@@ -19,6 +19,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **World model** | Archetype ECS core with a scene-graph node façade |
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
 | **Shaders** | Slang → SPIR-V (→ MSL) |
+| **VFX** | Engine-owned, GPU-first, compiled effect graphs |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Licence** | MIT |
@@ -71,7 +72,8 @@ replaceable. We build the ECS, renderer, scene model, asset pipeline, UI, animat
 audio graph and policy, and the editor — the parts where engine-level decisions compound.
 
 **Cost is bounded by configuration, not by content.** The renderer has culling and LOD budgets;
-audio has importance tiers with per-tier source budgets, so 8,000 noisy entities cost what you
+audio has importance tiers with per-tier source budgets; VFX has importance classes driven by a
+frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosions cost what you
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
 

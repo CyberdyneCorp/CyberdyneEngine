@@ -12,7 +12,7 @@ rendering, and the frame structure that the concrete pipelines fill in.
 `RenderServer` SHALL own all renderable state and expose it through generational handles, with
 no knowledge of entities, nodes, or scripts.
 
-Object families: textures, samplers, meshes, materials, shaders, skeletons, particle systems,
+Object families: textures, samplers, meshes, materials, shaders, skeletons, VFX effect instances,
 lights, reflection probes, decals, GI volumes, lightmaps, occluders, cameras, views, scenes,
 instances, canvases, environments, and post-process settings.
 
@@ -33,7 +33,7 @@ The renderer SHALL model:
 - **View** — a camera into a scene: transform, projection, viewport rect, render target,
   layer mask, quality settings, and post-process configuration. A view MAY have multiple
   **sub-views** for stereo or cubemap rendering.
-- **Instance** — a placement of a renderable (mesh, particle system, decal, light, probe) into a
+- **Instance** — a placement of a renderable (mesh, VFX effect, decal, light, probe) into a
   scene, with a transform, bounds, layer mask, LOD parameters, visibility, and per-instance data.
 
 #### Scenario: Multiple views of one scene
@@ -185,3 +185,37 @@ thread timing, so a frame is reproducible.
 #### Scenario: Same scene, same commands
 - **WHEN** the same snapshot is rendered twice
 - **THEN** the recorded command stream SHALL be identical
+### Requirement: GPU scene
+The renderer SHALL maintain a **GPU scene**: the authoritative GPU-side representation of
+renderable instances, from which GPU-driven culling, LOD selection, and indirect drawing are
+performed.
+
+The GPU scene SHALL hold per instance at minimum: a transform and its previous-frame value,
+bounds, a mesh reference, a material reference, an LOD chain reference, a layer mask, and instance
+flags.
+
+Instances SHALL be publishable into the GPU scene from multiple producers:
+
+- the **extract** stage, from ECS entities with renderable components
+- **instanced mesh** components, from their transform buffers
+- the **VFX system**, from mesh particles (see `vfx-system`)
+
+All producers SHALL use the same representation, so downstream culling, LOD, sorting, and drawing
+require no knowledge of an instance's origin.
+
+Instance publication SHALL be possible entirely GPU-side, without CPU round trips, for producers
+whose data already lives on the GPU.
+
+#### Scenario: One representation, many producers
+- **WHEN** mesh particles, instanced meshes, and ordinary entities are all visible
+- **THEN** they SHALL occupy the same GPU scene representation and be culled and drawn by the same
+  passes
+
+#### Scenario: GPU-side publication
+- **WHEN** a producer's instance data is computed on the GPU
+- **THEN** it SHALL publish into the GPU scene from a compute shader, with no readback and no CPU
+  submission per instance
+
+#### Scenario: Producer removed
+- **WHEN** an effect or entity is destroyed
+- **THEN** its instances SHALL be removed from the GPU scene without requiring a full rebuild

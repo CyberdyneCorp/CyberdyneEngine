@@ -48,6 +48,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [rendering-post-processing](rendering-post-processing/spec.md) | Chain order, AO, fog, exposure, DOF, bloom, tonemap, AA, upscaling |
 | [rendering-geometry-and-resources](rendering-geometry-and-resources/spec.md) | Vertex formats, compression, LOD, instancing, skinning, textures, particles |
 | [rendering-2d](rendering-2d/spec.md) | Sprites, batching, tilemaps, 2D lights and shadows, screen-space SDF |
+| [vfx-system](vfx-system/spec.md) | GPU-first VFX: graph compiler, unified simulation world, data interfaces, GPU events, budget scalability |
 
 **5 — Simulation**
 | Capability | Covers |
@@ -89,8 +90,14 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   FreeType, Slang, Recast, meshoptimizer. Build the ECS, renderer, scene model, asset pipeline,
   audio graph and policy, UI, and editor.
 - **Cost is bounded by configuration, not content.** Rendering has LOD and culling budgets; audio
-  has importance tiers with per-tier source budgets. At RTS scale, deciding *how much simulation
-  each thing deserves* matters far more than micro-optimising the work itself.
+  has importance tiers with per-tier source budgets; VFX has importance classes driven by a
+  frame-time budget controller. At RTS scale, deciding *how much simulation each thing deserves*
+  matters far more than micro-optimising the work itself.
+- **Graphs are compiled, not interpreted.** Material graphs and VFX graphs both lower to engine
+  shader source through the same Slang pipeline, so authoring convenience costs nothing at
+  runtime — and VFX attribute layouts are *derived* from what a graph actually uses.
+- **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
+  requirement, so effects can never break physics determinism or network reconciliation.
 - **Reversed-Z, Y-up, right-handed, −Z forward, metres and radians.** Stated once, normatively,
   because a silent mismatch here corrupts everything downstream.
 - **Deferred decisions are written down**, not assumed — see the non-goals in

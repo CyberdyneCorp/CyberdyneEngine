@@ -3,7 +3,8 @@
 ## Purpose
 
 Defines GPU-side content: mesh formats and vertex compression, LOD chains, instancing, skinning
-and blend shapes, texture formats and streaming, particle systems, and procedural geometry.
+and blend shapes, texture formats and streaming, and procedural geometry. Visual effects and
+particles are specified separately in `vfx-system`.
 
 ## Requirements
 
@@ -156,34 +157,6 @@ The lowest few mips SHALL always be resident so no texture is ever entirely miss
 #### Scenario: Budget pressure
 - **WHEN** the residency budget is exceeded
 - **THEN** the least recently sampled mips SHALL be evicted first, and the eviction reported
-
-### Requirement: Particle systems
-The engine SHALL provide a **GPU-simulated** particle system with a CPU fallback.
-
-A particle system SHALL be described by modules composed in a pipeline: emission (rate, bursts,
-shapes), initialisation (position, velocity, colour, size, lifetime, rotation, custom
-attributes), update (forces, drag, curves over lifetime, noise, collision, sub-emitters), and
-rendering (billboard, oriented, mesh, ribbon or trail, with sorting and lighting options).
-
-Simulation SHALL run as compute passes with persistent particle buffers, indirect dispatch based
-on live particle count, and GPU sorting for correctly ordered transparent particles.
-
-Collision SHALL be supported against: analytic shapes, the depth buffer (screen-space), and a
-signed distance field baked from the scene.
-
-#### Scenario: Depth-buffer collision
-- **WHEN** particles collide against the depth buffer
-- **THEN** they SHALL bounce off visible geometry, with the documented limitation that
-  off-screen and occluded geometry is invisible to the test
-
-#### Scenario: Sorted transparent particles
-- **WHEN** a system renders additive-blended particles that require ordering
-- **THEN** a GPU sort SHALL order them back to front before drawing
-
-#### Scenario: CPU fallback
-- **WHEN** compute is unavailable
-- **THEN** a CPU-simulated path SHALL feed an instanced draw, with a documented lower particle
-  budget
 
 ### Requirement: Procedural and dynamic geometry
 The engine SHALL support:
