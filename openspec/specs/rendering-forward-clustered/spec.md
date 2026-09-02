@@ -200,25 +200,6 @@ Per-view matrices SHALL be indexed by view index in the shader; geometry SHALL b
 - **WHEN** an XR view requests two sub-views
 - **THEN** geometry SHALL be submitted once and amplified to both layers
 
-### Requirement: Pipeline compilation strategy
-Pipeline permutations SHALL be minimised by preferring specialization constants over
-preprocessor variants, and the engine SHALL:
-
-- collect the permutations a project actually uses during play and development
-- cook them into a **pipeline manifest** shipped with the game
-- warm the pipeline cache from the manifest at load time, with progress reporting
-- use a generic **fallback pipeline** for any permutation not yet compiled, so a missing
-  permutation causes a temporary visual approximation rather than a hitch
-
-#### Scenario: First-run hitching is avoided
-- **WHEN** a shipped game starts with a cooked pipeline manifest
-- **THEN** required pipelines SHALL be compiled during loading, not on first draw
-
-#### Scenario: Unexpected permutation
-- **WHEN** a permutation is encountered that the manifest lacks
-- **THEN** the fallback pipeline SHALL be used for that draw while the specialised one compiles
-  asynchronously
-
 ### Requirement: Mobile pipeline differences
 The Mobile pipeline SHALL share the renderer's structure but:
 

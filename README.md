@@ -23,6 +23,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
 | **AI** | CyberAI: ECS agents, one compiled graph for states/BT/utility/GOAP, deterministic |
 | **Geometry** | CyberGeometry: virtualised clusters, GPU-driven streaming and culling, visibility buffer |
+| **Materials** | CyberMaterial: graph → IR → closures → compiled program, bindless, GPU material table |
 | **Animation** | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, motion matching |
 | **Networking** | CyberNet: ECS component replication, three network modes, priority-scheduled interest |
 | **Physics** | Jolt, behind an engine-owned interface |
@@ -95,6 +96,20 @@ frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosio
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
 
+**One component owns the frame's cost.** A renderer measures GPU time and lowers quality to fit a
+budget — but if several subsystems each do that independently, they read one shared signal, correct
+for costs they did not cause, and oscillate together. So exactly one arbiter measures the frame and
+hands out allocations; the VFX, geometry, and resolution controllers hold their own allocation with
+their own levers and report cost back. Capture and cinematics pin all of them at once, because
+half-pinned is not a state that should exist.
+
+**A material is compiled, and its cost is visible.** Authoring is a graph or a text definition;
+both lower to one typed intermediate representation that is optimised, cost-analysed, and then
+generated as shader source. Surfaces are composed from BSDF closures rather than picked from a
+menu of models — but a closure set that matches a known model compiles to that model's path and
+costs exactly what it costs, so layering is there when needed and free when not. The editor shows
+every stage from graph to binary, with cost attributed back to the nodes that caused it.
+
 **Detail is continuous, and geometry is virtual.** A mesh is a hierarchy of small triangle
 clusters, and the GPU picks which clusters to draw each frame against a screen-space error target —
 so cost tracks the pixels on screen rather than the triangles in the asset, and artists stop
@@ -151,7 +166,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 40 capabilities. Start here.
+  specs/          Target specifications — 43 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

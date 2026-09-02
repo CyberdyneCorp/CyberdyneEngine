@@ -44,9 +44,12 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [rendering-forward-clustered](rendering-forward-clustered/spec.md) | Cluster assignment, sort keys, prepass modes, pass order |
 | [shader-system](shader-system/spec.md) | Slang, permutations, reflection-driven binding, caching, hot reload |
 | [rendering-materials-and-shading](rendering-materials-and-shading/spec.md) | The BRDF in concrete terms, shading models, IBL, material model |
+| [material-compiler](material-compiler/spec.md) | CyberMaterial: graph → IR → closures → program, quality tiers, GPU material table, cost attribution |
 | [rendering-lighting-and-shadows](rendering-lighting-and-shadows/spec.md) | Light types, physical units, LTC area lights, atlas, cascades, filtering |
 | [rendering-global-illumination](rendering-global-illumination/spec.md) | Lightmaps, probes, dynamic diffuse GI, reflections, sky |
+| [ray-tracing-infrastructure](ray-tracing-infrastructure/spec.md) | Acceleration structure lifecycle, geometry adapters, ray queries, capability gating |
 | [rendering-post-processing](rendering-post-processing/spec.md) | Chain order, AO, fog, exposure, DOF, bloom, tonemap, AA, upscaling |
+| [temporal-rendering](temporal-rendering/spec.md) | CyberTemporal: jitter, motion vectors, history, reprojection, invalidation |
 | [rendering-geometry-and-resources](rendering-geometry-and-resources/spec.md) | Vertex formats, compression, LOD, instancing, skinning, textures, particles |
 | [rendering-2d](rendering-2d/spec.md) | Sprites, batching, tilemaps, 2D lights and shadows, screen-space SDF |
 | [vfx-system](vfx-system/spec.md) | GPU-first VFX: graph compiler, unified simulation world, data interfaces, GPU events, budget scalability |
@@ -105,6 +108,16 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **One component measures the frame; everything else receives an allocation.** VFX, virtual
+  geometry, and dynamic resolution each had their own controller reading total GPU time. Three
+  feedback loops on one shared signal is not three budgets, it is one unstable control system. The
+  renderer budget arbiter now owns measurement and allocation; subsystem controllers hold their
+  own allocation with their own levers, on a faster time constant, and report cost upward. A slow
+  outer loop over fast inner loops is stable.
+- **Closures are how a material is authored; shading models are what it compiles to.** A closure
+  set matching a known model costs exactly what that model costs, so layering is available without
+  taxing the materials that never layer. Generality that is always paid for is not generality, it
+  is overhead.
 - **Detail is a continuous function, not a list of levels.** Virtual geometry selects triangle
   clusters per frame against a screen-space error target, so rendering cost tracks pixels rather
   than the triangle count of the asset. Clusters are simplified in groups so boundaries stay
@@ -117,8 +130,8 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   physics guarantees determinism only within a platform. There is no world partition capability, so
   replication cells are networking-owned with the seam specified — and virtual geometry now needs
   the same seam, which makes world partition the most-referenced missing capability. Virtual
-  textures are specified as a seam too, not as a capability. Naming a gap is cheaper than
-  discovering it.
+  textures are specified as a seam too, not as a capability, as are virtual shadow maps and the
+  dynamic GI stack. Naming a gap is cheaper than discovering it.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can

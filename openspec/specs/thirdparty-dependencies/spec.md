@@ -140,9 +140,17 @@ The engine SHALL implement, rather than integrate:
 - the **ECS core**, scheduler, and job system — the performance model is the engine's identity
 - the **renderer**: RHI, render graph, GPU scene, culling, pipelines, lighting, GI, and
   post-processing
+- the **material compiler**: the authoring model, the material IR and its optimisation passes, the
+  closure model and its lowering to shading models, parameter classification, quality tier
+  generation, cost analysis, material classification and binning, and the GPU material table —
+  this is where material cost is actually decided, and it is inseparable from the GPU scene and
+  the renderer's budget model. The engine does **not** implement a shader optimiser or backend
+  code generator; it produces good input to somebody else's.
+- the **renderer budget arbiter** and the temporal framework — frame cost allocation and history
+  management are cross-subsystem policy that no library can hold
 - the **virtual geometry system**: cluster hierarchy and its error metric, page format, GPU
   traversal and culling, the geometry cache and residency manager, the visibility buffer and
-  material resolve, and the budget controller — the architecture is native to the GPU scene,
+  material resolve, and its budget controller — the architecture is native to the GPU scene,
   streaming, and budgeting systems, which no external library could be
 - the **VFX system**: asset model, graph compiler, particle storage, GPU simulation, event
   routing, scalability policy, and renderers — one of the few areas where an engine can still
@@ -169,6 +177,10 @@ The engine SHALL implement, rather than integrate:
 
 These are where engine-level decisions compound, and where a general-purpose library would impose
 its own architecture.
+
+Shader toolchains (Slang, SPIR-V tools, DXC where needed, platform shader compilers), GPU vendor
+upscalers, and GPU capture tools SHALL be integrated rather than built, behind engine-owned
+interfaces that expose no vendor types.
 
 Algorithms with published references — noise functions, sorting networks, curl fields,
 pathfinding heuristics — MAY be implemented in engine code from those references. Implementing a
@@ -197,6 +209,11 @@ published algorithm is not a dependency and does not require a manifest entry.
   generation within navigation, or an inference runtime within CyberML
 - **THEN** it SHALL be integrated behind the subsystem's own interface, since owning the
   architecture does not require implementing every algorithm
+
+#### Scenario: The material IR is owned; the shader backend is not
+- **WHEN** the shader toolchain is upgraded or replaced
+- **THEN** the material IR, its optimisation passes, and the cost model SHALL be unaffected, since
+  the engine owns the material compiler and integrates the shader compiler
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

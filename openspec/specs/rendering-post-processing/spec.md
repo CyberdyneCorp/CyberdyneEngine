@@ -214,8 +214,9 @@ The engine SHALL support:
 - **FXAA** and **SMAA** as post-tonemap spatial options
 - **Alpha-to-coverage** for masked materials under MSAA
 
-TAA SHALL require the projection matrix to be sub-pixel jittered with a Halton sequence and the
-velocity buffer to be produced.
+TAA SHALL consume the **temporal framework** (see `temporal-rendering`) for jitter, motion
+vectors, history storage, reprojection, disocclusion classification, and history invalidation.
+It SHALL NOT implement its own.
 
 TAA SHALL provide a sharpening pass to counteract the softening it introduces.
 
@@ -225,37 +226,52 @@ TAA SHALL provide a sharpening pass to counteract the softening it introduces.
 
 #### Scenario: Disocclusion
 - **WHEN** geometry is revealed from behind an occluder
-- **THEN** history SHALL be rejected for those pixels and reconstructed spatially
+- **THEN** the temporal framework SHALL classify those pixels as disoccluded, history SHALL be
+  rejected for them, and they SHALL be reconstructed spatially
 
 #### Scenario: TAA requires prerequisites
-- **WHEN** TAA is requested without a velocity buffer
-- **THEN** the pipeline SHALL enable the velocity pass, or refuse TAA with a diagnostic
+- **WHEN** TAA is requested without motion vectors
+- **THEN** the temporal framework SHALL enable their production, or TAA SHALL be refused with a
+  diagnostic
+
+#### Scenario: Camera cut is handled by the framework
+- **WHEN** the camera cuts
+- **THEN** TAA's history SHALL be invalidated by the framework's cut event, not by logic TAA
+  implements itself
 
 ### Requirement: Temporal upscaling
 The engine SHALL support rendering the 3D scene at a reduced internal resolution and
 reconstructing it at output resolution, with UI drawn at native resolution.
 
-Upscalers SHALL be pluggable behind one interface taking colour, depth, velocity, exposure, and
-jitter. The engine SHALL ship a **built-in temporal upscaler** and SHALL define the integration
-seams for vendor upscalers (FSR, DLSS, XeSS, MetalFX) as optional modules, since their licensing
-and distribution differ.
+Upscalers SHALL be pluggable behind one interface taking colour, depth, motion vectors, exposure,
+and jitter — the latter three supplied by the temporal framework. The engine SHALL ship a
+**built-in temporal upscaler** and SHALL define the integration seams for vendor upscalers (FSR,
+DLSS, XeSS, MetalFX) as optional modules, since their licensing and distribution differ. Public
+renderer interfaces SHALL NOT depend on vendor types.
 
-Dynamic resolution scaling SHALL be supported: internal resolution adjusted per frame to hold a
-GPU time budget.
+Dynamic resolution scaling SHALL be supported, and internal resolution SHALL be a **budget
+allocation held by the renderer budget arbiter** (see `rendering-architecture`), not an
+independent controller measuring frame time. Resolution SHALL adjust within configured bounds on
+the arbiter's time constant.
 
 #### Scenario: Half-resolution rendering
 - **WHEN** internal resolution is 50 % with temporal upscaling
-- **THEN** the 3D scene SHALL be reconstructed at full resolution using jitter, velocity, and
-  history, while UI is composited at native resolution
+- **THEN** the 3D scene SHALL be reconstructed at full resolution using jitter, motion vectors,
+  and history, while UI is composited at native resolution
 
 #### Scenario: Dynamic resolution holds a budget
 - **WHEN** GPU frame time exceeds the budget
-- **THEN** internal resolution SHALL be reduced within configured bounds, and raised again when
-  headroom returns
+- **THEN** the arbiter SHALL reduce the resolution allocation within configured bounds, and raise
+  it again when headroom returns
 
 #### Scenario: Vendor upscaler absent
 - **WHEN** a vendor upscaler module is not present
 - **THEN** the built-in upscaler SHALL be used with no content changes
+
+#### Scenario: Resolution does not fight other controllers
+- **WHEN** resolution is reduced, lowering every subsystem's measured cost
+- **THEN** subsystem controllers SHALL NOT interpret the change as headroom to spend; only the
+  arbiter SHALL re-evaluate allocations
 
 ### Requirement: Variable-rate shading
 Where supported, the engine SHALL apply **variable-rate shading** driven by: a content-adaptive
