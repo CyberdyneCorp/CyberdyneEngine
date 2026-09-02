@@ -171,7 +171,13 @@ The engine SHALL implement, rather than integrate:
   and retargeting — animation couples to the renderer, physics, AI, and VFX, and its scale
   behaviour is engine policy
 - the **UI system**: element storage, layout, styling, input routing, animation, and rendering
-- the **scene, prefab, and serialization** model
+- the **scene, prefab, and serialization** model, including the prefab compiler, exposed
+  parameters, override addressing, and entity templates
+- the **persistent world**: partitioning, cell identity and cooking, the streaming scheduler and
+  its budgets, residency and activation states, world layers, persistent entity identity and
+  cross-cell references, the persistence overlay, world HLOD, and representation tiers — this is
+  the layer every other subsystem streams against, and adopting an external world model would
+  adopt its object model with it
 - the **asset pipeline** and package format
 - the **AudioServer**, bus graph, voice management, and the audio importance and tiering policy —
   audio scheduling and budget policy are engine concerns that interact with the job system and ECS
@@ -228,6 +234,12 @@ published algorithm is not a dependency and does not require a manifest entry.
   scene, consumes the virtual geometry hierarchy at its own error target, fills a surface cache
   from engine-compiled secondary material programs, and holds an allocation from the engine's
   budget arbiter — coupling a self-contained solution cannot provide
+
+#### Scenario: Rejecting an external world model
+- **WHEN** an external world or streaming framework is proposed
+- **THEN** it SHALL be evaluated against the requirement that cells cook into the engine's own
+  archetype layout, that activation is a bulk copy into the engine's ECS chunks, and that streaming
+  budgets are held alongside the renderer's — coupling an external framework cannot provide
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

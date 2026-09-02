@@ -26,7 +26,8 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 |---|---|
 | [ecs-core](ecs-core/spec.md) | Entities, components, archetypes, queries, systems, change detection, snapshots |
 | [scene-graph-and-nodes](scene-graph-and-nodes/spec.md) | Node façade, transforms, lifecycle, behaviours, coherence invariants |
-| [serialization-and-prefabs](serialization-and-prefabs/spec.md) | Text and binary forms, prefabs, overrides, variants, schema migration |
+| [serialization-and-prefabs](serialization-and-prefabs/spec.md) | Prefab/scene/world assets, exposed parameters, overrides, entity templates, migration |
+| [world-partition-and-streaming](world-partition-and-streaming/spec.md) | CyberWorld: partitioning, cell streaming and activation, layers, persistence overlay, HLOD |
 
 **3 — Scripting**
 | Capability | Covers |
@@ -109,6 +110,13 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Residency, activation, asset detail, and simulation detail are four different things.**
+  Collapsing them is what makes crossing a world boundary mean *load everything now*. Kept apart,
+  approach is a gradient: metadata far out, resources resident, entities instantiated later, full
+  detail last — each step cheap because the expensive one already happened.
+- **Author hierarchically; ship flat.** Prefabs, scenes, and worlds are authoring assets with
+  nesting, variants, and overrides, all of which are resolved at cook time into archetype blocks.
+  Activation is a bulk copy into ECS chunks, and shipping builds carry no prefab link at all.
 - **Use the cheapest source that can give a trustworthy answer.** Illumination is a hybrid of
   screen tracing, world-space caches, software tracing and hardware rays, selected per sample by a
   computed confidence rather than a fixed fallback order. A traced hit is a *cache lookup*, not a
@@ -135,12 +143,11 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   separate representations derived from the same source asset. Conflating them is the mistake that
   makes virtualised geometry unusable for gameplay.
 - **Known gaps are written down, not implied.** Cross-platform lockstep is unsupported because
-  physics guarantees determinism only within a platform. There is no world partition capability, so
-  replication cells are networking-owned with the seam specified — and virtual geometry now needs
-  the same seam, which makes world partition the most-referenced missing capability. Virtual
-  textures are specified as a seam too, not as a capability, as are virtual shadow maps. World
-  partition is now required by a fourth subsystem — the GI scene is specified as cell-scoped
-  against a capability that does not exist. Naming a gap is cheaper than discovering it.
+  physics guarantees determinism only within a platform, and that is stated rather than discovered.
+  Virtual textures and virtual shadow maps are currently specified as seams rather than
+  capabilities. World partition was named as a gap by four subsystems before it was specified, and
+  specifying it removed four workarounds rather than adding one system — which is the argument for
+  writing gaps down in the first place.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can

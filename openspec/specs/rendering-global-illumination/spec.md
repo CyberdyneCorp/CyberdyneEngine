@@ -111,9 +111,12 @@ targets:
 Where an asset has a virtual geometry hierarchy, the GI scene SHALL select a coarser level from
 that hierarchy rather than building a separate simplification.
 
-The GI scene SHALL be **cell-scoped**: its representations SHALL be built, streamed, and evicted
-per world region, so no monolithic global structure exists. This depends on a world partition
-capability that is not yet specified; the seam is defined here.
+The GI scene SHALL be **cell-scoped**: illumination payloads SHALL be cooked as a cell channel and
+ingested on cell residency, and evicted on cell unload, so no monolithic global structure exists.
+Cell lifecycle SHALL come from `world-partition-and-streaming`.
+
+Ingestion and eviction SHALL be incremental and SHALL invalidate only the affected region, so
+streaming does not cause a global illumination rebuild.
 
 #### Scenario: Illumination does not pay for pixel-accurate geometry
 - **WHEN** a ray is traced for indirect diffuse
@@ -126,9 +129,13 @@ capability that is not yet specified; the seam is defined here.
   simplified mesh
 
 #### Scenario: Region unloads
-- **WHEN** a world region is unloaded
-- **THEN** its GI scene representations SHALL be evicted, and queries into that region SHALL fall
-  back to the far-field representation
+- **WHEN** a world cell is unloaded
+- **THEN** its GI payloads SHALL be evicted, the affected region invalidated, and queries into it
+  SHALL fall back to the far-field representation
+
+#### Scenario: Streaming does not rebuild illumination
+- **WHEN** cells stream in and out as the camera moves
+- **THEN** GI scene updates SHALL be incremental and local, not a global rebuild
 
 ### Requirement: Surface cache
 The engine SHALL maintain a **surface cache**: shaded radiance for world surfaces, stored per

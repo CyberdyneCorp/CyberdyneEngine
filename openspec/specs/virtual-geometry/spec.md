@@ -639,12 +639,15 @@ Two levels of streaming SHALL be distinguished: **content streaming** determines
 exist, and **geometry streaming** determines their detail. Both SHALL be driven from a shared
 notion of the viewer's region of interest.
 
-The engine currently has **no world partition capability**; the integration contract SHALL be
-specified so that when one exists, cell membership can drive geometry prefetching without reworking
-the residency manager or the request path.
+Content streaming is owned by `world-partition-and-streaming`. Cell membership SHALL drive geometry
+**prefetching**: when a cell becomes resident, the root pages of its geometry SHALL be requested,
+so that an activated cell is never visible without at least its coarsest representation.
 
-Similarly, virtual texture streaming does not exist; the contract by which geometry and texture
-residency would be jointly budgeted SHALL be specified as a seam.
+Geometry residency SHALL remain the responsibility of this system: cell membership provides the
+prefetch hint, and the feedback-driven residency manager decides detail.
+
+Virtual texture streaming does not exist; the contract by which geometry and texture residency
+would be jointly budgeted SHALL be specified as a seam.
 
 #### Scenario: Object existence and object detail are distinct
 - **WHEN** a region streams in
@@ -652,9 +655,14 @@ residency would be jointly budgeted SHALL be specified as a seam.
   streamed separately on demand
 
 #### Scenario: Seams remain open
-- **WHEN** a world partition or virtual texture capability is introduced
-- **THEN** it SHALL be able to drive geometry prefetching and share the residency budget without
-  changes to the page table or request path
+- **WHEN** a virtual texture capability is introduced
+- **THEN** it SHALL be able to share the residency budget without changes to the page table or
+  request path
+
+#### Scenario: An activated cell is never blank
+- **WHEN** a world cell is activated
+- **THEN** the root pages of its geometry SHALL already have been requested, so its objects render
+  at coarse detail immediately rather than appearing later
 
 ### Requirement: Gameplay API
 Gameplay SHALL see no cluster, page, or hierarchy concepts. A renderable entity SHALL declare a

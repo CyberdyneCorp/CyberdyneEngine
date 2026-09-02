@@ -17,6 +17,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Core language** | C++20, no exceptions, no RTTI |
 | **Scripting** | Swift, via a generated overlay over a stable C ABI |
 | **World model** | Archetype ECS core with a scene-graph node façade |
+| **World** | CyberWorld: partitioned streaming cells, layers, persistence overlay, authored from prefabs and scenes |
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
 | **Shaders** | Slang → SPIR-V (→ MSL) |
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
@@ -97,6 +98,18 @@ frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosio
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
 
+**Designers author hierarchies; the runtime gets flat data.** Prefabs, scenes and worlds are
+authoring assets with nesting, variants and overrides — all resolved at cook time into archetype
+blocks that match the runtime's chunk layout, so activating a streaming cell is a bulk copy rather
+than a hundred thousand object constructions, and a shipping build carries no prefab link at all.
+A prefab can expose a deliberate parameter surface, so its internals stay refactorable instead of
+becoming part of its contract with every instance.
+
+**Residency is not activation.** A region's bytes being in memory, its entities participating in
+simulation, its textures being resident, and how much it is thinking are four independent
+decisions. Collapsing them is what makes crossing a boundary mean *load everything now*; kept
+apart, approach becomes a gradient where every step is cheap.
+
 **Indirect light is a scheduling problem, not an algorithm.** Rather than one GI technique, the
 engine combines screen-space tracing, world-space radiance and surface caches, software tracing
 against a distance field, and hardware rays — picking per sample the cheapest source that can give
@@ -175,7 +188,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 44 capabilities. Start here.
+  specs/          Target specifications — 45 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```
