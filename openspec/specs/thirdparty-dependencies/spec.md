@@ -205,7 +205,15 @@ The engine SHALL implement, rather than integrate:
   model — these are the contracts every other subsystem encodes into its data and its scheduling.
   Beneath them, a C++ compiler frontend for parsing, a general-purpose heap allocator chosen by
   benchmark, and compression codecs SHALL be integrated rather than written.
-- the **editor**
+- the **editor**, including its document and transaction model, undo, semantic diff and merge, the
+  live edit compiler and the live bridge, and the source control abstraction — the transaction log
+  is one mechanism serving undo, autosave, crash recovery, diff and live editing at once, which no
+  external library could supply
+- the **project, module and plugin graph** and the **build pipeline**: layering enforcement, plugin
+  lifecycle and resolution, the build graph and its derivation keys, the build service, the derived
+  data cache, cooking, the package format, and patch manifests. Compilers, shader toolchains,
+  compression codecs, cryptographic implementations, and source control systems are integrated
+  beneath them.
 
 These are where engine-level decisions compound, and where a general-purpose library would impose
 its own architecture.
@@ -279,6 +287,18 @@ published algorithm is not a dependency and does not require a manifest entry.
 - **WHEN** a block-compression encoder or image codec is adopted
 - **THEN** it SHALL sit beneath the engine's own page format, address space, and residency policy,
   which remain engine-owned and replaceable independently of it
+
+#### Scenario: Rejecting an external build system as the model
+- **WHEN** a general-purpose build system is proposed to own the pipeline
+- **THEN** it SHALL be evaluated against the requirement that derivation keys span code, assets,
+  shaders, pages and packages in one graph, that outputs are content-addressed for patching, and
+  that the editor is a live client of the same graph — coupling an external system cannot provide,
+  though it MAY be used to build individual native modules
+
+#### Scenario: The plugin boundary reuses the engine ABI
+- **WHEN** a binary plugin interface is required
+- **THEN** it SHALL use the engine's existing stable C ABI rather than introducing a second
+  versioned boundary to maintain
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

@@ -32,6 +32,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Networking** | CyberNet: ECS component replication, three network modes, priority-scheduled interest |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
+| **Tooling** | Transaction-based editor, live editing to local and remote runtimes, graph-driven builds |
 | **Licence** | MIT |
 
 ## The shape of it
@@ -99,6 +100,13 @@ audio has importance tiers with per-tier source budgets; VFX has importance clas
 frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosions cost what you
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
+
+**Every edit is a transaction; every build is a graph.** Editor mutations are semantic operations
+addressing objects by stable identity, which makes undo, autosave, crash recovery, three-way merge
+and live editing one mechanism rather than five. Builds are graphs of derivations with explicit
+inputs, deterministic keys and immutable content-addressed outputs — so an incremental build is
+dependency-driven rather than timestamp-driven, and a one-texture change ships as a patch of the
+pages that changed.
 
 **Designers author hierarchies; the runtime gets flat data.** Prefabs, scenes and worlds are
 authoring assets with nesting, variants and overrides — all resolved at cook time into archetype
@@ -219,7 +227,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 52 capabilities. Start here.
+  specs/          Target specifications — 56 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

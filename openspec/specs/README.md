@@ -80,6 +80,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [ui-system](ui-system/spec.md) | CyberUI: dedicated element storage, retained tree, declarative authoring, `.cyss`, GPU-driven, layer navigation |
 | [asset-import-pipeline](asset-import-pipeline/spec.md) | Importers, cook cache, texture and model import, packaging |
 | [editor-architecture](editor-architecture/spec.md) | Editor as an engine app, play mode, inspector, plugins, build pipeline |
+| [editor-documents-and-transactions](editor-documents-and-transactions/spec.md) | Documents, transactions as the only write path, undo, journal, semantic diff and merge |
+| [live-editing](live-editing/spec.md) | Live edit compiler and policies, play modes, the live bridge, hot reload, runtime inspection |
+| [project-and-plugins](project-and-plugins/spec.md) | Project graph, module layering enforcement, plugins, extension points, trust tiers, configuration |
+| [build-and-packaging](build-and-packaging/spec.md) | Build graph and derivation keys, derived data cache, build service, packages, chunk-level patching |
 
 **7 — Systems and process**
 | Capability | Covers |
@@ -117,6 +121,14 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **One operation stream is five products.** Every editor mutation is a semantic transaction
+  addressing objects by identity — which makes undo, autosave-as-journal, crash recovery, semantic
+  three-way merge, and the delta a running game consumes the same mechanism read five ways.
+  Snapshots would have been simpler and would have foreclosed all of it.
+- **A build is a graph of derivations, not a script.** Explicit inputs, deterministic keys,
+  immutable content-addressed outputs. Undeclared reads are defects, because they produce stale
+  output no invalidation can catch — and determinism is what makes both cache sharing and
+  chunk-level patching possible.
 - **Identity is assigned and recorded, never derived from a name.** A type's and a field's
   identifiers live in a committed manifest with tombstones and a CI gate, so renaming a field or
   moving a type into a namespace leaves every scene, override, save, animation binding and

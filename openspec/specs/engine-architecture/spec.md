@@ -121,10 +121,17 @@ create node-less entities for particles, instanced props, and other bulk data.
 
 ### Requirement: Module system
 Optional functionality SHALL be packaged as **modules** under `modules/<name>/`, each providing
-a `CMakeLists.txt`, a `module.toml` manifest (name, description, dependencies, default-enabled
-flag, supported platforms), and registration entry points.
+a `CMakeLists.txt`, a manifest declaring name, description, **layer**, **type**, public and private
+dependencies, default-enabled flag, supported platforms, and hot-reload support, and registration
+entry points.
 
-Modules SHALL register at one of four levels: `Core`, `Servers`, `Scene`, `Editor`.
+Module manifests and their dependency graph SHALL be governed by `project-and-plugins`: the project
+graph is authoritative, undeclared dependencies and cycles are build errors, and **architectural
+layering is enforced** — a runtime module SHALL NOT depend on an editor module, and a foundation
+module SHALL NOT depend upward.
+
+Modules SHALL register at one of four levels: `Core`, `Servers`, `Scene`, `Editor`. Registration
+level orders initialisation; **layer** constrains dependencies. The two are distinct.
 
 #### Scenario: Module registers a backend
 - **WHEN** the `jolt-physics` module initialises at the `Servers` level
@@ -139,6 +146,10 @@ Modules SHALL register at one of four levels: `Core`, `Servers`, `Scene`, `Edito
 #### Scenario: Third-party module
 - **WHEN** a path is passed via `CY_EXTRA_MODULE_PATHS`
 - **THEN** modules found there SHALL build exactly as in-tree modules do
+
+#### Scenario: Layering is enforced, not advised
+- **WHEN** a module declares a dependency that violates the layer ordering
+- **THEN** the build SHALL fail naming both modules and their layers
 
 ### Requirement: Deterministic startup and shutdown
 The runtime SHALL initialise subsystems in a fixed order and tear them down in exact reverse:
