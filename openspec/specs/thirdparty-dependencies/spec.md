@@ -61,6 +61,8 @@ pinned in the dependency manifest, not here.
 | ML inference (optional, platform) | **Core ML**, **DirectML**, **TensorRT** | Platform / proprietary SDK | Per-device optimised inference where the platform provides it |
 | glTF | **cgltf** or **tinygltf** | MIT | Parsing an open spec is not differentiating |
 | FBX | **ufbx** | MIT | A closed format best handled by a maintained parser |
+| USD (optional, tool-time) | **OpenUSD** | Apache 2.0 | Interchange for pipelines built on it; a large dependency, so editor and cooker only |
+| Animation compression | **ACL** (to evaluate) | MIT | Error-bounded clip compression is a well-solved bounded problem; the clip format stays engine-owned |
 | Image codecs | **libpng**, **libjpeg-turbo**, **libwebp**, **tinyexr** | BSD/MIT | Standard codecs |
 | Texture compression | **ISPC Texture Compressor** or **bc7enc**, **astc-encoder** | MIT/Apache 2.0 | BC and ASTC encoding |
 | Audio codecs | **libvorbis**, **libopus**, **dr_libs** | BSD/Public domain | Formats miniaudio does not decode natively |
@@ -73,6 +75,14 @@ pinned in the dependency manifest, not here.
 Steam Audio SHALL be optional and capability-gated; the engine SHALL be fully functional without
 it. All ML inference runtimes SHALL be optional behind `CY_ML`; platform runtimes are additionally
 gated by platform availability.
+
+**OpenUSD SHALL be optional and tool-time only.** It is materially larger than the other importers
+and SHALL NOT be linked into a shipped runtime.
+
+Where a table entry is marked *to evaluate*, the requirement is the capability, not the library:
+the engine SHALL provide error-bounded clip compression, and whether that is an integrated codec or
+an engine implementation SHALL be decided by the implementation change against the criteria in the
+dependency policy.
 
 #### Scenario: Backend can be replaced
 - **WHEN** a better physics library appears
@@ -93,6 +103,16 @@ gated by platform availability.
 - **THEN** no inference runtime SHALL be fetched, built, or linked, and AI SHALL be fully
   functional without it
 
+#### Scenario: Large dependency is contained
+- **WHEN** USD import is enabled
+- **THEN** OpenUSD SHALL be built for the editor and cooker only, and a shipped game SHALL contain
+  no USD code
+
+#### Scenario: Capability, not library
+- **WHEN** the animation compression requirement is satisfied
+- **THEN** it SHALL be judged on achieving bounded error with reported ratios, not on which codec
+  was chosen
+
 ### Requirement: What the engine builds itself
 The engine SHALL implement, rather than integrate:
 
@@ -106,12 +126,15 @@ The engine SHALL implement, rather than integrate:
   scheduling and batching, the knowledge model, environment queries, smart objects, AI LOD, and
   the deterministic scheduler — the scale and determinism policy are engine concerns, and no
   third-party framework provides them
+- the **animation runtime**: asset model, graph and rig compilers, pose evaluation and storage,
+  the GPU pose world, animation LOD and pose sharing, motion matching, the constraint framework,
+  and retargeting — animation couples to the renderer, physics, AI, and VFX, and its scale
+  behaviour is engine policy
 - the **UI system**: element storage, layout, styling, input routing, animation, and rendering
 - the **scene, prefab, and serialization** model
 - the **asset pipeline** and package format
 - the **AudioServer**, bus graph, voice management, and the audio importance and tiering policy —
   audio scheduling and budget policy are engine concerns that interact with the job system and ECS
-- the **animation system** and animation graph
 - the **networking and replication** model
 - the **C ABI and Swift binding** layer
 - the **editor**

@@ -22,6 +22,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
 | **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
 | **AI** | CyberAI: ECS agents, one compiled graph for states/BT/utility/GOAP, deterministic |
+| **Animation** | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, motion matching |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Licence** | MIT |

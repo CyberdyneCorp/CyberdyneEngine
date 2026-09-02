@@ -54,7 +54,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | Capability | Covers |
 |---|---|
 | [physics](physics/spec.md) | `PhysicsServer`, Jolt backend, components, queries, character controller, determinism |
-| [animation-and-skinning](animation-and-skinning/spec.md) | Clips, skeletons, animation graph, IK, retargeting, root motion, tweens |
+| [animation-and-skinning](animation-and-skinning/spec.md) | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, LOD and pose sharing, motion matching |
 | [ai-system](ai-system/spec.md) | CyberAI: ECS agents, unified compiled behaviour graph, batched perception, knowledge, smart objects, AI LOD |
 | [navigation](navigation/spec.md) | Navmesh and volumes, A* + funnel, flow fields, hierarchical paths, avoidance, crowds |
 | [ml-inference](ml-inference/spec.md) | CyberML: model assets, tensors, backend abstraction, determinism boundary |
@@ -100,8 +100,14 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   runtime — and VFX attribute layouts are *derived* from what a graph actually uses.
 - **Determinism is a per-subsystem contract, decided deliberately.** AI is deterministic, because
   it drives gameplay that must survive reconciliation and replay — which is why its schedule
-  derives from simulation state, never from measured frame time. VFX and ML inference are not, and
-  are firewalled from authoritative state. Each boundary is a requirement, not an assumption.
+  derives from simulation state, never from measured frame time. Animation is partly so: root
+  motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
+  on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
+  state. Each boundary is a requirement, not an assumption.
+- **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
+  rigs and animation graphs all lower through a typed IR to a program shared by every instance
+  using it. It is the same answer to the same problem each time, and the reason instance counts can
+  be large.
 - **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
   requirement, so effects can never break physics determinism or network reconciliation.
 - **ECS is not the answer to everything.** UI elements deliberately live outside it: their counts
