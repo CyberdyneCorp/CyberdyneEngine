@@ -20,6 +20,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
 | **Shaders** | Slang → SPIR-V (→ MSL) |
 | **Physics** | Jolt, behind an engine-owned interface |
+| **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Licence** | MIT |
 
 ## The shape of it
@@ -63,11 +64,16 @@ aliasing, and pass scheduling. No renderer code writes a barrier or a layout tra
 the scheduler derives the dependency graph and runs non-conflicting systems concurrently.
 Undeclared access is an assertion, not a race waiting to be found.
 
-**Integrate where it isn't differentiating.** Jolt for physics, HarfBuzz + ICU + FreeType for
-text, Slang for shaders, Recast for navmeshes, meshoptimizer and xatlas for mesh processing. Each
-sits behind an engine-owned interface and must stay replaceable. We build the ECS, renderer, scene
-model, asset pipeline, UI, animation, networking, and editor — the parts where engine-level
-decisions compound.
+**Integrate where it isn't differentiating.** Jolt for physics, miniaudio and Steam Audio for
+audio, HarfBuzz + ICU + FreeType for text, Slang for shaders, Recast for navmeshes, meshoptimizer
+and xatlas for mesh processing. Each sits behind an engine-owned interface and must stay
+replaceable. We build the ECS, renderer, scene model, asset pipeline, UI, animation, networking,
+audio graph and policy, and the editor — the parts where engine-level decisions compound.
+
+**Cost is bounded by configuration, not by content.** The renderer has culling and LOD budgets;
+audio has importance tiers with per-tier source budgets, so 8,000 noisy entities cost what you
+configured rather than what the scene happens to contain. Deciding how much simulation each thing
+deserves is the performance lever that actually matters at scale.
 
 **Conventions are stated once, normatively.** Right-handed, Y-up, −Z forward. Reversed-Z with a
 `[0,1]` depth range. Column-major matrices. Metres, seconds, radians. A silent mismatch here

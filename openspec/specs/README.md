@@ -55,7 +55,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [physics](physics/spec.md) | `PhysicsServer`, Jolt backend, components, queries, character controller, determinism |
 | [animation-and-skinning](animation-and-skinning/spec.md) | Clips, skeletons, animation graph, IK, retargeting, root motion, tweens |
 | [navigation](navigation/spec.md) | Navmesh generation, A* + funnel, off-mesh links, local avoidance |
-| [audio](audio/spec.md) | Bus graph, lock-free mixing, spatialisation, effects, scheduling |
+| [audio](audio/spec.md) | Engine-owned AudioServer over miniaudio + Steam Audio, acoustic geometry, importance tiers |
 
 **6 — Content and tooling**
 | Capability | Covers |
@@ -85,8 +85,12 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   memory; no renderer code writes a barrier.
 - **Parallelism is safe by construction.** Systems declare their access; the scheduler derives the
   dependency graph. Undeclared access is an assertion, not a race.
-- **Integrate where it is not differentiating.** Jolt, HarfBuzz, ICU, FreeType, Slang, Recast,
-  meshoptimizer. Build the ECS, renderer, scene model, asset pipeline, UI, and editor.
+- **Integrate where it is not differentiating.** Jolt, miniaudio, Steam Audio, HarfBuzz, ICU,
+  FreeType, Slang, Recast, meshoptimizer. Build the ECS, renderer, scene model, asset pipeline,
+  audio graph and policy, UI, and editor.
+- **Cost is bounded by configuration, not content.** Rendering has LOD and culling budgets; audio
+  has importance tiers with per-tier source budgets. At RTS scale, deciding *how much simulation
+  each thing deserves* matters far more than micro-optimising the work itself.
 - **Reversed-Z, Y-up, right-handed, −Z forward, metres and radians.** Stated once, normatively,
   because a silent mismatch here corrupts everything downstream.
 - **Deferred decisions are written down**, not assumed — see the non-goals in

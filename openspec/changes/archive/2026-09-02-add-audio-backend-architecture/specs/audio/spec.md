@@ -1,19 +1,4 @@
-# audio Specification
-
-## Purpose
-
-Defines audio: the engine-owned `AudioServer` and mixing graph, the backends beneath it, spatial
-acoustics, the importance system that bounds cost at scale, and the thread-safety rules that keep
-a realtime mixer glitch-free while gameplay mutates state.
-
-The layering is deliberate. The engine owns `AudioServer`, the bus graph, voice management,
-streaming policy, and the importance and tiering policy, because those interact directly with the
-job system, the ECS, and the frame budget. Beneath that, **miniaudio** provides device I/O,
-conversion, decoding, and streaming, and **Steam Audio** provides high-end spatial acoustics —
-each behind an engine-owned interface, each replaceable. Commercial middleware (FMOD, Wwise) is
-supported as an optional plugin backend but is never a dependency.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Engine-owned audio architecture
 `AudioServer`, the bus graph, voice management, streaming policy, spatialisation policy, and the
@@ -61,145 +46,6 @@ entirely when it is not.
 - **WHEN** the miniaudio backend is reviewed
 - **THEN** the set of miniaudio APIs it calls SHALL be documented and limited to device I/O,
   conversion, decoding, and streaming
-
-### Requirement: Audio driver layer
-`AudioBackend` SHALL abstract the platform output device. The default implementation SHALL be
-built on **miniaudio**, covering WASAPI (Windows), CoreAudio (macOS/iOS), ALSA and
-PulseAudio/PipeWire (Linux), AAudio/OpenSL (Android), and Web Audio (Web). A **null** backend
-SHALL also be provided.
-
-The backend SHALL call back from its own realtime thread requesting a buffer of frames, and SHALL
-expose: mix rate, channel layout, buffer size, device enumeration and selection, and input
-capture.
-
-The engine SHALL support device change, reinitialising the mixer without dropping playback state.
-
-#### Scenario: Device changes mid-session
-- **WHEN** the default output device changes
-- **THEN** the driver SHALL reinitialise at the new device's mix rate and channel layout, and
-  playback SHALL continue
-
-#### Scenario: Realtime constraints
-- **WHEN** the driver callback runs
-- **THEN** the mixer SHALL NOT allocate, take a blocking lock, perform file I/O, or call into
-  script
-
-#### Scenario: Null backend for tests
-- **WHEN** the engine runs headless or in tests
-- **THEN** the null backend SHALL satisfy the interface, advancing playback positions
-  deterministically without a device
-
-### Requirement: Bus graph
-Audio SHALL be routed through a graph of **buses**, each with a volume, mute, solo, and bypass
-flag, an ordered effect chain, and a send to another bus.
-
-The graph SHALL be a directed acyclic graph, with a `Master` bus as the root. Cycles SHALL be
-rejected when configured.
-
-Buses SHALL support multiple sends with independent levels, enabling reverb and submix routing.
-
-#### Scenario: Reverb send
-- **WHEN** a sound sends 30 % to a reverb bus and 100 % to its main bus
-- **THEN** both paths SHALL be mixed, with the reverb bus processing its send before summing into
-  Master
-
-#### Scenario: Cycle rejected
-- **WHEN** a send would create a cycle
-- **THEN** the configuration SHALL be rejected with a diagnostic
-
-#### Scenario: Solo
-- **WHEN** a bus is soloed
-- **THEN** buses that do not feed it SHALL be silenced for the mix
-
-### Requirement: Mixing
-Mixing SHALL proceed per driver callback: clear bus buffers, mix each active voice into its
-target buses with per-channel gains, process each bus's effects in dependency order, apply bus
-gain, and sum into sends and finally Master.
-
-Voice gains SHALL be **interpolated** across the buffer from their previous to current values, so
-parameter changes do not click.
-
-Mixing SHALL be block-based with a configurable block size, and MAY be parallelised across
-independent bus subtrees when the graph permits.
-
-#### Scenario: No clicks on volume change
-- **WHEN** a voice's volume changes between callbacks
-- **THEN** the gain SHALL ramp across the buffer rather than stepping
-
-#### Scenario: Voice limit
-- **WHEN** more voices are requested than the configured limit
-- **THEN** voices SHALL be prioritised by importance and audibility, and the least important
-  SHALL be virtualised (tracked but not mixed) rather than dropped abruptly
-
-### Requirement: Thread-safe state handoff
-Gameplay and audio threads SHALL exchange state without locks in the mixer: commands SHALL be
-enqueued to a lock-free queue consumed at the start of each callback, and voice state SHALL be
-double buffered.
-
-Stopping or destroying a voice SHALL apply a short **fade-out** rather than cutting, and memory
-SHALL be reclaimed on the main thread after the audio thread has released it.
-
-#### Scenario: Stop during a callback
-- **WHEN** gameplay stops a sound while it is being mixed
-- **THEN** the mixer SHALL fade it out over the remainder of the block and mark it for
-  reclamation, avoiding a click
-
-#### Scenario: No allocation in the callback
-- **WHEN** a new voice starts
-- **THEN** its resources SHALL have been prepared on the game thread, with the callback only
-  activating a pre-allocated slot
-
-### Requirement: Audio assets and streaming
-The engine SHALL support: uncompressed PCM, and compressed **Vorbis** and **Opus** for streamed
-music, plus a lightweight ADPCM or similar for short effects.
-
-Assets SHALL declare a load mode: **fully decoded in memory** (short sounds), **compressed in
-memory, decoded on demand** (medium), or **streamed from disk** (music and ambience).
-
-Streaming SHALL decode ahead into a ring buffer on the asset thread, with underrun producing
-silence and a diagnostic rather than a stall.
-
-#### Scenario: Music streams
-- **WHEN** a long music track plays
-- **THEN** it SHALL be streamed and decoded ahead, with only the ring buffer resident
-
-#### Scenario: Seamless loop
-- **WHEN** a track declares loop points
-- **THEN** looping SHALL be sample-accurate with no gap or click
-
-### Requirement: Spatial audio
-The engine SHALL provide 2D and 3D spatialisation with:
-
-- distance attenuation models: inverse, inverse-squared, linear, logarithmic, and a custom curve,
-  with a reference distance and a maximum distance
-- directionality: a cone with inner and outer angles and outer gain
-- panning appropriate to the output channel layout, and **HRTF** binaural rendering for headphones
-- **Doppler** shift computed from relative velocity, with a configurable scale
-- **occlusion and obstruction**: low-pass filtering and attenuation driven by acoustic geometry,
-  by physics queries, or by explicit gameplay input
-- per-listener rendering, with support for more than one listener (split screen)
-
-The fidelity applied to a given source SHALL be determined by its simulation tier: sources at
-`FullAcoustic` SHALL additionally receive propagation, reflections, and geometry-based occlusion
-from the acoustics backend, while lower tiers SHALL use the panning, attenuation, and
-filter-based occlusion described above.
-
-#### Scenario: Sound behind the listener
-- **WHEN** HRTF is enabled and a source is behind the listener
-- **THEN** binaural filtering SHALL produce a perceptible front-back distinction
-
-#### Scenario: Occlusion
-- **WHEN** a wall lies between a source and the listener
-- **THEN** the source SHALL be low-pass filtered and attenuated by the occlusion parameters
-
-#### Scenario: Doppler
-- **WHEN** a source moves toward the listener at speed
-- **THEN** its pitch SHALL rise proportionally, scaled by the Doppler factor
-
-#### Scenario: Fidelity follows the tier
-- **WHEN** a source is demoted from `FullAcoustic` to `Spatialised`
-- **THEN** propagation and reflections SHALL be replaced by the fallback path, cross-faded so the
-  transition is not audible as a jump
 
 ### Requirement: Steam Audio as the spatial acoustics backend
 The engine SHALL support **Steam Audio** as an `AcousticsBackend`, providing HRTF binaural
@@ -350,24 +196,89 @@ Sources explicitly stopped by gameplay SHALL be stopped, not virtualised.
 - **WHEN** thousands of sources are virtualised
 - **THEN** their per-frame cost SHALL be limited to advancing a position and scoring importance
 
-### Requirement: Effects
-The engine SHALL provide bus effects: gain, parametric EQ, low/high/band-pass and shelf filters,
-compressor, limiter, gate, reverb (algorithmic and convolution), delay, chorus, flanger,
-phaser, distortion, pitch shift, stereo widener, panner, and an analysis tap (spectrum and level
-metering).
+### Requirement: Optional middleware backends
+The engine SHALL permit **FMOD** and **Wwise** to be used as alternative `AudioBackend`
+implementations supplied as optional plugins, for studios with existing sound-design pipelines.
 
-Effects SHALL be parameterisable at runtime with interpolated parameter changes, and SHALL report
-their latency so the engine can compensate.
+Neither SHALL be a dependency of the engine, appear in the dependency manifest as required, or be
+referenced by engine code. Middleware plugins SHALL live outside the engine repository or in an
+explicitly optional module excluded from default builds.
 
-Custom effects SHALL be implementable in native code and registered like built-ins.
+When a middleware backend is active, engine-owned policy that the middleware duplicates (its own
+bus graph, its own streaming) MAY be delegated to it, and the specification SHALL document which
+engine features are unavailable in that configuration.
 
-#### Scenario: Convolution reverb
-- **WHEN** a convolution reverb is configured with an impulse response
-- **THEN** it SHALL process using partitioned convolution to bound per-callback cost
+#### Scenario: Engine has no middleware dependency
+- **WHEN** the engine is built with default options
+- **THEN** no proprietary audio middleware SHALL be fetched, built, linked, or required
 
-#### Scenario: Latency compensation
-- **WHEN** an effect reports processing latency
-- **THEN** the engine SHALL account for it in timing queries used for synchronisation
+#### Scenario: Studio adopts existing pipeline
+- **WHEN** a project supplies a Wwise backend plugin
+- **THEN** gameplay code using `AudioServer` SHALL work unchanged, with documented feature
+  differences
+
+## MODIFIED Requirements
+
+### Requirement: Audio driver layer
+`AudioBackend` SHALL abstract the platform output device. The default implementation SHALL be
+built on **miniaudio**, covering WASAPI (Windows), CoreAudio (macOS/iOS), ALSA and
+PulseAudio/PipeWire (Linux), AAudio/OpenSL (Android), and Web Audio (Web). A **null** backend
+SHALL also be provided.
+
+The backend SHALL call back from its own realtime thread requesting a buffer of frames, and SHALL
+expose: mix rate, channel layout, buffer size, device enumeration and selection, and input
+capture.
+
+The engine SHALL support device change, reinitialising the mixer without dropping playback state.
+
+#### Scenario: Device changes mid-session
+- **WHEN** the default output device changes
+- **THEN** the driver SHALL reinitialise at the new device's mix rate and channel layout, and
+  playback SHALL continue
+
+#### Scenario: Realtime constraints
+- **WHEN** the driver callback runs
+- **THEN** the mixer SHALL NOT allocate, take a blocking lock, perform file I/O, or call into
+  script
+
+#### Scenario: Null backend for tests
+- **WHEN** the engine runs headless or in tests
+- **THEN** the null backend SHALL satisfy the interface, advancing playback positions
+  deterministically without a device
+
+### Requirement: Spatial audio
+The engine SHALL provide 2D and 3D spatialisation with:
+
+- distance attenuation models: inverse, inverse-squared, linear, logarithmic, and a custom curve,
+  with a reference distance and a maximum distance
+- directionality: a cone with inner and outer angles and outer gain
+- panning appropriate to the output channel layout, and **HRTF** binaural rendering for headphones
+- **Doppler** shift computed from relative velocity, with a configurable scale
+- **occlusion and obstruction**: low-pass filtering and attenuation driven by acoustic geometry,
+  by physics queries, or by explicit gameplay input
+- per-listener rendering, with support for more than one listener (split screen)
+
+The fidelity applied to a given source SHALL be determined by its simulation tier: sources at
+`FullAcoustic` SHALL additionally receive propagation, reflections, and geometry-based occlusion
+from the acoustics backend, while lower tiers SHALL use the panning, attenuation, and
+filter-based occlusion described above.
+
+#### Scenario: Sound behind the listener
+- **WHEN** HRTF is enabled and a source is behind the listener
+- **THEN** binaural filtering SHALL produce a perceptible front-back distinction
+
+#### Scenario: Occlusion
+- **WHEN** a wall lies between a source and the listener
+- **THEN** the source SHALL be low-pass filtered and attenuated by the occlusion parameters
+
+#### Scenario: Doppler
+- **WHEN** a source moves toward the listener at speed
+- **THEN** its pitch SHALL rise proportionally, scaled by the Doppler factor
+
+#### Scenario: Fidelity follows the tier
+- **WHEN** a source is demoted from `FullAcoustic` to `Spatialised`
+- **THEN** propagation and reflections SHALL be replaced by the fallback path, cross-faded so the
+  transition is not audible as a jump
 
 ### Requirement: Audio components and playback
 Audio SHALL be ECS-native. The engine SHALL provide the components:
@@ -405,53 +316,6 @@ mixing and simulation remain native.
 #### Scenario: Swift ergonomics
 - **WHEN** Swift gameplay code plays a sound on an entity
 - **THEN** it SHALL do so through the component API without managing voices, buses, or handles
-
-### Requirement: Timing and synchronisation
-The engine SHALL expose the audio clock: samples played, the current output time, time to the
-next callback, and output latency — so gameplay can schedule events precisely against audio.
-
-Playback SHALL be schedulable at a **future audio time**, so sounds can be started exactly on a
-beat regardless of frame timing.
-
-#### Scenario: Rhythm game
-- **WHEN** a game needs the exact playback position
-- **THEN** it SHALL combine the audio clock with output latency to obtain the position the
-  listener is actually hearing
-
-#### Scenario: Scheduled start
-- **WHEN** a sound is scheduled for a specific audio time
-- **THEN** it SHALL begin at that sample, not at the start of the next frame
-
-### Requirement: Interactive and adaptive audio
-The engine SHALL support: **playlists** with ordering and transition rules, **layered** music
-where stems fade with gameplay parameters, and **transitions** that occur at musically meaningful
-points (immediate, next beat, next bar, next marker, end of clip) with optional transition
-segments.
-
-#### Scenario: Combat transition
-- **WHEN** combat begins and the transition is set to "next bar"
-- **THEN** the music SHALL switch at the next bar boundary, optionally through a transition stem
-
-### Requirement: Optional middleware backends
-The engine SHALL permit **FMOD** and **Wwise** to be used as alternative `AudioBackend`
-implementations supplied as optional plugins, for studios with existing sound-design pipelines.
-
-Neither SHALL be a dependency of the engine, appear in the dependency manifest as required, or be
-referenced by engine code. Middleware plugins SHALL live outside the engine repository or in an
-explicitly optional module excluded from default builds.
-
-When a middleware backend is active, engine-owned policy that the middleware duplicates (its own
-bus graph, its own streaming) MAY be delegated to it, and the specification SHALL document which
-engine features are unavailable in that configuration.
-
-#### Scenario: Engine has no middleware dependency
-- **WHEN** the engine is built with default options
-- **THEN** no proprietary audio middleware SHALL be fetched, built, linked, or required
-
-#### Scenario: Studio adopts existing pipeline
-- **WHEN** a project supplies a Wwise backend plugin
-- **THEN** gameplay code using `AudioServer` SHALL work unchanged, with documented feature
-  differences
 
 ### Requirement: Audio diagnostics
 The engine SHALL report: active, virtual, and per-tier voice counts; per-bus peak and RMS levels;
