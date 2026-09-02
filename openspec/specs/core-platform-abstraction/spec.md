@@ -55,13 +55,21 @@ A **headless** implementation SHALL exist that satisfies the interface without a
   equivalent) without the backend containing platform `#ifdef`s
 
 ### Requirement: Input
-The input pipeline SHALL be: platform event → `InputServer` normalisation → per-frame input state
-snapshot → consumers (UI, then gameplay actions, then raw handlers).
+The input pipeline SHALL be: platform event → `InputServer` normalisation → **timestamped event
+stream and per-frame snapshot** → `input-and-actions` → consumers.
+
+This capability's responsibility ends at normalised, timestamped device events. Actions, users,
+contexts, bindings, and triggers are defined in `input-and-actions`, and gameplay commands in
+`gameplay-framework`.
 
 Event types SHALL cover: key press and release with scancode, keycode, modifiers and repeat flag;
 text input as UTF-8 (separate from key events); mouse motion (absolute and relative), buttons,
 and wheel; touch begin, move, and end with per-touch ids; pen input with pressure and tilt;
 gamepad buttons, axes, and connection changes; and gestures where the platform provides them.
+
+Every event SHALL carry a **high-resolution timestamp** taken as close to the platform's observation
+as available, and a stable device identifier — because fixed-tick resolution, replay fidelity, and
+latency measurement all depend on when an event happened rather than when it was processed.
 
 Gamepad support SHALL use SDL3 as the backend, giving controller database mappings, rumble, and
 hot-plug across platforms.
@@ -80,52 +88,27 @@ hot-plug across platforms.
 - **THEN** a connection event SHALL be delivered with a stable device id and its mapping resolved
   from the controller database
 
-### Requirement: Input actions
-`InputServer` SHALL provide an action mapping layer: named actions bound to one or more inputs,
-with per-binding deadzone, inversion, and scale; and named axes and 2D vectors composed from
-bindings.
-
-Action state SHALL be queryable as pressed, just-pressed, just-released, and analogue value,
-sampled against a per-frame snapshot so all consumers in a frame observe the same state.
-
-Binding sets SHALL be loadable from configuration and rebindable at runtime, and SHALL be organised
-into **contexts** that can be activated and deactivated, so that a menu, a vehicle, and on-foot
-movement have independent bindings without conflicting.
-
-**Input actions are the boundary with gameplay.** Actions produce **gameplay commands** (see
-`gameplay-framework`); raw input events SHALL NOT reach gameplay systems. This is what allows a
-human, an AI, a network peer, and a replay to drive the same simulation path, and what makes
-rebinding incapable of changing gameplay behaviour.
-
-Input actions MAY be consumed directly by the interface and by editor tooling, which are not
-gameplay.
-
-#### Scenario: Same action, keyboard and gamepad
-- **WHEN** "move" is bound to WASD and to the left stick
-- **THEN** `get_vector("move")` SHALL return a normalised vector from whichever device is active,
-  with the stick's deadzone applied
-
-#### Scenario: Consistent state within a frame
-- **WHEN** two systems query the same action in one frame
-- **THEN** both SHALL observe identical state regardless of when the platform event arrived
-
-#### Scenario: Gameplay never sees a key
-- **WHEN** a player presses a key bound to an attack
-- **THEN** gameplay SHALL receive an attack command, and no gameplay system SHALL observe the key
-  event
-
-#### Scenario: Rebinding cannot break gameplay
-- **WHEN** a player rebinds every control
-- **THEN** gameplay logic SHALL be unaffected, because it consumes commands rather than inputs
+#### Scenario: Events are timestamped at observation
+- **WHEN** an event is delivered late because a frame was long
+- **THEN** its timestamp SHALL reflect when the platform observed it, so tick resolution remains
+  correct
 
 ### Requirement: Fixed-step input handling
 Input consumed by fixed-step simulation SHALL be accumulated between ticks so that no press is
 lost when a frame contains zero or multiple ticks.
 
+Resolution of accumulated events into per-tick action state and command frames is defined in
+`input-and-actions`; this requirement states the guarantee the platform layer must make possible by
+delivering timestamped events without coalescing away transitions.
+
 #### Scenario: Button pressed and released within one frame
 - **WHEN** a button is pressed and released between two simulation ticks
 - **THEN** the tick SHALL still observe a just-pressed and just-released event, rather than
   missing the input entirely
+
+#### Scenario: Transitions are not coalesced away
+- **WHEN** several transitions of one control occur within a frame
+- **THEN** each SHALL be delivered with its timestamp, rather than collapsed into a final state
 
 ### Requirement: Clipboard, dialogs, and system integration
 `DisplayServer` SHALL expose, gated by feature queries: clipboard read and write (text and

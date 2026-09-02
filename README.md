@@ -18,6 +18,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Scripting** | Swift, via a generated overlay over a stable C ABI |
 | **World model** | Archetype ECS core with a scene-graph node façade |
 | **Gameplay** | CyberGameplay: sessions, rules and teams as data; one command stream for players, AI, network and replay |
+| **Input & camera** | CyberInput: users, contexts, triggers. CyberCamera: compiled rigs producing views, listeners and streaming sources |
 | **World** | CyberWorld: partitioned streaming cells, layers, persistence overlay, authored from prefabs and scenes |
 | **Environment** | CyberTerrain, CyberFoliage and CyberWater over a shared sparse field substrate |
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
@@ -58,6 +59,13 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 ```
 
 ## Design decisions worth knowing up front
+
+**Input becomes intent, and the camera produces everything downstream.** Devices feed a layered
+context stack that yields semantic actions, so gameplay never sees a key press, rebinding cannot
+change behaviour and accessibility transformations cannot be bypassed. Cameras are composable rigs
+compiled to programs — never a base class, never written directly by gameplay — and one evaluated
+camera yields the render view, the audio listener anchor and the streaming source with predicted
+motion, so the three cannot disagree about where the player is.
 
 **Gameplay structure is composition, not inheritance.** Sessions, rules, participants, teams,
 ownership and control are ECS data and scoped services — no actor base class, no per-entity virtual
@@ -235,7 +243,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 57 capabilities. Start here.
+  specs/          Target specifications — 59 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

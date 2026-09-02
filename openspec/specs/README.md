@@ -28,6 +28,8 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [scene-graph-and-nodes](scene-graph-and-nodes/spec.md) | Node façade, transforms, lifecycle, behaviours, coherence invariants |
 | [serialization-and-prefabs](serialization-and-prefabs/spec.md) | Prefab/scene/world assets, exposed parameters, overrides, entity templates, migration |
 | [gameplay-framework](gameplay-framework/spec.md) | CyberGameplay: sessions, rules, participants, teams, control bindings, one command stream, tags, features |
+| [input-and-actions](input-and-actions/spec.md) | CyberInput: users and devices, context stack, bindings, processors, triggers, accessibility |
+| [camera-system](camera-system/spec.md) | CyberCamera: compiled rigs, camera stack, framing, aim, cuts, render views and streaming sources |
 | [world-partition-and-streaming](world-partition-and-streaming/spec.md) | CyberWorld: partitioning, cell streaming and activation, layers, persistence overlay, HLOD |
 | [environment-fields](environment-fields/spec.md) | CyberField: sparse world-scale data — biome, moisture, wind, flow, wetness — with one producer each |
 | [terrain](terrain/spec.md) | CyberTerrain: tiled hierarchical surface, geometry source, deformation classes, deltas |
@@ -204,6 +206,13 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   be large.
 - **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
   requirement, so effects can never break physics determinism or network reconciliation.
+- **Devices produce actions; actions produce intent.** Gameplay never sees a key, so rebinding
+  cannot change behaviour and accessibility transformations cannot be bypassed. A mouse delta is
+  displacement and a stick is a rate — the binding says which, so look sensitivity is not
+  frame-rate dependent.
+- **One evaluated camera, three products.** A render view, an audio listener anchor and a streaming
+  source with prediction all derive from the same state, so they cannot disagree about where the
+  player is. Gameplay emits intent and impulses; nothing writes a camera transform.
 - **Human, AI, network, replay and tests produce one command stream.** Gameplay intent is a
   semantic command, never a key event, and the simulation cannot tell the five sources apart —
   which makes replay, network prediction, testable AI and headless CI consequences of the
