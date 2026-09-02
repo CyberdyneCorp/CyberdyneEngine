@@ -65,6 +65,7 @@ The engine SHALL implement these models, sharing one light iteration loop:
 | `Cloth` | Charlie sheen distribution with an Ashikhmin visibility term, plus optional subsurface colour | sheen + optional subsurface |
 | `Hair` | Marschner-style R / TT / TRT lobes approximated for real time | hair specular lobes |
 | `Foliage` | Two-sided lighting with a translucency term driven by a thickness map | diffuse + transmission |
+| `Water` | Reflection and refraction at a dielectric interface with wavelength-dependent absorption and scattering through the water column, and foam coverage blending toward a diffuse layer | specular + transmission + volumetric absorption |
 
 A closure set matching one of these SHALL cost exactly what that model costs. A closure set
 matching none SHALL lower to a **generic layered evaluator**, which SHALL be available on profiles
@@ -88,6 +89,11 @@ Each model SHALL be resolved through a specialization constant.
 #### Scenario: Unmatched closure set
 - **WHEN** a material composes closures matching no model
 - **THEN** it SHALL lower to the generic evaluator, and its additional cost SHALL be reported
+
+#### Scenario: Water is not opaque PBR
+- **WHEN** a water surface is shaded
+- **THEN** it SHALL use the `Water` model with absorption over the water column, rather than being
+  approximated by a metallic-roughness surface with a tinted colour
 
 ### Requirement: Image-based lighting
 Indirect specular SHALL use the **split-sum approximation**: a pre-filtered environment map

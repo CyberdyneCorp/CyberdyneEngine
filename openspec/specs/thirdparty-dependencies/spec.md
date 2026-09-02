@@ -171,6 +171,13 @@ The engine SHALL implement, rather than integrate:
   and retargeting — animation couples to the renderer, physics, AI, and VFX, and its scale
   behaviour is engine policy
 - the **UI system**: element storage, layout, styling, input routing, animation, and rendering
+- the **environment systems**: the environment field substrate, terrain representation, streaming
+  and its bridge to virtual geometry, terrain materials and deformation, the foliage runtime and
+  its promotion model, procedural placement, the wind field, water bodies and their backends, the
+  shoreline, and buoyancy integration — these are world-scale streamed datasets coupled to the
+  engine's own partitioning, geometry, material, and budget systems. Published algorithms —
+  spectral wave synthesis and its transforms, erosion, procedural noise — MAY be implemented from
+  references or integrated as bounded libraries beneath these interfaces.
 - the **scene, prefab, and serialization** model, including the prefab compiler, exposed
   parameters, override addressing, and entity templates
 - the **persistent world**: partitioning, cell identity and cooking, the streaming scheduler and
@@ -240,6 +247,11 @@ published algorithm is not a dependency and does not require a manifest entry.
 - **THEN** it SHALL be evaluated against the requirement that cells cook into the engine's own
   archetype layout, that activation is a bulk copy into the engine's ECS chunks, and that streaming
   budgets are held alongside the renderer's — coupling an external framework cannot provide
+
+#### Scenario: Algorithm integrated, environment architecture owned
+- **WHEN** a proven transform or erosion library is used for wave synthesis or terrain generation
+- **THEN** it SHALL sit beneath the engine's own water body, field, and terrain interfaces, and the
+  representation, streaming, and budget behaviour SHALL remain engine-owned
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

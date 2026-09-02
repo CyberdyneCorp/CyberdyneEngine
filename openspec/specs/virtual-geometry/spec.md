@@ -534,14 +534,16 @@ Assets SHALL declare a **deformation class**, and the system SHALL support them 
 |---|---|
 | `Static` | Required |
 | `RigidInstanced` | Required |
-| `Terrain` | Deferred |
+| `Terrain` | Supported: produced by `terrain` as a geometry source |
 | `Destructible` | Deferred |
 | `Skinned` | Deferred |
 
+**Terrain** produces virtual geometry clusters from its tile representation like any other geometry
+source, with no parallel streaming or rendering path. Its clusters SHALL be watertight across tile
+and detail boundaries.
+
 Deferred classes SHALL have their architectural seams reserved:
 
-- **Terrain** — a geometry source that produces clusters like any other, rather than a parallel
-  representation requiring its own streaming and rendering path
 - **Destructible** — fragments pre-cooked with cluster mappings and activated as subsets, never
   rebuilt at runtime
 - **Skinned** — clusters carrying bone influence sets, deformed from the **GPU pose world**
@@ -551,7 +553,7 @@ Deferred classes SHALL have their architectural seams reserved:
 A change adding a deferred class SHALL go through the OpenSpec flow.
 
 #### Scenario: Terrain is one representation
-- **WHEN** terrain support is added
+- **WHEN** terrain is rendered
 - **THEN** it SHALL produce virtual geometry rather than requiring a duplicate representation
   streamed alongside it
 

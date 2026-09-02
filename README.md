@@ -18,6 +18,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Scripting** | Swift, via a generated overlay over a stable C ABI |
 | **World model** | Archetype ECS core with a scene-graph node façade |
 | **World** | CyberWorld: partitioned streaming cells, layers, persistence overlay, authored from prefabs and scenes |
+| **Environment** | CyberTerrain, CyberFoliage and CyberWater over a shared sparse field substrate |
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
 | **Shaders** | Slang → SPIR-V (→ MSL) |
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
@@ -105,6 +106,14 @@ than a hundred thousand object constructions, and a shipping build carries no pr
 A prefab can expose a deliberate parameter surface, so its internals stay refactorable instead of
 becoming part of its contract with every instance.
 
+**The environment shares one substrate.** Biome, moisture, wind, flow, wetness and burn state live
+in sparse world-scale fields that terrain, vegetation, water, VFX, audio and AI all sample by
+position — so a river writes wetness that a terrain material reads and foliage placement avoids,
+without terrain and water knowing anything about each other. Terrain is a geometry source feeding
+the same virtual-geometry path as everything else rather than a renderer of its own; a million
+trees are GPU instances that get promoted to entities only when gameplay touches them; and a water
+body declares which wave bands physics and rendering must both obey.
+
 **Residency is not activation.** A region's bytes being in memory, its entities participating in
 simulation, its textures being resident, and how much it is thinking are four independent
 decisions. Collapsing them is what makes crossing a boundary mean *load everything now*; kept
@@ -188,7 +197,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 45 capabilities. Start here.
+  specs/          Target specifications — 49 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

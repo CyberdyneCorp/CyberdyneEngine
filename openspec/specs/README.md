@@ -28,6 +28,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [scene-graph-and-nodes](scene-graph-and-nodes/spec.md) | Node façade, transforms, lifecycle, behaviours, coherence invariants |
 | [serialization-and-prefabs](serialization-and-prefabs/spec.md) | Prefab/scene/world assets, exposed parameters, overrides, entity templates, migration |
 | [world-partition-and-streaming](world-partition-and-streaming/spec.md) | CyberWorld: partitioning, cell streaming and activation, layers, persistence overlay, HLOD |
+| [environment-fields](environment-fields/spec.md) | CyberField: sparse world-scale data — biome, moisture, wind, flow, wetness — with one producer each |
+| [terrain](terrain/spec.md) | CyberTerrain: tiled hierarchical surface, geometry source, deformation classes, deltas |
+| [foliage](foliage/spec.md) | CyberFoliage: GPU instances, ECS promotion, deterministic placement, GPU grass |
+| [water](water/spec.md) | CyberWater: water bodies, spectral ocean, rivers, shoreline, the displacement contract |
 
 **3 — Scripting**
 | Capability | Covers |
@@ -110,6 +114,14 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Environmental data is a substrate, not a subsystem's property.** Moisture, biome, wind, flow
+  and wetness live in sparse world-scale fields with one producer each, sampled by terrain,
+  foliage, water, VFX, audio and AI alike. Put moisture inside terrain and foliage must ask terrain
+  whether the ground is wet; put wind inside foliage and water must ask foliage which way it blows.
+- **Physics and rendering must agree about where the water is.** A water body declares which
+  displacement bands are authoritative — evaluated identically for rendering, physics and gameplay
+  — and which are visual only. A boat floating on a flat plane beneath visible swell is a
+  specification violation, not a tuning problem.
 - **Residency, activation, asset detail, and simulation detail are four different things.**
   Collapsing them is what makes crossing a world boundary mean *load everything now*. Kept apart,
   approach is a gradient: metadata far out, resources resident, entities instantiated later, full
@@ -145,9 +157,11 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 - **Known gaps are written down, not implied.** Cross-platform lockstep is unsupported because
   physics guarantees determinism only within a platform, and that is stated rather than discovered.
   Virtual textures and virtual shadow maps are currently specified as seams rather than
-  capabilities. World partition was named as a gap by four subsystems before it was specified, and
-  specifying it removed four workarounds rather than adding one system — which is the argument for
-  writing gaps down in the first place.
+  capabilities — and terrain materials have made virtual textures the most load-bearing of those.
+  Weather and hydrology are specified as field *producers* against systems that do not exist, which
+  costs nothing today and no rework later. World partition was named as a gap by four subsystems
+  before it was specified, and specifying it removed four workarounds rather than adding one
+  system — which is the argument for writing gaps down in the first place.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can
