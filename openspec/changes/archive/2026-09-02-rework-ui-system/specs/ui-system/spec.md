@@ -1,29 +1,13 @@
-# ui-system Specification
+## REMOVED Requirements
 
-## Purpose
+### Requirement: UI is built on ECS
 
-Defines **CyberUI**: one user interface system serving game UI, world-space UI, and the editor.
+Reversed. UI elements are no longer ECS entities; they live in dedicated UI storage. See the
+added requirement "Dedicated UI element storage" and the rationale in this change's `design.md`.
+ECS integration is retained where it earns its place: a node may host a UI document, world-space
+UI attaches to entities, and data binding reads component data.
 
-Four decisions shape it. UI elements live in **dedicated data-oriented storage**, not in the
-gameplay ECS — element counts run an order of magnitude above entity counts, and the workload is
-hierarchical rather than an archetype scan. The tree is **retained** with three independent dirty
-states (measure, arrange, paint), so a changing number repaints one label rather than rebuilding
-anything. Authoring is **declarative in Swift and C++, diffed** into that retained tree, giving
-SwiftUI-like ergonomics without immediate-mode cost — and the visual designer produces the same
-document asset, so there is one system rather than layers stacked on each other. Rendering
-**flattens to a GPU primitive stream** batched into few indirect draws, rather than submitting per
-element.
-
-Styling is a deliberately CSS-compatible subset (`.cyss`), layout is flex, grid, and absolute —
-nothing bespoke. Navigation borrows the layer stack and semantic input actions that make
-controller support and modal flows work without every game re-implementing them. Text is delegated
-to `TextServer` (HarfBuzz, ICU, FreeType), because correct international text is not a place to
-build your own.
-
-The editor is built on this system, which makes it the most demanding consumer and the reason
-virtualisation and docking are core rather than optional.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Engine-owned UI system
 The UI system SHALL be engine code: element storage, layout, styling, input routing, animation,
@@ -173,63 +157,6 @@ excludable from shipping builds.
 - **WHEN** a shipping build is produced
 - **THEN** immediate-mode UI code SHALL be excludable, and its absence SHALL not affect retained UI
 
-### Requirement: Layout model
-Layout SHALL be a two-pass process: **measure** (compute each element's desired size bottom-up)
-then **arrange** (assign final rects top-down), driven by the dirty states in the retained tree.
-
-Three layout models SHALL be supported, and no others:
-
-| Model | Semantics |
-|---|---|
-| **Flex** | Row and column with direction, wrap, gap, justify and align, grow, shrink, and basis |
-| **Grid** | Explicit and implicit tracks, spans, gaps, and area placement |
-| **Absolute** | Anchors (fractions of the parent rect) plus offsets, for HUD placement |
-
-Each element SHALL declare: preferred, minimum, and maximum size; margins and padding; alignment
-within its allocated space; flex grow, shrink, and basis; and an aspect-ratio constraint.
-
-Flex and grid semantics SHALL follow their CSS definitions within the documented subset, so
-existing understanding transfers.
-
-Scrolling, wrapping, and splitting SHALL be behaviours of container elements built on these three
-models, not additional layout models.
-
-#### Scenario: Flexible row
-- **WHEN** a flex row has more width than its children's minimum
-- **THEN** surplus SHALL be distributed by flex grow factors, respecting each child's maximum
-
-#### Scenario: Text drives layout
-- **WHEN** a label's text changes and its desired size grows
-- **THEN** the measure pass SHALL propagate the change upward and the arrange pass SHALL
-  re-layout affected ancestors only
-
-#### Scenario: Layout is incremental
-- **WHEN** one element is invalidated
-- **THEN** only the dirty subtree and its size-affecting ancestors SHALL be re-measured and
-  re-arranged
-
-#### Scenario: Anchored HUD element
-- **WHEN** a minimap is positioned absolutely against the bottom-right corner with a fixed size
-- **THEN** it SHALL remain anchored there across window resizes and aspect changes
-
-### Requirement: Resolution independence
-UI SHALL be authored against a **reference resolution** and scaled to the actual output, with
-selectable strategies: scale with width, scale with height, scale with the smaller or larger
-dimension, match a blend, or fixed pixel size.
-
-UI SHALL respect the platform **DPI scale**, and SHALL support a user-configurable UI scale
-factor on top.
-
-#### Scenario: Different aspect ratio
-- **WHEN** the window aspect differs from the reference
-- **THEN** the chosen strategy SHALL determine scaling, and anchored elements SHALL remain
-  attached to their intended edges
-
-#### Scenario: High-DPI display
-- **WHEN** the display reports a 2× scale
-- **THEN** UI SHALL render at twice the pixel density with text rasterised at the effective size,
-  not upscaled
-
 ### Requirement: Style sheets
 Styling SHALL use **`.cyss`**, a deliberately **CSS-compatible subset**, supporting: type, class
 and id selectors; descendant and child combinators; pseudo-states `:hover`, `:focus`, `:active`,
@@ -256,108 +183,30 @@ Themes SHALL be swappable at runtime, re-resolving affected styles.
 - **WHEN** the theme changes at runtime
 - **THEN** affected elements SHALL re-resolve styles and re-layout only where sizes changed
 
-### Requirement: Styling and theming
-Visual appearance SHALL be defined by style sheets (see the style sheets requirement) resolved per
-element, with a **theme** supplying the base rule set and custom property values.
+### Requirement: GPU-driven rendering
+Laid-out UI SHALL be **flattened** into a primitive stream — per primitive: bounds, UV rect,
+material index, clip index, transform index, and colour — rather than submitted per element.
 
-A style SHALL be able to define: colours, fonts and font sizes, spacing and sizing, icons,
-backgrounds (fills, borders, corner radii, shadows, nine-slice textures), transforms, opacity,
-and transition timings.
+Primitives SHALL be culled against the viewport and their clip rects, batched by material and
+atlas, and drawn with a small number of indirect draws.
 
-Styles SHALL support **variants** (a named style derived from a base) and **states** (normal,
-hovered, pressed, disabled, focused, selected, checked) with per-state overrides and transition
-durations.
+Text glyphs, rounded rectangles, borders, gradients, shadows, and images SHALL share the primitive
+representation and, where practical, one shader with material-indexed behaviour.
 
-#### Scenario: Theme change at runtime
-- **WHEN** the active theme changes
-- **THEN** all elements SHALL re-resolve their styles and re-layout where sizes changed
+Flattening SHALL be incremental: unchanged regions SHALL reuse their previous primitive data
+rather than being re-emitted.
 
-#### Scenario: State transition
-- **WHEN** a button is hovered with a 0.1 s transition
-- **THEN** its background colour SHALL interpolate rather than switching
+#### Scenario: Many elements, few draws
+- **WHEN** 20,000 elements produce 5,000 visible primitives
+- **THEN** they SHALL be drawn in a small, reportable number of batches
 
-#### Scenario: Variant
-- **WHEN** a button declares the variant "danger"
-- **THEN** properties SHALL resolve from the danger variant first, falling back to the base button
-  style
+#### Scenario: Incremental flattening
+- **WHEN** one panel repaints in an otherwise static document
+- **THEN** only its primitives SHALL be re-emitted and its GPU buffer range updated
 
-### Requirement: Data binding
-The engine SHALL provide binding between UI element properties and data sources: reflected
-component fields, resources, script-provided observable values, and reactive state in declarative
-views.
-
-Bindings SHALL support one-way and two-way modes with optional value converters, and SHALL update
-only when their source changes — using ECS change detection where the source is component data.
-
-A binding update SHALL mark only the affected element dirty, at the finest applicable granularity.
-
-#### Scenario: Health bar
-- **WHEN** a progress bar is bound to a `Health` component field
-- **THEN** it SHALL update when that component changes, and not otherwise
-
-#### Scenario: Two-way binding
-- **WHEN** a text field is two-way bound to a value
-- **THEN** editing the field SHALL write back, and external changes SHALL update the field unless
-  it is being edited
-
-#### Scenario: Binding granularity
-- **WHEN** a bound value changes without affecting layout
-- **THEN** only the bound element's paint state SHALL be dirtied
-
-### Requirement: Input routing and focus
-UI input SHALL be routed: hit-test from the topmost **layer** downward, deliver to the element
-under the pointer, then bubble to ancestors unless handled.
-
-Elements SHALL declare a **hit-test mode**: `Block` (consume), `Pass` (handle and continue), or
-`Ignore` (transparent).
-
-The system SHALL maintain: pointer-over state with enter and exit events, pressed state and
-capture (an element that captured the pointer receives events until release), keyboard focus with
-a visible focus indicator, and per-touch tracking for multi-touch.
-
-**Focus navigation** SHALL use the semantic navigation actions, support explicit neighbours and
-geometric fallback, and be scoped to the active layer.
-
-Input consumption SHALL be resolved by the layer stack rather than by ad-hoc flags in game code.
-
-#### Scenario: Pointer capture
-- **WHEN** a slider is pressed and the pointer moves outside it
-- **THEN** the slider SHALL continue receiving move events until release
-
-#### Scenario: Gamepad navigation
-- **WHEN** `UI.NavigateRight` is triggered
-- **THEN** focus SHALL move to the explicitly declared right neighbour, or to the nearest
-  focusable element in that direction within the active layer
-
-#### Scenario: UI consumes gameplay input
-- **WHEN** a modal layer is open
-- **THEN** it SHALL block input from reaching gameplay, by the layer's declared behaviour rather
-  than by game code checking a flag
-
-### Requirement: Semantic input actions
-UI SHALL consume **semantic actions**, never raw device input: `UI.Accept`, `UI.Cancel`,
-`UI.NavigateUp`, `UI.NavigateDown`, `UI.NavigateLeft`, `UI.NavigateRight`, `UI.NextTab`,
-`UI.PreviousTab`, `UI.Context`, `UI.ScrollUp`, `UI.ScrollDown`.
-
-The engine SHALL provide platform-appropriate default bindings for keyboard and mouse, gamepad,
-and touch, and SHALL expose the currently active input device so UI can display correct button
-glyphs.
-
-Directional navigation SHALL support explicit neighbours and geometric fallback, constrained to
-the focused layer's scope.
-
-#### Scenario: Device-agnostic game code
-- **WHEN** a button handles `UI.Accept`
-- **THEN** it SHALL respond to Enter, left click, gamepad south button, or tap, with no
-  device-specific code
-
-#### Scenario: Glyph display follows the device
-- **WHEN** the player switches from keyboard to gamepad
-- **THEN** prompts SHALL update to the gamepad's glyphs
-
-#### Scenario: Navigation stays in the layer
-- **WHEN** directional navigation reaches the edge of a modal
-- **THEN** focus SHALL NOT escape to elements beneath it
+#### Scenario: Clip culling
+- **WHEN** elements lie outside their scroll container's clip rect
+- **THEN** their primitives SHALL be culled before batching
 
 ### Requirement: UI layer stack and navigation
 The system SHALL provide a **layer stack** with defined semantics, ordered from back to front:
@@ -386,102 +235,30 @@ pops.
 - **WHEN** an inventory `Overlay` is open
 - **THEN** the HUD SHALL remain visible but non-interactive, per the overlay's declared behaviour
 
-### Requirement: Widget set
-The engine SHALL provide: `Panel`, `Label`, `RichText` (markup, inline images, per-character
-effects), `Image`, `Button`, `ToggleButton`, `Checkbox`, `RadioGroup`, `Slider`, `ProgressBar`,
-`TextField` (single-line), `TextArea` (multi-line with selection, undo, and IME support),
-`Dropdown`, `ListView` (virtualised), `TreeView` (virtualised), `TabView`, `ScrollView`,
-`SplitView`, `Tooltip`, `Popup`, `Modal`, `MenuBar`, `ContextMenu`, `ColorPicker`,
-`NumericField`, and `Separator`.
+### Requirement: Semantic input actions
+UI SHALL consume **semantic actions**, never raw device input: `UI.Accept`, `UI.Cancel`,
+`UI.NavigateUp`, `UI.NavigateDown`, `UI.NavigateLeft`, `UI.NavigateRight`, `UI.NextTab`,
+`UI.PreviousTab`, `UI.Context`, `UI.ScrollUp`, `UI.ScrollDown`.
 
-List and tree views SHALL be **virtualised**: only visible items are realised, so large data sets
-scroll without cost proportional to their size.
+The engine SHALL provide platform-appropriate default bindings for keyboard and mouse, gamepad,
+and touch, and SHALL expose the currently active input device so UI can display correct button
+glyphs.
 
-Text input SHALL support: selection, clipboard, undo and redo, IME composition, RTL editing,
-input masks and validation, and platform text-editing keyboard conventions.
+Directional navigation SHALL support explicit neighbours and geometric fallback, constrained to
+the focused layer's scope.
 
-#### Scenario: Large list
-- **WHEN** a list view displays 100 000 items
-- **THEN** only visible rows SHALL be realised, and scrolling SHALL cost the same as for 100 items
+#### Scenario: Device-agnostic game code
+- **WHEN** a button handles `UI.Accept`
+- **THEN** it SHALL respond to Enter, left click, gamepad south button, or tap, with no
+  device-specific code
 
-#### Scenario: IME input
-- **WHEN** a user composes text with an IME
-- **THEN** the composition string SHALL be displayed inline with the candidate window positioned
-  at the caret
+#### Scenario: Glyph display follows the device
+- **WHEN** the player switches from keyboard to gamepad
+- **THEN** prompts SHALL update to the gamepad's glyphs
 
-### Requirement: Animation and transitions
-UI animation SHALL be **internal to the UI system**, not delegated to the general tween system, so
-transitions run without crossing the scripting boundary per element per frame and without coupling
-UI lifetime to entity lifetime.
-
-The system SHALL support: style state transitions with duration, delay, and easing; declarative
-animation modifiers on elements; keyframe animations declared in style sheets; spring dynamics;
-and staggered sequences.
-
-Animations affecting only paint properties SHALL NOT trigger layout.
-
-The visual designer SHALL expose a timeline and curve editor over the same animation model.
-
-#### Scenario: Menu entrance
-- **WHEN** a menu opens with a staggered slide-and-fade
-- **THEN** each item SHALL animate with an incremental delay, evaluated inside the UI system
-
-#### Scenario: Paint-only animation
-- **WHEN** an element's opacity or colour animates
-- **THEN** no layout work SHALL occur for any frame of the animation
-
-#### Scenario: Reduced motion honoured
-- **WHEN** the platform reports a reduced-motion preference
-- **THEN** decorative animations SHALL be shortened or disabled while state feedback remains
-
-### Requirement: GPU-driven rendering
-Laid-out UI SHALL be **flattened** into a primitive stream — per primitive: bounds, UV rect,
-material index, clip index, transform index, and colour — rather than submitted per element.
-
-Primitives SHALL be culled against the viewport and their clip rects, batched by material and
-atlas, and drawn with a small number of indirect draws.
-
-Text glyphs, rounded rectangles, borders, gradients, shadows, and images SHALL share the primitive
-representation and, where practical, one shader with material-indexed behaviour.
-
-Flattening SHALL be incremental: unchanged regions SHALL reuse their previous primitive data
-rather than being re-emitted.
-
-#### Scenario: Many elements, few draws
-- **WHEN** 20,000 elements produce 5,000 visible primitives
-- **THEN** they SHALL be drawn in a small, reportable number of batches
-
-#### Scenario: Incremental flattening
-- **WHEN** one panel repaints in an otherwise static document
-- **THEN** only its primitives SHALL be re-emitted and its GPU buffer range updated
-
-#### Scenario: Clip culling
-- **WHEN** elements lie outside their scroll container's clip rect
-- **THEN** their primitives SHALL be culled before batching
-
-### Requirement: Rendering
-UI SHALL be rendered from the flattened primitive stream, batched by material and atlas, with
-draw order derived from layer, tree order, and explicit z-overrides.
-
-UI SHALL support: clipping to element rects (scissor, or stencil for rotated and rounded cases),
-opacity groups (composited offscreen so overlapping children do not double-blend), and per-element
-materials.
-
-By default UI SHALL be drawn **after tonemapping** in display-referred colour; a per-document
-option SHALL allow HDR UI drawn before tonemapping.
-
-#### Scenario: Nested clipping
-- **WHEN** a scroll view contains another scroll view
-- **THEN** clipping SHALL be the intersection of both rects
-
-#### Scenario: Opacity group
-- **WHEN** a panel with overlapping children is faded to 50 %
-- **THEN** it SHALL be composited once at 50 %, without the overlaps darkening
-
-#### Scenario: HDR UI
-- **WHEN** a document opts into HDR
-- **THEN** it SHALL be composited before tonemapping so emissive UI participates in bloom and
-  exposure
+#### Scenario: Navigation stays in the layer
+- **WHEN** directional navigation reaches the edge of a modal
+- **THEN** focus SHALL NOT escape to elements beneath it
 
 ### Requirement: UI materials and effects
 Elements SHALL support **custom materials** authored through the material system, and the engine
@@ -558,22 +335,173 @@ interaction or legibility, and SHALL report the degradation.
 - **WHEN** budgets are under pressure
 - **THEN** hit-testing, focus, and text legibility SHALL be preserved
 
-### Requirement: Accessibility
-UI elements SHALL publish accessibility information — role, label, description, value, and state —
-to the platform accessibility layer where available.
+## MODIFIED Requirements
 
-The system SHALL support: keyboard-only operation of every interactive element, focus indication
-that meets contrast requirements, respect for the platform's reduced-motion and increased-contrast
-settings, and configurable text scaling.
+### Requirement: Layout model
+Layout SHALL be a two-pass process: **measure** (compute each element's desired size bottom-up)
+then **arrange** (assign final rects top-down), driven by the dirty states in the retained tree.
 
-#### Scenario: Screen reader
-- **WHEN** focus moves to a slider with accessibility available
-- **THEN** its role, label, and current value SHALL be announced
+Three layout models SHALL be supported, and no others:
 
-#### Scenario: Reduced motion
+| Model | Semantics |
+|---|---|
+| **Flex** | Row and column with direction, wrap, gap, justify and align, grow, shrink, and basis |
+| **Grid** | Explicit and implicit tracks, spans, gaps, and area placement |
+| **Absolute** | Anchors (fractions of the parent rect) plus offsets, for HUD placement |
+
+Each element SHALL declare: preferred, minimum, and maximum size; margins and padding; alignment
+within its allocated space; flex grow, shrink, and basis; and an aspect-ratio constraint.
+
+Flex and grid semantics SHALL follow their CSS definitions within the documented subset, so
+existing understanding transfers.
+
+Scrolling, wrapping, and splitting SHALL be behaviours of container elements built on these three
+models, not additional layout models.
+
+#### Scenario: Flexible row
+- **WHEN** a flex row has more width than its children's minimum
+- **THEN** surplus SHALL be distributed by flex grow factors, respecting each child's maximum
+
+#### Scenario: Text drives layout
+- **WHEN** a label's text changes and its desired size grows
+- **THEN** the measure pass SHALL propagate the change upward and the arrange pass SHALL
+  re-layout affected ancestors only
+
+#### Scenario: Layout is incremental
+- **WHEN** one element is invalidated
+- **THEN** only the dirty subtree and its size-affecting ancestors SHALL be re-measured and
+  re-arranged
+
+#### Scenario: Anchored HUD element
+- **WHEN** a minimap is positioned absolutely against the bottom-right corner with a fixed size
+- **THEN** it SHALL remain anchored there across window resizes and aspect changes
+
+### Requirement: Input routing and focus
+UI input SHALL be routed: hit-test from the topmost **layer** downward, deliver to the element
+under the pointer, then bubble to ancestors unless handled.
+
+Elements SHALL declare a **hit-test mode**: `Block` (consume), `Pass` (handle and continue), or
+`Ignore` (transparent).
+
+The system SHALL maintain: pointer-over state with enter and exit events, pressed state and
+capture (an element that captured the pointer receives events until release), keyboard focus with
+a visible focus indicator, and per-touch tracking for multi-touch.
+
+**Focus navigation** SHALL use the semantic navigation actions, support explicit neighbours and
+geometric fallback, and be scoped to the active layer.
+
+Input consumption SHALL be resolved by the layer stack rather than by ad-hoc flags in game code.
+
+#### Scenario: Pointer capture
+- **WHEN** a slider is pressed and the pointer moves outside it
+- **THEN** the slider SHALL continue receiving move events until release
+
+#### Scenario: Gamepad navigation
+- **WHEN** `UI.NavigateRight` is triggered
+- **THEN** focus SHALL move to the explicitly declared right neighbour, or to the nearest
+  focusable element in that direction within the active layer
+
+#### Scenario: UI consumes gameplay input
+- **WHEN** a modal layer is open
+- **THEN** it SHALL block input from reaching gameplay, by the layer's declared behaviour rather
+  than by game code checking a flag
+
+### Requirement: Styling and theming
+Visual appearance SHALL be defined by style sheets (see the style sheets requirement) resolved per
+element, with a **theme** supplying the base rule set and custom property values.
+
+A style SHALL be able to define: colours, fonts and font sizes, spacing and sizing, icons,
+backgrounds (fills, borders, corner radii, shadows, nine-slice textures), transforms, opacity,
+and transition timings.
+
+Styles SHALL support **variants** (a named style derived from a base) and **states** (normal,
+hovered, pressed, disabled, focused, selected, checked) with per-state overrides and transition
+durations.
+
+#### Scenario: Theme change at runtime
+- **WHEN** the active theme changes
+- **THEN** all elements SHALL re-resolve their styles and re-layout where sizes changed
+
+#### Scenario: State transition
+- **WHEN** a button is hovered with a 0.1 s transition
+- **THEN** its background colour SHALL interpolate rather than switching
+
+#### Scenario: Variant
+- **WHEN** a button declares the variant "danger"
+- **THEN** properties SHALL resolve from the danger variant first, falling back to the base button
+  style
+
+### Requirement: Data binding
+The engine SHALL provide binding between UI element properties and data sources: reflected
+component fields, resources, script-provided observable values, and reactive state in declarative
+views.
+
+Bindings SHALL support one-way and two-way modes with optional value converters, and SHALL update
+only when their source changes — using ECS change detection where the source is component data.
+
+A binding update SHALL mark only the affected element dirty, at the finest applicable granularity.
+
+#### Scenario: Health bar
+- **WHEN** a progress bar is bound to a `Health` component field
+- **THEN** it SHALL update when that component changes, and not otherwise
+
+#### Scenario: Two-way binding
+- **WHEN** a text field is two-way bound to a value
+- **THEN** editing the field SHALL write back, and external changes SHALL update the field unless
+  it is being edited
+
+#### Scenario: Binding granularity
+- **WHEN** a bound value changes without affecting layout
+- **THEN** only the bound element's paint state SHALL be dirtied
+
+### Requirement: Rendering
+UI SHALL be rendered from the flattened primitive stream, batched by material and atlas, with
+draw order derived from layer, tree order, and explicit z-overrides.
+
+UI SHALL support: clipping to element rects (scissor, or stencil for rotated and rounded cases),
+opacity groups (composited offscreen so overlapping children do not double-blend), and per-element
+materials.
+
+By default UI SHALL be drawn **after tonemapping** in display-referred colour; a per-document
+option SHALL allow HDR UI drawn before tonemapping.
+
+#### Scenario: Nested clipping
+- **WHEN** a scroll view contains another scroll view
+- **THEN** clipping SHALL be the intersection of both rects
+
+#### Scenario: Opacity group
+- **WHEN** a panel with overlapping children is faded to 50 %
+- **THEN** it SHALL be composited once at 50 %, without the overlaps darkening
+
+#### Scenario: HDR UI
+- **WHEN** a document opts into HDR
+- **THEN** it SHALL be composited before tonemapping so emissive UI participates in bloom and
+  exposure
+
+### Requirement: Animation and transitions
+UI animation SHALL be **internal to the UI system**, not delegated to the general tween system, so
+transitions run without crossing the scripting boundary per element per frame and without coupling
+UI lifetime to entity lifetime.
+
+The system SHALL support: style state transitions with duration, delay, and easing; declarative
+animation modifiers on elements; keyframe animations declared in style sheets; spring dynamics;
+and staggered sequences.
+
+Animations affecting only paint properties SHALL NOT trigger layout.
+
+The visual designer SHALL expose a timeline and curve editor over the same animation model.
+
+#### Scenario: Menu entrance
+- **WHEN** a menu opens with a staggered slide-and-fade
+- **THEN** each item SHALL animate with an incremental delay, evaluated inside the UI system
+
+#### Scenario: Paint-only animation
+- **WHEN** an element's opacity or colour animates
+- **THEN** no layout work SHALL occur for any frame of the animation
+
+#### Scenario: Reduced motion honoured
 - **WHEN** the platform reports a reduced-motion preference
-- **THEN** decorative transitions SHALL be shortened or disabled while functional feedback
-  remains
+- **THEN** decorative animations SHALL be shortened or disabled while state feedback remains
 
 ### Requirement: Editor UI shares the runtime UI
 The editor SHALL be built with this UI system rather than a separate toolkit, so improvements

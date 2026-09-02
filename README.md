@@ -20,6 +20,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
 | **Shaders** | Slang → SPIR-V (→ MSL) |
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
+| **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Licence** | MIT |
@@ -70,6 +71,12 @@ audio, HarfBuzz + ICU + FreeType for text, Slang for shaders, Recast for navmesh
 and xatlas for mesh processing. Each sits behind an engine-owned interface and must stay
 replaceable. We build the ECS, renderer, scene model, asset pipeline, UI, animation, networking,
 audio graph and policy, and the editor — the parts where engine-level decisions compound.
+
+**ECS is not the answer to everything.** Component storage is right for gameplay entities and
+wrong for UI: a strategy game with 5,000 units has 20,000-plus labels, icons and containers, whose
+workload is a tree walk, not an archetype scan, and which need element-granular invalidation. So
+UI elements live in their own data-oriented storage and the gameplay world stays gameplay-sized.
+Using the right structure per subsystem beats one structure everywhere.
 
 **Cost is bounded by configuration, not by content.** The renderer has culling and LOD budgets;
 audio has importance tiers with per-tier source budgets; VFX has importance classes driven by a

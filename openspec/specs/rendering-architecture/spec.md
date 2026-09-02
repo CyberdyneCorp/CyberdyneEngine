@@ -199,6 +199,7 @@ Instances SHALL be publishable into the GPU scene from multiple producers:
 - the **extract** stage, from ECS entities with renderable components
 - **instanced mesh** components, from their transform buffers
 - the **VFX system**, from mesh particles (see `vfx-system`)
+- the **UI system**, from world-space and surface-space UI documents (see `ui-system`)
 
 All producers SHALL use the same representation, so downstream culling, LOD, sorting, and drawing
 require no knowledge of an instance's origin.
@@ -207,7 +208,7 @@ Instance publication SHALL be possible entirely GPU-side, without CPU round trip
 whose data already lives on the GPU.
 
 #### Scenario: One representation, many producers
-- **WHEN** mesh particles, instanced meshes, and ordinary entities are all visible
+- **WHEN** mesh particles, instanced meshes, world-space UI, and ordinary entities are all visible
 - **THEN** they SHALL occupy the same GPU scene representation and be culled and drawn by the same
   passes
 
@@ -217,5 +218,5 @@ whose data already lives on the GPU.
   submission per instance
 
 #### Scenario: Producer removed
-- **WHEN** an effect or entity is destroyed
+- **WHEN** an effect, entity, or UI document is destroyed
 - **THEN** its instances SHALL be removed from the GPU scene without requiring a full rebuild

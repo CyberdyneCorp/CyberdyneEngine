@@ -62,7 +62,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | Capability | Covers |
 |---|---|
 | [text-and-fonts](text-and-fonts/spec.md) | `TextServer`, fonts, shaping, BiDi, line breaking, glyph atlases |
-| [ui-system](ui-system/spec.md) | Layout, input and focus, theming, widgets, data binding, accessibility |
+| [ui-system](ui-system/spec.md) | CyberUI: dedicated element storage, retained tree, declarative authoring, `.cyss`, GPU-driven, layer navigation |
 | [asset-import-pipeline](asset-import-pipeline/spec.md) | Importers, cook cache, texture and model import, packaging |
 | [editor-architecture](editor-architecture/spec.md) | Editor as an engine app, play mode, inspector, plugins, build pipeline |
 
@@ -98,6 +98,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   runtime — and VFX attribute layouts are *derived* from what a graph actually uses.
 - **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
   requirement, so effects can never break physics determinism or network reconciliation.
+- **ECS is not the answer to everything.** UI elements deliberately live outside it: their counts
+  are an order of magnitude higher, their workload is a tree walk rather than an archetype scan,
+  and they need element-granular invalidation that chunk-granular change detection cannot give.
+  Where a subsystem gains nothing from ECS, it does not go in ECS.
 - **Reversed-Z, Y-up, right-handed, −Z forward, metres and radians.** Stated once, normatively,
   because a silent mismatch here corrupts everything downstream.
 - **Deferred decisions are written down**, not assumed — see the non-goals in
