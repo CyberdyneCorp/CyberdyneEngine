@@ -22,6 +22,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
 | **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
 | **AI** | CyberAI: ECS agents, one compiled graph for states/BT/utility/GOAP, deterministic |
+| **Geometry** | CyberGeometry: virtualised clusters, GPU-driven streaming and culling, visibility buffer |
 | **Animation** | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, motion matching |
 | **Networking** | CyberNet: ECS component replication, three network modes, priority-scheduled interest |
 | **Physics** | Jolt, behind an engine-owned interface |
@@ -94,6 +95,14 @@ frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosio
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
 
+**Detail is continuous, and geometry is virtual.** A mesh is a hierarchy of small triangle
+clusters, and the GPU picks which clusters to draw each frame against a screen-space error target —
+so cost tracks the pixels on screen rather than the triangles in the asset, and artists stop
+authoring LOD chains. Clusters are simplified in groups so shared boundaries stay watertight;
+streaming works in pages with an always-resident root, so an object is never absent, only coarse.
+Render geometry is explicitly not collision geometry: physics, navigation and ray tracing get their
+own representations from the same source.
+
 **Conventions are stated once, normatively.** Right-handed, Y-up, −Z forward. Reversed-Z with a
 `[0,1]` depth range. Column-major matrices. Metres, seconds, radians. A silent mismatch here
 corrupts everything downstream, so it is written down rather than discovered.
@@ -142,7 +151,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 36 capabilities. Start here.
+  specs/          Target specifications — 40 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

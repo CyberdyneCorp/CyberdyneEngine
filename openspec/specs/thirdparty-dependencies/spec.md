@@ -54,7 +54,7 @@ pinned in the dependency manifest, not here.
 | SPIR-V translation | **SPIRV-Cross** | Apache 2.0 | SPIR-V to MSL and HLSL for non-Vulkan backends |
 | SPIR-V tooling | **SPIRV-Tools**, **SPIRV-Reflect** | Apache 2.0 | Validation, optimisation, reflection |
 | Vulkan loading | **volk**, **Vulkan-Headers**, **VMA** | MIT | Loader and a proven GPU memory allocator |
-| Mesh processing | **meshoptimizer** | MIT | Simplification and cache optimisation, best in class |
+| Mesh processing | **meshoptimizer** | MIT | Simplification, cache optimisation, and meshlet/cluster generation — the algorithms beneath virtual geometry's cooker, with the hierarchy and format engine-owned |
 | UV unwrapping | **xatlas** | MIT | Lightmap UV generation |
 | Navigation meshes | **Recast / Detour** | Zlib | Voxelisation-based navmesh generation and the reference tiled-navmesh query implementation |
 | ML inference (optional) | **ONNX Runtime** | MIT | Portable inference with broad operator coverage; a neural runtime is years of work for no differentiating benefit |
@@ -129,12 +129,21 @@ layer needs and SHALL NOT bundle an implementation.
 - **THEN** it SHALL implement the engine's session interfaces, and the engine SHALL carry no
   dependency on that service
 
+#### Scenario: Algorithm integrated, architecture owned
+- **WHEN** virtual geometry cooking uses a third-party simplifier
+- **THEN** the cluster grouping strategy, boundary constraints, error metric, hierarchy, and page
+  format SHALL remain engine-owned, so the simplifier is replaceable
+
 ### Requirement: What the engine builds itself
 The engine SHALL implement, rather than integrate:
 
 - the **ECS core**, scheduler, and job system — the performance model is the engine's identity
 - the **renderer**: RHI, render graph, GPU scene, culling, pipelines, lighting, GI, and
   post-processing
+- the **virtual geometry system**: cluster hierarchy and its error metric, page format, GPU
+  traversal and culling, the geometry cache and residency manager, the visibility buffer and
+  material resolve, and the budget controller — the architecture is native to the GPU scene,
+  streaming, and budgeting systems, which no external library could be
 - the **VFX system**: asset model, graph compiler, particle storage, GPU simulation, event
   routing, scalability policy, and renderers — one of the few areas where an engine can still
   differentiate, and one that must be co-designed with the renderer and the frame budget

@@ -40,6 +40,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [rhi-and-render-graph](rhi-and-render-graph/spec.md) | Explicit RHI, automatic barriers and aliasing, backend roadmap |
 | [rendering-architecture](rendering-architecture/spec.md) | Render server, snapshot boundary, frame structure, extension points |
 | [rendering-culling-and-lod](rendering-culling-and-lod/spec.md) | Spatial indexing, frustum and occlusion culling, LOD, HLOD |
+| [virtual-geometry](virtual-geometry/spec.md) | CyberGeometry: clusters, crack-free hierarchy, geometry pages, GPU streaming, visibility buffer |
 | [rendering-forward-clustered](rendering-forward-clustered/spec.md) | Cluster assignment, sort keys, prepass modes, pass order |
 | [shader-system](shader-system/spec.md) | Slang, permutations, reflection-driven binding, caching, hot reload |
 | [rendering-materials-and-shading](rendering-materials-and-shading/spec.md) | The BRDF in concrete terms, shading models, IBL, material model |
@@ -104,9 +105,19 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Detail is a continuous function, not a list of levels.** Virtual geometry selects triangle
+  clusters per frame against a screen-space error target, so rendering cost tracks pixels rather
+  than the triangle count of the asset. Clusters are simplified in groups so boundaries stay
+  watertight; pages, not clusters, are the streaming unit; and a root region is always resident so
+  an object is never missing, only coarse.
+- **Render geometry is not collision geometry.** Physics, navigation and ray tracing consume
+  separate representations derived from the same source asset. Conflating them is the mistake that
+  makes virtualised geometry unusable for gameplay.
 - **Known gaps are written down, not implied.** Cross-platform lockstep is unsupported because
   physics guarantees determinism only within a platform. There is no world partition capability, so
-  replication cells are networking-owned with the seam specified. Naming a gap is cheaper than
+  replication cells are networking-owned with the seam specified — and virtual geometry now needs
+  the same seam, which makes world partition the most-referenced missing capability. Virtual
+  textures are specified as a seam too, not as a capability. Naming a gap is cheaper than
   discovering it.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
