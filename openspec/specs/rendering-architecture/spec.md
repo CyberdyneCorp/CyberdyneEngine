@@ -226,8 +226,12 @@ renderable instances, from which GPU-driven culling, LOD selection, and indirect
 performed.
 
 The GPU scene SHALL hold per instance at minimum: a transform and its previous-frame value,
-bounds, a mesh reference, a material reference, an LOD chain reference, a layer mask, and instance
-flags.
+bounds, a mesh reference, a material reference, an LOD chain reference, a layer mask, instance
+flags, and a **render importance** value (see `residency`).
+
+Render importance SHALL be published once per instance and consumed by every quality decision —
+geometry detail, texture page priority, shadow page resolution and refresh, animation rate, and
+illumination quality — so that subsystems do not maintain independent notions of what matters.
 
 Instances SHALL be publishable into the GPU scene from multiple producers:
 
@@ -235,6 +239,8 @@ Instances SHALL be publishable into the GPU scene from multiple producers:
 - **instanced mesh** components, from their transform buffers
 - the **VFX system**, from mesh particles (see `vfx-system`)
 - the **UI system**, from world-space and surface-space UI documents (see `ui-system`)
+- **foliage**, from its instance clusters (see `foliage`)
+- **terrain** and **water**, as procedural geometry sources
 
 All producers SHALL use the same representation, so downstream culling, LOD, sorting, and drawing
 require no knowledge of an instance's origin.
@@ -242,8 +248,12 @@ require no knowledge of an instance's origin.
 Instance publication SHALL be possible entirely GPU-side, without CPU round trips, for producers
 whose data already lives on the GPU.
 
+The GPU scene SHALL retain per-instance **previous and current bounds**, which shadow invalidation
+and motion vectors both consume, so neither derives them independently.
+
 #### Scenario: One representation, many producers
-- **WHEN** mesh particles, instanced meshes, world-space UI, and ordinary entities are all visible
+- **WHEN** mesh particles, instanced meshes, world-space UI, foliage, terrain, and ordinary entities
+  are all visible
 - **THEN** they SHALL occupy the same GPU scene representation and be culled and drawn by the same
   passes
 
@@ -255,6 +265,12 @@ whose data already lives on the GPU.
 #### Scenario: Producer removed
 - **WHEN** an effect, entity, or UI document is destroyed
 - **THEN** its instances SHALL be removed from the GPU scene without requiring a full rebuild
+
+#### Scenario: Importance is declared once
+- **WHEN** an instance is marked important
+- **THEN** geometry, texture, shadow, animation, and illumination quality SHALL all follow from that
+  one value
+
 ### Requirement: Renderer profiles
 The engine SHALL define named **renderer profiles** — at minimum `Mobile`, `Standard`, `HighEnd`,
 and `Cinematic` — each a configuration over one renderer, selecting: the pipeline, the enabled

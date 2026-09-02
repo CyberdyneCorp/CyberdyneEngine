@@ -171,6 +171,12 @@ The engine SHALL implement, rather than integrate:
   and retargeting — animation couples to the renderer, physics, AI, and VFX, and its scale
   behaviour is engine policy
 - the **UI system**: element storage, layout, styling, input routing, animation, and rendering
+- the **virtual texture and virtual shadow systems** and the **residency policy layer** above them:
+  address spaces, page tables, physical caches, GPU feedback, runtime page producers, receiver-driven
+  shadow page marking, the shadow page cache and its invalidation, and the shared scoring, budgets
+  and deadline propagation — these are the systems through which every other subsystem's data
+  reaches the frame. Image codecs, block-compression encoders, and GPU decompression facilities are
+  integrated beneath them.
 - the **environment systems**: the environment field substrate, terrain representation, streaming
   and its bridge to virtual geometry, terrain materials and deformation, the foliage runtime and
   its promotion model, procedural placement, the wind field, water bodies and their backends, the
@@ -268,6 +274,11 @@ published algorithm is not a dependency and does not require a manifest entry.
 - **WHEN** a general-purpose allocator is adopted
 - **THEN** it SHALL be selected by measurement on target platforms and remain replaceable behind
   the allocator interface, rather than an engine-written implementation
+
+#### Scenario: Encoders integrated, virtualisation owned
+- **WHEN** a block-compression encoder or image codec is adopted
+- **THEN** it SHALL sit beneath the engine's own page format, address space, and residency policy,
+  which remain engine-owned and replaceable independently of it
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

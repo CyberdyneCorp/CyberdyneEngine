@@ -46,6 +46,9 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [rendering-architecture](rendering-architecture/spec.md) | Render server, snapshot boundary, frame structure, extension points |
 | [rendering-culling-and-lod](rendering-culling-and-lod/spec.md) | Spatial indexing, frustum and occlusion culling, LOD, HLOD |
 | [virtual-geometry](virtual-geometry/spec.md) | CyberGeometry: clusters, crack-free hierarchy, geometry pages, GPU streaming, visibility buffer |
+| [virtual-texturing](virtual-texturing/spec.md) | CyberTexture: virtual address spaces, GPU feedback, runtime producers, resident mip tail |
+| [virtual-shadows](virtual-shadows/spec.md) | CyberShadow: receiver-driven pages, clipmaps, cached pages, precise invalidation |
+| [residency](residency/spec.md) | Shared paging policy: importance, priority, budgets, deadlines, churn, pressure |
 | [rendering-forward-clustered](rendering-forward-clustered/spec.md) | Cluster assignment, sort keys, prepass modes, pass order |
 | [shader-system](shader-system/spec.md) | Slang, permutations, reflection-driven binding, caching, hot reload |
 | [rendering-materials-and-shading](rendering-materials-and-shading/spec.md) | The BRDF in concrete terms, shading models, IBL, material model |
@@ -158,6 +161,15 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   set matching a known model costs exactly what that model costs, so layering is available without
   taxing the materials that never layer. Generality that is always paid for is not generality, it
   is overhead.
+- **World scale must not determine memory scale.** Geometry, textures and shadows are all paged:
+  a project may hold terabytes of source content while a frame holds what the platform's budget
+  permits. Visibility and prediction decide residency; residency never decides existence.
+- **Every virtualised system degrades along a defined axis and never fails.** An always-resident
+  geometry root, an always-resident texture mip tail, and a shadow fallback chain ending in
+  *unshadowed* — the same decision three times, and the one that makes virtualisation shippable.
+- **Importance is declared once.** One value per instance drives geometry detail, texture priority,
+  shadow resolution, animation rate and illumination quality. Five subsystems with five notions of
+  what matters is a collection of quality knobs; one value is a quality system.
 - **Detail is a continuous function, not a list of levels.** Virtual geometry selects triangle
   clusters per frame against a screen-space error target, so rendering cost tracks pixels rather
   than the triangle count of the asset. Clusters are simplified in groups so boundaries stay
@@ -168,12 +180,11 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   makes virtualised geometry unusable for gameplay.
 - **Known gaps are written down, not implied.** Cross-platform lockstep is unsupported because
   physics guarantees determinism only within a platform, and that is stated rather than discovered.
-  Virtual textures and virtual shadow maps are currently specified as seams rather than
-  capabilities — and terrain materials have made virtual textures the most load-bearing of those.
   Weather and hydrology are specified as field *producers* against systems that do not exist, which
-  costs nothing today and no rework later. World partition was named as a gap by four subsystems
-  before it was specified, and specifying it removed four workarounds rather than adding one
-  system — which is the argument for writing gaps down in the first place.
+  costs nothing today and no rework later. The practice pays: world partition was named as a gap by
+  four subsystems before it was specified, and specifying it removed four workarounds rather than
+  adding one system — as did virtual textures, which terrain had been specified against for three
+  changes before they existed.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can

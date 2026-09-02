@@ -25,6 +25,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
 | **AI** | CyberAI: ECS agents, one compiled graph for states/BT/utility/GOAP, deterministic |
 | **Geometry** | CyberGeometry: virtualised clusters, GPU-driven streaming and culling, visibility buffer |
+| **Textures & shadows** | CyberTexture and CyberShadow: paged virtual textures and receiver-driven virtual shadows |
 | **Materials** | CyberMaterial: graph → IR → closures → compiled program, bindless, GPU material table |
 | **Animation** | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, motion matching |
 | **Illumination** | CyberGI: hybrid tracing, surface and radiance caches, shared with reflections |
@@ -141,6 +142,13 @@ menu of models — but a closure set that matches a known model compiles to that
 costs exactly what it costs, so layering is there when needed and free when not. The editor shows
 every stage from graph to binary, with cost attributed back to the nodes that caused it.
 
+**World scale does not determine memory scale.** Geometry, textures and shadows are all paged
+against a shared residency policy: a project may hold terabytes of source content while a frame
+holds only what the platform's budget permits. Shadow pages exist because a *visible pixel* needs
+them rather than because a caster exists, and persist across frames until something actually
+invalidates them. Every one of these systems degrades along a defined axis — a coarse geometry root,
+a resident mip tail, a stale-but-valid shadow page — so a frame is never missing, only coarser.
+
 **Detail is continuous, and geometry is virtual.** A mesh is a hierarchy of small triangle
 clusters, and the GPU picks which clusters to draw each frame against a screen-space error target —
 so cost tracks the pixels on screen rather than the triangles in the asset, and artists stop
@@ -211,7 +219,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 49 capabilities. Start here.
+  specs/          Target specifications — 52 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

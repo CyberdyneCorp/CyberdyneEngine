@@ -123,8 +123,15 @@ Subsystems SHALL declare their response:
 | `Critical` | Drop optional caches, force streaming quality down, defer non-essential work |
 
 Pressure SHALL be **the coordination mechanism** for memory across streaming, geometry, texture,
-world, audio, and asset residency, in the same way the renderer budget arbiter coordinates GPU
-time. Subsystems SHALL respond to the declared level rather than each polling platform memory.
+shadow, world, audio, and asset residency, in the same way the renderer budget arbiter coordinates
+GPU time. Subsystems SHALL respond to the declared level rather than each polling platform memory.
+
+For **paged subsystems** — virtual geometry, virtual textures, virtual shadows, and illumination
+caches — the response SHALL be coordinated by the residency layer (see `residency`), which weighs
+their reductions against each other by importance and visible impact rather than letting each evict
+independently.
+
+GPU memory SHALL participate in the same pressure model as CPU memory.
 
 Pressure transitions SHALL be hysteretic, so systems do not oscillate between trimming and
 refilling.
@@ -146,6 +153,11 @@ allocation fails the system has already failed.
 - **WHEN** memory is exhausted
 - **THEN** `Critical` pressure SHALL have been signalled beforehand and recorded, so the failure is
   diagnosable
+
+#### Scenario: Paged subsystems reduce together
+- **WHEN** pressure forces a reduction across geometry, texture, and shadow caches
+- **THEN** the residency layer SHALL decide the split by importance, rather than three independent
+  evictions competing
 
 ### Requirement: Allocator propagation
 Containers SHALL accept an allocator at construction and SHALL default to the current
