@@ -25,6 +25,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Geometry** | CyberGeometry: virtualised clusters, GPU-driven streaming and culling, visibility buffer |
 | **Materials** | CyberMaterial: graph → IR → closures → compiled program, bindless, GPU material table |
 | **Animation** | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, motion matching |
+| **Illumination** | CyberGI: hybrid tracing, surface and radiance caches, shared with reflections |
 | **Networking** | CyberNet: ECS component replication, three network modes, priority-scheduled interest |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
@@ -96,6 +97,14 @@ frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosio
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
 
+**Indirect light is a scheduling problem, not an algorithm.** Rather than one GI technique, the
+engine combines screen-space tracing, world-space radiance and surface caches, software tracing
+against a distance field, and hardware rays — picking per sample the cheapest source that can give
+a trustworthy answer, where trust is a confidence value the system computes. A traced hit reads
+cached radiance instead of re-evaluating a material graph, which is what makes the whole thing
+affordable and which produces multi-bounce lighting as a side effect. Reflections are the same
+system with a different ray distribution, not a second one.
+
 **One component owns the frame's cost.** A renderer measures GPU time and lowers quality to fit a
 budget — but if several subsystems each do that independently, they read one shared signal, correct
 for costs they did not cause, and oscillate together. So exactly one arbiter measures the frame and
@@ -166,7 +175,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 43 capabilities. Start here.
+  specs/          Target specifications — 44 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

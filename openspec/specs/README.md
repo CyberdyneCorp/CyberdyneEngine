@@ -46,7 +46,8 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [rendering-materials-and-shading](rendering-materials-and-shading/spec.md) | The BRDF in concrete terms, shading models, IBL, material model |
 | [material-compiler](material-compiler/spec.md) | CyberMaterial: graph → IR → closures → program, quality tiers, GPU material table, cost attribution |
 | [rendering-lighting-and-shadows](rendering-lighting-and-shadows/spec.md) | Light types, physical units, LTC area lights, atlas, cascades, filtering |
-| [rendering-global-illumination](rendering-global-illumination/spec.md) | Lightmaps, probes, dynamic diffuse GI, reflections, sky |
+| [rendering-global-illumination](rendering-global-illumination/spec.md) | CyberGI: GI scene, surface and radiance caches, screen/software/hardware tracing, reflections, baking, sky |
+| [denoising](denoising/spec.md) | CyberDenoiser: one accumulation and edge-aware filter for every stochastic signal |
 | [ray-tracing-infrastructure](ray-tracing-infrastructure/spec.md) | Acceleration structure lifecycle, geometry adapters, ray queries, capability gating |
 | [rendering-post-processing](rendering-post-processing/spec.md) | Chain order, AO, fog, exposure, DOF, bloom, tonemap, AA, upscaling |
 | [temporal-rendering](temporal-rendering/spec.md) | CyberTemporal: jitter, motion vectors, history, reprojection, invalidation |
@@ -108,6 +109,13 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Use the cheapest source that can give a trustworthy answer.** Illumination is a hybrid of
+  screen tracing, world-space caches, software tracing and hardware rays, selected per sample by a
+  computed confidence rather than a fixed fallback order. A traced hit is a *cache lookup*, not a
+  material evaluation — which is what makes it affordable, and which gives multi-bounce for free.
+- **Illumination sees a coarser world than the camera does.** The GI scene targets centimetres of
+  world-space error where primary visibility targets sub-pixels, and takes that from the geometry
+  hierarchy that already exists. One hierarchy, two error targets.
 - **One component measures the frame; everything else receives an allocation.** VFX, virtual
   geometry, and dynamic resolution each had their own controller reading total GPU time. Three
   feedback loops on one shared signal is not three budgets, it is one unstable control system. The
@@ -130,8 +138,9 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   physics guarantees determinism only within a platform. There is no world partition capability, so
   replication cells are networking-owned with the seam specified — and virtual geometry now needs
   the same seam, which makes world partition the most-referenced missing capability. Virtual
-  textures are specified as a seam too, not as a capability, as are virtual shadow maps and the
-  dynamic GI stack. Naming a gap is cheaper than discovering it.
+  textures are specified as a seam too, not as a capability, as are virtual shadow maps. World
+  partition is now required by a fourth subsystem — the GI scene is specified as cell-scoped
+  against a capability that does not exist. Naming a gap is cheaper than discovering it.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can

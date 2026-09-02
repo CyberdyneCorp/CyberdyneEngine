@@ -486,6 +486,12 @@ device restricted to the fallback path, with reduced detail rather than missing 
 Ray tracing SHALL initially use the fallback representation. Native ray tracing against virtual
 geometry is recorded as deferred.
 
+**Illumination representations** SHALL be drawn from the cluster hierarchy rather than from the
+fallback mesh where the hierarchy is available: the GI scene (see `rendering-global-illumination`)
+selects a level meeting an illumination error target measured in world-space distance, which is
+far coarser than the primary visibility target. One hierarchy SHALL serve both, and no separate
+simplified mesh SHALL be cooked for illumination.
+
 #### Scenario: Unsupported device
 - **WHEN** a device lacks the required capabilities
 - **THEN** assets SHALL render through the fallback path, with the reduced detail reported
@@ -494,6 +500,11 @@ geometry is recorded as deferred.
 - **WHEN** acceleration structures are built
 - **THEN** the fallback representation SHALL be used, and the resulting detail difference SHALL be
   documented
+
+#### Scenario: Illumination uses a coarser hierarchy level
+- **WHEN** the GI scene requests a representation for an asset
+- **THEN** it SHALL receive a level of the existing cluster hierarchy chosen for a world-space
+  error target, not a separately authored or cooked simplification
 
 ### Requirement: Collision and navigation are separate representations
 Render geometry SHALL NOT be used as collision or navigation geometry.

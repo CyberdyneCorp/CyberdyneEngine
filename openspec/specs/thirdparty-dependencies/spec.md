@@ -146,8 +146,15 @@ The engine SHALL implement, rather than integrate:
   this is where material cost is actually decided, and it is inseparable from the GPU scene and
   the renderer's budget model. The engine does **not** implement a shader optimiser or backend
   code generator; it produces good input to somebody else's.
-- the **renderer budget arbiter** and the temporal framework — frame cost allocation and history
-  management are cross-subsystem policy that no library can hold
+- the **renderer budget arbiter**, the temporal framework, and the **denoising framework** — frame
+  cost allocation, history management, and edge-aware reconstruction are cross-subsystem policy
+  that no library can hold. A vendor or machine-learning denoiser MAY be integrated as a backend
+  behind the engine's interface.
+- the **illumination architecture**: the GI scene and its representations, the surface cache, the
+  radiance cache and its scheduler, the tracing tiers and their selection, the confidence model,
+  the resolve, and the illumination budget policy — hybrid GI is a scheduling problem over the
+  engine's own scene, streaming, geometry hierarchy, and budget, and a library that owned any of
+  those would own the engine
 - the **virtual geometry system**: cluster hierarchy and its error metric, page format, GPU
   traversal and culling, the geometry cache and residency manager, the visibility buffer and
   material resolve, and its budget controller — the architecture is native to the GPU scene,
@@ -214,6 +221,13 @@ published algorithm is not a dependency and does not require a manifest entry.
 - **WHEN** the shader toolchain is upgraded or replaced
 - **THEN** the material IR, its optimisation passes, and the cost model SHALL be unaffected, since
   the engine owns the material compiler and integrates the shader compiler
+
+#### Scenario: Rejecting a drop-in GI solution
+- **WHEN** an external global illumination library is proposed
+- **THEN** it SHALL be evaluated against the requirement that illumination reads the engine's GPU
+  scene, consumes the virtual geometry hierarchy at its own error target, fills a surface cache
+  from engine-compiled secondary material programs, and holds an allocation from the engine's
+  budget arbiter — coupling a self-contained solution cannot provide
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

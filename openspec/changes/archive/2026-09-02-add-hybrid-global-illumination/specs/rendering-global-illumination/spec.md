@@ -1,34 +1,5 @@
-# rendering-global-illumination Specification
+## ADDED Requirements
 
-## Purpose
-
-Defines **CyberGI**: fully dynamic diffuse and specular indirect illumination for large worlds,
-resolved by combining screen-space visibility, adaptive world-space radiance caching, software
-scene tracing, and hardware ray tracing under one quality and GPU-time budget.
-
-The organising rule is **use the cheapest source that can give a trustworthy answer** — where
-trustworthy is a confidence value the system computes, not a fixed fallback order. Screen tracing
-answers most rays almost free and cannot answer any ray that leaves the screen; world tracing
-answers the rest; confidence decides which is used and whether spending more is worthwhile.
-
-Three decisions make it work. A named **GI scene** defines what the world looks like to an
-illumination query, at a deliberately coarser error target than primary visibility — centimetres
-rather than sub-pixels — drawn from the virtual geometry hierarchy rather than from a second
-simplification. A **surface cache** turns a traced hit into a lookup rather than a material
-evaluation, which is what makes hybrid tracing affordable at all, and which incidentally provides
-multi-bounce: radiance fed back into the gather approximates additional bounces over frames.
-And **diffuse GI and reflections are one system** with two ray distributions, sharing the scene,
-the caches, the tracer, the denoiser, and the budget.
-
-Baked lighting is not a legacy path. It remains a first-class mode for constrained hardware, and it
-seeds the dynamic caches so a level is plausible on its first frame instead of converging from
-black. The offline path tracer that produces it is the same one that produces ground-truth
-references for measuring how wrong the real-time result is.
-
-Direct lighting stays out of this system deliberately — many shadowed lights is a direct-lighting
-problem, and solving it here would produce two lighting models that disagree at their boundary.
-
-## Requirements
 ### Requirement: Engine-owned illumination architecture
 The illumination system SHALL be engine code: the GI scene and its representations, the surface
 cache, the radiance cache and its scheduler, the tracing tiers and their selection, the resolve,
@@ -50,50 +21,6 @@ rendering path.
 #### Scenario: Subsystems are separable
 - **WHEN** the radiance cache is replaced or reworked
 - **THEN** the GI scene, surface cache, tracers, and resolve SHALL be unaffected
-
-### Requirement: GI strategy layers
-The engine SHALL support **GI modes**, selectable per project and per platform profile:
-
-| Mode | Behaviour |
-|---|---|
-| `None` | Ambient and sky only |
-| `Baked` | Lightmaps and baked probes |
-| `Probe` | Baked probes for dynamic objects, no lightmaps |
-| `Dynamic` | Fully dynamic hybrid illumination |
-| `Hybrid` | Dynamic illumination seeded and supplemented by baked data |
-
-Within a mode, indirect radiance SHALL be drawn from these **sources**, combined by confidence:
-
-| Source | Covers | Cost |
-|---|---|---|
-| Lightmaps | Static geometry lit by static lights | Bake time; near-zero runtime |
-| Irradiance volumes | Dynamic objects in baked environments | Small runtime |
-| Radiance cache | Dynamic diffuse and rough specular at all scales | Moderate runtime |
-| Surface cache | Radiance at traced hits | Moderate runtime |
-| Screen tracing | Contact-accurate detail where visible | Small runtime |
-| Reflection probes | Localised specular fallback | Small runtime; capture cost |
-
-Sources SHALL be combined without double counting: a surface taking a bounce from one source SHALL
-NOT accumulate the same bounce from another.
-
-Baked data SHALL remain a first-class mode, not a compatibility path: it is the correct answer for
-constrained hardware, and it **seeds** the dynamic caches so a level is plausible on its first
-frame.
-
-#### Scenario: No double counting
-- **WHEN** a lightmapped surface is inside a dynamic GI region
-- **THEN** it SHALL take indirect diffuse from the lightmap only, and the dynamic contribution
-  SHALL be excluded for it
-
-#### Scenario: Fallback chain for specular
-- **WHEN** a screen-space specular ray fails
-- **THEN** the result SHALL fall back through the world tracer and radiance cache to the nearest
-  reflection probe and then the sky, blended by confidence rather than switching abruptly
-
-#### Scenario: Mode is a profile decision
-- **WHEN** a project targets both high-end desktop and mobile
-- **THEN** it SHALL select `Dynamic` or `Hybrid` for one profile and `Baked` for the other, with
-  the same content
 
 ### Requirement: The GI scene
 The engine SHALL maintain a **GI scene**: the representation of the world used to answer
@@ -347,33 +274,6 @@ was it trusted" is a question the system must be able to answer.
 - **WHEN** a region has been invalidated and not yet re-solved
 - **THEN** samples from it SHALL carry reduced confidence and the resolve SHALL weight them down
 
-### Requirement: Dynamic diffuse global illumination
-Dynamic diffuse indirect lighting SHALL be resolved from the radiance cache, the surface cache,
-and the tracing tiers, combined by confidence and accumulated temporally through the framework in
-`temporal-rendering`.
-
-Multi-bounce SHALL be approximated by feeding previously accumulated radiance back into the
-gather, giving an infinite-bounce approximation over frames without tracing long paths.
-
-Rays SHALL be distributed across frames rather than resolved fully per frame: a probe or pixel MAY
-gather a subset of directions each frame, accumulating toward a stable result.
-
-The system SHALL function without hardware ray tracing, using the screen and software tiers, with
-the quality and cost differences documented.
-
-#### Scenario: Camera moves
-- **WHEN** the camera translates by one probe spacing
-- **THEN** the radiance clipmap SHALL scroll and only the newly entered region SHALL be re-solved
-
-#### Scenario: Lighting change converges
-- **WHEN** a light is switched on
-- **THEN** the affected region SHALL be invalidated and converge over a bounded number of frames,
-  with the convergence rate exposed as a quality setting and the unconverged state reportable
-
-#### Scenario: Ray tracing unavailable
-- **WHEN** the device lacks hardware ray tracing
-- **THEN** the software tier SHALL be used with the same caches, resolve, and sampling code
-
 ### Requirement: Reflections share the illumination infrastructure
 Specular indirect lighting SHALL use the same GI scene, caches, tracing tiers, resolve, and
 denoiser as diffuse indirect lighting, differing only in ray distribution and roughness handling.
@@ -403,71 +303,6 @@ denoiser.
 - **WHEN** reflections and diffuse GI are both active
 - **THEN** they SHALL share the GI scene, caches, and denoiser rather than duplicating them
 
-### Requirement: Reflection probes
-Reflection probes SHALL be **one source within the illumination hierarchy**, not a separate
-reflection system: they are consulted when higher tiers report low confidence, and they remain the
-primary specular source in `Baked` and `Probe` modes and on constrained profiles.
-
-Probes SHALL capture the surrounding scene into a roughness-filtered octahedral radiance map,
-with:
-
-- capture modes: **baked** (once, offline), **on demand**, and **realtime** (amortised across
-  frames)
-- **box** and **sphere** influence volumes with a blend distance
-- **box projection** (parallax correction) so reflections align with room geometry
-- an importance value resolving overlapping probes
-- an interior flag excluding the sky
-
-Probes SHALL be assigned to fragments through cluster assignment and blended by influence weight.
-
-Realtime probe capture SHALL draw from the GI allocation like any other illumination work.
-
-#### Scenario: Parallax-corrected reflection
-- **WHEN** box projection is enabled
-- **THEN** the reflection vector SHALL be intersected with the probe's box and re-aimed at the
-  hit point, so a wall reflects at the right place
-
-#### Scenario: Realtime probe is amortised
-- **WHEN** a realtime probe updates
-- **THEN** its faces and filtering mips SHALL be spread across several frames under the GI budget
-
-#### Scenario: Probe as a confidence fallback
-- **WHEN** a specular query cannot be answered by tracing
-- **THEN** the probe result SHALL be blended in by confidence rather than switched to
-
-### Requirement: Ray-traced effects
-Hardware ray tracing SHALL be a **tracing tier** available to illumination queries, reflections,
-soft shadows, and ambient occlusion — not a separate rendering mode and not a requirement.
-
-Ray-traced features SHALL consume the **ray tracing infrastructure** (see
-`ray-tracing-infrastructure`) for acceleration structures, geometry adapters, and ray queries.
-They SHALL NOT build, refit, or own acceleration structures themselves.
-
-A hardware hit SHALL resolve through the **surface cache**, not through full material evaluation,
-so ray cost does not scale with material complexity.
-
-Ray-traced features SHALL be capability-gated and each SHALL have a non-ray-traced path, so no
-content depends on their presence. Traced ray counts SHALL be part of the GI allocation.
-
-#### Scenario: Ray-traced reflection beyond the screen
-- **WHEN** ray tracing is available and screen-trace confidence is low
-- **THEN** a traced ray SHALL supply the reflection instead of falling back to a probe
-
-#### Scenario: Acceleration structure maintenance
-- **WHEN** dynamic geometry moves
-- **THEN** the ray tracing infrastructure SHALL refit its bottom-level structures and rebuild the
-  top-level structure within its declared budget, and GI SHALL not manage that itself
-
-#### Scenario: Virtual geometry is traced as a proxy
-- **WHEN** a traced ray hits virtual geometry
-- **THEN** it SHALL intersect the proxy representation, and the documented difference from the
-  rasterised surface SHALL apply
-
-#### Scenario: A hardware hit is still a cache lookup
-- **WHEN** a hardware ray hits a surface
-- **THEN** its radiance SHALL come from the surface cache, not from evaluating the material's
-  primary program
-
 ### Requirement: Emissive surfaces as illumination
 Emissive materials SHALL contribute to indirect illumination through the surface cache, so an
 emissive surface lights its surroundings without an explicitly placed light.
@@ -495,28 +330,6 @@ suppressed by clamping.
 - **WHEN** a bright emitter is handled
 - **THEN** the mechanism SHALL be classification and importance sampling, and any clamping applied
   SHALL be reported as energy loss
-
-### Requirement: Sky and atmosphere
-The engine SHALL provide sky models: a **physical atmosphere** (Rayleigh and Mie scattering with
-precomputed transmittance and multiple-scattering tables), a **cubemap or HDRI** sky, a
-**gradient** sky, and a fully **custom shader** sky.
-
-The sky SHALL produce: the background, a filtered radiance map for specular IBL, and irradiance
-for ambient diffuse — updated when the sky changes, incrementally where it changes continuously
-(a moving sun).
-
-Volumetric clouds SHALL be a planned addition whose interface (a participating-media layer
-integrated with atmosphere and aerial perspective) is reserved but not specified here.
-
-#### Scenario: Time of day
-- **WHEN** the sun rotates continuously
-- **THEN** atmosphere tables SHALL update incrementally and the radiance and irradiance SHALL
-  follow without a visible step
-
-#### Scenario: Aerial perspective
-- **WHEN** the physical atmosphere is enabled
-- **THEN** distant geometry SHALL receive scattering consistent with the sky, not a separately
-  tuned fog
 
 ### Requirement: Illumination classification of dynamic objects
 Every renderable SHALL be classified for illumination purposes: `Static`, `SlowDynamic`,
@@ -564,33 +377,6 @@ Content SHALL NOT be required to author a far-field representation; it SHALL be 
 #### Scenario: No visible boundary
 - **WHEN** the camera moves across the near-field to far-field transition
 - **THEN** illumination SHALL blend rather than step
-
-### Requirement: Transparency and participating media
-Illumination support for non-opaque surfaces SHALL be staged, with the classification declared:
-
-| Class | Support |
-|---|---|
-| Opaque, masked | Full participation |
-| Thin transmission | Supported: receives indirect, transmits approximately |
-| Volumetric media | Receives low-frequency indirect from the radiance cache |
-| True refraction | Deferred; interface reserved |
-| Caustics | Deferred; interface reserved |
-
-Volumetric fog (see `rendering-post-processing`) SHALL receive indirect radiance from the radiance
-cache rather than computing its own indirect term.
-
-#### Scenario: Foliage transmits
-- **WHEN** a leaf with thin transmission is backlit
-- **THEN** it SHALL transmit indirect light approximately, without a refraction solve
-
-#### Scenario: Fog is indirectly lit
-- **WHEN** fog fills an indirectly lit interior
-- **THEN** it SHALL take low-frequency indirect radiance from the radiance cache
-
-#### Scenario: Deferred features are named
-- **WHEN** a project needs caustics
-- **THEN** the specification SHALL state that they are deferred, rather than leaving the
-  expectation open
 
 ### Requirement: GI budget and importance
 The illumination system SHALL hold the GI allocation issued by the renderer budget arbiter (see
@@ -642,6 +428,33 @@ Volumes SHALL be an override, not a requirement: a scene SHALL be correctly lit 
 - **WHEN** a scene contains no GI volumes
 - **THEN** it SHALL be lit correctly using global settings
 
+### Requirement: Transparency and participating media
+Illumination support for non-opaque surfaces SHALL be staged, with the classification declared:
+
+| Class | Support |
+|---|---|
+| Opaque, masked | Full participation |
+| Thin transmission | Supported: receives indirect, transmits approximately |
+| Volumetric media | Receives low-frequency indirect from the radiance cache |
+| True refraction | Deferred; interface reserved |
+| Caustics | Deferred; interface reserved |
+
+Volumetric fog (see `rendering-post-processing`) SHALL receive indirect radiance from the radiance
+cache rather than computing its own indirect term.
+
+#### Scenario: Foliage transmits
+- **WHEN** a leaf with thin transmission is backlit
+- **THEN** it SHALL transmit indirect light approximately, without a refraction solve
+
+#### Scenario: Fog is indirectly lit
+- **WHEN** fog fills an indirectly lit interior
+- **THEN** it SHALL take low-frequency indirect radiance from the radiance cache
+
+#### Scenario: Deferred features are named
+- **WHEN** a project needs caustics
+- **THEN** the specification SHALL state that they are deferred, rather than leaving the
+  expectation open
+
 ### Requirement: Convergence and capture
 The system SHALL expose a **convergence metric** per region: how far the current illumination
 state is from its converged value.
@@ -663,79 +476,6 @@ is a reportable state rather than a suspected one.
 #### Scenario: Convergence is observable
 - **WHEN** a light changes and the image is still settling
 - **THEN** the convergence metric SHALL report the affected regions as unconverged
-
-### Requirement: Lightmap baking
-The engine SHALL bake static illumination using the **offline path tracer**, sharing its scene,
-material, and light representations with the real-time path.
-
-The bake SHALL: gather static meshes and their UV2 charts, build an acceleration structure,
-path-trace direct and indirect lighting for a configurable bounce count, denoise the result,
-dilate and pad chart borders, and pack into atlases.
-
-Bake outputs SHALL be selectable: **irradiance only** (single texture), **directional** (an
-irradiance plus a dominant direction, preserving normal-map response), or **spherical harmonics**
-(L1, preserving more directionality at higher memory cost).
-
-The bake SHALL additionally produce **seeds for the dynamic caches** — initial surface cache and
-radiance cache contents — so a level in `Hybrid` mode is plausible before convergence.
-
-The bake SHALL support: per-object lightmap resolution scaling, a global texel density, emissive
-surfaces as light sources, transparent and alpha-tested occlusion, and a **shadow mask** allowing
-stationary lights to keep dynamic direct light with baked shadows.
-
-Baking SHALL be **incremental** where possible: unchanged geometry and lighting SHALL reuse
-previous results.
-
-#### Scenario: Normal maps still respond
-- **WHEN** directional lightmaps are baked
-- **THEN** a normal-mapped surface SHALL still show normal-map detail in indirect lighting
-
-#### Scenario: Stationary light with shadow mask
-- **WHEN** a light is marked `Stationary` with shadow-mask baking
-- **THEN** its indirect contribution SHALL be baked while its direct light is computed at runtime
-  using the baked shadow term
-
-#### Scenario: Incremental rebake
-- **WHEN** one object is moved in a large baked level
-- **THEN** the bake SHALL re-solve the affected region rather than the whole level
-
-#### Scenario: Bake seeds the dynamic caches
-- **WHEN** a baked level runs in `Hybrid` mode
-- **THEN** the dynamic caches SHALL be initialised from the bake rather than from zero
-
-### Requirement: UV2 and chart packing
-Static meshes participating in lightmapping SHALL have a **UV2** channel generated at import time
-if not authored, using automatic unwrapping with a configurable texel density, chart padding, and
-angle and area distortion limits.
-
-Charts SHALL be packed into atlases with padding sufficient for bilinear filtering and mip
-generation at the bake resolution.
-
-#### Scenario: Unwrap is cached
-- **WHEN** a mesh is reimported without geometry changes
-- **THEN** the cached UV2 unwrap SHALL be reused
-
-#### Scenario: Seam artifacts
-- **WHEN** charts meet at a seam
-- **THEN** border texels SHALL be dilated and seam colours reconciled so the seam is not visible
-
-### Requirement: Irradiance volumes and light probes
-The engine SHALL support **irradiance volumes**: 3D grids of baked probes storing spherical
-harmonics irradiance, used to light dynamic objects inside baked environments.
-
-Probes SHALL be placeable as a regular grid within a volume, adaptively subdivided near
-geometry, or hand-placed.
-
-Sampling SHALL be trilinear across the eight surrounding probes, weighted by a **visibility**
-term so a probe on the other side of a wall does not leak light.
-
-#### Scenario: Dynamic object lit by baked environment
-- **WHEN** a character walks through a baked room
-- **THEN** it SHALL be lit by interpolated probe irradiance, not by the lightmap
-
-#### Scenario: Light leaking is suppressed
-- **WHEN** a probe lies inside geometry or on the far side of a wall
-- **THEN** its weight SHALL be reduced or zeroed by the visibility term
 
 ### Requirement: Offline path tracer and ground truth
 The engine SHALL provide an offline **GPU path tracer** serving three purposes: baking lightmaps
@@ -780,6 +520,198 @@ counts and updates, rays traced per tier, screen-trace hit rate, and cache hit r
 #### Scenario: Cost is attributable to content
 - **WHEN** GI cost is high
 - **THEN** the profiler SHALL attribute it to stages and to the geometry or lights responsible
+
+## REMOVED Requirements
+
+### Requirement: Screen-space reflections
+**Reason**: Superseded by **Screen-space tracing**.
+
+Screen-space marching is the first tier of one hybrid tracer serving both diffuse and specular
+queries, not a reflection technique. Keeping it named as a reflection requirement was what allowed
+diffuse GI and reflections to be specified as unrelated systems, each with its own tracing and
+fallback logic.
+
+Nothing is lost: the successor retains hierarchical depth marching, per-pixel confidence from hit
+validity, screen-edge proximity and thickness mismatch, blending rather than switching, and
+roughness-dependent resolve — including both original scenarios — and adds the requirement that a
+hidden surface produces low confidence rather than a plausible wrong answer.
+
+## MODIFIED Requirements
+
+### Requirement: GI strategy layers
+The engine SHALL support **GI modes**, selectable per project and per platform profile:
+
+| Mode | Behaviour |
+|---|---|
+| `None` | Ambient and sky only |
+| `Baked` | Lightmaps and baked probes |
+| `Probe` | Baked probes for dynamic objects, no lightmaps |
+| `Dynamic` | Fully dynamic hybrid illumination |
+| `Hybrid` | Dynamic illumination seeded and supplemented by baked data |
+
+Within a mode, indirect radiance SHALL be drawn from these **sources**, combined by confidence:
+
+| Source | Covers | Cost |
+|---|---|---|
+| Lightmaps | Static geometry lit by static lights | Bake time; near-zero runtime |
+| Irradiance volumes | Dynamic objects in baked environments | Small runtime |
+| Radiance cache | Dynamic diffuse and rough specular at all scales | Moderate runtime |
+| Surface cache | Radiance at traced hits | Moderate runtime |
+| Screen tracing | Contact-accurate detail where visible | Small runtime |
+| Reflection probes | Localised specular fallback | Small runtime; capture cost |
+
+Sources SHALL be combined without double counting: a surface taking a bounce from one source SHALL
+NOT accumulate the same bounce from another.
+
+Baked data SHALL remain a first-class mode, not a compatibility path: it is the correct answer for
+constrained hardware, and it **seeds** the dynamic caches so a level is plausible on its first
+frame.
+
+#### Scenario: No double counting
+- **WHEN** a lightmapped surface is inside a dynamic GI region
+- **THEN** it SHALL take indirect diffuse from the lightmap only, and the dynamic contribution
+  SHALL be excluded for it
+
+#### Scenario: Fallback chain for specular
+- **WHEN** a screen-space specular ray fails
+- **THEN** the result SHALL fall back through the world tracer and radiance cache to the nearest
+  reflection probe and then the sky, blended by confidence rather than switching abruptly
+
+#### Scenario: Mode is a profile decision
+- **WHEN** a project targets both high-end desktop and mobile
+- **THEN** it SHALL select `Dynamic` or `Hybrid` for one profile and `Baked` for the other, with
+  the same content
+
+### Requirement: Dynamic diffuse global illumination
+Dynamic diffuse indirect lighting SHALL be resolved from the radiance cache, the surface cache,
+and the tracing tiers, combined by confidence and accumulated temporally through the framework in
+`temporal-rendering`.
+
+Multi-bounce SHALL be approximated by feeding previously accumulated radiance back into the
+gather, giving an infinite-bounce approximation over frames without tracing long paths.
+
+Rays SHALL be distributed across frames rather than resolved fully per frame: a probe or pixel MAY
+gather a subset of directions each frame, accumulating toward a stable result.
+
+The system SHALL function without hardware ray tracing, using the screen and software tiers, with
+the quality and cost differences documented.
+
+#### Scenario: Camera moves
+- **WHEN** the camera translates by one probe spacing
+- **THEN** the radiance clipmap SHALL scroll and only the newly entered region SHALL be re-solved
+
+#### Scenario: Lighting change converges
+- **WHEN** a light is switched on
+- **THEN** the affected region SHALL be invalidated and converge over a bounded number of frames,
+  with the convergence rate exposed as a quality setting and the unconverged state reportable
+
+#### Scenario: Ray tracing unavailable
+- **WHEN** the device lacks hardware ray tracing
+- **THEN** the software tier SHALL be used with the same caches, resolve, and sampling code
+
+### Requirement: Reflection probes
+Reflection probes SHALL be **one source within the illumination hierarchy**, not a separate
+reflection system: they are consulted when higher tiers report low confidence, and they remain the
+primary specular source in `Baked` and `Probe` modes and on constrained profiles.
+
+Probes SHALL capture the surrounding scene into a roughness-filtered octahedral radiance map,
+with:
+
+- capture modes: **baked** (once, offline), **on demand**, and **realtime** (amortised across
+  frames)
+- **box** and **sphere** influence volumes with a blend distance
+- **box projection** (parallax correction) so reflections align with room geometry
+- an importance value resolving overlapping probes
+- an interior flag excluding the sky
+
+Probes SHALL be assigned to fragments through cluster assignment and blended by influence weight.
+
+Realtime probe capture SHALL draw from the GI allocation like any other illumination work.
+
+#### Scenario: Parallax-corrected reflection
+- **WHEN** box projection is enabled
+- **THEN** the reflection vector SHALL be intersected with the probe's box and re-aimed at the
+  hit point, so a wall reflects at the right place
+
+#### Scenario: Realtime probe is amortised
+- **WHEN** a realtime probe updates
+- **THEN** its faces and filtering mips SHALL be spread across several frames under the GI budget
+
+#### Scenario: Probe as a confidence fallback
+- **WHEN** a specular query cannot be answered by tracing
+- **THEN** the probe result SHALL be blended in by confidence rather than switched to
+
+### Requirement: Lightmap baking
+The engine SHALL bake static illumination using the **offline path tracer**, sharing its scene,
+material, and light representations with the real-time path.
+
+The bake SHALL: gather static meshes and their UV2 charts, build an acceleration structure,
+path-trace direct and indirect lighting for a configurable bounce count, denoise the result,
+dilate and pad chart borders, and pack into atlases.
+
+Bake outputs SHALL be selectable: **irradiance only** (single texture), **directional** (an
+irradiance plus a dominant direction, preserving normal-map response), or **spherical harmonics**
+(L1, preserving more directionality at higher memory cost).
+
+The bake SHALL additionally produce **seeds for the dynamic caches** — initial surface cache and
+radiance cache contents — so a level in `Hybrid` mode is plausible before convergence.
+
+The bake SHALL support: per-object lightmap resolution scaling, a global texel density, emissive
+surfaces as light sources, transparent and alpha-tested occlusion, and a **shadow mask** allowing
+stationary lights to keep dynamic direct light with baked shadows.
+
+Baking SHALL be **incremental** where possible: unchanged geometry and lighting SHALL reuse
+previous results.
+
+#### Scenario: Normal maps still respond
+- **WHEN** directional lightmaps are baked
+- **THEN** a normal-mapped surface SHALL still show normal-map detail in indirect lighting
+
+#### Scenario: Stationary light with shadow mask
+- **WHEN** a light is marked `Stationary` with shadow-mask baking
+- **THEN** its indirect contribution SHALL be baked while its direct light is computed at runtime
+  using the baked shadow term
+
+#### Scenario: Incremental rebake
+- **WHEN** one object is moved in a large baked level
+- **THEN** the bake SHALL re-solve the affected region rather than the whole level
+
+#### Scenario: Bake seeds the dynamic caches
+- **WHEN** a baked level runs in `Hybrid` mode
+- **THEN** the dynamic caches SHALL be initialised from the bake rather than from zero
+
+### Requirement: Ray-traced effects
+Hardware ray tracing SHALL be a **tracing tier** available to illumination queries, reflections,
+soft shadows, and ambient occlusion — not a separate rendering mode and not a requirement.
+
+Ray-traced features SHALL consume the **ray tracing infrastructure** (see
+`ray-tracing-infrastructure`) for acceleration structures, geometry adapters, and ray queries.
+They SHALL NOT build, refit, or own acceleration structures themselves.
+
+A hardware hit SHALL resolve through the **surface cache**, not through full material evaluation,
+so ray cost does not scale with material complexity.
+
+Ray-traced features SHALL be capability-gated and each SHALL have a non-ray-traced path, so no
+content depends on their presence. Traced ray counts SHALL be part of the GI allocation.
+
+#### Scenario: Ray-traced reflection beyond the screen
+- **WHEN** ray tracing is available and screen-trace confidence is low
+- **THEN** a traced ray SHALL supply the reflection instead of falling back to a probe
+
+#### Scenario: Acceleration structure maintenance
+- **WHEN** dynamic geometry moves
+- **THEN** the ray tracing infrastructure SHALL refit its bottom-level structures and rebuild the
+  top-level structure within its declared budget, and GI SHALL not manage that itself
+
+#### Scenario: Virtual geometry is traced as a proxy
+- **WHEN** a traced ray hits virtual geometry
+- **THEN** it SHALL intersect the proxy representation, and the documented difference from the
+  rasterised surface SHALL apply
+
+#### Scenario: A hardware hit is still a cache lookup
+- **WHEN** a hardware ray hits a surface
+- **THEN** its radiance SHALL come from the surface cache, not from evaluating the material's
+  primary program
 
 ### Requirement: GI debug visualisation
 The engine SHALL provide debug views: lightmap UV density and charts, lightmap texel resolution,
