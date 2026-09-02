@@ -1,0 +1,202 @@
+# testing-and-quality Specification
+
+## Purpose
+
+Defines how CyberdyneEngine is kept correct and fast: the test taxonomy and where each kind
+lives, determinism and golden-image testing, performance benchmarking with regression detection,
+static analysis, and the review gates a change must pass.
+
+## Requirements
+
+### Requirement: Test taxonomy
+The engine SHALL maintain these kinds of tests, each with a defined location and runtime budget:
+
+| Kind | Location | Budget | Purpose |
+|---|---|---|---|
+| Unit | `tests/unit/<module>/` | < 1 ms each | Pure logic: math, containers, algorithms, serialization |
+| Integration | `tests/integration/` | < 1 s each | Subsystems together: ECS + physics, asset load + render |
+| Golden image | `tests/render/` | < 5 s each | Rendering correctness against reference images |
+| Determinism | `tests/determinism/` | < 10 s each | Reproducibility of simulation and replication |
+| Performance | `benchmarks/` | Measured | Throughput and latency with regression thresholds |
+| Swift API | `bindings/swift/Tests/` | < 1 s each | The Swift overlay and macros |
+| Smoke | `tests/smoke/` | < 30 s each | The engine starts, loads a scene, renders, and exits cleanly |
+
+Unit and integration tests SHALL run on every pull request; the full set SHALL run nightly.
+
+#### Scenario: Fast feedback
+- **WHEN** a contributor runs the pre-commit test set
+- **THEN** unit tests SHALL complete in under a minute on a typical development machine
+
+#### Scenario: Test placement
+- **WHEN** a test requires a GPU or takes over a second
+- **THEN** it SHALL live in the integration or render suites, not among the unit tests
+
+### Requirement: Testability requirements on the engine
+Subsystems SHALL be testable without a full engine instance:
+
+- Servers SHALL be constructible standalone with null backends
+- The ECS world SHALL be constructible without rendering, audio, or platform services
+- The RHI SHALL have a null backend so render graph construction is testable headlessly
+- Determinism SHALL be achievable through the fixed-step and deterministic-scheduling modes
+- Time, random number generation, and input SHALL be injectable rather than globally sourced
+
+#### Scenario: Headless render test
+- **WHEN** a test constructs a render graph with the null backend
+- **THEN** culling, scheduling, aliasing, and barrier insertion SHALL be verifiable without a GPU
+
+#### Scenario: Injectable time
+- **WHEN** a test advances simulation
+- **THEN** it SHALL supply the time step explicitly rather than depending on wall-clock time
+
+### Requirement: Regression tests accompany fixes
+A change that fixes a defect SHALL include a test that fails without the fix and passes with it,
+whenever the defect is reachable from the test harness.
+
+Where a defect is not reachable (a driver-specific rendering bug, a platform-specific crash), the
+change SHALL document why and what manual verification was performed.
+
+#### Scenario: Bug fix without a test
+- **WHEN** a fix is proposed with no accompanying test and no documented reason
+- **THEN** review SHALL request one before merge
+
+### Requirement: Golden-image rendering tests
+Rendering correctness SHALL be verified by rendering fixed scenes with a fixed camera and
+deterministic settings, and comparing against committed reference images using a perceptual
+difference metric with a per-test tolerance.
+
+Tests SHALL run against every enabled RHI backend, and SHALL record which backend produced a
+failure.
+
+Reference images SHALL be regenerated only through a deliberate, reviewed step, and the diff SHALL
+be inspectable in review.
+
+#### Scenario: Unintended visual change
+- **WHEN** a change alters shading in an unrelated area
+- **THEN** the affected golden tests SHALL fail with a visual diff attached to the CI result
+
+#### Scenario: Intended visual change
+- **WHEN** a change deliberately improves output
+- **THEN** references SHALL be regenerated in the same pull request, with the before-and-after
+  images reviewed
+
+#### Scenario: Backend divergence
+- **WHEN** Vulkan and Metal produce results differing beyond tolerance
+- **THEN** the test SHALL fail identifying both, since backend parity is a requirement
+
+### Requirement: Determinism tests
+The engine SHALL verify that, in deterministic mode with a fixed step:
+
+- running the same simulation twice produces identical world-state hashes per tick
+- re-simulation during network reconciliation reproduces the original result
+- physics produces identical results for the same inputs on the same platform
+- system scheduling order is stable regardless of worker thread timing
+
+State hashing SHALL be able to isolate the first diverging tick and the diverging component.
+
+#### Scenario: Non-determinism introduced
+- **WHEN** a change makes system execution order depend on thread timing
+- **THEN** the determinism test SHALL fail identifying the first diverging tick
+
+#### Scenario: Hash granularity
+- **WHEN** divergence is detected
+- **THEN** the report SHALL narrow to the entity and component that differ, not merely report that
+  hashes differ
+
+### Requirement: Performance benchmarks
+The engine SHALL maintain benchmarks covering: ECS iteration and structural change throughput,
+job system scheduling overhead, culling throughput, draw submission and render graph compilation,
+physics step time at defined body counts, asset load and cook time, and Swift call overhead across
+the ABI.
+
+Benchmarks SHALL run nightly on stable hardware, record results over time, and fail when a metric
+regresses beyond a per-benchmark threshold.
+
+Each benchmark SHALL declare what it measures and what a regression would mean, so a failure is
+actionable rather than mysterious.
+
+#### Scenario: Regression detected
+- **WHEN** ECS iteration throughput drops more than the threshold
+- **THEN** the nightly run SHALL fail with the commit range and a history chart
+
+#### Scenario: Intentional trade-off
+- **WHEN** a change trades throughput for a correctness fix
+- **THEN** the threshold SHALL be updated in the same change with a recorded justification
+
+### Requirement: Memory and concurrency correctness
+CI SHALL run, at least nightly: AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer
+builds over the unit and integration suites.
+
+The engine SHALL report allocation leaks at shutdown in development builds, and leaks SHALL fail
+the test run.
+
+#### Scenario: Data race
+- **WHEN** a system writes a component it did not declare
+- **THEN** either the access assertion or ThreadSanitizer SHALL catch it
+
+#### Scenario: Leak in a test
+- **WHEN** a test leaves allocations outstanding
+- **THEN** the run SHALL fail with the tag and call site
+
+### Requirement: Static analysis and formatting
+The repository SHALL enforce, via pre-commit hooks and CI:
+
+- `clang-format` for C++, with a committed configuration
+- `clang-tidy` with a curated check set, treating findings as errors
+- `swift-format` for Swift
+- formatting and linting for build scripts and tooling
+- spelling checks on documentation and comments
+- a licence header check on every source file
+- a check that public API changes are documented
+
+#### Scenario: Formatting is not a review topic
+- **WHEN** code is submitted
+- **THEN** formatting SHALL be enforced automatically, so review discusses design rather than
+  whitespace
+
+### Requirement: ABI and API stability gates
+CI SHALL diff the generated ABI description against the committed baseline and fail on any
+non-additive change unless accompanied by a reviewed approval entry recording the rationale and
+version bump.
+
+CI SHALL verify that the committed Swift overlay matches what the generator produces from the
+current ABI.
+
+#### Scenario: Accidental ABI break
+- **WHEN** an existing ABI function's signature changes
+- **THEN** CI SHALL fail with the diff, before the change can reach users
+
+### Requirement: Documentation as a gate
+Every public API — C++ headers, the C ABI, and the Swift overlay — SHALL carry documentation
+comments, and CI SHALL fail when a newly exported symbol is undocumented.
+
+Every specification in `openspec/specs/` SHALL be validated structurally in CI.
+
+#### Scenario: Undocumented public API
+- **WHEN** a new public function is added without documentation
+- **THEN** CI SHALL fail naming the symbol
+
+#### Scenario: Specification drift
+- **WHEN** a change alters behaviour a specification describes
+- **THEN** review SHALL require the specification to be updated through the OpenSpec change flow
+
+### Requirement: Test infrastructure
+The test harness SHALL provide: scene and world fixtures, a deterministic clock, seeded random
+generators, a mock platform and display server, an in-memory filesystem mount, network condition
+simulation, image comparison utilities, and state hashing.
+
+Tests SHALL be runnable individually and by pattern, in parallel where isolated, and SHALL produce
+machine-readable results for CI.
+
+#### Scenario: Isolated parallel tests
+- **WHEN** tests run in parallel
+- **THEN** each SHALL use its own world, filesystem mount, and allocator scope, so no test can
+  affect another
+
+### Requirement: Quality gates for merge
+A change SHALL NOT merge unless: all platform builds succeed, unit and integration tests pass,
+static analysis and formatting pass, the ABI baseline check passes, generated code is current,
+new public API is documented, and a defect fix includes a regression test or a documented reason.
+
+#### Scenario: Gate cannot be bypassed silently
+- **WHEN** a gate fails
+- **THEN** merging SHALL require an explicit, recorded override rather than a quiet exception

@@ -1,0 +1,28 @@
+# Build output
+build/
+out/
+cmake-build-*/
+.cache/
+compile_commands.json
+
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj/
+*.xcworkspace/
+Package.resolved
+
+# Cooked content and caches
+cooked/
+.cookcache/
+*.cypak
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local overrides
+CMakeUserPresets.json
+*.local

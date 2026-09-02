@@ -1,0 +1,68 @@
+schema: spec-driven
+
+context: |
+  Project: CyberdyneEngine - an open-source game engine.
+  Core: C++20. Gameplay scripting: Swift. Status: greenfield (specs precede code).
+
+  Locked architectural decisions (change these only through an OpenSpec change):
+  - Object model: archetype ECS core (packed SoA chunks) with a scene-graph Node facade for
+    authoring and scripting. A Node is a handle onto an Entity; it never duplicates component data.
+  - Scripting boundary: a flat, versioned, append-only C ABI (`cy_`/`Cy`/`CY_`). Swift binds via a
+    GENERATED overlay (CyberdyneKit). No C++ types cross the boundary. The engine core never links
+    the Swift runtime.
+  - Rendering: explicit Vulkan-shaped RHI + an automatic render graph (barriers, aliasing,
+    scheduling). Backends: Vulkan first, Metal second, D3D12 later. Native Metal, not MoltenVK.
+  - Shading language: Slang -> SPIR-V (-> MSL via SPIRV-Cross). The engine does NOT author its own
+    shading language.
+  - Integrate, do not rebuild: Jolt (physics), HarfBuzz + ICU + FreeType (text),
+    glTF/ufbx/meshoptimizer/xatlas/Recast (import and navigation). Each sits behind an
+    engine-owned interface and must be replaceable.
+  - Build own: ECS + scheduler + job system, renderer, scene/prefab/serialization, asset pipeline,
+    UI, animation, networking, the ABI + Swift layer, and the editor.
+  - Conventions: right-handed, Y-up, -Z forward; 2D is Y-down. Reversed-Z with [0,1] depth,
+    depth cleared to 0, compare GreaterEqual. Column-major matrices, column-vector convention.
+    Metres, seconds, kilograms, radians. f32 runtime math; camera-relative rendering for large
+    worlds.
+  - Loop: N fixed simulation ticks (default 60 Hz, max 8/frame) then one variable render, with an
+    interpolation alpha. Structural ECS changes are deferred to stage flush points.
+  - Concurrency: one JobSystem owns all workers. Systems declare Read/Write/Exclude access;
+    the scheduler parallelises from those declarations. No exceptions, no RTTI; fallible calls
+    return cy::Expected.
+
+  Spec conventions:
+  - These are TARGET specs for a greenfield build, not descriptions of existing code.
+  - Requirements use SHALL; each has at least one #### Scenario.
+  - Record deferred decisions explicitly rather than assuming them (see the non-goals
+    requirement in engine-architecture and the whole of xr-support).
+
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
