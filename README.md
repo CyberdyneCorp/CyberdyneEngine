@@ -21,6 +21,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Shaders** | Slang → SPIR-V (→ MSL) |
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
 | **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
+| **AI** | CyberAI: ECS agents, one compiled graph for states/BT/utility/GOAP, deterministic |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Licence** | MIT |
@@ -71,6 +72,13 @@ audio, HarfBuzz + ICU + FreeType for text, Slang for shaders, Recast for navmesh
 and xatlas for mesh processing. Each sits behind an engine-owned interface and must stay
 replaceable. We build the ECS, renderer, scene model, asset pipeline, UI, animation, networking,
 audio graph and policy, and the editor — the parts where engine-level decisions compound.
+
+**Determinism is a contract, decided per subsystem.** AI is deterministic — it drives gameplay
+that must survive network reconciliation and replay — so its scheduling derives from simulation
+state, never from measured frame time, and the budget controller offers a deterministic mode and an
+adaptive one that is honest about forfeiting lockstep. VFX and ML inference are non-deterministic
+and firewalled from authoritative state. Each boundary is written down, because the failure mode
+otherwise is an unexplained desync months later.
 
 **ECS is not the answer to everything.** Component storage is right for gameplay entities and
 wrong for UI: a strategy game with 5,000 units has 20,000-plus labels, icons and containers, whose

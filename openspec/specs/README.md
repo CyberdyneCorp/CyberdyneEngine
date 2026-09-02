@@ -55,7 +55,9 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 |---|---|
 | [physics](physics/spec.md) | `PhysicsServer`, Jolt backend, components, queries, character controller, determinism |
 | [animation-and-skinning](animation-and-skinning/spec.md) | Clips, skeletons, animation graph, IK, retargeting, root motion, tweens |
-| [navigation](navigation/spec.md) | Navmesh generation, A* + funnel, off-mesh links, local avoidance |
+| [ai-system](ai-system/spec.md) | CyberAI: ECS agents, unified compiled behaviour graph, batched perception, knowledge, smart objects, AI LOD |
+| [navigation](navigation/spec.md) | Navmesh and volumes, A* + funnel, flow fields, hierarchical paths, avoidance, crowds |
+| [ml-inference](ml-inference/spec.md) | CyberML: model assets, tensors, backend abstraction, determinism boundary |
 | [audio](audio/spec.md) | Engine-owned AudioServer over miniaudio + Steam Audio, acoustic geometry, importance tiers |
 
 **6 — Content and tooling**
@@ -96,6 +98,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 - **Graphs are compiled, not interpreted.** Material graphs and VFX graphs both lower to engine
   shader source through the same Slang pipeline, so authoring convenience costs nothing at
   runtime — and VFX attribute layouts are *derived* from what a graph actually uses.
+- **Determinism is a per-subsystem contract, decided deliberately.** AI is deterministic, because
+  it drives gameplay that must survive reconciliation and replay — which is why its schedule
+  derives from simulation state, never from measured frame time. VFX and ML inference are not, and
+  are firewalled from authoritative state. Each boundary is a requirement, not an assumption.
 - **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
   requirement, so effects can never break physics determinism or network reconciliation.
 - **ECS is not the answer to everything.** UI elements deliberately live outside it: their counts

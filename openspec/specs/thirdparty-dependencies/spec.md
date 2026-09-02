@@ -56,7 +56,9 @@ pinned in the dependency manifest, not here.
 | Vulkan loading | **volk**, **Vulkan-Headers**, **VMA** | MIT | Loader and a proven GPU memory allocator |
 | Mesh processing | **meshoptimizer** | MIT | Simplification and cache optimisation, best in class |
 | UV unwrapping | **xatlas** | MIT | Lightmap UV generation |
-| Navigation meshes | **Recast** | Zlib | Voxelisation-based navmesh generation |
+| Navigation meshes | **Recast / Detour** | Zlib | Voxelisation-based navmesh generation and the reference tiled-navmesh query implementation |
+| ML inference (optional) | **ONNX Runtime** | MIT | Portable inference with broad operator coverage; a neural runtime is years of work for no differentiating benefit |
+| ML inference (optional, platform) | **Core ML**, **DirectML**, **TensorRT** | Platform / proprietary SDK | Per-device optimised inference where the platform provides it |
 | glTF | **cgltf** or **tinygltf** | MIT | Parsing an open spec is not differentiating |
 | FBX | **ufbx** | MIT | A closed format best handled by a maintained parser |
 | Image codecs | **libpng**, **libjpeg-turbo**, **libwebp**, **tinyexr** | BSD/MIT | Standard codecs |
@@ -69,7 +71,8 @@ pinned in the dependency manifest, not here.
 | Profiling | **Tracy** | BSD | Frame profiler with an excellent viewer |
 
 Steam Audio SHALL be optional and capability-gated; the engine SHALL be fully functional without
-it.
+it. All ML inference runtimes SHALL be optional behind `CY_ML`; platform runtimes are additionally
+gated by platform availability.
 
 #### Scenario: Backend can be replaced
 - **WHEN** a better physics library appears
@@ -85,6 +88,11 @@ it.
 - **THEN** miniaudio SHALL still provide device I/O and mixing, and spatialisation SHALL use the
   engine's fallback path
 
+#### Scenario: Default build carries no ML runtime
+- **WHEN** the engine is built with `CY_ML` disabled
+- **THEN** no inference runtime SHALL be fetched, built, or linked, and AI SHALL be fully
+  functional without it
+
 ### Requirement: What the engine builds itself
 The engine SHALL implement, rather than integrate:
 
@@ -94,11 +102,15 @@ The engine SHALL implement, rather than integrate:
 - the **VFX system**: asset model, graph compiler, particle storage, GPU simulation, event
   routing, scalability policy, and renderers — one of the few areas where an engine can still
   differentiate, and one that must be co-designed with the renderer and the frame budget
+- the **AI system**: agent model, the unified behaviour graph and its compiler, perception
+  scheduling and batching, the knowledge model, environment queries, smart objects, AI LOD, and
+  the deterministic scheduler — the scale and determinism policy are engine concerns, and no
+  third-party framework provides them
+- the **UI system**: element storage, layout, styling, input routing, animation, and rendering
 - the **scene, prefab, and serialization** model
 - the **asset pipeline** and package format
 - the **AudioServer**, bus graph, voice management, and the audio importance and tiering policy —
   audio scheduling and budget policy are engine concerns that interact with the job system and ECS
-- the **UI system**
 - the **animation system** and animation graph
 - the **networking and replication** model
 - the **C ABI and Swift binding** layer
@@ -107,9 +119,9 @@ The engine SHALL implement, rather than integrate:
 These are where engine-level decisions compound, and where a general-purpose library would impose
 its own architecture.
 
-Algorithms with published references — noise functions, sorting networks, curl fields — MAY be
-implemented in engine code from those references. Implementing a published algorithm is not a
-dependency and does not require a manifest entry.
+Algorithms with published references — noise functions, sorting networks, curl fields,
+pathfinding heuristics — MAY be implemented in engine code from those references. Implementing a
+published algorithm is not a dependency and does not require a manifest entry.
 
 #### Scenario: Rejecting a general-purpose ECS library
 - **WHEN** an existing ECS library is proposed
@@ -128,6 +140,12 @@ dependency and does not require a manifest entry.
 - **THEN** it SHALL be evaluated against the requirement that the VFX system publishes into the
   engine's GPU scene, compiles through the engine's shader pipeline, and is governed by the
   engine's frame budget controller — coupling a third-party runtime cannot provide
+
+#### Scenario: Integrating within an owned subsystem
+- **WHEN** a proven library solves a bounded problem inside an owned subsystem — navmesh
+  generation within navigation, or an inference runtime within CyberML
+- **THEN** it SHALL be integrated behind the subsystem's own interface, since owning the
+  architecture does not require implementing every algorithm
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,
