@@ -71,7 +71,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 **7 — Systems and process**
 | Capability | Covers |
 |---|---|
-| [networking-and-replication](networking-and-replication/spec.md) | Transports, authority, replication, prediction, interest management, security |
+| [networking-and-replication](networking-and-replication/spec.md) | CyberNet: three network modes, replication schemas, priority-scheduled interest, rollback, dedicated server |
 | [xr-support](xr-support/spec.md) | Deferred; the prerequisites the engine must not preclude |
 | [build-system-and-platforms](build-system-and-platforms/spec.md) | CMake, configurations, Swift toolchain, codegen, porting surface, CI |
 | [testing-and-quality](testing-and-quality/spec.md) | Test taxonomy, golden images, determinism, benchmarks, merge gates |
@@ -104,6 +104,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Known gaps are written down, not implied.** Cross-platform lockstep is unsupported because
+  physics guarantees determinism only within a platform. There is no world partition capability, so
+  replication cells are networking-owned with the seam specified. Naming a gap is cheaper than
+  discovering it.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can

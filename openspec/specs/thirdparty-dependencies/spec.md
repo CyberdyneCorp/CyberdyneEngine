@@ -68,7 +68,8 @@ pinned in the dependency manifest, not here.
 | Audio codecs | **libvorbis**, **libopus**, **dr_libs** | BSD/Public domain | Formats miniaudio does not decode natively |
 | Input and gamepads | **SDL3** | Zlib | Controller database and platform input coverage |
 | Compression | **zstd**, **LZ4** | BSD/BSD | Best-in-class ratio and speed |
-| Cryptography | **BLAKE3**, **mbedTLS** | CC0/Apache 2.0 | Never hand-roll cryptography |
+| Cryptography | **BLAKE3**, **mbedTLS** | CC0/Apache 2.0 | Never hand-roll cryptography, least of all transport security |
+| Network transport (to evaluate) | A QUIC implementation, or a reliable-UDP library | Permissive | Reliability, congestion control, and encryption are solved; the replication layer above is not |
 | Testing | **Catch2** or **doctest** | BSL/MIT | Test framework |
 | Profiling | **Tracy** | BSD | Frame profiler with an excellent viewer |
 
@@ -113,6 +114,21 @@ dependency policy.
 - **THEN** it SHALL be judged on achieving bounded error with reported ratios, not on which codec
   was chosen
 
+**Platform online services** — matchmaking, lobbies, presence, entitlement — and **voice chat**
+SHALL be integration points rather than engine features. They are platform-specific, commercially
+licensed, and change independently of the engine. The engine SHALL define the interfaces a session
+layer needs and SHALL NOT bundle an implementation.
+
+#### Scenario: Transport is replaceable
+- **WHEN** a title ships on a platform requiring its own networking service
+- **THEN** it SHALL be implementable as a transport backend, with no change above the transport
+  interface
+
+#### Scenario: Online services stay out of tree
+- **WHEN** a project integrates a platform matchmaking service
+- **THEN** it SHALL implement the engine's session interfaces, and the engine SHALL carry no
+  dependency on that service
+
 ### Requirement: What the engine builds itself
 The engine SHALL implement, rather than integrate:
 
@@ -135,7 +151,10 @@ The engine SHALL implement, rather than integrate:
 - the **asset pipeline** and package format
 - the **AudioServer**, bus graph, voice management, and the audio importance and tiering policy —
   audio scheduling and budget policy are engine concerns that interact with the job system and ECS
-- the **networking and replication** model
+- the **networking and replication** model: replication schemas and encoding, snapshot and delta,
+  interest management and its priority scheduler, network LOD and bandwidth budgeting, prediction,
+  rollback, lag compensation, session management, and the network profiler — transports and crypto
+  are integrated beneath it
 - the **C ABI and Swift binding** layer
 - the **editor**
 
