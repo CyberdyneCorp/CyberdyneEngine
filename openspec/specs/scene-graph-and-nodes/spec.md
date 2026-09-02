@@ -146,25 +146,38 @@ Nodes with an attached behaviour SHALL receive lifecycle callbacks in a defined 
   nothing
 
 ### Requirement: Behaviours bridge nodes and systems
-A **behaviour** SHALL be a script-side object (Swift, or native) attached to a node, receiving
-lifecycle callbacks and holding script state.
+A **behaviour** SHALL be a script-side or native object attached to a node, declaring lifecycle
+callbacks and the component data it reads and writes.
 
-Behaviour dispatch SHALL be driven by a system that iterates entities with a `BehaviourRef`
-component, so script execution is scheduled like any other system and participates in stage
-ordering.
+Behaviours SHALL be **compiled** where possible: a behaviour whose callbacks operate on declared
+component data SHALL be lowered into a **generated system** iterating chunks, so that many instances
+of one behaviour cost one system rather than one call per instance.
 
-Behaviours SHALL be documented as the ergonomic path, and systems as the performant path;
-per-entity behaviours are not intended for very high entity counts.
+Behaviours that cannot be batched — those invoking arbitrary script per entity per tick, holding
+unbounded per-instance state, or accessing data outside their declaration — SHALL fall back to
+per-instance dispatch, and the build SHALL **report which behaviours batched, which did not, and
+why**.
+
+Per-instance dispatch SHALL remain a system iterating entities with a behaviour reference, so script
+execution is scheduled and ordered like any other system.
+
+Behaviours are the ergonomic path and systems the explicit one; the compiler is what keeps the
+ergonomic path from being the slow one.
 
 #### Scenario: Behaviour dispatch is a system
 - **WHEN** the `Simulation` stage runs
-- **THEN** the behaviour dispatch system SHALL invoke `onFixedUpdate` on entities with behaviours,
-  ordered and scheduled like other systems
+- **THEN** behaviour execution SHALL occur through systems — generated where batchable, dispatching
+  where not — ordered and scheduled like other systems
 
 #### Scenario: Guidance on scale
 - **WHEN** a project needs per-entity logic on 100 000 entities
-- **THEN** the documented guidance SHALL be to write a system over a query rather than 100 000
-  behaviours
+- **THEN** a batchable behaviour SHALL compile to one system, and where a behaviour cannot batch the
+  build SHALL report it so the developer can convert it deliberately
+
+#### Scenario: The cost is known at build time
+- **WHEN** a behaviour prevents batching
+- **THEN** the build report SHALL name it and the reason, rather than the cost appearing only at
+  scale
 
 ### Requirement: Groups and tags
 Nodes SHALL be assignable to named **groups**, and the engine SHALL provide efficient iteration

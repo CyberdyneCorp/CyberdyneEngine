@@ -17,6 +17,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Core language** | C++20, no exceptions, no RTTI |
 | **Scripting** | Swift, via a generated overlay over a stable C ABI |
 | **World model** | Archetype ECS core with a scene-graph node façade |
+| **Gameplay** | CyberGameplay: sessions, rules and teams as data; one command stream for players, AI, network and replay |
 | **World** | CyberWorld: partitioned streaming cells, layers, persistence overlay, authored from prefabs and scenes |
 | **Environment** | CyberTerrain, CyberFoliage and CyberWater over a shared sparse field substrate |
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
@@ -57,6 +58,13 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 ```
 
 ## Design decisions worth knowing up front
+
+**Gameplay structure is composition, not inheritance.** Sessions, rules, participants, teams,
+ownership and control are ECS data and scoped services — no actor base class, no per-entity virtual
+tick, no one-controller-one-pawn. Players, AI, network peers, replays and automated tests all emit
+the same semantic commands, so the simulation cannot tell them apart, and control bindings are
+many-to-many: one player commands an army, two players share a tank. Behaviours you attach like
+scripts compile into generated systems where they can, and the build tells you when they cannot.
 
 **ECS is the storage; the node tree is the interface.** Component data lives in packed
 per-archetype chunks so systems iterate contiguously. A `Node` is a named handle onto an entity —
@@ -227,7 +235,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 56 capabilities. Start here.
+  specs/          Target specifications — 57 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

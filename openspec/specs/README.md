@@ -27,6 +27,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [ecs-core](ecs-core/spec.md) | Entities, components, archetypes, queries, systems, change detection, snapshots |
 | [scene-graph-and-nodes](scene-graph-and-nodes/spec.md) | Node façade, transforms, lifecycle, behaviours, coherence invariants |
 | [serialization-and-prefabs](serialization-and-prefabs/spec.md) | Prefab/scene/world assets, exposed parameters, overrides, entity templates, migration |
+| [gameplay-framework](gameplay-framework/spec.md) | CyberGameplay: sessions, rules, participants, teams, control bindings, one command stream, tags, features |
 | [world-partition-and-streaming](world-partition-and-streaming/spec.md) | CyberWorld: partitioning, cell streaming and activation, layers, persistence overlay, HLOD |
 | [environment-fields](environment-fields/spec.md) | CyberField: sparse world-scale data — biome, moisture, wind, flow, wetness — with one producer each |
 | [terrain](terrain/spec.md) | CyberTerrain: tiled hierarchical surface, geometry source, deformation classes, deltas |
@@ -203,6 +204,16 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   be large.
 - **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
   requirement, so effects can never break physics determinism or network reconciliation.
+- **Human, AI, network, replay and tests produce one command stream.** Gameplay intent is a
+  semantic command, never a key event, and the simulation cannot tell the five sources apart —
+  which makes replay, network prediction, testable AI and headless CI consequences of the
+  architecture rather than features bolted onto it.
+- **Control is many-to-many and channelled.** A player commands two hundred units; two players
+  share a tank; an AI assists a human's aim. One controller possessing one pawn describes a
+  first-person game and nothing else.
+- **Ergonomics compile.** Behaviours that can be batched become generated systems, and those that
+  cannot are named at build time. Authoring convenience never costs one object, one virtual update
+  or one controller per entity.
 - **ECS is not the answer to everything.** UI elements deliberately live outside it: their counts
   are an order of magnitude higher, their workload is a tree walk rather than an archetype scan,
   and they need element-granular invalidation that chunk-granular change detection cannot give.
