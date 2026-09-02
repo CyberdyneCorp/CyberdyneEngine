@@ -149,6 +149,20 @@ streaming works in pages with an always-resident root, so an object is never abs
 Render geometry is explicitly not collision geometry: physics, navigation and ray tracing get their
 own representations from the same source.
 
+**Persistent identity does not come from names.** Types and fields carry identifiers assigned once
+and recorded in a committed manifest, so renaming a field or moving a class into a namespace leaves
+every scene, prefab override, save file, animation binding and network schema still resolving —
+and a CI gate fails the build if an identifier ever changes by accident. Serialization is two
+deliberate modes rather than one compromise: tagged and migratable for authoring and saves, packed
+and untagged for runtime data that loads by bulk copy.
+
+**Nothing blocks a worker, and nothing allocates without a budget.** Asynchronous work is
+coroutines whose continuations resume as tasks, so a file read or a GPU fence suspends rather than
+occupying a core; every task carries its scratch allocator and cancellation token. Memory is
+apportioned by a budget tree with a pressure level that tells every cache to trim at once — the
+counterpart of the renderer's GPU-time arbiter, because an over-budget frame is a stutter and an
+over-budget heap is a crash.
+
 **Conventions are stated once, normatively.** Right-handed, Y-up, −Z forward. Reversed-Z with a
 `[0,1]` depth range. Column-major matrices. Metres, seconds, radians. A silent mismatch here
 corrupts everything downstream, so it is written down rather than discovered.

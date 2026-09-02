@@ -193,6 +193,12 @@ The engine SHALL implement, rather than integrate:
   rollback, lag compensation, session management, and the network profiler — transports and crypto
   are integrated beneath it
 - the **C ABI and Swift binding** layer
+- the **foundations**: persistent type and field identity and its manifest, the reflection
+  generator's engine-specific output, the serialization formats and the migration model, the task
+  scheduler and its coroutine integration, and the memory domain, budget, pressure and epoch
+  model — these are the contracts every other subsystem encodes into its data and its scheduling.
+  Beneath them, a C++ compiler frontend for parsing, a general-purpose heap allocator chosen by
+  benchmark, and compression codecs SHALL be integrated rather than written.
 - the **editor**
 
 These are where engine-level decisions compound, and where a general-purpose library would impose
@@ -252,6 +258,16 @@ published algorithm is not a dependency and does not require a manifest entry.
 - **WHEN** a proven transform or erosion library is used for wave synthesis or terrain generation
 - **THEN** it SHALL sit beneath the engine's own water body, field, and terrain interfaces, and the
   representation, streaming, and budget behaviour SHALL remain engine-owned
+
+#### Scenario: Parsing is integrated, metadata is owned
+- **WHEN** the reflection generator parses annotated C++
+- **THEN** it SHALL use an established compiler frontend, while the identity model, metadata
+  format, and generated output remain engine-owned
+
+#### Scenario: The general heap is a benchmark result
+- **WHEN** a general-purpose allocator is adopted
+- **THEN** it SHALL be selected by measurement on target platforms and remain replaceable behind
+  the allocator interface, rather than an engine-written implementation
 
 ### Requirement: Dependency manifest
 Every dependency SHALL be recorded in a single machine-readable manifest containing: name,

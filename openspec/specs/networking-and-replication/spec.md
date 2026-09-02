@@ -181,6 +181,10 @@ jitter, packet loss, duplication, and reordering, usable in development builds a
 Replicated components SHALL be described by **replication schemas**: declarations of which fields
 cross the wire and how each is encoded.
 
+Schemas SHALL identify fields by **`FieldId`** (see `core-type-system`), so that renaming a field
+does not invalidate a schema, and so that schema drift means a field genuinely removed or changed
+rather than merely renamed.
+
 A schema SHALL specify per field: the encoder (raw, quantised scalar, quantised vector, compressed
 quaternion, dictionary index, bitfield), its parameters (range and bit count, or precision), the
 send condition, the target filter, and a priority contribution.
@@ -201,8 +205,9 @@ schemas are rejected rather than misinterpreting each other's data.
   code, not by per-field reflection per entity
 
 #### Scenario: Schema drift is caught
-- **WHEN** a component field is renamed without updating its schema
-- **THEN** cooking SHALL fail naming the field
+- **WHEN** a replicated component field is removed or its type changed without updating its schema
+- **THEN** cooking SHALL fail naming the field; a rename alone SHALL NOT be drift, since the
+  schema keys on identity
 
 #### Scenario: Mismatched peers are rejected
 - **WHEN** a client with an older schema set connects

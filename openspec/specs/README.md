@@ -14,10 +14,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | Capability | Covers |
 |---|---|
 | [engine-architecture](engine-architecture/spec.md) | Layers, servers, ECS + scene duality, modules, startup, main loop, non-goals |
-| [core-type-system](core-type-system/spec.md) | Reflection, `Var`, generational handles, events and signals, `Callable`, diagnostics |
-| [core-memory-and-containers](core-memory-and-containers/spec.md) | Allocators, containers, handle pools, chunk storage, frame arenas |
+| [core-type-system](core-type-system/spec.md) | Reflection, persistent type and field identity, `Var`, handles, events, `Callable` |
+| [core-memory-and-containers](core-memory-and-containers/spec.md) | Allocators, memory domains and budgets, pressure, epochs, containers, chunk storage |
 | [core-math](core-math/spec.md) | Types, coordinate and depth conventions, SIMD, BVH, geometry, curves, RNG |
-| [core-jobs-and-concurrency](core-jobs-and-concurrency/spec.md) | Job system, thread roles, safe-by-construction parallel systems |
+| [core-jobs-and-concurrency](core-jobs-and-concurrency/spec.md) | Job system, coroutines, cancellation, deterministic parallelism, critical path |
 | [core-assets-and-io](core-assets-and-io/spec.md) | Asset identity, cooking, virtual filesystem, packages, streaming, hot reload |
 | [core-platform-abstraction](core-platform-abstraction/spec.md) | Platform services, display, input, the porting surface |
 
@@ -114,6 +114,18 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Identity is assigned and recorded, never derived from a name.** A type's and a field's
+  identifiers live in a committed manifest with tombstones and a CI gate, so renaming a field or
+  moving a type into a namespace leaves every scene, override, save, animation binding and
+  replication schema resolving. Identifiers are never recycled: a recycled one produces data that
+  loads successfully and is wrong.
+- **A worker thread never blocks.** Asynchronous work is coroutines whose continuations resume as
+  tasks; file reads and GPU fences suspend rather than occupy a core. Every task carries its
+  worker's scratch allocator and its cancellation token, which is where the scheduler and the
+  memory model meet.
+- **Memory has budgets, not just tags.** Domains are apportioned by a budget tree and a pressure
+  level tells every cache to trim at once — the memory counterpart of the renderer's GPU-time
+  arbiter. An over-budget frame is a stutter; an over-budget heap is a crash.
 - **Environmental data is a substrate, not a subsystem's property.** Moisture, biome, wind, flow
   and wetness live in sparse world-scale fields with one producer each, sampled by terrain,
   foliage, water, VFX, audio and AI alike. Put moisture inside terrain and foliage must ask terrain
