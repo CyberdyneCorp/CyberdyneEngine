@@ -26,3 +26,46 @@ Thumbs.db
 # Local overrides
 CMakeUserPresets.json
 *.local
+
+# --- Build trees and caches -----------------------------------------------------------------------
+# `build/<profile>/` is where CMakePresets.json puts every configuration, so `build/` above covers
+# the normal case. What follows covers the tools' own caches and the trees a different entry point
+# creates.
+
+# CMake and Ninja
+_deps/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+.ninja_deps
+.ninja_log
+Testing/
+
+# Compiler and build caches
+.ccache/
+.sccache/
+.clangd/
+.clang-tidy-cache/
+
+# Cargo, for the editor workspace
+target/
+
+# Python, for the tooling that is scripts rather than compiled targets
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local workflow overrides. `.just.local` and CMakeUserPresets.json are how a contributor configures
+# local paths; editing a shared workflow file to do it is a defect against
+# `developer-workflow-and-just`.
+.just.local
+.env.local
+
+# Diagnostic artefacts. Traces and crash reports are written to the user mount, but a run started
+# from the repository root will leave them here.
+*.cytrace
+crash-reports/
+perf.data
+perf.data.old

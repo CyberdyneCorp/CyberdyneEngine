@@ -1,0 +1,104 @@
+# The permanent merge-gate set — task 4.4.1.
+#
+# `testing-and-quality` fixes what must pass before a change merges: every platform build, the unit
+# and integration tests, static analysis and formatting, generated code current, the specification
+# set valid. `delivery-roadmap` adds the status record and, on close, each milestone's own criteria.
+# This file is that list, as data, because continuous integration, `just roadmap-gates` and the
+# contributor documentation must name the same gates and three hand-maintained copies diverge.
+#
+# Each gate names the commands it runs. They are `just` recipes: a workflow file that reimplements a
+# recipe is a defect (`developer-workflow-and-just`), and a gate is not exempt from that.
+#
+#   class = "permanent"  runs on every pull request, forever
+#   class = "milestone"  a closed milestone's criteria. state = "joins-on-close" until the milestone
+#                        closes; the change that closes it sets state = "green" and it is permanent
+#                        from then on — a later milestone may not break an earlier milestone's gate.
+#
+# An override is recorded below, never taken silently. Every field is required and an expired
+# override fails this check, so `just roadmap-gates` reports the truth about what is being skipped.
+
+schema = 1
+
+[[gate]]
+id = "build-and-test"
+describe = "Configure, build, and run every test suite on each supported desktop platform."
+runs = ["just env-doctor", "just build-engine", "just test-all"]
+platforms = ["linux", "windows", "macos"]
+since = "m0"
+class = "permanent"
+
+[[gate]]
+id = "format"
+describe = "clang-format over the engine tree, against the committed .clang-format."
+runs = ["just quality-format-check"]
+platforms = ["linux"]
+since = "m0"
+class = "permanent"
+
+[[gate]]
+id = "lint"
+describe = "clang-tidy over the engine tree, with findings treated as errors."
+runs = ["just quality-lint"]
+platforms = ["linux"]
+since = "m0"
+class = "permanent"
+
+[[gate]]
+id = "layering"
+describe = "Layer order: declared links, source-level includes, the platform/ SDL rule, no bare target. Runs the negative fixtures, so enforcement that stopped firing is caught."
+runs = ["just quality-layers"]
+platforms = ["linux"]
+since = "m0"
+class = "permanent"
+
+[[gate]]
+id = "generated-code"
+describe = "Generated output is current and reproducible: cy_features.h, cy_modules.h, THIRD_PARTY.md. generate-test covers the module graph, cycles and feature exclusion."
+runs = ["just generate-check", "just generate-test", "just maintenance-deps-check"]
+platforms = ["linux"]
+since = "m0"
+class = "permanent"
+
+[[gate]]
+id = "specs"
+describe = "openspec validate --specs --strict: a specification that does not validate is not one."
+runs = ["just quality-specs"]
+platforms = ["linux"]
+since = "m0"
+class = "permanent"
+
+[[gate]]
+id = "roadmap-status"
+describe = "The status record and openspec/specs/ agree, and every tier claim names the change that made it. roadmap-test proves the drift detection still fires."
+runs = ["just roadmap-status", "just roadmap-test"]
+platforms = ["linux"]
+since = "m0"
+class = "permanent"
+
+# --- Milestone gates ------------------------------------------------------------------------------
+#
+# Task 4.4.3. M0's exit criteria join the gate set when M0 closes and stay green afterwards; a change
+# that breaks one does not merge unless it lands the criterion's recorded replacement in the same
+# change (`testing-and-quality`, Quality gates for merge). Until then the state below says so, and
+# `just roadmap-milestone m0` is the recipe that decides it.
+
+[[gate]]
+id = "milestone-m0"
+describe = "M0 — Ground: the exit criteria of the milestone that built the toolchain, the skeleton and the first gates."
+runs = ["just roadmap-milestone m0"]
+platforms = ["linux", "windows", "macos"]
+since = "m0"
+class = "milestone"
+milestone = "m0"
+state = "joins-on-close"
+
+# --- Recorded overrides ---------------------------------------------------------------------------
+#
+# None. The shape one takes, when one is unavoidable:
+#
+#   [[override]]
+#   gate = "lint"
+#   reason = "clang-tidy 19 crashes on <file>; upstream issue NNN"
+#   approved_by = "the reviewer who accepted the risk"
+#   change = "the OpenSpec change that records it"
+#   expires = "2026-10-01"

@@ -1,0 +1,137 @@
+# CyberdyneEngine — the dependency manifest.
+#
+# The single source of truth for third-party code: cmake/dependencies.cmake drives FetchContent
+# from it, tools/deps/attribution.py generates THIRD_PARTY.md from it, and a security audit answers
+# "which version, gated by what" from it. Nothing here is duplicated anywhere else; a version that
+# appears in a CMake file rather than in this table is a defect.
+#
+# `thirdparty-dependencies` fixes the required fields: name, version, commit, upstream URL, licence
+# identifier, licence file path, whether it is optional and which feature gates it, whether a system
+# version may be used, and a one-line justification. The remaining fields are what the build needs
+# to act on the entry.
+#
+# Format — a deliberately small subset of TOML, because cmake/dependencies.cmake parses it directly
+# and a parser is only as trustworthy as it is small:
+#   * only `[[dependency]]` tables,
+#   * one `key = value` per line, values are quoted strings or `true`/`false`,
+#   * comments occupy a whole line; there are no inline comments,
+#   * `name` is the first key of every table.
+# Anything else is a configure-time error naming the line, rather than a silently ignored entry.
+#
+# Fields
+#   name           lowercase identifier. The FetchContent name, the CY_SYSTEM_<NAME> suffix, and the
+#                  engine-facing target cy::dep::<name>.
+#   version        upstream release, without the tag's decoration.
+#   tag            the upstream tag `commit` is the tip of, so the pin can be read by a human.
+#   commit         the exact commit fetched. Never a branch, never a tag: a tag can be moved.
+#   repository     upstream URL.
+#   licence        SPDX identifier.
+#   licence_file   path to the full licence text within the upstream tree.
+#   optional       false when the engine always carries it.
+#   feature        the CY_* option that gates it, empty when `optional` is false.
+#   system_package true when a system-provided copy is acceptable, exposed as CY_SYSTEM_<NAME>.
+#   system_find_package  the find_package() name of that system copy. Required when
+#                  `system_package` is true, absent otherwise.
+#   system_target  the target that system copy provides, which is not always the one the fetched
+#                  build provides: zstd's in-tree target is `libzstd_static` and its installed
+#                  config package exports `zstd::libzstd_static`. Required when `system_package` is
+#                  true, absent otherwise.
+#   cmake_target   the target the fetched build provides. cy::dep::<name> wraps it — or the system
+#                  target — and engine code links only that wrapper, so where the dependency came
+#                  from is invisible above this file.
+#   source_subdir  where the CMake project lives when it is not at the root of the tree.
+#   interface      the engine-owned interface it sits behind. This is the isolation the dependency
+#                  policy requires: its types appear nowhere else.
+#   scope          runtime | tool-time | test | development. What links it.
+#   justification  one line: why this is integrated rather than built.
+
+[[dependency]]
+name = "sdl3"
+version = "3.4.16"
+tag = "release-3.4.16"
+commit = "fa2c02bb6e21974a89ea9824bc53c9932abe5f9c"
+repository = "https://github.com/libsdl-org/SDL"
+licence = "Zlib"
+licence_file = "LICENSE.txt"
+optional = false
+feature = ""
+system_package = true
+system_find_package = "SDL3"
+system_target = "SDL3::SDL3"
+cmake_target = "SDL3::SDL3"
+source_subdir = ""
+interface = "cy::Platform and cy::DisplayServer, implemented in platform/desktop-sdl3/"
+scope = "runtime"
+justification = "Window, event, and gamepad coverage across three desktop platforms, plus the controller database, which is maintenance rather than differentiation."
+
+[[dependency]]
+name = "doctest"
+version = "2.4.12"
+tag = "v2.4.12"
+commit = "1da23a3e8119ec5cce4f9388e91b065e20bf06f5"
+repository = "https://github.com/doctest/doctest"
+licence = "MIT"
+licence_file = "LICENSE.txt"
+optional = true
+feature = "CY_BUILD_TESTS"
+system_package = true
+system_find_package = "doctest"
+system_target = "doctest::doctest"
+cmake_target = "doctest::doctest"
+source_subdir = ""
+interface = "the CY_TEST_CASE wrapper in tests/, so the framework is replaceable"
+scope = "test"
+justification = "A test framework is not differentiating, and doctest compiles roughly an order of magnitude faster than the alternative — see design.md section 5."
+
+[[dependency]]
+name = "tracy"
+version = "0.12.2"
+tag = "v0.12.2"
+commit = "c556831ddc6fe26d2fce01c14c97205a9dad46d5"
+repository = "https://github.com/wolfpld/tracy"
+licence = "BSD-3-Clause"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_PROFILING"
+system_package = false
+cmake_target = "Tracy::TracyClient"
+source_subdir = ""
+interface = "a backend of the engine's own trace in src/core/diagnostics/, never a second timeline beside it"
+scope = "development"
+justification = "An excellent frame profiler and viewer. The engine owns the trace schema and publishes into Tracy as one export of it."
+
+[[dependency]]
+name = "zstd"
+version = "1.5.7"
+tag = "v1.5.7"
+commit = "ac66b19e6bd6b83238bf008eecc1298105298532"
+repository = "https://github.com/facebook/zstd"
+licence = "BSD-3-Clause"
+licence_file = "LICENSE"
+optional = false
+feature = ""
+system_package = true
+system_find_package = "zstd"
+system_target = "zstd::libzstd_static"
+cmake_target = "libzstd_static"
+source_subdir = "build/cmake"
+interface = "the engine's compression interface in src/core/, which the trace writer and the package format consume"
+scope = "runtime"
+justification = "Best-in-class ratio at the speeds the trace writer and the package format need. Offered under BSD-3-Clause or GPL-2.0 and taken under BSD-3-Clause."
+
+[[dependency]]
+name = "blake3"
+version = "1.8.7"
+tag = "1.8.7"
+commit = "f3149ec5bb5449af877ba20377a11008ff499fa2"
+repository = "https://github.com/BLAKE3-team/BLAKE3"
+licence = "CC0-1.0"
+licence_file = "LICENSE_CC0"
+optional = false
+feature = ""
+system_package = false
+cmake_target = "BLAKE3::blake3"
+source_subdir = "c"
+interface = "the engine's hashing interface in src/core/, beneath derivation keys and content addressing"
+scope = "runtime"
+justification = "Cryptographic code is never hand-rolled, and the build graph's derivation keys need a fast tree hash. Offered under CC0-1.0, Apache-2.0 or Apache-2.0 WITH LLVM-exception and taken under CC0-1.0."

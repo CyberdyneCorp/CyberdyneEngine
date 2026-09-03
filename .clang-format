@@ -1,0 +1,63 @@
+# CyberdyneEngine — C++ formatting. Task 4.2.1.
+#
+# `testing-and-quality` requires a committed configuration enforced automatically, "so review
+# discusses design rather than whitespace". This file is therefore not a topic: `just quality-format`
+# applies it and `just quality-format-check` gates it, and the only argument worth having about it is
+# one that changes this file.
+#
+# It agrees with .editorconfig — four spaces, 100 columns, LF, a final newline — because an editor
+# applies that file while typing and the formatter applies this one on the way to review, and two
+# rules that disagree produce a diff on every save.
+#
+# Written against clang-format 18 and using no option newer than it. A newer clang-format may format
+# a file differently from an older one, which turns the gate into a version check; `just env-doctor`
+# reports the version it found, and CI pins one.
+
+Language: Cpp
+BasedOnStyle: Google
+
+ColumnLimit: 100
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+UseTab: Never
+TabWidth: 4
+
+# The preprocessor is code: an #if nested inside another reads as nested.
+IndentPPDirectives: AfterHash
+PPIndentWidth: 4
+
+PointerAlignment: Left
+DerivePointerAlignment: false
+ReferenceAlignment: Pointer
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+InsertBraces: true
+
+# Namespaces are not indented — the engine nests cy::<subsystem>::<detail> and indenting each would
+# spend a third of the line budget on the namespace rather than on the code.
+NamespaceIndentation: None
+FixNamespaceComments: true
+CompactNamespaces: false
+
+BreakBeforeBraces: Attach
+BinPackArguments: true
+BinPackParameters: true
+AlignAfterOpenBracket: Align
+AlwaysBreakTemplateDeclarations: Yes
+SeparateDefinitionBlocks: Leave
+
+# Include order is grouped by blank line in the source and preserved here: the file's own header
+# first, then the engine, then the standard library, then anything third-party. Sorting within a
+# group is automatic; deciding which group a header belongs to is the author's, because it is a
+# statement about dependency direction and no regular expression should make it silently.
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+SortUsingDeclarations: true
+SpacesBeforeTrailingComments: 2
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false

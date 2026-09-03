@@ -1,0 +1,155 @@
+# CyberdyneEngine — clang-tidy. Task 4.2.2.
+#
+# `testing-and-quality` asks for "a curated check set, treating findings as errors". Curated is the
+# operative word: clang-tidy's default is `clang-analyzer-*`, and its full set contains several
+# hundred checks written for codebases with different rules from this one. A lint that reports
+# findings nobody intends to fix is a lint that gets suppressed wholesale, so every group below is
+# enabled for a reason and every exclusion names one.
+#
+# WHAT IS ENABLED, AND WHY
+#
+#   bugprone-*        The reason this file exists. These are defects: a dangling reference from a
+#                     temporary, a signed-to-unsigned comparison, a suspicious memset, a
+#                     use-after-move. An engine is exactly the kind of program where these are found
+#                     at three in the morning rather than in review.
+#   performance-*     The engine has frame budgets. An unnecessary copy in a hot loop is a defect
+#                     against a requirement here, not a style preference.
+#   clang-analyzer-*  Path-sensitive analysis: null dereference, leak, uninitialised read. It is the
+#                     one group that reasons about execution rather than about syntax.
+#   readability-*     The specifications are written to be read and the code should match. Trimmed
+#                     below, because parts of this group encode a house style rather than a defect.
+#   misc-*            Narrowed to the members that catch real problems: an unused private field, a
+#                     header that fails to be self-contained, a definition in a header.
+#   modernize-*       C++20 is the language; a codebase that writes C++11 in it ages badly. Trimmed,
+#                     because parts of this group are taste.
+#   cppcoreguidelines-  Only three: slicing, uninitialised members, and virtual calls in
+#                     constructors. The rest of the group assumes the Guidelines Support Library,
+#                     exceptions, and ownership types the engine does not use.
+#
+# WHAT IS DISABLED, AND WHY
+#
+# The engine compiles with -fno-exceptions and -fno-rtti, and fallible operations return
+# cy::Expected<T, Error>. Every exception-shaped check is therefore noise, not signal — it reports on
+# a language feature this codebase cannot use:
+#
+#   bugprone-exception-escape, misc-throw-by-value-catch-by-reference, cert-err*, modernize-use-*
+#   involving exception specifications, cppcoreguidelines-avoid-goto (goto is how error paths are
+#   written without unwinding).
+#
+# Four more are disabled because they are wrong about this codebase rather than about style, and
+# each cost a real reading of its findings before it was switched off:
+#
+#   performance-enum-size            Reports every enum whose values fit in a smaller type. An
+#                                    enum's underlying type here is an interface decision — it is
+#                                    what a struct's layout and the C ABI are built on — and
+#                                    shrinking WindowFlags to a byte to save three bytes in a
+#                                    parameter is not one this check is qualified to make.
+#   clang-analyzer-optin.core.EnumCastOutOfRange
+#                                    Fires on the bitmask-enum idiom: `~Flags::A` produces a value
+#                                    that is not a named enumerator, which is the point of a flag
+#                                    set. The check cannot see the intent, so every operator~ in the
+#                                    engine would be a finding.
+#   readability-use-concise-preprocessor-directives
+#                                    Rewrites `#if defined(X)` as `#ifdef X`, which is fine, and
+#                                    `#elif defined(X)` as `#elifdef X`, which is C++23. A lint that
+#                                    proposes code the language standard in use does not have is
+#                                    worse than no lint.
+#   modernize-avoid-variadic-functions
+#                                    A printf-style diagnostic sink is deliberate: the format string
+#                                    and its arguments cross a boundary where a parameter pack would
+#                                    force the callee to be a template, and diagnostics are the one
+#                                    subsystem every other one includes.
+#   modernize-use-designated-initializers
+#                                    Reports every aggregate initialised positionally, including
+#                                    `Extent{width, height}`, where naming both fields is longer and
+#                                    no clearer. The safety argument for designated initialisers —
+#                                    that reordering fields breaks the initialiser — is real, and it
+#                                    is an argument for using them where a struct has enough fields
+#                                    to confuse, which is a review judgement. As a blanket error it
+#                                    reported fifty-odd correct sites on the day it was switched on.
+#   modernize-use-scoped-lock        std::scoped_lock over one mutex is std::lock_guard with a
+#                                    variadic template in front of it. The check reports every
+#                                    single-mutex guard in the engine and nothing is safer
+#                                    afterwards; scoped_lock earns its place where two locks are
+#                                    taken together, and that is a review question, not a lint.
+#   clang-analyzer-optin.performance.Padding
+#                                    Reports a struct whose fields could be packed tighter. The
+#                                    first one it found was a ring buffer padded to a cache line on
+#                                    purpose — reordering its fields would reintroduce the false
+#                                    sharing the padding exists to prevent.
+#
+# The other exclusions are house style, and each is named individually below rather than by
+# disabling its group, so the group keeps working when a new check joins it.
+#
+# `just quality-lint` runs this over the compile database. Findings are errors — WarningsAsErrors
+# below is the whole enabled set — which is what the specification requires. A finding that is wrong
+# is silenced at its line with a NOLINT comment carrying the reason, so the exception is reviewable.
+
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  clang-analyzer-*,
+  readability-*,
+  modernize-*,
+  misc-definitions-in-headers,
+  misc-header-include-cycle,
+  misc-misplaced-const,
+  misc-redundant-expression,
+  misc-unused-alias-decls,
+  misc-unused-parameters,
+  misc-unused-using-decls,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-virtual-class-destructor,
+  -bugprone-exception-escape,
+  -bugprone-easily-swappable-parameters,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-braces-around-statements,
+  -readability-else-after-return,
+  -readability-named-parameter,
+  -readability-avoid-const-params-in-decls,
+  -readability-uppercase-literal-suffix,
+  -readability-static-accessed-through-instance,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-use-nodiscard,
+  -modernize-macro-to-enum,
+  -modernize-avoid-variadic-functions,
+  -performance-enum-size,
+  -readability-use-concise-preprocessor-directives,
+  -modernize-use-scoped-lock,
+  -modernize-use-designated-initializers,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -clang-analyzer-optin.performance.Padding
+
+# Every enabled check is an error. `testing-and-quality`: "clang-tidy with a curated check set,
+# treating findings as errors".
+WarningsAsErrors: '*'
+
+# Findings are reported for the engine's own headers and for nothing else. A dependency's header is
+# included as a system header and is not this project's to fix; the directory names below are the
+# engine tree, and no fetched dependency's path matches them.
+HeaderFilterRegex: '(^|/)(src|platform|modules|tests|benchmarks|samples|tools|editor)/'
+
+FormatStyle: file
+
+CheckOptions:
+  # The exclusions above are the ones this codebase argues with. The options below tune a check
+  # rather than remove it, which is the better outcome wherever it is available.
+
+  # An engine moves data through interfaces by reference; a "trivially copyable" threshold of one
+  # word would report every span and string view.
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: ''
+  # doctest's macros expand to statements the check reads as loops with a single iteration.
+  - key: bugprone-branch-clone.IgnoreSystemHeaders
+    value: 'true'
+  # readability-identifier-naming is deliberately given no macro rule. The engine's rule is that a
+  # macro begins CY_ (`engine-architecture`), and the check cannot express only that: setting
+  # MacroDefinitionPrefix also turns on a case rule that rejects CY_DIAG_JOIN_ — a correctly named
+  # internal macro — as "invalid case style". A prefix rule that reports correct names is worse than
+  # no prefix rule; the layering check already reads the tree, and that is where it belongs.

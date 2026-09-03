@@ -1,0 +1,315 @@
+# Per-capability implementation status — the authoritative record.
+#
+# tier:      none | seed | working | complete
+# milestone: the milestone that last advanced this capability, or null
+# change:    the OpenSpec change that advanced it, or null
+#
+# A change that implements or advances a capability updates its entry in the same
+# commit. `just roadmap::status` fails when the keys here and the capability
+# directories under openspec/specs/ disagree.
+#
+# The planned path of each capability through the milestone ladder is in
+# capability-matrix.md; this file records what is actually true today.
+
+schema: 1
+capabilities:
+  engine-architecture:
+    tier: none
+    milestone: null
+    change: null
+  core-type-system:
+    tier: none
+    milestone: null
+    change: null
+  core-memory-and-containers:
+    tier: none
+    milestone: null
+    change: null
+  core-math:
+    tier: none
+    milestone: null
+    change: null
+  core-jobs-and-concurrency:
+    tier: none
+    milestone: null
+    change: null
+  core-assets-and-io:
+    tier: none
+    milestone: null
+    change: null
+  core-platform-abstraction:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  ecs-core:
+    tier: none
+    milestone: null
+    change: null
+  scene-graph-and-nodes:
+    tier: none
+    milestone: null
+    change: null
+  serialization-and-prefabs:
+    tier: none
+    milestone: null
+    change: null
+  gameplay-framework:
+    tier: none
+    milestone: null
+    change: null
+  gameplay-abilities-and-effects:
+    tier: none
+    milestone: null
+    change: null
+  visual-scripting:
+    tier: none
+    milestone: null
+    change: null
+  sequencing-and-cinematics:
+    tier: none
+    milestone: null
+    change: null
+  input-and-actions:
+    tier: none
+    milestone: null
+    change: null
+  camera-system:
+    tier: none
+    milestone: null
+    change: null
+  simulation-and-determinism:
+    tier: none
+    milestone: null
+    change: null
+  replay-and-rollback:
+    tier: none
+    milestone: null
+    change: null
+  save-and-persistence:
+    tier: none
+    milestone: null
+    change: null
+  world-partition-and-streaming:
+    tier: none
+    milestone: null
+    change: null
+  environment-fields:
+    tier: none
+    milestone: null
+    change: null
+  procedural-content-generation:
+    tier: none
+    milestone: null
+    change: null
+  weather-and-wind:
+    tier: none
+    milestone: null
+    change: null
+  atmosphere-sky-and-clouds:
+    tier: none
+    milestone: null
+    change: null
+  terrain:
+    tier: none
+    milestone: null
+    change: null
+  foliage:
+    tier: none
+    milestone: null
+    change: null
+  water:
+    tier: none
+    milestone: null
+    change: null
+  native-abi:
+    tier: none
+    milestone: null
+    change: null
+  swift-scripting:
+    tier: none
+    milestone: null
+    change: null
+  rhi-and-render-graph:
+    tier: none
+    milestone: null
+    change: null
+  rendering-architecture:
+    tier: none
+    milestone: null
+    change: null
+  rendering-culling-and-lod:
+    tier: none
+    milestone: null
+    change: null
+  virtual-geometry:
+    tier: none
+    milestone: null
+    change: null
+  virtual-texturing:
+    tier: none
+    milestone: null
+    change: null
+  virtual-shadows:
+    tier: none
+    milestone: null
+    change: null
+  residency:
+    tier: none
+    milestone: null
+    change: null
+  rendering-forward-clustered:
+    tier: none
+    milestone: null
+    change: null
+  shader-system:
+    tier: none
+    milestone: null
+    change: null
+  rendering-materials-and-shading:
+    tier: none
+    milestone: null
+    change: null
+  material-compiler:
+    tier: none
+    milestone: null
+    change: null
+  rendering-lighting-and-shadows:
+    tier: none
+    milestone: null
+    change: null
+  rendering-global-illumination:
+    tier: none
+    milestone: null
+    change: null
+  denoising:
+    tier: none
+    milestone: null
+    change: null
+  ray-tracing-infrastructure:
+    tier: none
+    milestone: null
+    change: null
+  rendering-post-processing:
+    tier: none
+    milestone: null
+    change: null
+  temporal-rendering:
+    tier: none
+    milestone: null
+    change: null
+  rendering-geometry-and-resources:
+    tier: none
+    milestone: null
+    change: null
+  rendering-2d:
+    tier: none
+    milestone: null
+    change: null
+  vfx-system:
+    tier: none
+    milestone: null
+    change: null
+  physics:
+    tier: none
+    milestone: null
+    change: null
+  animation-and-skinning:
+    tier: none
+    milestone: null
+    change: null
+  ai-system:
+    tier: none
+    milestone: null
+    change: null
+  navigation:
+    tier: none
+    milestone: null
+    change: null
+  ml-inference:
+    tier: none
+    milestone: null
+    change: null
+  audio:
+    tier: none
+    milestone: null
+    change: null
+  text-and-fonts:
+    tier: none
+    milestone: null
+    change: null
+  ui-system:
+    tier: none
+    milestone: null
+    change: null
+  asset-import-pipeline:
+    tier: none
+    milestone: null
+    change: null
+  editor-architecture:
+    tier: none
+    milestone: null
+    change: null
+  editor-documents-and-transactions:
+    tier: none
+    milestone: null
+    change: null
+  editor-rust-application:
+    tier: none
+    milestone: null
+    change: null
+  editor-ui-ux:
+    tier: none
+    milestone: null
+    change: null
+  editor-visual-language:
+    tier: none
+    milestone: null
+    change: null
+  editor-viewport-and-gizmos:
+    tier: none
+    milestone: null
+    change: null
+  live-editing:
+    tier: none
+    milestone: null
+    change: null
+  project-and-plugins:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  build-and-packaging:
+    tier: none
+    milestone: null
+    change: null
+  networking-and-replication:
+    tier: none
+    milestone: null
+    change: null
+  xr-support:
+    tier: none
+    milestone: null
+    change: null
+  build-system-and-platforms:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  developer-workflow-and-just:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  testing-and-quality:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  diagnostics-profiling-and-crash:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  thirdparty-dependencies:
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
+  delivery-roadmap:
+    tier: working
+    milestone: M0
+    change: implement-m0-ground   # spec by add-delivery-roadmap; the tooling landed here

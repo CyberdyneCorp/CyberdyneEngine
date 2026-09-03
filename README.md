@@ -5,10 +5,14 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: specification stage. There is no code yet.**
-> [`openspec/specs/`](openspec/specs/) holds **73 capabilities · 1,155 requirements · 2,551
-> scenarios** that define what is being built and why, and are the contract the implementation must
-> satisfy. Start at [the specification index](openspec/specs/README.md).
+> **Status: [M0 — Ground](docs/ROADMAP.md) has landed. M1 — Substrate is next.**
+> The build configures and runs on Linux: `just build-all`, `just test-all`, and a sample that opens
+> a window and writes a trace. Windows and macOS are authored and wait on their first CI run.
+> [`openspec/specs/`](openspec/specs/) holds **75 capabilities · 1,192 requirements · 2,624 scenarios**
+> that define what is being built and why, and are the contract the implementation must satisfy.
+> Start at [the specification index](openspec/specs/README.md), then
+> [the roadmap](docs/ROADMAP.md) for the order they are built in, and
+> [Building on Linux](#building-on-linux) to compile it.
 
 ---
 
@@ -303,18 +307,181 @@ the build tells you when they cannot. → [`swift-scripting`](openspec/specs/swi
 
 ---
 
+## Roadmap
+
+There is no code yet, and the interesting question is not *what* to build — that is written down —
+but *in what order*. Some of the commitments in these specifications are properties of every line of
+code written after them: computed barriers, stable field identity, one command stream into the
+simulation, transactions as the only write path. Established at the right moment they cost almost
+nothing; established late, everything downstream has to be revisited.
+
+So the order is specified too, in twelve milestones with no dates — because a date is an estimate
+that decays, while *after what* is a design consequence that does not.
+
+| Era | | Ends with |
+|---|---|---|
+| **Foundation** | M0 Ground · M1 Substrate · M2 World | A headless simulation that ticks, hashes, and reproduces its hash exactly |
+| **First playable** | M3 First light · M4 Playable · M5 Authorable | A character controller written in Swift, edited in an editor that survives a runtime crash |
+| **Production scale** | M6 Scale · M7 Fidelity · M8 Game systems | A streamed multi-kilometre world at film detail, playable as a real game |
+| **Shipping** | M9 Integrity · M10 Worlds · M11 Reach | Four-player rollback, open worlds, every platform — 1.0 |
+
+Every milestone ends in a runnable artefact committed to the repository, and once its checks are
+green they stay in continuous integration — so the M4 character controller still runs at M11.
+
+→ [**The roadmap**](docs/ROADMAP.md) · [capability matrix](docs/roadmap/capability-matrix.md) ·
+[dependencies](docs/roadmap/dependencies.md) · [risks and deferrals](docs/roadmap/risks.md)
+
+---
+
 ## Repository layout
 
 ```
+src/              Engine. core/ ecs/ servers/ backends/ scene/ runtime/ abi/ — strictly layered
+platform/         Platform layer: desktop-sdl3/, headless/. The only place SDL may be named.
+modules/          Optional functionality, discovered by manifest
+samples/          Runnable artefacts. One per milestone; each stays green forever after.
+tests/            unit/ integration/ smoke/ — and render/ determinism/ awaiting M3 and M9
+benchmarks/       Throughput and latency, with regression thresholds
+cmake/            Build modules. module.cmake carries the layering rule.
+deps/             manifest.toml — every dependency, pinned to a commit
+tools/            layercheck, roadmap, deps, trace inspection
+just/             One file per recipe category, imported by the root justfile
+docs/
+  ROADMAP.md      Milestone ladder, exit criteria, and the invariants that cannot wait
+  roadmap/        Capability matrix, dependency graphs, risk register, status record
+  design/         The editor's visual language, with reference imagery
 openspec/
-  specs/          Target specifications — 73 capabilities. Start here.
+  specs/          Target specifications — 75 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
-justfile          One entry point for every developer task (planned)
+justfile          One entry point for every developer task — run `just` to list them
 ```
 
-Source directories (`src/`, `bindings/`, `editor/`, `tools/`) will appear as the specifications are
-implemented.
+`bindings/` and `editor/` are placeholders until M4 and M5. Directories appear as the milestones
+that specify them land, not before.
+
+## Building on Linux
+
+> **The build lands with [M0](docs/ROADMAP.md).** Until that milestone closes, `openspec/` is the
+> whole repository and there is nothing to compile — skip to [Working on this](#working-on-this).
+> The prerequisites below are what M0 needs, and they are worth installing before it does.
+
+Reference platform: **Ubuntu 24.04 LTS "noble"** and derivatives (Linux Mint 22.x). Other
+distributions work; only the package names differ.
+
+### Prerequisites
+
+Everything the engine *links* — SDL3, doctest, Tracy, zstd, BLAKE3, and later Jolt, Slang and the
+rest — is fetched and built from source by CMake at pinned commits recorded in `deps/manifest.toml`.
+You do not install those. What you install is the toolchain, plus the system libraries SDL3 itself
+links against.
+
+```bash
+# Toolchain
+sudo apt install -y build-essential clang cmake ninja-build git just pkg-config python3
+
+# System libraries SDL3 builds against (windowing, input, audio, IME)
+sudo apt install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+                    libxfixes-dev libxss-dev libxkbcommon-dev \
+                    libwayland-dev wayland-protocols libdecor-0-dev \
+                    libudev-dev libasound2-dev libpulse-dev libibus-1.0-dev
+```
+
+`libudev-dev` is not optional in practice — it is what gives SDL3 gamepad hot-plug on Linux, which
+[`core-platform-abstraction`](openspec/specs/core-platform-abstraction/spec.md) requires.
+
+| | Minimum | Why |
+|---|---|---|
+| CMake | **3.28** | Required by [`build-system-and-platforms`](openspec/specs/build-system-and-platforms/spec.md); presets and target-level layering |
+| Ninja | 1.11 | The default generator |
+| Clang | 18 | Or GCC 13. The engine is C++20 with `-fno-exceptions -fno-rtti` |
+| just | 1.14 | Needs `import`; noble ships 1.21 |
+| Python | 3.10 | Code generation and the layering, roadmap and dependency tools |
+
+### First build
+
+```bash
+git clone <this repository> && cd CyberdyneEngine
+
+just env-doctor      # checks every tool above and names the fix for anything missing
+just build-engine    # configure and build, dev profile
+just test-unit       # under a minute
+just run-sample empty
+```
+
+Run `just` on its own to list every recipe with a description — that listing is the workflow's
+documentation, and a task you are expected to perform always has a recipe. Four profiles —
+`debug`, `dev`, `profile`, `release` — mean the same thing across every toolchain
+([`developer-workflow-and-just`](openspec/specs/developer-workflow-and-just/spec.md)).
+
+### Additional prerequisites, by milestone
+
+Each becomes a check in `just env-doctor` when its milestone arrives. Nothing below is needed
+before then.
+
+**M3 · First light** — Vulkan. You also need a working driver and ICD; Mesa or the proprietary
+NVIDIA/AMD drivers provide one, and `/usr/share/vulkan/icd.d/` is where to check.
+
+```bash
+sudo apt install -y libvulkan-dev vulkan-tools vulkan-validationlayers spirv-tools glslang-tools
+vulkaninfo --summary        # must list a device, with its apiVersion
+vkcube                      # a spinning cube confirms the swapchain path works
+```
+
+There is no `vulkan-validationlayers-dev` on noble — that package name is from 22.04 and was
+dropped. Noble's `vulkan-tools` is from SDK 1.3.275 while a current driver will report Vulkan 1.4;
+that mismatch is fine, and the LunarG SDK is only worth adding if newer validation coverage turns
+out to be needed.
+
+**M4 · Playable** — the Swift toolchain, via swift.org's own installer. Two things about this
+install are not obvious and both have already cost time; they are written out below rather than
+left to be rediscovered.
+
+```bash
+sudo apt install -y binutils gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev \
+                    libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libz3-dev \
+                    tzdata unzip zlib1g-dev
+
+curl -O https://download.swift.org/swiftly/linux/swiftly-x86_64.tar.gz
+tar zxf swiftly-x86_64.tar.gz && ./swiftly init
+. ~/.local/share/swiftly/env.sh
+swiftly install --use latest --platform ubuntu24.04
+```
+
+**On a Ubuntu derivative, name the platform.** `/etc/os-release` reports `ID=linuxmint` rather than
+`ubuntu`, so swiftly stops and asks you to pick a platform from a menu. Passing
+`--platform ubuntu24.04` answers it up front — which matters because a script or a CI job cannot
+answer a prompt. The Ubuntu 24.04 toolchain is the correct choice on Mint 22.x; `UBUNTU_CODENAME`
+in `/etc/os-release` is what confirms the base.
+
+**Then put the environment line in `~/.bashrc`, not just `~/.profile`.** `swiftly init` writes it
+to `~/.profile`, which only *login* shells read. A new terminal window is an interactive
+*non-login* shell that reads `~/.bashrc` and never touches `~/.profile` — so `swift` appears to
+vanish the moment you open a second terminal, and build tooling that spawns its own shells does not
+see it either:
+
+```bash
+printf '\n# Added by swiftly\n. "$HOME/.local/share/swiftly/env.sh"\n' >> ~/.bashrc
+```
+
+Verify from a **new** terminal, which is the case that actually fails:
+
+```bash
+swift --version                                  # expect 6.x, x86_64-unknown-linux-gnu
+echo 'print("ok")' > /tmp/t.swift && swift /tmp/t.swift
+```
+
+Any script that must not depend on shell configuration should source the environment explicitly
+instead: `bash -lc '. ~/.local/share/swiftly/env.sh; swiftc …'`.
+
+**M5 · Authorable** — Rust for the editor, via [rustup](https://rustup.rs). The engine and the
+editor are separate builds; `just` drives both.
+
+### Other platforms
+
+Windows and macOS are supported targets from M0 and are built in continuous integration on every
+change. Only Linux is documented here because it is the platform the engine is being developed on;
+the CI workflow files are the authoritative recipe for the other two.
 
 ## Working on this
 

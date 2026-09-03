@@ -1,0 +1,167 @@
+# M0 — Ground: the exit criteria, as data. Task 4.3.4.
+#
+# The sources are section 5 of openspec/changes/implement-m0-ground/tasks.md and the M0 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a
+# recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate. A criterion that cannot be
+# evaluated on the host running the recipe — another operating system, no display — carries a
+# `reason`, is reported as not evaluated rather than as passed, and is counted separately.
+
+schema = 1
+id = "m0"
+name = "Ground"
+artefact = "samples/00-empty — opens a window, runs an empty loop through tick(), writes a trace, exits cleanly"
+
+# Non-binding, because neither can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "tasks 5.8 — docs/roadmap/capability-matrix.md and docs/ROADMAP.md are corrected where M0 recorded an intention the implementation changed. Reviewed, not checked: no tool can tell an intention from its correction.",
+    "tasks 5.9 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it.",
+]
+
+# --- The environment and the static gates: cheap, and they fail first -----------------------------
+
+[[criterion]]
+id = "doctor"
+describe = "just env-doctor diagnoses the development environment"
+source = "tasks 5.1"
+kind = "recipe"
+run = "just env-doctor"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "layering"
+describe = "the layering check passes, and fails on each deliberately introduced violation"
+source = "tasks 5.5"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes"
+source = "tasks 5.9"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is live and green"
+source = "tasks 5.4"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 5.7, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M0's exit tiers, each naming the change that advanced it"
+source = "tasks 5.7"
+kind = "tiers"
+ci_job = "milestone-m0"
+
+[criterion.expect_tiers]
+build-system-and-platforms = "seed"
+developer-workflow-and-just = "seed"
+thirdparty-dependencies = "seed"
+testing-and-quality = "seed"
+core-platform-abstraction = "seed"
+diagnostics-profiling-and-crash = "seed"
+project-and-plugins = "seed"
+delivery-roadmap = "working"
+
+# --- The build, and everything that needs one -----------------------------------------------------
+
+[[criterion]]
+id = "build"
+describe = "just build-engine configures and builds"
+source = "tasks 5.1"
+kind = "recipe"
+run = "just build-engine"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "generated-code"
+describe = "generated headers are current and their regeneration is reproducible"
+source = "ROADMAP M0, gates.toml"
+kind = "recipe"
+run = "just generate-check"
+ci_job = "generated-code"
+
+[[criterion]]
+id = "lint"
+describe = "the static analysis gate is live and green"
+source = "tasks 5.4"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "test"
+describe = "just test-all is green: unit, integration and smoke"
+source = "tasks 5.1"
+kind = "recipe"
+run = "just test-all"
+ci_job = "build-and-test"
+
+# --- The closing artefact -------------------------------------------------------------------------
+
+[[criterion]]
+id = "sample-headless"
+describe = "the empty sample runs under the headless display server and exits cleanly"
+source = "tasks 5.2, 5.3"
+kind = "recipe"
+run = "just run-sample empty --headless --frames 10"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "sample-window"
+describe = "the empty sample opens a window and closes it"
+source = "tasks 5.2"
+kind = "recipe"
+run = "just run-sample empty --frames 10"
+requires = "display"
+reason = "no window system on this host, and a headless run is not evidence that a window opens"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "trace"
+describe = "a run produces a trace file, and just diagnose-trace reads it"
+source = "tasks 5.3"
+kind = "command"
+run = "trace=\"$(mktemp -d)/m0.cytrace\"; just run-sample empty --headless --frames 10 --trace \"$trace\" && just diagnose-trace \"$trace\""
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "three-platforms"
+describe = "doctor, build and test are green on Linux, Windows and macOS"
+source = "tasks 5.1, ROADMAP M0"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ------------------------------------------------------------------------------
+
+[[criterion]]
+id = "m1-open"
+describe = "the M1 change is open, so the ladder continues deliberately"
+source = "tasks 5.10"
+kind = "path"
+path = "openspec/changes/*m1*/proposal.md"
+ci_job = "milestone-m0"

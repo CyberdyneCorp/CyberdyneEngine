@@ -1,0 +1,61 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "displayName": "debug — unoptimised, assertions on",
+      "description": "Debugging the engine itself. CMake configuration Debug.",
+      "cacheVariables": { "CY_PROFILE": "debug" }
+    },
+    {
+      "name": "dev",
+      "inherits": "base",
+      "displayName": "dev — optimised with assertions and symbols (default)",
+      "description": "The day-to-day working profile. CMake configuration Development.",
+      "cacheVariables": { "CY_PROFILE": "dev" }
+    },
+    {
+      "name": "profile",
+      "inherits": "base",
+      "displayName": "profile — shipping optimisation with symbols and instrumentation",
+      "description": "Measurements that reflect shipping performance. CMake configuration Profile.",
+      "cacheVariables": { "CY_PROFILE": "profile" }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "release — shipping optimisation, checks off",
+      "description": "Release builds. CMake configuration Shipping, with link-time optimisation.",
+      "cacheVariables": { "CY_PROFILE": "release" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug",   "configurePreset": "debug",   "displayName": "debug" },
+    { "name": "dev",     "configurePreset": "dev",     "displayName": "dev" },
+    { "name": "profile", "configurePreset": "profile", "displayName": "profile" },
+    { "name": "release", "configurePreset": "release", "displayName": "release" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    { "name": "debug",   "inherits": "base", "configurePreset": "debug" },
+    { "name": "dev",     "inherits": "base", "configurePreset": "dev" },
+    { "name": "profile", "inherits": "base", "configurePreset": "profile" },
+    { "name": "release", "inherits": "base", "configurePreset": "release" }
+  ]
+}

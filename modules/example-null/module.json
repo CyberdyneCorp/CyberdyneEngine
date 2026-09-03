@@ -1,0 +1,12 @@
+{
+  "name": "example-null",
+  "description": "A module that does nothing, kept as the template a new module is copied from",
+  "layer": "core",
+  "type": "runtime",
+  "registration_level": "Core",
+  "public_dependencies": [],
+  "private_dependencies": [],
+  "default_enabled": true,
+  "platforms": ["linux", "windows", "macos"],
+  "hot_reload": false
+}

@@ -1,0 +1,225 @@
+# CyberdyneEngine — continuous integration.
+#
+# Every command below is a `just` recipe or the installation of a tool `just env-doctor` would tell
+# a developer to install. That is not a convention: `developer-workflow-and-just` requires that a
+# check gating a change is runnable locally by one command and that the local and remote invocations
+# are the same code path, and lists a workflow that duplicates rather than invokes recipes among its
+# forbidden patterns. `just ci-check` enforces both, and runs in the `quality` job below.
+#
+# What continuous integration adds around the recipes — checkout, caching, the matrix, artefact
+# upload — is `uses:` steps and job configuration, which wrap the recipes rather than replacing
+# them.
+#
+# The gate set is declared once, as data, in tools/roadmap/gates.toml — `just roadmap-gates` prints
+# it. The jobs below are that list arranged into jobs: build, test, quality, spec validation,
+# generated-code currency, and the roadmap status record. `just ci-check` fails when a permanent gate
+# declared there is run by no job here, so the two cannot drift apart in the direction that matters;
+# `just ci-jobs` prints what this file actually invokes.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The engine's default working profile. Every recipe takes --profile; CI states it once here so
+  # that a job cannot silently test a configuration nobody builds.
+  CY_PROFILE: dev
+
+jobs:
+  # --- The three-platform, two-architecture build ------------------------------------------------
+  build:
+    name: build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-x86_64, os: ubuntu-24.04 }
+          - { label: linux-arm64, os: ubuntu-24.04-arm }
+          - { label: macos-x86_64, os: macos-13 }
+          - { label: macos-arm64, os: macos-14 }
+          - { label: windows-x86_64, os: windows-2022, msvc: x64 }
+          - { label: windows-arm64, os: windows-11-arm, msvc: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - if: matrix.msvc != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
+      - name: Install the tools the doctor requires
+        run: npm install -g @fission-ai/openspec
+      - name: Install the window-system headers SDL3 builds against
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - name: Install the generator
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      # Keyed on the dependency manifest, per task 2.4.3: a change to deps/manifest.toml is exactly
+      # the change that invalidates the fetched sources, and nothing else does. The build tree rides
+      # in the same cache so that the test job restores what this job produced.
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-${{ matrix.label }}-
+      - name: Diagnose the environment
+        run: just env-doctor
+      # `just build-engine`, not `just build-all`, because tools/roadmap/gates.toml declares that
+      # command for the build-and-test gate and `just ci-check` fails when a declared gate is not
+      # run. build-all is a one-line alias to it; the gate list is the thing that must not drift.
+      - name: Build
+        run: just build-engine
+
+  # --- The graduated test set --------------------------------------------------------------------
+  test:
+    name: test ${{ matrix.label }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-x86_64, os: ubuntu-24.04 }
+          - { label: linux-arm64, os: ubuntu-24.04-arm }
+          - { label: macos-x86_64, os: macos-13 }
+          - { label: macos-arm64, os: macos-14 }
+          - { label: windows-x86_64, os: windows-2022, msvc: x64 }
+          - { label: windows-arm64, os: windows-11-arm, msvc: arm64 }
+    env:
+      # The machine-readable results `testing-and-quality` requires of a continuous integration run.
+      # The recipe already knows how to produce them; the job only says where to put them.
+      CY_TEST_JUNIT: test-results.xml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - if: matrix.msvc != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
+      - name: Install the window-system headers SDL3 builds against
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - name: Install the generator
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-${{ matrix.label }}-
+      - name: Unit, integration and smoke
+        run: just test-all
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.label }}
+          path: test-results.xml
+          if-no-files-found: ignore
+
+  # --- Format, static analysis, layering, and the workflow's own checks --------------------------
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the tools the doctor requires
+        run: npm install -g @fission-ai/openspec
+      - name: Install the compiler tooling and window-system headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang-format clang-tidy libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-quality-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-quality-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-quality-
+      - name: Formatting
+        run: just quality-format-check
+      # The layer rule is checked in two places and this recipe runs both: the source-level scan,
+      # and the fixtures whose configure must fail. It needs no build.
+      - name: Layering
+        run: just quality-layers
+      - name: The workflow itself
+        run: just ci-check
+      # clang-tidy needs the flags every file is compiled with, so the build comes first.
+      - name: Configure and build for the compile database
+        run: just build-engine
+      - name: Static analysis
+        run: just quality-lint
+
+  # --- The specification set ----------------------------------------------------------------------
+  specs:
+    name: spec validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the OpenSpec CLI
+        run: npm install -g @fission-ai/openspec
+      - name: Validate
+        run: just quality-specs
+
+  # --- Generated code, and the attribution generated from the dependency manifest -----------------
+  generated:
+    name: generated-code currency
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-generated-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-generated-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-generated-
+      # THIRD_PARTY.md is generated from deps/manifest.toml and needs nothing configured.
+      - name: Attribution matches the dependency manifest
+        run: just maintenance-deps-check
+      # The generated headers are a function of the configuration, so a configure comes first.
+      - name: Configure
+        run: just build-engine
+      - name: Generated headers are current and reproducible
+        run: just generate-check
+      - name: The generators, the feature options and the module graph
+        run: just generate-test
+
+  # --- The capability status record ---------------------------------------------------------------
+  roadmap:
+    name: roadmap-status
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Status matches the specification set
+        run: just roadmap-status
+      # The drift detection's own negative fixtures: a status recipe that stopped failing on drift
+      # would report every capability green and gate nothing.
+      - name: The drift detection still fires
+        run: just roadmap-test

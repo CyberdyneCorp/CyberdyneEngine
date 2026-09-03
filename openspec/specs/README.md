@@ -8,6 +8,9 @@ implementation must satisfy, and the place where architectural decisions are rec
 justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:apply` →
 `openspec validate` → `/opsx:archive`), so the reasoning behind a decision stays with it.
 
+For the order in which these become code, see [`delivery-roadmap`](delivery-roadmap/spec.md) and
+its narrative view, [the roadmap](../../docs/ROADMAP.md).
+
 ## Reading order
 
 **1 — Foundations**
@@ -110,6 +113,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [testing-and-quality](testing-and-quality/spec.md) | Test taxonomy, golden images, determinism, benchmarks, merge gates |
 | [diagnostics-profiling-and-crash](diagnostics-profiling-and-crash/spec.md) | One trace, profiler views, rolling capture, crash artefacts, reproduction, privacy |
 | [thirdparty-dependencies](thirdparty-dependencies/spec.md) | Dependency policy, the intended set, what we build ourselves |
+| [delivery-roadmap](delivery-roadmap/spec.md) | The milestone ladder, maturity tiers, executable gates, invariant timing, deferred re-entry points |
 
 ## The decisions that shape everything else
 

@@ -1,0 +1,49 @@
+# Line endings are normalised to LF in the repository and checked out as LF everywhere. The build,
+# the formatter and the layering check all read source as text; a CRLF checkout would make each of
+# them report differences that are not there.
+* text=auto eol=lf
+
+# Windows keeps its own line endings, because the interpreters require them.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary, so that git neither diffs nor normalises them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+*.wav  binary
+*.ogg  binary
+*.mp3  binary
+*.spv  binary
+*.dds  binary
+*.ktx2 binary
+*.exr  binary
+*.cypak binary
+*.pdb  binary
+*.a    binary
+*.lib  binary
+*.so   binary
+*.dylib binary
+*.dll  binary
+
+# Diffs that read better with language-aware hunk headers.
+*.c    diff=cpp
+*.cc   diff=cpp
+*.cpp  diff=cpp
+*.h    diff=cpp
+*.hpp  diff=cpp
+*.inl  diff=cpp
+*.rs   diff=rust
+*.py   diff=python
+*.md   diff=markdown
+
+# Generated and committed: reviewable, but not the place to make a change. The generator is.
+bindings/swift/**  linguist-generated=true
+THIRD_PARTY.md     linguist-generated=true
