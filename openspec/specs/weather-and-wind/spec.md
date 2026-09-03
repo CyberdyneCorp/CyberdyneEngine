@@ -212,8 +212,10 @@ durations**: cloud coverage over minutes, precipitation over a shorter period, w
 Transitions SHALL be deterministic where the session's determinism profile requires it, and
 schedulable in advance so that a designed weather sequence is reproducible.
 
-Sequencing tools SHALL drive weather by manipulating this state; a separate cinematic-only weather
-implementation SHALL NOT exist.
+`sequencing-and-cinematics` drives weather by **setting this state** through environment tracks —
+target preset, transition timing, and individual parameters — and a separate cinematic-only weather
+implementation SHALL NOT exist. A weather change authored on a timeline and one triggered by
+gameplay SHALL be the same operation.
 
 #### Scenario: Weather arrives, it does not appear
 - **WHEN** a storm preset is applied
@@ -222,6 +224,10 @@ implementation SHALL NOT exist.
 #### Scenario: Cinematics use the same system
 - **WHEN** a sequence drives the weather
 - **THEN** it SHALL set the same state, not a parallel visual path
+
+#### Scenario: Authored and gameplay weather agree
+- **WHEN** the same storm is triggered by a sequence in one mission and by gameplay in another
+- **THEN** both SHALL produce the same environmental state through the same transition mechanism
 
 ### Requirement: Weather determinism and the firewall
 Weather SHALL declare which of its state is **authoritative** — participating in gameplay and

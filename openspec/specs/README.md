@@ -30,6 +30,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [gameplay-framework](gameplay-framework/spec.md) | CyberGameplay: sessions, rules, participants, teams, control bindings, one command stream, tags, features |
 | [gameplay-abilities-and-effects](gameplay-abilities-and-effects/spec.md) | Compiled ability programs, attributes and modifiers, effects, targeting, prediction |
 | [visual-scripting](visual-scripting/spec.md) | CyberGraph: shared graph infrastructure, typed pins, compiled programs, semantic merge |
+| [sequencing-and-cinematics](sequencing-and-cinematics/spec.md) | CyberSequence: compiled timelines, exact time, batched dispatch, seek and skip, preload plans |
 | [input-and-actions](input-and-actions/spec.md) | CyberInput: users and devices, context stack, bindings, processors, triggers, accessibility |
 | [camera-system](camera-system/spec.md) | CyberCamera: compiled rigs, camera stack, framing, aim, cuts, render views and streaming sources |
 | [simulation-and-determinism](simulation-and-determinism/spec.md) | Ticks, epochs, the commit boundary, determinism profiles, hashing, the validator |
@@ -137,6 +138,10 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   what they report; one trace carries all of it, so a task stall, a memory spike and a streaming
   stall appear on one timeline. The rolling buffer means a profiler need not have been running
   before the hitch.
+- **A cinematic orchestrates; it never owns.** Sequences produce batched commands for the camera,
+  animation, audio, effect, environment and gameplay systems that remain authoritative — and
+  authoritative change crosses the same command boundary as a player's input. A compiled sequence
+  also knows the future, which makes it the only predictor in the engine that is not extrapolating.
 - **Authoring convenience compiles.** Abilities are shared programs plus compact state; graphs are a
   source language that lowers to systems over archetypes. Neither introduces one object, one
   interpreter or one virtual update per entity — which is the whole reason to have built the ECS.

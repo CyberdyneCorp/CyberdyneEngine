@@ -37,6 +37,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Simulation integrity** | Determinism profiles, one command log for replay and rollback, saves as world deltas |
 | **Tooling** | Transaction-based editor, live editing to local and remote runtimes, graph-driven builds |
+| **Cinematics** | CyberSequence: compiled timelines orchestrating camera, animation, audio, environment and gameplay |
 | **Diagnostics** | One trace across every subsystem, rolling capture, crash artefacts that reproduce |
 | **Licence** | MIT |
 
@@ -69,6 +70,13 @@ change behaviour and accessibility transformations cannot be bypassed. Cameras a
 compiled to programs — never a base class, never written directly by gameplay — and one evaluated
 camera yields the render view, the audio listener anchor and the streaming source with predicted
 motion, so the three cannot disagree about where the player is.
+
+**Cinematics coordinate; they never own.** A sequence compiles into a program that produces batched
+commands for the camera, animation, audio, effect and environment systems — which stay authoritative
+— and anything it changes in gameplay crosses the same command boundary a player's input does.
+Because it is compiled, it also knows what the next shot will need seconds before the camera arrives,
+which makes it the one predictor in the engine that is not extrapolating. And skipping a cutscene
+applies what it skipped, rather than leaving the door it would have opened still locked.
 
 **A bug report should carry its own reproduction.** Every subsystem emits into one trace, so a task
 stall, a memory spike and a streaming stall land on a single timeline; a rolling buffer is always on
@@ -269,7 +277,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 68 capabilities. Start here.
+  specs/          Target specifications — 69 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```
