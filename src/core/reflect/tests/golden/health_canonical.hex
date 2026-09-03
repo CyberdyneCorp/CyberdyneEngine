@@ -1,0 +1,11 @@
+# A cy::demo::Health record, exactly as write_record() emits it today. Task 1.2.5.
+#
+# The golden is committed so that a change to the encoding is a change to this file, reviewed like
+# any other. Hexadecimal rather than binary because a diff of it is readable: the leading 01000000
+# is TypeId 1, then the payload size, then the field count.
+#
+# maximum = 250.0, current = 137.5, last_damage = Frost (2), icon = 0x0123456789ABCDEF.
+# `displayed` is absent because it is Transient, which is what Transient means.
+
+010000003100000004000000010000000a00040000007a43020000000a000400
+008009430400000006000100020500000009000800efcdab8967452301

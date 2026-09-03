@@ -172,3 +172,99 @@ _ctest kind *args:
         fi
     fi
     exit "${status}"
+
+# The job system's throughput, checked against benchmarks/thresholds. Pass --record to rewrite them.
+test-bench-jobs *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    # A separate recipe from `test-bench` because this benchmark is not one of the shared harness's:
+    # it measures a thread pool against a serial baseline rather than a fixed-iteration loop, and it
+    # owns its own thresholds (src/core/jobs/bench/thresholds.json) and its own comparison. The
+    # runner exits non-zero on a regression, so this is a gate rather than a report.
+    if [ "$(just _profile-column "${profile}" 3)" = "on" ]; then
+        echo "note: profile '${profile}' has assertions on. Measurements from it are not shipping" >&2
+        echo "      numbers — use --profile profile for a figure worth recording." >&2
+    fi
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    runner="${build_dir}/benchmarks/cy_bench_jobs_throughput"
+    if [ ! -x "${runner}" ]; then
+        echo "test-bench-jobs: no runner at ${runner}" >&2
+        echo "  It is built with the tests (CY_BUILD_TESTS); check that they are enabled." >&2
+        exit 1
+    fi
+    echo "==> jobs throughput"
+    exec "${runner}" ${rest}
+
+# Build and run a suite under a sanitizer. Usage: just test-sanitize [--sanitizer thread|address|...] [--tests <regex>]
+test-sanitize *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+
+    # `core-jobs-and-concurrency` asks for a data-race detector over the concurrency suites, and
+    # `testing-and-quality` asks for the unit and integration suites under ASan, UBSan and TSan at
+    # least nightly. This is the one recipe both mean: it configures a sanitized tree of its own —
+    # a sanitized build is not interchangeable with an ordinary one, so it never reuses build/<profile>
+    # — builds it, and runs the selected tests in it.
+    sanitizer="thread"
+    tests="."
+    leaks="off"
+    expecting=""
+    ctest_args=()
+    for argument in ${rest}; do
+        case "${expecting}" in
+            sanitizer) sanitizer="${argument}"; expecting=""; continue ;;
+            tests)     tests="${argument}";     expecting=""; continue ;;
+            leaks)     leaks="${argument}";     expecting=""; continue ;;
+        esac
+        case "${argument}" in
+            --sanitizer) expecting=sanitizer ;;
+            --sanitizer=*) sanitizer="${argument#*=}" ;;
+            --tests) expecting=tests ;;
+            --tests=*) tests="${argument#*=}" ;;
+            --leaks) expecting=leaks ;;
+            --leaks=*) leaks="${argument#*=}" ;;
+            *) ctest_args+=("${argument}") ;;
+        esac
+    done
+
+    build_dir="${CY_BUILD_DIR:-build/sanitize-${sanitizer}}"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    echo "==> sanitize    ${sanitizer}  profile=${profile}  tree=${build_dir}"
+    CY_BUILD_DIR="${build_dir}" just build-engine --profile "${profile}" -D "CY_SANITIZE=${sanitizer}"
+
+    # A sanitized binary is five to twenty times slower, which is the tool working rather than the
+    # test regressing. The harness scales its per-test budget under a sanitizer already; this makes
+    # the intent explicit and gives CTest room too.
+    export CY_TEST_BUDGET_SCALE="${CY_TEST_BUDGET_SCALE:-0}"
+
+    # LeakSanitizer is off by default and that is a recorded state, not an oversight: the trace's
+    # per-thread rings are pooled for the life of the process and are not yet declared to the
+    # detector (design.md §9, M1 task 2.12). Any suite that opens a trace therefore reports them.
+    # `--leaks on` turns detection on, and the change that closes task 2.12 makes that the default.
+    if [ "${leaks}" = "on" ]; then
+        export ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=1"
+    else
+        export ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=0"
+    fi
+    export UBSAN_OPTIONS="${UBSAN_OPTIONS:-}${UBSAN_OPTIONS:+:}print_stacktrace=1"
+
+    # ThreadSanitizer maps its shadow memory at fixed addresses and refuses to start when the
+    # kernel's ASLR entropy puts the executable where it wants to be — "unexpected memory mapping"
+    # on a recent Linux with vm.mmap_rnd_bits at 32. `setarch -R` disables randomisation for the
+    # run, which is the documented workaround and costs nothing else.
+    launcher=()
+    if [ "${sanitizer}" = "thread" ] && command -v setarch >/dev/null 2>&1; then
+        launcher=(setarch "$(uname -m)" -R)
+    fi
+
+    echo "==> tests       ${tests}"
+    "${launcher[@]}" ctest --test-dir "${build_dir}" --output-on-failure \
+        --tests-regex "${tests}" --no-tests=error ${ctest_args[@]+"${ctest_args[@]}"}

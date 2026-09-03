@@ -1,0 +1,33 @@
+# Attribute types this module declares for itself, beyond `core-type-system`'s table.
+#
+# Task 1.1.3. The specification requires that "projects and modules SHALL be able to declare their
+# own attribute types, which the generator emits as typed data like the built-in ones" — so a
+# consumer reads a struct with named members rather than parsing a string, and the generator
+# validates the declaration at build time rather than a reader discovering it is malformed.
+#
+# A module names its schema in CMake:
+#
+#     cy_reflect_generate(... ATTRIBUTES "${CMAKE_CURRENT_SOURCE_DIR}/reflect_attributes.toml")
+#
+# The generator emits, into that module's generated header, one struct per attribute with one member
+# per parameter, and a constexpr instance per use. Read it with
+# cy::reflect::find_custom<cy::demo::StreamingAttribute>(field.attributes, "Streaming").
+#
+# Parameter types are the fixed-width vocabulary of cy/core/base/types.h plus `bool` and `string`;
+# `string` becomes a `const char*` pointing at a literal in the generated translation unit. A
+# parameter with no default is required, and omitting it fails generation naming the field.
+
+[[attribute]]
+name = "Streaming"
+struct = "StreamingAttribute"
+namespace = "cy::demo"
+doc = "How the streamer should treat the tile this field names."
+
+[[attribute.parameter]]
+name = "priority"
+type = "i32"
+
+[[attribute.parameter]]
+name = "prefetch"
+type = "bool"
+default = false

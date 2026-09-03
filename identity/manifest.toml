@@ -1,0 +1,87 @@
+# The identity manifest — the source of truth for type and field identifiers.
+#
+# Generated and appended to by tools/gen/reflect_gen.py; committed, reviewed, and never rewritten by
+# hand except to record a rename or a removal. `just quality-identity` is the gate.
+#
+# An identifier is an OPAQUE NUMBER assigned on first sight. It is not a hash of the name, not a
+# hash of the type, not an index, and not a content digest — see design.md section 1. Renaming a
+# type or a field, moving it between namespaces, or relocating it between modules changes its `name`
+# here and nothing else, so every scene, prefab override, save, animation binding and replication
+# schema written against it stays valid.
+#
+# `status = "removed"` is a TOMBSTONE. The number stays here forever and is never issued again: a
+# recycled identifier produces data that loads successfully and is wrong, which is the one failure
+# mode with no diagnostic.
+#
+# `next_type_id` and each type's `next_field_id` are above every number ever issued, tombstones
+# included. Lowering one recycles an identifier and is rejected.
+
+
+version = 1
+next_type_id = 3
+
+[[type]]
+id = 1
+name = "cy::demo::Health"
+module = "core-reflect"
+header = "src/core/reflect/include/cy/core/reflect/demo/types.h"
+status = "live"
+next_field_id = 6
+
+[[type.field]]
+id = 1
+name = "maximum"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "current"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "displayed"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "last_damage"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "icon"
+status = "live"
+
+[[type]]
+id = 2
+name = "cy::demo::Placement"
+module = "core-reflect"
+header = "src/core/reflect/include/cy/core/reflect/demo/types.h"
+status = "live"
+next_field_id = 6
+
+[[type.field]]
+id = 1
+name = "x"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "y"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "rotation"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "flags"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "tile"
+status = "live"

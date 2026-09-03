@@ -92,6 +92,36 @@ quality-layers *args:
     cd "{{root}}" && python3 tools/layercheck/layercheck.py {{args}}
     cd "{{root}}" && python3 tools/layercheck/selftest.py
 
+# The identity gate. `core-type-system` requires a check that "diffs the manifest and fails when an
+# existing entry's identifier changes, so an accidental identity change is a red build rather than a
+# corrupted save months later". This is that check, and it is a merge gate.
+#
+# Three failures it produces, each naming the entry and its identifier:
+#
+#   * a declaration in the tree with no identifier in the manifest — run `just generate-headers`;
+#   * a live entry in the manifest that has left the tree — a rename or a removal, and the generator
+#     will not guess which, so it names both fixes;
+#   * an identifier that has moved since the revision being diffed against, or that has been
+#     recycled, or a counter lowered below a number already issued.
+#
+# It reads the annotated headers the *build* declares, from the argument vector
+# src/core/reflect/CMakeLists.txt writes at configure time, so it cannot check a different set of
+# types than the build compiles.
+
+# Check type and field identity: nothing unassigned, nothing removed silently, no identifier moved.
+quality-identity *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    reflect_inputs="$(just _reflect-inputs "${build_dir}")"
+    mapfile -t reflect_args <<< "${reflect_inputs}"
+    echo "==> identity    identity/manifest.toml against the tree and against git"
+    python3 tools/gen/reflect_gen.py --source-root . "${reflect_args[@]}" \
+        --cache "${build_dir}/generated/cy_reflect_gate.json" --gate ${rest}
+
 # Validate the specification set: openspec validate --specs --strict. Seconds.
 quality-specs *args:
     #!/usr/bin/env bash

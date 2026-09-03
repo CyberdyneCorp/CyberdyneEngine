@@ -1,0 +1,10 @@
+{
+  "note": "Thresholds for the job system's throughput benchmark (task 3.2.12). Every metric is dimensionless so that it survives being run on a different machine: a speedup, or a cost in units of the calibration workload measured in the same process. A speedup must not fall below its threshold; a cost must not rise above it. Rewritten by `just test-bench-jobs --record`, which is a reviewed step: a threshold a failing run could rewrite for itself would gate nothing.",
+  "calibration_ns_per_unit_when_recorded": 5690.6427,
+  "metrics": {
+    "jobs/parallel-efficiency": 0.0809,
+    "jobs/parallel-for-efficiency": 0.2090,
+    "jobs/dispatch-overhead": 0.2072,
+    "jobs/scheduling-allocations": 0.0000
+  }
+}

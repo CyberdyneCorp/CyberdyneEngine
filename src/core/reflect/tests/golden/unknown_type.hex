@@ -1,0 +1,7 @@
+# A record whose TypeId this build does not know. Task 1.2.5.
+#
+# `core-type-system` requires that such data be "preserved verbatim as an opaque blob so re-saving
+# does not destroy it". peek_record() reads its header without the type, and write_opaque() copies
+# it forward byte for byte.
+
+921000000c00000001000000010000000800040007000000

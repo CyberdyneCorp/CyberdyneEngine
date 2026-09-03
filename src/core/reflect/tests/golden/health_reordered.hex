@@ -1,0 +1,14 @@
+# The same cy::demo::Health values, written by a build whose field order was different, and carrying
+# one field this build has never heard of. Task 1.2.5.
+#
+# This is the golden that proves the identity model rather than the encoding. Nothing here depends
+# on declaration order or on a byte offset — the record addresses fields by FieldId — so it loads
+# into today's struct and produces the same values as health_canonical.hex.
+#
+# FieldId 200 is a field that no build in this tree declares. A reader skips it: its number is
+# retired in the manifest and will never be issued to anything else, which is what makes skipping it
+# safe rather than a silent misread.
+
+010000003d000000050000000500000009000800efcdab896745230101000000
+0a00040000007a43c800000008000400efbeadde040000000600010002020000
+000a00040000800943

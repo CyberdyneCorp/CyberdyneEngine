@@ -1,0 +1,31 @@
+# LeakSanitizer suppressions for allocations this engine holds for the life of the process
+# ON PURPOSE. Task 2.12, carried from M0.
+#
+# THIS FILE IS THE FALLBACK, NOT THE MECHANISM. The mechanism is
+# cy::declare_process_lifetime() in <cy/core/memory/lifetime.h>: it names one pointer, of a known
+# size, with a tag, and tells both the engine's own leak report and LeakSanitizer about it in one
+# call. Use that wherever the allocating code can call it.
+#
+# This file exists for a binary that cannot: src/core/diagnostics/ does not link cy::core-memory,
+# so its per-thread trace rings — pooled for the life of the process so that a thread which exits
+# returns its slot for the next thread rather than freeing its buffer — have no way to reach the
+# declaration. Point LSAN_OPTIONS at this file for those suites:
+#
+#     LSAN_OPTIONS=suppressions=src/core/memory/lsan.supp ctest --preset dev
+#
+# EACH LINE NAMES ONE FUNCTION. A suppression matches a frame in the allocating stack, so these are
+# as narrow as the tool allows: a leak from anywhere else in diagnostics, or a second ring allocated
+# every frame by a defect, is still reported. Do not add a module, a namespace or a file here.
+
+# The per-thread trace ring buffer. src/core/diagnostics/src/ring.h, one malloc per thread slot,
+# freed only by ~ThreadRing, which never runs because slots outlive their threads on purpose.
+leak:cy::diag::ThreadRing::initialize
+
+# The slot that owns the ring. src/core/diagnostics/src/trace.cpp claim_slot(); the slots vector is
+# a member of a function-local static whose destructor runs before LeakSanitizer's check, which is
+# what makes a deliberately pooled slot look unreachable.
+#
+# Spelled without a namespace because it has none in the symbol: claim_slot() is in an anonymous
+# namespace, so the frame LeakSanitizer matches against is the bare name. `cy::diag::claim_slot`
+# matches nothing, which is a mistake worth stating rather than a line worth deleting.
+leak:claim_slot
