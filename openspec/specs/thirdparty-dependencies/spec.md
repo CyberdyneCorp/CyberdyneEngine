@@ -66,11 +66,11 @@ pinned in the dependency manifest, not here.
 | Image codecs | **libpng**, **libjpeg-turbo**, **libwebp**, **tinyexr** | BSD/MIT | Standard codecs |
 | Texture compression | **ISPC Texture Compressor** or **bc7enc**, **astc-encoder** | MIT/Apache 2.0 | BC and ASTC encoding |
 | Audio codecs | **libvorbis**, **libopus**, **dr_libs** | BSD/Public domain | Formats miniaudio does not decode natively |
-| Input and gamepads | **SDL3** | Zlib | Controller database and platform input coverage |
+| Windowing, input and gamepads | **SDL3** | Zlib | Window and event handling, graphics surface creation, the controller database, rumble and hot-plug, across every desktop platform |
 | Compression | **zstd**, **LZ4** | BSD/BSD | Best-in-class ratio and speed |
 | Cryptography | **BLAKE3**, **mbedTLS** | CC0/Apache 2.0 | Never hand-roll cryptography, least of all transport security |
 | Network transport (to evaluate) | A QUIC implementation, or a reliable-UDP library | Permissive | Reliability, congestion control, and encryption are solved; the replication layer above is not |
-| Testing | **Catch2** or **doctest** | BSL/MIT | Test framework |
+| Testing | **doctest** | MIT | Test framework, chosen for compile time: the unit budget is under a millisecond per test across thousands of tests, and compile time is a tax every contributor pays on every build |
 | Profiling | **Tracy** | BSD | Frame profiler with an excellent viewer |
 
 Steam Audio SHALL be optional and capability-gated; the engine SHALL be fully functional without
@@ -84,6 +84,21 @@ Where a table entry is marked *to evaluate*, the requirement is the capability, 
 the engine SHALL provide error-bounded clip compression, and whether that is an integrated codec or
 an engine implementation SHALL be decided by the implementation change against the criteria in the
 dependency policy.
+
+**SDL3 sits beneath `DisplayServer` and the input backend, not beside them.** It is the initial
+desktop implementation of engine-owned interfaces, and no SDL type SHALL appear above
+`platform/`. Native per-platform backends — Win32, Cocoa, and X11 with Wayland — are **planned**
+rather than assumed, and delivering one before 1.0 is how the abstraction is validated against a
+second implementation rather than against a guess.
+
+#### Scenario: SDL does not leak above the platform layer
+- **WHEN** the engine is compiled
+- **THEN** no header outside `platform/` SHALL include an SDL header, and the check SHALL be a
+  build gate
+
+#### Scenario: A second backend validates the interface
+- **WHEN** a native backend is implemented for one desktop platform
+- **THEN** it SHALL require no change in `src/core/`, `src/ecs/`, `src/servers/`, or `src/scene/`
 
 #### Scenario: Backend can be replaced
 - **WHEN** a better physics library appears
@@ -443,6 +458,7 @@ expose it at runtime so games can display required notices without assembling th
 #### Scenario: Game credits
 - **WHEN** a game needs to display third-party licences
 - **THEN** the runtime SHALL provide the text for exactly the dependencies linked into that build
+
 ### Requirement: Optional proprietary middleware
 The engine SHALL permit optional, proprietary middleware to be adopted by a project as a **plugin
 implementing an engine-owned interface**, without that middleware becoming an engine dependency.
@@ -462,6 +478,7 @@ justify depending on proprietary code for any engine-provided capability.
 #### Scenario: Studio-supplied middleware plugin
 - **WHEN** a project supplies a proprietary backend plugin for an engine interface
 - **THEN** it SHALL load through the normal plugin mechanism, and gameplay code SHALL be unchanged
+
 ### Requirement: Rust editor dependencies
 The editor's Rust dependencies SHALL be governed by the same policy as the engine's C++ dependencies:
 declared, pinned, licence-reviewed, vendored or reproducibly acquired, and justified.

@@ -109,7 +109,7 @@ it advances and the artefact that closes it.
 | **M8** | Game systems | Gameplay framework, abilities, visual scripting, sequencing, animation, AI, navigation, VFX, UI, text, 2D, full audio, inference | A playable vertical-slice game exercising every gameplay-facing capability at Working |
 | **M9** | Integrity | Determinism profiles and the validator, replay, rollback, networking and replication, dedicated server | A four-player session with rollback reconciliation; a recorded replay reproduces bit-exactly; an injected divergence is narrowed to a field on an entity |
 | **M10** | Worlds | Environment fields, terrain, foliage, water, weather and wind, atmosphere and clouds, procedural generation | An open-world environment demo: procedurally populated terrain, dynamic weather driving foliage, water and wetness through the shared field substrate |
-| **M11** | Reach | Metal and D3D12 backends, the console porting surface, mobile, XR prerequisites, packaging and patching complete, the documentation gate | The same project ships on every supported target from one command; every capability is Complete or explicitly deferred |
+| **M11** | Reach | Metal and D3D12 backends, a native platform backend proving the porting surface, mobile targets, XR prerequisites, packaging and patching complete, the documentation gate | The same project ships on every supported target from one command; every capability is Complete or explicitly deferred |
 
 **M11** SHALL be the **1.0** gate. Before it, no compatibility promise SHALL be made beyond the ABI
 versioning rules that apply from **M4**.
@@ -227,9 +227,17 @@ a change:
 | 2 | Metal | M11, seeded at M7 | Native Metal, not a translation layer |
 | 3 | D3D12 | M11 | Last, because it adds no capability the first two do not exercise |
 
-Target platforms SHALL be delivered in this order: the three desktop platforms together from M0;
-the console **porting surface** — the platform abstraction proving it has no desktop assumptions —
-from M11; mobile from M11; XR deferred with its prerequisites held open from M3.
+Target platforms SHALL be delivered in this order: **Linux, Windows and macOS** — each on x86-64 and
+ARM64 — together from M0; the **porting surface** proven against a second platform-layer
+implementation at M11; **iOS, Android, visionOS and Web** as planned targets whose requirements the
+platform abstraction must not preclude. Consoles are out of scope, per
+`core-platform-abstraction`.
+
+The desktop platform layer SHALL be delivered as an SDL3-backed implementation of `Platform`,
+`DisplayServer` and the input backend at M0. At least one **native** per-platform implementation of
+those interfaces SHALL land at M11, for the same reason Metal is seeded at M7: an abstraction with
+one implementation is a guess, and the cost of discovering that at 1.0 is a porting surface that
+does not port.
 
 A second backend SHALL be started only after the first has passed a milestone gate, so that the
 abstraction is validated against a working implementation rather than against a guess.
@@ -241,6 +249,11 @@ abstraction is validated against a working implementation rather than against a 
 #### Scenario: Metal is seeded before it is required
 - **WHEN** M7 introduces features that could accidentally become Vulkan-specific
 - **THEN** a Metal seed SHALL exist to expose the assumption while it is still cheap to remove
+
+#### Scenario: The platform abstraction is validated by a second implementation
+- **WHEN** a native platform backend is written at M11
+- **THEN** it SHALL require no change in `src/core/`, `src/ecs/`, `src/servers/`, or `src/scene/`,
+  and any change it does require SHALL be recorded as a defect in the abstraction
 
 ### Requirement: Third-party integration is staged
 Each integrated dependency SHALL enter the project at the milestone that first needs it, behind its

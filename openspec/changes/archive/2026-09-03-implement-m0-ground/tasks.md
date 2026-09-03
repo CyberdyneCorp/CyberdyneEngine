@@ -255,20 +255,20 @@ The named risk of this milestone. Its only deliverable is a decision, recorded i
 
 ## 5. Closing the milestone
 
-- [ ] 5.1 `just doctor && just build && just test` green on Linux, Windows and macOS in CI
-- [ ] 5.2 `just run-sample empty` opens and closes a window on all three
+- [x] 5.1 `just doctor && just build && just test` green on Linux, Windows and macOS in CI
+- [x] 5.2 `just run-sample empty` opens and closes a window on all three
 - [x] 5.3 A trace file is produced and readable by `just diagnose-trace`
 - [x] 5.4 Format, lint and static analysis gates live and green
 - [x] 5.5 The layering check fails on each of the three deliberately introduced violations
-- [ ] 5.6 `just roadmap-milestone m0` exits zero
+- [x] 5.6 `just roadmap-milestone m0` exits zero
 - [x] 5.7 Update `docs/roadmap/status.yaml`: `build-system-and-platforms`,
       `developer-workflow-and-just`, `thirdparty-dependencies`, `testing-and-quality`,
       `core-platform-abstraction`, `diagnostics-profiling-and-crash` and `project-and-plugins` to
       **seed**; `delivery-roadmap` to **working**; each naming this change
 - [x] 5.8 Update `docs/roadmap/capability-matrix.md` and `docs/ROADMAP.md` where M0 recorded an
       intention that the implementation changed
-- [ ] 5.9 `openspec validate --specs --strict` passes; archive this change
-- [ ] 5.10 Open the M1 change — the reflection generator's incrementality is its named spike
+- [x] 5.9 `openspec validate --specs --strict` passes; archive this change
+- [x] 5.10 Open the M1 change — the reflection generator's incrementality is its named spike
 
 ---
 
