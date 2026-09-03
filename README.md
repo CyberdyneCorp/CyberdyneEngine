@@ -1,261 +1,267 @@
 # CyberdyneEngine
 
-An open-source game engine: **C++20** core, **Swift** for gameplay scripting, **Rust** for the
-editor.
+An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for the editor.
 
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: specification stage.** There is no code yet. The specifications in
-> [`openspec/specs/`](openspec/specs/) define what is being built and why, and are the contract
-> the implementation must satisfy. Start with
-> [the specification index](openspec/specs/README.md).
+> **Status: specification stage. There is no code yet.**
+> [`openspec/specs/`](openspec/specs/) holds **73 capabilities · 1,155 requirements · 2,551
+> scenarios** that define what is being built and why, and are the contract the implementation must
+> satisfy. Start at [the specification index](openspec/specs/README.md).
 
-## What it is
-
-| | |
-|---|---|
-| **Core language** | C++20, no exceptions, no RTTI |
-| **Editor** | A separate Rust application; a client of the engine over the C ABI and the live bridge |
-| **Scripting** | Swift, via a generated overlay over a stable C ABI |
-| **World model** | Archetype ECS core with a scene-graph node façade |
-| **Gameplay** | CyberGameplay: sessions, rules and teams as data; one command stream for players, AI, network and replay |
-| **Input & camera** | CyberInput: users, contexts, triggers. CyberCamera: compiled rigs producing views, listeners and streaming sources |
-| **World** | CyberWorld: partitioned streaming cells, layers, persistence overlay, authored from prefabs and scenes |
-| **Environment** | Terrain, foliage, water, weather and sky over a shared sparse field substrate |
-| **Procedural** | CyberPCG: compiled generation graphs, region-incremental, stable identity, provenance |
-| **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
-| **Shaders** | Slang → SPIR-V (→ MSL) |
-| **VFX** | Engine-owned, GPU-first, compiled effect graphs |
-| **UI** | CyberUI: retained tree, declarative Swift/C++ authoring, CSS-like styling, GPU-driven |
-| **AI** | CyberAI: ECS agents, one compiled graph for states/BT/utility/GOAP, deterministic |
-| **Geometry** | CyberGeometry: virtualised clusters, GPU-driven streaming and culling, visibility buffer |
-| **Textures & shadows** | CyberTexture and CyberShadow: paged virtual textures and receiver-driven virtual shadows |
-| **Materials** | CyberMaterial: graph → IR → closures → compiled program, bindless, GPU material table |
-| **Animation** | CyberAnimation: skeleton/rig split, compiled programs, GPU pose world, motion matching |
-| **Illumination** | CyberGI: hybrid tracing, surface and radiance caches, shared with reflections |
-| **Networking** | CyberNet: ECS component replication, three network modes, priority-scheduled interest |
-| **Physics** | Jolt, behind an engine-owned interface |
-| **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
-| **Simulation integrity** | Determinism profiles, one command log for replay and rollback, saves as world deltas |
-| **Tooling** | Transaction-based editor, live editing to local and remote runtimes, graph-driven builds |
-| **Workflow** | One `justfile`: build, run, test, generate, cook, diagnose, release — the same recipes CI runs |
-| **Cinematics** | CyberSequence: compiled timelines orchestrating camera, animation, audio, environment and gameplay |
-| **Diagnostics** | One trace across every subsystem, rolling capture, crash artefacts that reproduce |
-| **Licence** | MIT |
+---
 
 ## The shape of it
 
+Three languages, three processes, two boundaries — and the same boundary serves game code, the
+editor, and a game running on a console.
+
+```mermaid
+flowchart TB
+    subgraph GAME["Game process"]
+        SW["Swift gameplay code"]
+        KIT["CyberdyneKit<br/><i>generated overlay</i>"]
+        SW --- KIT
+    end
+
+    subgraph ED["Editor process (Rust)"]
+        UI["Panels · view models · commands"]
+        SDK["CyberEditor SDK<br/><i>generated overlay</i>"]
+        UI --- SDK
+    end
+
+    ABI{{"flat C ABI<br/>versioned · append-only"}}
+    BRIDGE{{"live bridge protocol"}}
+
+    subgraph CORE["C++20 core"]
+        LAYERS["<b>Scene</b> — node façade, prefabs, serialization<br/><b>ECS</b> — archetypes, queries, scheduler<br/><b>Servers</b> — render, physics, audio, nav, text<br/><b>Backends</b> — Vulkan / Metal · Jolt · platform<br/><b>Core</b> — types, memory, math, jobs, assets"]
+    end
+
+    KIT --> ABI
+    SDK --> ABI
+    SDK --> BRIDGE
+    ABI --> CORE
+    BRIDGE -.->|"local, remote, or console"| CORE
+
+    classDef boundary fill:#1f2937,stroke:#60a5fa,stroke-width:2px,color:#e5e7eb
+    class ABI,BRIDGE boundary
 ```
-      Swift game code            Rust editor (separate process)
-            │                                │
-   CyberdyneKit (overlay)          CyberEditor SDK (overlay)
-            │                                │
-            │                      live bridge protocol
-            │                                │
-            └────────────────┬───────────────┘
-                             │
-             flat C ABI (versioned, append-only)
-                             │
-  ┌──────────────────────────┴────────────────────────┐
-  │                    C++20 core                     │
-  │                                                   │
-  │   Scene   ── Node façade, prefabs, serialization  │
-  │   ECS     ── archetypes, queries, scheduler       │
-  │   Servers ── render, physics, audio, nav, text    │
-  │   Backends── Vulkan/Metal · Jolt · platform       │
-  │   Core    ── types, memory, math, jobs, assets    │
-  └───────────────────────────────────────────────────┘
+
+The editor is a **client**, not a part of the engine ([`editor-rust-application`](openspec/specs/editor-rust-application/spec.md)).
+A runtime crash costs a restart, not a session. And because the runtime is already out of process,
+editing on a console is the same code path as editing locally.
+
+---
+
+## What it is
+
+| | | |
+|---|---|---|
+| **Core** | C++20, no exceptions, no RTTI; archetype ECS with a node façade | [`ecs-core`](openspec/specs/ecs-core/spec.md) · [`scene-graph-and-nodes`](openspec/specs/scene-graph-and-nodes/spec.md) |
+| **Scripting** | Swift over a generated overlay on a stable C ABI | [`swift-scripting`](openspec/specs/swift-scripting/spec.md) · [`native-abi`](openspec/specs/native-abi/spec.md) |
+| **Editor** | Separate Rust application; MVVM, commands, hosted runtime | [`editor-rust-application`](openspec/specs/editor-rust-application/spec.md) · [`editor-ui-ux`](openspec/specs/editor-ui-ux/spec.md) |
+| **Renderer** | Explicit RHI + automatic render graph — Vulkan first, Metal second | [`rhi-and-render-graph`](openspec/specs/rhi-and-render-graph/spec.md) · [`rendering-architecture`](openspec/specs/rendering-architecture/spec.md) |
+| **Geometry** | CyberGeometry: virtualised clusters, GPU culling, visibility buffer | [`virtual-geometry`](openspec/specs/virtual-geometry/spec.md) |
+| **Materials** | CyberMaterial: graph → IR → closures → compiled program, bindless | [`material-compiler`](openspec/specs/material-compiler/spec.md) |
+| **Illumination** | CyberGI: hybrid tracing, surface and radiance caches, shared with reflections | [`rendering-global-illumination`](openspec/specs/rendering-global-illumination/spec.md) |
+| **Paging** | Virtual textures and receiver-driven virtual shadows over one residency policy | [`virtual-texturing`](openspec/specs/virtual-texturing/spec.md) · [`virtual-shadows`](openspec/specs/virtual-shadows/spec.md) · [`residency`](openspec/specs/residency/spec.md) |
+| **World** | CyberWorld: partitioned cells, layers, persistence overlay | [`world-partition-and-streaming`](openspec/specs/world-partition-and-streaming/spec.md) |
+| **Environment** | Terrain, foliage, water, weather and sky over one sparse field substrate | [`environment-fields`](openspec/specs/environment-fields/spec.md) · [`terrain`](openspec/specs/terrain/spec.md) · [`water`](openspec/specs/water/spec.md) |
+| **Procedural** | CyberPCG: compiled graphs, region-incremental, stable generated identity | [`procedural-content-generation`](openspec/specs/procedural-content-generation/spec.md) |
+| **Gameplay** | Sessions, rules and teams as data; one command stream for every producer | [`gameplay-framework`](openspec/specs/gameplay-framework/spec.md) |
+| **Simulation** | Animation, AI, physics and audio — compiled programs; Jolt and miniaudio behind engine-owned interfaces | [`animation-and-skinning`](openspec/specs/animation-and-skinning/spec.md) · [`ai-system`](openspec/specs/ai-system/spec.md) · [`physics`](openspec/specs/physics/spec.md) |
+| **Networking** | CyberNet: component replication, priority-scheduled interest, rollback | [`networking-and-replication`](openspec/specs/networking-and-replication/spec.md) |
+| **Integrity** | Determinism profiles, one command log for replay, rollback and cinematics | [`simulation-and-determinism`](openspec/specs/simulation-and-determinism/spec.md) · [`sequencing-and-cinematics`](openspec/specs/sequencing-and-cinematics/spec.md) |
+| **Diagnostics** | One trace, rolling capture, crash artefacts that reproduce | [`diagnostics-profiling-and-crash`](openspec/specs/diagnostics-profiling-and-crash/spec.md) |
+| **Workflow** | One `justfile` — the same recipes CI runs | [`developer-workflow-and-just`](openspec/specs/developer-workflow-and-just/spec.md) |
+| **Licence** | MIT | [LICENSE](LICENSE) |
+
+---
+
+## How a frame is built
+
+Nothing walks a scene tree at render time. The GPU scene is the renderer's input, and one arbiter
+decides what the frame can afford.
+
+```mermaid
+flowchart LR
+    subgraph SIM["Simulation"]
+        W["ECS world<br/>archetype chunks"]
+        ANIM["GPU pose world"]
+        VFX["VFX simulation"]
+    end
+
+    GS[("GPU scene<br/>instances · materials · transforms")]
+    W --> GS
+    ANIM --> GS
+    VFX --> GS
+
+    subgraph GPU["GPU-driven frame"]
+        direction TB
+        CULL["Cull + LOD"]
+        CLUST["Cluster selection<br/><i>screen-space error</i>"]
+        VIS["Visibility buffer"]
+        MAT["Material resolve"]
+        LIGHT["Lighting + GI"]
+        POST["Post + temporal + upscale"]
+        CULL --> CLUST --> VIS --> MAT --> LIGHT --> POST
+    end
+
+    GS --> CULL
+
+    subgraph PAGES["Paged data"]
+        direction TB
+        VT["Virtual textures"]
+        VSM["Virtual shadows"]
+        GEO["Geometry pages"]
+    end
+    PAGES -.->|"feedback drives residency"| GPU
+
+    ARB{{"Renderer budget arbiter<br/><i>one measurer, many allocations</i>"}}
+    ARB -.->|allocations| GPU
+    ARB -.->|allocations| PAGES
+
+    POST --> OUT["Frame"]
+
+    classDef arb fill:#3b1f1f,stroke:#f87171,stroke-width:2px,color:#fee2e2
+    class ARB arb
 ```
+
+Every paged system degrades along a defined axis — a coarse geometry root, a resident mip tail, a
+stale-but-valid shadow page — so a frame is never missing, only coarser.
+See [`rendering-culling-and-lod`](openspec/specs/rendering-culling-and-lod/spec.md),
+[`temporal-rendering`](openspec/specs/temporal-rendering/spec.md),
+[`denoising`](openspec/specs/denoising/spec.md).
+
+---
+
+## One command stream
+
+Players, AI, network peers, replays, tests and cinematics all emit the same semantic commands. The
+simulation cannot tell them apart — which is precisely why replay, rollback and lockstep are one
+mechanism instead of five.
+
+```mermaid
+flowchart LR
+    P["Player input"] --> CS
+    AI["AI agents"] --> CS
+    NET["Network peers"] --> CS
+    REP["Replay log"] --> CS
+    TEST["Automated tests"] --> CS
+    SEQ["Cinematic sequences"] --> CS
+
+    CS{{"Gameplay command stream<br/>validated · ordered · logged"}}
+    CS --> SIMU["Authoritative simulation"]
+    SIMU --> LEDGER[("Side-effect ledger")]
+    SIMU --> HASH["Hierarchical state hash"]
+
+    HASH -.->|divergence| DIAG["Narrow to a field on an entity"]
+    LEDGER -.->|"replayed once, not twice"| ROLL["Rollback"]
+
+    FIRE["Determinism firewall"] -.-> VFXN["VFX · ML inference<br/><i>presentation only</i>"]
+    SIMU --- FIRE
+
+    classDef stream fill:#1f2937,stroke:#60a5fa,stroke-width:2px,color:#e5e7eb
+    class CS stream
+```
+
+A session **declares** how deterministic it needs to be — `ReplayStable`, `SamePlatform`,
+`CrossPlatform`, `Lockstep` — and pays for that and no more; a configuration a subsystem cannot meet
+is rejected rather than discovered as a desync months later.
+See [`replay-and-rollback`](openspec/specs/replay-and-rollback/spec.md),
+[`save-and-persistence`](openspec/specs/save-and-persistence/spec.md).
+
+---
+
+## Content is a graph of derivations
+
+Not a script, not timestamps. Explicit inputs, deterministic keys, immutable content-addressed
+outputs — which is what makes cache sharing and chunk-level patching possible at all.
+
+```mermaid
+flowchart LR
+    ASSETS["Source assets<br/>glTF · FBX · textures · audio"] --> IMP["Import"]
+    GRAPHS["Authored graphs<br/>material · VFX · AI · PCG"] --> COMP["Compile to IR"]
+    IMP --> BG
+    COMP --> BG
+    BG{{"Build graph<br/>derivation keys"}}
+    BG <--> DDC[("Derived data cache<br/>content-addressed")]
+    BG --> COOK["Cook<br/>archetype blocks · pages"]
+    COOK --> PKG["Package"]
+    PKG --> PATCH["Chunk-level patch"]
+    BG -.->|"live client"| EDITOR["Editor"]
+```
+
+A designer authors hierarchies; the runtime gets flat data. Prefabs, scenes and worlds resolve at
+cook time into archetype blocks matching the runtime's chunk layout, so activating a streaming cell
+is a bulk copy — and a shipping build carries no prefab link at all.
+See [`build-and-packaging`](openspec/specs/build-and-packaging/spec.md),
+[`serialization-and-prefabs`](openspec/specs/serialization-and-prefabs/spec.md).
+
+---
 
 ## Design decisions worth knowing up front
 
-**Input becomes intent, and the camera produces everything downstream.** Devices feed a layered
-context stack that yields semantic actions, so gameplay never sees a key press, rebinding cannot
-change behaviour and accessibility transformations cannot be bypassed. Cameras are composable rigs
-compiled to programs — never a base class, never written directly by gameplay — and one evaluated
-camera yields the render view, the audio listener anchor and the streaming source with predicted
-motion, so the three cannot disagree about where the player is.
+Each links to the specification that owns it. The reasoning stays attached to the decision.
 
-**Cinematics coordinate; they never own.** A sequence compiles into a program that produces batched
-commands for the camera, animation, audio, effect and environment systems — which stay authoritative
-— and anything it changes in gameplay crosses the same command boundary a player's input does.
-Because it is compiled, it also knows what the next shot will need seconds before the camera arrives,
-which makes it the one predictor in the engine that is not extrapolating. And skipping a cutscene
-applies what it skipped, rather than leaving the door it would have opened still locked.
+- **ECS is the storage; the node tree is the interface.** Component data lives in packed
+  per-archetype chunks. A `Node` is a named handle onto an entity — it never duplicates data.
+  Designers get the tree, the runtime gets the arrays, and the coherence invariants are specified
+  rather than assumed — but UI elements deliberately live *outside* the ECS, because the right
+  structure per subsystem beats one structure everywhere.
+  → [`ecs-core`](openspec/specs/ecs-core/spec.md) · [`ui-system`](openspec/specs/ui-system/spec.md)
+- **The scripting boundary is a flat C ABI.** Opaque handles, POD structs, a versioned append-only
+  table. Swift and Rust bind through *generated* overlays, so they cannot drift.
+  → [`native-abi`](openspec/specs/native-abi/spec.md)
+- **Barriers are computed, not written.** The render graph owns synchronisation, transient aliasing
+  and pass scheduling. No renderer code writes a barrier.
+  → [`rhi-and-render-graph`](openspec/specs/rhi-and-render-graph/spec.md)
+- **Cost is bounded by configuration, not by content.** Rendering, audio and VFX each hold a budget
+  with importance tiers, so 8,000 noisy entities and 100 simultaneous explosions cost what you
+  configured rather than what the scene happens to contain. Deciding *how much simulation each thing
+  deserves* is the lever that actually matters at scale. → [`vfx-system`](openspec/specs/vfx-system/spec.md)
+- **Graphs are compiled, never interpreted.** Materials, VFX, AI, animation, camera rigs, PCG,
+  abilities, visual scripts and sequences all lower to shared programs with compact per-entity
+  state. No object, no interpreter, no virtual tick per entity — the whole reason to build an ECS.
+  → [`visual-scripting`](openspec/specs/visual-scripting/spec.md)
+- **Indirect light is a scheduling problem, not an algorithm.** Screen-space, world-space caches,
+  distance-field software tracing and hardware rays, chosen per sample by a computed confidence
+  value. Reflections are the same system with a different ray distribution.
+  → [`rendering-global-illumination`](openspec/specs/rendering-global-illumination/spec.md)
+- **One component owns the frame's cost.** Several subsystems each measuring GPU time would read one
+  shared signal, correct for costs they did not cause, and oscillate together. So exactly one
+  arbiter measures and allocates; the rest hold allocations and report cost back.
+  → [`rendering-architecture`](openspec/specs/rendering-architecture/spec.md)
+- **Detail is continuous, and geometry is virtual.** Cost tracks pixels on screen rather than
+  triangles in the asset, and artists stop authoring LOD chains. Render geometry is explicitly not
+  collision geometry. → [`virtual-geometry`](openspec/specs/virtual-geometry/spec.md)
+- **Residency is not activation.** Bytes in memory, entities simulating, textures resident, and how
+  much a region is thinking are four independent decisions. Collapsing them is what makes crossing a
+  boundary mean *load everything now*. → [`residency`](openspec/specs/residency/spec.md)
+- **Every edit is a transaction.** Semantic operations addressing objects by stable identity — which
+  makes undo, autosave, crash recovery, three-way merge and live editing one mechanism read five
+  ways. → [`editor-documents-and-transactions`](openspec/specs/editor-documents-and-transactions/spec.md)
+- **The editor decides what should be shown; the renderer decides how it is drawn.** No second
+  renderer, no editor-only shading path, so the viewport image is the shipping image — and picking
+  runs engine-side, so what is picked is what was actually rendered.
+  → [`editor-viewport-and-gizmos`](openspec/specs/editor-viewport-and-gizmos/spec.md)
+- **Persistent identity does not come from names.** Type and field identifiers are assigned once and
+  recorded in a committed manifest with a CI gate, so renaming a field leaves every scene, override,
+  save, animation binding and network schema resolving.
+  → [`core-type-system`](openspec/specs/core-type-system/spec.md)
+- **Integrate where it isn't differentiating.** Jolt, miniaudio, Steam Audio, HarfBuzz + ICU +
+  FreeType, Slang, Recast, meshoptimizer, xatlas — each behind an engine-owned interface, each
+  replaceable. → [`thirdparty-dependencies`](openspec/specs/thirdparty-dependencies/spec.md)
+- **Conventions are stated once, normatively.** Right-handed, Y-up, −Z forward. Reversed-Z with a
+  `[0,1]` range. Column-major matrices. Metres, seconds, radians.
+  → [`engine-architecture`](openspec/specs/engine-architecture/spec.md)
 
-**A bug report should carry its own reproduction.** Every subsystem emits into one trace, so a task
-stall, a memory spike and a streaming stall land on a single timeline; a rolling buffer is always on
-and freezes itself when a frame overruns or a process faults; and the crash artefact links to a
-replay slice that can be loaded and advanced to just before the failure. Abilities and visual scripts
-follow the same rule as everything else — authored conveniently, compiled to shared programs with
-compact per-entity state, never one object or interpreter per entity.
-
-**Gameplay structure is composition, not inheritance.** Sessions, rules, participants, teams,
-ownership and control are ECS data and scoped services — no actor base class, no per-entity virtual
-tick, no one-controller-one-pawn. Players, AI, network peers, replays and automated tests all emit
-the same semantic commands, so the simulation cannot tell them apart, and control bindings are
-many-to-many: one player commands an army, two players share a tank. Behaviours you attach like
-scripts compile into generated systems where they can, and the build tells you when they cannot.
-
-**ECS is the storage; the node tree is the interface.** Component data lives in packed
-per-archetype chunks so systems iterate contiguously. A `Node` is a named handle onto an entity —
-it never duplicates data. Designers and Swift developers get the object-oriented tree; the runtime
-gets the packed arrays. The coherence invariants that keep those two honest are specified, not
-assumed.
-
-**The scripting boundary is a flat C ABI.** C++ has no stable ABI across compilers or standard
-library versions, so the boundary is C: opaque handles, POD structs, a versioned append-only
-function table. Swift binds through a *generated* overlay, so the two can never drift. This is
-what makes hot reload, stable game modules, and future language bindings tractable.
-
-**Barriers are computed, not written.** The render graph owns synchronisation, transient memory
-aliasing, and pass scheduling. No renderer code writes a barrier or a layout transition.
-
-**Parallelism is safe by construction.** Systems declare `Read` / `Write` / `Exclude` access;
-the scheduler derives the dependency graph and runs non-conflicting systems concurrently.
-Undeclared access is an assertion, not a race waiting to be found.
-
-**Integrate where it isn't differentiating.** Jolt for physics, miniaudio and Steam Audio for
-audio, HarfBuzz + ICU + FreeType for text, Slang for shaders, Recast for navmeshes, meshoptimizer
-and xatlas for mesh processing. Each sits behind an engine-owned interface and must stay
-replaceable. We build the ECS, renderer, scene model, asset pipeline, UI, animation, networking,
-audio graph and policy, and the editor — the parts where engine-level decisions compound.
-
-**Determinism is a contract, decided per subsystem.** AI is deterministic — it drives gameplay
-that must survive network reconciliation and replay — so its scheduling derives from simulation
-state, never from measured frame time, and the budget controller offers a deterministic mode and an
-adaptive one that is honest about forfeiting lockstep. VFX and ML inference are non-deterministic
-and firewalled from authoritative state. Each boundary is written down, because the failure mode
-otherwise is an unexplained desync months later.
-
-**ECS is not the answer to everything.** Component storage is right for gameplay entities and
-wrong for UI: a strategy game with 5,000 units has 20,000-plus labels, icons and containers, whose
-workload is a tree walk, not an archetype scan, and which need element-granular invalidation. So
-UI elements live in their own data-oriented storage and the gameplay world stays gameplay-sized.
-Using the right structure per subsystem beats one structure everywhere.
-
-**Cost is bounded by configuration, not by content.** The renderer has culling and LOD budgets;
-audio has importance tiers with per-tier source budgets; VFX has importance classes driven by a
-frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosions cost what you
-configured rather than what the scene happens to contain. Deciding how much simulation each thing
-deserves is the performance lever that actually matters at scale.
-
-**Reproducibility is a chosen profile, and divergence is findable.** A session declares how
-deterministic it needs to be — replay-stable, same-platform, cross-platform, lockstep — and pays for
-that and no more, with the configuration rejected if a subsystem cannot meet it. One command log
-serves replay, rollback and lockstep; what genuinely cannot be reproduced is recorded rather than
-re-run. And when two runs disagree, hierarchical hashing narrows it to a field on an entity while a
-chaos scheduler surfaces the ordering dependency that caused it.
-
-**Every edit is a transaction; every build is a graph.** Editor mutations are semantic operations
-addressing objects by stable identity, which makes undo, autosave, crash recovery, three-way merge
-and live editing one mechanism rather than five. Builds are graphs of derivations with explicit
-inputs, deterministic keys and immutable content-addressed outputs — so an incremental build is
-dependency-driven rather than timestamp-driven, and a one-texture change ships as a patch of the
-pages that changed.
-
-**Designers author hierarchies; the runtime gets flat data.** Prefabs, scenes and worlds are
-authoring assets with nesting, variants and overrides — all resolved at cook time into archetype
-blocks that match the runtime's chunk layout, so activating a streaming cell is a bulk copy rather
-than a hundred thousand object constructions, and a shipping build carries no prefab link at all.
-A prefab can expose a deliberate parameter surface, so its internals stay refactorable instead of
-becoming part of its contract with every instance.
-
-**Weather writes fields; procedural generation reads them.** Nothing pushes wetness onto materials
-or sway onto trees — weather publishes state and consumers sample it, so lowering cloud quality
-cannot change how wet the ground is. Generation compiles authored graphs into programs that run per
-region with declared dependencies, so moving five hundred metres of road regenerates what that road
-touched and nothing else, and generated things carry stable identities so a designer's override and
-a player's felled tree survive regeneration. Distant regions evolve as a handful of field values and
-are materialised into detail only when someone arrives — which is what makes a planet that changes
-affordable.
-
-**The environment shares one substrate.** Biome, moisture, wind, flow, wetness and burn state live
-in sparse world-scale fields that terrain, vegetation, water, VFX, audio and AI all sample by
-position — so a river writes wetness that a terrain material reads and foliage placement avoids,
-without terrain and water knowing anything about each other. Terrain is a geometry source feeding
-the same virtual-geometry path as everything else rather than a renderer of its own; a million
-trees are GPU instances that get promoted to entities only when gameplay touches them; and a water
-body declares which wave bands physics and rendering must both obey.
-
-**Residency is not activation.** A region's bytes being in memory, its entities participating in
-simulation, its textures being resident, and how much it is thinking are four independent
-decisions. Collapsing them is what makes crossing a boundary mean *load everything now*; kept
-apart, approach becomes a gradient where every step is cheap.
-
-**Indirect light is a scheduling problem, not an algorithm.** Rather than one GI technique, the
-engine combines screen-space tracing, world-space radiance and surface caches, software tracing
-against a distance field, and hardware rays — picking per sample the cheapest source that can give
-a trustworthy answer, where trust is a confidence value the system computes. A traced hit reads
-cached radiance instead of re-evaluating a material graph, which is what makes the whole thing
-affordable and which produces multi-bounce lighting as a side effect. Reflections are the same
-system with a different ray distribution, not a second one.
-
-**One component owns the frame's cost.** A renderer measures GPU time and lowers quality to fit a
-budget — but if several subsystems each do that independently, they read one shared signal, correct
-for costs they did not cause, and oscillate together. So exactly one arbiter measures the frame and
-hands out allocations; the VFX, geometry, and resolution controllers hold their own allocation with
-their own levers and report cost back. Capture and cinematics pin all of them at once, because
-half-pinned is not a state that should exist.
-
-**The editor is a client, not a part of the engine.** It is a separate Rust application that talks
-to a hosted runtime over the same stable C ABI game code uses and the same live bridge that drives
-remote play. A runtime crash costs a restart, not a session. The boundary is enforced by the
-language rather than by discipline — no C++ type, no raw pointer as identity, `unsafe` confined to
-a generated overlay. And because the runtime is already out of process, editing on a console is the
-same code path as editing locally. This reverses an earlier decision to build the editor as a C++
-engine application on CyberUI; that argument was a good one, and what it cost is written down in
-`ui-system` rather than quietly dropped.
-
-**The editor decides what should be shown; the renderer decides how it is drawn.** Camera,
-selection, filters, gizmo intent and debug-view requests belong to the editor. The render graph,
-culling, LOD, materials, lighting, gizmo geometry and drawing belong to the engine. There is no
-second renderer and no editor-only shading path, so the viewport image is the shipping image — and
-picking runs engine-side, so what is picked is what was actually rendered, virtualised geometry and
-foliage included.
-
-**A material is compiled, and its cost is visible.** Authoring is a graph or a text definition;
-both lower to one typed intermediate representation that is optimised, cost-analysed, and then
-generated as shader source. Surfaces are composed from BSDF closures rather than picked from a
-menu of models — but a closure set that matches a known model compiles to that model's path and
-costs exactly what it costs, so layering is there when needed and free when not. The editor shows
-every stage from graph to binary, with cost attributed back to the nodes that caused it.
-
-**World scale does not determine memory scale.** Geometry, textures and shadows are all paged
-against a shared residency policy: a project may hold terabytes of source content while a frame
-holds only what the platform's budget permits. Shadow pages exist because a *visible pixel* needs
-them rather than because a caster exists, and persist across frames until something actually
-invalidates them. Every one of these systems degrades along a defined axis — a coarse geometry root,
-a resident mip tail, a stale-but-valid shadow page — so a frame is never missing, only coarser.
-
-**Detail is continuous, and geometry is virtual.** A mesh is a hierarchy of small triangle
-clusters, and the GPU picks which clusters to draw each frame against a screen-space error target —
-so cost tracks the pixels on screen rather than the triangles in the asset, and artists stop
-authoring LOD chains. Clusters are simplified in groups so shared boundaries stay watertight;
-streaming works in pages with an always-resident root, so an object is never absent, only coarse.
-Render geometry is explicitly not collision geometry: physics, navigation and ray tracing get their
-own representations from the same source.
-
-**Persistent identity does not come from names.** Types and fields carry identifiers assigned once
-and recorded in a committed manifest, so renaming a field or moving a class into a namespace leaves
-every scene, prefab override, save file, animation binding and network schema still resolving —
-and a CI gate fails the build if an identifier ever changes by accident. Serialization is two
-deliberate modes rather than one compromise: tagged and migratable for authoring and saves, packed
-and untagged for runtime data that loads by bulk copy.
-
-**Nothing blocks a worker, and nothing allocates without a budget.** Asynchronous work is
-coroutines whose continuations resume as tasks, so a file read or a GPU fence suspends rather than
-occupying a core; every task carries its scratch allocator and cancellation token. Memory is
-apportioned by a budget tree with a pressure level that tells every cache to trim at once — the
-counterpart of the renderer's GPU-time arbiter, because an over-budget frame is a stutter and an
-over-budget heap is a crash.
-
-**Conventions are stated once, normatively.** Right-handed, Y-up, −Z forward. Reversed-Z with a
-`[0,1]` depth range. Column-major matrices. Metres, seconds, radians. A silent mismatch here
-corrupts everything downstream, so it is written down rather than discovered.
+---
 
 ## Gameplay code, roughly
+
+Behaviours are the ergonomic path:
 
 ```swift
 @Behaviour
@@ -278,7 +284,7 @@ final class PlayerController: Behaviour {
 }
 ```
 
-…and for bulk work, the same language drops to data-oriented systems:
+Systems are the fast path — same language, same scheduler:
 
 ```swift
 @System(stage: .simulation)
@@ -292,8 +298,10 @@ func applyGravity(
 }
 ```
 
-Behaviours are the ergonomic path. Systems are the fast path. Both are scheduled by the same
-scheduler, and a project can use either or both.
+A project can use either or both. Behaviours that can be batched compile into generated systems, and
+the build tells you when they cannot. → [`swift-scripting`](openspec/specs/swift-scripting/spec.md)
+
+---
 
 ## Repository layout
 
@@ -302,6 +310,7 @@ openspec/
   specs/          Target specifications — 73 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
+justfile          One entry point for every developer task (planned)
 ```
 
 Source directories (`src/`, `bindings/`, `editor/`, `tools/`) will appear as the specifications are
@@ -322,7 +331,6 @@ openspec validate --specs --strict     # check them all
 
 To propose a change, use `/opsx:propose` in an agent session, or scaffold with
 `openspec new change <name>`, then implement against the generated tasks and archive when done.
-The reasoning behind a decision stays attached to it.
 
 ## Licence
 
