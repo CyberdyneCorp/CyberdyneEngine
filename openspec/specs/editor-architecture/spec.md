@@ -12,28 +12,39 @@ demanding consumer.
 ## Requirements
 
 ### Requirement: Editor is an engine application
-The editor SHALL be built on the engine runtime, using the same ECS world, scene graph, UI
-system, and renderer, compiled only when `CY_EDITOR` is enabled.
+The editor SHALL be a **separate Rust application** as defined in `editor-rust-application`, and
+SHALL NOT be compiled into the engine runtime. It SHALL reach the engine only through the stable C
+ABI and the live bridge protocol.
 
-The editor SHALL maintain the world separation defined in `editor-documents-and-transactions`: its
-own interface world, the **authoring** world holding the edited project, isolated **preview** worlds
-for asset editors, and the **runtime** world that play mode instantiates from authoring data.
+The world separation this capability defines remains, but its parts are owned by different processes:
 
-Authoring-only data SHALL NOT reach a runtime world, and because a compilation step separates them
-this SHALL be checkable rather than conventional.
+| World | Owner |
+|---|---|
+| Interface | The editor process, in Rust; not an ECS world |
+| Authoring | The runtime, hosting the edited project |
+| Preview | The runtime, isolated per asset editor |
+| Runtime | The runtime, instantiated from authoring data by play mode |
+
+Authoring-only data SHALL NOT reach a runtime world. This SHALL be checkable, and it is now enforced
+by two mechanisms rather than one: the compilation separation of authoring code, and the fact that
+the editor is a different binary that cannot be linked into a game.
+
+A shipping game SHALL contain no editor code — which follows from the editor being a separate
+application rather than from a build flag.
 
 #### Scenario: Export build excludes the editor
 - **WHEN** a game is built for shipping
-- **THEN** no editor code SHALL be linked
+- **THEN** no editor code SHALL be linked, since the editor is a separate binary
 
 #### Scenario: Two worlds
 - **WHEN** the editor runs
-- **THEN** the editor UI SHALL live in one world and the edited content in another, each with its
-  own systems and schedule
+- **THEN** the editor's interface state SHALL live in the editor process and the edited content in a
+  runtime world, each with its own state and scheduling
 
 #### Scenario: Previews do not touch the project
 - **WHEN** an asset editor previews content
-- **THEN** it SHALL use an isolated preview world, and the edited project SHALL be unaffected
+- **THEN** it SHALL use an isolated preview world in the runtime, and the edited project SHALL be
+  unaffected
 
 ### Requirement: Editor mode and tool execution
 Systems and behaviours SHALL declare whether they run in the editor: `Runtime` (default),
@@ -207,10 +218,24 @@ which also owns plugin identity, manifests, lifecycle, dependency resolution, th
 and hot reload eligibility. This capability defines the editor-specific extension points and their
 behaviour.
 
-Editor extension points SHALL include: panels, menus, toolbars, and keyboard shortcuts; inspector
-property editors and component gizmos; importers and asset post-processors; viewport tools receiving
-input; build steps and platform targets; commands; document kinds and asset editors; source control
-providers; and editor event subscriptions.
+Editor extension points SHALL include: panels, view models, and commands; menus, toolbars, and
+keyboard shortcuts; inspector property editors and component gizmos; importers and asset
+post-processors; viewport tools receiving input; build steps and platform targets; document kinds and
+asset editors; source control providers; search providers; settings pages; and editor event
+subscriptions.
+
+Extension points SHALL be expressed in **editor SDK abstractions**, not in the Rust interface
+toolkit's types, so that a plugin survives a change of toolkit.
+
+Editor extensions SHALL be authored in one of three forms, each with a defined boundary:
+
+| Form | Boundary |
+|---|---|
+| Rust plugin distributed as source | Compiled with the editor; uses the editor SDK crates directly |
+| Binary plugin | Crosses the engine's stable C ABI, as required by `project-and-plugins` |
+| Swift or out-of-process plugin | Crosses the C ABI or the live bridge protocol |
+
+**Rust's native binary interface SHALL NOT be used as a plugin contract.**
 
 Plugins SHALL read and write edited content only through the transaction API, so their changes are
 undoable and journalled like any other.
@@ -220,8 +245,9 @@ plugin targets an interface rather than a patch release.
 
 #### Scenario: Swift editor plugin
 - **WHEN** a project includes a Swift editor plugin
-- **THEN** it SHALL load with the game module, register its panels and tools, and reload on rebuild
-  where it declares support for reload
+- **THEN** it SHALL be reachable across the C ABI or the live bridge, SHALL register its panels and
+  tools through editor SDK abstractions, and SHALL reload on rebuild where it declares support for
+  reload
 
 #### Scenario: Plugin API version
 - **WHEN** a plugin requires a newer editor extension interface than is present

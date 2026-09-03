@@ -93,6 +93,9 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [asset-import-pipeline](asset-import-pipeline/spec.md) | Importers, cook cache, texture and model import, packaging |
 | [editor-architecture](editor-architecture/spec.md) | Editor as an engine app, play mode, inspector, plugins, build pipeline |
 | [editor-documents-and-transactions](editor-documents-and-transactions/spec.md) | Documents, transactions as the only write path, undo, journal, semantic diff and merge |
+| [editor-rust-application](editor-rust-application/spec.md) | The editor as a Rust client of the engine: hosting modes, MVVM with services and commands, the editor SDK, toolkit independence |
+| [editor-ui-ux](editor-ui-ux/spec.md) | Familiarity as a feature, docking and workspaces, density, command palette, generated inspector, declared interaction targets |
+| [editor-viewport-and-gizmos](editor-viewport-and-gizmos/spec.md) | The rendering responsibility split, viewport transports, engine-side picking, gizmos, view modes, degradation |
 | [live-editing](live-editing/spec.md) | Live edit compiler and policies, play modes, the live bridge, hot reload, runtime inspection |
 | [project-and-plugins](project-and-plugins/spec.md) | Project graph, module layering enforcement, plugins, extension points, trust tiers, configuration |
 | [build-and-packaging](build-and-packaging/spec.md) | Build graph and derivation keys, derived data cache, build service, packages, chunk-level patching |
@@ -103,6 +106,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [networking-and-replication](networking-and-replication/spec.md) | CyberNet: three network modes, replication schemas, priority-scheduled interest, rollback, dedicated server |
 | [xr-support](xr-support/spec.md) | Deferred; the prerequisites the engine must not preclude |
 | [build-system-and-platforms](build-system-and-platforms/spec.md) | CMake, configurations, Swift toolchain, codegen, porting surface, CI |
+| [developer-workflow-and-just](developer-workflow-and-just/spec.md) | One `justfile` entry point, orchestration without building, profiles across four toolchains, `doctor`, graduated tests |
 | [testing-and-quality](testing-and-quality/spec.md) | Test taxonomy, golden images, determinism, benchmarks, merge gates |
 | [diagnostics-profiling-and-crash](diagnostics-profiling-and-crash/spec.md) | One trace, profiler views, rolling capture, crash artefacts, reproduction, privacy |
 | [thirdparty-dependencies](thirdparty-dependencies/spec.md) | Dependency policy, the intended set, what we build ourselves |
@@ -270,6 +274,26 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   are an order of magnitude higher, their workload is a tree walk rather than an archetype scan,
   and they need element-granular invalidation that chunk-granular change detection cannot give.
   Where a subsystem gains nothing from ECS, it does not go in ECS.
+- **The editor is a client, not a part of the engine.** It is a separate Rust application talking to
+  a hosted runtime over the stable C ABI and the live bridge, so a runtime crash costs a restart
+  rather than a session, the boundary is enforced by the language rather than by discipline, and a
+  console is not a special case. This reverses two earlier requirements — the editor was to be a
+  C++ engine application built on CyberUI — and both were good arguments. What it cost CyberUI is
+  written down in `ui-system` rather than quietly dropped.
+- **The editor decides what should be shown; the renderer decides how it is drawn.** Camera,
+  selection, filters, gizmo intent and visualisation requests belong to the editor; the render
+  graph, culling, LOD, materials, gizmo geometry and drawing belong to the engine. There is no
+  second renderer, so what the editor shows is what the game will show — and picking is engine-side,
+  so what is picked is what was rendered.
+- **A view model is never a second source of truth, and no panel depends on another panel.** Both
+  are stated as prohibitions because both are violated by accident, for locally reasonable reasons,
+  and produce a dependency graph with no workable initialisation order. Every action is a registered
+  command instead, so menus, shortcuts, the palette, scripts and tests are one surface.
+- **`just` orchestrates and does not build.** CMake, Cargo, the shader toolchain and the content
+  pipeline stay authoritative; what the workflow adds is four profiles that mean the same thing in
+  all four, a `doctor` that diagnoses the environment instead of letting a nested tool fail
+  obscurely, and continuous integration that invokes the same recipes a developer does — so a
+  failing check reproduces locally by construction.
 - **Reversed-Z, Y-up, right-handed, −Z forward, metres and radians.** Stated once, normatively,
   because a silent mismatch here corrupts everything downstream.
 - **Deferred decisions are written down**, not assumed — see the non-goals in

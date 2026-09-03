@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Defines **CyberUI**: one user interface system serving game UI, world-space UI, and the editor.
+Defines **CyberUI**: one user interface system serving game UI, world-space UI, and the
+engine's own in-game tooling.
 
 Four decisions shape it. UI elements live in **dedicated data-oriented storage**, not in the
 gameplay ECS — element counts run an order of magnitude above entity counts, and the workload is
@@ -20,8 +21,10 @@ controller support and modal flows work without every game re-implementing them.
 to `TextServer` (HarfBuzz, ICU, FreeType), because correct international text is not a place to
 build your own.
 
-The editor is built on this system, which makes it the most demanding consumer and the reason
-virtualisation and docking are core rather than optional.
+The editor is **not** built on this system — it is a separate Rust application. That removed
+CyberUI's most demanding consumer, so the forcing functions that keep virtualisation, docking, and
+text editing honest are specified explicitly rather than assumed: shipped in-game tooling, a
+conformance suite, and a real sample interface.
 
 ## Requirements
 
@@ -29,13 +32,17 @@ virtualisation and docking are core rather than optional.
 The UI system SHALL be engine code: element storage, layout, styling, input routing, animation,
 rendering, and authoring surfaces.
 
-One system SHALL serve **game UI**, **world-space UI**, and the **editor**, rather than separate
+One system SHALL serve **game UI**, **world-space UI**, and the engine's **in-game tooling** —
+developer console, debuggers, profiler overlays, and settings interfaces — rather than separate
 technologies layered on each other.
+
+The editor is not a consumer: it is a separate Rust application (see `editor-rust-application`), and
+CyberUI SHALL NOT carry requirements that exist only to serve it.
 
 The system SHALL be removable at build time via `CY_UI`.
 
 #### Scenario: One system, three consumers
-- **WHEN** the editor, a game HUD, and a world-space health bar are all rendered
+- **WHEN** a developer console, a game HUD, and a world-space health bar are all rendered
 - **THEN** they SHALL use the same element storage, layout, styling, and rendering code
 
 #### Scenario: No UI toolkit dependency
@@ -159,7 +166,7 @@ the affected subtree only, not the whole document.
 
 ### Requirement: Immediate-mode API
 The engine SHALL provide an immediate-mode UI API for debug overlays, development tooling, and
-editor utilities, emitting into the same primitive stream and renderer as the retained system.
+in-game utilities, emitting into the same primitive stream and renderer as the retained system.
 
 The immediate-mode API SHALL be documented as **not** the production UI architecture, and SHALL be
 excludable from shipping builds.
@@ -586,25 +593,6 @@ settings, and configurable text scaling.
 - **THEN** decorative transitions SHALL be shortened or disabled while functional feedback
   remains
 
-### Requirement: Editor UI shares the runtime UI
-The editor SHALL be built with this UI system rather than a separate toolkit, so improvements
-benefit both and the system is exercised by its most demanding consumer.
-
-The editor SHALL specifically exercise: virtualised lists and trees of tens of thousands of rows,
-docking layouts, property grids generated from reflection, graph canvases, and text editing.
-
-Editor-only widgets SHALL live in an editor UI module layered on the runtime widgets, using only
-the public API.
-
-#### Scenario: Editor exercises the UI system
-- **WHEN** the editor is used daily
-- **THEN** it SHALL exercise virtualisation, docking, and text editing, so defects surface during
-  development rather than in games
-
-#### Scenario: No private editor API
-- **WHEN** an editor panel needs a capability the public UI API lacks
-- **THEN** the capability SHALL be added to the public API rather than accessed privately
-
 ### Requirement: UI diagnostics
 The engine SHALL provide: an element inspector showing the tree with computed layout rects,
 resolved style values and their source rule, and dirty state; counts of measure, arrange, and
@@ -627,3 +615,59 @@ since that is the most common and least obvious source of declarative UI bugs.
 #### Scenario: Identity churn is reported
 - **WHEN** a declarative list rebuilds and elements lose state unexpectedly
 - **THEN** the diagnostic SHALL report the identity changes, pointing at the missing keys
+### Requirement: Forcing functions for the UI system
+Because the editor is not built on CyberUI, the system SHALL have **explicit forcing functions** that
+exercise it at the scale and complexity a production interface demands. Left implicit, a UI system
+with no demanding first-party consumer decays.
+
+The engine SHALL ship, built on CyberUI:
+
+| Tooling | Exercises |
+|---|---|
+| Developer console | Text input, text editing, scrollback virtualisation, autocompletion, high message rates |
+| Gameplay and network debuggers | Virtualised tables of tens of thousands of rows, live-updating values, filtering, sorting |
+| Profiler and statistics overlays | Continuously changing content at frame rate with bounded cost |
+| Settings and input rebinding interface | Property grids, navigation, controller and keyboard operation, modal flows |
+| World-space and diegetic interface samples | World-space rendering, perspective interaction, and scaling |
+
+These SHALL be **shipping features usable in a game**, not demonstrations, and SHALL be maintained as
+such.
+
+The engine SHALL additionally ship a **conformance suite** covering the demanding cases the editor
+would otherwise have exercised — virtualised lists and trees of tens of thousands of rows, docking
+layouts, reflection-generated property grids, graph canvases, and text editing — with performance
+assertions that fail in continuous integration on regression.
+
+A **sample project with a complete, real interface** SHALL be maintained, exercising navigation,
+localisation, controller support, and animation end to end.
+
+This is **weaker than dogfooding an editor**, and the requirement states it plainly so that the
+weakness is managed rather than forgotten: a defect that only daily editor use would have found may
+reach a game instead.
+
+#### Scenario: Defects surface before games find them
+- **WHEN** a virtualisation or text-editing defect is introduced
+- **THEN** the conformance suite or the shipped in-game tooling SHALL surface it before a game does
+
+#### Scenario: In-game tooling is real
+- **WHEN** a game ships with the developer console enabled
+- **THEN** it SHALL be a supported feature rather than a demonstration
+
+#### Scenario: The weakness is acknowledged
+- **WHEN** the forcing functions are evaluated
+- **THEN** they SHALL be treated as a mitigation for the loss of editor dogfooding, and gaps SHALL
+  be recorded rather than assumed covered
+
+### Requirement: The runtime UI system is not the editor's toolkit
+CyberUI SHALL be designed for **game and application interfaces**, and SHALL NOT carry requirements
+that exist only to satisfy a desktop editor shell.
+
+Where a capability is needed by both — virtualisation, docking, property grids, graph canvases, text
+editing — it SHALL be justified by game and in-game tooling needs on its own merit.
+
+The editor SHALL NOT be given a private CyberUI interface, since it does not use CyberUI at all;
+correspondingly, no CyberUI feature SHALL be added solely because the editor once required it.
+
+#### Scenario: A feature is justified on its own merit
+- **WHEN** a CyberUI feature is proposed
+- **THEN** its justification SHALL be a game or in-game tooling need, not the editor

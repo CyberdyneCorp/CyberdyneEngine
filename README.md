@@ -1,6 +1,7 @@
 # CyberdyneEngine
 
-An open-source game engine: **C++20** core, **Swift** for gameplay scripting.
+An open-source game engine: **C++20** core, **Swift** for gameplay scripting, **Rust** for the
+editor.
 
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
@@ -15,6 +16,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | | |
 |---|---|
 | **Core language** | C++20, no exceptions, no RTTI |
+| **Editor** | A separate Rust application; a client of the engine over the C ABI and the live bridge |
 | **Scripting** | Swift, via a generated overlay over a stable C ABI |
 | **World model** | Archetype ECS core with a scene-graph node façade |
 | **Gameplay** | CyberGameplay: sessions, rules and teams as data; one command stream for players, AI, network and replay |
@@ -37,6 +39,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Simulation integrity** | Determinism profiles, one command log for replay and rollback, saves as world deltas |
 | **Tooling** | Transaction-based editor, live editing to local and remote runtimes, graph-driven builds |
+| **Workflow** | One `justfile`: build, run, test, generate, cook, diagnose, release — the same recipes CI runs |
 | **Cinematics** | CyberSequence: compiled timelines orchestrating camera, animation, audio, environment and gameplay |
 | **Diagnostics** | One trace across every subsystem, rolling capture, crash artefacts that reproduce |
 | **Licence** | MIT |
@@ -44,17 +47,20 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 ## The shape of it
 
 ```
-                      Swift game code
-                            │
-                   CyberdyneKit (generated overlay)
-                            │
-                    flat C ABI  (versioned, append-only)
-                            │
-  ┌─────────────────────────┴─────────────────────────┐
+      Swift game code            Rust editor (separate process)
+            │                                │
+   CyberdyneKit (overlay)          CyberEditor SDK (overlay)
+            │                                │
+            │                      live bridge protocol
+            │                                │
+            └────────────────┬───────────────┘
+                             │
+             flat C ABI (versioned, append-only)
+                             │
+  ┌──────────────────────────┴────────────────────────┐
   │                    C++20 core                     │
   │                                                   │
-  │   Editor                                          │
-  │   Scene   ── Node façade, prefabs, serialization   │
+  │   Scene   ── Node façade, prefabs, serialization  │
   │   ECS     ── archetypes, queries, scheduler       │
   │   Servers ── render, physics, audio, nav, text    │
   │   Backends── Vulkan/Metal · Jolt · platform       │
@@ -193,6 +199,22 @@ hands out allocations; the VFX, geometry, and resolution controllers hold their 
 their own levers and report cost back. Capture and cinematics pin all of them at once, because
 half-pinned is not a state that should exist.
 
+**The editor is a client, not a part of the engine.** It is a separate Rust application that talks
+to a hosted runtime over the same stable C ABI game code uses and the same live bridge that drives
+remote play. A runtime crash costs a restart, not a session. The boundary is enforced by the
+language rather than by discipline — no C++ type, no raw pointer as identity, `unsafe` confined to
+a generated overlay. And because the runtime is already out of process, editing on a console is the
+same code path as editing locally. This reverses an earlier decision to build the editor as a C++
+engine application on CyberUI; that argument was a good one, and what it cost is written down in
+`ui-system` rather than quietly dropped.
+
+**The editor decides what should be shown; the renderer decides how it is drawn.** Camera,
+selection, filters, gizmo intent and debug-view requests belong to the editor. The render graph,
+culling, LOD, materials, lighting, gizmo geometry and drawing belong to the engine. There is no
+second renderer and no editor-only shading path, so the viewport image is the shipping image — and
+picking runs engine-side, so what is picked is what was actually rendered, virtualised geometry and
+foliage included.
+
 **A material is compiled, and its cost is visible.** Authoring is a graph or a text definition;
 both lower to one typed intermediate representation that is optimised, cost-analysed, and then
 generated as shader source. Surfaces are composed from BSDF closures rather than picked from a
@@ -277,7 +299,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 69 capabilities. Start here.
+  specs/          Target specifications — 73 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```
