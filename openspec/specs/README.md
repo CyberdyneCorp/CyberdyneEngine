@@ -35,6 +35,9 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [save-and-persistence](save-and-persistence/spec.md) | The overlay as the save, scopes and traits, dirty tracking, atomic generations, migration |
 | [world-partition-and-streaming](world-partition-and-streaming/spec.md) | CyberWorld: partitioning, cell streaming and activation, layers, persistence overlay, HLOD |
 | [environment-fields](environment-fields/spec.md) | CyberField: sparse world-scale data — biome, moisture, wind, flow, wetness — with one producer each |
+| [procedural-content-generation](procedural-content-generation/spec.md) | CyberPCG: typed datasets, compiled graphs, region invalidation, stable identity, provenance |
+| [weather-and-wind](weather-and-wind/spec.md) | Climate, weather cells, the wind field, precipitation, wetness and snow, storms, ecosystem state |
+| [atmosphere-sky-and-clouds](atmosphere-sky-and-clouds/spec.md) | Physical atmosphere and tables, celestial model, volumetric clouds, aerial perspective |
 | [terrain](terrain/spec.md) | CyberTerrain: tiled hierarchical surface, geometry source, deformation classes, deltas |
 | [foliage](foliage/spec.md) | CyberFoliage: GPU instances, ECS promotion, deterministic placement, GPU grass |
 | [water](water/spec.md) | CyberWater: water bodies, spectral ocean, rivers, shoreline, the displacement contract |
@@ -147,6 +150,15 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 - **Memory has budgets, not just tags.** Domains are apportioned by a budget tree and a pressure
   level tells every cache to trim at once — the memory counterpart of the renderer's GPU-time
   arbiter. An over-budget frame is a stutter; an over-budget heap is a crash.
+- **Weather publishes state and touches nothing.** It writes fields; materials sample wetness,
+  foliage samples wind, audio samples rain. Lowering cloud quality cannot change how wet the ground
+  is, because the ground's wetness never came from the renderer.
+- **A procedural result is not an entity by default.** Ten million trees are a foliage population,
+  a road is a terrain layer, a biome is a field. And generated identity is stable, so regenerating a
+  region does not move a designer's override onto a different tree or resurrect one a player felled.
+- **Potential is not state.** What a place could support and what fire, drought or terraforming have
+  left it are different fields — which is the difference between an ecosystem that recovers and a
+  map that was painted once.
 - **Environmental data is a substrate, not a subsystem's property.** Moisture, biome, wind, flow
   and wetness live in sparse world-scale fields with one producer each, sampled by terrain,
   foliage, water, VFX, audio and AI alike. Put moisture inside terrain and foliage must ask terrain
@@ -198,11 +210,12 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   makes virtualised geometry unusable for gameplay.
 - **Known gaps are written down, not implied.** Cross-platform lockstep is unsupported because
   physics guarantees determinism only within a platform, and that is stated rather than discovered.
-  Weather and hydrology are specified as field *producers* against systems that do not exist, which
-  costs nothing today and no rework later. The practice pays: world partition was named as a gap by
-  four subsystems before it was specified, and specifying it removed four workarounds rather than
-  adding one system — as did virtual textures, which terrain had been specified against for three
-  changes before they existed.
+  **Hydrology and erosion are the last environmental gap**, and every input and output they need is
+  already a field. The practice pays: world partition was named as a gap by four subsystems before
+  it was specified and removed four workarounds rather than adding one system; virtual textures had
+  been specified against for three changes before they existed; and weather was recorded as a field
+  producer against a system that did not exist until it did — at which point nothing consuming those
+  fields had to change.
 - **Graphs compile; shared programs, per-instance state.** Materials, VFX, AI behaviour, control
   rigs and animation graphs all lower through a typed IR to a program shared by every instance
   using it. It is the same answer to the same problem each time, and the reason instance counts can

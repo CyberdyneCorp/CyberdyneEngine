@@ -20,7 +20,8 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Gameplay** | CyberGameplay: sessions, rules and teams as data; one command stream for players, AI, network and replay |
 | **Input & camera** | CyberInput: users, contexts, triggers. CyberCamera: compiled rigs producing views, listeners and streaming sources |
 | **World** | CyberWorld: partitioned streaming cells, layers, persistence overlay, authored from prefabs and scenes |
-| **Environment** | CyberTerrain, CyberFoliage and CyberWater over a shared sparse field substrate |
+| **Environment** | Terrain, foliage, water, weather and sky over a shared sparse field substrate |
+| **Procedural** | CyberPCG: compiled generation graphs, region-incremental, stable identity, provenance |
 | **Renderer** | Explicit RHI + automatic render graph — Vulkan first, native Metal second, D3D12 later |
 | **Shaders** | Slang → SPIR-V (→ MSL) |
 | **VFX** | Engine-owned, GPU-first, compiled effect graphs |
@@ -139,6 +140,15 @@ than a hundred thousand object constructions, and a shipping build carries no pr
 A prefab can expose a deliberate parameter surface, so its internals stay refactorable instead of
 becoming part of its contract with every instance.
 
+**Weather writes fields; procedural generation reads them.** Nothing pushes wetness onto materials
+or sway onto trees — weather publishes state and consumers sample it, so lowering cloud quality
+cannot change how wet the ground is. Generation compiles authored graphs into programs that run per
+region with declared dependencies, so moving five hundred metres of road regenerates what that road
+touched and nothing else, and generated things carry stable identities so a designer's override and
+a player's felled tree survive regeneration. Distant regions evolve as a handful of field values and
+are materialised into detail only when someone arrives — which is what makes a planet that changes
+affordable.
+
 **The environment shares one substrate.** Biome, moisture, wind, flow, wetness and burn state live
 in sparse world-scale fields that terrain, vegetation, water, VFX, audio and AI all sample by
 position — so a river writes wetness that a terrain material reads and foliage placement avoids,
@@ -251,7 +261,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 62 capabilities. Start here.
+  specs/          Target specifications — 65 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```
