@@ -34,6 +34,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Networking** | CyberNet: ECS component replication, three network modes, priority-scheduled interest |
 | **Physics** | Jolt, behind an engine-owned interface |
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
+| **Simulation integrity** | Determinism profiles, one command log for replay and rollback, saves as world deltas |
 | **Tooling** | Transaction-based editor, live editing to local and remote runtimes, graph-driven builds |
 | **Licence** | MIT |
 
@@ -116,6 +117,13 @@ audio has importance tiers with per-tier source budgets; VFX has importance clas
 frame-time budget controller. 8,000 noisy entities and 100 simultaneous explosions cost what you
 configured rather than what the scene happens to contain. Deciding how much simulation each thing
 deserves is the performance lever that actually matters at scale.
+
+**Reproducibility is a chosen profile, and divergence is findable.** A session declares how
+deterministic it needs to be — replay-stable, same-platform, cross-platform, lockstep — and pays for
+that and no more, with the configuration rejected if a subsystem cannot meet it. One command log
+serves replay, rollback and lockstep; what genuinely cannot be reproduced is recorded rather than
+re-run. And when two runs disagree, hierarchical hashing narrows it to a field on an entity while a
+chaos scheduler surfaces the ordering dependency that caused it.
 
 **Every edit is a transaction; every build is a graph.** Editor mutations are semantic operations
 addressing objects by stable identity, which makes undo, autosave, crash recovery, three-way merge
@@ -243,7 +251,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 59 capabilities. Start here.
+  specs/          Target specifications — 62 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

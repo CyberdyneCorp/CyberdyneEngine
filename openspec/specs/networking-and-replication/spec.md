@@ -518,12 +518,18 @@ Reconciliation SHALL be smoothed visually so corrections do not appear as snaps.
 - **THEN** it SHALL use the same fixed-step schedule and system order as the original simulation
 
 ### Requirement: Rollback and reconciliation primitives
-The engine SHALL provide rollback as a reusable mechanism rather than a per-game implementation.
+Rollback SHALL be a reusable **mechanism** rather than a per-game implementation, and the mechanism
+itself — the snapshot ring, restore, re-simulation from the command log, and the side-effect ledger
+that prevents effects being realised twice — is defined in `replay-and-rollback`.
 
-It SHALL provide: an **input buffer** recording local inputs with tick numbers, **per-tick state
-snapshots** over a bounded window using the ECS snapshot mechanism, a **comparison** of predicted
-against authoritative state for a tick, and a **replay** that restores the authoritative state and
-re-simulates buffered inputs.
+This capability owns the **networking policy** over that mechanism: when to roll back, the tolerance
+for divergence between predicted and authoritative state, correction smoothing, and the response
+when a correction predates the window.
+
+It SHALL provide: an **input buffer** recording local commands with their simulation points,
+**per-tick snapshots** over a bounded window, a **comparison** of predicted against authoritative
+state for a tick, and a **replay** that restores the authoritative state and re-simulates buffered
+commands.
 
 Systems participating in rollback SHALL be **snapshot-restorable and deterministic**; systems that
 are not — VFX, audio, non-pinned inference, adaptive controllers — SHALL be excluded from the
@@ -552,6 +558,11 @@ full state resynchronisation rather than an unbounded replay.
 #### Scenario: Beyond the window
 - **WHEN** an authoritative update predates the rollback window
 - **THEN** a full resynchronisation SHALL occur, reported as such
+
+#### Scenario: Effects are not realised twice
+- **WHEN** a tick that produced an effect is re-simulated
+- **THEN** the side-effect ledger SHALL suppress it, and networking SHALL not implement its own
+  suppression
 
 ### Requirement: Interpolation and lag compensation
 Entities a peer does not control SHALL be rendered **interpolated** between received states, with

@@ -30,6 +30,9 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [gameplay-framework](gameplay-framework/spec.md) | CyberGameplay: sessions, rules, participants, teams, control bindings, one command stream, tags, features |
 | [input-and-actions](input-and-actions/spec.md) | CyberInput: users and devices, context stack, bindings, processors, triggers, accessibility |
 | [camera-system](camera-system/spec.md) | CyberCamera: compiled rigs, camera stack, framing, aim, cuts, render views and streaming sources |
+| [simulation-and-determinism](simulation-and-determinism/spec.md) | Ticks, epochs, the commit boundary, determinism profiles, hashing, the validator |
+| [replay-and-rollback](replay-and-rollback/spec.md) | One command log, external results, snapshot kinds, rollback, the side-effect ledger, lockstep |
+| [save-and-persistence](save-and-persistence/spec.md) | The overlay as the save, scopes and traits, dirty tracking, atomic generations, migration |
 | [world-partition-and-streaming](world-partition-and-streaming/spec.md) | CyberWorld: partitioning, cell streaming and activation, layers, persistence overlay, HLOD |
 | [environment-fields](environment-fields/spec.md) | CyberField: sparse world-scale data — biome, moisture, wind, flow, wetness — with one producer each |
 | [terrain](terrain/spec.md) | CyberTerrain: tiled hierarchical surface, geometry source, deformation classes, deltas |
@@ -206,6 +209,18 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   be large.
 - **VFX cannot touch gameplay state.** GPU simulation is non-deterministic; the firewall is a
   requirement, so effects can never break physics determinism or network reconciliation.
+- **Determinism is a profile, not a promise.** Nine capabilities made local determinism claims
+  before one system reconciled them. A session declares none, replay-stable, same-platform,
+  cross-platform or lockstep, and pays only for what it chose — with configuration-time validation
+  when a subsystem cannot meet the profile.
+- **A save is not a memory dump and a replay is not a recording.** Both are schema-aware
+  representations of authoritative state, keyed off the same commit boundary. Rollback, replay
+  checkpoints and saves share one schema and deliberately three encodings, because a format that
+  survives code change cannot run sixty times a second.
+- **Non-determinism should be findable, not merely detectable.** Hierarchical hashing narrows to a
+  field, a chaos scheduler perturbs execution order to surface hidden dependencies, and divergence
+  capture produces a reproduction — which is the difference between reporting a problem and having
+  a solvable bug.
 - **Devices produce actions; actions produce intent.** Gameplay never sees a key, so rebinding
   cannot change behaviour and accessibility transformations cannot be bypassed. A mouse delta is
   displacement and a stick is a rate — the binding says which, so look sensitivity is not

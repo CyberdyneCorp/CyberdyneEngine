@@ -450,8 +450,14 @@ Gameplay simulation SHALL advance in **fixed simulation ticks** with a monotonic
 number, and systems MAY run at reduced rates relative to it — strategic reasoning at a few hertz,
 distant agents lower still.
 
+The clock itself, the exact rational tick rate, catch-up bounds, simulation epochs, and the commit
+boundary at which a tick becomes authoritative are defined in `simulation-and-determinism`. This
+capability consumes them.
+
 Scheduled gameplay SHALL be expressed in **ticks**, not wall-clock time: "at tick 8842" is
 reproducible; "in 3.0 seconds" is not.
+
+A moment SHALL be identified by **epoch and tick**, since rollback moves the tick backwards.
 
 Timers SHALL be provided per time domain, implemented so that many timers cost bounded work — a
 bucketed or wheel structure rather than one heap entry and one callback per timer per tick.
@@ -467,9 +473,16 @@ same instants.
 - **WHEN** fifty thousand timers are pending
 - **THEN** advancing a tick SHALL cost work proportional to the timers actually due
 
+#### Scenario: The same tick is not the same moment
+- **WHEN** a rollback returns to a tick already simulated
+- **THEN** the two occurrences SHALL be distinguishable by epoch
+
 ### Requirement: Deterministic random streams
 Randomness used by gameplay SHALL come from **named streams** derived from the session seed, not
 from a global generator.
+
+Stream derivation, counter-based sampling, and inspection are defined in
+`simulation-and-determinism`; this capability requires their use.
 
 Streams SHALL be independent, so that consuming randomness in one system does not perturb another's
 sequence — which is what makes a change in one feature alter unrelated outcomes in replay.
@@ -484,6 +497,11 @@ presentation only SHALL be declared as such.
 #### Scenario: Reproducible session
 - **WHEN** a session is replayed from its seed and command stream
 - **THEN** random outcomes SHALL match the original
+
+#### Scenario: Sampling is parallel-safe
+- **WHEN** many entities sample randomness concurrently
+- **THEN** each SHALL derive its value from stable inputs, with no shared generator and no ordering
+  dependency
 
 ### Requirement: Interaction
 The engine SHALL provide an **interaction framework**: an interactor queries what is available, an
@@ -616,11 +634,16 @@ Gameplay state SHALL declare a persistence class — session transient, world pe
 persistent, save game, or derived — and those declarations SHALL determine what a save captures.
 
 A **replay** SHALL be reconstructible from: the session's initial state, its seed, its stream of
-gameplay commands, authoritative events where determinism does not suffice, and periodic snapshots
-for seeking.
+gameplay commands, recorded external results where determinism does not suffice, and periodic
+checkpoints for seeking.
 
 Replay playback SHALL be a control source producing commands, so playback exercises the same
 simulation path as live play.
+
+The mechanisms — the command log, external result records, snapshot kinds, checkpoints, seeking,
+rollback, and the side-effect ledger — are defined in `replay-and-rollback`, and save encoding,
+scopes, and migration in `save-and-persistence`. This capability declares what gameplay contributes
+to them.
 
 Command and gameplay state schemas SHALL be versioned, so a replay or save from an older build is
 either migrated where supported or rejected clearly.
@@ -632,6 +655,10 @@ either migrated where supported or rejected clearly.
 #### Scenario: Version mismatch is explicit
 - **WHEN** a replay's command schema differs from the build's
 - **THEN** it SHALL be migrated where supported or rejected with a diagnostic, never misinterpreted
+
+#### Scenario: Non-reproducible results are recorded
+- **WHEN** an authoritative outcome comes from a service or an inference
+- **THEN** it SHALL be recorded as an external result and consumed from the record during replay
 
 ### Requirement: Headless operation
 The gameplay framework SHALL be **fully functional with no renderer, no audio, no interface, and no

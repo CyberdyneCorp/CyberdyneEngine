@@ -64,8 +64,21 @@ submission — rather than by making the whole engine double precision.
 The authoritative persistent form of a world position SHALL be cell-relative (see
 `world-partition-and-streaming`): a cell coordinate plus a 32-bit local offset. Because the local
 offset is bounded by cell size, 32-bit precision is sufficient at any distance from the world
-origin. A 64-bit accessor exists for tooling and interchange and is not the runtime
-representation.
+origin. A 64-bit accessor exists for tooling and interchange and is not the runtime representation.
+
+**Deterministic profiles constrain floating point** (see `simulation-and-determinism`). Under
+`SamePlatform`, authoritative code requires a controlled floating-point environment — declared
+rounding mode, denormal handling, and contraction policy — and transformations that alter results
+are disallowed on authoritative paths. Under `CrossPlatform` and `Lockstep`, authoritative
+computation requires **deterministic math types** provided as an optional module: fixed-point
+scalars, vectors, angles, and deterministic transcendental approximations.
+
+The deterministic math module SHALL NOT replace this library. Rendering, animation, and effects
+continue to use ordinary floating point, and deterministic types are used only where an
+authoritative path requires them.
+
+The engine SHALL NOT claim that arbitrary floating-point code produces identical results across
+architectures, compilers, or vector widths.
 
 #### Scenario: Distant object stays stable
 - **WHEN** an object is 100 km from the world origin
@@ -80,6 +93,11 @@ representation.
 - **WHEN** a subsystem is tempted to store global double-precision positions
 - **THEN** the cell-relative form SHALL be used instead, so precision handling stays confined to
   the world layer
+
+#### Scenario: Cross-platform determinism has a mechanism
+- **WHEN** a project requires cross-platform reproducibility of authoritative simulation
+- **THEN** it SHALL use deterministic math types on those paths, rather than relying on ordinary
+  floating point behaving identically everywhere
 
 ### Requirement: Math types
 `core/math` SHALL provide: `Vec2`, `Vec3`, `Vec4`, `IVec2`, `IVec3`, `IVec4`, `Quat`, `Mat3`,
