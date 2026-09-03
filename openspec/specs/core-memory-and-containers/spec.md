@@ -372,6 +372,13 @@ integration hooks for ASan, UBSan, and TSan.
 All builds SHALL provide per-domain live and peak bytes, budget utilisation, pressure level and its
 history, retirement queue depths, and pool and arena utilisation.
 
+Allocation and free events, pressure transitions, and budget violations SHALL be emitted into the
+**shared trace** defined in `diagnostics-profiling-and-crash`, so that a memory spike correlates with
+the frame, task, asset, and streaming activity that caused it.
+
+Call-stack capture for allocations SHALL be a **declared mode** — off, sampled, or full — rather than
+an always-on cost, since full capture is affordable in development and not in shipping.
+
 Reporting SHALL be attributable along the axes that answer real questions: by domain, by type, by
 thread, by world cell, and by asset — so that "why is this region consuming this much" is
 answerable.
@@ -395,3 +402,8 @@ reports distinguish them from defects.
 #### Scenario: Attribution answers a question
 - **WHEN** a world region consumes unexpected memory
 - **THEN** the report SHALL attribute it by domain, asset, and cell
+
+#### Scenario: A spike has a cause on the timeline
+- **WHEN** memory rises sharply during one frame
+- **THEN** the allocations SHALL appear on the shared timeline alongside the activity that produced
+  them

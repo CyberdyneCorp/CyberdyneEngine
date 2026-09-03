@@ -235,16 +235,22 @@ plugin targets an interface rather than a patch release.
 The editor SHALL provide dedicated editors for: materials (including the node graph),
 animation graphs and clips (a timeline with curve editing), the VFX graph (see `vfx-system`),
 **terrain**, **foliage**, **water**, and **environment fields**, tilemaps, UI layout, audio buses
-and mixing, navigation baking, lighting and lightmap baking, and localisation tables.
+and mixing, navigation baking, lighting and lightmap baking, **abilities and effects**, **gameplay
+and utility graphs**, and localisation tables.
+
+**All node-graph editors SHALL be built on the shared graph infrastructure defined in
+`visual-scripting`**: one canvas, one identity model, one serialization and diff format, one
+debugging model — while each domain keeps its own lowering. A sixth bespoke graph editor SHALL NOT
+be created.
 
 The environment tools SHALL include: terrain sculpting and material painting over a
 **non-destructive modifier stack**, biome and field painting, river spline authoring with live flow
 and shoreline preview, lake and ocean configuration, foliage painting and rule authoring with
 regional preview, and road and spline tools.
 
-Rule-driven tools — foliage placement, field-driven terrain materials — SHALL be able to show
-**why** a result occurred, naming the input that drove or excluded it, since a procedural result
-that cannot be explained cannot be corrected.
+Rule-driven tools — foliage placement, field-driven terrain materials, procedural generation — SHALL
+be able to show **why** a result occurred, naming the input that drove or excluded it, since a
+procedural result that cannot be explained cannot be corrected.
 
 Each SHALL be a plugin using the same panel and undo infrastructure as user plugins, so the
 extension API is exercised by the engine's own tooling.
@@ -255,9 +261,9 @@ extension API is exercised by the engine's own tooling.
   first
 
 #### Scenario: Graph editors share infrastructure
-- **WHEN** the material graph and the VFX graph editors are implemented
-- **THEN** they SHALL share the node-graph canvas, undo, and inspector infrastructure rather than
-  each implementing its own
+- **WHEN** the material graph, the VFX graph, and a gameplay graph editor are implemented
+- **THEN** they SHALL share the node-graph canvas, identity, serialization, diffing, undo, and
+  debugging infrastructure rather than each implementing its own
 
 #### Scenario: A procedural result is explainable
 - **WHEN** a designer asks why no trees appear in a region
@@ -313,6 +319,14 @@ debugger (breakpoints, stepping, variable inspection for Swift and native), a li
 inspector for the running game, a frame profiler (CPU stages, jobs, GPU passes) with a timeline,
 memory profiling by allocator tag and asset category, and a render debugger.
 
+**The editor is a client of the diagnostics backend defined in `diagnostics-profiling-and-crash`,
+not its owner.** Trace transport, buffering, capture artefacts, crash artefacts, and reproduction
+belong to that capability, and the same data SHALL be consumable by command-line tools, automated
+systems, and a remote session with no editor attached.
+
+The editor SHALL be able to open capture, crash, and reproduction artefacts **without the game
+running**, including artefacts produced on another platform.
+
 The **render debugger** SHALL show the render graph as it was built for a frame: passes and their
 dependencies as a navigable graph, and per pass its GPU time, queue, resources read and written,
 transient memory, and barrier wait time. It SHALL show the budget arbiter's allocations,
@@ -347,6 +361,10 @@ Live editing SHALL be supported: property changes in the editor applied to the r
 - **WHEN** a material is expensive
 - **THEN** the inspector SHALL attribute the cost to specific graph nodes rather than reporting a
   total
+
+#### Scenario: An artefact opens without the game
+- **WHEN** a capture or crash artefact arrives from a tester on another platform
+- **THEN** the editor SHALL open it without that runtime present
 
 ### Requirement: Collaboration-friendly behaviour
 The editor SHALL avoid patterns hostile to team work: text-based scene and asset formats with

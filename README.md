@@ -37,6 +37,7 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 | **Audio** | Engine-owned AudioServer over miniaudio; Steam Audio for spatial acoustics |
 | **Simulation integrity** | Determinism profiles, one command log for replay and rollback, saves as world deltas |
 | **Tooling** | Transaction-based editor, live editing to local and remote runtimes, graph-driven builds |
+| **Diagnostics** | One trace across every subsystem, rolling capture, crash artefacts that reproduce |
 | **Licence** | MIT |
 
 ## The shape of it
@@ -68,6 +69,13 @@ change behaviour and accessibility transformations cannot be bypassed. Cameras a
 compiled to programs — never a base class, never written directly by gameplay — and one evaluated
 camera yields the render view, the audio listener anchor and the streaming source with predicted
 motion, so the three cannot disagree about where the player is.
+
+**A bug report should carry its own reproduction.** Every subsystem emits into one trace, so a task
+stall, a memory spike and a streaming stall land on a single timeline; a rolling buffer is always on
+and freezes itself when a frame overruns or a process faults; and the crash artefact links to a
+replay slice that can be loaded and advanced to just before the failure. Abilities and visual scripts
+follow the same rule as everything else — authored conveniently, compiled to shared programs with
+compact per-entity state, never one object or interpreter per entity.
 
 **Gameplay structure is composition, not inheritance.** Sessions, rules, participants, teams,
 ownership and control are ECS data and scoped services — no actor base class, no per-entity virtual
@@ -261,7 +269,7 @@ scheduler, and a project can use either or both.
 
 ```
 openspec/
-  specs/          Target specifications — 65 capabilities. Start here.
+  specs/          Target specifications — 68 capabilities. Start here.
   changes/        In-flight proposals (propose → apply → validate → archive)
   config.yaml     Project context and locked architectural decisions
 ```

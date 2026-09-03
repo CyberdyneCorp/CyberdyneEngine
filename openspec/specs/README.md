@@ -28,6 +28,8 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [scene-graph-and-nodes](scene-graph-and-nodes/spec.md) | Node façade, transforms, lifecycle, behaviours, coherence invariants |
 | [serialization-and-prefabs](serialization-and-prefabs/spec.md) | Prefab/scene/world assets, exposed parameters, overrides, entity templates, migration |
 | [gameplay-framework](gameplay-framework/spec.md) | CyberGameplay: sessions, rules, participants, teams, control bindings, one command stream, tags, features |
+| [gameplay-abilities-and-effects](gameplay-abilities-and-effects/spec.md) | Compiled ability programs, attributes and modifiers, effects, targeting, prediction |
+| [visual-scripting](visual-scripting/spec.md) | CyberGraph: shared graph infrastructure, typed pins, compiled programs, semantic merge |
 | [input-and-actions](input-and-actions/spec.md) | CyberInput: users and devices, context stack, bindings, processors, triggers, accessibility |
 | [camera-system](camera-system/spec.md) | CyberCamera: compiled rigs, camera stack, framing, aim, cuts, render views and streaming sources |
 | [simulation-and-determinism](simulation-and-determinism/spec.md) | Ticks, epochs, the commit boundary, determinism profiles, hashing, the validator |
@@ -101,6 +103,7 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
 | [xr-support](xr-support/spec.md) | Deferred; the prerequisites the engine must not preclude |
 | [build-system-and-platforms](build-system-and-platforms/spec.md) | CMake, configurations, Swift toolchain, codegen, porting surface, CI |
 | [testing-and-quality](testing-and-quality/spec.md) | Test taxonomy, golden images, determinism, benchmarks, merge gates |
+| [diagnostics-profiling-and-crash](diagnostics-profiling-and-crash/spec.md) | One trace, profiler views, rolling capture, crash artefacts, reproduction, privacy |
 | [thirdparty-dependencies](thirdparty-dependencies/spec.md) | Dependency policy, the intended set, what we build ourselves |
 
 ## The decisions that shape everything else
@@ -130,6 +133,13 @@ justified. Changes go through the OpenSpec flow (`/opsx:propose` → `/opsx:appl
   motion is gameplay, so it is computed on a deterministic CPU path even when the pose is evaluated
   on the GPU. VFX and ML inference are not deterministic and are firewalled from authoritative
   state. Each boundary is a requirement, not an assumption.
+- **Diagnostics are infrastructure, not an editor feature.** Nearly forty capabilities each specify
+  what they report; one trace carries all of it, so a task stall, a memory spike and a streaming
+  stall appear on one timeline. The rolling buffer means a profiler need not have been running
+  before the hitch.
+- **Authoring convenience compiles.** Abilities are shared programs plus compact state; graphs are a
+  source language that lowers to systems over archetypes. Neither introduces one object, one
+  interpreter or one virtual update per entity — which is the whole reason to have built the ECS.
 - **One operation stream is five products.** Every editor mutation is a semantic transaction
   addressing objects by identity — which makes undo, autosave-as-journal, crash recovery, semantic
   three-way merge, and the delta a running game consumes the same mechanism read five ways.
