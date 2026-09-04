@@ -74,14 +74,25 @@ def compare_one(result: dict, entry: dict | None) -> tuple[str, str]:
 
 
 def record(results: dict, baseline: dict, path: Path) -> None:
-    """Write the baseline from a run, keeping each benchmark's reviewed tolerance."""
-    previous = baseline_entries(baseline)
-    entries = {}
+    """Merge a run's measurements into the baseline, keeping each benchmark's reviewed tolerance.
+
+    MERGE, NOT REPLACE. `just test-bench` runs every runner in the build tree and calls this script
+    once per runner, so a record that rewrote `benchmarks` wholesale would leave the baseline
+    holding only the last runner's benchmarks — every other one then fails its next run as "has no
+    entry in the baseline", which is the check firing on a file this command wrote. It was harmless
+    while there was exactly one runner and stopped being harmless the moment task 1.6 added a
+    second; `selftest()` is the regression.
+
+    An entry this run did not measure is therefore left alone rather than pruned. `report()` names
+    those, so a benchmark that has genuinely been deleted is still visible — it is a line to remove
+    by hand, which is the right amount of friction for discarding a recorded threshold.
+    """
+    entries = dict(baseline_entries(baseline))
     for result in results["benchmarks"]:
         name = result["name"]
         entries[name] = {
             "ratio": round(result["ratio"], 4),
-            "tolerance": previous.get(name, {}).get("tolerance", DEFAULT_TOLERANCE),
+            "tolerance": entries.get(name, {}).get("tolerance", DEFAULT_TOLERANCE),
             "ns_per_op_when_recorded": round(result["ns_per_op"], 4),
             "recorded_on": datetime.date.today().isoformat(),
         }
@@ -97,7 +108,7 @@ def record(results: dict, baseline: dict, path: Path) -> None:
     )
     baseline["benchmarks"] = dict(sorted(entries.items()))
     path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-    print(f"recorded {len(entries)} threshold(s) in {path}")
+    print(f"recorded {len(results['benchmarks'])} of {len(entries)} threshold(s) in {path}")
 
 
 def report(results: dict, baseline: dict) -> int:
@@ -111,9 +122,13 @@ def report(results: dict, baseline: dict) -> int:
         if status in ("regressed", "missing"):
             failures.append(explanation)
 
+    # Named rather than silent, but not called stale: the baseline is shared by every runner and
+    # this comparison sees one runner's results, so an entry missing here usually belongs to another
+    # binary. An entry no runner measures any more is deleted by hand — `--record` merges and never
+    # prunes, for the reason `record()` gives.
     measured = {result["name"] for result in results["benchmarks"]}
-    for stale in sorted(set(entries) - measured):
-        print(f"note {stale} is in the baseline but was not measured — re-record to prune it.")
+    for other in sorted(set(entries) - measured):
+        print(f"note {other} is in the baseline and was not measured by this runner.")
 
     if failures:
         print(f"\n{len(failures)} benchmark(s) outside their threshold.")
@@ -122,13 +137,82 @@ def report(results: dict, baseline: dict) -> int:
     return 0
 
 
+def selftest() -> int:
+    """Check the decisions this script makes, without a build.
+
+    Two of them, and each was a real defect rather than a hypothetical: recording from one runner
+    used to discard every other runner's thresholds, and a regression has to fail rather than be
+    reported. Run by `just test-bench` before it measures anything, so the tool that decides a gate
+    is itself checked on the run that uses it.
+    """
+    import tempfile
+
+    checks: list[tuple[str, bool]] = []
+
+    def run(name: str, condition: bool) -> None:
+        checks.append((name, condition))
+
+    def measurement(name: str, ratio: float) -> dict:
+        return {"name": name, "ratio": ratio, "ns_per_op": ratio * 2.0}
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "baseline.json"
+        baseline = {
+            "benchmarks": {
+                "harness/one": {"ratio": 2.0, "tolerance": 0.2},
+                "ecs/two": {"ratio": 10.0, "tolerance": 0.5},
+            }
+        }
+
+        # Recording one runner's results keeps the other runner's entries, and keeps the reviewed
+        # tolerance of the entry it did rewrite.
+        record({"benchmarks": [measurement("ecs/two", 11.0)],
+                "calibration": {"ns_per_op": 1.0}}, dict(baseline), path)
+        written = json.loads(path.read_text(encoding="utf-8"))["benchmarks"]
+        run("recording one runner keeps another runner's thresholds", "harness/one" in written)
+        run("a rewritten entry keeps its reviewed tolerance",
+            written.get("ecs/two", {}).get("tolerance") == 0.5)
+        run("a rewritten entry takes the new ratio", written.get("ecs/two", {}).get("ratio") == 11.0)
+        run("an untouched entry keeps its ratio", written.get("harness/one", {}).get("ratio") == 2.0)
+
+        # A new benchmark gets the default tolerance rather than none.
+        record({"benchmarks": [measurement("ecs/three", 4.0)],
+                "calibration": {"ns_per_op": 1.0}}, dict(baseline), path)
+        written = json.loads(path.read_text(encoding="utf-8"))["benchmarks"]
+        run("a new benchmark is recorded with the default tolerance",
+            written.get("ecs/three", {}).get("tolerance") == DEFAULT_TOLERANCE)
+
+    entries = baseline_entries(baseline)
+    run("a benchmark inside its tolerance passes",
+        compare_one(measurement("harness/one", 2.3), entries["harness/one"])[0] == "ok")
+    run("a benchmark past its tolerance fails",
+        compare_one(measurement("harness/one", 2.5), entries["harness/one"])[0] == "regressed")
+    run("a benchmark with no baseline entry fails rather than printing itself",
+        compare_one(measurement("harness/new", 1.0), None)[0] == "missing")
+    run("a benchmark faster than its threshold is reported, not failed",
+        compare_one(measurement("harness/one", 1.0), entries["harness/one"])[0] == "faster")
+
+    failed = [name for name, passed in checks if not passed]
+    for name, passed in checks:
+        print(f"{'ok  ' if passed else 'FAIL'} {name}")
+    print(f"compare.py selftest: {len(checks) - len(failed)}/{len(checks)} passed")
+    return 1 if failed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--results", required=True, type=Path, help="the runner's JSON output")
-    parser.add_argument("--baseline", required=True, type=Path, help="the committed thresholds")
+    parser.add_argument("--selftest", action="store_true",
+                        help="check this script's own decisions and exit")
+    parser.add_argument("--results", type=Path, help="the runner's JSON output")
+    parser.add_argument("--baseline", type=Path, help="the committed thresholds")
     parser.add_argument("--record", action="store_true",
                         help="rewrite the baseline from this run (a reviewed step)")
     arguments = parser.parse_args()
+
+    if arguments.selftest:
+        return selftest()
+    if arguments.results is None or arguments.baseline is None:
+        parser.error("--results and --baseline are required unless --selftest is given")
 
     results = load_json(arguments.results, "results file")
     if not results.get("benchmarks"):

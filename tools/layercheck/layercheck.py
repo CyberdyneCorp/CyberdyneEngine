@@ -5,10 +5,14 @@ Task 1.3.3. The second half of the layer enforcement: `cmake/module.cmake` sees 
 declares, and this sees every `#include` a translation unit writes, including one that reaches
 upward through an include path CMake was never told about.
 
-Three checks, all of them cheap enough to run on every pull request:
+Five checks, all of them cheap enough to run on every pull request:
 
   includes      a file may include a header at its own layer or below, never above
   sdl           no SDL header appears outside platform/ — design.md §4
+  gpuapi        no Vulkan, Slang or SPIR-V header appears outside src/backends/ — the same rule as
+                `sdl`, for the same reason, and M3's task 2.3.1
+  barriers      no barrier-emitting call appears outside the render graph and the RHI — M3's task
+                2.2.4, the structural half of "a pass has no API to emit a barrier"
   targets       no bare add_library or add_executable, because that is a target that opted out of
                 the configure-time check (task 1.3.2)
 
@@ -41,6 +45,7 @@ LAYER_OF_NAME = {
     "backends": 3,
     "platform": 3,
     "scene": 4,
+    "rendering": 4,
     "runtime": 5,
     "abi": 6,
     "editor": 7,
@@ -57,6 +62,7 @@ DIRECTORY_LAYERS = {
     "src/backends": 3,
     "platform": 3,
     "src/scene": 4,
+    "src/rendering": 4,
     "src/runtime": 5,
     "src/abi": 6,
     "editor": 7,
@@ -66,7 +72,7 @@ DIRECTORY_LAYERS = {
     "samples": 7,
 }
 
-LAYER_NAMES = {0: "core", 1: "ecs", 2: "servers", 3: "backends", 4: "scene",
+LAYER_NAMES = {0: "core", 1: "ecs", 2: "servers", 3: "backends", 4: "scene/rendering",
                5: "runtime", 6: "abi", 7: "editor/tools"}
 
 SOURCE_SUFFIXES = {".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp", ".c", ".cc", ".cpp", ".cxx",
@@ -78,6 +84,54 @@ SOURCE_SUFFIXES = {".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp", ".c", ".cc", ".c
 INCLUDE_RE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*[<"]([^>"\n]+)[>"]', re.MULTILINE)
 
 BARE_TARGET_RE = re.compile(r'^[ \t]*(add_library|add_executable)[ \t]*\(', re.MULTILINE)
+
+# --- The graphics-API rule (task 2.3.1) -------------------------------------------------------------
+#
+# The same rule as `sdl` and for the same reason: a third-party API's types live beneath an
+# engine-owned interface, and a second backend arrives later. `rhi-and-render-graph` puts the RHI at
+# layer 3 and the render graph above it, so a Vulkan type reaching layer 4 would mean the graph could
+# not be compiled without a Vulkan SDK — and the null backend, which is what makes rendering testable
+# in continuous integration, would stop being a reference for what the RHI requires.
+#
+# Matched by the include's leading directory or by its file name, so `SDL3/SDL_vulkan.h` — SDL's own
+# forward declarations, which platform/desktop-sdl3 legitimately uses to build a surface — is not a
+# finding. It is an SDL header and the `sdl` check already governs where it may appear.
+GPU_API_DIRECTORIES = frozenset({"vulkan", "volk", "vk_video", "spirv", "spirv-tools",
+                                 "spirv_cross", "SPIRV", "SPIRV-Reflect", "glslang", "slang"})
+GPU_API_FILES = frozenset({"volk.h", "volk.c", "vk_mem_alloc.h", "vulkan.h", "vulkan.hpp",
+                           "vulkan_core.h", "spirv_reflect.h", "spirv.h", "spirv.hpp", "slang.h",
+                           "slang-com-ptr.h", "slang-com-helper.h"})
+
+# Where a graphics API may be named. Only the backend that owns it.
+GPU_API_ROOTS = ("src/backends/",)
+
+# --- The barrier rule (task 2.2.4) ------------------------------------------------------------------
+#
+# THE M3 INVARIANT, AS A BUILD FAILURE. A pass declares what it reads and what it writes and has no
+# API to emit a barrier; the render graph computes every barrier, layout transition and queue-family
+# ownership transfer from those declarations. design.md §2: this is a property of the thirtieth pass,
+# and the thirtieth pass obeys it because the first one did.
+#
+# The C++ side of the rule is a passkey — rhi::GraphBarrierKey's constructor is private and
+# cy::rendering::GraphExecutor is its only friend — and this is the other side, because a passkey
+# cannot stop somebody declaring a class of that name, and because a backend-level barrier call
+# (vkCmdPipelineBarrier2) bypasses the RHI's types entirely.
+#
+# The symbols below are the whole barrier-emitting surface. A file outside the two permitted roots
+# that names one is a file that is emitting synchronisation by hand.
+BARRIER_SYMBOLS = ("record_barriers", "barrier_recorder", "GraphBarrierKey", "BarrierRecorder",
+                   "vkCmdPipelineBarrier", "vkCmdWaitEvents", "vkCmdSetEvent")
+
+BARRIER_RE = re.compile(r'\b(' + "|".join(BARRIER_SYMBOLS) + r')\b')
+
+# Where a barrier may be emitted: the interface that declares it, and the one implementation that
+# reaches it. Nothing else in the engine, ever.
+BARRIER_ROOTS = ("src/backends/rhi/", "src/rendering/graph/")
+
+# A line whose first non-space character starts a comment. Prose that names the barrier API — a
+# design note, a header comment explaining why the rule exists — is not a barrier call, and a gate
+# that reported one would be a gate people work around by not writing the comment.
+COMMENT_LINE_RE = re.compile(r'^[ \t]*(//|/\*|\*|#)')
 
 # Where the bare-target check applies: the engine tree, plus the top-level CMakeLists.txt. cmake/ is
 # out of scope because it *is* the build system — it declares cy_add_module() itself, the
@@ -139,6 +193,19 @@ def is_sdl_include(include: str) -> bool:
     return path.parts[0].startswith("SDL") or path.name.startswith("SDL")
 
 
+def is_gpu_api_include(include: str) -> bool:
+    """Whether an include names a Vulkan, Slang or SPIR-V header.
+
+    An SDL header is never one, even when it is spelled SDL_vulkan.h: those are SDL's own forward
+    declarations, they name no Vulkan type the engine can use, and where they may appear is already
+    the `sdl` check's business.
+    """
+    if is_sdl_include(include):
+        return False
+    path = PurePosixPath(include.replace("\\", "/"))
+    return path.parts[0] in GPU_API_DIRECTORIES or path.name in GPU_API_FILES
+
+
 def line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
@@ -166,9 +233,10 @@ def is_excluded(directory: PurePosixPath) -> bool:
 
 
 def check_source_file(relative: str, text: str) -> list[Violation]:
-    """Both source-level rules for one file: the layer of each include, and the SDL rule."""
+    """The include-shaped rules for one file: the layer of each include, SDL, and the graphics APIs."""
     own_layer = directory_layer(relative)
     in_platform = relative.startswith("platform/")
+    in_gpu_backend = relative.startswith(GPU_API_ROOTS)
     violations = []
 
     for match in INCLUDE_RE.finditer(text):
@@ -182,6 +250,15 @@ def check_source_file(relative: str, text: str) -> list[Violation]:
                 f"lands at M11 (design.md §4)."))
             continue
 
+        if is_gpu_api_include(include) and not in_gpu_backend:
+            violations.append(Violation(relative, line, "gpuapi",
+                f"includes '{include}'. No Vulkan, Slang or SPIR-V header appears outside "
+                f"src/backends/ — the RHI's synchronisation vocabulary is engine-owned "
+                f"(cy/backends/rhi/types.h) precisely so that the render graph above it needs no "
+                f"graphics SDK, and so that Metal and D3D12 are a directory rather than a rewrite "
+                f"(rhi-and-render-graph, 'Backend roadmap')."))
+            continue
+
         target_layer = include_layer(include)
         if own_layer is None or target_layer is None or target_layer <= own_layer:
             continue
@@ -190,6 +267,31 @@ def check_source_file(relative: str, text: str) -> list[Violation]:
             f"layer {target_layer} ({LAYER_NAMES[target_layer]}). A lower layer never depends on a "
             f"higher one."))
 
+    return violations
+
+
+def check_barriers(relative: str, text: str) -> list[Violation]:
+    """Task 2.2.4: no barrier-emitting call outside the render graph and the RHI.
+
+    Comment lines are skipped. Prose that names the barrier API — the header comment that explains
+    why the rule exists, this file's own tables — is not a barrier call, and a gate that reported one
+    would be a gate people work around by not writing the comment.
+    """
+    if relative.startswith(BARRIER_ROOTS):
+        return []
+    violations = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if COMMENT_LINE_RE.match(line):
+            continue
+        match = BARRIER_RE.search(line)
+        if match is None:
+            continue
+        violations.append(Violation(relative, number, "barriers",
+            f"names '{match.group(1)}'. Barriers, image layout transitions and queue-family "
+            f"ownership transfers are COMPUTED by the render graph from the reads and writes a pass "
+            f"declares; a pass has no API to emit one (rhi-and-render-graph, 'No manual barriers in "
+            f"user-facing code'). The barrier-emitting surface lives in "
+            f"{' and '.join(BARRIER_ROOTS)} and nowhere else. Declare the resource use instead."))
     return violations
 
 
@@ -219,10 +321,13 @@ def run(root: Path, checks: set[str]) -> tuple[list[Violation], int]:
     violations: list[Violation] = []
     scanned = 0
 
-    if {"includes", "sdl"} & checks:
+    if {"includes", "sdl", "gpuapi", "barriers"} & checks:
         for path, relative in walk(root, names=set(), suffixes=SOURCE_SUFFIXES):
             scanned += 1
-            violations += [v for v in check_source_file(relative, read(path)) if v.check in checks]
+            text = read(path)
+            violations += [v for v in check_source_file(relative, text) if v.check in checks]
+            if "barriers" in checks:
+                violations += check_barriers(relative, text)
 
     if "targets" in checks:
         for path, relative in walk(root, names={"CMakeLists.txt"}, suffixes={".cmake"}):
@@ -237,13 +342,15 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2],
                         help="tree to check (default: the repository root)")
-    parser.add_argument("--check", action="append", choices=["includes", "sdl", "targets", "all"],
+    parser.add_argument("--check", action="append",
+                        choices=["includes", "sdl", "gpuapi", "barriers", "targets", "all"],
                         help="run only this check; repeatable (default: all)")
     parser.add_argument("-q", "--quiet", action="store_true", help="print nothing when clean")
     args = parser.parse_args(argv)
 
     selected = set(args.check or ["all"])
-    checks = {"includes", "sdl", "targets"} if "all" in selected else selected
+    checks = ({"includes", "sdl", "gpuapi", "barriers", "targets"} if "all" in selected
+              else selected)
 
     root = args.root.resolve()
     if not root.is_dir():

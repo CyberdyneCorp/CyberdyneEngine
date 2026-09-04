@@ -53,9 +53,9 @@ CY_TEST_CASE("harness: a subcase re-enters the case with fresh state") {
 }
 
 CY_TEST_CASE("harness: every test case is measured against a budget") {
-    // The budget itself is a compile-time constant the suite's KIND selects; the scale is a
-    // run-time relaxation for sanitizer builds. A test that asserts the constant would only restate
-    // tests/CMakeLists.txt, so this asserts the property that matters: the check is live.
+    // The budget itself is a compile-time constant the suite's KIND selects. What it measures, how
+    // it is scaled, and why it is CPU time rather than wall clock are test_budget.cpp's, which is
+    // where the guard's own regressions live; this only asserts that a case here carries one.
     CY_CHECK_EQ(CY_TEST_BUDGET_NS, 1000000ULL);
-    CY_CHECK_GT(cy::test::budget_scale(), 0.0);
+    CY_CHECK_GE(cy::test::budget_scale(), 0.0);
 }

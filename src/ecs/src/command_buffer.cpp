@@ -187,6 +187,17 @@ void CommandBuffer::clear() noexcept {
     placeholders_ = 0;
 }
 
+Status CommandBuffer::set_merge_key(u32 system_order, u32 thread_index) noexcept {
+    if (!commands_.empty()) {
+        return fail(ErrorCode::Unavailable,
+                    "the merge key decides where this buffer's commands land in the flush; it "
+                    "cannot be changed while it holds any. Flush or clear first.");
+    }
+    system_order_ = system_order;
+    thread_index_ = thread_index;
+    return ok();
+}
+
 // --- The world's half ---------------------------------------------------------------------------
 
 Status World::attach(CommandBuffer& buffer) noexcept {

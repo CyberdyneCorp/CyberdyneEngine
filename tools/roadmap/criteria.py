@@ -11,7 +11,7 @@ tiers, since a milestone that does not update the record has not closed.
 
 **Nothing is silently skipped.** Every criterion names the continuous-integration job that runs it,
 whether or not this machine can evaluate it. A criterion that cannot run here — another operating
-system, no display — says so, names that job, and is counted separately in the summary.
+system, no display, no GPU — says so, names that job, and is counted separately in the summary.
 
 Governed by: delivery-roadmap (Milestone exit criteria are executable, Forbidden roadmap patterns).
 """
@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 import tomllib
 from dataclasses import dataclass, field
@@ -32,7 +33,7 @@ MILESTONES_DIR = Path(__file__).resolve().parent / "milestones"
 SCHEMA = 1
 KINDS = ("recipe", "command", "path", "tiers")
 WHERE = ("local", "ci")
-REQUIREMENTS = ("display",)
+REQUIREMENTS = ("display", "gpu")
 DEFAULT_TIMEOUT_S = 1800
 
 CRITERION_KEYS = frozenset(
@@ -186,7 +187,35 @@ def unmet_requirement(criterion: Criterion, force_ci: bool = False) -> str:
         os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     ):
         return criterion.reason
+    if criterion.requires == "gpu" and not _has_gpu():
+        return criterion.reason
     return ""
+
+
+def _has_gpu() -> bool:
+    """Whether this machine has a graphics device a rendering criterion could run against.
+
+    M3 is the first milestone with criteria that need one — the conventions sampled back off a
+    device, and the golden images. Those cannot be evaluated on a machine with no GPU and they must
+    not be reported as passing there, which is what this requirement exists to prevent: a milestone
+    recipe that quietly skipped its rendering criteria would report the milestone green on precisely
+    the machines least able to judge it.
+
+    The probe is the presence of a DRM render node, plus `CY_HAS_GPU` as an override for the cases a
+    file cannot answer — a container that has a device but no node, or a developer who wants the
+    criterion reported as unevaluated. It is deliberately not "run vulkaninfo": this module runs on
+    every pull request on three platforms and a gate that shells out to a tool that may not be
+    installed is a gate that fails for the wrong reason.
+    """
+    override = os.environ.get("CY_HAS_GPU")
+    if override is not None:
+        return override not in ("", "0", "false", "no")
+    nodes = Path("/dev/dri")
+    if nodes.is_dir():
+        return any(entry.name.startswith("render") for entry in nodes.iterdir())
+    # macOS and Windows always have one; there is no headless variant of either that this project
+    # builds for, and `where = "ci"` is how a criterion says "another operating system" anyway.
+    return os.name != "posix" or sys.platform == "darwin"
 
 
 def evaluate(criterion: Criterion, entries: tuple[Entry, ...], force_ci: bool = False) -> Result:

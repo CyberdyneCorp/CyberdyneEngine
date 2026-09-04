@@ -159,15 +159,230 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M2 eighteen capabilities have left `—`. `core-assets-and-io`, `core-jobs-and-concurrency`,
-`core-math`, `core-memory-and-containers`, `core-type-system`, `delivery-roadmap`, `ecs-core`,
-`engine-architecture`, `project-and-plugins`, `scene-graph-and-nodes` and
-`serialization-and-prefabs` are Working; `build-system-and-platforms`, `core-platform-abstraction`,
-`developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `simulation-and-determinism`,
-`testing-and-quality` and `thirdparty-dependencies` are Seed. The remaining 57 have not started.
-M2 advanced six of them, each recorded against `implement-m2-world`.
+As of M3 twenty-six capabilities have left `—`, and one has reached Complete.
 
-## Where M2's tiers are thin
+- **Complete (1)**: `core-math`.
+- **Working (16)**: `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+  `core-type-system`, `delivery-roadmap`, `ecs-core`, `engine-architecture`, `project-and-plugins`,
+  `rendering-architecture`, `rendering-forward-clustered`, `rendering-geometry-and-resources`,
+  `rendering-materials-and-shading`, `rhi-and-render-graph`, `scene-graph-and-nodes`,
+  `serialization-and-prefabs`, `shader-system`.
+- **Seed (9)**: `build-system-and-platforms`, `core-platform-abstraction`,
+  `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `rendering-culling-and-lod`,
+  `rendering-lighting-and-shadows`, `simulation-and-determinism`, `testing-and-quality`,
+  `thirdparty-dependencies`.
+
+The remaining 49 have not started. M3 advanced nine of them — six to Working, two to Seed, and
+`core-math` from Working to Complete — each recorded against `implement-m3-first-light`.
+
+**One capability the matrix plans for M3 did not advance, and the record says so rather than the
+plan.** The M3 column above marks `testing-and-quality` **W**, and it is still Seed.
+`tools/roadmap/milestones/m3.toml` does not ask for it, and the reason it should not is that three
+of its twelve requirements have no prerequisite in the tree yet: **ABI and API stability gates**
+needs an ABI (M4), **Documentation as a gate** has no undocumented-symbol check anywhere in
+`.github/workflows/`, and **Golden-image rendering tests** asks for every enabled backend, a
+perceptual metric and a path-traced reference — M3 has one backend, an exact-match comparison with
+an edge-tolerance rule, and no path tracer. What M3 did add is real and is recorded in the M3
+section below: the `render` suite kind, the first committed references, the ECS benchmark runner and
+the nightly sanitizer schedule. That is movement inside Seed, not Working.
+
+## Where M3's tiers are thin
+
+The nine tiers M3 advanced are the plan, and the record agrees with it. What the plan does not say
+is where the implementation is **thinner than the tier claims**. Every entry below was measured or
+reproduced at M3's gate on this tree; where a number appears, it is a number this tree produced, on
+an NVIDIA RTX 5060 (driver 580.95.05, device API 1.4.312, loader 1.3.275) with the Khronos
+validation layers and synchronisation validation on.
+
+Three entries are defects the gate found by attacking what the milestone exists to establish, and
+each is fixed in this change with a regression test rather than recorded and left: a persistent
+descriptor set that the Vulkan backend recycled after two frames, a build-time barrier gate that
+only fired when the render graph itself relinked, and an XR seam check whose expected value came
+from the code it was checking.
+
+- **The milestone's central invariant holds, and one of its two halves had a hole.** The passkey is
+  the strong half and it is airtight: `rhi::GraphBarrierKey`'s constructor is private and
+  `cy::rendering::GraphExecutor` is its only friend, so a barrier CALL outside the graph does not
+  compile. Introduced deliberately in `src/rendering/forward/src/frame.cpp`:
+
+      error: 'constexpr cy::rhi::GraphBarrierKey::GraphBarrierKey()' is private within this context
+
+  The grep half — design.md §2's "a grep-level gate fails the build if a barrier call appears
+  outside it" — was **not** true as written. It was an `add_custom_command(TARGET cy_rendering_graph
+  POST_BUILD ...)`, so it ran only when the graph was relinked, and a barrier SYMBOL introduced in a
+  module that does not relink the graph built clean:
+
+      `using ProbeRecorder = rhi::BarrierRecorder;` in src/rendering/forward/src/frame.cpp
+        just build-engine    exit 0        <- the gate never ran
+        just quality-layers  1 violation   <- the permanent gate still caught it
+
+  Fixed here: the check is `add_custom_target(... ALL)`, so it runs on every build of the default
+  target. Re-introducing the same symbol now fails the build from
+  `cy_rendering_graph_barrier_gate`, and removing it goes green again. The invariant was never
+  unenforced — `layering` is a permanent gate and an M3 criterion — but the build-time claim was
+  overstated by a milestone, which is exactly the kind of thing that is believed rather than
+  re-checked.
+- **The artefact tripped 24 Vulkan validation errors a frame from frame 3, and exited 0.** This is
+  the milestone's own sample on the milestone's own device path, and no suite in the tree saw it,
+  because **every device suite renders one frame**. `VulkanDevice::allocate_descriptor_set(layout,
+  per_frame)` recorded the flag and then allocated from `frames_[frame_slot_].descriptor_pool`
+  whichever value it had — and a frame pool is `vkResetDescriptorPool`'d the moment its slot comes
+  round. So a set the caller asked to be persistent, which is what the sample's constants set is,
+  was recycled after `frames_in_flight` frames and every later draw bound a `VkDescriptorSet` the
+  driver had already destroyed:
+
+      frames=1  validation_errors=0     frames=4   validation_errors=48
+      frames=2  validation_errors=0     frames=6   validation_errors=96
+      frames=3  validation_errors=24    frames=10  validation_errors=192
+
+  — 24 a frame from the third onward, on a run whose last line is `exit 0 (clean)`.
+
+  Fixed here with a pool that is never reset (`VulkanDevice::persistent_descriptor_pool_`), and the
+  regression is `render.golden`'s "the frame survives more frames than the device holds in flight",
+  which renders twice round the ring and one more and then compares against the **committed
+  reference** — because a descriptor naming recycled memory can also be a frame that happens to look
+  right. With the defect restored the case fails on `validation_errors == 0`; with the fix it passes
+  and the sample is clean at 60 frames. The pool sizes were wrong in the same place and are also
+  fixed: neither the frame pools nor the new one sized `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE`, which is
+  what `DescriptorKind::SampledTexture` allocates.
+
+  **What to carry forward is the shape rather than the bug.** A one-frame test cannot see a
+  frames-in-flight defect, and every other device suite here is still a one-frame test. M4's live
+  Swift objects and M6's streaming both live on the far side of that ring.
+- **The XR late-latch check had no teeth, and the number it compared against came from the code
+  under test.** `render.xr_prerequisites`' third case asserts that the view is not in the command
+  stream, and the null backend records a push constant's offset and size but never its bytes — so
+  the case's real assertion was on the push block's SIZE, compared against
+  `cy::sample::first_light::kObjectPushBytes`, which the renderer publishes. Baking a
+  `f32 view_projection[4][4]` into `ObjectPush` and moving that constant from 64 to 128 — the seam
+  closing, exactly — left the suite at **3 cases, 67 assertions, SUCCESS**. The expected size is now
+  the test's own literal with a `static_assert`, and the same probe fails the build. Two limits
+  remain and are stated in the case: the log still cannot see payload bytes at all, and closing that
+  is a change to `rhi::null::RecordedCommand`; and **late-latching is proved for orientation only**
+  — the per-object translation is camera-relative and does travel in a push constant, so a late
+  correction to the predicted *position* would still require re-recording every draw.
+- **`rhi-and-render-graph` is Working over one backend, and the frame does not reach a window.**
+  Vulkan is the only backend with a device behind it; the null backend executes nothing by design.
+  `DisplayServer::create_surface(GraphicsApi::Vulkan, ...)` exists and works, and
+  `SwapchainDescription` takes the surface it produces — but `cy::rhi::Device` exposes no way to
+  obtain the API instance a surface must be created against (`native_handle()` returns the
+  `VkDevice`; the `VkInstance` stays inside `src/backends/rhi/vulkan/`). So a host can create a
+  window and a device and cannot join them, and `samples/03-first-light` renders offscreen and
+  writes a PPM with `--capture`. The milestone's artefact is therefore a **headless** lit scene, and
+  `m3.toml` records it as a note. It is a small engine-owned accessor away, and it is the first
+  thing M5's editor viewport will want.
+- **Async compute is derived, and nothing in the artefact uses it.** The spike proved the model on
+  the device — two queue families, a coalesced `qf2 -> qf0` ownership release, a cross-queue
+  semaphore, 256/256 texels correct, zero validation errors — and `unit.render_graph`,
+  `integration.render_graph_scale` and `smoke.vulkan_frame` keep it. But the sample declares
+  `request_async_compute = false` and the frame it renders is one submit on one queue, so the
+  path that runs on every pull request is the single-queue collapse of the same derivation. Read
+  "async compute, per the spike's outcome" as *derived and tested*, not as *exercised by the
+  artefact*.
+- **Transient aliasing saves nothing on the milestone's own frame, and the 87.5% figure is a
+  synthetic chain.** Task 7.3's claim is real and measured twice — `integration.render_graph_scale`
+  derives 64.00 MiB unaliased against 8.00 MiB aliased for a sixteen-transient read-modify-write
+  chain, and `smoke.vulkan_frame` asserts the device reserves exactly the plan's figure — but the
+  artefact's two transients (the colour target and the depth target) overlap in time and therefore
+  cannot share memory:
+
+      $ just run-sample first-light --frames 4
+        memory   transients=196608 B unaliased=196608 B aliasing=on
+      $ just run-sample first-light --frames 4 --no-aliasing
+        memory   transients=196608 B unaliased=196608 B aliasing=off
+
+  `render.null_frame` asserts `transient_bytes <= transient_bytes_without_aliasing` and says the
+  same thing in its comment, which is the honest shape. The saving is a property of a frame with a
+  post chain, and M3 does not have one.
+- **`engine-architecture`'s server split is still seven nulls, and M3 was the milestone that was
+  supposed to register the first.** `design.md`'s handoff table says so outright: "All seven servers
+  resolve to null because no backend has ever registered. M3 registers the first." It did not.
+  `cy::render::RenderServer` exists at layer 2, is driven directly by handles, and has 84 unit cases
+  over it — but `ServerRegistry::register_backend` is called by **nothing outside its own tests**,
+  and `Runtime::tick()`'s render step is still the empty seam M2 left.
+  `samples/03-first-light/main.cpp` drives the renderer from the host loop, and its header comment
+  records the gap and calls the closure "a four-line adapter at layer 5 that this sample does not
+  own". So the M2 caveat below
+  stands unchanged at M3, and the requirement's first scenario — a `MeshRenderer` component holding
+  a handle obtained from `RenderServer` — still has no path through the runtime.
+- **The frame is deterministic within a process and across processes, and the guarantee rests on a
+  hash that cannot see payload bytes.** Two runs agree: three separate processes of the sample
+  printed `plan hash=f31bdc099ded9851` on Vulkan and `74b615b87a605044` on the null backend, and
+  `render.null_frame` compares the command-stream hash of two frames in one process. The sort is
+  genuinely order-independent — a total order over `(key, stable_id, surface)` where `stable_id` is
+  the entity's bits, never a slot or a pointer — and `sort_draws()` asserts the identities are
+  unique in a development build. What the stream hash does **not** cover is any command's payload:
+  push-constant bytes, viewport values and clear colours are hashed as their sizes. So "the same
+  frame twice records the same stream" is a statement about structure, and the content half is
+  carried by the golden images, which need a device.
+- **The null backend records the same frame the device does — as structure, not as bytes.** Same
+  scene, two backends, three processes each: `passes=4 culled=0 submits=1 barriers=6 batches=4
+  transfers=0 draws=16 triangles=172` on both. The plan hashes differ and should — `plan_hash`
+  covers placement offsets and those come from the device's own memory requirements — and the
+  transient totals differ for the same reason (196 608 B on Vulkan against 165 888 B on the null
+  device's synthetic alignments). `render.golden`'s fourth case is the committed form of this
+  comparison. Claiming hash equality across backends would have been claiming something false.
+- **`core-math` is Complete, and half of what makes it Complete cannot run in continuous
+  integration.** The device-side conventions are real and they have teeth: `render.conventions` is
+  10 cases and 95 assertions on the RTX 5060, the near plane samples back as **1.000000000** and the
+  far plane as **0.000000000**, and a negative control — `depth_compare` flipped to `LessOrEqual` —
+  fails 14 assertions across all three files rather than one. But `render.conventions` and
+  `render.golden` are declared only when `CY_RENDERER_VULKAN` is on, the default build has it off,
+  and no hosted runner has a device. So the gate that runs on every pull request covers
+  `unit.math`'s 72 cases and 1 012 assertions of arithmetic; the half that meets a depth buffer is
+  evaluated on a machine with a GPU and reported as *not evaluated* everywhere else. That is what
+  `requires = "gpu"` in `m3.toml` records, and it is the honest reading of the tier.
+- **Camera-relative rendering is proved twice, and only one of the two exercises the renderer's own
+  subtraction.** `render.conventions`' million-unit case builds its camera-relative vertices in the
+  test and asserts the two images are bit-identical, with a control showing the world-space path
+  loses the centimetre offsets — good evidence about the arithmetic, none about the renderer.
+  `render.golden`'s second case is the one that matters: it runs `samples/03-first-light` with
+  `--origin 1000000` through `Renderer::render()`'s own `f64` subtraction and compares against **the
+  same committed reference file** as the near scene. Both need a device.
+- **Shader hot reload is proved over the file watcher and not over a running frame.**
+  `integration.shader_pipeline` edits a module, waits for the watcher's settle period, recompiles
+  and asserts that exactly the pipeline states naming the rebuilt program are invalidated — which is
+  task 7.4's claim and is a real one. What no test does is replace a shader while the sample is
+  running and see the next frame change, because the sample has no reload path wired into its loop.
+  Read the tier as "the pipeline reloads", not "the artefact hot-reloads".
+- **Slang is integrated and the pull-request build does not compile a shader.** `CY_SHADER_SLANG` is
+  off by default; what runs everywhere is the SPIR-V passthrough, which is the shipping path rather
+  than a stub, over three fixtures compiled with `slangc` and validated with `spirv-val` before they
+  were embedded. `smoke.shader_slang` — the four cases that actually drive a Slang session — is
+  declared only when the option is on, and it costs about 1.1 s to create the global session before
+  anything is compiled. So a Slang regression is caught by whoever builds with the option, not by
+  CI.
+- **M3's renderer components are registered by name, and the identity manifest still holds two demo
+  types.** M2's carried-forward debt 1.2 asked for M3's renderer components to be *reflected* as
+  they were written. They are not: `src/core/reflect/CMakeLists.txt`'s annotated-header list is
+  still one demo header, `just quality-identity` still reports **2 live types, 0 tombstones**, and
+  `src/rendering/scene/include/cy/rendering/scene/components.h` says why in the header — reflection
+  cannot carry a `Transform` or a `Name` today, and inventing manifest identifiers for a component
+  would be inventing an identity. The hash gap was closed the other way instead, with an explicit
+  `StateSchema` (see the M2 section below), which is the right call and is not the same thing. The
+  consequence stands: **no component in the engine is covered by the identity gate**, and every one
+  of them is a rename M5's save files will not survive.
+- **Still standing at M3 and larger** — restated with M3's numbers in the section above. The M2
+  finding:
+
+  **`build-system-and-platforms` is unchanged and still Linux-only in practice.** Windows and macOS
+  have still never compiled. The tree `just quality-layers` walks is now **816 files**, up from 600
+  at M2, and 216 of that growth is this milestone — so the first foreign build is a larger diff
+  again, and every `three-platforms` criterion in every ledger is still reported as *not evaluated*
+  rather than as passed. Two things M3 added make it harder rather than easier: `volk` and VMA are
+  new dependencies with their own platform surfaces, and `CY_RENDERER_VULKAN` is a second
+  configuration that only one machine has ever built.
+- **The milestone gates are green and nothing in continuous integration runs them.**
+  `tools/roadmap/gates.toml` declares `milestone-m0`, `-m1` and `-m2` as `green` and permanent, and
+  `tools/ci/check_workflows.py`'s coverage check skips every gate whose class is not `permanent` —
+  so no job in `.github/workflows/ci.yml` runs `just roadmap-milestone` for any milestone. The
+  ladder is real (each ledger's first criterion is the previous milestone's whole set) but it is
+  run by whoever closes a milestone, not by a pull request. That is a defensible trade — `m2`'s
+  recipe is a working session and `m3`'s contains three `four-profiles` loops — but it should be a
+  recorded decision rather than an accident of how the coverage check is written, and it is recorded
+  here as the second.
+
+## Where M2's tiers were thin, and what M3 closed
 
 The tiers above are the plan and the record agrees with it. What the plan does not say is where the
 implementation is **thinner than the tier claims**, and that belongs here rather than in a commit
@@ -183,7 +398,24 @@ attacking what the milestone exists to establish rather than by reading it: the 
 dependence on entity indices, `engine-architecture` reaching Working over seven null servers, and a
 milestone gate that was never promoted when its milestone closed.
 
-- **The state hash covers what was declared, and in the closing artefact that is four subjects out
+**Re-checked again at M3's gate, and each entry now opens with what M3 did to it.** M3 carried seven
+of M2's debts as its own section 1, so most of this list moved; a caveat that is still here after a
+milestone that was asked to close it is worth more than one nobody revisited. Verdicts below were
+run rather than read — the command or the file that decides each is named.
+
+- **Closed in the engine at M3, and still true of M2's own artefact.** `src/ecs/state_schema.h`,
+  `src/scene/state_schema.h` and `src/rendering/scene/state_schema.h` declare explicit field lists
+  for the ECS's two relationship components, the scene's twelve built-ins and M3's renderer
+  components, and `integration.state_hash_coverage` is the regression: renaming a node, reparenting
+  one, changing sibling order and changing visibility each change the hash, and the derived world
+  transform is recomputed rather than hashed. The route taken is an explicit schema rather than
+  reflection, for the reason the M3 section above records. What did **not** change is the closing
+  artefact: `just run-sample headless-sim` still prints `subjects declared=4 undeclared=13`, because
+  `samples/02-headless-sim` declares only its own components and declaring the other thirteen would
+  change the hash `smoke.headless_sim` asserts. The mechanism is closed; the sample that advertises
+  the number is not. The M2 finding, as it was written:
+
+  **The state hash covers what was declared, and in the closing artefact that is four subjects out
   of seventeen.** `samples/02-headless-sim` prints `schema subjects declared=4 undeclared=13` and
   opens its own run with `[info] runtime: 13 component types have no reflected descriptor and are
   not in the state hash`. The thirteen are the ECS's `Parent`/`Children` and all twelve of the
@@ -207,7 +439,11 @@ milestone gate that was never promoted when its milestone closed.
   and `src/scene/`'s twelve, which is a change to `src/core/reflect/CMakeLists.txt` and
   `identity/manifest.toml` — neither of which those modules own this milestone, and both modules'
   READMEs record the seam.
-- **The state hash depended on component *registration order*, and that was found at the gate rather
+- **Closed at M2, and the residual is unchanged at M3.** The fix and its regression stand; the
+  shared-component caveat at the end of this entry is still true, and
+  `src/runtime/src/state_hash.cpp` still says so at the line that does it. The M2 finding:
+
+  **The state hash depended on component *registration order*, and that was found at the gate rather
   than by a test.** `simulation-and-determinism` is explicit — "Registries whose contents affect
   simulation — systems, **types**, rules, providers — SHALL be finalised in a deterministic order
   derived from **stable identifiers**", and "WHEN plugins load in a different order THEN simulation
@@ -242,7 +478,15 @@ milestone gate that was never promoted when its milestone closed.
   interned index, which is assigned in interning order. That is deterministic for one run of one
   program and is not a stable identity; `archetype_key()` says so at the line that does it. Nothing
   in M2 uses shared components in a hashed archetype, so it is recorded rather than fixed.
-- **The same class is still open in two more places, and both are named rather than fixed.** The
+- **Closed at M3 for the scheduler, still standing for the command buffer's fallback.** M3's task
+  1.7 replaced the stage scheduler's tie-break with the system's **name**:
+  `Schedule::assign_merge_keys()` insertion-sorts by name and says why, so a plugin registering a
+  system conditionally no longer shifts every later system's key. `CommandBuffer`'s merge key is now
+  set from that same rank — but a buffer used **outside** a schedule still falls back to its
+  attachment order to the world, which `command_buffer.h` documents as "itself a registration
+  order". That is the remainder. The M2 finding:
+
+  **The same class is still open in two more places, and both are named rather than fixed.** The
   registration-order defect above was one instance of "a sequence number used where a stable
   identifier belongs"; the audit that found it turned up two more.
   `<cy/core/jobs/schedule.h>` levels a stage's systems into batches "with ties broken by
@@ -254,7 +498,15 @@ milestone gate that was never promoted when its milestone closed.
   because M2 has no plugins and no conditional system registration; they should be closed before
   either arrives. `StateProviderRegistry::finalize()` is the counter-example that shows the right
   shape: it insertion-sorts by name and says why.
-- **The determinism firewall is unspellable, and nothing has adopted it.** `Classified<>` delivers
+- **Adopted at M3, at three fields.** The grep that returned only the header and its own test now
+  returns `src/scene/include/cy/scene/components.h` (2),
+  `src/rendering/scene/include/cy/rendering/scene/components.h` (1),
+  `src/scene/src/node_transform.cpp` and `src/rendering/scene/src/state_schema.cpp`. Three wrapped
+  fields against the tree's whole state is movement rather than closure, and the debt's own argument
+  — cheapest at the moment a component is authored — means every component M3 wrote unwrapped is one
+  M9's lint inherits. The M2 finding:
+
+  **The determinism firewall is unspellable, and nothing has adopted it.** `Classified<>` delivers
   exactly what design.md §5 demanded: a firewall crossing between two classified values does not
   compile — `Presentation<f32>::read(AuthoritativeContext)` has no overload, in either direction,
   and `test_classification.cpp` proves it with `static_assert` rather than with a runtime check. The
@@ -272,7 +524,12 @@ milestone gate that was never promoted when its milestone closed.
   protects zero fields. The wrapper being opt-in per field is the design, and the header says so;
   what a reader must not take from "unspellable" is that the engine's state is currently behind it.
   M9's determinism lint inherits every unwrapped field, which is all of them.
-- **`core-assets-and-io` is Working with two of its ten requirements unimplemented.** The cook path
+- **Half closed at M3.** Hot reload is no longer at zero: `src/core/assets/watch.h` is a file
+  watcher with a settle period, `asset_system.h` has a reload entry point and a change report handed
+  to observers, and `integration.shader_pipeline` is its first consumer. Streaming is still absent
+  and still scheduled for M6 — no residency budget, no partial-mip or LOD path. The M2 finding:
+
+  **`core-assets-and-io` is Working with two of its ten requirements unimplemented.** The cook path
   is real — `cy_cook` reads authoring documents and writes a `.cypak` addressed by identity, and
   `integration.cook_path` loads it back — and that is what the M2 tasks asked for. But the
   capability's **Streaming** and **Hot reload** requirements have no implementation at all: there is
@@ -281,7 +538,11 @@ milestone gate that was never promoted when its milestone closed.
   M6 — but hot reload is named by the M2 row of `ROADMAP.md` and by task 3.2.13 and is simply
   absent. Read the tier as "the cook path is Working"; two of the ten requirements are still at
   none.
-- **`core-type-system` is still a two-type demonstration, and M2 is what it was supposed to stop
+- **Unchanged at M3, and now costlier.** `just quality-identity` still reports **2 live types, 0
+  tombstones**, and M3 added nine modules of components that are registered by name — see the M3
+  section above for why the renderer took the explicit-schema route instead. The M2 finding:
+
+  **`core-type-system` is still a two-type demonstration, and M2 is what it was supposed to stop
   being.** The quadratic half of M1's caveat is closed: `TypeRegistry::find` and `find_field` now go
   through an open-addressed probe table. `integration.reflect_scaling` measures it against M1's
   linear scan kept in the test as a reference implementation, on the same corpus in the same
@@ -319,7 +580,11 @@ milestone gate that was never promoted when its milestone closed.
   `test_identity.cpp` still uses identifiers 9302 and above, and M1's `identity-rename` criterion
   exercises the manifest half alone. Until a reflected component with a manifest identifier exists,
   the joined test has nowhere to live.
-- **Cook-time flattening needs a fixup pass, and "activation is a bulk copy" is an abbreviation
+- **Unchanged at M3, and now measurable.** The figures were not re-run; what changed is that
+  `benchmarks/ecs/` exists (task 1.6), so the next person to argue about them has a runner. The M2
+  finding:
+
+  **Cook-time flattening needs a fixup pass, and "activation is a bulk copy" is an abbreviation
   twice over.** This was the milestone's named risk and the spike answered the first half: a cooked
   block copies into a chunk as whole-column `memcpy`s — `World::copy_block_columns()` is one
   `memcpy` per column per run and nothing else — and then the key column and every entity-reference
@@ -364,7 +629,9 @@ milestone gate that was never promoted when its milestone closed.
   is the idea that M6's cell activation is free. Price it as a copy, plus a strided fixup pass, plus
   an entity-id allocation per row. Emitting the reference sites at cook time is what keeps the fixup
   cheap: asking the registry per row measured 4.7-5.2x slower in the spike.
-- **The state hash is a function of the entity indices, and that is nowhere written down.** The
+- **Still standing at M3, unchanged.** The M2 finding:
+
+  **The state hash is a function of the entity indices, and that is nowhere written down.** The
   walk seeds each Entity node with `entity.index()` (`hash.cpp`'s `seed_for`), so two worlds whose
   observable content is identical hash differently when the same values sit on different entity
   ids. That is defensible — an entity id *is* state as soon as anything holds an entity reference,
@@ -384,7 +651,11 @@ milestone gate that was never promoted when its milestone closed.
   activates into, so the same cell activated after different history hashes differently, and M9's
   replay must restore ids verbatim rather than merely restore values. `ecs-core`'s snapshot does
   restore them verbatim, which is why the M2 restore criterion passes.
-- **`engine-architecture` is Working, and all seven of its servers are the null implementation.**
+- **Still standing at M3, and M3 was the milestone that was supposed to close it** — see the M3
+  section above, where it is restated with what exists now. `ServerRegistry::register_backend` is
+  still called by nothing outside its own tests. The M2 finding:
+
+  **`engine-architecture` is Working, and all seven of its servers are the null implementation.**
   `src/servers/` does not exist; `servers.h` is the registry, the selection chain and `NullServer`,
   and every one of `RenderServer`, `PhysicsServer`, `AudioServer`, `NavigationServer`, `TextServer`,
   `DisplayServer` and `InputServer` resolves to it because no backend registers before M3. The
@@ -395,7 +666,15 @@ milestone gate that was never promoted when its milestone closed.
   or script, so "the server SHALL never dereference an ECS entity or a scene node" is a property of
   the interface rather than a rule to remember. Read the tier as "the loop, the duality, the command
   queue and feature slicing are Working; the server split is an interface with one null behind it".
-- **`milestone-m1` was still `joins-on-close` in `tools/roadmap/gates.toml` when M2 came to close.**
+- **Closed at M3, and the pattern is now a check rather than a reminder.** `milestone-m2` was
+  flipped to `green` in this change and `milestone-m3` with it, so M3 is the first milestone that
+  did not have to be reminded. `just roadmap-test` now reads `openspec/changes/archive/` and fails
+  when a milestone whose change is archived still has a gate at `joins-on-close` — proved by setting
+  `milestone-m2` back and watching the selftest go 57/58. The cost is real and is stated in
+  `gates.toml`: a pull request that runs `milestone-m3` runs `four-profiles` three times over
+  through the nested ladder. The M2 finding:
+
+  **`milestone-m1` was still `joins-on-close` in `tools/roadmap/gates.toml` when M2 came to close.**
   `delivery-roadmap` is explicit that a milestone's criteria join the gate set when it closes, and
   the comment above `milestone-m0` in that file records what happened the last time the flip was
   forgotten: M0's gate was left at `joins-on-close` when M0 was archived, and M1 then landed
@@ -407,20 +686,27 @@ milestone gate that was never promoted when its milestone closed.
   which is a recipe of several minutes containing `four-profiles`, and `four-profiles` is the flaky
   criterion two entries below — so a pull request now has two independent exposures to that rate
   rather than one. The answer is to fix the flake, not to write an override.
-- **The bulk-copy claim is a correctness test with a time budget, not a committed benchmark.**
+- **Closed at M3.** `benchmarks/ecs/bench_ecs.cpp` is declared with `cy_add_benchmark(NAME ecs ...)`
+  and `just test-bench` compares six ECS metrics against `benchmarks/baseline.json`. The M2 finding:
+
+  **The bulk-copy claim is a correctness test with a time budget, not a committed benchmark.**
   `integration.ecs_scale` instantiates 100,000 rows and reads them back through the runtime layout,
   inside the integration suite's per-case budget. That is a threshold a gross regression trips; it
   is **not** a ns/entity figure compared against `benchmarks/baseline.json`, because no benchmark
   runner exists for the ECS — only for the job system. `tools/roadmap/milestones/m2.toml` records
   this as a note and names `cy_add_benchmark(NAME ecs ...)` as the honest fix.
-- **"Identical across restore-from-snapshot" is a round trip, not a re-run.** The gate captures a
+- **Still standing at M3, unchanged; it is M9's.** The M2 finding:
+
+  **"Identical across restore-from-snapshot" is a round trip, not a re-run.** The gate captures a
   snapshot, ticks the world 128 further ticks so it demonstrably moved, restores, and checks the
   hash matches the settled one again — `smoke.headless_sim` asserts the divergence as well as the
   match, so it cannot pass on a restore that did nothing. What it does not do is *replay* from the
   restored state and reproduce the same trajectory: that needs the clock rewound into the same
   epoch, and `Simulation` exposes only `reset_epoch()`, which by design enters a new one. Rewinding
   is `replay-and-rollback`'s, at M9.
-- **`scene-graph-and-nodes`' coherence check is five invariants, and "no orphaned entity" is not one
+- **Still standing at M3, unchanged.** The M2 finding:
+
+  **`scene-graph-and-nodes`' coherence check is five invariants, and "no orphaned entity" is not one
   of them.** `check_coherence()` covers the specification's five — entity alive, one node per
   entity, `Parent` matches the tree, `WorldTransform` consistent after propagation, effective flags
   consistent — and returns a report in every configuration rather than asserting, which is right,
@@ -429,7 +715,18 @@ milestone gate that was never promoted when its milestone closed.
   two separate scene cases ("unloading destroys exactly its entities", "a node reparented out of its
   scene is still destroyed with it") rather than by the invariant checker. The claim holds; the
   gate's own wording overstates where it is checked.
-- **M2's own suites did not fit the test taxonomy, and the repair is a split rather than a fix.**
+- **Closed at M3, in two steps, and the second was found by this gate.** Task 1.1 replaced the
+  harness's wall-clock budget with the case's own CPU time plus a stall ceiling, which removed the
+  load-induced failures — `tests/harness/src/budget.cpp`'s `cpu_now_ns()`. That was not the whole of
+  it: at M3's gate `just roadmap-milestone m0` failed on `unit.material` on an **idle** machine, and
+  the case was `test_brdf.cpp`'s spherical-harmonic orthonormality check, which integrates 4 096
+  directions against a nine-term basis and measured between 0.536 ms and 1.241 ms of CPU against a 1
+  ms budget — 1 failure in 10 standalone. It is moved to `integration.material_ibl`, where the
+  taxonomy puts a case that integrates something. After the move: **0 failures in 30**, and a sweep
+  of every unit and integration binary at `CY_TEST_BUDGET_SCALE=0.4` reports no case at all above
+  40% of its budget. The M2 finding:
+
+  **M2's own suites did not fit the test taxonomy, and the repair is a split rather than a fix.**
   `just test-all --profile debug` — an M1 *and* an M2 exit criterion, and the `profiles` permanent
   gate — was failing 8 runs in 10 at M2's close, and no agent's own report caught it because each
   ran the suite once. Two causes, both M2's own additions overrunning the taxonomy's
@@ -460,7 +757,12 @@ milestone gate that was never promoted when its milestone closed.
   count, the tree it walks is now **600 files** — so the first foreign build is a larger diff again,
   and every `three-platforms` criterion in every ledger is still reported as *not evaluated* rather
   than as passed.
-- **The sanitizer gate is wider than M1's and still not what the specification asks for.** It now
+- **Closed at M3.** `.github/workflows/ci.yml` has a `schedule:` trigger at 03:41 UTC and a
+  `sanitize-nightly` job that runs `--tests .` under TSan, ASan+UBSan and UBSan alone; the
+  `CY_TEST_BUDGET_SCALE=0` conflict with `test_assertions.cpp` is fixed, and all three commands were
+  run at 69 tests passing. The M2 finding:
+
+  **The sanitizer gate is wider than M1's and still not what the specification asks for.** It now
   runs TSan and ASan+UBSan over the job suite and over M2's ECS suites — four commands where M1 had
   two, and the TSan run over `ecs_scheduling` is what found and closed the milestone's one real data
   race. `testing-and-quality` asks for the unit and integration suites under all three **at least

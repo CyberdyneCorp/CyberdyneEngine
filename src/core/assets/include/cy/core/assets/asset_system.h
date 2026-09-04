@@ -162,6 +162,23 @@ struct LoadOptions {
     jobs::Priority priority = jobs::Priority::Normal;
 };
 
+/// What a reload changed, handed to every observer after the swap.
+///
+/// `core-assets-and-io`: "Reload SHALL notify dependents so derived state (GPU uploads, material
+/// instances, shader pipelines) is rebuilt." A dependent registers an observer and rebuilds what it
+/// derived; the asset itself has already been replaced by the time it is called, so an observer
+/// that reads the bytes reads the new ones.
+struct ReloadEvent {
+    cy::AssetId id;
+    VariantKey variant;
+    /// The payload's size before and after, so an observer that budgets memory does not have to
+    /// have remembered.
+    usize previous_bytes = 0;
+    usize bytes = 0;
+};
+
+using ReloadObserver = void (*)(void* user, const ReloadEvent& event) noexcept;
+
 struct AssetSystemStats {
     u64 loads_started = 0;
     u64 loads_completed = 0;
@@ -179,6 +196,11 @@ struct AssetSystemStats {
     u64 evictions = 0;
     /// The GPU upload stage, counted and skipped. See the note at the top of this file.
     u64 uploads_skipped = 0;
+    /// Reloads that replaced an asset's bytes in place, and reloads that did not and left the old
+    /// bytes in use. The second is not an error rate to be alarmed by on its own: an editor saving
+    /// a file in two writes produces one of each.
+    u64 reloads_completed = 0;
+    u64 reloads_failed = 0;
     usize resident_assets = 0;
     usize resident_bytes = 0;
     usize requests_in_flight = 0;
@@ -258,8 +280,52 @@ public:
     [[nodiscard]] Expected<Ref<AssetData>, Error> find_resident(cy::AssetId id,
                                                                 VariantKey variant = {}) noexcept;
 
-    /// Retire finished requests, collect time-delayed releases, and evict against the budget.
-    /// Called once a frame; a headless tool that never calls it keeps everything resident.
+    // --- Hot reload ---------------------------------------------------------------------------
+    //
+    // `core-assets-and-io` — "Hot reload": in development builds the asset system watches source
+    // files and cooked outputs and reloads changed assets **in place, preserving existing `Ref`s**,
+    // and notifies dependents so derived state is rebuilt. `FileWatcher` (watch.h) is the watching
+    // half; this is the acting half. Nothing here is development-only in the compiler's sense —
+    // a tool and the cooker use it too — and nothing calls it unless something asks.
+
+    /// Re-read one resident asset's bytes and replace them **in the object every `Ref` already
+    /// points at**, so a material holding a texture keeps holding the same texture and sees the new
+    /// content. Returns NotFound when the asset is not resident: a reload does not start a load,
+    /// because "reload what is in use" and "load what is not" are different decisions and only the
+    /// caller knows which it meant.
+    ///
+    /// **It reads on the calling thread.** Every other read in this file goes to the async service
+    /// because a job worker may not block; this one is called from an editor tick, a tool, or a
+    /// watcher's observer, and those are threads where blocking is legal. Calling it from a job
+    /// body is a defect the job system will report.
+    ///
+    /// **The old bytes are kept until `update()`.** A reader that took `bytes()` before the swap
+    /// holds a span into the previous buffer, so the previous buffer is retired rather than freed
+    /// and released at the next `update()`. The contract that makes this safe is the one a frame
+    /// loop already keeps: re-acquire the span each frame, never hold one across a frame boundary.
+    ///
+    /// **A failed reload keeps the old asset**, which is the specification's second scenario: a
+    /// file caught mid-write reads short or not at all, the error is returned, `reloads_failed` is
+    /// counted, and every `Ref` still names the content that was working.
+    ///
+    /// PACKAGE-BACKED ASSETS ARE REFUSED, by name, with `ErrorCode::Unimplemented`. An entry inside
+    /// a cooked package reaches its bytes through the package's chunk framing, decompression and
+    /// dependency list — the pipeline `load` runs across the async service and the job graph — and
+    /// re-running that synchronously here would be a second implementation of it. The iteration
+    /// loop this exists for edits loose files under a directory mount, which is the case that is
+    /// supported and tested. Doing the other one properly means restarting the load pipeline into
+    /// the existing slot and swapping at `publish()`; it is a change to this file and to nothing
+    /// that consumes it.
+    [[nodiscard]] Status reload(cy::AssetId id, const LoadOptions& options = {}) noexcept;
+
+    /// Register a dependent to be told when an asset's bytes are replaced. Registering the same
+    /// (function, user) pair twice registers it once.
+    [[nodiscard]] Status add_reload_observer(ReloadObserver observer, void* user) noexcept;
+    void remove_reload_observer(ReloadObserver observer, void* user) noexcept;
+
+    /// Retire finished requests, collect time-delayed releases, evict against the budget, and
+    /// release the payloads that reloads replaced. Called once a frame; a headless tool that never
+    /// calls it keeps everything resident.
     void update() noexcept;
 
     [[nodiscard]] AssetSystemStats stats() const noexcept;

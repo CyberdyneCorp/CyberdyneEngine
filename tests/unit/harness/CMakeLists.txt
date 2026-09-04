@@ -7,4 +7,5 @@ cy_add_test(
     KIND    unit
     SOURCES
         test_assertions.cpp
+        test_budget.cpp
         test_fixtures.cpp)

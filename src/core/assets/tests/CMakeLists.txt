@@ -76,6 +76,16 @@ function(cy_assets_declare_tests)
         KIND integration
         SOURCES "${cy_assets_tests_dir}/test_asset_system.cpp"
         DEPENDENCIES cy::core-assets cy::core-jobs)
+
+    # The watcher and the reload it feeds. Integration rather than unit for the same reason
+    # `assets_loading` is: the reload cases start a job system and an I/O thread. The watcher's own
+    # cases would fit a millisecond, and they are here rather than split across two suites because
+    # the two halves of hot reload are one subject and a failure in either is read together.
+    cy_add_test(
+        NAME assets_watch
+        KIND integration
+        SOURCES "${cy_assets_tests_dir}/test_watch.cpp"
+        DEPENDENCIES cy::core-assets cy::core-jobs)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_assets_declare_tests)

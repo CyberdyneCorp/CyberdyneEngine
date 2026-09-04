@@ -13,17 +13,24 @@
 #
 #   kind | per-test budget (ns) | CTest timeout for the suite (s) | recipe
 #
-# The budget is per test case and is enforced inside the binary (cy::test::BudgetGuard). The timeout
-# is per suite and is enforced by CTest: it is what stops a hung test from holding the run open, and
-# for the unit suite it is also the "under a minute" requirement, checked rather than hoped for.
+# The budget is per test case, measured as that case's own CPU time, and enforced inside the binary
+# (cy::test::BudgetGuard — see its header for why CPU time rather than wall clock). The timeout is
+# per suite, in wall clock, and is enforced by CTest: it is what stops a hung test from holding the
+# run open, and for the unit suite it is also the "under a minute" requirement, checked rather than
+# hoped for.
 
 set(CY_TEST_BUDGET_unit        1000000)      # 1 ms
 set(CY_TEST_BUDGET_integration 1000000000)   # 1 s
 set(CY_TEST_BUDGET_smoke       30000000000)  # 30 s
+# render/: 5 s per test, which is tests/render/README.md's own number. A case here creates a device,
+# submits real work and waits for the GPU, and it does so several times — the conventions suite
+# renders one frame per assertion because a frame is how you ask the device a question.
+set(CY_TEST_BUDGET_render      5000000000)   # 5 s
 
 set(CY_TEST_TIMEOUT_unit        60)
 set(CY_TEST_TIMEOUT_integration 300)
 set(CY_TEST_TIMEOUT_smoke       300)
+set(CY_TEST_TIMEOUT_render      300)
 
 # A test source that includes doctest directly has stepped around the CY_TEST_CASE wrapper, and the
 # wrapper is the whole reason doctest is an acceptable choice (design.md §5). Checked here, at the
@@ -64,7 +71,7 @@ function(cy_add_test)
     if(NOT DEFINED CY_TEST_BUDGET_${arg_KIND})
         message(FATAL_ERROR
             "cy_add_test(${arg_NAME}): KIND '${arg_KIND}' is not part of the taxonomy. It is one of "
-            "unit, integration or smoke; render and determinism join it at M3 and M9.")
+            "unit, integration, smoke or render; determinism joins them at M9.")
     endif()
     if(NOT arg_SOURCES)
         message(FATAL_ERROR "cy_add_test(${arg_NAME}): SOURCES is required.")
@@ -99,7 +106,10 @@ add_subdirectory(harness)
 add_subdirectory(unit)
 add_subdirectory(integration)
 add_subdirectory(smoke)
+# render/ was empty until M3, which is the milestone its README named. It holds section 5's
+# conventions-on-a-device suite, and task 6.3's golden images join it.
+add_subdirectory(render)
 
-# render/ and determinism/ hold a README and nothing else: they are the two suites whose subjects do
-# not exist yet, and an empty CMakeLists.txt for each would only be a place for a placeholder test to
-# accumulate. They are added when the renderer lands at M3 and simulation at M9.
+# determinism/ holds a README and nothing else: it is the suite whose subject does not exist yet, and
+# an empty CMakeLists.txt would only be a place for a placeholder test to accumulate. It is added
+# when simulation lands at M9.

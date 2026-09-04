@@ -2,6 +2,8 @@
 
 #include <cy/test/test.h>
 
+#include <type_traits>
+
 #include <cy/scene/coherence.h>
 #include <cy/scene/propagation.h>
 #include <cy/scene/tree.h>
@@ -142,6 +144,43 @@ CY_TEST_CASE("reparenting with keep-world recomputes the local transform") {
     CY_REQUIRE(other.set_parent(second).has_value());
     CY_REQUIRE(fixture.tree.propagate().has_value());
     CY_CHECK(near_vec(other.world_transform().translation, cy::Vec3{1.0F, 20.0F, 0.0F}));
+}
+
+CY_TEST_CASE("the interpolated transform is presentation state, and the firewall says so") {
+    // Task 1.3. `Classified<>` was correct at M2 and adopted by nothing, so the determinism
+    // firewall guarded zero fields. `InterpolatedTransform` is the first component to adopt it, and
+    // these are the properties that make the adoption worth having rather than decorative.
+    //
+    // WHAT CANNOT BE WRITTEN HERE IS THE POINT, and it cannot be written as a test: a crossing the
+    // firewall forbids does not compile, so an authoritative read of these fields is not an
+    // assertion that fails but an expression that does not exist. src/core/determinism/'s
+    // test_classification.cpp holds that proof against the wrapper itself. What is asserted here is
+    // that this component really carries it, and that the layout the ECS depends on survived.
+    static_assert(cy::scene::InterpolatedTransform{}.previous.kClass ==
+                      cy::determinism::SimulationClass::Presentation,
+                  "the previous world transform is presentation state: it exists so a renderer can "
+                  "blend between two ticks");
+    static_assert(cy::scene::InterpolatedTransform{}.teleport.kClass ==
+                  cy::determinism::SimulationClass::Presentation);
+    static_assert(
+        !cy::determinism::participation_of(cy::determinism::SimulationClass::Presentation).hashed,
+        "presentation state is not part of the state hash, which is what stops a render "
+        "blend from being reported as a divergence");
+
+    // Layout, because the ECS computes a chunk's column width from `sizeof` and refuses a component
+    // that is not trivially relocatable. A wrapper that broke either would be found here rather
+    // than as a failed registration in whichever suite happened to run first.
+    static_assert(sizeof(cy::scene::InterpolatedTransform) ==
+                  sizeof(cy::Transform) + alignof(cy::Transform));
+    static_assert(std::is_trivially_copyable_v<cy::scene::InterpolatedTransform>);
+
+    // And the value really is reachable through the witness, rather than the wrapper merely
+    // compiling: a component that stored nothing would satisfy every assertion above.
+    constexpr cy::determinism::PresentationContext kPresentation;
+    cy::scene::InterpolatedTransform held;
+    held.teleport.write(cy::determinism::AuthoritativeContext{}, true);
+    CY_CHECK(held.teleport.read(kPresentation));
+    CY_CHECK_FALSE(held.previous.read(kPresentation).translation.x != 0.0F);
 }
 
 CY_TEST_CASE(

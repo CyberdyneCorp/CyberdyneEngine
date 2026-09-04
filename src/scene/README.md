@@ -113,7 +113,17 @@ two test assertions.
   `identity/manifest.toml`, neither of which this module owns. Fabricating identifiers would be
   inventing the one kind of number `core-type-system` says must be assigned once and never guessed.
   Moving them across is a change to `components.cpp`'s two registration calls and to nothing that
-  consumes them.
+  consumes them. **Their absence from the state hash did not wait for that**: M3's task 1.2 declares
+  all twelve to `determinism::StateSchema` in `state_schema.h`, with each field's simulation class
+  stated, so a divergence in a node's name, its parent, its sibling order or its visibility changes
+  the hash — which none of them did at M2's close. `integration.state_hash_coverage` is the claim,
+  run.
+* **`InterpolatedTransform` is classified and the other eleven are not.** M3's task 1.3 adopted
+  `determinism::Classified<>` on the component whose fields are unambiguously presentation state, so
+  an authoritative system cannot read a render blend — the read does not compile. `components.h`
+  names the next two (`WorldTransform` and `NodeState`, both `Derived`) and states the cost: every
+  reader of a classified field has to carry a witness, which is a change to this module's bodies
+  rather than to its data.
 * **A group and a batched behaviour each consume one of the world's 256 component slots**, for the
   life of the world. That is what "groups SHALL be implemented as tag components" costs, and it is
   the right cost for the tens of named sets a game broadcasts to. A per-entity attribute with

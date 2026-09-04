@@ -115,6 +115,14 @@ private:
     WindowEventQueue events_;
     WindowId next_id_ = 1;
     bool initialised_ = false;
+    /// Whether SDL could load a Vulkan loader at start-up.
+    ///
+    /// It decides two things together, and they have to agree: whether has_feature(VulkanSurface)
+    /// answers true, and whether every window is created with SDL_WINDOW_VULKAN. SDL will only
+    /// build a VkSurfaceKHR for a window that carries that flag, and the flag has to be chosen when
+    /// the window is created — long before anything asks for a surface. So the answer is decided
+    /// once, at initialise(), and both sites read it. M3 task 2.3.2.
+    bool vulkan_loader_ = false;
 };
 
 }  // namespace cy

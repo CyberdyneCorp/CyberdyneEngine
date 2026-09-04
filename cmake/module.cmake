@@ -24,14 +24,14 @@ include_guard(GLOBAL)
 # it resolves a module manifest's `layer` field — it defers to whatever this file published, because
 # there must be exactly one layer order in the build. The CY_LAYER_INDEX_<name> variables below are
 # this file's own lookup: a name is a variable suffix, so resolving one is not a list search.
-set(CY_LAYER_NAMES   core ecs servers backends platform scene runtime abi editor tools)
-set(CY_LAYER_INDICES 0    1   2       3        3        4     5       6   7      7)
+set(CY_LAYER_NAMES   core ecs servers backends platform scene rendering runtime abi editor tools)
+set(CY_LAYER_INDICES 0    1   2       3        3        4     4         5       6   7      7)
 
 # Written out rather than derived, because a diagnostic that lists `platform` between `backends` and
 # `scene` without saying what it is teaches the reader the wrong table.
 set(CY_LAYER_NAMES_READABLE
-    "core 0, ecs 1, servers 2, backends 3 (also spelled platform), scene 4, runtime 5, abi 6, "
-    "editor 7, tools 7")
+    "core 0, ecs 1, servers 2, backends 3 (also spelled platform), scene 4 (also spelled "
+    "rendering), runtime 5, abi 6, editor 7, tools 7")
 string(REPLACE ";" "" CY_LAYER_NAMES_READABLE "${CY_LAYER_NAMES_READABLE}")
 
 set(CY_LAYER_INDEX_core     0)  # src/core/
@@ -44,6 +44,11 @@ set(CY_LAYER_INDEX_abi      6)  # src/abi/
 set(CY_LAYER_INDEX_editor   7)  # editor/
 set(CY_LAYER_INDEX_tools    7)  # tools/
 set(CY_LAYER_INDEX_platform 3)  # a spelling of backends, not a layer of its own
+# src/rendering/ sits beside src/scene/: both are above the backends and below the runtime, and
+# neither may see the other. A spelling rather than a layer of its own, for the same reason
+# `platform` is one — a reader in src/rendering/graph/ should not have to remember that the layer
+# they are at is called `scene`.
+set(CY_LAYER_INDEX_rendering 4)
 
 # What a layer index is called in a diagnostic. Keyed by index rather than by name, so that a module
 # declaring LAYER 7 and one declaring LAYER editor read identically in the same message.

@@ -80,7 +80,12 @@ Status Node::set_interpolated(bool interpolated) const noexcept {
     }
     // Seeded with the current world transform rather than the identity: a node that opts in
     // mid-frame must not blend from the origin on the frame it opted in.
-    const InterpolatedTransform initial{world_transform(), false};
+    //
+    // Both fields are `Presentation`, so they are constructed rather than assigned — a classified
+    // field has no converting constructor, which is what stops a value being laundered into one by
+    // copying it. See components.h.
+    const InterpolatedTransform initial{determinism::Presentation<Transform>(world_transform()),
+                                        determinism::Presentation<bool>(false)};
     return tree_->world().add(entity_, component, &initial);
 }
 
@@ -95,7 +100,10 @@ Status Node::teleport() const noexcept {
         // answer: the caller asked for "do not blend this node", and it will not be blended.
         return ok();
     }
-    held->teleport = true;
+    // An authoritative caller writing a presentation field: legal, and the direction the firewall
+    // leaves open. Gameplay saying "do not blend this node" is authority flowing downhill; what it
+    // could not do is read the blend back.
+    held->teleport.write(determinism::AuthoritativeContext{}, true);
     return ok();
 }
 
@@ -106,10 +114,14 @@ Transform Node::render_transform(f32 alpha) const noexcept {
     }
     const auto* held = tree_->world().get<InterpolatedTransform>(
         entity_, tree_->components().interpolated_transform);
-    if (held == nullptr || held->teleport) {
+    // The witness this function carries is what it is: `render_transform` is presentation, it is
+    // named after the thing it is for, and a presentation reader may read anything. An
+    // authoritative caller cannot obtain this value at all — there is no overload that yields it.
+    constexpr determinism::PresentationContext kPresentation;
+    if (held == nullptr || held->teleport.read(kPresentation)) {
         return current;
     }
-    return interpolate(held->previous, current, alpha);
+    return interpolate(held->previous.read(kPresentation), current, alpha);
 }
 
 bool Node::visible() const noexcept {

@@ -49,11 +49,20 @@ CASES = (
     Case("sdl-above-platform", "check", False, checks=("sdl",),
          why="a file outside platform/ includes <SDL3/SDL.h>",
          expect=("src/runtime/host.cpp", "sdl:", "SDL3/SDL.h", "platform/")),
+    Case("gpuapi-above-backends", "check", False, checks=("gpuapi",),
+         why="a file above src/backends/ includes <vulkan/vulkan.h>",
+         expect=("src/rendering/graph/pass.cpp", "gpuapi:", "vulkan/vulkan.h", "src/backends/")),
+    Case("barrier-outside-graph", "check", False, checks=("barriers",),
+         why="a render pass emits its own barrier instead of declaring a resource use",
+         expect=("src/rendering/passes/depth_prepass.cpp", "barriers:", "record_barriers",
+                 "src/rendering/graph/")),
     Case("bare-target", "check", False, checks=("targets",),
          why="a target is declared without cy_add_module()",
          expect=("src/core/CMakeLists.txt", "targets:", "add_library", "cy_add_module")),
     Case("legal", "configure", True, why="downward links only"),
-    Case("legal", "check", True, why="downward includes, SDL under platform/, no bare targets"),
+    Case("legal", "check", True,
+         why="downward includes, SDL under platform/, no graphics API above it, no barrier outside "
+             "the graph, no bare targets"),
 )
 
 

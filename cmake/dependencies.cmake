@@ -245,6 +245,104 @@ function(cy__configure_zstd)
     set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "" FORCE)  # the engine writes only current-format frames
 endfunction()
 
+function(cy__configure_vulkan_headers)
+    # Headers only. Nothing is built and nothing is linked: the loader is resolved at run time by
+    # volk, so a build with the Vulkan backend on still links no Vulkan library and still runs on a
+    # machine with no driver — which is what lets `just test-all` cover this backend's compile.
+    set(VULKAN_HEADERS_ENABLE_MODULE OFF CACHE BOOL "" FORCE)
+    set(VULKAN_HEADERS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    set(VULKAN_HEADERS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+endfunction()
+
+function(cy__configure_volk)
+    # volk fetches every entry point itself and dlopen()s the loader, so it must not link one.
+    set(VOLK_STATIC_DEFINES "" CACHE STRING "" FORCE)
+    set(VOLK_PULL_IN_VULKAN ON CACHE BOOL "" FORCE)
+    set(VOLK_INSTALL OFF CACHE BOOL "" FORCE)
+    # Surfaces come from DisplayServer (platform/), never from a window-system call in the backend,
+    # so none of the platform-specific surface extensions is compiled in here.
+    #
+    # AND THE HEADERS ARE THE PINNED ONES. Left to itself, volk's CMake calls find_package(Vulkan)
+    # and compiles volk.c against whatever headers the machine happens to have installed — which
+    # makes the pin in deps/manifest.toml govern the engine's sources and not volk's, and produces a
+    # build where two halves of one library were compiled against two API versions. The path is the
+    # one FetchContent will populate `vulkan_headers` into; it is deterministic, and the manifest
+    # lists vulkan_headers before volk so it exists by the time volk builds.
+    if(FETCHCONTENT_BASE_DIR)
+        set(cy_fetch_base "${FETCHCONTENT_BASE_DIR}")
+    else()
+        set(cy_fetch_base "${CMAKE_BINARY_DIR}/_deps")
+    endif()
+    set(VULKAN_HEADERS_INSTALL_DIR "${cy_fetch_base}/vulkan_headers-src" CACHE PATH "" FORCE)
+endfunction()
+
+function(cy__configure_slang)
+    # WHAT IS TURNED OFF, AND WHY EACH ONE. The engine wants one thing from this dependency: a
+    # library that turns Slang source into SPIR-V. Everything else in the upstream tree is a tool,
+    # a sample, or a second graphics abstraction the engine already has.
+    set(SLANG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    set(SLANG_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(SLANG_ENABLE_REPLAYER OFF CACHE BOOL "" FORCE)
+    # slang-rhi and gfx are Slang's own rendering abstractions. The engine has one (cy::rhi), and
+    # building a second would double the Vulkan surface in the tree that the layer checker guards.
+    set(SLANG_ENABLE_SLANG_RHI OFF CACHE BOOL "" FORCE)
+    set(SLANG_ENABLE_GFX OFF CACHE BOOL "" FORCE)
+    # The language server and the interpreter are developer tools, not compilation.
+    set(SLANG_ENABLE_SLANGD OFF CACHE BOOL "" FORCE)
+    set(SLANG_ENABLE_SLANGI OFF CACHE BOOL "" FORCE)
+    # DXIL needs DXC, which is a second downstream toolchain for a backend the roadmap does not
+    # reach until M11. SPIR-V is the interchange form (`shader-system`), and D3D12 turns this on.
+    set(SLANG_ENABLE_DXIL OFF CACHE BOOL "" FORCE)
+    # slang-llvm is a host-execution back end for running Slang on the CPU. Nothing here does.
+    set(SLANG_SLANG_LLVM_FLAVOR DISABLE CACHE STRING "" FORCE)
+    # BUT slang-glslang STAYS ON, and this is the one that cost a build to find out: Slang's SPIR-V
+    # emission calls out to spirv-opt, which ships inside the slang-glslang shared module. With it
+    # off, every compilation — including at -O0 — fails with "failed to load downstream compiler
+    # 'spirv-opt'". It is not optional for a SPIR-V target.
+    set(SLANG_ENABLE_SLANG_GLSLANG ON CACHE BOOL "" FORCE)
+    # slangc is how a cook step and a test fixture compile a shader without linking the engine.
+    set(SLANG_ENABLE_SLANGC ON CACHE BOOL "" FORCE)
+endfunction()
+
+# Slang's own sources use C++ exceptions and `dynamic_cast`. The engine compiles with
+# -fno-exceptions and -fno-rtti as a *directory* property (see the top-level CMakeLists.txt), which
+# every target created under it inherits — including the ones FetchContent creates for a dependency.
+# The top-level file already anticipates this: "a third-party subdirectory that genuinely requires
+# exceptions clears them for its own scope in cmake/dependencies.cmake". This is that scope.
+#
+# WHY IT APPENDS RATHER THAN REMOVES. A directory's COMPILE_OPTIONS are copied into a target when
+# the target is created, so editing the directory property afterwards changes nothing. Appending to
+# each target works because a target's own options come after the directory's on the command line
+# and the compiler takes the last of a contradictory pair — which is also why this cannot silently
+# half-apply: either the flag is on the line after -fno-exceptions or the build fails as before.
+function(cy__slang_allow_exceptions directory)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(type ${target} TYPE)
+        if(type STREQUAL "INTERFACE_LIBRARY" OR type STREQUAL "UTILITY")
+            continue()
+        endif()
+        target_compile_options(${target} PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:-fexceptions> $<$<COMPILE_LANGUAGE:CXX>:-frtti>)
+    endforeach()
+    get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        cy__slang_allow_exceptions("${child}")
+    endforeach()
+endfunction()
+
+function(cy__finalise_slang target)
+    if(NOT MSVC AND slang_SOURCE_DIR)
+        cy__slang_allow_exceptions("${slang_SOURCE_DIR}")
+    endif()
+endfunction()
+
+function(cy__configure_vma)
+    set(VMA_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(VMA_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
+    set(VMA_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+endfunction()
+
 function(cy__configure_blake3)
     set(BLAKE3_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(BLAKE3_TESTING OFF CACHE BOOL "" FORCE)

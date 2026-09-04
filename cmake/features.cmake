@@ -45,6 +45,7 @@ set(CY_FEATURE_OPTIONS
     "CY_NETWORKING|OFF|Replication, transport and the network runtime (M9)"
     "CY_XR|OFF|Extended-reality sessions, tracking and stereo rendering (M11)"
     "CY_PROFILING|OFF|Tracy as a backend of the engine's own trace (M0 seam, M2 wiring)"
+    "CY_SHADER_SLANG|OFF|The Slang shader front end: source to SPIR-V, for the cook step and development hot reload (M3)"
     "CY_RENDERER_VULKAN|OFF|The Vulkan RHI backend (M3)"
     "CY_RENDERER_METAL|OFF|The Metal RHI backend (M7)"
     "CY_RENDERER_D3D12|OFF|The Direct3D 12 RHI backend (M7)"

@@ -13,6 +13,7 @@ itself.
 |---|---|
 | `harness/` | Registration, the timing loop, the calibration, and the results file. `cy::bench-harness`. |
 | `micro/` | Benchmarks with no engine dependency. Today: one, and it measures the harness. |
+| `ecs/` | The ECS's per-entity costs: query iteration, random access, spawn, block activation, deferred structural change. |
 | `tools/compare.py` | Turns a run into a pass or a failure against the baseline. |
 | `baseline.json` | The thresholds. A reviewed file: changing it is recording an intentional trade-off. |
 
@@ -48,6 +49,17 @@ The ratio divides the machine out for anything ALU- or latency-bound.
 It does **not** divide out cache and memory behaviour. A benchmark dominated by memory traffic
 needs its baseline recorded on the reference machine, and its tolerance set with that in mind.
 
+That is why `ecs/` carries wider tolerances than the 20% default: its bodies are bound by the chunk
+allocator and by 2.4 MB of column data that does not fit in cache, and the calibration workload
+divides out neither. They were measured at 25% for `ecs/query-iterate` and 35% for the four that
+allocate or chase pointers — chosen from the spread of repeated runs on the recording machine, wide
+enough not to fire on a busy agent and far too narrow for a doubling to hide in.
+
+**Not every runner in `benchmarks/` is one of these.** `cy_bench_jobs_throughput` measures a thread
+pool against a serial baseline, owns its own thresholds, and has its own recipe (`just
+test-bench-jobs`); `just test-bench` recognises it by the fact that it does not answer `--list` and
+leaves it alone.
+
 ## Running
 
 ```
@@ -60,6 +72,15 @@ just test-bench --filter ecs             # forwarded to the runner
 The measurement is the fastest of five repetitions, each at least 20 ms long, at an iteration count
 the harness scales to reach that. The minimum is the estimate of the work: nothing makes the work
 faster than it is, and everything else on the machine makes some repetitions slower.
+
+## The thresholds file
+
+`just test-bench --record` **merges**: it rewrites the entries this run measured and leaves the rest
+alone, because the recipe calls it once per runner and a record that replaced the file would leave
+the baseline holding only the last runner's benchmarks. An entry that is genuinely obsolete is
+deleted by hand, which is the right amount of friction for discarding a threshold.
+`python3 benchmarks/tools/compare.py --selftest` checks that and the comparison's other decisions;
+`just test-bench` runs it before it measures anything.
 
 ## What is not here yet
 

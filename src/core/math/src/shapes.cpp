@@ -80,9 +80,18 @@ Frustum Frustum::from_view_projection(const Mat4& view_projection) noexcept {
         if (len > math::kSmallLength) {
             out.planes[i] = Plane{normal * (1.0f / len), rows[i].w / len};
         } else {
-            // A degenerate matrix — an orthographic projection with an infinite far plane, say —
-            // yields a zero-length normal. A plane that rejects nothing is the conservative answer.
-            out.planes[i] = Plane{kAxisUp, -math::kInfinity};
+            // A zero-length normal means that inequality is not a plane at all. THE ENGINE'S
+            // DEFAULT PROJECTION IS ONE OF THESE: `perspective_reversed_z_infinite` puts the far
+            // plane at infinity, so its row 2 is (0, 0, 0, near) and the far half-space `z >= 0`
+            // has no geometry — every point satisfies it.
+            //
+            // The conservative answer is a plane that rejects nothing, and since
+            // `signed_distance(p)` is `dot(normal, p) + d`, that is `d = +infinity` and NOT
+            // `-infinity`: a negative infinity makes every signed distance negative and the frustum
+            // culls the entire scene. Regression coverage:
+            // src/servers/render/tests/test_view.cpp, "the default projection's frustum keeps what
+            // is in front of the camera".
+            out.planes[i] = Plane{kAxisUp, math::kInfinity};
         }
     }
     out.refresh_corner_masks();

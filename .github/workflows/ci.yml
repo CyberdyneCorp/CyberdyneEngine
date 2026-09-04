@@ -23,6 +23,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The nightly run `testing-and-quality` requires: the unit and integration suites under
+  # AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer "at least nightly". Through M2
+  # this trigger did not exist, so that requirement was met by nothing — the `sanitize` job below
+  # covers the jobs and ECS suites on every pull request, which is a different and much narrower
+  # claim. `sanitize-nightly` is the job; this is the schedule that runs it.
+  #
+  # 03:41 UTC, and deliberately not on the hour: GitHub queues scheduled workflows and the round
+  # hours are where every repository's cron lands, so an off-hour start is the difference between a
+  # run that begins on time and one that begins twenty minutes late.
+  schedule:
+    - cron: '41 3 * * *'
+  # So that the nightly set can be run against a branch before it is merged, rather than being
+  # discovered the morning after. `sanitize-nightly` accepts this trigger as well as the schedule.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -204,6 +218,54 @@ jobs:
       - name: Job system throughput against its thresholds
         run: just test-bench-jobs --profile profile
 
+  # --- The whole test set under every sanitizer, nightly -----------------------------------------
+  #
+  # Task 1.5. `testing-and-quality`: "the unit and integration suites SHALL run under
+  # AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer at least nightly". The `sanitize`
+  # job above is scoped to the suites whose failure modes are races — it runs on every pull request,
+  # and widening it there would put three whole instrumented builds on the critical path of every
+  # change. This job is the wide one, and it runs on the schedule instead.
+  #
+  # It is not merely `--tests .` bolted onto the job above. Two things had to be true first, and
+  # neither was at M2's close:
+  #
+  #   * `just test-sanitize` exported CY_TEST_BUDGET_SCALE=0, which switches the per-test budget off
+  #     rather than relaxing it, while the harness's own suite asserted the scale was positive — so
+  #     `--tests .` failed on `unit.harness` before it reached anything the sanitizer had to say.
+  #     The recipe now exports 20, the same relaxation the harness picks for itself under a
+  #     sanitizer, and the harness suite no longer requires a positive scale.
+  #   * the budget was wall clock, and a sanitized, oversubscribed runner is precisely where a
+  #     wall-clock budget reports on the machine rather than on the test. It is CPU time now.
+  #
+  # `continue-on-error` is deliberately absent. A nightly job that is allowed to fail is a nightly
+  # job nobody reads; if this is red, the sanitizer found something and someone has to look.
+  sanitize-nightly:
+    name: every suite under every sanitizer (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    # Three instrumented builds and the whole test set through each. The default six hours would let
+    # a hung suite hold a runner for a shift; the graduated recipes' own budgets are minutes.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      # Each sanitizer gets its own tree, which the recipe arranges; TSan cannot be combined with
+      # ASan, so this is three builds rather than two. They are separate steps so that a failure
+      # names the tool that found it in the step list rather than only in the log.
+      - name: Every suite under ThreadSanitizer
+        run: just test-sanitize --sanitizer thread --tests .
+      - name: Every suite under AddressSanitizer and UndefinedBehaviorSanitizer
+        run: just test-sanitize --sanitizer address,undefined --tests .
+      # UBSan alone as well as combined: ASan changes allocation layout, and an alignment or
+      # object-lifetime finding that only appears without it is exactly the kind the combined run
+      # can hide.
+      - name: Every suite under UndefinedBehaviorSanitizer alone
+        run: just test-sanitize --sanitizer undefined --tests .
+
   # --- The world: the ECS, the node façade, the cook, and the state hash ---------------------------
   #
   # M2's four new permanent gates, and they are a job of their own rather than steps in `test`
@@ -255,6 +317,67 @@ jobs:
         run: just test-smoke -R tick_loop
       - name: The milestone artefact, across processes and across a snapshot restore
         run: just test-smoke -R headless_sim
+
+  # --- First light: the RHI, the render graph, the shader pipeline and the frame -------------------
+  #
+  # M3's four new permanent gates, and a job of its own for the same reason `world` is: `test` runs
+  # every suite once and reports that they passed, which is a different claim from "these particular
+  # properties still hold". Each command below is declared literally in tools/roadmap/gates.toml and
+  # `just ci-check` compares the two, so the gate set and this file cannot drift apart in the
+  # direction that matters.
+  #
+  # NO GPU AND NO VULKAN BUILD, and that is the point rather than a limitation. A hosted runner has
+  # no graphics device and the default build has CY_RENDERER_VULKAN off, so what `just test-render`
+  # runs here is `render.null_frame` and `render.xr_prerequisites` — the whole of the milestone's
+  # frame as far as it is DECIDED rather than drawn: the pass count before and after the one-off
+  # upload, the submit count, the barrier batches in the recorded command stream equalling the number
+  # the compiled plan derived, two runs producing an identical stream, and the three XR seams. That
+  # is design.md §1's argument for writing the null backend first, cashed in.
+  #
+  # The golden images are NOT here. A committed reference is a photograph of one implementation and
+  # this runner is another; they are a criterion of tools/roadmap/milestones/m3.toml carrying
+  # `requires = "gpu"`, reported as not evaluated on a machine that cannot judge them rather than as
+  # passed. `just roadmap-milestone m3` on a machine with a device is what evaluates them.
+  render:
+    name: first light — rhi, graph, shaders, frame
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-render-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-render-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-render-
+      # The milestone's whole point: a pass declares reads and writes, and the graph derives the
+      # barriers, the aliasing, the schedule, the semaphores and the ownership transfers.
+      - name: Barriers, aliasing and scheduling are derived from the declarations
+        run: just test-unit -R render_graph
+      - name: Aliasing measurably reduces the plan's peak against its own no-aliasing control
+        run: just test-integration -R render_graph_scale
+      # The renderer above the graph, all of it with no GPU.
+      - name: The explicit RHI over the null backend
+        run: just test-unit -R rhi
+      - name: The render server, the snapshot, the pass order, the lights and the culling
+        run: just test-unit -R render_
+      - name: The BRDF, the shading models and the standard material
+        run: just test-unit -R material
+      # Slang to SPIR-V and the pipeline around it, with CY_SHADER_SLANG off — over the SPIR-V
+      # passthrough, which is the shipping path rather than a stub.
+      - name: Reflection-driven binding, permutations and the shader cache
+        run: just test-unit -R shader
+      - name: Shader hot reload replaces a pipeline's program without a restart
+        run: just test-integration -R shader_pipeline
+      # The artefact's own frame, through a device that executes nothing.
+      - name: The milestone's frame with no GPU, and the XR prerequisite seams
+        run: just test-render
 
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:

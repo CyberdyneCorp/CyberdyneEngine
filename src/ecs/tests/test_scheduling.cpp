@@ -173,7 +173,7 @@ CY_TEST_CASE("the parallel plan and the serial one produce the same world") {
     CY_CHECK_EQ(parallel_frozen, serial_frozen);
 }
 
-CY_TEST_CASE("systems spawning through their own command buffers merge in registration order") {
+CY_TEST_CASE("systems spawning through their own command buffers merge in system-name order") {
     cy::ecs::World world(allocator());
     CY_REQUIRE(world.initialize().has_value());
     const auto ids = cy::ecs::test::register_all(world);
@@ -220,8 +220,10 @@ CY_TEST_CASE("systems spawning through their own command buffers merge in regist
     jobs.shutdown();
 
     CY_CHECK_EQ(world.entity_count(), 2u);
-    // The merge key is the registration order, not the order the workers happened to finish in:
-    // the first-registered system's entity is created first, on every machine and every run.
+    // The merge key is the systems' name order, not the order the workers happened to finish in:
+    // "spawn-first" precedes "spawn-second" in the alphabet as well as in registration, so its
+    // entity is created first, on every machine and every run. The case below is the one that
+    // distinguishes the two rules.
     const cy::ecs::Entity first_created = world.entities().at(0);
     const cy::ecs::Entity second_created = world.entities().at(1);
     CY_CHECK_EQ(
@@ -230,6 +232,77 @@ CY_TEST_CASE("systems spawning through their own command buffers merge in regist
     CY_CHECK_EQ(
         cy::ecs::test::value_of<cy::ecs::test::Position>(world, second_created, ids->position).x,
         2.0F);
+}
+
+CY_TEST_CASE("the flush order is the systems' names, not the order they were registered in") {
+    // REGRESSION, task 1.7. The merge key used to be the system's registration index within its
+    // stage. That is a sequence number standing in for an identity: it is reproducible only while
+    // the same code registers the same systems in the same order, and the first plugin, feature
+    // flag or game mode that registers one conditionally shifts every later key — two conflicting
+    // spawns swap places in the flush and the world after the stage is a different world.
+    //
+    // So this case registers them in the order that disagrees with their names. Under the old rule
+    // "zulu" flushed first because it was registered first; under the rule
+    // `StateProviderRegistry::finalize()` established and `Schedule::build()` now follows, "alpha"
+    // flushes first because it is called "alpha".
+    cy::ecs::World world(allocator());
+    CY_REQUIRE(world.initialize().has_value());
+    const auto ids = cy::ecs::test::register_all(world);
+    CY_REQUIRE(ids.has_value());
+
+    struct SpawnState {
+        cy::ecs::ComponentTypeId component = cy::ecs::kInvalidComponent;
+        cy::f32 mark = 0.0F;
+    };
+    static const auto spawn = [](const cy::ecs::SystemContext& context) noexcept {
+        auto* state = static_cast<SpawnState*>(context.user);
+        auto created = context.commands->create();
+        if (created) {
+            (void)context.commands->add(*created, state->component,
+                                        cy::ecs::test::Position{state->mark, 0.0F, 0.0F});
+        }
+    };
+
+    SpawnState zulu_state{ids->position, 1.0F};
+    SpawnState alpha_state{ids->position, 2.0F};
+
+    cy::ecs::Schedule schedule(world);
+    cy::ecs::SystemDesc zulu;
+    zulu.name = "spawn-zulu";
+    zulu.body = spawn;
+    zulu.user = &zulu_state;
+    CY_REQUIRE(zulu.access.write(ids->position).has_value());
+
+    cy::ecs::SystemDesc alpha;
+    alpha.name = "spawn-alpha";
+    alpha.body = spawn;
+    alpha.user = &alpha_state;
+    CY_REQUIRE(alpha.access.write(ids->position).has_value());
+
+    // Registered zulu first, alpha second — the opposite of their name order.
+    CY_REQUIRE(schedule.add(cy::ecs::Stage::Simulation, zulu).has_value());
+    CY_REQUIRE(schedule.add(cy::ecs::Stage::Simulation, alpha).has_value());
+    CY_REQUIRE(schedule.build().has_value());
+    CY_REQUIRE(schedule.run_serial(cy::ecs::Stage::Simulation).has_value());
+
+    CY_CHECK_EQ(world.entity_count(), 2u);
+    const cy::ecs::Entity created_first = world.entities().at(0);
+    const cy::ecs::Entity created_second = world.entities().at(1);
+    // 2.0 is alpha's mark: the entity created first belongs to the system whose name sorts first.
+    CY_CHECK_EQ(
+        cy::ecs::test::value_of<cy::ecs::test::Position>(world, created_first, ids->position).x,
+        2.0F);
+    CY_CHECK_EQ(
+        cy::ecs::test::value_of<cy::ecs::test::Position>(world, created_second, ids->position).x,
+        1.0F);
+
+    // And the key itself, so a failure says whether the ranking or the flush is at fault.
+    const cy::ecs::CommandBuffer* zulu_commands = schedule.commands(cy::ecs::Stage::Simulation, 0);
+    const cy::ecs::CommandBuffer* alpha_commands = schedule.commands(cy::ecs::Stage::Simulation, 1);
+    CY_REQUIRE(zulu_commands != nullptr);
+    CY_REQUIRE(alpha_commands != nullptr);
+    CY_CHECK_EQ(alpha_commands->system_order(), 0u);
+    CY_CHECK_EQ(zulu_commands->system_order(), 1u);
 }
 
 CY_TEST_CASE("two systems iterating one world in parallel leave it not iterating") {

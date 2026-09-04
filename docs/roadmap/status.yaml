@@ -26,9 +26,9 @@ capabilities:
     milestone: M1
     change: implement-m1-substrate
   core-math:
-    tier: working
-    milestone: M1
-    change: implement-m1-substrate
+    tier: complete
+    milestone: M3
+    change: implement-m3-first-light
   core-jobs-and-concurrency:
     tier: working
     milestone: M1
@@ -130,17 +130,17 @@ capabilities:
     milestone: null
     change: null
   rhi-and-render-graph:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
   rendering-architecture:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
   rendering-culling-and-lod:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M3
+    change: implement-m3-first-light
   virtual-geometry:
     tier: none
     milestone: null
@@ -158,25 +158,25 @@ capabilities:
     milestone: null
     change: null
   rendering-forward-clustered:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
   shader-system:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
   rendering-materials-and-shading:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
   material-compiler:
     tier: none
     milestone: null
     change: null
   rendering-lighting-and-shadows:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M3
+    change: implement-m3-first-light
   rendering-global-illumination:
     tier: none
     milestone: null
@@ -198,9 +198,9 @@ capabilities:
     milestone: null
     change: null
   rendering-geometry-and-resources:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
   rendering-2d:
     tier: none
     milestone: null

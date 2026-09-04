@@ -199,6 +199,58 @@ platforms = ["linux"]
 since = "m2"
 class = "permanent"
 
+# --- The gates M3 — First light added ---------------------------------------------------------------
+#
+# The proposal's "New permanent gates", and every one of them is a property a change can break
+# without breaking a test that names it — which is the standard the M1 and M2 blocks above set.
+#
+# What is NOT here is as deliberate as what is. There is no golden-image gate: a committed reference
+# is a photograph of one implementation, a hosted runner has no GPU, and the default build has
+# CY_RENDERER_VULKAN off — so a `golden` gate would be an intention rather than a check. What runs
+# on every pull request is everything about a frame that is DECIDED rather than drawn, which is most
+# of it; the golden images are a criterion of m3.toml carrying `requires = "gpu"`, reported as not
+# evaluated on a machine that cannot judge them rather than as passed.
+#
+# Each names commands that already run in .github/workflows/ci.yml's `render` job. That is not a
+# coincidence: `just ci-check` fails when a permanent gate declared here is run by no job there, so
+# a gate is declared and its job lands in the same change, or neither does.
+
+[[gate]]
+id = "render-graph"
+describe = "The milestone's whole point: a pass declares what it reads and what it writes, and the graph derives the barriers, the transient aliasing, the pass schedule, the culling, the cross-queue semaphores and the queue-family ownership transfers. `just quality-layers` (the `layering` gate) is the STATIC half — no barrier-emitting symbol outside the graph and the RHI, proven against fixtures that introduce one. This is the DERIVATION half: that what comes out is correct, that it is identical across runs (design.md §6, and M9's replay depends on it), and that aliasing measurably reduces the plan's peak against its own no-aliasing control. Barriers written by hand spread to every pass and their removal is a renderer rewrite; this is the gate that stops the first one."
+runs = ["just test-unit -R render_graph", "just test-integration -R render_graph_scale"]
+platforms = ["linux"]
+since = "m3"
+class = "permanent"
+
+[[gate]]
+id = "render-device"
+describe = "The render suites. WHAT THIS RUNS DEPENDS ON THE BUILD, and the honesty is the point: on a build with no Vulkan backend — which is the default, and what a hosted runner gets — `just test-render` runs `render.null_frame` and `render.xr_prerequisites`, which need no GPU and check everything about the artefact's frame that is decided rather than drawn: the pass count before and after the one-off upload, the submit count, the barrier batches in the recorded stream equalling the number the plan derived (the runtime half of task 7.2), two runs producing an identical command stream, and the three XR seams. On a machine with a device and CY_RENDERER_VULKAN=ON the same command also runs `render.conventions` and `render.golden`. A rendering milestone whose only gate is a photograph is a rendering milestone that is not gated on the machines that build it."
+runs = ["just test-render"]
+platforms = ["linux"]
+since = "m3"
+class = "permanent"
+
+[[gate]]
+id = "render-frame"
+describe = "The renderer above the graph, and all of it runs with no GPU: the explicit RHI over the null backend, the handle-based render server and the GPU scene as a publication interface, the snapshot taken at M2's commit boundary, the thirteen-stage pass order in which a disabled feature is an ABSENT PASS rather than a branch, the BRDF (whose normalisation is asserted by integrating the distribution, which is what caught a GGX that lost energy), the shadow atlas and cascades, and the culling and LOD hysteresis. Each is a decision the milestone made that a later one can undo without any test that names it going red."
+runs = [
+    "just test-unit -R rhi",
+    "just test-unit -R render_",
+    "just test-unit -R material",
+]
+platforms = ["linux"]
+since = "m3"
+class = "permanent"
+
+[[gate]]
+id = "shader-pipeline"
+describe = "Slang to SPIR-V, and the pipeline around it: permutations, reflection-driven binding (bindings derive from reflection rather than from a hand-maintained table, which is the requirement a hand-maintained table always eventually violates), the shader library and its tiered cache, the pipeline state cache, and hot reload over M2's file watcher. It runs with CY_SHADER_SLANG OFF, over the SPIR-V passthrough — which is not a stub but the shipping path, and is why a machine with no shader toolchain still exercises reflection, permutations, the cache and the reload."
+runs = ["just test-unit -R shader", "just test-integration -R shader_pipeline"]
+platforms = ["linux"]
+since = "m3"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;
@@ -245,6 +297,24 @@ class = "milestone"
 milestone = "m1"
 state = "green"
 
+# M2 closed — openspec/changes/archive/…-implement-m2-world — and its gate was still
+# `joins-on-close` when M3 came to close, which is the THIRD time in a row this has happened: M0's
+# was flipped at M2 and M1's was flipped at M2 as well, both after the omission had already cost
+# something. Flipped here, at M3's close, which is the milestone that is supposed to do it — M3's
+# modules are compiled into and run by M2's `four-profiles` criterion, so this is exactly the shape
+# of regression the state exists to make unmergeable.
+#
+# THE PATTERN IS THE FINDING. Every milestone so far has had to be reminded to flip the previous
+# one, which means the reminder does not work. What would work is `roadmap-test` failing when a
+# milestone has a ledger, an archived change, and a gate still at `joins-on-close`; the archive path
+# is the fact a tool can read. That is a change to selftest.py and it is recorded here rather than
+# made in passing, because the check needs a rule about what "closed" means that this file does not
+# yet carry.
+#
+# What it costs is the same as M1's and is not small: this gate runs `just roadmap-milestone m2`, a
+# recipe of a working session that contains `four-profiles`, which M2 measured failing roughly one
+# Debug run in thirty. A pull request now has three independent exposures to that rate.
+
 [[gate]]
 id = "milestone-m2"
 describe = "M2 — World: the exit criteria of the milestone that built the ECS, the node façade, serialization and the cook, the fixed-tick loop and the determinism seeds."
@@ -253,7 +323,29 @@ platforms = ["linux", "windows", "macos"]
 since = "m2"
 class = "milestone"
 milestone = "m2"
-state = "joins-on-close"
+state = "green"
+
+# M3 closed with the change that carries this line, and the state is `green` HERE rather than at
+# M4 — which is what the three paragraphs above are about. The pattern is also now a check rather
+# than a reminder: `just roadmap-test` reads openspec/changes/archive/ and fails when a milestone
+# whose change is archived still has a gate at `joins-on-close`, so M3's flip is the last one that
+# depended on somebody remembering. (It does not fire for M3 itself until this change is archived,
+# which happens after this recipe passes — task 7.12.)
+#
+# What it costs is the same as M1's and M2's: a pull request now runs `just roadmap-milestone m3`,
+# which contains `four-profiles` and, on a machine with a device, the golden images and the
+# conventions. On a hosted runner without one those three are reported as not evaluated rather than
+# as passed, which is what `requires = "gpu"` in m3.toml records.
+
+[[gate]]
+id = "milestone-m3"
+describe = "M3 — First light: the exit criteria of the milestone that built the RHI and the render graph, the shader pipeline, the renderer and the first frame."
+runs = ["just roadmap-milestone m3"]
+platforms = ["linux", "windows", "macos"]
+since = "m3"
+class = "milestone"
+milestone = "m3"
+state = "green"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

@@ -49,6 +49,29 @@ struct SchemaSubject {
     friend constexpr bool operator==(SchemaSubject, SchemaSubject) noexcept = default;
 };
 
+/// How the bytes at a field's offset become the value that is hashed.
+///
+/// Almost always `Direct`. The exception exists because one of the engine's own value types is a
+/// **handle whose number is not stable across runs**, and hashing the handle would make the state
+/// hash a function of process history rather than of state.
+enum class StateEncoding : u8 {
+    /// The bytes at the offset are the value, read according to `kind`.
+    Direct = 0,
+    /// The four bytes at the offset are a `cy::Name`, and what is folded in is its **text**.
+    ///
+    /// A `Name` is an index into a process-wide intern table, assigned in interning order —
+    /// `core-type-system` says in as many words that it "is NOT stable across runs". Two runs that
+    /// created the same nodes in a different order give the same node different `Name` indices, so
+    /// a hash over the index reports a divergence between two worlds that are identical, and a hash
+    /// over the text does not. `simulation-and-determinism` forbids exactly this class of thing:
+    /// determinism must not depend on allocator or registration history by accident.
+    ///
+    /// Costs a table lookup and a string mix per field rather than a mix of one word. That is the
+    /// price of the property, and a node name is hashed once per entity per hash rather than per
+    /// frame.
+    InternedName = 1,
+};
+
 /// One field of one subject, resolved to an offset and a width.
 ///
 /// This is a *value* description, not a memory description: `kind` says how to read the bytes, so
@@ -63,6 +86,9 @@ struct StateField {
     u32 offset = 0;
     reflect::FieldKind kind = reflect::FieldKind::Unsupported;
     SimulationClass classification = SimulationClass::Authoritative;
+    /// How the bytes become the value. `declare()` refuses an encoding whose `kind` cannot carry
+    /// it — an `InternedName` is four bytes read as a `U32` and nothing else.
+    StateEncoding encoding = StateEncoding::Direct;
 };
 
 /// Every field of one subject, in the order the hash folds them.

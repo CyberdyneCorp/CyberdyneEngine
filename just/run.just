@@ -16,7 +16,10 @@ run-sample *args:
     # recipe, and is forwarded untouched. An omitted name means `empty`, which is the sample that
     # takes `--headless`, so that `just run-sample --headless` and `just run-headless` say what they
     # mean. M1's artefact is `just run-sample headless-host`, and it is named because it has no
-    # display server to choose between and takes a different command line entirely.
+    # display server to choose between and takes a different command line entirely; M2's is
+    # `just run-sample headless-sim` and M3's is `just run-sample first-light`, which renders the
+    # milestone's frame through whichever RHI backend the build has — the null one on a default
+    # build, and Vulkan on a build configured with -D CY_RENDERER_VULKAN=ON.
     argv=(${rest})
     if [ "${#argv[@]}" -gt 0 ] && [[ "${argv[0]}" != --* ]]; then
         name="${argv[0]}"

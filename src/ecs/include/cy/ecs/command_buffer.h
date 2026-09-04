@@ -23,6 +23,22 @@
 // discovered from whichever worker happened to run the body — cy::jobs makes the same point about
 // its own commit key, and for the same reason: work stealing makes a worker's identity a function
 // of timing.
+//
+// AND `system_order` IS A RANK DERIVED FROM AN IDENTITY, NOT A REGISTRATION SEQUENCE NUMBER. Task
+// 1.7. Through M2 it was the index a system happened to be registered at within its stage, which is
+// reproducible only for as long as the same code registers the same systems in the same order.
+// The moment registration is conditional — a plugin, a feature flag, a game mode that adds one
+// system — every later system's key shifts, two conflicting spawns swap places, and the world after
+// the flush is a different world. That is not a hypothetical failure mode: it is the same class of
+// defect as folding a `ComponentTypeId` into the state hash, which M2 measured and fixed at its
+// close for exactly this reason.
+//
+// `Schedule::build()` now assigns the key as the system's **rank among its stage's systems in name
+// order** — `StateProviderRegistry::finalize()`'s shape, and the "deterministic order derived from
+// stable identifiers" `simulation-and-determinism` requires of a registry whose contents affect
+// simulation. A system's name is unique within a stage (the schedule refuses a duplicate), so the
+// rank is a total order; adding a system renumbers the ones after it in the alphabet and nothing
+// else; and removing one changes nothing about the rest.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
@@ -51,6 +67,10 @@ public:
     /// `system_order` and `thread_index` are the merge key. A buffer used outside a schedule may
     /// leave both at zero; two buffers with the same key are merged by the order they were attached
     /// to the world, which is itself a registration order and therefore stable.
+    ///
+    /// A buffer owned by a `Schedule` is constructed here and given its real key by
+    /// `Schedule::build()`, which is the only place that knows every system's name and can rank
+    /// them — see `set_merge_key` and the header comment.
     CommandBuffer(World& world, u32 system_order = 0, u32 thread_index = 0) noexcept;
     ~CommandBuffer();
 
@@ -89,6 +109,20 @@ public:
     }
 
     [[nodiscard]] Status add_child(Entity parent, Entity child) noexcept;
+
+    /// Set the merge key from a stable identity, once the identities are all known.
+    ///
+    /// The one supported way to change it. A registry that orders its members by name cannot know
+    /// a member's rank until the last one has joined, so the key is assigned at the point the
+    /// registry is finalised rather than at the point a buffer is constructed — which is why this
+    /// exists at all, and it is the reason `Schedule::build()` is the only caller in the engine.
+    ///
+    /// Refused while the buffer holds commands: the key decides where those commands land in the
+    /// merge, and changing it underneath them would move recorded work to a different point in the
+    /// flush. Refused rather than asserted, because `CY_ASSERT` is compiled out in Profile and
+    /// Shipping and this is a condition a caller composing a schedule from configuration can
+    /// legitimately reach.
+    [[nodiscard]] Status set_merge_key(u32 system_order, u32 thread_index) noexcept;
 
     /// Apply every recorded command in record order and empty the buffer. Called by `World::flush`,
     /// which is what establishes the order between buffers; calling it directly applies one

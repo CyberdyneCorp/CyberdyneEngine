@@ -74,6 +74,14 @@ numbering them (`ComponentRegistry::register_builtin`). This is a *seam*, not a 
 reflection generator's annotated-header list lives in `src/core/reflect/CMakeLists.txt` and the
 identifiers come from `identity/manifest.toml`, neither of which this module owned at M2. When
 `src/ecs/`'s own headers are wired into the generator, both take manifest identifiers and move to
-`register_reflected` with no change to anything that consumes them. The same applies to the test
+`register_reflected` with no change to anything that consumes them.
+
+Being unreflected had one consequence that could not wait for that, and M3's task 1.2 closed it:
+the state hash covered only reflected components, so **a divergence in an entity's parent produced
+the same hash as no divergence at all**. `state_schema.h` declares both to
+`determinism::StateSchema` with an explicit field list — `Parent` by the parent's entity *index*,
+which is what `runtime::hash_world` already treats as an entity's identity, and `Children` with no
+hashed fields, because `ecs-core` leaves the buffer's order unspecified and hashing it would hash
+operation history. `integration.state_hash_coverage` is the claim, run. The same applies to the test
 fixtures in `tests/fixtures.h`, whose hand-written `TypeInfo` descriptors carry identifiers from a
 9000-range that the manifest never issued and that never leave a test's own registry.

@@ -5,6 +5,7 @@
 #include <cy/core/base/diagnostic_sink.h>
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <cstdio>
 #include <utility>
@@ -104,6 +105,20 @@ Status Sdl3DisplayServer::initialise() {
         return sdl_failure(ErrorCode::Unavailable);
     }
     initialised_ = true;
+
+    // THE GRAPHICS SURFACE SEAM, FILLED IN AT M3. `core-platform-abstraction` requires "native
+    // surface creation for the active graphics backend" from here, so that no backend contains a
+    // platform #ifdef — and until this milestone there was no RHI to hand a VkSurfaceKHR to.
+    //
+    // The loader is loaded once, here, rather than when a surface is asked for, because the ANSWER
+    // decides how windows are created: SDL builds a surface only for a window that carries
+    // SDL_WINDOW_VULKAN, and that flag is chosen at creation. Failure is not an error — a machine
+    // with no Vulkan driver still gets windows, has_feature(VulkanSurface) answers false, and the
+    // RHI's backend selection falls back to the null backend.
+    vulkan_loader_ = SDL_Vulkan_LoadLibrary(nullptr);
+    if (!vulkan_loader_) {
+        SDL_ClearError();
+    }
     return ok();
 }
 
@@ -116,6 +131,10 @@ void Sdl3DisplayServer::shutdown() {
     }
     events_.clear();
     (void)events_.take_dropped_count();
+    if (vulkan_loader_) {
+        SDL_Vulkan_UnloadLibrary();
+        vulkan_loader_ = false;
+    }
     if (initialised_) {
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         initialised_ = false;
@@ -166,9 +185,12 @@ bool Sdl3DisplayServer::has_feature(Feature feature) const {
         case Feature::VSyncMailbox:
             return false;
 
-        // The surface seam exists (create_surface with GraphicsApi::None) but no graphics API is
-        // initialised at M0, so no API-specific surface can be produced. M3.
+        // Answered from the loader SDL actually found, not from the platform in general: the same
+        // binary on a machine with no Vulkan driver answers false and the RHI falls back.
         case Feature::VulkanSurface:
+            return vulkan_loader_;
+
+        // M7 and M11 respectively; the seam is the same one Vulkan uses.
         case Feature::MetalSurface:
         case Feature::D3D12Surface:
             return false;
@@ -218,9 +240,18 @@ Expected<WindowId, Error> Sdl3DisplayServer::create_window(const WindowDescripti
     // the window is created without it rather than not created at all.
     const WindowFlags flags = filter_unsupported_flags(*this, description.flags);
 
+    // SDL_WINDOW_VULKAN on every window when a loader was found. SDL will only build a
+    // VkSurfaceKHR for a window that carries the flag, and the flag is chosen here — before
+    // anything has asked for a surface. Setting it costs a window nothing when no surface is ever
+    // created, and not setting it would make create_surface() fail on a window that was otherwise
+    // fine.
+    SDL_WindowFlags sdl_flags = to_sdl_flags(flags);
+    if (vulkan_loader_) {
+        sdl_flags |= SDL_WINDOW_VULKAN;
+    }
     SDL_Window* handle =
         SDL_CreateWindow(description.title != nullptr ? description.title : "",
-                         description.size.width, description.size.height, to_sdl_flags(flags));
+                         description.size.width, description.size.height, sdl_flags);
     if (handle == nullptr) {
         return sdl_failure(ErrorCode::Unavailable);
     }
@@ -546,13 +577,47 @@ Expected<NativeSurface, Error> Sdl3DisplayServer::create_surface(
         return no_such_window();
     }
 
+    if (description.api == GraphicsApi::Vulkan) {
+        // M3 task 2.3.2: the seam's first consumer. SDL owns the platform-specific call — xlib,
+        // xcb, Wayland, Win32, Metal — so the RHI contains no window-system code and no #ifdef,
+        // which is design.md §4's whole point.
+        if (!vulkan_loader_) {
+            return fail(ErrorCode::Unsupported,
+                        "no Vulkan loader on this machine; has_feature(VulkanSurface) answers "
+                        "false and the RHI falls back to its null backend");
+        }
+        if (description.api_instance == nullptr) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a Vulkan surface is created against a VkInstance; pass it in "
+                        "SurfaceDescription::api_instance");
+        }
+        // SDL declares the two Vulkan handle types itself, so this file needs no Vulkan header —
+        // which is what keeps tools/layercheck's `gpuapi` rule true for platform/ as well.
+        // Value-initialised rather than VK_NULL_HANDLE, which only a Vulkan header defines.
+        static_assert(sizeof(VkSurfaceKHR) == sizeof(void*),
+                      "the DisplayServer seam carries a surface as a void*, which assumes a "
+                      "64-bit non-dispatchable handle; a 32-bit port needs a different carrier");
+        VkSurfaceKHR created{};
+        if (!SDL_Vulkan_CreateSurface(as_window(handle),
+                                      static_cast<VkInstance>(description.api_instance), nullptr,
+                                      &created)) {
+            return sdl_failure(ErrorCode::Unavailable);
+        }
+        NativeSurface surface;
+        surface.api = GraphicsApi::Vulkan;
+        // A non-dispatchable Vulkan handle is 64 bits on every platform, and the seam carries it as
+        // a void*. The RHI does the matching cast and never asks how the surface was made.
+        surface.handle = reinterpret_cast<void*>(created);
+        // The instance the surface belongs to, so destroy_surface() can undo this without the
+        // caller having to remember which one it used.
+        surface.display = description.api_instance;
+        return surface;
+    }
     if (description.api != GraphicsApi::None) {
-        // The seam is here and it has the right shape; what is missing is an RHI to hand a
-        // VkSurfaceKHR or a CAMetalLayer to. M3 fills this in, and has_feature() already answers
-        // false for all three so that a caller finds out by asking rather than by failing.
+        // Metal is M7 and D3D12 is M11. The seam is the same one Vulkan now uses, and
+        // has_feature() answers false for both so that a caller finds out by asking.
         return fail(ErrorCode::NotImplemented,
-                    "no graphics API surface until the RHI lands at M3; GraphicsApi::None yields "
-                    "the native window this surface would be built from");
+                    "only GraphicsApi::Vulkan and GraphicsApi::None produce a surface at M3");
     }
 
     NativeSurface surface;
@@ -565,9 +630,17 @@ Expected<NativeSurface, Error> Sdl3DisplayServer::create_surface(
     return surface;
 }
 
-void Sdl3DisplayServer::destroy_surface(const NativeSurface& /*surface*/) {
-    // Nothing is owned: the handles belong to the window, and GraphicsApi::None allocates nothing.
-    // The API-specific surfaces M3 adds are destroyed here.
+void Sdl3DisplayServer::destroy_surface(const NativeSurface& surface) {
+    // GraphicsApi::None owns nothing: those handles belong to the window. A Vulkan surface is an
+    // object SDL created against an instance, and it is destroyed here rather than by the RHI —
+    // whoever created it owns it, and a swapchain that destroyed it would leave the window's own
+    // bookkeeping pointing at a freed object.
+    if (surface.api != GraphicsApi::Vulkan || surface.handle == nullptr ||
+        surface.display == nullptr) {
+        return;
+    }
+    SDL_Vulkan_DestroySurface(static_cast<VkInstance>(surface.display),
+                              reinterpret_cast<VkSurfaceKHR>(surface.handle), nullptr);
 }
 
 // --- Events -------------------------------------------------------------------------------------

@@ -9,33 +9,73 @@
 //
 // The wrapper is thin on purpose. It renames what doctest already does well and adds exactly one
 // thing doctest does not do: it enforces the taxonomy's per-test budget, because a budget nothing
-// measures is an aspiration.
+// measures is an aspiration. That budget is CPU time rather than wall clock, which is task 1.1 and
+// is argued where BudgetGuard is declared.
 
 #ifndef CY_TEST_TEST_H
 #define CY_TEST_TEST_H
 
 #include <doctest/doctest.h>
 
-// The wall-clock budget for one test case, in nanoseconds. tests/CMakeLists.txt defines it per
-// suite from the taxonomy in `testing-and-quality`: 1 ms for a unit test, 1 s for an integration
-// test, 30 s for a smoke test. The default here is the strictest of the three, so a test built
-// outside that machinery is held to the tightest budget rather than to none.
+// The budget for one test case, in nanoseconds of the case's own CPU time. tests/CMakeLists.txt
+// defines it per suite from the taxonomy in `testing-and-quality`: 1 ms for a unit test, 1 s for an
+// integration test, 30 s for a smoke test. The default here is the strictest of the three, so a
+// test built outside that machinery is held to the tightest budget rather than to none.
 #ifndef CY_TEST_BUDGET_NS
 #    define CY_TEST_BUDGET_NS 1000000ULL
 #endif
 
 namespace cy::test {
 
-/// Fails the surrounding test case when its body outlives the suite's budget.
+/// How much wall clock a case within its budget may still hold the suite for, as a multiple of the
+/// budget. See BudgetGuard: the budget is CPU time, and this is the separate limit that keeps
+/// "a unit test does not sleep, block or wait on a thread" a checked property rather than a
+/// comment.
+///
+/// A hundred, because the two limits must not be confusable. A case that spends 1 ms of CPU and
+/// 100 ms of wall clock is waiting on something by a factor no amount of machine load explains: the
+/// measurement that motivated this file saw a 0.2 ms case stretch to 4.1 ms of wall clock under
+/// 24-way oversubscription, which is 25x below this ceiling.
+inline constexpr unsigned long long kStallMultiplier = 100;
+
+/// Fails the surrounding test case when its body costs more than its suite's budget.
 ///
 /// Constructed by CY_TEST_CASE, so every test in the tree is measured. A failure is reported as an
 /// ordinary check failure at the test's own file and line — it names the budget, the measurement
 /// and the recipe that owns the suite, because "which suite is this test in?" is the first question
 /// an over-budget test raises.
 ///
+/// --- THE CLOCK IS THE CASE'S OWN CPU TIME, AND THAT IS TASK 1.1 -------------------------------
+///
+/// Through M2 the budget was wall clock, and `four-profiles` — an exit criterion of two milestones
+/// and a permanent gate, so a pull request is exposed to it three times over — failed about one
+/// Debug run in thirty for it. The failure was measured, not guessed: `ctest -L unit` in the Debug
+/// tree fails when the host is busy and passes when it is idle (0 failures in 100 idle runs; 10 in
+/// 30 with 24 spinning threads beside it), and the case it lands on is whichever one happened to be
+/// descheduled — `unit.values`' generation-table case measured 4.134 ms of wall clock against a
+/// 1 ms budget while doing about 0.2 ms of work.
+///
+/// That is a defect in the instrument. The taxonomy's question is "what does this test cost?", and
+/// the answer must not change with what else the machine is doing, or the gate reports on the
+/// build agent rather than on the change. So the budget is the CPU time the case's own thread
+/// consumed. Load is invisible to it; the work is not, so the split that moved seven scene and
+/// reflection cases into the integration suite at M2's close stands on exactly the same numbers.
+///
+/// The fix deliberately is NOT any of: shrinking a case (the case is not the problem), raising the
+/// budget (a budget raised until a flake hides measures nothing), or scaling it under load (which
+/// is the same thing with an extra variable).
+///
+/// WHAT THE CPU CLOCK DOES NOT SEE, AND WHAT COVERS IT. Time the case spends waiting — a sleep, a
+/// blocking read, a lock, a thread it joined — costs its thread no CPU, and work handed to the job
+/// system is charged to the workers rather than to the case. A pure CPU budget would therefore let
+/// a unit test sleep for a second, and `testing-and-quality` places sleeping and I/O in
+/// tests/integration/ or above. `kStallMultiplier` is the second limit that keeps that checkable:
+/// a case within its CPU budget that holds the suite for more than a hundred times it is reported
+/// as stalled, and the message says "waiting" rather than "slow", because that is what it is.
+///
 /// The budget is scaled by the CY_TEST_BUDGET_SCALE environment variable, and defaults to a relaxed
 /// scale under a sanitizer, where a five- to twenty-fold slowdown is the tool working correctly
-/// rather than the test regressing. CY_TEST_BUDGET_SCALE=0 disables the check.
+/// rather than the test regressing. CY_TEST_BUDGET_SCALE=0 disables both checks.
 class BudgetGuard {
 public:
     BudgetGuard(const char* name, unsigned long long budget_ns, const char* file, int line);
@@ -49,12 +89,19 @@ private:
     const char* file_;
     int line_;
     unsigned long long budget_ns_;
-    unsigned long long started_ns_;
+    unsigned long long started_cpu_ns_;
+    unsigned long long started_wall_ns_;
 };
 
 /// The scale applied to every budget, resolved once from the environment. Exposed so that a test of
 /// the harness can state what it is running under rather than guess.
 double budget_scale();
+
+/// True where the budget is measured as CPU time. False on a platform with no usable per-thread CPU
+/// clock — Windows, whose thread times are updated on the scheduler's quantum — where the guard
+/// falls back to wall clock and the stall ceiling is not applied. Exposed so that a test of the
+/// harness states which instrument it is asserting about instead of assuming one.
+bool budget_measures_cpu_time() noexcept;
 
 }  // namespace cy::test
 

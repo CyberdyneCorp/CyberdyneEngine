@@ -22,7 +22,15 @@ test-integration *args:
 test-smoke *args:
     @just _ctest smoke {{args}}
 
-# Every suite: unit, integration, smoke, and anything registered outside them. What CI runs. Minutes.
+# Render tests: conventions asserted on a device, and golden images. Five seconds each.
+#
+# They SKIP loudly rather than fail on a machine with no GPU, and the suite is not built at all
+# without a rendering backend — so this recipe is green on a continuous integration machine with no
+# device, and says so, which is the only arrangement under which anybody leaves it in the set.
+test-render *args:
+    @just _ctest render {{args}}
+
+# Every suite: unit, integration, smoke, render, and anything registered outside them. What CI runs.
 test-all *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -33,7 +41,7 @@ test-all *args:
     # nobody — invisible to every recipe here and green in CI by never executing. Running it is the
     # honest half; the recipe also names it, because a test with no label is a test with no budget
     # and the taxonomy is where it belongs.
-    for kind in unit integration smoke unclassified; do
+    for kind in unit integration smoke render unclassified; do
         # Not `set -e`: a failing suite must not hide the state of the two after it. CI reads the
         # summary below, and a developer who has broken two suites should learn that in one run.
         if ! just _ctest "${kind}" {{args}}; then
@@ -42,7 +50,7 @@ test-all *args:
     done
     echo
     if [ ${#failed[@]} -eq 0 ]; then
-        echo "test-all: unit, integration, smoke and the unclassified pass all green"
+        echo "test-all: unit, integration, smoke, render and the unclassified pass all green"
     else
         echo "test-all: failed — ${failed[*]}" >&2
         exit 1
@@ -75,6 +83,11 @@ test-bench *args:
 
     just build-engine --profile "${profile}"
 
+    # The tool that decides a threshold, checked before it decides one. It costs milliseconds and it
+    # has caught a real defect: recording used to keep only the last runner's thresholds.
+    echo "==> selftest    benchmarks/tools/compare.py"
+    python3 benchmarks/tools/compare.py --selftest
+
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     results="${build_dir}/benchmarks/results"
     mkdir -p "${results}"
@@ -83,8 +96,23 @@ test-bench *args:
     found=0
     for runner in "${build_dir}"/benchmarks/cy_bench_*; do
         [ -x "${runner}" ] || continue
-        found=1
         name="$(basename "${runner}")"
+        # Not everything in benchmarks/ is one of the shared harness's runners.
+        # `cy_bench_jobs_throughput` is built by src/core/jobs/bench/, measures a thread pool against
+        # a serial baseline rather than a fixed-iteration loop, owns its own thresholds file, and has
+        # its own recipe — `just test-bench-jobs`. It has no --json option, so this loop handed it an
+        # argument it rejects and the recipe exited 2 before reaching the runners after it. That has
+        # been true since M1 and was invisible because the alphabetically later runner was the only
+        # one it hid.
+        #
+        # The probe is `--list`, which every cy_add_benchmark() runner answers and nothing else does,
+        # rather than a list of names here that would drift the first time a second such runner
+        # appears.
+        if ! "${runner}" --list >/dev/null 2>&1; then
+            echo "==> ${name}: not a cy_add_benchmark() runner; it has a recipe of its own" >&2
+            continue
+        fi
+        found=1
         echo "==> ${name}"
         "${runner}" --json "${results}/${name}.json" ${runner_args[@]+"${runner_args[@]}"}
         echo "==> thresholds  benchmarks/baseline.json"
@@ -148,7 +176,13 @@ _ctest kind *args:
     # the same exemption until task 4.1.4 landed smoke.empty_sample; it does not any more, so a
     # smoke suite that stops being registered fails here rather than reporting a vacuous pass.
     if [ "{{kind}}" = "unclassified" ]; then
-        ctest_args+=(--label-exclude "^(unit|integration|smoke)\$" --no-tests=ignore)
+        ctest_args+=(--label-exclude "^(unit|integration|smoke|render)\$" --no-tests=ignore)
+    elif [ "{{kind}}" = "render" ]; then
+        # The render suites are declared only when a rendering backend is compiled in
+        # (tests/render/CMakeLists.txt), because every case needs a device to read back from. So an
+        # empty selection here is the ordinary state of a build with CY_RENDERER_VULKAN off, and it
+        # is not an error — unlike a misspelled label, which the branch below still catches.
+        ctest_args+=(--label-regex "^render\$" --no-tests=ignore)
     else
         ctest_args+=(--label-regex "^{{kind}}\$" --no-tests=error)
     fi
@@ -175,12 +209,12 @@ _ctest kind *args:
         # ctest names them on failure; on success they are silent, and silently-passing tests
         # outside the taxonomy are exactly what this pass exists to surface.
         unclassified="$(ctest --test-dir "${build_dir}" -N \
-            --label-exclude "^(unit|integration|smoke)\$" 2>/dev/null \
+            --label-exclude "^(unit|integration|smoke|render)\$" 2>/dev/null \
             | sed -n 's/^  Test *#[0-9]*: //p')"
         if [ -n "${unclassified}" ]; then
             echo "note: these tests carry no taxonomy label, so no graduated recipe runs them:" >&2
             printf '        %s\n' ${unclassified} >&2
-            echo "      Declare them with cy_add_test(NAME <n> KIND unit|integration|smoke ...)" >&2
+            echo "      Declare them with cy_add_test(NAME <n> KIND unit|integration|smoke|render ...)" >&2
             echo "      from tests/, or set LABELS on them; that is what gives them a budget." >&2
         fi
     fi
@@ -275,7 +309,16 @@ test-sanitize *args:
     # A sanitized binary is five to twenty times slower, which is the tool working rather than the
     # test regressing. The harness scales its per-test budget under a sanitizer already; this makes
     # the intent explicit and gives CTest room too.
-    export CY_TEST_BUDGET_SCALE="${CY_TEST_BUDGET_SCALE:-0}"
+    #
+    # TWENTY, NOT ZERO. Through M2 this line exported 0, which does not relax the budget — it
+    # switches the check off — and `tests/unit/harness/test_assertions.cpp` asserted that the scale
+    # was positive, so `just test-sanitize --tests .` failed on the harness suite and the recipe
+    # could not be used over the whole tree. `testing-and-quality` asks for the unit and integration
+    # suites under every sanitizer at least nightly, so "the whole tree" is the case that matters.
+    # Both halves are fixed (task 1.5): the harness's own suite no longer requires a positive scale,
+    # and the default here is the same twenty the harness picks for itself under a sanitizer, so the
+    # budget still measures something. Export CY_TEST_BUDGET_SCALE=0 deliberately to switch it off.
+    export CY_TEST_BUDGET_SCALE="${CY_TEST_BUDGET_SCALE:-20}"
 
     # LeakSanitizer is ON by default. It was off through M0 because the trace's per-thread rings are
     # pooled for the life of the process and nothing declared them, so every suite that opened a

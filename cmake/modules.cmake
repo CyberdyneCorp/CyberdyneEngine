@@ -24,8 +24,8 @@ include_guard(GLOBAL)
 # second copy here that disagreed would be worse than none.
 
 if(NOT DEFINED CY_LAYER_NAMES)
-    set(CY_LAYER_NAMES core ecs servers backends platform scene runtime abi editor tools)
-    set(CY_LAYER_INDICES 0   1   2       3        3        4     5       6   7      7)
+    set(CY_LAYER_NAMES core ecs servers backends platform scene rendering runtime abi editor tools)
+    set(CY_LAYER_INDICES 0   1   2       3        3        4     4         5       6   7      7)
 endif()
 
 # Registration levels, in initialisation order. `engine-architecture` fixes both the set and the

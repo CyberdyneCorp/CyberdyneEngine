@@ -133,6 +133,17 @@ struct AssetSystemImpl {
 
     AssetSystemStats stats;
 
+    /// Payloads a reload replaced, freed at the next `update()` rather than at the swap. A reader
+    /// that took `AssetData::bytes()` before the swap holds a span into one of these; see
+    /// `AssetSystem::reload`.
+    Array<Array<u8>> retired_payloads{default_allocator()};
+
+    struct ReloadListener {
+        ReloadObserver observer = nullptr;
+        void* user = nullptr;
+    };
+    Array<ReloadListener> reload_listeners{default_allocator()};
+
     // --- slot lookup -----------------------------------------------------------------------
 
     [[nodiscard]] AssetSlot* find_slot(cy::AssetId id, VariantKey variant) noexcept {
@@ -178,6 +189,14 @@ struct AssetSystemImpl {
         }
         slot.last_use = use_clock++;
     }
+
+    /// Replace a resident asset's bytes in the object every `Ref` already points at. Called with
+    /// the mutex held, by `AssetSystem::reload`, which is where the whole argument lives.
+    ///
+    /// A member of the impl rather than of `AssetSystem` because `AssetData`'s storage is private
+    /// and this struct is its friend — the same reason `publish` lives here.
+    [[nodiscard]] Status apply_reload(AssetSlot& slot, Array<u8>&& replacement,
+                                      ReloadEvent& event) noexcept;
 
     /// Build and publish the payload for a slot. Called with the mutex held.
     [[nodiscard]] Status publish(AssetSlot& slot, Array<u8>&& payload, Span<const u8> mapped,
@@ -254,6 +273,38 @@ void AssetSystemImpl::on_last_reference(AssetData* data, Allocator* allocator) n
         ++stats.evictions;
     }
     destroy_asset(data, allocator);
+}
+
+Status AssetSystemImpl::apply_reload(AssetSlot& slot, Array<u8>&& replacement,
+                                     ReloadEvent& event) noexcept {
+    AssetData& data = *slot.data;
+    event.previous_bytes = data.bytes_.size();
+    event.bytes = replacement.size();
+
+    // Room for the retired buffer FIRST, before anything is moved. A push_back that fails after the
+    // old payload has been moved out of the asset would leave the asset holding nothing while this
+    // function reports that it changed nothing — the one outcome worse than a failed reload.
+    if (Status room = retired_payloads.reserve(retired_payloads.size() + 1); !room) {
+        return room;
+    }
+
+    // The swap. Every `Ref` points at this AssetData and keeps pointing at it; what changes is what
+    // it holds. The previous buffer is retired rather than dropped, because a reader may hold a
+    // span into it — see AssetSystem::reload.
+    if (Status retired = retired_payloads.push_back(std::move(data.storage_)); !retired) {
+        return retired;
+    }
+    data.storage_ = std::move(replacement);
+    data.bytes_ = data.storage_.span();
+    data.mapped_ = false;
+    data.placeholder_ = false;
+
+    stats.resident_bytes -= slot.bytes;
+    slot.bytes = data.bytes_.size();
+    stats.resident_bytes += slot.bytes;
+    revive(slot);
+    ++stats.reloads_completed;
+    return ok();
 }
 
 Status AssetSystemImpl::publish(AssetSlot& slot, Array<u8>&& payload, Span<const u8> mapped,
@@ -1032,6 +1083,128 @@ Expected<Ref<AssetData>, Error> AssetSystem::find_resident(cy::AssetId id,
     return Ref<AssetData>::retain(slot->data);
 }
 
+Status AssetSystem::add_reload_observer(ReloadObserver observer, void* user) noexcept {
+    if (!impl_) {
+        return fail(ErrorCode::Unavailable, "the asset system is not running");
+    }
+    if (observer == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "a null observer would be told nothing");
+    }
+    detail::AssetSystemImpl& self = *impl_;
+    std::lock_guard<std::mutex> guard(self.mutex);
+    for (const detail::AssetSystemImpl::ReloadListener& listener : self.reload_listeners) {
+        if (listener.observer == observer && listener.user == user) {
+            return ok();
+        }
+    }
+    return self.reload_listeners.push_back(detail::AssetSystemImpl::ReloadListener{observer, user});
+}
+
+void AssetSystem::remove_reload_observer(ReloadObserver observer, void* user) noexcept {
+    if (!impl_) {
+        return;
+    }
+    detail::AssetSystemImpl& self = *impl_;
+    std::lock_guard<std::mutex> guard(self.mutex);
+    for (usize index = 0; index < self.reload_listeners.size(); ++index) {
+        if (self.reload_listeners[index].observer == observer &&
+            self.reload_listeners[index].user == user) {
+            // erase(), not remove_unordered(): observers are told in registration order, and a
+            // rebuild order that changed when an unrelated dependent unregistered would be a
+            // different frame for a reason nobody could see.
+            self.reload_listeners.erase(index);
+            return;
+        }
+    }
+}
+
+Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept {
+    if (!impl_) {
+        return fail(ErrorCode::Unavailable, "the asset system is not running");
+    }
+    detail::AssetSystemImpl& self = *impl_;
+
+    // Everything this call decides before it reads is decided under the lock, and the read itself
+    // is not: reading is the slow part, every completing load takes this mutex, and holding it
+    // across a file read would stall the loader for as long as the disk takes.
+    {
+        std::lock_guard<std::mutex> guard(self.mutex);
+        if (!self.running) {
+            return fail(ErrorCode::Unavailable, "the asset system is not running");
+        }
+        const detail::AssetSlot* slot = self.find_slot(id, options.variant);
+        if (slot == nullptr || slot->data == nullptr) {
+            return fail(ErrorCode::NotFound,
+                        "that asset is not resident, and a reload does not start a load");
+        }
+        if (slot->loading) {
+            return fail(ErrorCode::Unavailable,
+                        "that asset is being loaded; reloading it would race the load that is "
+                        "already producing its bytes");
+        }
+    }
+
+    Expected<VirtualPath, Error> path = package_entry_path(id, options.variant);
+    if (!path) {
+        return make_unexpected(path.error());
+    }
+    Expected<VirtualFileSystem::Resolution, Error> resolved = self.files->resolve(path.value());
+    if (!resolved) {
+        ++self.stats.reloads_failed;
+        return make_unexpected(resolved.error());
+    }
+    if (resolved.value().source->as_package() != nullptr) {
+        return fail(ErrorCode::NotImplemented,
+                    "this asset is served from a cooked package, and reloading one means "
+                    "re-running the chunk framing, decompression and dependency pass that only the "
+                    "load pipeline implements. Mount the loose file over the package to iterate on "
+                    "it; see AssetSystem::reload's comment for what closing this needs.");
+    }
+
+    Array<u8> replacement(default_allocator());
+    if (Status read = self.files->read(path.value(), replacement); !read) {
+        // The specification's "malformed file mid-write" scenario. The old asset is untouched, and
+        // it is untouched because nothing has been written yet rather than because something was
+        // rolled back.
+        ++self.stats.reloads_failed;
+        return read;
+    }
+
+    ReloadEvent event;
+    Array<detail::AssetSystemImpl::ReloadListener> listeners(default_allocator());
+    {
+        std::lock_guard<std::mutex> guard(self.mutex);
+        detail::AssetSlot* slot = self.find_slot(id, options.variant);
+        if (slot == nullptr || slot->data == nullptr) {
+            // Evicted while the read was in flight. Not an error the caller can act on and not a
+            // reload either: the next load will read the new bytes anyway.
+            ++self.stats.reloads_failed;
+            return fail(ErrorCode::NotFound, "the asset was released while it was being reloaded");
+        }
+
+        event.id = id;
+        event.variant = options.variant;
+        if (Status swapped = self.apply_reload(*slot, std::move(replacement), event); !swapped) {
+            ++self.stats.reloads_failed;
+            return swapped;
+        }
+
+        // Copied out so the observers are called with the mutex released: a dependent rebuilding a
+        // material is entitled to ask this system for another asset, and doing that under the lock
+        // it is already holding would deadlock.
+        for (const detail::AssetSystemImpl::ReloadListener& listener : self.reload_listeners) {
+            if (Status copied = listeners.push_back(listener); !copied) {
+                break;
+            }
+        }
+    }
+
+    for (const detail::AssetSystemImpl::ReloadListener& listener : listeners) {
+        listener.observer(listener.user, event);
+    }
+    return ok();
+}
+
 void AssetSystem::update() noexcept {
     if (!impl_) {
         return;
@@ -1076,6 +1249,13 @@ void AssetSystem::update() noexcept {
         }
     }
     detail::AssetSystemImpl::evict(victims);
+
+    // The payloads reloads replaced. Freed here rather than at the swap, which is what makes
+    // "re-acquire the span each frame" a sufficient rule for a reader — see AssetSystem::reload.
+    {
+        std::lock_guard<std::mutex> guard(self.mutex);
+        self.retired_payloads.clear();
+    }
 }
 
 AssetSystemStats AssetSystem::stats() const noexcept {

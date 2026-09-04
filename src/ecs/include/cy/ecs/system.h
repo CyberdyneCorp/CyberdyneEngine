@@ -159,8 +159,10 @@ private:
         Stage stage = Stage::Simulation;
         SystemId system = kInvalidSystem;
         SystemProfile profile;
-        /// Constructed with the system's registration order as its merge key, so the flush order
-        /// is the registration order and therefore the same on every machine.
+        /// Constructed with a provisional merge key and given its real one by `build()`, which
+        /// ranks the stage's systems by name. The flush order is therefore a function of what the
+        /// systems are called rather than of the order they were registered in — see
+        /// command_buffer.h for why that distinction is worth a pass over the list.
         CommandBuffer commands;
 
         Registration(World& world, u32 order) noexcept : commands(world, order, 0) {}
@@ -182,6 +184,14 @@ private:
     }
     /// Advance the version, run the bodies, flush. The half `run` and `run_serial` share.
     [[nodiscard]] Status finish_stage(StageState& state) noexcept;
+
+    /// Give every system in the stage the merge key its name earns it. Called by `build()`, which
+    /// is the first point at which every name is known — see command_buffer.h.
+    ///
+    /// Static because everything it needs is in the stage: a schedule-wide fact leaking into a
+    /// per-stage ranking is exactly the kind of coupling that would make two stages' merge orders
+    /// depend on each other.
+    [[nodiscard]] static Status assign_merge_keys(StageState& state) noexcept;
 
     World* world_;
     StageState* stages_[kStageCount] = {};

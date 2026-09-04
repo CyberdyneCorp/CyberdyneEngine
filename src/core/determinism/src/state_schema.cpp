@@ -1,5 +1,7 @@
 #include <cy/core/determinism/state_schema.h>
 
+#include <cy/core/values/name.h>
+
 #include <cy/core/base/assert.h>
 
 #include <algorithm>
@@ -40,6 +42,13 @@ bool kind_is_hashable(reflect::FieldKind kind) noexcept {
 }
 
 void hash_field(StateHashTree& tree, const StateField& field, const void* base) noexcept {
+    if (field.encoding == StateEncoding::InternedName) {
+        // The text, never the index. See StateEncoding::InternedName for why that is the whole
+        // point of the encoding existing.
+        const Name name = Name::from_index(read_at<u32>(base, field.offset));
+        tree.mix_text(name.c_str());
+        return;
+    }
     switch (field.kind) {
         case reflect::FieldKind::Bool:
             tree.mix_u64(read_at<bool>(base, field.offset) ? 1U : 0U);
@@ -103,6 +112,14 @@ Status StateSchema::declare(SchemaSubject subject, const char* name,
             return fail(ErrorCode::Unsupported,
                         "a state field's kind cannot be read by value; declare it with the integer "
                         "kind of its underlying type, or leave it out of the schema");
+        }
+        if (fields[outer].encoding == StateEncoding::InternedName &&
+            fields[outer].kind != reflect::FieldKind::U32) {
+            // A `Name` is one 32-bit word and the encoding reads exactly that. Refused here rather
+            // than misread at hash time, where the wrong width would produce a plausible number.
+            return fail(ErrorCode::InvalidArgument,
+                        "an InternedName field is a cy::Name, which is four bytes; declare it with "
+                        "FieldKind::U32");
         }
         for (usize inner = outer + 1; inner < fields.size(); ++inner) {
             if (fields[outer].id == fields[inner].id) {

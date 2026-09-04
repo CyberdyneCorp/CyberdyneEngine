@@ -7,3 +7,7 @@
 add_subdirectory(00-empty)
 add_subdirectory(01-headless-host)
 add_subdirectory(02-headless-sim)
+# M3's artefact declares TWO targets: cy::sample-first-light, the scene and the renderer, and the
+# host around it. tests/render/ links the first so that the golden images photograph the sample
+# rather than a copy of it — see 03-first-light/CMakeLists.txt for why that is worth the split.
+add_subdirectory(03-first-light)

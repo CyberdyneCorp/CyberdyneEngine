@@ -26,6 +26,7 @@ Run directly, or through `just roadmap-test`.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -259,7 +260,7 @@ def test_milestone_ladder(root: Path) -> None:
     """
     milestones = criteria_module.available()
     check("every milestone on the ladder so far has a ledger",
-          {"m0", "m1", "m2"} <= set(milestones), f"found: {', '.join(milestones) or 'none'}")
+          {"m0", "m1", "m2", "m3"} <= set(milestones), f"found: {', '.join(milestones) or 'none'}")
 
     gate_set = gates_module.load()
     milestone_gates = {gate.milestone for gate in gate_set.gates if gate.klass == "milestone"}
@@ -275,23 +276,94 @@ def test_milestone_ladder(root: Path) -> None:
               all(criterion.reason for criterion in milestone.criteria
                   if criterion.where == "ci" or criterion.requires))
 
+    # THE OMISSION THAT HAPPENED THREE TIMES, AS A CHECK. M0's gate was still `joins-on-close`
+    # after M0 closed, M1's after M1 closed, and M2's after M2 closed — each caught by the next
+    # milestone's author noticing, which is not a mechanism. gates.toml records the pattern and
+    # says what would work: the ARCHIVE PATH is the fact a tool can read. A change under
+    # openspec/changes/archive/ whose directory names the milestone means that milestone closed,
+    # and a closed milestone's gate that is still waiting to join is a ledger nothing runs.
+    #
+    # It does not fire for the milestone being closed right now, whose change is archived after
+    # its own recipe passes — which is correct: that gate is flipped by the change that closes it,
+    # and this check is what catches the flip being forgotten one milestone later.
+    # record_module.REPO_ROOT, not this function's `root`: `root` is a scratch directory the
+    # fixtures are written into, and the archive being read here is the repository's own.
+    archive = record_module.REPO_ROOT / "openspec" / "changes" / "archive"
+    archived = {
+        identifier
+        for identifier in milestones
+        if any(directory.is_dir() and identifier in directory.name.split("-")
+               for directory in (archive.iterdir() if archive.is_dir() else ()))
+    }
+    states = {gate.milestone: gate.state for gate in gate_set.gates if gate.klass == "milestone"}
+    for identifier in sorted(archived):
+        check(f"{identifier.upper()} is archived, so its gate is green rather than joins-on-close",
+              states.get(identifier) == "green",
+              f"gates.toml records milestone-{identifier} as "
+              f"'{states.get(identifier, '(no gate)')}'")
+
     m1 = criteria_module.load("m1")
     check("M1 has a criterion for each of the milestone's exit conditions",
           len(m1.criteria) >= 15, f"{len(m1.criteria)} criteria")
     m2 = criteria_module.load("m2")
     check("M2 has a criterion for each of the milestone's exit conditions",
           len(m2.criteria) >= 20, f"{len(m2.criteria)} criteria")
+    m3 = criteria_module.load("m3")
+    check("M3 has a criterion for each of the milestone's exit conditions",
+          len(m3.criteria) >= 20, f"{len(m3.criteria)} criteria")
     # M1 broke M0's static analysis gate before this ledger existed. `delivery-roadmap` forbids that
     # outright, so the rule is a criterion rather than a paragraph, and this is the check that it
     # stays one. Every ledger from M1 on carries the previous milestone's recipe, so the whole ladder
     # runs from whichever rung is being closed — checked here rather than left to the next author to
     # notice, because the omission is invisible until the day it matters.
-    for later, earlier in (("m1", "m0"), ("m2", "m1")):
+    # DERIVED FROM THE LEDGERS RATHER THAN LISTED. The pairs used to be written out here, which
+    # made this check itself something the next author had to remember to extend — the same class of
+    # omission it exists to catch. `available()` is sorted, so zipping it against its own tail is
+    # every rung, and a ledger added under milestones/ is checked the moment it is added.
+    rungs = criteria_module.available()
+    for later, earlier in zip(rungs[1:], rungs[:-1]):
         ledger = criteria_module.load(later)
         check(f"{later.upper()}'s ledger runs {earlier.upper()}'s, so a milestone that breaks an "
               f"earlier one cannot close",
               any(criterion.run == f"just roadmap-milestone {earlier}"
                   for criterion in ledger.criteria))
+
+
+def test_requirements(root: Path) -> None:
+    """A criterion this host cannot evaluate is reported as unevaluated, never as passed.
+
+    M3 is the first milestone with criteria that need a graphics device, so `gpu` joins `display` as
+    a requirement a host can fail to meet. The failure mode this guards against is the expensive one:
+    a milestone recipe that silently skipped its rendering criteria would report M3 green on exactly
+    the machines least able to judge it.
+    """
+    criterion = criteria_module.Criterion(
+        id="needs-a-gpu", describe="a criterion that needs a device", source="selftest",
+        kind="recipe", run="just test-render", ci_job="render-device", requires="gpu",
+        reason="this host has no graphics device")
+    previous = os.environ.get("CY_HAS_GPU")
+    try:
+        os.environ["CY_HAS_GPU"] = "0"
+        check("a criterion that needs a GPU is not evaluated on a host without one",
+              criteria_module.unmet_requirement(criterion) == criterion.reason)
+        os.environ["CY_HAS_GPU"] = "1"
+        check("and is evaluated on a host with one",
+              criteria_module.unmet_requirement(criterion) == "")
+    finally:
+        if previous is None:
+            del os.environ["CY_HAS_GPU"]
+        else:
+            os.environ["CY_HAS_GPU"] = previous
+
+    check("'gpu' and 'display' are the requirements a criterion may declare",
+          set(criteria_module.REQUIREMENTS) == {"display", "gpu"})
+    expect_error(
+        "a requirement this tool does not know is rejected", criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "unknown-requirement",
+            'schema = 1\nid = "m0"\n[[criterion]]\nid = "c"\ndescribe = "d"\nsource = "s"\n'
+            'kind = "recipe"\nrun = "just x"\nci_job = "build-and-test"\n'
+            'requires = "quantum-computer"\nreason = "r"\n')))
 
 
 def _gated(milestone: criteria_module.Milestone) -> bool:
@@ -349,6 +421,7 @@ def main() -> int:
         test_criteria(_area(root, "criteria"))
         test_exit_tiers(_area(root, "tiers"))
         test_milestone_ladder(_area(root, "ladder"))
+        test_requirements(_area(root, "requirements"))
         test_gates(_area(root, "gates"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")

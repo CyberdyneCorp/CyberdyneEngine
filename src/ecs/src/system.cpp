@@ -5,6 +5,24 @@
 #include <cy/core/jobs/types.h>
 
 namespace cy::ecs {
+namespace {
+
+/// Lexicographic comparison of two system names, by content. A local loop rather than std::strcmp
+/// because that is all it needs to be, and a null name cannot reach here — `SystemSchedule::add`
+/// refuses a system without one, and refuses a duplicate, so the names of one stage are a set and
+/// this is a total order over them.
+[[nodiscard]] bool name_less(const char* left, const char* right) noexcept {
+    if (left == nullptr || right == nullptr) {
+        return right != nullptr;
+    }
+    while (*left != '\0' && *left == *right) {
+        ++left;
+        ++right;
+    }
+    return static_cast<unsigned char>(*left) < static_cast<unsigned char>(*right);
+}
+
+}  // namespace
 
 const char* stage_name(Stage stage) noexcept {
     switch (stage) {
@@ -96,8 +114,10 @@ Expected<SystemId, Error> Schedule::add(Stage stage, const SystemDesc& desc) noe
     if (block == nullptr) {
         return fail(ErrorCode::OutOfMemory, "could not allocate a system registration");
     }
-    // The merge key is the registration order within the stage, so two systems' command buffers
-    // flush in the order they were registered on every machine and every run.
+    // A provisional merge key: the registration index, which is a total order and nothing more.
+    // The real one is assigned by `build()`, which is the first moment every system in the stage
+    // has a name to be ranked by — see assign_merge_keys() and command_buffer.h. A schedule that is
+    // run without being built is refused, so the provisional key never decides a flush.
     auto* registration =
         ::new (block) Registration(*world_, static_cast<u32>((*state)->systems.size()));
     registration->owner = this;
@@ -158,7 +178,49 @@ Status Schedule::build() noexcept {
         if (Status built = state->schedule.build(); !built) {
             return built;
         }
+        if (Status keyed = assign_merge_keys(*state); !keyed) {
+            return keyed;
+        }
         state->built = true;
+    }
+    return ok();
+}
+
+Status Schedule::assign_merge_keys(StageState& state) noexcept {
+    // Task 1.7. The command buffers of one stage flush in (system, thread, record) order, and
+    // `system` is this rank: the system's position among its stage's systems **in name order**.
+    // Registration order was what it used to be, and registration order is a sequence number
+    // standing in for an identity — the moment a plugin or a game mode registers a system
+    // conditionally, every later system's key shifts and two conflicting spawns swap places in the
+    // flush. `StateProviderRegistry::finalize()` is the shape this follows, and
+    // `simulation-and-determinism` is the requirement: a registry whose contents affect simulation
+    // is finalised in an order derived from stable identifiers.
+    //
+    // Insertion sort over an index array. Allocation-free, stable, and over a list that
+    // `jobs::SystemSchedule` caps at 128 — sorting it is nothing beside building the stage's
+    // dependency graph, which is quadratic in the same number.
+    const u32 count = static_cast<u32>(state.systems.size());
+    u32 order[jobs::SystemSchedule::kMaxSystems];
+    for (u32 i = 0; i < count; ++i) {
+        order[i] = i;
+    }
+    for (u32 i = 1; i < count; ++i) {
+        for (u32 j = i; j > 0 && name_less(state.systems[order[j]]->profile.name,
+                                           state.systems[order[j - 1]]->profile.name);
+             --j) {
+            const u32 held = order[j - 1];
+            order[j - 1] = order[j];
+            order[j] = held;
+        }
+    }
+    for (u32 rank = 0; rank < count; ++rank) {
+        // Refused only when the buffer still holds commands, which would mean a stage was rebuilt
+        // between a system recording and the flush that applies it. That is a defect in the caller
+        // and it is reported rather than absorbed: the alternative is a command applied at a point
+        // in the merge that neither key describes.
+        if (Status keyed = state.systems[order[rank]]->commands.set_merge_key(rank, 0); !keyed) {
+            return keyed;
+        }
     }
     return ok();
 }

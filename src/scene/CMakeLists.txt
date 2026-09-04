@@ -37,9 +37,10 @@ cy_add_module(
         src/node_transform.cpp
         src/propagation.cpp
         src/scene.cpp
+        src/state_schema.cpp
         src/tree.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-values cy::ecs)
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-values cy::ecs)
 
 # The authoring side: prefabs, scenes, worlds, and the cooker that flattens them. Read after the
 # façade it serialises, so cy::scene is already declared when cy::scene-serialization links it.

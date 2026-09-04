@@ -42,6 +42,7 @@ cy_add_module(
         src/resource.cpp
         src/snapshot.cpp
         src/sparse_store.cpp
+        src/state_schema.cpp
         src/system.cpp
         src/world.cpp
         src/world_relations.cpp
@@ -49,6 +50,10 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-values cy::core-reflect
                         cy::core-jobs
+                        # cy::core-determinism for the state schema the built-in components declare
+                        # themselves to (state_schema.h): a `Parent` divergence has to change the
+                        # state hash, and reflection cannot describe an `Entity` field.
+                        cy::core-determinism
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
 # A suite lands with the first real source. The EXISTS guard is what lets this line be written now:

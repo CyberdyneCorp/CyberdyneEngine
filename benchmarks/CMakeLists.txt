@@ -40,3 +40,4 @@ endfunction()
 
 add_subdirectory(harness)
 add_subdirectory(micro)
+add_subdirectory(ecs)

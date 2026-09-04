@@ -98,8 +98,16 @@ void recompute_transform(const Walk& walk, Entity entity, const Frame& frame,
     // A teleported node's history collapses onto the new placement, so any blend a renderer does is
     // a blend between two equal values — which is "a teleport flag SHALL suppress interpolation for
     // that frame" expressed as data rather than as a branch the renderer has to remember.
-    history->previous = history->teleport ? derived->value : previous;
-    history->teleport = false;
+    //
+    // THIS BLOCK IS PRESENTATION CODE AND SAYS SO. It reads and writes `InterpolatedTransform`,
+    // whose fields are `Presentation` (components.h), and a presentation reader may read anything
+    // while nothing it writes can reach authoritative state. The witness is not decoration: it is
+    // the reason the rest of this function — which computes `WorldTransform`, authoritative state —
+    // cannot accidentally start depending on a render blend.
+    constexpr determinism::PresentationContext kPresentation;
+    history->previous.write(kPresentation,
+                            history->teleport.read(kPresentation) ? derived->value : previous);
+    history->teleport.write(kPresentation, false);
 }
 
 /// Read and update the node's dirty bits, recompute what is stale, and report what the children

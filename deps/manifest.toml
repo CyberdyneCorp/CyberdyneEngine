@@ -145,3 +145,71 @@ source_subdir = "c"
 interface = "the engine's hashing interface in src/core/, beneath derivation keys and content addressing"
 scope = "runtime"
 justification = "Cryptographic code is never hand-rolled, and the build graph's derivation keys need a fast tree hash. Offered under CC0-1.0, Apache-2.0 or Apache-2.0 WITH LLVM-exception and taken under CC0-1.0."
+
+[[dependency]]
+name = "vulkan_headers"
+version = "1.4.304"
+tag = "v1.4.304"
+commit = "d4a196d8c84e032d27f999adcea3075517c1c97f"
+repository = "https://github.com/KhronosGroup/Vulkan-Headers"
+licence = "Apache-2.0"
+licence_file = "LICENSE.md"
+optional = true
+feature = "CY_RENDERER_VULKAN"
+system_package = false
+cmake_target = "Vulkan::Headers"
+source_subdir = ""
+interface = "cy::rhi in src/backends/rhi/, whose types are engine-owned; no Vulkan type appears above src/backends/"
+scope = "runtime"
+justification = "The Khronos-published headers and the only definition of the API the Vulkan backend is written against. Headers only: the loader is resolved at run time by volk, so nothing links a Vulkan library."
+
+[[dependency]]
+name = "volk"
+version = "1.4.304"
+tag = "1.4.304"
+commit = "0b17a763ba5643e32da1b2152f8140461b3b7345"
+repository = "https://github.com/zeux/volk"
+licence = "MIT"
+licence_file = "LICENSE.md"
+optional = true
+feature = "CY_RENDERER_VULKAN"
+system_package = false
+cmake_target = "volk"
+source_subdir = ""
+interface = "cy::rhi in src/backends/rhi/vulkan/, which is the only directory that names a Vulkan symbol"
+scope = "runtime"
+justification = "A meta-loader: entry points are fetched per device rather than through the loader's dispatch trampoline, which removes a per-call indirection and lets the engine link no Vulkan library at all. Writing one is a generated-code maintenance task with no differentiation in it."
+
+[[dependency]]
+name = "vma"
+version = "3.3.0"
+tag = "v3.3.0"
+commit = "1d8f600fd424278486eade7ed3e877c99f0846b1"
+repository = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
+licence = "MIT"
+licence_file = "LICENSE.txt"
+optional = true
+feature = "CY_RENDERER_VULKAN"
+system_package = false
+cmake_target = "GPUOpen::VulkanMemoryAllocator"
+source_subdir = ""
+interface = "the RHI's memory report and transient pool in src/backends/rhi/vulkan/; GPU bytes reach the engine through cy::MemoryDomain::Gpu and the shared pressure monitor, not through a second report"
+scope = "runtime"
+justification = "Suballocation, memory-type selection, defragmentation and VK_EXT_memory_budget tracking against a device's own heaps. An allocator is not differentiating and getting memory types wrong is a class of bug that only appears on the vendor nobody tested."
+
+[[dependency]]
+name = "slang"
+version = "2026.9.2"
+tag = "v2026.9.2"
+commit = "5ad2bcb74902fa5cf4344e9ee3dd33fa125883cb"
+repository = "https://github.com/shader-slang/slang"
+licence = "Apache-2.0 WITH LLVM-exception"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_SHADER_SLANG"
+system_package = false
+cmake_target = "slang"
+source_subdir = ""
+interface = "cy::shader::ShaderCompiler in src/backends/shader/slang/, which is the only directory that names a Slang symbol; the pipeline around it consumes SPIR-V"
+scope = "tool-time"
+justification = "The authoring language `shader-system` adopts, and the compiler that lowers it to SPIR-V. Writing a shading language is a multi-year commitment that competes directly with building the renderer; Slang supplies generics, interfaces, modules and multi-target output and is designed for exactly this use."

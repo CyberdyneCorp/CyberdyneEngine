@@ -6,7 +6,7 @@ a change has to pass. Three recipes, four data files, and no judgement anywhere 
 ```
 just roadmap-status                # every capability's tier, milestone and change
 just roadmap-milestone m0          # M0's exit criteria, run
-just roadmap-milestone m2 --list   # what M2's are, without running them
+just roadmap-milestone m3 --list   # what M3's are, without running them
 just roadmap-gates                 # the permanent merge gates and any recorded override
 just roadmap-test                  # the tooling's own tests, including the three drift cases
 ```
@@ -16,7 +16,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | Path | Is |
 |---|---|
 | `docs/roadmap/status.yaml` | The record. One entry per capability: tier, the milestone that last advanced it, the change that did so. Not owned by this directory — owned by whoever advances a capability. |
-| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. `m0.toml`, `m1.toml` and `m2.toml` today; M3 through M11 add a file each and change no code. |
+| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. `m0.toml` through `m3.toml` today; M4 through M11 add a file each and change no code — M3 added one line of code, the `gpu` requirement below, because it is the first milestone whose criteria need hardware. |
 | `tools/roadmap/gates.toml` | The permanent merge-gate set, and the overrides recorded against it. |
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
 | `roadmap.py` | The command line behind the recipes. |
@@ -62,9 +62,19 @@ A criterion that passes on one laptop and runs nowhere else is not a gate, and t
 one that names a job no gate declares.
 
 **Nothing is silently skipped.** A criterion this host cannot evaluate — another operating system
-(`where = "ci"`), no window system (`requires = "display"`) — must carry a `reason`. It is then
-reported as *not evaluated*, never as passed, is counted separately in the summary, and names the CI
-job that does evaluate it. `--ci` runs those criteria too, for the platform-specific jobs.
+(`where = "ci"`), no window system (`requires = "display"`), no graphics device
+(`requires = "gpu"`) — must carry a `reason`. It is then reported as *not evaluated*, never as
+passed, is counted separately in the summary, and names the CI job that does evaluate it. `--ci`
+runs those criteria too, for the platform-specific jobs.
+
+`gpu` joined `display` at M3, which is the first milestone with criteria that need hardware: the
+conventions sampled back off a device, the golden images, and a frame run with the validation layers
+on. The probe is the presence of a DRM render node, with `CY_HAS_GPU` as the override for the cases
+a file cannot answer. It is deliberately not "run `vulkaninfo`" — this module runs on every pull
+request on three platforms, and a gate that shells out to a tool that may not be installed is a gate
+that fails for the wrong reason. The failure this guards against is the expensive one: a milestone
+recipe that quietly skipped its rendering criteria would report M3 green on exactly the machines
+least able to judge it.
 
 Exit status: `0` every criterion this host evaluated passed, `1` one failed, `2` the data is wrong.
 
@@ -78,8 +88,15 @@ non-default profiles, and the workflow check itself. M2 added four, and each is 
 can break without breaking a test that names it: the state hash reproducing across processes and
 across a snapshot restore, an authored hierarchy lowering to archetype blocks, the coherence
 invariants between a node and the entity it is a handle onto, and structural change being observable
-only at flush points. It exists as data so that continuous integration, the contributor
-documentation and this tool name the same gates — three hand-maintained copies of a list diverge,
+only at flush points. M3 added four: the graph deriving barriers, aliasing and scheduling from
+declarations alone and producing an identical plan twice; the renderer above it — the RHI, the
+render server, the pass order, the BRDF, the lights and the culling — all of which runs with no GPU;
+the shader pipeline over the SPIR-V passthrough, with the Slang front end off; and the render suites
+themselves, whose gate says out loud which of them a machine without a device actually runs. What
+M3 deliberately did NOT declare is a golden-image gate: a committed reference is a photograph of one
+implementation and a hosted runner is another, so the golden images are a criterion carrying
+`requires = "gpu"` rather than a gate nobody can run. It exists as data so that continuous
+integration, the contributor documentation and this tool name the same gates — three hand-maintained copies of a list diverge,
 and the copy that drifts is the one in CI.
 
 `tools/ci/check_workflows.py` is the check that stops the CI copy from drifting: a gate declared
@@ -107,9 +124,19 @@ M1 is the first milestone to have to obey that rule, and it did not: two of its 
 findings against the `lint` gate M0 closed with, which turned `just roadmap-milestone m0` red. So
 `m1.toml`'s first criterion runs `just roadmap-milestone m0` — the rule as something the closing
 recipe executes rather than something a reviewer is expected to remember. Every milestone ledger
-after this one carries the same criterion for the milestone before it, `m2.toml` included, and
-`selftest.py` checks each rung rather than trusting the next author to remember: the omission is
-invisible until the day it matters, which is the day somebody closes a milestone on a broken one.
+after this one carries the same criterion for the milestone before it, `m2.toml` and `m3.toml`
+included, and `selftest.py` checks each rung — **derived from the ledgers rather than listed**, so
+that the check itself is not one more thing the next author has to extend. The omission is invisible
+until the day it matters, which is the day somebody closes a milestone on a broken one.
+
+**The flip is the part that keeps being forgotten.** A milestone's gate carries
+`state = "joins-on-close"` until it closes and `state = "green"` from then on, and three times in a
+row the flip has been done a milestone late: M0's and M1's were both flipped while M2 was closing,
+and M2's while M3 was. The reminder in `gates.toml` demonstrably does not work. What would work is
+`roadmap-test` failing when a milestone has a ledger, an archived change under
+`openspec/changes/archive/`, and a gate still at `joins-on-close` — the archive path is the fact a
+tool can read. That check does not exist yet; it is recorded in `gates.toml` beside the M2 entry
+because it needs a rule about what "closed" means that this directory does not yet carry.
 
 `just roadmap-test` checks the ladder itself on every pull request: every ledger under
 `milestones/` loads, every criterion in it names a gate that exists, every milestone with a ledger

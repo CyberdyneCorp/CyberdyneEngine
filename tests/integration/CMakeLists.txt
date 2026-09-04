@@ -20,3 +20,14 @@ cy_add_test(
     # discovered, because a test that guesses where the sources are passes vacuously when it guesses
     # wrong.
     DEFINITIONS CY_TESTS_SOURCE_DIR="${cy_tests_dir}")
+
+# The state hash's coverage over a scene world. Here rather than in a module because it is a claim
+# about three at once — the ECS's built-in components, the scene's, and the runtime's walk over both
+# — and because the thing it defends is a property of the composition: at M2's close the hash was
+# silent about thirteen of seventeen subjects, and a suite inside any one module would have been
+# able to say only that its own half was declared.
+cy_add_test(
+    NAME    state_hash_coverage
+    KIND    integration
+    SOURCES test_state_hash_coverage.cpp
+    DEPENDENCIES cy::runtime cy::scene cy::ecs cy::core-determinism cy::core-values)

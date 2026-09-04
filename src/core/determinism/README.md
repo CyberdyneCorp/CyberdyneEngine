@@ -60,6 +60,22 @@ So the honest statement is: **the crossing is unspellable for state that is clas
 classification is opt-in per field.** Adopting the wrapper buys the guarantee; a component that has
 not adopted it gets a comment.
 
+**M2 closed with nothing having adopted it, and M3's task 1.3 changed that.**
+`scene::InterpolatedTransform` is the first classified component: both its fields are
+`Presentation`, because the component exists so a renderer can blend between two ticks, and an
+authoritative system now cannot name either value — there is no overload that yields it.
+`src/scene/src/propagation.cpp`'s interpolation block and `Node::render_transform()` carry a
+`PresentationContext` and say why. The eleven that follow are named in `scene/components.h` with the
+cost of each; the rule going forward is the one the task states, that a component is classified at
+the moment it is authored, because retrofitting a witness into every reader is the expensive half.
+
+**And the state hash learned to read a name as text rather than as a handle.** `StateField` carries
+a `StateEncoding`, whose one non-`Direct` value says "these four bytes are a `cy::Name`, fold in its
+text". A `Name`'s index is its position in a process-wide table filled in interning order, which
+`core-type-system` says is not stable across runs — so hashing the index would make the state hash a
+function of what else the process interned first. That is what lets `scene::NodeName` be hashed at
+all, and it is what closes "a divergence in a node's name does not change the hash".
+
 ### 2. `SimulationClock` cannot read a wall clock
 
 It has no member that calls one and includes no header that offers one. Its only source of elapsed

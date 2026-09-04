@@ -36,9 +36,12 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/determinism/classification.h>
 #include <cy/core/math/transform.h>
 #include <cy/core/values/name.h>
 #include <cy/ecs/world.h>
+
+#include <type_traits>
 
 namespace cy::scene {
 
@@ -86,13 +89,46 @@ struct WorldTransform {
 /// The previous tick's `WorldTransform`, for a node marked interpolatable. Present only on those
 /// nodes: `scene-graph-and-nodes` makes interpolation opt-in, and a node that does not opt in must
 /// not pay 40 bytes a row for it.
+///
+/// THIS IS THE ENGINE'S FIRST CLASSIFIED COMPONENT, AND IT IS THE RIGHT ONE. Task 1.3, carried
+/// forward from M2: `determinism::Classified<>` was correct and adopted by nothing, so the
+/// determinism firewall guarded zero fields. Both fields here are `Presentation`, which is exactly
+/// what they are — this component exists so a renderer can blend between two ticks, and
+/// `simulation-and-determinism` names "animation pose, camera, audio, VFX, GPU-produced data,
+/// illumination" as the class. Wrapping them means an authoritative system **cannot name the value
+/// at all**: `read()` requires a witness and the overload does not exist for a crossing the
+/// firewall forbids, so gameplay reading an interpolated position is a compile error rather than a
+/// divergence M9's replay has to find.
+///
+/// The direction that stays open is the one that should: an authoritative system may *write* a
+/// presentation field (`Node::teleport()` does), because authority flowing downhill is legal and it
+/// is only the read back up that is not.
+///
+/// Layout is unchanged — `Classified<C, T>` is the same size and alignment as `T` and is trivially
+/// copyable when `T` is, both asserted in classification.h — so the chunk this component occupies
+/// is the chunk it occupied before, and the ECS still accepts it as trivially relocatable.
+///
+/// WHY THE OTHER ELEVEN ARE NOT WRAPPED YET, honestly: this one has five use sites and the rest
+/// have between six and twenty-four each, and every one of them would have to grow a witness. That
+/// is a change to src/scene/'s bodies rather than to its data, and it belongs with whoever is
+/// editing those bodies rather than in a pass over a module that is otherwise untouched.
+/// `WorldTransform`
+/// (`Derived`) and `NodeState` (`Derived`) are the next two, and they are next because a derived
+/// value read by an authoritative system is the second-most-likely determinism defect after a
+/// presentation one.
 struct InterpolatedTransform {
-    Transform previous;
+    determinism::Presentation<Transform> previous;
     /// Set by `Node::teleport()`, cleared by the next simulation-phase propagation. While it is
     /// set, `render_transform()` returns the current world transform rather than a blend — which is
     /// the "teleport flag SHALL suppress interpolation for that frame" scenario.
-    bool teleport = false;
+    determinism::Presentation<bool> teleport;
 };
+
+static_assert(sizeof(InterpolatedTransform) == sizeof(Transform) + alignof(Transform),
+              "Classified<> must not change this component's layout: the chunk's column width is "
+              "computed from it");
+static_assert(std::is_trivially_copyable_v<InterpolatedTransform>,
+              "the ECS refuses a component that is not trivially relocatable");
 
 /// The two authored flags. Orthogonal in meaning — one is about rendering and one about simulation
 /// — and in one component because they are written together, inherited together, and propagated in

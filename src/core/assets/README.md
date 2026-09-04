@@ -7,6 +7,12 @@ Section 3.3 of `openspec/changes/implement-m1-substrate/tasks.md`, governed by `
 filesystem, the package format's read path, asynchronous loading, file and directory access, the two
 serialization forms, and compression. What is deliberately absent is listed under *Seams* below.
 
+**Hot reload joined it at M3** (task 1.4, carried forward from M2's gate). `FileWatcher` watches the
+virtual filesystem and reports added, modified and removed paths; `AssetSystem::reload()` replaces a
+resident asset's bytes **inside the object every `Ref` already points at** and tells registered
+dependents so they can rebuild what they derived. Both halves are exercised by
+`integration.assets_watch`, including the specification's "reload failure keeps the old asset".
+
 ## The map
 
 | Header | What it owns |
@@ -19,7 +25,8 @@ serialization forms, and compression. What is deliberately absent is listed unde
 | `vfs.h` | `Mount`, `DirectoryMount`, `MemoryMount`, `RemoteMount`, `VirtualFileSystem` |
 | `package.h` | The `.cypak` format: `PackageReader`, `PackageWriter`, `PackageSet`, `PackageMount` |
 | `serialization.h` | The binary envelope and the text form over reflected data |
-| `asset_system.h` | `AssetSystem`, `AssetData`, `LoadRequestId`, the retention policies |
+| `asset_system.h` | `AssetSystem`, `AssetData`, `LoadRequestId`, the retention policies, and `reload()` |
+| `watch.h` | `FileWatcher` — polls the namespace, reports what changed, debounces a file still being written |
 | `diagnostics.h` | The layer's counters, on the M0 trace |
 | `assets.h` | The umbrella |
 
@@ -60,7 +67,8 @@ the tests assert on both.
 | Cooking, importers, source-format parsers | `PackageWriter::add` takes bytes that are already cooked | M2 |
 | Streaming, per-mip residency, renderer feedback | `AssetSystem` retention is about *when memory goes back*, not about partial residency | M6 |
 | GPU upload | `AssetSystemStats::uploads_skipped` counts the stage that is skipped | M3 |
-| Hot reload | Not in tasks 3.3.1–3.3.6; the `Mount` interface is where a watcher would sit | M2+ |
+| A native change-notification backend (inotify, ReadDirectoryChangesW, FSEvents) | `FileWatcher` polls the `VirtualFileSystem`, which is layer 0; a native backend is platform code and belongs behind the platform seam. Its callers' contract — call `poll()`, be told what changed — does not move | when someone needs the latency |
+| Reloading a **package-backed** asset | `AssetSystem::reload` refuses one by name: an entry inside a cooked package reaches its bytes through chunk framing, decompression and a dependency pass that only the load pipeline implements. Closing it means restarting that pipeline into the existing slot and swapping at `publish()` | when a cooked package is iterated on |
 | Encryption | `PackageFlags::EncryptedDirectory` / `EncryptedPayload` are defined and `open` **refuses** them | when key management exists |
 | LZ4, Deflate | `CompressionMethod` declares them; every entry point refuses them by name. Neither codec is pinned in `deps/manifest.toml`, and adding a dependency is a manifest decision | when one is pinned |
 | SHA-256, HMAC, AES-GCM, CSPRNG | `hash.h` is the shape a `core/crypto` takes; nothing at M1 signs or encrypts | M2+ |
@@ -113,8 +121,11 @@ subject is not built at M1, and each is named here rather than left to be discov
 | Shipping build has no source assets | Cooking and packaging a shipping build are M2 |
 | Approaching a surface | Streaming under a residency budget is M6 |
 | Budget exceeded | Streaming under a residency budget is M6 |
-| Texture edited while running | Hot reload; not in tasks 3.3.1–3.3.6 |
-| Reload failure keeps the old asset | Hot reload; not in tasks 3.3.1–3.3.6 |
+
+*Texture edited while running* and *Reload failure keeps the old asset* were on that list until M3:
+both are `integration.assets_watch` now — the first as a watcher poll followed by a `reload()` that
+the pre-existing `Ref` sees, the second as a reload whose read fails while the old bytes stay in
+use.
 
 Two scenarios have a case in **two** suites, because they have two halves that are tested in
 different places: *Platform variants* (the key is a value in `test_identity.cpp`; the addressing is

@@ -1,0 +1,347 @@
+# M3 — First light: the exit criteria, as data. Task 7.10.
+#
+# The sources are section 7 of openspec/changes/implement-m3-first-light/tasks.md and the M3 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a
+# recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate. A criterion that cannot be
+# evaluated on the host running the recipe — another operating system, no display, NO GPU — carries
+# a `reason`, is reported as not evaluated rather than as passed, and is counted separately.
+#
+# `requires = "gpu"` is new at this milestone and is the honest half of a rendering ledger: the
+# conventions sampled back off a device and the golden images cannot be evaluated without one, and
+# a milestone recipe that quietly skipped them would report M3 green on exactly the machines least
+# able to judge it. criteria.py's `_has_gpu()` is the probe and `CY_HAS_GPU` overrides it.
+#
+# The first criterion is M2's whole set, for the reason m1.toml records against M0's: a later
+# milestone may not break an earlier milestone's gate, and the way to keep that true is for the
+# closing recipe to run it rather than for a reviewer to remember it. M2's ledger runs M1's, which
+# runs M0's, so this one criterion carries the whole ladder below it.
+
+schema = 1
+id = "m3"
+name = "First light"
+artefact = "samples/03-first-light — a lit, textured, shadowed scene with a moving camera, rendered through the render graph, photographed by golden images and compiled identically through the null backend with no GPU"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "tasks 7.10 — `just roadmap-milestone m3` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 7.11 — docs/roadmap/status.yaml and docs/roadmap/capability-matrix.md are corrected where M3 recorded an intention the implementation changed, and record what is thinner than the tasks claim. `roadmap-tiers` below checks the record; no tool can tell an intention from its correction.",
+    "tasks 7.12 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "tasks 7.13 — opening the M4 change is `m4-open` below, which asks only that the change exists. Whether its named spike is the right one is a judgement.",
+    "ROADMAP M3, 'the null backend records the same graph' — checked as STRUCTURE rather than as a plan hash, in render.golden's fourth case: passes, culls, submits, barriers, barrier batches, ownership transfers, draws and triangles all agree between the two backends. The plan HASHES differ and should: `CompiledGraph::plan_hash` covers every placement offset, and a placement offset comes from the device's own memory requirements, which a synthetic allocator's alignments are not. Claiming hash equality across backends would have been claiming something false.",
+    "ROADMAP M3, 'a scene one million units from the origin renders without visible precision loss' — render.golden's second case compares the far scene against THE SAME reference file as the near one, so the claim asserted is bit-identity rather than 'no visible loss'. render.conventions makes the same claim off the depth buffer. Both need a device and both carry requires = 'gpu'.",
+    "THE ARTEFACT DOES NOT OPEN A WINDOW, and this is a real gap rather than a choice. `DisplayServer::create_surface(GraphicsApi::Vulkan, ...)` exists and works (task 2.3.2) and `SwapchainDescription` takes the surface it produces — but `cy::rhi::Device` exposes no way to obtain the API instance a surface must be created against: `native_handle()` returns the VkDevice and the VkInstance stays inside src/backends/rhi/vulkan/. So a host can create a window and a device and cannot join them. samples/03-first-light renders offscreen and writes a PPM with --capture. Closing it is a small accessor on the RHI in engine-owned terms; it belongs to whoever owns src/backends/rhi/ and it is recorded here rather than worked around.",
+    "THE XR FRAME-TIMING SEAM IS HALF OPEN. render.xr_prerequisites checks the half a renderer can violate — the frame's inputs are arguments and no clock reaches it, proved by a byte-identical command stream across two renders separated by other work. The half that is NOT open is `cy::Runtime::tick()`, which takes no predicted display time, so a host cannot yet tell the engine when a frame will be displayed. tests/render/README.md and the case's own comment say so; it is small today and gets expensive once anything downstream reads the runtime's clock instead.",
+    "GOLDEN IMAGES ARE NOT A CONTINUOUS-INTEGRATION GATE and the `render-device` gate says which suites it actually runs where. A committed reference is a photograph of one implementation; a hosted runner has no GPU and the default build has CY_RENDERER_VULKAN off, so what runs there is render.null_frame and render.xr_prerequisites — everything about the frame that is decided rather than drawn. The golden images are evaluated on a machine with a device, which is what `requires = 'gpu'` records.",
+    "tasks 7.9 — the nightly sanitizer schedule exists (ci.yml's `sanitize-nightly`); `sanitizers-render` below is the pull-request half over M3's own suites.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. M3 adds render-graph, render-frame, render-device and shader-pipeline to it.",
+]
+
+# --- What M3 must not have broken -----------------------------------------------------------------
+
+[[criterion]]
+id = "m2-green"
+describe = "M2's exit criteria are still green, and M2's own first criterion is M1's — so the whole ladder below this milestone is run"
+source = "delivery-roadmap (Milestone gates do not regress)"
+kind = "recipe"
+run = "just roadmap-milestone m2"
+timeout_s = 28800
+ci_job = "milestone-m2"
+
+# --- The static gates: cheap, and they fail first --------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes"
+source = "tasks 7.12"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over the modules M3 added"
+source = "tasks 7.8"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over the RHI, the render graph, the shader front end, the renderer and the sample"
+source = "tasks 7.8"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+# TASK 7.2 LIVES HERE. `just quality-layers` runs three source-level rules and their negative
+# fixtures: the layer order, the `gpuapi` rule (no Vulkan, Slang or SPIR-V header above
+# src/backends/), and the `barriers` rule — no barrier-emitting symbol outside src/backends/rhi/ and
+# src/rendering/graph/. The fixtures are what make it a gate rather than a grep that has stopped
+# firing: each violation is introduced deliberately and the check must reject it.
+#
+# The RUNTIME half of the same invariant is `render-null` below, which counts the barrier batches in
+# a recorded command stream and requires the number to equal the number the compiled plan derived —
+# so no barrier reached the stream from outside the graph either.
+[[criterion]]
+id = "layering"
+describe = "the layer order holds, no Vulkan/Slang/SPIR-V header appears above src/backends/, and NO BARRIER CALL EXISTS OUTSIDE THE RENDER GRAPH — each proven by introducing one and requiring the check to reject it"
+source = "tasks 7.2, ROADMAP M3 (a grep-level check finds no barrier call outside the render graph)"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate M3 declared is run by a job in .github/workflows/, and no job reimplements a recipe"
+source = "delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 7.11, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M3's exit tiers, each naming the change that advanced it"
+source = "tasks 7.11, ROADMAP M3"
+kind = "tiers"
+ci_job = "milestone-m3"
+
+# The M3 row of docs/ROADMAP.md, as data. An exit tier is a floor rather than an equality: a later
+# milestone advancing one of these past its M3 level must not make this recipe fail.
+[criterion.expect_tiers]
+rhi-and-render-graph = "working"
+shader-system = "working"
+rendering-architecture = "working"
+rendering-geometry-and-resources = "working"
+rendering-materials-and-shading = "working"
+rendering-forward-clustered = "working"
+rendering-lighting-and-shadows = "seed"
+rendering-culling-and-lod = "seed"
+core-math = "complete"
+
+# --- The RHI and the render graph -------------------------------------------------------------------
+
+[[criterion]]
+id = "rhi"
+describe = "the explicit RHI: devices, queues, command buffers, resources, pipelines, and a capability model that is queried rather than assumed — over the null backend, which was written first so that the RHI is an interface rather than a wrapper (design.md §1)"
+source = "tasks 2.1.1, 2.1.2, 2.1.3, ROADMAP M3 (rhi-and-render-graph)"
+kind = "recipe"
+run = "just test-unit -R rhi"
+ci_job = "render-frame"
+
+[[criterion]]
+id = "render-graph"
+describe = "passes declare reads and writes and the graph derives everything else: barriers, transient aliasing, pass scheduling, culling, async compute, parallel recording and the resource lifetime"
+source = "tasks 2.2.1 to 2.2.8, ROADMAP M3 (automatic barriers, aliasing and scheduling)"
+kind = "recipe"
+run = "just test-unit -R render_graph"
+ci_job = "render-graph"
+
+# TASK 7.3. The measurement and its control are one test rather than two builds:
+# `CompileOptions::enable_aliasing` is a compile-time option of the PLAN, so the same process can
+# derive both and compare, and the figure the plan reports is the figure the device reserves.
+[[criterion]]
+id = "aliasing"
+describe = "transient aliasing measurably reduces peak GPU memory against a no-aliasing plan, and the alias-edge ordering that makes it sound across queues is checked with it"
+source = "tasks 7.3, ROADMAP M3 (transient aliasing reduces peak GPU memory measurably)"
+kind = "recipe"
+run = "just test-integration -R render_graph_scale"
+ci_job = "render-graph"
+
+# --- The shader pipeline ------------------------------------------------------------------------------
+
+[[criterion]]
+id = "shaders"
+describe = "the compilation pipeline, permutations and specialization, reflection-driven binding, the shader library and its tiered cache, global parameters and diagnostics — all of it exercised with CY_SHADER_SLANG off, over the SPIR-V passthrough, which is the shipping path rather than a stub"
+source = "tasks 3.1 to 3.8, ROADMAP M3 (shader-system)"
+kind = "recipe"
+run = "just test-unit -R shader"
+ci_job = "shader-pipeline"
+
+# TASK 7.4. Hot reload is M2's carried-forward debt 1.4 and M3's first consumer of it: the watcher
+# reports a change only after it has held the same fingerprint for the settle period, which is what
+# stops a half-written shader being compiled.
+[[criterion]]
+id = "hot-reload"
+describe = "a shader edit reaches a built pipeline without a restart: the watcher notices, the module recompiles, and exactly the pipeline states that named the rebuilt program are invalidated"
+source = "tasks 3.5, 7.4, ROADMAP M3 (shader hot reload replaces a material's shader without a restart)"
+kind = "recipe"
+run = "just test-integration -R shader_pipeline"
+ci_job = "shader-pipeline"
+
+# --- The renderer -------------------------------------------------------------------------------------
+
+[[criterion]]
+id = "render-server"
+describe = "the handle-based render server, its scene/view/instance model and the GPU scene as a publication interface — driven directly with handles, with no ECS world and no scene tree in existence"
+source = "tasks 4.1.1, 4.1.4, ROADMAP M3 (rendering-architecture)"
+kind = "recipe"
+run = "just test-unit -R render_server"
+ci_job = "render-frame"
+
+[[criterion]]
+id = "render-extract"
+describe = "the simulation-to-render snapshot taken at M2's commit boundary, and the change detection that keeps it from walking a world that did not move"
+source = "tasks 4.1.2, ROADMAP M3"
+kind = "recipe"
+run = "just test-unit -R render_extract"
+ci_job = "render-frame"
+
+[[criterion]]
+id = "render-frame"
+describe = "the frame: the cluster grid and its light assignment, the depth prepass whose mode is derived from the feature set, the sorted draw list, and the thirteen-stage pass order in which a disabled feature is an absent pass rather than a branch"
+source = "tasks 4.3.1 to 4.3.4, ROADMAP M3 (rendering-forward-clustered)"
+kind = "recipe"
+run = "just test-unit -R render_forward"
+ci_job = "render-frame"
+
+[[criterion]]
+id = "materials"
+describe = "the core BRDF, the shading models, image-based lighting, the standard material and its fallbacks — including the assertion that the distribution integrates to one, which is what caught a GGX that was not normalised"
+source = "tasks 4.2.3, 4.2.4, 4.2.5, ROADMAP M3 (rendering-materials-and-shading)"
+kind = "recipe"
+run = "just test-unit -R material"
+ci_job = "render-frame"
+
+[[criterion]]
+id = "lighting"
+describe = "light types with physical units, the shadow atlas and its hysteresis, the directional cascades and their texel snapping, and the filtering"
+source = "tasks 4.4.1, 4.4.2, ROADMAP M3 (rendering-lighting-and-shadows)"
+kind = "recipe"
+run = "just test-unit -R render_lighting"
+ci_job = "render-frame"
+
+[[criterion]]
+id = "culling"
+describe = "spatial indexing, per-view frustum culling and LOD selection with a hysteresis band that is applied to the level being HELD rather than the level being considered"
+source = "tasks 4.4.3, ROADMAP M3 (rendering-culling-and-lod)"
+kind = "recipe"
+run = "just test-unit -R render_culling"
+ci_job = "render-frame"
+
+# --- The artefact, and the suites that photograph it --------------------------------------------------
+
+# TASKS 6.4 AND 7.6, AND THE HALF OF 7.2 A GREP CANNOT REACH. This is the criterion that runs
+# everywhere: it needs no GPU, no window and no Vulkan build, and it renders the MILESTONE'S OWN
+# FRAME — samples/03-first-light's, through cy::sample-first-light — against a device that executes
+# nothing. What it asserts is everything about a frame that is decided rather than drawn.
+[[criterion]]
+id = "render-null"
+describe = "the artefact's frame compiles and records with no GPU at all: five passes then four, one submit, the barrier batches in the recorded stream equal to the number the plan derived, and two runs producing an identical plan hash and an identical command stream"
+source = "tasks 6.4, 7.1, 7.2, 7.6, ROADMAP M3 (rendering identically through the null backend in continuous integration)"
+kind = "recipe"
+run = "just test-render -R null_frame"
+ci_job = "render-device"
+
+[[criterion]]
+id = "xr-prerequisites"
+describe = "the three deferred-scope checks tests/render/README.md has recorded since M0: two views are ONE submission of the geometry, the frame's inputs are arguments rather than a clock, and the view reaches submission through memory rather than through a re-recorded command"
+source = "tasks 6.5, 7.7, ROADMAP M3 (the XR prerequisite checks pass)"
+kind = "recipe"
+run = "just test-render -R xr_prerequisites"
+ci_job = "render-device"
+
+# ONE BUILD DIRECTORY OF ITS OWN, AND CY_RENDERER_VULKAN=ON. The default build has the backend off
+# — cmake/features.cmake, and M3 did not change that — so a criterion that needs a device has to
+# configure a tree that has one. `${CY_BUILD_DIR:+...}` keeps a developer who redirects the build
+# tree from configuring two profiles into one directory, which is m2.toml's finding E.
+[[criterion]]
+id = "conventions"
+describe = "the conventions asserted FROM THE DEVICE: the depth buffer clears to 0, near maps to 1 and far to 0 as sampled back, the nearer surface wins whichever order the two are drawn in, a scene a million units out renders bit-identically to the same scene at the origin, and the axis conventions hold against rendered output rather than only against the arithmetic"
+source = "tasks 5.1, 5.2, 5.3, 5.4, 7.5, ROADMAP M3 (camera-relative rendering and reversed-Z proven by test)"
+kind = "command"
+run = "d=\"${CY_BUILD_DIR:-build/vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine -D CY_RENDERER_VULKAN=ON && CY_BUILD_DIR=\"$d\" just test-render -R conventions"
+timeout_s = 3600
+requires = "gpu"
+reason = "this host has no graphics device, and a convention sampled back off a device cannot be sampled back off nothing"
+ci_job = "render-device"
+
+[[criterion]]
+id = "golden"
+describe = "the golden images pass on Vulkan: the artefact's frame against its committed reference with zero validation errors, the same frame a million units out against THE SAME reference file, the shadow-off control against a different one, and the null backend deriving the same frame structure the device did"
+source = "tasks 6.3, 7.1, 7.5, ROADMAP M3 (golden-image tests pass on Vulkan)"
+kind = "command"
+run = "d=\"${CY_BUILD_DIR:-build/vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine -D CY_RENDERER_VULKAN=ON && CY_BUILD_DIR=\"$d\" just test-render -R golden"
+timeout_s = 3600
+requires = "gpu"
+reason = "this host has no graphics device, and a golden image cannot be photographed without one"
+ci_job = "render-device"
+
+[[criterion]]
+id = "vulkan-frame"
+describe = "a whole frame through the graph on a real device with the validation layers AND synchronisation validation on, producing zero validation errors — because a frame that renders but trips validation is not a frame that works"
+source = "tasks 2.3.1, 2.3.3, ROADMAP M3"
+kind = "command"
+run = "d=\"${CY_BUILD_DIR:-build/vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine -D CY_RENDERER_VULKAN=ON && CY_BUILD_DIR=\"$d\" just test-smoke -R vulkan_frame"
+timeout_s = 3600
+requires = "gpu"
+reason = "this host has no graphics device; the null backend runs the same derivation and is covered by render-null above"
+ci_job = "render-device"
+
+[[criterion]]
+id = "sample-recipe"
+describe = "just run-sample first-light runs the artefact through the workflow a contributor uses, rather than only through the test that links it — on the DEFAULT build, where the null backend is what answers"
+source = "tasks 6.1, 6.2"
+kind = "recipe"
+run = "just run-sample first-light --frames 4"
+ci_job = "render-device"
+
+# --- Every profile, and the sanitizers ----------------------------------------------------------------
+
+# ONE BUILD DIRECTORY PER PROFILE, EVEN WHEN CY_BUILD_DIR IS SET — m2.toml's finding E, restated
+# because the failure it describes cost an agent an hour and would cost the next one the same.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including the render suites, which run in every profile because CY_ASSERT is compiled out of two of them and a graph invariant that was only an assertion would be no invariant at all there"
+source = "tasks 7.8"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+[[criterion]]
+id = "sanitizers-render"
+describe = "AddressSanitizer and UndefinedBehaviorSanitizer are clean over every suite M3 added, and ThreadSanitizer over the one that records a frame from several job workers at once — which is where the parallel-recording defect was found"
+source = "tasks 7.9"
+kind = "command"
+run = "for t in rhi render_graph render_ shader material; do just test-sanitize --sanitizer address,undefined --tests \"$t\" || exit 1; done && just test-sanitize --sanitizer thread --tests render_graph"
+timeout_s = 14400
+ci_job = "sanitizers"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M3's modules in the tree"
+source = "ROADMAP M3, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be
+# most satisfied.
+[[criterion]]
+id = "m4-open"
+describe = "the M4 change exists — open, or closed and archived — so the ladder continues deliberately"
+source = "tasks 7.13"
+kind = "path"
+path = "openspec/changes/**/*m4*/proposal.md"
+ci_job = "milestone-m3"

@@ -25,6 +25,10 @@ whole table.
 | [tracy](https://github.com/wolfpld/tracy) | 0.12.2 | BSD-3-Clause | `CY_PROFILING` is on | development builds only |
 | [zstd](https://github.com/facebook/zstd) | 1.5.7 | BSD-3-Clause | always | a shipped game |
 | [blake3](https://github.com/BLAKE3-team/BLAKE3) | 1.8.7 | CC0-1.0 | always | a shipped game |
+| [vulkan_headers](https://github.com/KhronosGroup/Vulkan-Headers) | 1.4.304 | Apache-2.0 | `CY_RENDERER_VULKAN` is on | a shipped game |
+| [volk](https://github.com/zeux/volk) | 1.4.304 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
+| [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.3.0 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
+| [slang](https://github.com/shader-slang/slang) | 2026.9.2 | Apache-2.0 WITH LLVM-exception | `CY_SHADER_SLANG` is on | the editor and the cooker only |
 
 ## Host prerequisites, which are not linked and not shipped
 
@@ -103,6 +107,54 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: always
 - **Linked into**: a shipped game
 - **Why integrated rather than built**: Cryptographic code is never hand-rolled, and the build graph's derivation keys need a fast tree hash. Offered under CC0-1.0, Apache-2.0 or Apache-2.0 WITH LLVM-exception and taken under CC0-1.0.
+
+### vulkan_headers 1.4.304
+
+- **Upstream**: https://github.com/KhronosGroup/Vulkan-Headers
+- **Pinned at**: `d4a196d8c84e032d27f999adcea3075517c1c97f` (`v1.4.304`)
+- **Licence**: Apache-2.0
+- **Licence text**: [`LICENSE.md`](https://github.com/KhronosGroup/Vulkan-Headers/blob/d4a196d8c84e032d27f999adcea3075517c1c97f/LICENSE.md), and
+  `LICENSE.md` at the root of the fetched source in any configured build tree
+- **Behind**: cy::rhi in src/backends/rhi/, whose types are engine-owned; no Vulkan type appears above src/backends/
+- **Included when**: `CY_RENDERER_VULKAN` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: The Khronos-published headers and the only definition of the API the Vulkan backend is written against. Headers only: the loader is resolved at run time by volk, so nothing links a Vulkan library.
+
+### volk 1.4.304
+
+- **Upstream**: https://github.com/zeux/volk
+- **Pinned at**: `0b17a763ba5643e32da1b2152f8140461b3b7345` (`1.4.304`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE.md`](https://github.com/zeux/volk/blob/0b17a763ba5643e32da1b2152f8140461b3b7345/LICENSE.md), and
+  `LICENSE.md` at the root of the fetched source in any configured build tree
+- **Behind**: cy::rhi in src/backends/rhi/vulkan/, which is the only directory that names a Vulkan symbol
+- **Included when**: `CY_RENDERER_VULKAN` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: A meta-loader: entry points are fetched per device rather than through the loader's dispatch trampoline, which removes a per-call indirection and lets the engine link no Vulkan library at all. Writing one is a generated-code maintenance task with no differentiation in it.
+
+### vma 3.3.0
+
+- **Upstream**: https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+- **Pinned at**: `1d8f600fd424278486eade7ed3e877c99f0846b1` (`v3.3.0`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE.txt`](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/1d8f600fd424278486eade7ed3e877c99f0846b1/LICENSE.txt), and
+  `LICENSE.txt` at the root of the fetched source in any configured build tree
+- **Behind**: the RHI's memory report and transient pool in src/backends/rhi/vulkan/; GPU bytes reach the engine through cy::MemoryDomain::Gpu and the shared pressure monitor, not through a second report
+- **Included when**: `CY_RENDERER_VULKAN` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Suballocation, memory-type selection, defragmentation and VK_EXT_memory_budget tracking against a device's own heaps. An allocator is not differentiating and getting memory types wrong is a class of bug that only appears on the vendor nobody tested.
+
+### slang 2026.9.2
+
+- **Upstream**: https://github.com/shader-slang/slang
+- **Pinned at**: `5ad2bcb74902fa5cf4344e9ee3dd33fa125883cb` (`v2026.9.2`)
+- **Licence**: Apache-2.0 WITH LLVM-exception
+- **Licence text**: [`LICENSE`](https://github.com/shader-slang/slang/blob/5ad2bcb74902fa5cf4344e9ee3dd33fa125883cb/LICENSE), and
+  `LICENSE` at the root of the fetched source in any configured build tree
+- **Behind**: cy::shader::ShaderCompiler in src/backends/shader/slang/, which is the only directory that names a Slang symbol; the pipeline around it consumes SPIR-V
+- **Included when**: `CY_SHADER_SLANG` is on
+- **Linked into**: the editor and the cooker only
+- **Why integrated rather than built**: The authoring language `shader-system` adopts, and the compiler that lowers it to SPIR-V. Writing a shading language is a multi-year commitment that competes directly with building the renderer; Slang supplies generics, interfaces, modules and multi-target output and is designed for exactly this use.
 
 ### clang 18.1.8
 

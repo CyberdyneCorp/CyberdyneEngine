@@ -39,6 +39,7 @@ cy_add_module(
         src/path.cpp
         src/serialization.cpp
         src/vfs.cpp
+        src/watch.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-values cy::core-jobs cy::core-reflect

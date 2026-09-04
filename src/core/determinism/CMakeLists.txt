@@ -37,7 +37,10 @@ cy_add_module(
         src/provider.cpp
         src/state_schema.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-reflect)
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-reflect
+    # core-values for cy::Name: a state field may be declared as an interned name,
+    # and what is hashed is its text rather than its index (StateEncoding).
+    PRIVATE_DEPENDENCIES cy::core-values)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
