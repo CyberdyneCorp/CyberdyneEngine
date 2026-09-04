@@ -14,6 +14,7 @@
 #include "approx.h"
 
 #include <cmath>
+#include <limits>
 
 CY_TEST_CASE("Vec3: the operations agree with their definitions") {
     const cy::Vec3 a{1.0f, 2.0f, 3.0f};
@@ -22,7 +23,7 @@ CY_TEST_CASE("Vec3: the operations agree with their definitions") {
     CY_CHECK(a + b == cy::Vec3{-3.0f, 2.5f, 5.0f});
     CY_CHECK(a - b == cy::Vec3{5.0f, 1.5f, 1.0f});
     CY_CHECK(a * 2.0f == cy::Vec3{2.0f, 4.0f, 6.0f});
-    CY_CHECK_EQ(dot(a, b), 1.0f * -4.0f + 2.0f * 0.5f + 3.0f * 2.0f);
+    CY_CHECK_EQ(dot(a, b), (1.0f * -4.0f) + (2.0f * 0.5f) + (3.0f * 2.0f));
     CY_CHECK_EQ(length_squared(cy::Vec3{3.0f, 4.0f, 0.0f}), 25.0f);
     CY_CHECK_EQ(length(cy::Vec3{3.0f, 4.0f, 0.0f}), 5.0f);
 
@@ -233,7 +234,7 @@ CY_TEST_CASE("Aabb: the empty box is the identity for growing") {
     box.grow(cy::Vec3{-1.0f, 5.0f, 0.0f});
     CY_CHECK(box.min == cy::Vec3{-1.0f, 2.0f, 0.0f});
     CY_CHECK(box.max == cy::Vec3{1.0f, 5.0f, 3.0f});
-    CY_CHECK_EQ(box.surface_area(), 2.0f * (2.0f * 3.0f + 3.0f * 3.0f + 3.0f * 2.0f));
+    CY_CHECK_EQ(box.surface_area(), 2.0f * ((2.0f * 3.0f) + (3.0f * 3.0f) + (3.0f * 2.0f)));
 }
 
 CY_TEST_CASE("Aabb: corner indexing matches the frustum's sign-mask bit order") {
@@ -340,4 +341,39 @@ CY_TEST_CASE("Color: the sRGB boundary round-trips and alpha stays linear") {
 
     CY_CHECK(cy::Color::from_srgb_hex(0x8040FF80u) == color);
     CY_CHECK_CLOSE(cy::colors::kWhite.luminance(), 1.0f, 1e-6f);
+}
+
+// `clamp` and `sign` were nested conditional operators until the lint gate asked for guards. The
+// rewrite is only equivalent if the fallthrough order survives, and the cases where that is
+// observable are the ones nobody writes down: what a NaN does, and which of the two signed zeroes
+// comes back. This case is the regression test for that rewrite, not a test of the arithmetic.
+CY_TEST_CASE("clamp and sign: the edge cases the guard form has to preserve") {
+    const cy::f32 nan = std::numeric_limits<cy::f32>::quiet_NaN();
+
+    // Ordinary behaviour first, so a failure below is read as an edge case and not as a typo.
+    CY_CHECK_EQ(cy::math::clamp(0.5f, 0.0f, 1.0f), 0.5f);
+    CY_CHECK_EQ(cy::math::clamp(-1.0f, 0.0f, 1.0f), 0.0f);
+    CY_CHECK_EQ(cy::math::clamp(2.0f, 0.0f, 1.0f), 1.0f);
+    // Exactly on a bound returns the value, not the bound: neither guard fires.
+    CY_CHECK_EQ(cy::math::clamp(0.0f, 0.0f, 1.0f), 0.0f);
+    CY_CHECK_EQ(cy::math::clamp(1.0f, 0.0f, 1.0f), 1.0f);
+    // An inverted range: the low guard is tested first, so `low` wins.
+    CY_CHECK_EQ(cy::math::clamp(0.5f, 1.0f, 0.0f), 1.0f);
+
+    // A NaN compares false against both bounds and falls through unchanged. `saturate` inherits it.
+    CY_CHECK(std::isnan(cy::math::clamp(nan, 0.0f, 1.0f)));
+    CY_CHECK(std::isnan(cy::math::saturate(nan)));
+
+    CY_CHECK_EQ(cy::math::sign(3.0f), 1.0f);
+    CY_CHECK_EQ(cy::math::sign(-3.0f), -1.0f);
+    // Both signed zeroes and a NaN reach the final return, which is 0.0f and not the input.
+    CY_CHECK_EQ(cy::math::sign(0.0f), 0.0f);
+    CY_CHECK_EQ(cy::math::sign(-0.0f), 0.0f);
+    CY_CHECK_EQ(cy::math::sign(nan), 0.0f);
+    CY_CHECK(!std::isnan(cy::math::sign(nan)));
+
+    // Both stay usable in a constant expression, which the conditional form also was: the guards
+    // are not allowed to have cost that.
+    static_assert(cy::math::clamp(2.0f, 0.0f, 1.0f) == 1.0f);
+    static_assert(cy::math::sign(-3.0f) == -1.0f);
 }

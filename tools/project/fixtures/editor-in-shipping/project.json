@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "fixture-shipping",
+    "version": "0.1.0",
+    "engine_version": "0.0.0"
+  },
+  "modules": [
+    {
+      "name": "fx-editor",
+      "path": "modules/fx-editor",
+      "layer": "editor",
+      "type": "editor",
+      "registration_level": "Editor",
+      "public_dependencies": [],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-scene",
+      "path": "modules/fx-scene",
+      "layer": "scene",
+      "type": "runtime",
+      "registration_level": "Scene",
+      "public_dependencies": [],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    }
+  ],
+  "targets": [
+    {
+      "name": "client",
+      "kind": "client",
+      "shipping": true,
+      "modules": [
+        "fx-scene",
+        "fx-editor"
+      ]
+    }
+  ]
+}

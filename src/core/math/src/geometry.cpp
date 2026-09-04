@@ -63,13 +63,13 @@ bool ray_aabb(const Ray& ray, const Aabb& box, f32 max_distance, f32& t_min, f32
 bool ray_sphere(const Ray& ray, const Sphere& sphere, f32 max_distance, f32& t) noexcept {
     const Vec3 to_center = ray.origin - sphere.center;
     const f32 projection = dot(to_center, ray.direction);
-    const f32 outside = dot(to_center, to_center) - sphere.radius * sphere.radius;
+    const f32 outside = dot(to_center, to_center) - (sphere.radius * sphere.radius);
     // Origin outside and pointing away: no root can be non-negative, and this rejects most misses
     // before the discriminant is computed.
     if (outside > 0.0f && projection > 0.0f) {
         return false;
     }
-    const f32 discriminant = projection * projection - outside;
+    const f32 discriminant = (projection * projection) - outside;
     if (discriminant < 0.0f) {
         return false;
     }
@@ -177,10 +177,10 @@ void closest_points_segment_segment(Vec3 a_start, Vec3 a_end, Vec3 b_start, Vec3
             s = math::saturate(-c / a);
         } else {
             const f32 b = dot(d1, d2);
-            const f32 denominator = a * e - b * b;
+            const f32 denominator = (a * e) - (b * b);
             // Zero denominator means the segments are parallel: any s does, so pick the start.
-            s = denominator != 0.0f ? math::saturate((b * f - c * e) / denominator) : 0.0f;
-            t = (b * s + f) / e;
+            s = denominator != 0.0f ? math::saturate(((b * f) - (c * e)) / denominator) : 0.0f;
+            t = ((b * s) + f) / e;
             // Clamping t may invalidate s, so recompute it against the clamped t.
             if (t < 0.0f) {
                 t = 0.0f;
@@ -214,7 +214,7 @@ Vec3 closest_point_on_triangle(Vec3 p, Vec3 v0, Vec3 v1, Vec3 v2) noexcept {
         return v1;
     }
 
-    const f32 vc = d1 * d4 - d3 * d2;
+    const f32 vc = (d1 * d4) - (d3 * d2);
     if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
         return v0 + ab * (d1 / (d1 - d3));
     }
@@ -226,12 +226,12 @@ Vec3 closest_point_on_triangle(Vec3 p, Vec3 v0, Vec3 v1, Vec3 v2) noexcept {
         return v2;
     }
 
-    const f32 vb = d5 * d2 - d1 * d6;
+    const f32 vb = (d5 * d2) - (d1 * d6);
     if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
         return v0 + ac * (d2 / (d2 - d6));
     }
 
-    const f32 va = d3 * d6 - d5 * d4;
+    const f32 va = (d3 * d6) - (d5 * d4);
     if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
         return v1 + (v2 - v1) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
     }
@@ -255,7 +255,7 @@ bool point_in_polygon(Vec2 point, const Vec2* vertices, usize count) noexcept {
         const Vec2 a = vertices[i];
         const Vec2 b = vertices[j];
         if ((a.y > point.y) != (b.y > point.y)) {
-            const f32 crossing_x = a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x);
+            const f32 crossing_x = a.x + ((point.y - a.y) / (b.y - a.y) * (b.x - a.x));
             if (point.x < crossing_x) {
                 inside = !inside;
             }
@@ -505,6 +505,11 @@ Expected<usize, Error> clip_polygon_by_planes(const Vec3* vertices, usize count,
     // `out_vertices` in the ordinary case; an early exit on an empty polygon can leave it in the
     // scratch buffer instead, so the copy is not dead code.
     if (source != out_vertices) {
+        // `source` is the ping-pong buffer holding the result and `out_vertices` is the
+        // destination; the guard above is exactly the test that they are not the same buffer. The
+        // check's heuristic reads `out_vertices` as a better match for the parameter named
+        // `vertices` than `source` is, which is a similarity of names and not of roles.
+        // NOLINTNEXTLINE(readability-suspicious-call-argument)
         return copy_polygon(source, current_count, out_vertices, buffer_capacity);
     }
     return current_count;
@@ -721,7 +726,7 @@ void accumulate_triangle_tangents(const Vec3* positions, const Vec2* uvs, u32 i0
     const Vec2 delta_uv1 = uvs[i1] - uvs[i0];
     const Vec2 delta_uv2 = uvs[i2] - uvs[i0];
 
-    const f32 determinant = delta_uv1.x * delta_uv2.y - delta_uv2.x * delta_uv1.y;
+    const f32 determinant = (delta_uv1.x * delta_uv2.y) - (delta_uv2.x * delta_uv1.y);
     if (std::fabs(determinant) < 1e-12f) {
         // Degenerate UVs: this triangle says nothing about the tangent frame. Skipping it is right;
         // contributing a zero would pull its vertices' accumulated tangents toward nothing.

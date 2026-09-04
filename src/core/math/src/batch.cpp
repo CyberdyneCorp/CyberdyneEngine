@@ -6,6 +6,27 @@
 // one template is what makes the two paths perform the same operations in the same order, and it is
 // why the bit-identity test in tests/test_simd.cpp is a check on the compiler and the intrinsics
 // rather than on whether two hand-written loops happen to still agree.
+//
+// THESE LOOPS ARE FOUR-WIDE EVEN WHERE THE BUILD HAS AVX2, AND THAT IS A MEASUREMENT.
+//
+// An eight-lane loop was written, tested bit-identical at every length, and measured against this
+// one in the same `-mavx2` build: 0.544 against 0.572 ns per point for `transform_points`, and
+// 0.557 against 0.518 for `transform_directions` — medians of five paired runs over 100 000 points,
+// GCC 13 at -O2. Faster at one, slower at the other, both by less than the run-to-run spread.
+//
+// The reason it is a wash is worth keeping, because it will be true of the next such loop too. This
+// moves 24 bytes per point and does nine multiply-adds on them: it is store-bound long before it is
+// arithmetic-bound, so widening the arithmetic buys nothing. And the specific trick a wide loop
+// needs — a `vpermps` to spread one point's x across four lanes — competes for the shuffle port,
+// while the four-wide loop's `vbroadcastss` reads straight from memory on a load port that this
+// loop is not saturating. Twice the width, the same throughput, one more loop shape and one more
+// tail case in the module's most alias-sensitive code.
+//
+// So `Avx2Ops` exists in simd.h, is compiled wherever the build targets AVX2, and is tested lane
+// for lane against the reference — the abstraction `core-math` asks for has its 256-bit backend —
+// and these entry points stay four-wide until a workload measures otherwise. The first arithmetic-
+// bound consumer (skinning, or culling over bounds already stored as component arrays) is where
+// that changes, and it should re-measure rather than assume in either direction.
 
 #include <cy/core/math/batch.h>
 
@@ -16,7 +37,7 @@ namespace {
 
 template <class Ops>
 void transform_points_impl(const Mat4& m, const Vec3* in, Vec3* out, usize count) noexcept {
-    using Vec = typename Ops::Vec;
+    using Vec = Ops::Vec;
 
     // The four columns are loaded once and reused for every point, which is the whole reason the
     // batch form is faster: a per-point call reloads them and cannot know they are invariant.
@@ -46,7 +67,7 @@ void transform_points_impl(const Mat4& m, const Vec3* in, Vec3* out, usize count
 
 template <class Ops>
 void transform_directions_impl(const Mat4& m, const Vec3* in, Vec3* out, usize count) noexcept {
-    using Vec = typename Ops::Vec;
+    using Vec = Ops::Vec;
 
     const Vec c0 = Ops::load(&m.columns[0].x);
     const Vec c1 = Ops::load(&m.columns[1].x);
@@ -72,7 +93,7 @@ void transform_directions_impl(const Mat4& m, const Vec3* in, Vec3* out, usize c
 
 template <class Ops>
 void cull_aabbs_impl(const Frustum& frustum, const Aabb* boxes, u8* visible, usize count) noexcept {
-    using Vec = typename Ops::Vec;
+    using Vec = Ops::Vec;
 
     // A plane is (nx, ny, nz, d) and a corner is (cx, cy, cz, 1), so the signed distance is one
     // four-wide multiply and a horizontal sum. Packing the plane constant into the fourth lane is

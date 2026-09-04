@@ -13,8 +13,10 @@ run-sample *args:
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
 
     # The first argument is the sample; everything after it belongs to the sample, not to this
-    # recipe, and is forwarded untouched. An omitted name means the milestone's own sample, so that
-    # `just run-sample --headless` and `just run-headless` say what they mean.
+    # recipe, and is forwarded untouched. An omitted name means `empty`, which is the sample that
+    # takes `--headless`, so that `just run-sample --headless` and `just run-headless` say what they
+    # mean. M1's artefact is `just run-sample headless-host`, and it is named because it has no
+    # display server to choose between and takes a different command line entirely.
     argv=(${rest})
     if [ "${#argv[@]}" -gt 0 ] && [[ "${argv[0]}" != --* ]]; then
         name="${argv[0]}"

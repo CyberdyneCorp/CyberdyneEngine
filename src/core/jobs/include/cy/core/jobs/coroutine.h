@@ -83,7 +83,7 @@ class TaskPromiseBase {
 public:
     /// Lazy: a Task does not start until it is awaited or spawned. An eager coroutine would run on
     /// the thread that created it, which is exactly the thread a caller usually wanted to keep.
-    std::suspend_always initial_suspend() noexcept { return {}; }
+    static std::suspend_always initial_suspend() noexcept { return {}; }
 
     /// Symmetric transfer into the awaiting coroutine, or the completion signal. Returning the
     /// continuation's handle rather than resuming it means the two coroutines share one stack frame
@@ -100,7 +100,7 @@ public:
     /// continuation. Handling them as an either/or keeps the signal out of the awaited path
     /// entirely.
     struct FinalAwaiter {
-        [[nodiscard]] bool await_ready() const noexcept { return false; }
+        [[nodiscard]] static bool await_ready() noexcept { return false; }
 
         template <class Promise>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> self) noexcept {
@@ -117,7 +117,7 @@ public:
         void await_resume() const noexcept {}
     };
 
-    FinalAwaiter final_suspend() noexcept { return {}; }
+    static FinalAwaiter final_suspend() noexcept { return {}; }
 
     /// Unreachable: the engine compiles with -fno-exceptions, so nothing in a coroutine body can
     /// throw. The language requires the member to exist.
@@ -230,7 +230,7 @@ public:
         Task get_return_object() noexcept {
             return Task(std::coroutine_handle<promise_type>::from_promise(*this));
         }
-        static Task get_return_object_on_allocation_failure() noexcept { return Task(); }
+        static Task get_return_object_on_allocation_failure() noexcept { return {}; }
         void return_void() noexcept {}
     };
 
@@ -265,7 +265,7 @@ public:
         struct Awaiter {
             Handle inner;
             [[nodiscard]] bool await_ready() const noexcept { return !inner || inner.done(); }
-            std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
+            std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) const noexcept {
                 inner.promise().set_continuation(awaiting);
                 return inner;
             }
@@ -275,7 +275,7 @@ public:
     }
 
 private:
-    Handle handle_{};
+    Handle handle_;
 };
 
 // --- Awaiting a job ------------------------------------------------------------------------------
@@ -304,7 +304,7 @@ public:
         desc.dependencies = &handle_;
         desc.dependency_count = 1;
         const void* address = awaiting.address();
-        desc.inline_data = &address;
+        desc.inline_data = static_cast<const void*>(&address);
         desc.inline_size = static_cast<u32>(sizeof(address));
 
         if (auto submitted = jobs_->submit(desc); submitted) {
@@ -325,7 +325,7 @@ private:
 /// `co_await await_job(jobs, handle);`
 inline JobAwaiter await_job(JobSystem& jobs, JobHandle handle,
                             Priority priority = Priority::Normal) noexcept {
-    return JobAwaiter(jobs, handle, priority);
+    return {jobs, handle, priority};
 }
 
 /// Awaiting a cancellation. Resumes when the token is cancelled; if it already is, the coroutine
@@ -352,7 +352,7 @@ private:
 
 inline CancellationAwaiter await_cancellation(JobSystem& jobs, CancellationToken token,
                                               Priority priority = Priority::Normal) noexcept {
-    return CancellationAwaiter(jobs, std::move(token), priority);
+    return {jobs, std::move(token), priority};
 }
 
 // --- Starting a coroutine from ordinary code -----------------------------------------------------

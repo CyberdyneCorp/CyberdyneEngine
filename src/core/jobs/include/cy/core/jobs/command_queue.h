@@ -53,7 +53,7 @@ public:
         /// Commands the queue holds between drains.
         u32 capacity = 1024;
         /// Bytes for arguments too large to be inline. Reset by every drain.
-        usize arena_bytes = 64 * 1024;
+        usize arena_bytes = usize{64} * 1024;
         /// Distinct command identifiers that may be registered.
         u32 max_commands = 64;
         /// Synchronous calls per frame beyond which a development build warns. One is a

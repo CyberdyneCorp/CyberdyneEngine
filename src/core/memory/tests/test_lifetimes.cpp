@@ -7,6 +7,7 @@
 #include <cy/core/memory/frame_memory.h>
 #include <cy/core/memory/lifetime.h>
 #include <cy/core/memory/ownership.h>
+#include <cy/core/memory/sanitizer.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/memory/tracking_allocator.h>
 #include <cy/core/memory/virtual_memory.h>
@@ -75,17 +76,29 @@ CY_TEST_CASE("use after reset is caught: the region carries a poison pattern") {
 
     cy::reset_frame_arena();
 
-    // Poisoning is a development-build behaviour: `core-memory-and-containers` asks for it in
-    // development builds, and writing a megabyte of pattern at every frame boundary is not
-    // something a shipping build should pay for. The test therefore checks the profile rather than
-    // asserting behaviour that was compiled out — which is the mistake that made M0's suite red in
-    // two configurations.
+    // THERE ARE TWO POISONS AND THIS CASE READS WHICHEVER ONE IS LIVE.
+    //
+    // Under AddressSanitizer the region is handed back to the tool on reset (sanitizer.h), so
+    // reading `bytes[0]` at all is the use-after-reset this requirement is about — and the tool
+    // reports it rather than the test comparing a byte. Asking the shadow is how the same claim is
+    // made without provoking the abort.
+    //
+    // Otherwise the byte pattern is the mechanism, and it is a development-build behaviour:
+    // `core-memory-and-containers` asks for it in development builds, and writing a megabyte of
+    // pattern at every frame boundary is not something a shipping build should pay for. The test
+    // checks the profile rather than asserting behaviour that was compiled out — which is the
+    // mistake that made M0's suite red in two configurations.
+    if constexpr (cy::kAddressSanitizerPresent) {
+        CY_CHECK(cy::memory_is_poisoned(bytes));
+        CY_CHECK(cy::memory_is_poisoned(bytes + 63));
+    } else {
 #if defined(CY_DEVELOPMENT)
-    CY_CHECK_EQ(bytes[0], cy::kArenaPoisonByte);
-    CY_CHECK_EQ(bytes[63], cy::kArenaPoisonByte);
+        CY_CHECK_EQ(bytes[0], cy::kArenaPoisonByte);
+        CY_CHECK_EQ(bytes[63], cy::kArenaPoisonByte);
 #else
-    CY_CHECK_EQ(bytes[0], 0x42);  // untouched: no poison outside a development build
+        CY_CHECK_EQ(bytes[0], 0x42);  // untouched: no poison outside a development build
 #endif
+    }
 }
 
 CY_TEST_CASE("a job's scratch is released on every path out of the job") {
@@ -200,18 +213,18 @@ CY_TEST_CASE("reservation is not consumption: reserved space is reported apart f
     const cy::DomainStats before = cy::domain_stats(cy::MemoryDomain::Streaming);
 
     cy::VirtualArena arena(cy::MemoryDomain::Streaming, "texture-cache");
-    CY_REQUIRE(arena.reserve(64u * 1024u * 1024u).has_value());
+    CY_REQUIRE(arena.reserve(cy::usize{64} * 1024 * 1024).has_value());
     CY_CHECK(arena.reserves_address_space());
 
     const cy::DomainStats reserved = cy::domain_stats(cy::MemoryDomain::Streaming);
-    CY_CHECK_EQ(reserved.reserved_bytes, before.reserved_bytes + 64u * 1024u * 1024u);
+    CY_CHECK_EQ(reserved.reserved_bytes, before.reserved_bytes + (cy::u64{64} * 1024 * 1024));
     CY_CHECK_EQ(reserved.live_bytes, before.live_bytes);  // reserved is NOT live
     CY_CHECK_EQ(arena.committed_bytes(), 0u);
 }
 
 CY_TEST_CASE("a cache grows without moving: pages are committed inside the reservation") {
     cy::VirtualArena arena(cy::MemoryDomain::Streaming, "grow");
-    CY_REQUIRE(arena.reserve(8u * 1024u * 1024u).has_value());
+    CY_REQUIRE(arena.reserve(cy::usize{8} * 1024 * 1024).has_value());
 
     auto* first = static_cast<cy::u8*>(arena.bump(64, 64));
     CY_REQUIRE(first != nullptr);
@@ -222,7 +235,7 @@ CY_TEST_CASE("a cache grows without moving: pages are committed inside the reser
     // Grow far past the first page. Existing pointers stay valid, because the address range was
     // reserved up front and only the backing was added.
     for (int index = 0; index < 64; ++index) {
-        CY_REQUIRE(arena.bump(64 * 1024, 64) != nullptr);
+        CY_REQUIRE(arena.bump(cy::usize{64} * 1024, 64) != nullptr);
     }
     CY_CHECK(arena.committed_bytes() > committed_after_first);
     CY_CHECK_EQ(first[0], 0x5A);

@@ -130,11 +130,10 @@ CY_TEST_CASE("a cell load reads as a sequence, and its worker is released while 
         state.steps.fetch_add(1);
 
         // Step two: the decompression, as an ordinary job. Awaiting it is the same mechanism.
-        auto decompress = jobs.submit(
-            [](const TaskContext& context, void*) noexcept {
-                state.worker_at_start.store(context.worker);
-            },
-            nullptr, "cell.decompress");
+        auto decompress =
+            jobs.submit([](const TaskContext& context,
+                           void*) noexcept { state.worker_at_start.store(context.worker); },
+                        nullptr, "cell.decompress");
         if (decompress) {
             co_await await_job(jobs, decompress.value());
         }

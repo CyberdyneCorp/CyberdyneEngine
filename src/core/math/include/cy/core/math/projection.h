@@ -71,7 +71,7 @@ struct DepthConvention {
 ///
 /// Provided so that sorting and occlusion code expresses "nearer" once rather than open-coding a
 /// `>` that reads backwards to anyone who has worked in a conventional depth engine.
-[[nodiscard]] inline constexpr bool depth_is_nearer(f32 depth_a, f32 depth_b) noexcept {
+[[nodiscard]] constexpr bool depth_is_nearer(f32 depth_a, f32 depth_b) noexcept {
     return depth_a > depth_b;
 }
 

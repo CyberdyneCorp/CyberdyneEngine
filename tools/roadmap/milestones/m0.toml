@@ -158,10 +158,18 @@ ci_job = "build-and-test"
 
 # --- What comes next ------------------------------------------------------------------------------
 
+# Amended while closing M1, and the amendment is the criterion doing what its description always
+# said. The pattern was `openspec/changes/*m1*/proposal.md`, which stops matching the moment M1 is
+# archived — `openspec archive` moves the change under `openspec/changes/archive/`, and `*` does not
+# match a path separator. So the last step of closing M1 (its task 6.11) would have turned this
+# criterion red, and with it `just roadmap-milestone m0`, and with that M1's own `m0-green`
+# criterion: the ladder could not survive its own final rung. The question the criterion asks is
+# whether the next milestone was opened deliberately, and a change that has been opened and then
+# closed answers it more strongly than one still open. `**` matches both.
 [[criterion]]
 id = "m1-open"
-describe = "the M1 change is open, so the ladder continues deliberately"
+describe = "the M1 change exists — open, or closed and archived — so the ladder continues deliberately"
 source = "tasks 5.10"
 kind = "path"
-path = "openspec/changes/*m1*/proposal.md"
+path = "openspec/changes/**/*m1*/proposal.md"
 ci_job = "milestone-m0"

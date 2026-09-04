@@ -54,7 +54,7 @@ public:
 
     [[nodiscard]] Expected<void, Error> remove(u32 id);
 
-    [[nodiscard]] bool contains(u32 id) const noexcept { return id_to_slot_.count(id) != 0; }
+    [[nodiscard]] bool contains(u32 id) const noexcept { return id_to_slot_.contains(id); }
     [[nodiscard]] usize size() const noexcept { return id_to_slot_.size(); }
     [[nodiscard]] usize cell_count() const noexcept { return cells_.size(); }
     [[nodiscard]] f32 cell_size() const noexcept { return cell_size_; }
@@ -161,7 +161,7 @@ public:
     [[nodiscard]] Expected<void, Error> remove(u32 id);
     [[nodiscard]] Expected<void, Error> update(u32 id, const Aabb& bounds);
 
-    [[nodiscard]] bool contains(u32 id) const noexcept { return id_to_node_.count(id) != 0; }
+    [[nodiscard]] bool contains(u32 id) const noexcept { return id_to_node_.contains(id); }
     [[nodiscard]] usize size() const noexcept { return id_to_node_.size(); }
     [[nodiscard]] usize node_count() const noexcept { return nodes_.size(); }
     [[nodiscard]] const Aabb& bounds() const noexcept { return root_bounds_; }

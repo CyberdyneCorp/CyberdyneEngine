@@ -28,7 +28,7 @@ namespace {
 
 /// Text is bump-allocated out of chunks. A chunk is never reallocated, so every `std::string_view`
 /// handed out stays valid; an entry longer than the chunk gets a chunk of its own.
-constexpr usize kChunkBytes = 64 * 1024;
+constexpr usize kChunkBytes = usize{64} * 1024;
 
 struct Entry {
     const char* text;
@@ -41,7 +41,7 @@ public:
         // Index 0 is the empty name, interned before anything else so that a default-constructed
         // Name resolves to "" rather than to whatever was interned first.
         entries_.push_back(Entry{"", 0});
-        index_.emplace(std::string_view{"", 0}, 0u);
+        index_.emplace(std::string_view{}, 0u);
     }
 
     u32 intern(std::string_view text, bool create) noexcept {

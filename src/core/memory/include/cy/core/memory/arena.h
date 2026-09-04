@@ -14,6 +14,9 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/allocator.h>
+#include <cy/core/memory/sanitizer.h>
+
+#include <algorithm>
 
 namespace cy {
 
@@ -38,9 +41,10 @@ public:
             return nullptr;
         }
         offset_ = aligned + size;
-        if (offset_ > high_water_) {
-            high_water_ = offset_;
-        }
+        high_water_ = std::max(high_water_, offset_);
+        // The alignment padding before this allocation stays poisoned, so a write that runs off the
+        // end of the previous one is a finding rather than a silent overlap. See sanitizer.h.
+        unpoison_memory(data_ + aligned, size);
         return data_ + aligned;
     }
 
@@ -59,11 +63,19 @@ public:
     }
 
     void adopt(u8* data, usize capacity) noexcept {
+        // The region being replaced goes back to whoever owns it unpoisoned; the new one starts
+        // wholly poisoned and is opened up a bump at a time.
+        unpoison_memory(data_, capacity_);
         data_ = data;
         capacity_ = capacity;
         offset_ = 0;
         high_water_ = 0;
+        poison_memory(data_, capacity_);
     }
+
+    /// Hand the whole region back to the program. Called before the block is returned to the
+    /// allocator underneath, which must never receive memory this one left poisoned.
+    void unpoison_all() noexcept { unpoison_memory(data_, capacity_); }
 
     [[nodiscard]] u8* data() const noexcept { return data_; }
     [[nodiscard]] usize capacity() const noexcept { return capacity_; }
@@ -76,9 +88,11 @@ public:
         return data_ != nullptr && byte >= data_ && byte < data_ + capacity_;
     }
 
-    /// Fill a range with the poison byte, in development builds only. In Profile and Shipping this
-    /// compiles to nothing: the pattern is a debugging aid, and writing a megabyte of it at every
-    /// frame boundary is not something a shipping build should pay for.
+    /// Give a range back to the region: fill it with the poison byte in development builds, and
+    /// hand it to AddressSanitizer in an instrumented one. The byte pattern is a debugging aid and
+    /// compiles to nothing in Profile and Shipping — writing a megabyte of it at every frame
+    /// boundary is not something a shipping build should pay for — while the sanitizer half is what
+    /// turns a read of reset memory into a finding.
     void poison(usize offset, usize bytes) noexcept;
 
 private:

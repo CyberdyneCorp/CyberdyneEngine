@@ -32,7 +32,7 @@ struct LayoutSolution {
     offset = solution.versions_offset + static_cast<u32>(columns.size() * sizeof(u64));
 
     solution.key_offset = round_to(offset, key_alignment);
-    offset = solution.key_offset + key_size * rows;
+    offset = solution.key_offset + (key_size * rows);
 
     for (usize index = 0; index < columns.size(); ++index) {
         offset = round_to(offset, columns[index].alignment);
@@ -79,7 +79,7 @@ Expected<ChunkLayout, Error> ChunkLayout::compute(u32 chunk_bytes, u32 key_size,
     u32 low = 1;
     u32 high = (chunk_bytes / ((row_bytes == 0) ? 1 : row_bytes)) + 1;
     while (low < high) {
-        const u32 middle = low + (high - low + 1) / 2;
+        const u32 middle = low + ((high - low + 1) / 2);
         if (solve(middle, key_size, key_alignment, columns).total <= chunk_bytes) {
             low = middle;
         } else {
@@ -105,11 +105,14 @@ Expected<ChunkLayout, Error> ChunkLayout::compute(u32 chunk_bytes, u32 key_size,
 }
 
 void ChunkView::move_row_bytes(u32 target, u32 source) noexcept {
-    const u32 key_size = layout_->key_size();
+    // The row products are computed in `usize`: they are byte offsets into a chunk, and a
+    // multiplication left in u32 that is then widened for the pointer arithmetic is the shape that
+    // silently truncates on a larger chunk than this engine currently uses.
+    const auto key_size = static_cast<usize>(layout_->key_size());
     std::memcpy(memory_ + layout_->key_offset() + (key_size * target),
                 memory_ + layout_->key_offset() + (key_size * source), key_size);
     for (u32 column = 0; column < layout_->column_count(); ++column) {
-        const u32 size = layout_->column_size(column);
+        const auto size = static_cast<usize>(layout_->column_size(column));
         const u32 base = layout_->column_offset(column);
         std::memcpy(memory_ + base + (size * target), memory_ + base + (size * source), size);
     }

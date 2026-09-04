@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <limits>
+#include <numbers>
 
 namespace cy::math {
 
@@ -25,16 +26,23 @@ namespace cy::math {
 // Spelled as `f32` because that is the engine's runtime precision (`core-math` — "Precision"). The
 // `_f64` forms exist for the places the specification names: the simulation clock, accumulated
 // time, and interchange helpers.
+//
+// The table is mixed on purpose: <numbers> names four of these and the rest are written out. The
+// four it names are taken from it, because a standard constant cannot be mistyped; the other five
+// stay as digits because deriving them (`kTwoPi = 2.0f * kPi`, `kSqrtHalf = 1.0f / kSqrt2`) would
+// make their value a consequence of an arithmetic operation rather than of a decimal this file
+// states, and `1.0f / kSqrt2` is not the correctly rounded `f32` nearest to 1/sqrt(2). Each
+// substitution below was checked to be bit-identical to the literal it replaced.
 
-inline constexpr f32 kPi = 3.14159265358979323846f;
+inline constexpr f32 kPi = std::numbers::pi_v<f32>;
 inline constexpr f32 kTwoPi = 6.28318530717958647692f;
 inline constexpr f32 kHalfPi = 1.57079632679489661923f;
 inline constexpr f32 kQuarterPi = 0.78539816339744830962f;
-inline constexpr f32 kInvPi = 0.31830988618379067154f;
-inline constexpr f32 kSqrt2 = 1.41421356237309504880f;
+inline constexpr f32 kInvPi = std::numbers::inv_pi_v<f32>;
+inline constexpr f32 kSqrt2 = std::numbers::sqrt2_v<f32>;
 inline constexpr f32 kSqrtHalf = 0.70710678118654752440f;
 
-inline constexpr f64 kPi_f64 = 3.14159265358979323846;
+inline constexpr f64 kPi_f64 = std::numbers::pi;
 inline constexpr f64 kTwoPi_f64 = 6.28318530717958647692;
 
 inline constexpr f32 kDegToRad = kPi / 180.0f;
@@ -58,12 +66,12 @@ inline constexpr f32 kInfinity = std::numeric_limits<f32>::infinity();
 // ---------------------------------------------------------------------------------------
 
 /// Degrees to radians. One of the two places in the engine that may say "degrees".
-[[nodiscard]] inline constexpr f32 radians(f32 degrees_value) noexcept {
+[[nodiscard]] constexpr f32 radians(f32 degrees_value) noexcept {
     return degrees_value * kDegToRad;
 }
 
 /// Radians to degrees, for an editor field or a log line. Never for storage.
-[[nodiscard]] inline constexpr f32 degrees(f32 radians_value) noexcept {
+[[nodiscard]] constexpr f32 degrees(f32 radians_value) noexcept {
     return radians_value * kRadToDeg;
 }
 
@@ -89,29 +97,38 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] constexpr T clamp(T value, T low, T high) noexcept {
-    return value < low ? low : (high < value ? high : value);
+    // Written as two guards rather than as nested conditionals, and in this order: a NaN `value`
+    // compares false against both bounds and falls through unchanged, which is what the previous
+    // form did and what every caller of `saturate` depends on.
+    if (value < low) {
+        return low;
+    }
+    if (high < value) {
+        return high;
+    }
+    return value;
 }
 
 /// Clamp to [0, 1]. Named for what it is used for rather than for what it does, because that is
 /// how it reads at a call site: `saturate(dot(n, l))`.
-[[nodiscard]] inline constexpr f32 saturate(f32 value) noexcept {
+[[nodiscard]] constexpr f32 saturate(f32 value) noexcept {
     return clamp(value, 0.0f, 1.0f);
 }
 
-[[nodiscard]] inline constexpr f32 lerp(f32 a, f32 b, f32 t) noexcept {
-    return a + (b - a) * t;
+[[nodiscard]] constexpr f32 lerp(f32 a, f32 b, f32 t) noexcept {
+    return a + ((b - a) * t);
 }
 
 /// The `t` that `lerp(a, b, t)` would have needed to produce `value`. Returns 0 when a == b, which
 /// is the only defensible answer: every `t` is equally correct and 0 is the one that does not
 /// depend on floating-point luck.
-[[nodiscard]] inline constexpr f32 inverse_lerp(f32 a, f32 b, f32 value) noexcept {
+[[nodiscard]] constexpr f32 inverse_lerp(f32 a, f32 b, f32 value) noexcept {
     const f32 span = b - a;
     return span == 0.0f ? 0.0f : (value - a) / span;
 }
 
-[[nodiscard]] inline constexpr f32 remap(f32 value, f32 from_low, f32 from_high, f32 to_low,
-                                         f32 to_high) noexcept {
+[[nodiscard]] constexpr f32 remap(f32 value, f32 from_low, f32 from_high, f32 to_low,
+                                  f32 to_high) noexcept {
     return lerp(to_low, to_high, inverse_lerp(from_low, from_high, value));
 }
 
@@ -126,8 +143,16 @@ template <typename T>
     return std::fabs(value) <= tolerance;
 }
 
-[[nodiscard]] inline constexpr f32 sign(f32 value) noexcept {
-    return value > 0.0f ? 1.0f : (value < 0.0f ? -1.0f : 0.0f);
+[[nodiscard]] constexpr f32 sign(f32 value) noexcept {
+    // Zero, both signed zeroes, and NaN all fall through to 0.0f, which is what the nested
+    // conditional this replaced did.
+    if (value > 0.0f) {
+        return 1.0f;
+    }
+    if (value < 0.0f) {
+        return -1.0f;
+    }
+    return 0.0f;
 }
 
 [[nodiscard]] inline bool is_finite(f32 value) noexcept {

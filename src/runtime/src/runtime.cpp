@@ -95,14 +95,15 @@ const char* startup_stage_name(StartupStage stage) {
 const Runtime::StageOps Runtime::kStages[kStartupStageCount] = {
     {StartupStage::Platform, &Runtime::enter_platform, &Runtime::leave_platform},
     {StartupStage::Core, nullptr, nullptr},
-    {StartupStage::ModulesCore, nullptr, nullptr},
+    {StartupStage::ModulesCore, &Runtime::enter_modules_core, &Runtime::leave_modules_core},
     {StartupStage::Display, &Runtime::enter_display, &Runtime::leave_display},
     {StartupStage::Servers, nullptr, nullptr},
-    {StartupStage::ModulesServers, nullptr, nullptr},
+    {StartupStage::ModulesServers, &Runtime::enter_modules_servers,
+     &Runtime::leave_modules_servers},
     {StartupStage::EcsScene, nullptr, nullptr},
-    {StartupStage::ModulesScene, nullptr, nullptr},
+    {StartupStage::ModulesScene, &Runtime::enter_modules_scene, &Runtime::leave_modules_scene},
     {StartupStage::Scripting, nullptr, nullptr},
-    {StartupStage::Editor, nullptr, nullptr},
+    {StartupStage::Editor, &Runtime::enter_modules_editor, &Runtime::leave_modules_editor},
     {StartupStage::Boot, &Runtime::enter_boot, &Runtime::leave_boot},
 };
 
@@ -244,6 +245,72 @@ void Runtime::leave_platform() {
         diag::uninstall_crash_handler();
         crash_handler_ = false;
     }
+}
+
+// --- Stages 3, 6, 8 and 10: modules at a registration level --------------------------------------
+//
+// Task 4.5. `engine-architecture` puts modules at level Core after the core subsystems and before
+// the display server, modules at Servers after the servers, modules at Scene after the world, and
+// modules at Editor last. The four stages are the same operation on four levels, so they are one
+// function called four times rather than four functions that must be kept in step.
+//
+// The order *within* a level is not decided here. cy::config::ModuleRegistry sorts by (level, name)
+// and journals what it started and stopped, so the order is the project graph's and the evidence
+// for it is a record rather than an argument. A registration that fails returns the error as this
+// stage's, and Runtime::startup() unwinds the stages below.
+
+Status Runtime::start_modules(config::ModuleLevel level) const {
+    if (config_.modules == nullptr) {
+        return ok();
+    }
+    const Status started = config_.modules->start(level);
+    if (!started) {
+        emit_diagnosticf(DiagnosticSeverity::Error, "runtime",
+                         "a module at registration level %s failed to register: %s",
+                         config::module_level_name(level), started.error().message);
+    }
+    return started;
+}
+
+void Runtime::stop_modules(config::ModuleLevel level) const {
+    if (config_.modules != nullptr) {
+        config_.modules->stop(level);
+    }
+}
+
+Status Runtime::enter_modules_core() {
+    return start_modules(config::ModuleLevel::Core);
+}
+
+void Runtime::leave_modules_core() {
+    stop_modules(config::ModuleLevel::Core);
+}
+
+Status Runtime::enter_modules_servers() {
+    return start_modules(config::ModuleLevel::Servers);
+}
+
+void Runtime::leave_modules_servers() {
+    stop_modules(config::ModuleLevel::Servers);
+}
+
+Status Runtime::enter_modules_scene() {
+    return start_modules(config::ModuleLevel::Scene);
+}
+
+void Runtime::leave_modules_scene() {
+    stop_modules(config::ModuleLevel::Scene);
+}
+
+// The Editor stage is the specification's "Editor (tools builds) and modules at level Editor". The
+// editor itself arrives at M5; the modules at that level are here now, because their position in
+// the sequence is what M1 is fixing.
+Status Runtime::enter_modules_editor() {
+    return start_modules(config::ModuleLevel::Editor);
+}
+
+void Runtime::leave_modules_editor() {
+    stop_modules(config::ModuleLevel::Editor);
 }
 
 // --- Stage 4: Display ----------------------------------------------------------------------------

@@ -28,7 +28,7 @@ struct Tracked {
     int value = 0;
 
     explicit Tracked(int initial = 0) noexcept : value(initial) {}
-    Tracked(const Tracked& other) noexcept : value(other.value) {}
+    Tracked(const Tracked&) noexcept = default;
     Tracked(Tracked&& other) noexcept : value(other.value) { ++moves; }
     Tracked& operator=(const Tracked&) noexcept = default;
     Tracked& operator=(Tracked&& other) noexcept {
@@ -236,7 +236,7 @@ CY_TEST_CASE("SparseSet stores densely behind a sparse index") {
     // The values are contiguous, which is what makes iteration linear.
     const cy::Span<int> values = set.values();
     CY_CHECK_EQ(values.size(), 3u);
-    CY_CHECK_EQ(&values[1] - &values[0], 1);
+    CY_CHECK_EQ(&values[1] - values.data(), 1);
 
     CY_CHECK(set.remove(7));
     CY_CHECK_FALSE(set.remove(7));
@@ -434,7 +434,7 @@ CY_TEST_CASE("the hash seed is randomised in development and fixed otherwise") {
 
 CY_TEST_CASE("containers allocate from the scope they were constructed in") {
     cy::ArenaAllocator arena(cy::MemoryDomain::Renderer, "batches");
-    CY_REQUIRE(arena.reserve(64 * 1024).has_value());
+    CY_REQUIRE(arena.reserve(cy::usize{64} * 1024).has_value());
 
     {
         const cy::AllocatorScope scope(arena);

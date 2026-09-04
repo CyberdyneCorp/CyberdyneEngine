@@ -94,7 +94,7 @@ CY_TEST_CASE("chunk capacity derives from the column set and is recorded") {
 
     // It is the LARGEST count that fits: one more row would not.
     const cy::u64 row_bytes = 8 + 4 + 12 + 16;
-    CY_CHECK(static_cast<cy::u64>(layout->capacity() + 1) * row_bytes > 16u * 1024u - 64u);
+    CY_CHECK(static_cast<cy::u64>(layout->capacity() + 1) * row_bytes > (16u * 1024u) - 64u);
 
     // Every column is aligned to its own requirement, and the key array comes first.
     CY_CHECK(layout->key_offset() < layout->column_offset(0));
@@ -138,7 +138,7 @@ CY_TEST_CASE("iteration is linear: a column is one contiguous span") {
     const cy::Span<cy::f32> floats = first.column_as<cy::f32>(0);
     CY_REQUIRE_EQ(floats.size(), rows);
     // Contiguous: the distance between consecutive elements is one element, with no indirection.
-    CY_CHECK_EQ(&floats[1] - &floats[0], 1);
+    CY_CHECK_EQ(&floats[1] - floats.data(), 1);
     cy::f32 sum = 0.0f;
     for (cy::f32 value : floats) {
         sum += value;

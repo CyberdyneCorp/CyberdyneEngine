@@ -155,7 +155,7 @@ public:
     template <typename T>
     void shuffle(T* first, usize count) noexcept {
         for (usize i = count; i > 1; --i) {
-            const usize j = static_cast<usize>(next_u32_below(static_cast<u32>(i)));
+            const auto j = static_cast<usize>(next_u32_below(static_cast<u32>(i)));
             T tmp = first[i - 1];
             first[i - 1] = first[j];
             first[j] = tmp;

@@ -211,8 +211,8 @@ Status CommandQueue::submit_sync(CommandId id, const void* arguments, usize argu
     }
 
     if (is_owner) {
-        if (auto status = enqueue(id, arguments, argument_bytes, result, result_bytes,
-                                  kNoCompletion);
+        if (auto status =
+                enqueue(id, arguments, argument_bytes, result, result_bytes, kNoCompletion);
             !status) {
             return status;
         }

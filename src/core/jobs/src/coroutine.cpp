@@ -50,7 +50,7 @@ struct FrameSlab {
             void* block = free_list[i];
             while (block != nullptr) {
                 void* next = nullptr;
-                std::memcpy(&next, block, sizeof(next));
+                std::memcpy(static_cast<void*>(&next), block, sizeof(next));
                 ::operator delete(block, std::nothrow);
                 g_slab_bytes.fetch_sub(kSizeClasses[i], std::memory_order_relaxed);
                 block = next;
@@ -90,7 +90,7 @@ void* coroutine_frame_allocate(usize bytes) noexcept {
     void* block = t_slab.free_list[klass];
     if (block != nullptr) {
         void* next = nullptr;
-        std::memcpy(&next, block, sizeof(next));
+        std::memcpy(static_cast<void*>(&next), block, sizeof(next));
         t_slab.free_list[klass] = next;
         return block;
     }
@@ -116,7 +116,7 @@ void coroutine_frame_free(void* frame, usize bytes) noexcept {
         return;
     }
     void* next = t_slab.free_list[klass];
-    std::memcpy(frame, &next, sizeof(next));
+    std::memcpy(frame, static_cast<const void*>(&next), sizeof(next));
     t_slab.free_list[klass] = frame;
 }
 
@@ -125,7 +125,7 @@ void resume_coroutine(const TaskContext& context, void*) noexcept {
         return;
     }
     void* address = nullptr;
-    std::memcpy(&address, context.data, sizeof(address));
+    std::memcpy(static_cast<void*>(&address), context.data, sizeof(address));
     if (address == nullptr) {
         return;
     }
@@ -158,7 +158,7 @@ Expected<JobHandle, cy::Error> spawn_coroutine(JobSystem& jobs, std::coroutine_h
     start.name = name;
     start.priority = priority;
     void* address = coroutine.address();
-    start.inline_data = &address;
+    start.inline_data = static_cast<const void*>(&address);
     start.inline_size = static_cast<u32>(sizeof(address));
 
     auto started = jobs.submit(start);
@@ -195,7 +195,7 @@ bool CancellationAwaiter::await_suspend(std::coroutine_handle<> awaiting) noexce
     continuation.dependencies = &gate_;
     continuation.dependency_count = 1;
     void* address = awaiting.address();
-    continuation.inline_data = &address;
+    continuation.inline_data = static_cast<const void*>(&address);
     continuation.inline_size = static_cast<u32>(sizeof(address));
 
     auto scheduled = jobs_->submit(continuation);

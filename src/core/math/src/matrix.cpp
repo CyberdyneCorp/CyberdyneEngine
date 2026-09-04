@@ -30,9 +30,9 @@ Mat3 Mat3::from_quat(const Quat& q) noexcept {
 
     // Each column is the image of a basis vector, which is why the transposed-looking assignment is
     // correct: column 0 is where +X goes.
-    return Mat3{{Vec3{1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy)},
-                 Vec3{2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx)},
-                 Vec3{2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy)}}};
+    return Mat3{{Vec3{1.0f - (2.0f * (yy + zz)), 2.0f * (xy + wz), 2.0f * (xz - wy)},
+                 Vec3{2.0f * (xy - wz), 1.0f - (2.0f * (xx + zz)), 2.0f * (yz + wx)},
+                 Vec3{2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - (2.0f * (xx + yy))}}};
 }
 
 Mat4 Mat4::from_quat(const Quat& q) noexcept {
@@ -94,64 +94,64 @@ Vec3 project_point(const Mat4& m, Vec3 p, f32* out_clip_w) noexcept {
 f32 determinant(const Mat4& m) noexcept {
     // Laplace expansion over the first two columns, sharing the six 2x2 minors between the four
     // 3x3 cofactors. Twice as fast as the naive expansion and no less readable once named.
-    const f32 s0 = m.at(0, 0) * m.at(1, 1) - m.at(1, 0) * m.at(0, 1);
-    const f32 s1 = m.at(0, 0) * m.at(1, 2) - m.at(1, 0) * m.at(0, 2);
-    const f32 s2 = m.at(0, 0) * m.at(1, 3) - m.at(1, 0) * m.at(0, 3);
-    const f32 s3 = m.at(0, 1) * m.at(1, 2) - m.at(1, 1) * m.at(0, 2);
-    const f32 s4 = m.at(0, 1) * m.at(1, 3) - m.at(1, 1) * m.at(0, 3);
-    const f32 s5 = m.at(0, 2) * m.at(1, 3) - m.at(1, 2) * m.at(0, 3);
+    const f32 s0 = (m.at(0, 0) * m.at(1, 1)) - (m.at(1, 0) * m.at(0, 1));
+    const f32 s1 = (m.at(0, 0) * m.at(1, 2)) - (m.at(1, 0) * m.at(0, 2));
+    const f32 s2 = (m.at(0, 0) * m.at(1, 3)) - (m.at(1, 0) * m.at(0, 3));
+    const f32 s3 = (m.at(0, 1) * m.at(1, 2)) - (m.at(1, 1) * m.at(0, 2));
+    const f32 s4 = (m.at(0, 1) * m.at(1, 3)) - (m.at(1, 1) * m.at(0, 3));
+    const f32 s5 = (m.at(0, 2) * m.at(1, 3)) - (m.at(1, 2) * m.at(0, 3));
 
-    const f32 c5 = m.at(2, 2) * m.at(3, 3) - m.at(3, 2) * m.at(2, 3);
-    const f32 c4 = m.at(2, 1) * m.at(3, 3) - m.at(3, 1) * m.at(2, 3);
-    const f32 c3 = m.at(2, 1) * m.at(3, 2) - m.at(3, 1) * m.at(2, 2);
-    const f32 c2 = m.at(2, 0) * m.at(3, 3) - m.at(3, 0) * m.at(2, 3);
-    const f32 c1 = m.at(2, 0) * m.at(3, 2) - m.at(3, 0) * m.at(2, 2);
-    const f32 c0 = m.at(2, 0) * m.at(3, 1) - m.at(3, 0) * m.at(2, 1);
+    const f32 c5 = (m.at(2, 2) * m.at(3, 3)) - (m.at(3, 2) * m.at(2, 3));
+    const f32 c4 = (m.at(2, 1) * m.at(3, 3)) - (m.at(3, 1) * m.at(2, 3));
+    const f32 c3 = (m.at(2, 1) * m.at(3, 2)) - (m.at(3, 1) * m.at(2, 2));
+    const f32 c2 = (m.at(2, 0) * m.at(3, 3)) - (m.at(3, 0) * m.at(2, 3));
+    const f32 c1 = (m.at(2, 0) * m.at(3, 2)) - (m.at(3, 0) * m.at(2, 2));
+    const f32 c0 = (m.at(2, 0) * m.at(3, 1)) - (m.at(3, 0) * m.at(2, 1));
 
-    return s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+    return (s0 * c5) - (s1 * c4) + (s2 * c3) + (s3 * c2) - (s4 * c1) + (s5 * c0);
 }
 
 Expected<Mat4, Error> inverse(const Mat4& m) noexcept {
-    const f32 s0 = m.at(0, 0) * m.at(1, 1) - m.at(1, 0) * m.at(0, 1);
-    const f32 s1 = m.at(0, 0) * m.at(1, 2) - m.at(1, 0) * m.at(0, 2);
-    const f32 s2 = m.at(0, 0) * m.at(1, 3) - m.at(1, 0) * m.at(0, 3);
-    const f32 s3 = m.at(0, 1) * m.at(1, 2) - m.at(1, 1) * m.at(0, 2);
-    const f32 s4 = m.at(0, 1) * m.at(1, 3) - m.at(1, 1) * m.at(0, 3);
-    const f32 s5 = m.at(0, 2) * m.at(1, 3) - m.at(1, 2) * m.at(0, 3);
+    const f32 s0 = (m.at(0, 0) * m.at(1, 1)) - (m.at(1, 0) * m.at(0, 1));
+    const f32 s1 = (m.at(0, 0) * m.at(1, 2)) - (m.at(1, 0) * m.at(0, 2));
+    const f32 s2 = (m.at(0, 0) * m.at(1, 3)) - (m.at(1, 0) * m.at(0, 3));
+    const f32 s3 = (m.at(0, 1) * m.at(1, 2)) - (m.at(1, 1) * m.at(0, 2));
+    const f32 s4 = (m.at(0, 1) * m.at(1, 3)) - (m.at(1, 1) * m.at(0, 3));
+    const f32 s5 = (m.at(0, 2) * m.at(1, 3)) - (m.at(1, 2) * m.at(0, 3));
 
-    const f32 c5 = m.at(2, 2) * m.at(3, 3) - m.at(3, 2) * m.at(2, 3);
-    const f32 c4 = m.at(2, 1) * m.at(3, 3) - m.at(3, 1) * m.at(2, 3);
-    const f32 c3 = m.at(2, 1) * m.at(3, 2) - m.at(3, 1) * m.at(2, 2);
-    const f32 c2 = m.at(2, 0) * m.at(3, 3) - m.at(3, 0) * m.at(2, 3);
-    const f32 c1 = m.at(2, 0) * m.at(3, 2) - m.at(3, 0) * m.at(2, 2);
-    const f32 c0 = m.at(2, 0) * m.at(3, 1) - m.at(3, 0) * m.at(2, 1);
+    const f32 c5 = (m.at(2, 2) * m.at(3, 3)) - (m.at(3, 2) * m.at(2, 3));
+    const f32 c4 = (m.at(2, 1) * m.at(3, 3)) - (m.at(3, 1) * m.at(2, 3));
+    const f32 c3 = (m.at(2, 1) * m.at(3, 2)) - (m.at(3, 1) * m.at(2, 2));
+    const f32 c2 = (m.at(2, 0) * m.at(3, 3)) - (m.at(3, 0) * m.at(2, 3));
+    const f32 c1 = (m.at(2, 0) * m.at(3, 2)) - (m.at(3, 0) * m.at(2, 2));
+    const f32 c0 = (m.at(2, 0) * m.at(3, 1)) - (m.at(3, 0) * m.at(2, 1));
 
-    const f32 det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+    const f32 det = (s0 * c5) - (s1 * c4) + (s2 * c3) + (s3 * c2) - (s4 * c1) + (s5 * c0);
     if (std::fabs(det) < kSingularDeterminant) {
         return cy::fail(ErrorCode::InvalidArgument, "inverse(Mat4): the matrix is singular");
     }
     const f32 d = 1.0f / det;
 
     Mat4 out;
-    out.at(0, 0) = (m.at(1, 1) * c5 - m.at(1, 2) * c4 + m.at(1, 3) * c3) * d;
-    out.at(0, 1) = (-m.at(0, 1) * c5 + m.at(0, 2) * c4 - m.at(0, 3) * c3) * d;
-    out.at(0, 2) = (m.at(3, 1) * s5 - m.at(3, 2) * s4 + m.at(3, 3) * s3) * d;
-    out.at(0, 3) = (-m.at(2, 1) * s5 + m.at(2, 2) * s4 - m.at(2, 3) * s3) * d;
+    out.at(0, 0) = ((m.at(1, 1) * c5) - (m.at(1, 2) * c4) + (m.at(1, 3) * c3)) * d;
+    out.at(0, 1) = ((-m.at(0, 1) * c5) + (m.at(0, 2) * c4) - (m.at(0, 3) * c3)) * d;
+    out.at(0, 2) = ((m.at(3, 1) * s5) - (m.at(3, 2) * s4) + (m.at(3, 3) * s3)) * d;
+    out.at(0, 3) = ((-m.at(2, 1) * s5) + (m.at(2, 2) * s4) - (m.at(2, 3) * s3)) * d;
 
-    out.at(1, 0) = (-m.at(1, 0) * c5 + m.at(1, 2) * c2 - m.at(1, 3) * c1) * d;
-    out.at(1, 1) = (m.at(0, 0) * c5 - m.at(0, 2) * c2 + m.at(0, 3) * c1) * d;
-    out.at(1, 2) = (-m.at(3, 0) * s5 + m.at(3, 2) * s2 - m.at(3, 3) * s1) * d;
-    out.at(1, 3) = (m.at(2, 0) * s5 - m.at(2, 2) * s2 + m.at(2, 3) * s1) * d;
+    out.at(1, 0) = ((-m.at(1, 0) * c5) + (m.at(1, 2) * c2) - (m.at(1, 3) * c1)) * d;
+    out.at(1, 1) = ((m.at(0, 0) * c5) - (m.at(0, 2) * c2) + (m.at(0, 3) * c1)) * d;
+    out.at(1, 2) = ((-m.at(3, 0) * s5) + (m.at(3, 2) * s2) - (m.at(3, 3) * s1)) * d;
+    out.at(1, 3) = ((m.at(2, 0) * s5) - (m.at(2, 2) * s2) + (m.at(2, 3) * s1)) * d;
 
-    out.at(2, 0) = (m.at(1, 0) * c4 - m.at(1, 1) * c2 + m.at(1, 3) * c0) * d;
-    out.at(2, 1) = (-m.at(0, 0) * c4 + m.at(0, 1) * c2 - m.at(0, 3) * c0) * d;
-    out.at(2, 2) = (m.at(3, 0) * s4 - m.at(3, 1) * s2 + m.at(3, 3) * s0) * d;
-    out.at(2, 3) = (-m.at(2, 0) * s4 + m.at(2, 1) * s2 - m.at(2, 3) * s0) * d;
+    out.at(2, 0) = ((m.at(1, 0) * c4) - (m.at(1, 1) * c2) + (m.at(1, 3) * c0)) * d;
+    out.at(2, 1) = ((-m.at(0, 0) * c4) + (m.at(0, 1) * c2) - (m.at(0, 3) * c0)) * d;
+    out.at(2, 2) = ((m.at(3, 0) * s4) - (m.at(3, 1) * s2) + (m.at(3, 3) * s0)) * d;
+    out.at(2, 3) = ((-m.at(2, 0) * s4) + (m.at(2, 1) * s2) - (m.at(2, 3) * s0)) * d;
 
-    out.at(3, 0) = (-m.at(1, 0) * c3 + m.at(1, 1) * c1 - m.at(1, 2) * c0) * d;
-    out.at(3, 1) = (m.at(0, 0) * c3 - m.at(0, 1) * c1 + m.at(0, 2) * c0) * d;
-    out.at(3, 2) = (-m.at(3, 0) * s3 + m.at(3, 1) * s1 - m.at(3, 2) * s0) * d;
-    out.at(3, 3) = (m.at(2, 0) * s3 - m.at(2, 1) * s1 + m.at(2, 2) * s0) * d;
+    out.at(3, 0) = ((-m.at(1, 0) * c3) + (m.at(1, 1) * c1) - (m.at(1, 2) * c0)) * d;
+    out.at(3, 1) = ((m.at(0, 0) * c3) - (m.at(0, 1) * c1) + (m.at(0, 2) * c0)) * d;
+    out.at(3, 2) = ((-m.at(3, 0) * s3) + (m.at(3, 1) * s1) - (m.at(3, 2) * s0)) * d;
+    out.at(3, 3) = ((m.at(2, 0) * s3) - (m.at(2, 1) * s1) + (m.at(2, 2) * s0)) * d;
     return out;
 }
 

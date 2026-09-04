@@ -246,9 +246,9 @@ CY_TEST_CASE("a task that runs longer than the limit is reported with its name")
     ScopedJobSystem system(config);
     CY_REQUIRE(system.started());
 
-    auto handle = system->submit(
-        [](const TaskContext&, void*) noexcept { Thread::sleep_for_ns(40'000'000); }, nullptr,
-        "deliberately-overlong");
+    auto handle =
+        system->submit([](const TaskContext&, void*) noexcept { Thread::sleep_for_ns(40'000'000); },
+                       nullptr, "deliberately-overlong");
     CY_REQUIRE(handle.has_value());
     system->wait(handle.value());
 

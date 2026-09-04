@@ -14,6 +14,16 @@
 // Componentwise multiplication is spelled `cwise_mul`, not `operator*`. `a * b` on two vectors
 // reads as a product and every reader has a different product in mind; the ones that matter (dot,
 // cross) have names.
+//
+// `operator[]` INDEXES THE MEMBERS AS AN ARRAY, AND THAT IS SUPPRESSED RATHER THAN REWRITTEN.
+// `(&x)[i]` walks the adjacent components of a type the specification requires to be exactly its
+// components and nothing else — `core-math` forbids padding `Vec3` to 16 bytes, the static_asserts
+// below hold the compiler to the size of every type here, and batch.h already reads arrays of these
+// as contiguous `f32` through memcpy. clang's `security.ArrayBound` reads `&x` as a pointer to one
+// scalar and is right about the letter of [expr.add]; the layout guarantee is what makes the
+// indexing well defined in this codebase, and there is no standard spelling that keeps the layout,
+// the aggregate-ness and the indexing at once. The suppression below is scoped to that one check
+// and to the block that contains the construct.
 
 #include <cy/core/base/assert.h>
 #include <cy/core/base/types.h>
@@ -26,6 +36,7 @@ namespace cy {
 // --- Types
 // ----------------------------------------------------------------------------------------
 
+// NOLINTBEGIN(clang-analyzer-security.ArrayBound)
 struct Vec2 {
     f32 x = 0.0f;
     f32 y = 0.0f;
@@ -88,6 +99,8 @@ struct IVec4 {
 // The density requirement, checked rather than commented. A `Vec3` that grew to 16 bytes would
 // still compile everywhere and would cost a third of the memory bandwidth of every position stream
 // in the engine, which is the kind of regression that is only ever found by profiling.
+// NOLINTEND(clang-analyzer-security.ArrayBound)
+
 static_assert(sizeof(Vec3) == 12, "Vec3 must be three floats: core-math forbids padding it to 16");
 static_assert(sizeof(Vec2) == 8);
 static_assert(sizeof(Vec4) == 16);
@@ -153,7 +166,7 @@ constexpr Vec2& operator/=(Vec2& a, f32 s) noexcept {
 }
 
 [[nodiscard]] constexpr f32 dot(Vec2 a, Vec2 b) noexcept {
-    return a.x * b.x + a.y * b.y;
+    return (a.x * b.x) + (a.y * b.y);
 }
 
 /// The 2D "cross product": the z component of the 3D cross of the two vectors lifted into the
@@ -161,7 +174,7 @@ constexpr Vec2& operator/=(Vec2& a, f32 s) noexcept {
 /// parallelogram, which is what the orientation and triangulation code in geometry.h actually asks
 /// for.
 [[nodiscard]] constexpr f32 cross(Vec2 a, Vec2 b) noexcept {
-    return a.x * b.y - a.y * b.x;
+    return (a.x * b.y) - (a.y * b.x);
 }
 
 [[nodiscard]] constexpr Vec2 cwise_mul(Vec2 a, Vec2 b) noexcept {
@@ -260,13 +273,13 @@ constexpr Vec3& operator/=(Vec3& a, f32 s) noexcept {
 }
 
 [[nodiscard]] constexpr f32 dot(Vec3 a, Vec3 b) noexcept {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
 }
 
 /// Right-handed cross product: `cross(kAxisX, kAxisY) == kAxisZ`. That identity is the handedness
 /// of the whole engine expressed in one line, and tests/test_conventions.cpp asserts it.
 [[nodiscard]] constexpr Vec3 cross(Vec3 a, Vec3 b) noexcept {
-    return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    return Vec3{(a.y * b.z) - (a.z * b.y), (a.z * b.x) - (a.x * b.z), (a.x * b.y) - (a.y * b.x)};
 }
 
 [[nodiscard]] constexpr Vec3 cwise_mul(Vec3 a, Vec3 b) noexcept {
@@ -396,7 +409,7 @@ constexpr Vec4& operator/=(Vec4& a, f32 s) noexcept {
 }
 
 [[nodiscard]] constexpr f32 dot(Vec4 a, Vec4 b) noexcept {
-    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z) + (a.w * b.w);
 }
 [[nodiscard]] constexpr f32 length_squared(Vec4 v) noexcept {
     return dot(v, v);

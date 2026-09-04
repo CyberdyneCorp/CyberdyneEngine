@@ -17,9 +17,12 @@
 // THE M0 CARRY-OVER. The trace's per-thread ring buffers are pooled for the life of the process by
 // design — a thread that exits returns its slot for the next thread rather than freeing it, so a
 // process that churns threads does not churn buffers. LeakSanitizer sees the pool as unreachable at
-// exit, because the container holding it is itself destroyed first. `src/core/memory/lsan.supp`
-// names those two frames precisely for a binary that cannot call this function, and
-// `src/core/memory/README.md` records what the two-line adoption in the trace looks like.
+// exit, because the container holding it is itself destroyed first. That module sits BELOW this one
+// in the link order — memory reports onto the trace — so it cannot call this function without
+// closing a cycle. It carries the tool half itself instead, in
+// `src/core/diagnostics/src/lifetime.h`, and declares both the slot and its ring at the allocation
+// site. Use this function everywhere the dependency is legal, because it reaches the engine's own
+// leak report as well as the tool's.
 
 #include <cy/core/base/types.h>
 

@@ -112,6 +112,11 @@ function(cy_apply_sanitizers)
         # By default UBSan prints and continues, so a CI run finds undefined behaviour and still
         # exits zero. `testing-and-quality` requires the run to fail, so the check traps instead.
         list(APPEND flags -fno-sanitize-recover=undefined)
+        # GCC defines no macro for UndefinedBehaviorSanitizer the way it does __SANITIZE_ADDRESS__,
+        # and __has_feature is Clang's. A test that must know — the crash probe, whose deliberate
+        # null store UBSan diagnoses before the hardware faults — reads this instead, so the answer
+        # comes from the build that made the decision rather than from a compiler-specific guess.
+        add_compile_definitions(CY_SANITIZE_UNDEFINED=1)
     endif()
 
     add_compile_options(${flags})

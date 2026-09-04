@@ -12,6 +12,7 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/chunk_allocator.h>
+#include <cy/core/memory/sanitizer.h>
 
 #include <type_traits>
 #include <utility>
@@ -49,10 +50,13 @@ public:
             return nullptr;
         }
         FreeNode* node = free_list_;
+        // A free block is poisoned, including the link threaded through it. See sanitizer.h.
+        unpoison_memory(node, kBlockBytes);
         free_list_ = node->next;
         ++live_;
         // Through void*: a direct reinterpret_cast between two pointer types of different
         // alignment is what -Wcast-align reports, and the block is aligned for both.
+        // NOLINTNEXTLINE(bugprone-casting-through-void)
         return static_cast<T*>(static_cast<void*>(node));
     }
 
@@ -61,10 +65,13 @@ public:
         if (object == nullptr) {
             return;
         }
+        // NOLINTNEXTLINE(bugprone-casting-through-void) — see acquire().
         auto* node = static_cast<FreeNode*>(static_cast<void*>(object));
         node->next = free_list_;
         free_list_ = node;
         --live_;
+        // Reading the block after this is a use-after-free, and now says so.
+        poison_memory(node, kBlockBytes);
     }
 
     template <class... Args>
@@ -134,6 +141,7 @@ private:
             auto* node = static_cast<FreeNode*>(slot);
             node->next = free_list_;
             free_list_ = node;
+            poison_memory(node, kBlockBytes);
         }
         return true;
     }

@@ -60,7 +60,8 @@ bool thread_holds_role(ThreadRole role) noexcept;
 /// The calling thread's worker index, or kNotAWorker off a job worker.
 WorkerIndex current_worker_index() noexcept;
 
-// --- The check ------------------------------------------------------------------------------------
+// --- The check
+// ------------------------------------------------------------------------------------
 
 /// True when the calling thread holds `required`. Otherwise records the violation — the role that
 /// was required, the role the thread actually holds, and `what` was attempted — and returns false.
@@ -91,5 +92,4 @@ void reset_thread_role_violations() noexcept;
 /// Shipping — it holds it inside sizeof() — so an assertion here would leave those two
 /// configurations counting nothing. CY_VERIFY evaluates always and checks the result where
 /// assertions are live, which is exactly the split this file's header comment describes.
-#define CY_ASSERT_THREAD_ROLE(role, what) \
-    CY_VERIFY(::cy::jobs::require_thread_role((role), (what)))
+#define CY_ASSERT_THREAD_ROLE(role, what) CY_VERIFY(::cy::jobs::require_thread_role((role), (what)))

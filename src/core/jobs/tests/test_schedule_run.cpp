@@ -81,7 +81,7 @@ void spawning_system(const SystemContext& context, void* user) noexcept {
     // applied at the stage's flush point in commit order.
     for (u64 entity = 0; entity < 4; ++entity) {
         if (context.commands != nullptr &&
-            context.commands->create_entity(context.system * 100 + entity)) {
+            context.commands->create_entity((static_cast<u64>(context.system) * 100) + entity)) {
             count->fetch_add(1);
         }
     }
@@ -162,9 +162,10 @@ CY_TEST_CASE("structural changes are deferred and applied at the flush point") {
 
     std::atomic<u32> recorded{0};
     SystemSchedule schedule;
+    const char* const names[] = {"spawn.a", "spawn.b", "spawn.c"};
     for (u32 i = 0; i < 3; ++i) {
         SystemDesc spawner;
-        spawner.name = i == 0 ? "spawn.a" : (i == 1 ? "spawn.b" : "spawn.c");
+        spawner.name = names[i];
         spawner.body = &spawning_system;
         spawner.user = &recorded;
         // Disjoint writes, so all three share a batch and record concurrently.
@@ -179,14 +180,15 @@ CY_TEST_CASE("structural changes are deferred and applied at the flush point") {
     Applied applied;
 
     CY_REQUIRE(schedule
-                   .run(system.get(), &commands,
-                        [](const StructuralCommand& command, void* user) noexcept {
-                            auto* seen = static_cast<Applied*>(user);
-                            if (seen->count < 16) {
-                                seen->entities[seen->count++] = command.entity;
-                            }
-                        },
-                        &applied)
+                   .run(
+                       system.get(), &commands,
+                       [](const StructuralCommand& command, void* user) noexcept {
+                           auto* seen = static_cast<Applied*>(user);
+                           if (seen->count < 16) {
+                               seen->entities[seen->count++] = command.entity;
+                           }
+                       },
+                       &applied)
                    .has_value());
 
     CY_CHECK_EQ(schedule.batch_count(), 1u);
@@ -196,7 +198,7 @@ CY_TEST_CASE("structural changes are deferred and applied at the flush point") {
     // Commit order is (system, partition, sequence): system 0's four spawns, then system 1's, then
     // system 2's — whichever worker happened to finish first.
     for (u32 i = 0; i < 12; ++i) {
-        const u64 expected = static_cast<u64>(i / 4) * 100 + (i % 4);
+        const u64 expected = (static_cast<u64>(i / 4) * 100) + (i % 4);
         CY_REQUIRE_EQ(applied.entities[i], expected);
     }
     CY_CHECK_EQ(commands.pending(), 0u);
@@ -233,7 +235,7 @@ CY_TEST_CASE("a stage runs its batches in order and reports what it built") {
     SystemSchedule schedule;
     std::atomic<u32> order{0};
     struct Step {
-        std::atomic<u32>* order;
+        std::atomic<u32>* order{};
         std::atomic<u32> at{0};
     };
     static Step steps[4];

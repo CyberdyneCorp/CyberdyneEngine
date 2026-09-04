@@ -112,13 +112,13 @@ struct JobSystemConfig {
     u32 fairness_quantum = 16;
 
     /// A worker inside a declared blocking region for longer than this is reported.
-    i64 blocked_worker_threshold_ns = 50'000'000;   // 50 ms
+    i64 blocked_worker_threshold_ns = 50'000'000;  // 50 ms
     /// A task running longer than this is reported. Task 3.2.8: long work is chunked or yields.
-    i64 long_task_threshold_ns = 250'000'000;       // 250 ms
+    i64 long_task_threshold_ns = 250'000'000;  // 250 ms
     /// A cancelled task still running this long after cancellation is reported.
-    i64 cancellation_grace_ns = 100'000'000;        // 100 ms
+    i64 cancellation_grace_ns = 100'000'000;  // 100 ms
     /// How often the watchdog looks. It also services timers, so this bounds a timer's resolution.
-    i64 watchdog_interval_ns = 2'000'000;           // 2 ms
+    i64 watchdog_interval_ns = 2'000'000;  // 2 ms
 
     /// Emit TaskBegin and TaskEnd onto the M0 shared trace. Off by default: a trace record per task
     /// is the right default for a profiling session and the wrong one for a benchmark.

@@ -153,7 +153,7 @@ u32 platform_install_crash_handler() noexcept {
     alternate.ss_size = sizeof(g_alternate_stack);
     ::sigaltstack(&alternate, nullptr);
 
-    struct sigaction action {};
+    struct sigaction action{};
     action.sa_flags = SA_SIGINFO | SA_ONSTACK;
     action.sa_sigaction = &handle_fault;
     ::sigemptyset(&action.sa_mask);

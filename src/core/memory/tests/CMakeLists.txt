@@ -78,6 +78,13 @@ function(cy_memory_declare_tests)
         KIND integration
         SOURCES "${cy_memory_tests_dir}/test_diagnostics.cpp"
         DEPENDENCIES cy::core-memory cy::core-diagnostics)
+
+    # TASK 2.12 IS CLOSED IN THE MODULE THAT ALLOCATES. This suite opens the shared trace, so under
+    # LeakSanitizer it used to inherit the trace's per-thread rings — pooled for the life of the
+    # process on purpose, and reported as leaked because the container holding them is destroyed
+    # before the leak check runs. src/core/diagnostics/src/lifetime.h now declares both the slot and
+    # its ring to the detector at the allocation site, so no suppression file and no LSAN_OPTIONS
+    # are needed here or in the eight other suites that open a trace.
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_memory_declare_tests)

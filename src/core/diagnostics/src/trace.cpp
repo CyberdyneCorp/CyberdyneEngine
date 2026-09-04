@@ -11,6 +11,7 @@
 #include <cy/core/diagnostics/bridge.h>
 
 #include "internal.h"
+#include "lifetime.h"
 #include "ring.h"
 #include "tracy_sink.h"
 #include "writer.h"
@@ -101,6 +102,10 @@ ThreadSlot* claim_slot(System& sys) noexcept {
     }
     slot->index = static_cast<u32>(sys.slots.size());
     sys.slots.push_back(slot);
+    // The slot outlives the thread that claimed it, and `sys` is a function-local static whose
+    // vector is destroyed before the leak detector looks. Declared for the same reason its ring is:
+    // this is pooling, and the detector should say so rather than report it every run.
+    declare_process_lifetime(slot);
     return slot;
 }
 

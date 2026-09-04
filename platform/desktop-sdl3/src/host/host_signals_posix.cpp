@@ -79,7 +79,7 @@ Status install_crash_handler(CrashHandler handler, void* user) {
     g_handler = handler;
     g_user = user;
 
-    struct sigaction action {};
+    struct sigaction action{};
     std::memset(&action, 0, sizeof(action));
     action.sa_handler = crash_signal_handler;
     ::sigemptyset(&action.sa_mask);

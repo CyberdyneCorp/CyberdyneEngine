@@ -1,7 +1,9 @@
 // The allocator interface, the concrete allocators, and the scope. Tasks 2.1 and 2.11.
 //
 // Every scenario in `core-memory-and-containers` under "Allocator interface" and "Allocator
-// propagation" has a case here, named after it.
+// propagation" has a case here, named after it, plus the "Hot paths do not reach the general heap"
+// scenario of "General heap is an integration decided by measurement" — the half of that
+// requirement that is a property of this code rather than of the benchmark in `bench/`.
 
 #include <cy/test/test.h>
 
@@ -9,12 +11,14 @@
 #include <cy/core/memory/chunk_allocator.h>
 #include <cy/core/memory/domain.h>
 #include <cy/core/memory/pool.h>
+#include <cy/core/memory/sanitizer.h>
 #include <cy/core/memory/scope.h>
 #include <cy/core/memory/slab.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/memory/tracking_allocator.h>
 
 #include <cstring>
+#include <type_traits>
 
 namespace {
 
@@ -104,7 +108,7 @@ CY_TEST_CASE("out of memory: the allocator returns null and nothing throws") {
 
 CY_TEST_CASE("per-frame scratch is freed in O(1) by resetting an offset") {
     cy::ArenaAllocator arena(cy::MemoryDomain::Frame, "frame");
-    CY_REQUIRE(arena.reserve(64 * 1024).has_value());
+    CY_REQUIRE(arena.reserve(cy::usize{64} * 1024).has_value());
 
     for (int index = 0; index < 100; ++index) {
         CY_REQUIRE(arena.bump(128, 16) != nullptr);
@@ -232,7 +236,7 @@ CY_TEST_CASE("a slab allocator chains blocks and gives them all back at once") {
 
 CY_TEST_CASE("scope attributes automatically: containers allocate where the scope says") {
     cy::ArenaAllocator renderer_arena(cy::MemoryDomain::Renderer, "renderer");
-    CY_REQUIRE(renderer_arena.reserve(64 * 1024).has_value());
+    CY_REQUIRE(renderer_arena.reserve(cy::usize{64} * 1024).has_value());
 
     CY_CHECK_EQ(cy::allocator_scope_depth(), 0u);
     CY_CHECK_EQ(cy::current_allocator().domain(), cy::MemoryDomain::Engine);
@@ -338,7 +342,202 @@ CY_TEST_CASE("a capture mode is declared rather than always on") {
         [](const cy::TrackedAllocation& allocation, void* user) noexcept {
             *static_cast<const char**>(user) = allocation.site.file;
         },
-        &recorded);
+        static_cast<void*>(&recorded));
     CY_CHECK(std::strcmp(recorded, "<unknown>") == 0);
     tracker.deallocate(block, 16);
+}
+
+// --- The two scenarios that are prose to state and awkward to check --------------------------
+//
+// The two scenarios below are the ones this file's header claims for the whole "Allocator
+// interface" and "General heap" requirements, and they are the two that are easiest to write as
+// prose and hardest to write as a check. Both are checked here by an observable difference rather
+// than by an assertion about the generated code.
+
+CY_TEST_CASE("no virtual dispatch where it matters: the fast path is not the interface") {
+    // C++ offers no trait for "this member function is not virtual", so the property is checked by
+    // a behaviour only the interface has. `Allocator::allocate` is a non-virtual wrapper that
+    // answers null for a zero-sized request before it dispatches; every concrete fast path is a
+    // different function that never sees that wrapper. A fast path routed through the interface
+    // would therefore start answering null here, and this case would fail.
+    //
+    // The wrapper is also where the alignment assertion lives, which is the second half of the same
+    // point: the checks the interface owes a generic caller are not paid by a caller that has the
+    // concrete type in hand.
+
+    cy::ArenaAllocator arena(cy::MemoryDomain::Frame, "fast-path");
+    CY_REQUIRE(arena.reserve(4096).has_value());
+    CY_CHECK(static_cast<cy::Allocator&>(arena).allocate(0, 8) == nullptr);
+    CY_CHECK(arena.bump(0, 8) != nullptr);
+
+    cy::StackAllocator stack(cy::MemoryDomain::Frame, "fast-path");
+    CY_REQUIRE(stack.reserve(4096).has_value());
+    CY_CHECK(static_cast<cy::Allocator&>(stack).allocate(0, 8) == nullptr);
+    CY_CHECK(stack.push(0, 8) != nullptr);
+
+    cy::SlabAllocator slab(cy::MemoryDomain::Frame, "fast-path", 4096);
+    CY_CHECK(static_cast<cy::Allocator&>(slab).allocate(0, 8) == nullptr);
+    CY_CHECK(slab.take(0, 8) != nullptr);
+
+    cy::PoolAllocator<Counted> pool(cy::MemoryDomain::Ecs, "fast-path", 8);
+    CY_CHECK(static_cast<cy::Allocator&>(pool).allocate(0, 8) == nullptr);
+    Counted* storage = pool.acquire();
+    CY_CHECK(storage != nullptr);
+    pool.release(storage);
+
+    cy::ChunkAllocator chunks(cy::MemoryDomain::Ecs, "fast-path", 4096, 64);
+    CY_CHECK(static_cast<cy::Allocator&>(chunks).allocate(0, 64) == nullptr);
+    void* chunk = chunks.acquire();
+    CY_CHECK(chunk != nullptr);
+    chunks.release(chunk);
+
+    // The arithmetic itself lives in a type with no virtual table at all, so a header that needs
+    // only the bump does not acquire an interface along with it.
+    static_assert(!std::is_polymorphic_v<cy::detail::BumpRegion>);
+
+    // Every concrete allocator is final, so even a call made through a reference to one of them is
+    // statically bound. `Allocator` itself is not, because a subsystem may write its own.
+    static_assert(std::is_final_v<cy::ArenaAllocator>);
+    static_assert(std::is_final_v<cy::StackAllocator>);
+    static_assert(std::is_final_v<cy::SlabAllocator>);
+    static_assert(std::is_final_v<cy::ChunkAllocator>);
+    static_assert(std::is_final_v<cy::SystemAllocator>);
+    static_assert(std::is_final_v<cy::PoolAllocator<Counted>>);
+    static_assert(!std::is_final_v<cy::Allocator>);
+}
+
+CY_TEST_CASE("hot paths do not reach the general heap") {
+    // `core-memory-and-containers` — "General heap is an integration decided by measurement":
+    // "per-frame and per-task allocation SHALL come from arenas, scratch, and pools, and general
+    // heap allocation SHALL be rare and attributable". The measurable form of that is a frame that
+    // touches the platform heap exactly zero times.
+    //
+    // Domain accounting is the instrument, because it records at the moment memory is taken FROM
+    // THE PLATFORM and nowhere else: an arena charges its reservation once, and its bumps charge
+    // nothing. `total_allocations` is monotonic, so a delta of zero over the frame body is the
+    // whole assertion, and it is the same counter a shipping build reports.
+
+    cy::ArenaAllocator frame_arena(cy::MemoryDomain::Frame, "frame");
+    CY_REQUIRE(frame_arena.reserve(cy::usize{64} * 1024).has_value());
+    cy::StackAllocator job_scratch(cy::MemoryDomain::Frame, "scratch");
+    CY_REQUIRE(job_scratch.reserve(cy::usize{64} * 1024).has_value());
+    cy::PoolAllocator<Counted> pool(cy::MemoryDomain::Ecs, "records", 64);
+    cy::ChunkAllocator chunks(cy::MemoryDomain::Ecs, "chunks", cy::usize{16} * 1024, 64);
+
+    // Warm the two allocators that take from upstream on demand, so that what the frame body
+    // measures is steady state rather than the first frame after a level load.
+    Counted* warm[64] = {};
+    for (Counted*& slot : warm) {
+        slot = pool.acquire();
+        CY_REQUIRE(slot != nullptr);
+    }
+    for (Counted* slot : warm) {
+        pool.release(slot);
+    }
+    void* warm_chunks[4] = {};
+    for (void*& slot : warm_chunks) {
+        slot = chunks.acquire();
+        CY_REQUIRE(slot != nullptr);
+    }
+    for (void* slot : warm_chunks) {
+        chunks.release(slot);
+    }
+
+    const cy::u64 before = cy::domain_stats_recursive(cy::MemoryDomain::Engine).total_allocations;
+
+    for (int frame = 0; frame < 2; ++frame) {
+        for (int index = 0; index < 200; ++index) {
+            CY_REQUIRE(frame_arena.bump(64, 16) != nullptr);
+        }
+        {
+            const cy::StackScope scope(job_scratch);
+            CY_REQUIRE(job_scratch.push(4096, 64) != nullptr);
+        }
+        for (Counted*& slot : warm) {
+            slot = pool.acquire();
+            CY_REQUIRE(slot != nullptr);
+        }
+        for (Counted* slot : warm) {
+            pool.release(slot);
+        }
+        for (void*& slot : warm_chunks) {
+            slot = chunks.acquire();
+            CY_REQUIRE(slot != nullptr);
+        }
+        for (void* slot : warm_chunks) {
+            chunks.release(slot);
+        }
+        frame_arena.reset();
+    }
+
+    const cy::u64 after = cy::domain_stats_recursive(cy::MemoryDomain::Engine).total_allocations;
+    CY_CHECK_EQ(after, before);
+}
+
+CY_TEST_CASE("sanitiser build: the allocators route through AddressSanitizer's interface") {
+    // `core-memory-and-containers` — "Memory diagnostics", scenario "Sanitiser build". An arena
+    // carves one heap block, so without this the tool sees one valid object and a write off the end
+    // of a bump allocation is not a finding. The check is on the shadow state rather than on a
+    // crash: asking `memory_is_poisoned` costs nothing and does not need a second process.
+    //
+    // In a build without the instrumentation there is no shadow to read, every answer is `false`,
+    // and this case asserts only that the calls compile and are harmless — which is the other half
+    // of the contract, since the poisoning sits on the hot paths of five allocators.
+
+    cy::ArenaAllocator arena(cy::MemoryDomain::Frame, "poison");
+    CY_REQUIRE(arena.reserve(4096).has_value());
+    auto* first = static_cast<cy::u8*>(arena.bump(16, 16));
+    CY_REQUIRE(first != nullptr);
+    auto* second = static_cast<cy::u8*>(arena.bump(16, 64));  // forces alignment padding between
+    CY_REQUIRE(second != nullptr);
+    CY_REQUIRE(second > first + 16);
+
+    cy::PoolAllocator<Counted> pool(cy::MemoryDomain::Ecs, "poison", 8);
+    Counted* block = pool.acquire();
+    CY_REQUIRE(block != nullptr);
+
+    cy::ChunkAllocator chunks(cy::MemoryDomain::Ecs, "poison", 4096, 64);
+    void* chunk = chunks.acquire();
+    CY_REQUIRE(chunk != nullptr);
+
+    if constexpr (!cy::kAddressSanitizerPresent) {
+        // Nothing to observe. Writing through the pointers is the assertion that the calls above
+        // did not poison anything in a build with no shadow memory to poison.
+        *first = 1;
+        *second = 2;
+        pool.release(block);
+        chunks.release(chunk);
+        CY_CHECK_FALSE(cy::memory_is_poisoned(first));
+        return;
+    }
+
+    // What was handed out is readable; the untouched tail of the arena is not.
+    CY_CHECK_FALSE(cy::memory_is_poisoned(first));
+    CY_CHECK_FALSE(cy::memory_is_poisoned(second));
+    CY_CHECK(cy::memory_is_poisoned(second + 16));
+
+    // The alignment padding between two allocations is poisoned, which is what makes a write off
+    // the end of `first` a finding rather than an overlap with its neighbour.
+    CY_CHECK(cy::memory_is_poisoned(second - 8));
+
+    // A reset takes the whole region back.
+    arena.reset();
+    CY_CHECK(cy::memory_is_poisoned(first));
+    CY_CHECK(cy::memory_is_poisoned(second));
+
+    // A pool block and a chunk are poisoned when they go back on their free lists, and readable
+    // again when they are handed out.
+    CY_CHECK_FALSE(cy::memory_is_poisoned(block));
+    pool.release(block);
+    CY_CHECK(cy::memory_is_poisoned(block));
+    CY_CHECK_EQ(pool.acquire(), block);
+    CY_CHECK_FALSE(cy::memory_is_poisoned(block));
+    pool.release(block);
+
+    CY_CHECK_FALSE(cy::memory_is_poisoned(chunk));
+    chunks.release(chunk);
+    CY_CHECK(cy::memory_is_poisoned(chunk));
+    CY_CHECK_EQ(chunks.acquire(), chunk);
+    CY_CHECK_FALSE(cy::memory_is_poisoned(chunk));
+    chunks.release(chunk);
 }

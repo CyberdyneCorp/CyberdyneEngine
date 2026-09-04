@@ -24,6 +24,10 @@
 #                 way an acceleration structure is ever wrong.
 #   math_random   measures a distribution. A hundred thousand samples is what makes the mean and
 #                 variance assertions meaningful rather than decorative.
+#   math_geometry checks the hull, the Delaunay triangulation and the booleans against their
+#                 defining properties over hundreds of random shapes. The properties are what
+#                 distinguish a correct answer from a plausible one, and they only bite on a corpus
+#                 nobody would draw by hand.
 
 # This directory's path travels to the deferred call in a global property. Neither an ordinary
 # variable nor a deferred-call argument survives the trip: the call runs in the top-level scope,
@@ -62,7 +66,14 @@ function(cy_math_declare_tests)
             "${cy_math_tests_dir}/test_conventions.cpp"
             "${cy_math_tests_dir}/test_curves.cpp"
             "${cy_math_tests_dir}/test_geometry.cpp"
+            "${cy_math_tests_dir}/test_polygon_ops.cpp"
             "${cy_math_tests_dir}/test_types.cpp"
+        DEPENDENCIES cy::core-math)
+
+    cy_add_test(
+        NAME math_geometry
+        KIND integration
+        SOURCES "${cy_math_tests_dir}/test_geometry_property.cpp"
         DEPENDENCIES cy::core-math)
 
     cy_add_test(

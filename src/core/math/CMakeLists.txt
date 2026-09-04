@@ -20,9 +20,13 @@ cy_add_module(
         src/bvh.cpp
         src/color.cpp
         src/curve.cpp
+        src/delaunay.cpp
         src/easing.cpp
         src/geometry.cpp
+        src/hull3d.cpp
         src/matrix.cpp
+        src/polygon_boolean.cpp
+        src/polygon_offset.cpp
         src/projection.cpp
         src/quat.cpp
         src/random.cpp

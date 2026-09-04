@@ -142,9 +142,8 @@ bool SystemAccessGuard::check(AccessDomain domain, u32 id, Access requested) con
     if (access_ != nullptr && access_->find(domain, id, declared)) {
         // A writer may read what it writes; a reader may not write what it reads. Exclude declares
         // no data access at all, so any data access under it is undeclared.
-        const bool permitted = declared == Access::Write
-                                   ? requested != Access::Exclude
-                                   : declared == requested;
+        const bool permitted =
+            declared == Access::Write ? requested != Access::Exclude : declared == requested;
         if (permitted) {
             return true;
         }

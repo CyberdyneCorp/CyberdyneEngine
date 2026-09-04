@@ -200,6 +200,8 @@ CY_TEST_CASE("Callable: equality is identity, so a connection can be found again
     const cy::Var bound[] = {cy::Var::from_int(1)};
     const cy::Callable first_binding = cy::Callable::bind(a, {bound, 1});
     const cy::Callable second_binding = cy::Callable::bind(a, {bound, 1});
+    // The copy is the subject: a reference would compare a binding with itself.
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     const cy::Callable copy = first_binding;
     CY_CHECK(first_binding != second_binding);  // two separate bindings, not one
     CY_CHECK(first_binding == copy);

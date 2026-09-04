@@ -2,6 +2,7 @@
 
 #include <cy/core/jobs/scratch.h>
 
+#include <algorithm>
 #include <cstring>
 #include <new>
 #include <utility>
@@ -89,9 +90,7 @@ void* ScratchArena::allocate(usize bytes, usize alignment) noexcept {
 
     u8* result = block_ + aligned;
     used_ = aligned + bytes;
-    if (used_ > high_water_) {
-        high_water_ = used_;
-    }
+    high_water_ = std::max(used_, high_water_);
     return result;
 }
 

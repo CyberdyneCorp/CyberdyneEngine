@@ -46,7 +46,7 @@ struct Color {
     /// Rec. 709 luminance of the linear colour. The coefficients are the ones the engine's colour
     /// primaries imply; they are not a stylistic choice.
     [[nodiscard]] constexpr f32 luminance() const noexcept {
-        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+        return (0.2126f * r) + (0.7152f * g) + (0.0722f * b);
     }
 
     [[nodiscard]] constexpr Color with_alpha(f32 alpha) const noexcept {

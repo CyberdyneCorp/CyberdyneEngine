@@ -24,7 +24,7 @@ constexpr f32 kOffset = 0.055f;
 [[nodiscard]] u8 to_byte(f32 value) noexcept {
     // Round to nearest rather than truncate: truncation loses a full level on every channel and
     // makes a round trip through 8 bits drift downward.
-    const f32 scaled = math::saturate(value) * 255.0f + 0.5f;
+    const f32 scaled = (math::saturate(value) * 255.0f) + 0.5f;
     return static_cast<u8>(scaled);
 }
 
@@ -41,7 +41,7 @@ f32 linear_to_srgb(f32 linear) noexcept {
     if (linear <= kLinearBreak) {
         return linear * kLinearSlope;
     }
-    return (1.0f + kOffset) * std::pow(linear, 1.0f / kGamma) - kOffset;
+    return ((1.0f + kOffset) * std::pow(linear, 1.0f / kGamma)) - kOffset;
 }
 
 Color Color::from_srgb8(u8 red, u8 green, u8 blue, u8 alpha) noexcept {

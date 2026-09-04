@@ -95,10 +95,10 @@ private:
 
 /// A GPU fence, or any other completion a backend notifies rather than one the engine polls.
 ///
-/// `handle()` is a gated job: everything that needs the fence depends on it, and `signal()` — called
-/// from the driver's completion notification, from any thread — releases it. There is no wait here
-/// on purpose. A worker that needs a GPU result awaits the handle, which suspends a coroutine or
-/// schedules a continuation; it never spins and never blocks.
+/// `handle()` is a gated job: everything that needs the fence depends on it, and `signal()` —
+/// called from the driver's completion notification, from any thread — releases it. There is no
+/// wait here on purpose. A worker that needs a GPU result awaits the handle, which suspends a
+/// coroutine or schedules a continuation; it never spins and never blocks.
 class FenceSignal {
 public:
     FenceSignal() noexcept = default;

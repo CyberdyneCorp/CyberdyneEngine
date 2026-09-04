@@ -82,13 +82,13 @@ Vec3 Quat::to_euler_yxz() const noexcept {
     // Read off the rotation matrix entries the YXZ order determines. With R = Ry·Rx·Rz:
     //   m12 = -sin(pitch), m10 = cos(pitch)·sin(roll), m11 = cos(pitch)·cos(roll),
     //   m02 = sin(yaw)·cos(pitch), m22 = cos(yaw)·cos(pitch).
-    const f32 m10 = 2.0f * (x * y + w * z);
-    const f32 m11 = 1.0f - 2.0f * (x * x + z * z);
-    const f32 m12 = 2.0f * (y * z - w * x);
-    const f32 m02 = 2.0f * (x * z + w * y);
-    const f32 m22 = 1.0f - 2.0f * (x * x + y * y);
-    const f32 m00 = 1.0f - 2.0f * (y * y + z * z);
-    const f32 m01 = 2.0f * (x * y - w * z);
+    const f32 m10 = 2.0f * ((x * y) + (w * z));
+    const f32 m11 = 1.0f - (2.0f * ((x * x) + (z * z)));
+    const f32 m12 = 2.0f * ((y * z) - (w * x));
+    const f32 m02 = 2.0f * ((x * z) + (w * y));
+    const f32 m22 = 1.0f - (2.0f * ((x * x) + (y * y)));
+    const f32 m00 = 1.0f - (2.0f * ((y * y) + (z * z)));
+    const f32 m01 = 2.0f * ((x * y) - (w * z));
 
     const f32 sin_pitch = math::clamp(-m12, -1.0f, 1.0f);
     const f32 pitch = std::asin(sin_pitch);
@@ -106,7 +106,7 @@ void Quat::to_axis_angle(Vec3& axis, f32& angle_radians) const noexcept {
     const Quat q = normalize(*this);
     const f32 clamped_w = math::clamp(q.w, -1.0f, 1.0f);
     angle_radians = 2.0f * std::acos(clamped_w);
-    const f32 sin_half = std::sqrt(math::max(0.0f, 1.0f - clamped_w * clamped_w));
+    const f32 sin_half = std::sqrt(math::max(0.0f, 1.0f - (clamped_w * clamped_w)));
     if (sin_half < math::kSmallLength) {
         // The identity, or as close as makes no difference. There is no axis, so return a valid
         // one rather than a zero vector a caller would go on to normalise.

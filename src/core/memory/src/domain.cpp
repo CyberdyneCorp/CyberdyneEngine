@@ -152,6 +152,9 @@ DomainStats domain_stats_recursive(MemoryDomain domain) noexcept {
     // structure that would avoid it, and it cannot go stale when a domain is added.
     for (u32 index = 0; index < kMemoryDomainCount; ++index) {
         const auto candidate = static_cast<MemoryDomain>(index);
+        // The argument order is deliberate and is the question being asked: is this candidate
+        // inside the domain being reported.
+        // NOLINTNEXTLINE(readability-suspicious-call-argument)
         if (!domain_is_within(candidate, domain)) {
             continue;
         }

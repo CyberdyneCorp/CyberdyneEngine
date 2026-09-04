@@ -29,8 +29,8 @@ namespace cy {
 /// The sizes each thread's arenas are created with. Set before the threads start; a thread that has
 /// already created its arenas keeps the size it was given.
 struct FrameMemoryConfig {
-    usize frame_bytes = 2u * 1024u * 1024u;
-    usize scratch_bytes = 256u * 1024u;
+    usize frame_bytes = usize{2} * 1024 * 1024;
+    usize scratch_bytes = usize{256} * 1024;
 };
 
 void configure_frame_memory(const FrameMemoryConfig& config) noexcept;

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "fixture-private-leak",
+    "version": "0.1.0",
+    "engine_version": "0.0.0"
+  },
+  "modules": [
+    {
+      "name": "fx-core",
+      "path": "modules/fx-core",
+      "layer": "core",
+      "type": "runtime",
+      "registration_level": "Core",
+      "public_dependencies": [],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-scene",
+      "path": "modules/fx-scene",
+      "layer": "scene",
+      "type": "runtime",
+      "registration_level": "Scene",
+      "public_dependencies": [],
+      "private_dependencies": [
+        "fx-core"
+      ],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    }
+  ]
+}

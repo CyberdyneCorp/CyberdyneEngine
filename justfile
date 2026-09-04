@@ -57,6 +57,33 @@ profile | Profile     | off | off | profiling   | -O2 -g
 release | Shipping    | off | off | shipping    | -O3
 '
 
+# --- The LLVM tooling pin -------------------------------------------------------------------------
+#
+# `developer-workflow-and-just` requires the workflow to "pin the versions of the toolchains it
+# depends on", to "detect when the local environment does not match", and requires continuous
+# integration to "use the same pinned versions as developers". clang-format and clang-tidy are
+# toolchains by that definition: they decide whether a change merges.
+#
+# They have to be pinned because two versions do not agree, and the disagreement is measured rather
+# than assumed:
+#
+#   * clang-format 18.1.8 and 22.1.8 disagree about three sites in this tree — `struct sigaction
+#     action {}` against `action{}`, and `IntrusiveNode T::*Member` against `T::* Member` — and the
+#     disagreement has no fixed point: each version rewrites the other's output back. There is no
+#     spelling of those lines that satisfies both, so a formatting gate is a version check.
+#   * clang-tidy 18.1.3 reports two `bugprone-multi-level-implicit-pointer-conversion` findings in
+#     src/core/values/src/var.cpp that 22.1.8 does not report at all, and 22 reports whole checks 18
+#     has never had. Over src/core/math/ the same tree measured 404 findings under 22 and 41 under
+#     18. A lint gate run at an unpinned version means a different thing on every machine.
+#
+# One version, everywhere: `llvm_pin_version` is what continuous integration installs and what
+# `just env-doctor` requires, and `llvm_pin` is the major the recipes enforce. The tools are taken
+# from PyPI because that is the one source that gives the same build on Linux, macOS and Windows
+# without root; a distribution package of the same major is accepted too, and the recipes look for
+# `<tool>-22` and /usr/lib/llvm-22/bin/ before falling back to the unversioned name on PATH.
+llvm_pin := '22'
+llvm_pin_version := '22.1.8'
+
 # The repository root. `just` 1.21 runs a recipe in the directory of the file that *defines* it, so
 # a recipe in just/ starts in just/ rather than at the root. Every recipe that touches the tree
 # begins `cd "{{root}}"`; a recipe that forgets will fail loudly on the first path it uses.

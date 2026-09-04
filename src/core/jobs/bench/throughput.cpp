@@ -62,7 +62,7 @@ constexpr u32 kRepeats = 7;
 u64 work_unit(u64 seed) noexcept {
     u64 value = seed | 1;
     for (u64 i = 0; i < kWorkIterations; ++i) {
-        value = value * 6364136223846793005ull + 1442695040888963407ull;
+        value = (value * 6364136223846793005ull) + 1442695040888963407ull;
         value ^= value >> 29;
     }
     return value;
@@ -239,14 +239,21 @@ char* read_file(const char* path) noexcept {
         std::fclose(file);
         return nullptr;
     }
-    auto* buffer = static_cast<char*>(std::malloc(static_cast<usize>(size) + 1));
+    // calloc rather than malloc, for the extra byte: the buffer arrives zero-filled, so a short
+    // read is already terminated and there is no indexed write to terminate it with. That is one
+    // fewer bound to reason about — the alternative spells `buffer[read] = 0`, whose index the
+    // reader, and the static analyser, must derive from fread's contract.
+    auto* buffer = static_cast<char*>(std::calloc(static_cast<usize>(size) + 1, 1));
     if (buffer == nullptr) {
         std::fclose(file);
         return nullptr;
     }
     const usize read = std::fread(buffer, 1, static_cast<usize>(size), file);
-    buffer[read] = '\0';
     std::fclose(file);
+    if (read == 0) {
+        std::free(buffer);
+        return nullptr;
+    }
     return buffer;
 }
 
@@ -256,18 +263,19 @@ int write_thresholds(const char* path, const Metric* metrics, u32 count, f64 cal
         std::fprintf(stderr, "throughput: could not write %s\n", path);
         return 2;
     }
-    std::fprintf(file,
-                 "{\n"
-                 "  \"note\": \"Thresholds for the job system's throughput benchmark (task "
-                 "3.2.12). Every metric is dimensionless so that it survives being run on a "
-                 "different machine: a speedup, or a cost in units of the calibration workload "
-                 "measured in the same process. A speedup must not fall below its threshold; a cost "
-                 "must not rise above it. Rewritten by `just test-bench-jobs --record`, which is a "
-                 "reviewed step: a threshold a failing run could rewrite for itself would gate "
-                 "nothing.\",\n"
-                 "  \"calibration_ns_per_unit_when_recorded\": %.4f,\n"
-                 "  \"metrics\": {\n",
-                 calibration);
+    std::fprintf(
+        file,
+        "{\n"
+        "  \"note\": \"Thresholds for the job system's throughput benchmark (task "
+        "3.2.12). Every metric is dimensionless so that it survives being run on a "
+        "different machine: a speedup, or a cost in units of the calibration workload "
+        "measured in the same process. A speedup must not fall below its threshold; a cost "
+        "must not rise above it. Rewritten by `just test-bench-jobs --record`, which is a "
+        "reviewed step: a threshold a failing run could rewrite for itself would gate "
+        "nothing.\",\n"
+        "  \"calibration_ns_per_unit_when_recorded\": %.4f,\n"
+        "  \"metrics\": {\n",
+        calibration);
     for (u32 i = 0; i < count; ++i) {
         // The threshold is the measurement moved by the metric's own margin, so that ordinary
         // run-to-run noise on a shared runner is not a failure while a real regression still is.
@@ -343,8 +351,8 @@ int main(int argc, char** argv) {
         {"jobs/parallel-efficiency", true, 0.70, (serial / parallel) / scale, 0.0, false},
         {"jobs/parallel-for-efficiency", true, 0.70, (serial / parallel_for) / scale, 0.0, false},
         {"jobs/dispatch-overhead", false, 1.50, dispatch / calibration, 0.0, false},
-        {"jobs/scheduling-allocations", false, 0.0,
-         static_cast<f64>(stats.scheduling_allocations), 0.0, false},
+        {"jobs/scheduling-allocations", false, 0.0, static_cast<f64>(stats.scheduling_allocations),
+         0.0, false},
     };
     constexpr u32 kMetricCount = sizeof(metrics) / sizeof(metrics[0]);
 
@@ -376,15 +384,14 @@ int main(int argc, char** argv) {
                      path);
         return 1;
     }
-    for (u32 i = 0; i < kMetricCount; ++i) {
-        metrics[i].have_threshold = read_number(text, metrics[i].name, metrics[i].threshold);
+    for (auto& metric : metrics) {
+        metric.have_threshold = read_number(text, metric.name, metric.threshold);
     }
     std::free(text);
 
     int status = 0;
     std::printf("\nthresholds  %s\n", path);
-    for (u32 i = 0; i < kMetricCount; ++i) {
-        const Metric& metric = metrics[i];
+    for (const auto& metric : metrics) {
         if (!metric.have_threshold) {
             std::fprintf(stderr, "  %-26s %.4f — no threshold recorded\n", metric.name,
                          metric.measured);

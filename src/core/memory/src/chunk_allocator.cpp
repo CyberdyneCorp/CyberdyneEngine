@@ -15,10 +15,13 @@ ChunkAllocator::ChunkAllocator(MemoryDomain domain, AllocationTag tag, usize chu
 
 ChunkAllocator::~ChunkAllocator() {
     for (u32 index = 0; index < committed_; ++index) {
+        // A chunk on the free list is poisoned; upstream must not be handed it that way.
+        unpoison_memory(chunks_[index], chunk_bytes_);
         upstream().deallocate(chunks_[index], chunk_bytes_, chunk_alignment_);
     }
     if (chunks_ != nullptr) {
-        upstream().deallocate(chunks_, kMaxChunksPerAllocator * sizeof(void*), alignof(void*));
+        upstream().deallocate(static_cast<void*>(chunks_), kMaxChunksPerAllocator * sizeof(void*),
+                              alignof(void*));
         chunks_ = nullptr;
     }
     committed_ = 0;
@@ -53,6 +56,7 @@ void ChunkAllocator::set_upstream(Allocator& source) noexcept {
 void* ChunkAllocator::acquire() noexcept {
     if (free_list_ != nullptr) {
         FreeNode* node = free_list_;
+        unpoison_memory(node, chunk_bytes_);  // the link is inside the poisoned chunk
         free_list_ = node->next;
         --free_count_;
         return node;
@@ -76,6 +80,7 @@ void ChunkAllocator::release(void* chunk) noexcept {
     node->next = free_list_;
     free_list_ = node;
     ++free_count_;
+    poison_memory(node, chunk_bytes_);
 }
 
 usize ChunkAllocator::trim() noexcept {
@@ -86,6 +91,7 @@ usize ChunkAllocator::trim() noexcept {
     usize released = 0;
     while (free_list_ != nullptr) {
         FreeNode* node = free_list_;
+        unpoison_memory(node, chunk_bytes_);
         free_list_ = node->next;
         --free_count_;
 

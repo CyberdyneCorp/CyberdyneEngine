@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "project": { "name": "fixture-malformed", "version": "0.1.0", "engine_version": "0.0.0" },
+  "modules": [
+}

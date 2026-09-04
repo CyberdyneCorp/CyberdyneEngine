@@ -81,14 +81,14 @@ Vec2 Transform2D::transform_point(Vec2 p) const noexcept {
     const f32 c = std::cos(rotation_radians);
     const f32 s = std::sin(rotation_radians);
     const Vec2 scaled = cwise_mul(scale, p);
-    return translation + Vec2{scaled.x * c - scaled.y * s, scaled.x * s + scaled.y * c};
+    return translation + Vec2{(scaled.x * c) - (scaled.y * s), (scaled.x * s) + (scaled.y * c)};
 }
 
 Vec2 Transform2D::transform_vector(Vec2 v) const noexcept {
     const f32 c = std::cos(rotation_radians);
     const f32 s = std::sin(rotation_radians);
     const Vec2 scaled = cwise_mul(scale, v);
-    return Vec2{scaled.x * c - scaled.y * s, scaled.x * s + scaled.y * c};
+    return Vec2{(scaled.x * c) - (scaled.y * s), (scaled.x * s) + (scaled.y * c)};
 }
 
 Mat3 Transform2D::to_matrix() const noexcept {
@@ -123,7 +123,7 @@ Transform2D interpolate(const Transform2D& a, const Transform2D& b, f32 t) noexc
     // round rather than sweeping backwards through the whole circle. `Quat` slerp does the
     // equivalent by choosing the nearer hemisphere; this is the scalar version of the same rule.
     const f32 delta = math::wrap_angle(b.rotation_radians - a.rotation_radians);
-    out.rotation_radians = a.rotation_radians + delta * t;
+    out.rotation_radians = a.rotation_radians + (delta * t);
     out.translation = lerp(a.translation, b.translation, t);
     out.scale = lerp(a.scale, b.scale, t);
     return out;

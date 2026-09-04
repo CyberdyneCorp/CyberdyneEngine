@@ -53,6 +53,9 @@ inline constexpr usize kDefaultAlignment = alignof(std::max_align_t);
     const auto address = reinterpret_cast<std::uintptr_t>(pointer);
     const auto aligned =
         static_cast<std::uintptr_t>(align_up(static_cast<usize>(address), alignment));
+    // The round trip through uintptr_t is what the standard defines for arithmetic on an address,
+    // and the result is the same object the caller passed in, moved forward.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<void*>(aligned);
 }
 

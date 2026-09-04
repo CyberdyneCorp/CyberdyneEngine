@@ -53,7 +53,11 @@ CY_TEST_CASE("Curve: linear tangents produce a straight line between keys") {
     cy::Curve curve;
     curve.add_key(cy::CurveKey{0.0f, 0.0f, 1.0f, 1.0f});
     curve.add_key(cy::CurveKey{2.0f, 2.0f, 1.0f, 1.0f});
-    for (cy::f32 t = 0.0f; t <= 2.0f; t += 0.25f) {
+    // Stepped by an integer and multiplied, rather than accumulated in f32: the accumulating form
+    // reaches the loop bound by luck, and whether the last sample is taken at all depends on the
+    // rounding of the increment.
+    for (cy::u32 step = 0; step <= 8; ++step) {
+        const cy::f32 t = static_cast<cy::f32>(step) * 0.25f;
         CY_REQUIRE(cy::math::nearly_equal(curve.evaluate(t), t, 1e-5f));
         CY_REQUIRE(cy::math::nearly_equal(curve.derivative(t), 1.0f, 1e-4f));
     }
@@ -226,7 +230,11 @@ CY_TEST_CASE("Easing: the four modes are reflections of one family") {
     // somebody replacing the generic reflection with a hand-written table.
     for (cy::u32 kind = 0; kind < static_cast<cy::u32>(cy::ease::Kind::kCount); ++kind) {
         const auto k = static_cast<cy::ease::Kind>(kind);
-        for (cy::f32 t = 0.0f; t <= 1.0f; t += 0.1f) {
+        // Eleven samples across [0, 1] inclusive. Accumulating `t += 0.1f` in f32 overshoots 1.0f
+        // on the eleventh step and silently drops the endpoint, which is the sample most likely to
+        // catch a mirrored family transcribed from the wrong source.
+        for (cy::u32 step = 0; step <= 10; ++step) {
+            const cy::f32 t = static_cast<cy::f32>(step) * 0.1f;
             const cy::f32 in_value = cy::ease::evaluate(k, cy::ease::Mode::In, 1.0f - t);
             const cy::f32 out_value = cy::ease::evaluate(k, cy::ease::Mode::Out, t);
             CY_REQUIRE(cy::math::nearly_equal(out_value, 1.0f - in_value, 1e-4f));

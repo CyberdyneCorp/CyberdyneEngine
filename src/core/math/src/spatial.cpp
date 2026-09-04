@@ -52,7 +52,7 @@ void SpatialHash::remove_from_cells(u32 slot, const Aabb& bounds) {
                 std::vector<u32>& list = it->second;
                 // Swap-and-pop: the order within a cell carries no meaning, so there is no reason
                 // to pay for preserving it.
-                const auto found = std::find(list.begin(), list.end(), slot);
+                const auto found = std::ranges::find(list, slot);
                 if (found != list.end()) {
                     *found = list.back();
                     list.pop_back();
@@ -98,7 +98,7 @@ Expected<void, Error> SpatialHash::insert(u32 id, const Aabb& bounds) {
 }
 
 Expected<void, Error> SpatialHash::update(u32 id, const Aabb& bounds) {
-    if (id_to_slot_.find(id) == id_to_slot_.end()) {
+    if (!id_to_slot_.contains(id)) {
         return cy::fail(ErrorCode::NotFound, "SpatialHash::update(): no such id");
     }
     return insert(id, bounds);
@@ -255,7 +255,7 @@ Expected<void, Error> Octree::remove(u32 id) {
 }
 
 Expected<void, Error> Octree::update(u32 id, const Aabb& bounds) {
-    if (id_to_node_.find(id) == id_to_node_.end()) {
+    if (!id_to_node_.contains(id)) {
         return cy::fail(ErrorCode::NotFound, "Octree::update(): no such id");
     }
     return insert(id, bounds);

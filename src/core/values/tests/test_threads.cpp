@@ -129,6 +129,9 @@ CY_TEST_CASE("Var: heap blocks are shared across threads without a race on the c
     for (int i = 0; i < kThreads; ++i) {
         threads.emplace_back([&shared]() {
             for (int n = 0; n < 2000; ++n) {
+                // The copy is the subject: retaining and releasing the block from many threads at
+                // once is the race this test exists to expose.
+                // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
                 const cy::Var copy = shared;
                 (void)copy.as_string();
             }

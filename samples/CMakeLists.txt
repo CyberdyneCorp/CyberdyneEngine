@@ -5,3 +5,4 @@
 # a directory, a cy_add_module(NAME cy_sample_<name> ...) and one line here — there is no manifest
 # to keep in step.
 add_subdirectory(00-empty)
+add_subdirectory(01-headless-host)

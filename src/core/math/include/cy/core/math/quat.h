@@ -67,8 +67,12 @@ struct Quat {
     /// The shortest rotation taking unit-length `from` onto unit-length `to`.
     [[nodiscard]] static Quat from_to(Vec3 from, Vec3 to) noexcept;
 
+    // Indexed as four adjacent floats, for the reason vec.h gives at length: the layout is the
+    // contract, not an accident of this compiler.
+    // NOLINTBEGIN(clang-analyzer-security.ArrayBound)
     [[nodiscard]] constexpr f32 operator[](usize i) const noexcept { return (&x)[i]; }
     [[nodiscard]] constexpr f32& operator[](usize i) noexcept { return (&x)[i]; }
+    // NOLINTEND(clang-analyzer-security.ArrayBound)
 
     /// Yaw, pitch and roll recovered under the YXZ order, on the axes they rotate about. For an
     /// editor field or a glTF export, never for storage.
@@ -107,14 +111,14 @@ static_assert(sizeof(Quat) == 16);
 /// Composition. `a * b` is "b first, then a" — the same reading order as matrix composition
 /// (matrix.h) and as `Transform` composition, so the three cannot disagree.
 [[nodiscard]] constexpr Quat operator*(const Quat& a, const Quat& b) noexcept {
-    return Quat{a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-                a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-                a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-                a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+    return Quat{(a.w * b.x) + (a.x * b.w) + (a.y * b.z) - (a.z * b.y),
+                (a.w * b.y) - (a.x * b.z) + (a.y * b.w) + (a.z * b.x),
+                (a.w * b.z) + (a.x * b.y) - (a.y * b.x) + (a.z * b.w),
+                (a.w * b.w) - (a.x * b.x) - (a.y * b.y) - (a.z * b.z)};
 }
 
 [[nodiscard]] constexpr f32 dot(const Quat& a, const Quat& b) noexcept {
-    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z) + (a.w * b.w);
 }
 
 [[nodiscard]] constexpr f32 length_squared(const Quat& q) noexcept {

@@ -133,7 +133,8 @@ private:
     u32 count_ = 0;
 };
 
-// --- The run-time half: undeclared access is caught -----------------------------------------------
+// --- The run-time half: undeclared access is caught
+// -----------------------------------------------
 //
 // `core-jobs-and-concurrency`: "WHEN a development build detects a system touching a component it
 // did not declare THEN an assertion SHALL fire identifying the system and the component type."

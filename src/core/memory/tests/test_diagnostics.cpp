@@ -92,7 +92,7 @@ CY_TEST_CASE("the snapshot reports what every build must be able to answer") {
     CY_REQUIRE(budgets.apply(*desktop).has_value());
 
     cy::SystemAllocator& assets = cy::system_allocator(cy::MemoryDomain::Assets);
-    void* block = assets.allocate(64 * 1024);
+    void* block = assets.allocate(cy::usize{64} * 1024);
     CY_REQUIRE(block != nullptr);
 
     const cy::MemoryDiagnostics snapshot = cy::memory_diagnostics();
@@ -105,7 +105,7 @@ CY_TEST_CASE("the snapshot reports what every build must be able to answer") {
              64u * 1024u);
     CY_CHECK_EQ(snapshot.retirement.capacity, cy::default_epoch_manager().stats().capacity);
 
-    assets.deallocate(block, 64 * 1024);
+    assets.deallocate(block, cy::usize{64} * 1024);
     budgets.clear();
 }
 

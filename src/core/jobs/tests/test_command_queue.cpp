@@ -1,7 +1,7 @@
 // The command queue for single-threaded servers. Task 3.2.9.
 //
-// The scenarios: a fire-and-forget render call returns immediately and is applied at the next drain;
-// a synchronous cross-thread call is flagged in a development build. The third case is this
+// The scenarios: a fire-and-forget render call returns immediately and is applied at the next
+// drain; a synchronous cross-thread call is flagged in a development build. The third case is this
 // module's own: a synchronous call from a job worker is refused outright, because a worker waiting
 // for another thread is the same defect as a worker waiting for a disk.
 
@@ -79,8 +79,8 @@ CY_TEST_CASE("a fire-and-forget call returns immediately and is applied at the d
     RenderState state;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(small_config()).has_value());
-    CY_REQUIRE(queue.register_command(kSetTransform, &set_transform, &state, "set_transform")
-                   .has_value());
+    CY_REQUIRE(
+        queue.register_command(kSetTransform, &set_transform, &state, "set_transform").has_value());
 
     const SetTransform payload{42, {1.0F, 2.0F, 3.0F}};
     CY_REQUIRE(queue.submit(kSetTransform, &payload, sizeof(payload)).has_value());
@@ -100,8 +100,8 @@ CY_TEST_CASE("commands are replayed in submission order") {
     RenderState state;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(small_config()).has_value());
-    CY_REQUIRE(queue.register_command(kSetTransform, &set_transform, &state, "set_transform")
-                   .has_value());
+    CY_REQUIRE(
+        queue.register_command(kSetTransform, &set_transform, &state, "set_transform").has_value());
 
     for (u64 entity = 1; entity <= 5; ++entity) {
         const SetTransform payload{entity, {0.0F, 0.0F, 0.0F}};
@@ -119,8 +119,8 @@ CY_TEST_CASE("a payload larger than the inline limit goes to the arena, never th
         queue.register_command(kLargePayload, &checksum_payload, &state, "large").has_value());
 
     u8 payload[200];
-    for (usize i = 0; i < sizeof(payload); ++i) {
-        payload[i] = 1;
+    for (u8& byte : payload) {
+        byte = 1;
     }
     CY_REQUIRE(sizeof(payload) > kInlineArgumentBytes);
     CY_REQUIRE(queue.submit(kLargePayload, payload, sizeof(payload)).has_value());
@@ -150,8 +150,8 @@ CY_TEST_CASE("a full queue reports rather than dropping") {
     config.capacity = 2;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(config).has_value());
-    CY_REQUIRE(queue.register_command(kSetTransform, &set_transform, &state, "set_transform")
-                   .has_value());
+    CY_REQUIRE(
+        queue.register_command(kSetTransform, &set_transform, &state, "set_transform").has_value());
 
     const SetTransform payload{1, {0.0F, 0.0F, 0.0F}};
     CY_CHECK(queue.submit(kSetTransform, &payload, sizeof(payload)).has_value());
@@ -172,9 +172,10 @@ CY_TEST_CASE("a synchronous call from the owning thread drains inline rather tha
     RenderState state;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(small_config()).has_value());
-    CY_REQUIRE(queue.register_command(kSetTransform, &set_transform, &state, "set_transform")
-                   .has_value());
-    CY_REQUIRE(queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
+    CY_REQUIRE(
+        queue.register_command(kSetTransform, &set_transform, &state, "set_transform").has_value());
+    CY_REQUIRE(
+        queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
     queue.claim_owner();
 
     const SetTransform payload{7, {0.0F, 0.0F, 0.0F}};
@@ -190,7 +191,8 @@ CY_TEST_CASE("a synchronous call blocks until the owner has run it and written t
     RenderState state;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(small_config()).has_value());
-    CY_REQUIRE(queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
+    CY_REQUIRE(
+        queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
     state.transforms.store(11);
 
     // A stand-in for the owning thread: it drains until it has served the call.
@@ -228,7 +230,8 @@ CY_TEST_CASE("a synchronous call from a job worker is refused, not merely warned
     RenderState state;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(small_config()).has_value());
-    CY_REQUIRE(queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
+    CY_REQUIRE(
+        queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
 
     struct Attempt {
         CommandQueue* queue;
@@ -240,12 +243,10 @@ CY_TEST_CASE("a synchronous call from a job worker is refused, not merely warned
         [](const TaskContext&, void* user) noexcept {
             auto* state_of_attempt = static_cast<Attempt*>(user);
             u32 count = 0;
-            const Status result =
-                state_of_attempt->queue->submit_sync(kQueryCount, nullptr, 0, &count,
-                                                     sizeof(count));
-            state_of_attempt->code.store(result.has_value()
-                                             ? 0u
-                                             : static_cast<u32>(result.error().code));
+            const Status result = state_of_attempt->queue->submit_sync(kQueryCount, nullptr, 0,
+                                                                       &count, sizeof(count));
+            state_of_attempt->code.store(
+                result.has_value() ? 0u : static_cast<u32>(result.error().code));
         },
         &attempt, "sync-from-worker");
     CY_REQUIRE(handle.has_value());
@@ -262,7 +263,8 @@ CY_TEST_CASE("repeated synchronous calls in one frame are counted so they can be
     config.synchronous_warning_threshold = 1;
     CommandQueue queue;
     CY_REQUIRE(queue.initialize(config).has_value());
-    CY_REQUIRE(queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
+    CY_REQUIRE(
+        queue.register_command(kQueryCount, &query_count, &state, "query_count").has_value());
     queue.claim_owner();
 
     queue.begin_frame();

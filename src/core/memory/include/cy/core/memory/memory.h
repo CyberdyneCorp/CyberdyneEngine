@@ -49,6 +49,7 @@
 #include <cy/core/memory/pressure.h>
 #include <cy/core/memory/relocatable.h>
 #include <cy/core/memory/ring_buffer.h>
+#include <cy/core/memory/sanitizer.h>
 #include <cy/core/memory/scope.h>
 #include <cy/core/memory/slab.h>
 #include <cy/core/memory/sparse_set.h>

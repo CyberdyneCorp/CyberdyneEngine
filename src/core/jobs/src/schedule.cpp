@@ -14,6 +14,7 @@
 
 #include <cy/core/base/assert.h>
 
+#include <algorithm>
 #include <cstring>
 #include <new>
 
@@ -50,7 +51,8 @@ const char* structural_op_name(StructuralOp op) noexcept {
     return "Unknown";
 }
 
-// --- DeferredCommands -----------------------------------------------------------------------------
+// --- DeferredCommands
+// -----------------------------------------------------------------------------
 
 DeferredCommands::~DeferredCommands() {
     delete[] commands_;
@@ -96,9 +98,7 @@ u64 DeferredCommands::flush(ApplyFn apply, void* user) noexcept {
         return 0;
     }
     u32 count = used_.load(std::memory_order_acquire);
-    if (count > capacity_) {
-        count = capacity_;
-    }
+    count = std::min(count, capacity_);
 
     for (u32 i = 1; i < count; ++i) {
         const StructuralCommand command = commands_[i];
@@ -151,7 +151,8 @@ Status CommandRecorder::record(StructuralOp op, ComponentTypeId component, u64 e
     return store_->append(command);
 }
 
-// --- SystemSchedule -------------------------------------------------------------------------------
+// --- SystemSchedule
+// -------------------------------------------------------------------------------
 
 bool SystemSchedule::has_edge(SystemId before, SystemId after) const noexcept {
     return (edges_[before][after / 64] & (1ull << (after % 64))) != 0;
@@ -182,7 +183,7 @@ bool SystemSchedule::reaches(SystemId from, SystemId to) const noexcept {
             while (bits != 0) {
                 const u32 bit = static_cast<u32>(__builtin_ctzll(bits));
                 bits &= bits - 1;
-                const SystemId next = word * 64 + bit;
+                const SystemId next = (word * 64) + bit;
                 if (next == to) {
                     return true;
                 }
@@ -234,9 +235,9 @@ Expected<SystemId, cy::Error> SystemSchedule::add(const SystemDesc& desc) noexce
     }
 
     // The conflict test, run here rather than at run time. An overlapping write between this system
-    // and one already registered becomes an ordering edge immediately; the direction is registration
-    // order, which is the "stable deterministic order" the specification asks for when no explicit
-    // constraint says otherwise.
+    // and one already registered becomes an ordering edge immediately; the direction is
+    // registration order, which is the "stable deterministic order" the specification asks for when
+    // no explicit constraint says otherwise.
     for (SystemId other = 0; other < id; ++other) {
         AccessConflict conflict;
         if (!systems_[other].access.conflicts_with(systems_[id].access, conflict)) {
@@ -253,8 +254,9 @@ Expected<SystemId, cy::Error> SystemSchedule::add(const SystemDesc& desc) noexce
 
 Status SystemSchedule::order(SystemId before, SystemId after) noexcept {
     if (before >= count_ || after >= count_) {
-        return fail(ErrorCode::NotFound, "an ordering constraint names a system that is not "
-                                         "registered");
+        return fail(ErrorCode::NotFound,
+                    "an ordering constraint names a system that is not "
+                    "registered");
     }
     if (before == after) {
         return fail(ErrorCode::InvalidArgument, "a system cannot be ordered against itself");
@@ -278,9 +280,9 @@ Status SystemSchedule::order(SystemId before, SystemId after) noexcept {
 }
 
 Status SystemSchedule::build() noexcept {
-    // Kahn's algorithm, with ties broken by registration index. The tie-break is what makes the plan
-    // identical on every machine: without it, the order would depend on the traversal, which is
-    // stable here but would not survive the first refactor.
+    // Kahn's algorithm, with ties broken by registration index. The tie-break is what makes the
+    // plan identical on every machine: without it, the order would depend on the traversal, which
+    // is stable here but would not survive the first refactor.
     u32 indegree[kMaxSystems] = {};
     for (SystemId before = 0; before < count_; ++before) {
         for (SystemId after = 0; after < count_; ++after) {
@@ -362,7 +364,8 @@ bool SystemSchedule::ordered_before(SystemId before, SystemId after) const noexc
     return has_edge(before, after) || reaches(before, after);
 }
 
-bool SystemSchedule::conflicts(SystemId first, SystemId second, AccessConflict& out) const noexcept {
+bool SystemSchedule::conflicts(SystemId first, SystemId second,
+                               AccessConflict& out) const noexcept {
     if (first >= count_ || second >= count_ || first == second) {
         return false;
     }
@@ -421,10 +424,20 @@ Status SystemSchedule::run(JobSystem& jobs, DeferredCommands* commands,
     for (u32 batch = 0; batch < batch_count_; ++batch) {
         const u32 size = batch_size(batch);
         for (u32 i = 0; i < size; ++i) {
-            SystemInvocation invocation{this, commands, batch_member(batch, i)};
+            // `batch_member` answers kInvalidSystem only for an index outside the batch, which the
+            // loop bound excludes. Checking anyway is one compare per system, and it is what makes
+            // the systems_ access below provably in range rather than in range by argument: a batch
+            // table that named a system the schedule does not hold would read off the end of it.
+            const SystemId member = batch_member(batch, i);
+            if (member >= count_) {
+                jobs.wait_all(handles, i);
+                return fail(ErrorCode::Internal,
+                            "a schedule batch names a system the schedule does not hold");
+            }
+            SystemInvocation invocation{this, commands, member};
             JobDesc desc;
             desc.body = &run_one_system;
-            desc.name = systems_[invocation.system].name;
+            desc.name = systems_[member].name;
             desc.inline_data = &invocation;
             desc.inline_size = static_cast<u32>(sizeof(invocation));
             auto submitted = jobs.submit(desc);

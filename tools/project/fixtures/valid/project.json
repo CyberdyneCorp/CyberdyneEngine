@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "fixture-valid",
+    "version": "1.2.3",
+    "engine_version": "0.0.0",
+    "description": "Every construct the schema allows, in one project that passes."
+  },
+  "content_roots": [
+    "content"
+  ],
+  "modules": [
+    {
+      "name": "fx-core",
+      "path": "modules/fx-core",
+      "layer": "core",
+      "type": "runtime",
+      "registration_level": "Core",
+      "public_dependencies": [],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-scene",
+      "path": "modules/fx-scene",
+      "layer": "scene",
+      "type": "runtime",
+      "registration_level": "Scene",
+      "public_dependencies": [
+        "fx-core"
+      ],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-tools",
+      "path": "modules/fx-tools",
+      "layer": "tools",
+      "type": "tool",
+      "registration_level": "Editor",
+      "public_dependencies": [],
+      "private_dependencies": [
+        "fx-core"
+      ],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-editor",
+      "path": "modules/fx-editor",
+      "layer": "editor",
+      "type": "editor",
+      "registration_level": "Editor",
+      "public_dependencies": [],
+      "private_dependencies": [
+        "fx-core"
+      ],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    }
+  ],
+  "plugins": [
+    {
+      "id": "com.example.terrain",
+      "version": "2.0.1",
+      "engine_api": ">=0.0.0, <1.0.0"
+    }
+  ],
+  "targets": [
+    {
+      "name": "client",
+      "kind": "client",
+      "shipping": true,
+      "modules": [
+        "fx-scene"
+      ]
+    },
+    {
+      "name": "editor",
+      "kind": "editor",
+      "shipping": false,
+      "modules": [
+        "fx-scene",
+        "fx-editor",
+        "fx-tools"
+      ]
+    }
+  ],
+  "settings": {
+    "renderer.profile": "desktop",
+    "renderer.max_frames_in_flight": 3
+  },
+  "platform_overrides": {
+    "android": {
+      "settings": {
+        "renderer.profile": "mobile"
+      },
+      "modules": {
+        "fx-tools": {
+          "enabled": false
+        }
+      }
+    }
+  }
+}

@@ -75,12 +75,96 @@ platforms = ["linux"]
 since = "m0"
 class = "permanent"
 
+# --- The gates M1 — Substrate added -----------------------------------------------------------------
+#
+# Task 6.1 to 6.8, and the proposal's "New permanent gates": the identity manifest check, the
+# reflection round-trip goldens, generated-code reproducibility, the job system throughput benchmark
+# and TSan over the job suite. Generated-code reproducibility is not a new gate — `generate-check`
+# above already is one, and M1 only widened what it regenerates — so it is not restated here; the
+# other four are declared below, together with the two checks M1 built and left undeclared.
+#
+# Each names commands that already run in .github/workflows/ci.yml. That is not a coincidence:
+# `just ci-check` fails when a permanent gate declared here is run by no job there, and it is the
+# check that stops this file from becoming a list of intentions.
+
+[[gate]]
+id = "identity"
+describe = "Type and field identity: nothing unassigned, nothing removed silently, no identifier moved or recycled. Runs the generator's own negative fixture too, which renames a field in a real tree and requires the gate to reject it — so an identity check that has stopped firing is caught here rather than in a save file months later."
+runs = ["just quality-identity", "just test-integration -R reflect_generator"]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
+[[gate]]
+id = "reflection"
+describe = "The reflection round-trip goldens: the committed byte-for-byte encoding, the same values in a different field order, and a payload carrying a field this build has never seen. A format change that was not meant to happen fails here."
+runs = ["just test-unit -R reflect_"]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
+[[gate]]
+id = "project-graph"
+describe = "The project graph's rejections — a cycle, an undeclared dependency, an upward layer dependency, a shipping target that reaches editor code. They are configure-time failures over fixture projects, so they cannot be a C++ test: a program that links only exists because the graph was accepted."
+runs = ["just test-integration -R project_graph"]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
+[[gate]]
+id = "sanitizers"
+describe = "The job suite under ThreadSanitizer, and again under AddressSanitizer with UndefinedBehaviorSanitizer. `core-jobs-and-concurrency` requires a data-race detector, and a job system whose races are only detectable locally is a job system whose races reach a user. Leak detection is on: M1 declared the trace's pooled allocations at their allocation site, so a leak reported here is a defect rather than M0's standing false positive."
+runs = [
+    "just test-sanitize --sanitizer thread --tests jobs",
+    "just test-sanitize --sanitizer address,undefined --tests jobs",
+]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
+[[gate]]
+id = "job-throughput"
+describe = "The job system's throughput benchmark against its committed thresholds. Every metric it checks is dimensionless — a speedup divided by the worker count, a cost in units of a calibration workload measured in the same process — so a shared two-core runner and a workstation are held to the same number. --profile profile because assertions are compiled out there, and a measurement taken with them on is not the number the thresholds were recorded against."
+runs = ["just test-bench-jobs --profile profile"]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
+[[gate]]
+id = "profiles"
+describe = "Every profile builds and its whole test set is green. The build and test jobs cover dev; this covers debug, profile and release, because M0's gate found the class of failure that only appears outside the profile everyone develops in."
+runs = [
+    "just build-engine --profile debug",
+    "just test-all --profile debug",
+    "just build-engine --profile profile",
+    "just test-all --profile profile",
+    "just build-engine --profile release",
+    "just test-all --profile release",
+]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
+[[gate]]
+id = "workflows"
+describe = "The workflow invokes recipes rather than reimplementing them, names no recipe that does not exist, and runs every permanent gate declared in this file; env-doctor still diagnoses a broken environment. It has run in the quality job since M0 and is declared here from M1, because it is the check that keeps this file and .github/workflows/ from drifting apart — and a gate that is enforced by nothing but habit is the drift it exists to catch."
+runs = ["just ci-check"]
+platforms = ["linux"]
+since = "m1"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
-# Task 4.4.3. M0's exit criteria join the gate set when M0 closes and stay green afterwards; a change
-# that breaks one does not merge unless it lands the criterion's recorded replacement in the same
-# change (`testing-and-quality`, Quality gates for merge). Until then the state below says so, and
-# `just roadmap-milestone m0` is the recipe that decides it.
+# Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;
+# a change that breaks one does not merge unless it lands the criterion's recorded replacement in the
+# same change (`testing-and-quality`, Quality gates for merge). Until then the state below says so,
+# and `just roadmap-milestone <id>` is the recipe that decides it.
+#
+# M0 closed — openspec/changes/archive/2026-09-03-implement-m0-ground — so its gate is `green` and
+# permanent from here on, which is what the class exists to record. It was left at
+# `joins-on-close` when M0 was archived, and M1 then landed static-analysis findings in two modules
+# that turned `just roadmap-milestone m0` red: exactly the regression this state is meant to make
+# unmergeable. M1's ledger runs M0's whole set as its first criterion for the same reason.
 
 [[gate]]
 id = "milestone-m0"
@@ -90,6 +174,16 @@ platforms = ["linux", "windows", "macos"]
 since = "m0"
 class = "milestone"
 milestone = "m0"
+state = "green"
+
+[[gate]]
+id = "milestone-m1"
+describe = "M1 — Substrate: the exit criteria of the milestone that built reflection and identity, memory, math, the job system, the asset layer and the project graph."
+runs = ["just roadmap-milestone m1"]
+platforms = ["linux", "windows", "macos"]
+since = "m1"
+class = "milestone"
+milestone = "m1"
 state = "joins-on-close"
 
 # --- Recorded overrides ---------------------------------------------------------------------------

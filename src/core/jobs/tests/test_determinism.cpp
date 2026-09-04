@@ -1,9 +1,9 @@
 // Deterministic scheduling and deterministic parallel primitives. Task 3.2.10.
 //
 // M9 validates determinism across a whole simulation; M1's job is to make that possible, and these
-// cases are what "possible" means concretely. A deterministic run's execution order is a function of
-// submission sequence and nothing else; a parallel reduction's combination order is a function of
-// the partitioning and nothing else; the single-threaded mode produces the same answer as the
+// cases are what "possible" means concretely. A deterministic run's execution order is a function
+// of submission sequence and nothing else; a parallel reduction's combination order is a function
+// of the partitioning and nothing else; the single-threaded mode produces the same answer as the
 // parallel one, so a divergence between them localises a scheduling-dependent defect.
 //
 // What is deliberately NOT claimed here: that the engine is deterministic. Nothing above this layer
@@ -130,9 +130,17 @@ CY_TEST_CASE("determinism does not require single-threaded execution") {
 
     bool seen[64] = {};
     for (u32 i = 0; i < 64; ++i) {
-        CY_REQUIRE(trace.order[i] < 64u);
-        CY_REQUIRE_FALSE(seen[trace.order[i]]);
-        seen[trace.order[i]] = true;
+        const u32 slot = trace.order[i];
+        CY_REQUIRE(slot < 64u);
+        // A failed CY_REQUIRE aborts under -fno-exceptions, so `slot` is in range by the line
+        // above. The static analyser cannot see through doctest's macro to know that, and an
+        // unproven index into a stack array is a finding worth keeping switched on everywhere
+        // else — so the bound is restated here rather than suppressed.
+        if (slot >= 64u) {
+            return;
+        }
+        CY_REQUIRE_FALSE(seen[slot]);
+        seen[slot] = true;
     }
 }
 

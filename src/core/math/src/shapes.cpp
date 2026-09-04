@@ -3,6 +3,7 @@
 
 #include <cy/core/math/shapes.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace cy {
@@ -116,21 +117,19 @@ bool Frustum::intersects(const Aabb& box) const noexcept {
 }
 
 bool Frustum::intersects(const Sphere& sphere) const noexcept {
-    for (u32 i = 0; i < kCount; ++i) {
-        if (planes[i].signed_distance(sphere.center) < -sphere.radius) {
-            return false;
-        }
-    }
-    return true;
+    // Spelled as the negation of "behind this plane" rather than as `>= -radius`: the two differ
+    // when the distance is NaN, and the outward answer for a degenerate input is that the sphere is
+    // kept, which is what the loop this replaced did.
+    return std::ranges::all_of(planes, [&](const Plane& plane) noexcept {
+        return !(plane.signed_distance(sphere.center) < -sphere.radius);
+    });
 }
 
 bool Frustum::contains(Vec3 point) const noexcept {
-    for (u32 i = 0; i < kCount; ++i) {
-        if (planes[i].signed_distance(point) < 0.0f) {
-            return false;
-        }
-    }
-    return true;
+    // Negated for the same reason as `intersects(const Sphere&)` above.
+    return std::ranges::all_of(planes, [&](const Plane& plane) noexcept {
+        return !(plane.signed_distance(point) < 0.0f);
+    });
 }
 
 }  // namespace cy

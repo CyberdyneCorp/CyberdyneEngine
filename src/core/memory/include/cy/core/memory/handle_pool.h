@@ -227,7 +227,8 @@ private:
                                    static_cast<usize>(objects_per_chunk_) * sizeof(T), alignof(T));
         }
         if (chunks_ != nullptr) {
-            allocator_->deallocate(chunks_, kMaxHandlePoolChunks * sizeof(T*), alignof(T*));
+            allocator_->deallocate(static_cast<void*>(chunks_), kMaxHandlePoolChunks * sizeof(T*),
+                                   alignof(T*));
             chunks_ = nullptr;
         }
         chunk_count_.store(0, std::memory_order_release);

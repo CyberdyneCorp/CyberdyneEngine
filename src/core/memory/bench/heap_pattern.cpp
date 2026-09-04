@@ -135,7 +135,7 @@ cy::u64 churn_one_thread(cy::u32 seed_index, cy::u32 iterations) {
 /// frame.
 cy::u64 arena_one_thread(cy::u32 seed_index, cy::u32 iterations) {
     cy::ArenaAllocator arena(cy::MemoryDomain::Frame, "bench-frame");
-    if (!arena.reserve(4u * 1024u * 1024u).has_value()) {
+    if (!arena.reserve(cy::usize{4} * 1024 * 1024).has_value()) {
         return 0;
     }
     Sequence sequence(0x9E3779B97F4A7C15ull ^ seed_index);
@@ -207,7 +207,7 @@ Result pool_churn(cy::u32 iterations) {
 Result mixed_frame(cy::u32 frames) {
     cy::SystemAllocator& heap = cy::system_allocator(cy::MemoryDomain::Renderer);
     cy::ArenaAllocator arena(cy::MemoryDomain::Frame, "bench-mixed");
-    if (!arena.reserve(4u * 1024u * 1024u).has_value()) {
+    if (!arena.reserve(cy::usize{4} * 1024 * 1024).has_value()) {
         return {"mixed-frame", 0.0, 0};
     }
     cy::PoolAllocator<PooledObject> pool(cy::MemoryDomain::Ecs, "bench-mixed-pool", 256);
@@ -255,11 +255,24 @@ void print(const Result& result) {
                 static_cast<unsigned long long>(result.operations));
 }
 
+/// One command-line count. Falls back to `fallback` when the argument is not a positive number,
+/// so a mistyped flag runs the default rather than measuring nothing.
+cy::u32 parse_count(const char* text, cy::u32 fallback) {
+    char* end = nullptr;
+    const unsigned long value = std::strtoul(text, &end, 10);
+    if (end == text || *end != '\0' || value == 0) {
+        return fallback;
+    }
+    return static_cast<cy::u32>(value);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    const cy::u32 scale = (argc > 1) ? static_cast<cy::u32>(std::atoi(argv[1])) : 1;
-    const cy::u32 threads = (argc > 2) ? static_cast<cy::u32>(std::atoi(argv[2])) : 4;
+    // strtoul rather than atoi: atoi cannot report a non-numeric argument, and a benchmark that
+    // silently ran at scale 0 because it was handed `--help` reports "inf ns/op" and looks broken.
+    const cy::u32 scale = (argc > 1) ? parse_count(argv[1], 1) : 1;
+    const cy::u32 threads = (argc > 2) ? parse_count(argv[2], 4) : 4;
 
     std::printf("heap pattern benchmark — scale %u, %u threads\n", scale, threads);
     print(general_churn(threads, 200000 * scale));

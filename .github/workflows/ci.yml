@@ -11,9 +11,10 @@
 # them.
 #
 # The gate set is declared once, as data, in tools/roadmap/gates.toml — `just roadmap-gates` prints
-# it. The jobs below are that list arranged into jobs: build, test, quality, spec validation,
-# generated-code currency, and the roadmap status record. `just ci-check` fails when a permanent gate
-# declared there is run by no job here, so the two cannot drift apart in the direction that matters;
+# it. The jobs below are that list arranged into jobs: build, test, sanitizers and throughput,
+# quality, spec validation, generated-code currency, identity and reflection, the non-default
+# profiles, and the roadmap status record. `just ci-check` fails when a permanent gate declared
+# there is run by no job here, so the two cannot drift apart in the direction that matters;
 # `just ci-jobs` prints what this file actually invokes.
 
 name: ci
@@ -59,6 +60,18 @@ jobs:
           arch: ${{ matrix.msvc }}
       - name: Install the tools the doctor requires
         run: npm install -g @fission-ai/openspec
+      # The pinned LLVM tooling. `just env-doctor` requires it on every host — the format and lint
+      # gates are the project's, not Linux's — and the version is the one the justfile pins, which
+      # is the same command `just env-doctor` prints as the correction. A distribution package
+      # would be a different version on each runner, which is the ambiguity the pin removes.
+      #
+      # setup-python is here so that `pip` means the same interpreter on all six legs of the matrix;
+      # the Windows and macOS images do not agree about whether it is `pip`, `pip3` or neither.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned LLVM tooling
+        run: pip install clang-format==22.1.8 clang-tidy==22.1.8
       - name: Install the window-system headers SDL3 builds against
         if: runner.os == 'Linux'
         run: |
@@ -135,6 +148,53 @@ jobs:
           path: test-results.xml
           if-no-files-found: ignore
 
+  # --- The concurrency suites under a data-race detector, and the job system's throughput ---------
+  #
+  # Task 3.2.12. `core-jobs-and-concurrency` lists "a data-race detector integration (TSan)" among
+  # the concurrency diagnostics a development build provides, and a job system whose races are only
+  # detectable locally is a job system whose races reach a user. So the sanitizers run here rather
+  # than being something a developer might remember.
+  #
+  # A sanitized tree is not interchangeable with an ordinary one — the instrumentation changes the
+  # ABI — so `just test-sanitize` configures its own build directory and never reuses build/dev.
+  # That is why this job restores no cache from `build`: there is nothing in it this job can use.
+  #
+  # The two sanitizers are separate steps because TSan is exclusive: it cannot be combined with
+  # AddressSanitizer, so each pass costs its own build. Both are scoped to the jobs suites with
+  # `--tests jobs`; widening that to the whole test set is `testing-and-quality`'s nightly run,
+  # which is a schedule this file does not yet have.
+  #
+  # Leak detection is on, which is the recipe's default rather than this job's choice. M1 task 2.12
+  # declared the trace's pooled per-thread slots and rings at the allocation site
+  # (src/core/diagnostics/src/lifetime.h), so a leak reported here is a defect rather than the
+  # standing false positive M0 carried.
+  sanitize:
+    name: sanitizers and throughput
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      # ThreadSanitizer first: it is the one the specification names, and running it before the
+      # slower combined pass means a race is reported early rather than after two builds.
+      - name: Data races over the job suite (TSan)
+        run: just test-sanitize --sanitizer thread --tests jobs
+      - name: Memory errors and undefined behaviour over the job suite (ASan + UBSan)
+        run: just test-sanitize --sanitizer address,undefined --tests jobs
+      # The throughput benchmark is a gate rather than a report: every metric it checks is
+      # dimensionless — a speedup divided by the worker count, or a cost in units of a calibration
+      # workload measured in the same process — precisely so that a two-core shared runner and a
+      # workstation are held to the same threshold. It exits non-zero on a regression.
+      #
+      # `--profile profile` because assertions are compiled out there; a measurement taken with them
+      # on is not the number the thresholds were recorded against, and the recipe says so.
+      - name: Job system throughput against its thresholds
+        run: just test-bench-jobs --profile profile
+
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:
     name: quality
@@ -144,10 +204,20 @@ jobs:
       - uses: extractions/setup-just@v3
       - name: Install the tools the doctor requires
         run: npm install -g @fission-ai/openspec
-      - name: Install the compiler tooling and window-system headers
+      # Ubuntu 24.04's `clang-format` and `clang-tidy` are 18.1.3, and this repository pins LLVM 22:
+      # 18 and 22 disagree about three sites in this tree and about which checks exist at all, so
+      # installing the distribution package here would run a different gate from the one a developer
+      # runs. The version is the justfile's `llvm_pin_version`, and `just env-doctor` prints this
+      # exact command as the correction when the local tooling is not it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned LLVM tooling
+        run: pip install clang-format==22.1.8 clang-tidy==22.1.8
+      - name: Install the window-system headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang-format clang-tidy libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -168,6 +238,12 @@ jobs:
         run: just build-engine
       - name: Static analysis
         run: just quality-lint
+      # The other half of the layer rule, and the half quality-layers cannot reach: the project
+      # graph's rejections are configure-time failures over fixture projects, so they are registered
+      # as a CTest test rather than run by a recipe of their own. The `project-graph` gate declares
+      # this command; without a job that runs it the check exists and gates nothing.
+      - name: The project graph's rejections
+        run: just test-integration -R project_graph
 
   # --- The specification set ----------------------------------------------------------------------
   specs:
@@ -192,6 +268,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      # The reflection generator parses annotated C++ with a real frontend, so this job — the one
+      # that asserts generated output is current and reproducible — is the one that must have it.
+      # Without these two packages `just generate-check` fails naming them, which is the generator
+      # being honest rather than silently skipping the check it exists to be.
+      - name: Install the reflection generator's frontend
+        run: |
+          sudo apt-get install -y libclang1-18
+          pip install --user clang==18.1.8
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -209,6 +293,103 @@ jobs:
         run: just generate-check
       - name: The generators, the feature options and the module graph
         run: just generate-test
+
+  # --- Type and field identity, and the reflection round-trip goldens -----------------------------
+  #
+  # Task 6.1 and 6.2. `core-type-system` requires a check that "diffs the manifest and fails when an
+  # existing entry's identifier changes, so an accidental identity change is a red build rather than
+  # a corrupted save months later". `just quality-identity` is that check; until this job existed it
+  # ran in no continuous-integration job at all, which made it a check a developer might remember
+  # rather than a gate. The `identity` and `reflection` gates in tools/roadmap/gates.toml declare
+  # these commands, and `just ci-check` fails if this job stops running them.
+  #
+  # It is a job of its own rather than a step in `quality` because it needs what that job does not:
+  # the generator's compiler frontend, and a configured build to read the annotated headers the
+  # build itself declares — so the gate cannot check a different set of types than the build
+  # compiles.
+  identity:
+    name: identity and reflection
+    runs-on: ubuntu-24.04
+    steps:
+      # The manifest gate diffs the identifiers against a revision, so it needs history rather than
+      # the single commit actions/checkout fetches by default.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - name: Install the reflection generator's frontend
+        run: |
+          sudo apt-get install -y libclang1-18
+          pip install --user clang==18.1.8
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-identity-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-identity-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-identity-
+      # The identity gate reads the argument vector src/core/reflect/CMakeLists.txt writes at
+      # configure time, so the configure comes first.
+      - name: Configure
+        run: just build-engine
+      - name: Type and field identity against the tree and against git
+        run: just quality-identity
+      # The gate's own negative fixture: a field is renamed in a real tree and generation must fail
+      # naming it. An identity check that has silently stopped firing fails here rather than passing
+      # everything.
+      - name: The identity gate still rejects an untombstoned rename
+        run: just test-integration -R reflect_generator
+      - name: The reflection round-trip goldens
+        run: just test-unit -R reflect_
+
+  # --- Every profile, not just the one everyone develops in ---------------------------------------
+  #
+  # Task 6.7. The build and test jobs above cover `dev`; this covers the other three. M0's gate found
+  # a class of failure that only appears outside the default profile — assertions compiled out,
+  # different optimisation, a different NDEBUG — and a milestone that only ever built `dev` would
+  # have shipped it.
+  #
+  # The three profiles are separate steps rather than a matrix because tools/roadmap/gates.toml
+  # declares each command literally and `just ci-check` compares the declared commands against what
+  # this file runs: a matrix expression would make the gate set unverifiable, which is the drift the
+  # check exists to prevent.
+  profiles:
+    name: profiles
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/debug
+            build/profile
+            build/release
+          key: cy-build-profiles-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-profiles-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-profiles-
+      - name: Build debug
+        run: just build-engine --profile debug
+      - name: Test debug
+        run: just test-all --profile debug
+      - name: Build profile
+        run: just build-engine --profile profile
+      - name: Test profile
+        run: just test-all --profile profile
+      - name: Build release
+        run: just build-engine --profile release
+      - name: Test release
+        run: just test-all --profile release
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

@@ -37,6 +37,12 @@ namespace simd = cy::math::simd;
 /// unit: zero and negative zero, denormals, values that round differently, and the two infinities.
 /// NaN is deliberately absent — `min` and `max` disagree about it between the reference and the
 /// hardware instruction, which simd.h documents, and no bounding volume contains one.
+///
+/// The entries are probe bit patterns, not mathematical constants: two of them happen to be the
+/// f32 nearest pi and e, and spelling those as `std::numbers` would say the test cares which
+/// transcendental they are. It does not — it cares that the exponent range and the low mantissa
+/// bits are covered.
+// NOLINTBEGIN(modernize-use-std-numbers)
 const std::vector<cy::f32>& probe_values() {
     static const std::vector<cy::f32> values = {
         0.0f,    -0.0f,       1.0f,         -1.0f,         0.5f,        -0.5f,
@@ -46,6 +52,7 @@ const std::vector<cy::f32>& probe_values() {
     };
     return values;
 }
+// NOLINTEND(modernize-use-std-numbers)
 
 /// Compare two backends over every pair of probe values, for every primitive operation.
 ///
@@ -69,7 +76,13 @@ void compare_primitives() {
             // The operation's name is passed in only so that a failure prints which one it was:
             // doctest reports the expression, and `same("madd")` is a far better failure line than
             // `std::memcmp(...) == 0`.
+            //
+            // The comparison is over the object representation because that is what design.md §5
+            // asks for: bit-identical. Comparing the values would accept +0.0f for -0.0f and a
+            // quiet NaN for a different quiet NaN, and a backend that disagrees with the reference
+            // in exactly those ways is what this test exists to catch.
             const auto same = [&](const char*) {
+                // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
                 return std::memcmp(a_out, b_out, sizeof(a_out)) == 0;
             };
 
@@ -101,6 +114,120 @@ void compare_primitives() {
             CY_CHECK_EQ(A::hsum(a_lhs), B::hsum(b_lhs));
             for (cy::u32 lane = 0; lane < 4; ++lane) {
                 CY_CHECK_EQ(A::lane(a_lhs, lane), B::lane(b_lhs, lane));
+            }
+        }
+    }
+}
+
+/// Compare an eight-lane backend against the four-lane reference, lane for lane.
+///
+/// The reference has no eight-lane form and must not grow one: it is the definition of the answer,
+/// and a second implementation of it would only raise the question of which one is the reference.
+/// So the eight lanes are checked as two independent halves of four, which is exactly what they
+/// are — an eight-wide register in this engine holds two points, not one wider one.
+template <class Wide>
+void compare_wide_against_reference() {
+    static_assert(Wide::kLanes == 8);
+    const std::vector<cy::f32>& values = probe_values();
+
+    for (const cy::f32 x : values) {
+        for (const cy::f32 y : values) {
+            const cy::f32 lhs[8] = {x, y, -x, y * 0.5f, y, x, -y, x * 0.25f};
+            const cy::f32 rhs[8] = {y, x, y, -x, x, -y, x * 2.0f, y};
+
+            const typename Wide::Vec wide_lhs = Wide::load(lhs);
+            const typename Wide::Vec wide_rhs = Wide::load(rhs);
+
+            cy::f32 wide_out[8];
+            cy::f32 reference_out[8];
+
+            // Each half of the reference result is computed separately and laid side by side, so
+            // the comparison below is against the four-wide answer and not against a rewritten one.
+            const auto reference_halves = [&](auto op) {
+                for (cy::usize half = 0; half < 2; ++half) {
+                    const simd::reference::Float4 a = simd::reference::load(lhs + (4 * half));
+                    const simd::reference::Float4 b = simd::reference::load(rhs + (4 * half));
+                    simd::reference::store(reference_out + (4 * half), op(a, b));
+                }
+            };
+            // Bit-identity again, against the two halves laid side by side. See the comment on
+            // the four-wide comparison above for why this is a memcmp.
+            const auto same = [&](const char*) {
+                // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
+                return std::memcmp(wide_out, reference_out, sizeof(wide_out)) == 0;
+            };
+
+            Wide::store(wide_out, Wide::add(wide_lhs, wide_rhs));
+            reference_halves([](auto a, auto b) { return simd::reference::add(a, b); });
+            CY_CHECK(same("add"));
+
+            Wide::store(wide_out, Wide::sub(wide_lhs, wide_rhs));
+            reference_halves([](auto a, auto b) { return simd::reference::sub(a, b); });
+            CY_CHECK(same("sub"));
+
+            Wide::store(wide_out, Wide::mul(wide_lhs, wide_rhs));
+            reference_halves([](auto a, auto b) { return simd::reference::mul(a, b); });
+            CY_CHECK(same("mul"));
+
+            Wide::store(wide_out, Wide::min(wide_lhs, wide_rhs));
+            reference_halves([](auto a, auto b) { return simd::reference::min(a, b); });
+            CY_CHECK(same("min"));
+
+            Wide::store(wide_out, Wide::max(wide_lhs, wide_rhs));
+            reference_halves([](auto a, auto b) { return simd::reference::max(a, b); });
+            CY_CHECK(same("max"));
+
+            // madd is the one that would break if anybody reached for the fused instruction the
+            // 256-bit instruction set makes available: it rounds once where this rounds twice.
+            Wide::store(wide_out, Wide::madd(wide_lhs, wide_rhs, wide_lhs));
+            for (cy::usize half = 0; half < 2; ++half) {
+                const simd::reference::Float4 a = simd::reference::load(lhs + (4 * half));
+                const simd::reference::Float4 b = simd::reference::load(rhs + (4 * half));
+                simd::reference::store(reference_out + (4 * half), simd::reference::madd(a, b, a));
+            }
+            CY_CHECK(same("madd"));
+
+            // Eight comparison bits are the two halves' four, the high half shifted up.
+            const cy::u32 low =
+                simd::reference::mask_ge(simd::reference::load(lhs), simd::reference::load(rhs));
+            const cy::u32 high = simd::reference::mask_ge(simd::reference::load(lhs + 4),
+                                                          simd::reference::load(rhs + 4));
+            CY_CHECK_EQ(Wide::mask_ge(wide_lhs, wide_rhs), low | (high << 4));
+
+            for (cy::u32 lane = 0; lane < 8; ++lane) {
+                CY_CHECK_EQ(Wide::lane(wide_lhs, lane), lhs[lane]);
+            }
+
+            cy::f32 sum_low = 0.0f;
+            cy::f32 sum_high = 0.0f;
+            Wide::hsum_halves(wide_lhs, sum_low, sum_high);
+            CY_CHECK_EQ(sum_low, simd::reference::hsum(simd::reference::load(lhs)));
+            CY_CHECK_EQ(sum_high, simd::reference::hsum(simd::reference::load(lhs + 4)));
+
+            // The spread helpers, which are the whole reason this backend exists: from eight floats
+            // laid out as a Vec3 array — [x0 y0 z0 x1 y1 z1 x2 y2] — each component of the first
+            // two points, filled across its own half.
+            Wide::store(wide_out, Wide::spread_x(wide_lhs));
+            for (cy::usize lane = 0; lane < 4; ++lane) {
+                CY_CHECK_EQ(wide_out[lane], lhs[0]);
+                CY_CHECK_EQ(wide_out[4 + lane], lhs[3]);
+            }
+            Wide::store(wide_out, Wide::spread_y(wide_lhs));
+            for (cy::usize lane = 0; lane < 4; ++lane) {
+                CY_CHECK_EQ(wide_out[lane], lhs[1]);
+                CY_CHECK_EQ(wide_out[4 + lane], lhs[4]);
+            }
+            Wide::store(wide_out, Wide::spread_z(wide_lhs));
+            for (cy::usize lane = 0; lane < 4; ++lane) {
+                CY_CHECK_EQ(wide_out[lane], lhs[2]);
+                CY_CHECK_EQ(wide_out[4 + lane], lhs[5]);
+            }
+
+            // And the broadcast, which loads a matrix column once for a whole batch.
+            Wide::store(wide_out, Wide::broadcast_quad(lhs));
+            for (cy::usize lane = 0; lane < 4; ++lane) {
+                CY_CHECK_EQ(wide_out[lane], lhs[lane]);
+                CY_CHECK_EQ(wide_out[4 + lane], lhs[lane]);
             }
         }
     }
@@ -139,9 +266,17 @@ CY_TEST_CASE("SIMD: the scalar reference is compiled into every build") {
         std::string("active SIMD backend: ") + simd::backend_name(simd::active_backend());
     CY_TEST_MESSAGE(active);
 
-    // AVX2 is named by `core-math` and is not implemented; the honest answer is what is asserted,
-    // so that a benchmark cannot claim a width the engine does not have.
+    // AVX2 is present only in a build told to target it. The assertion is that the report matches
+    // the build rather than that it is any particular value, so that a benchmark cannot claim a
+    // width the binary does not contain — in either direction.
+#if defined(CY_MATH_HAS_AVX2)
+    CY_CHECK(simd::backend_compiled(simd::Backend::Avx2));
+    // Compiled and *not* active: the batch loops are four-wide by measurement, and the two
+    // questions have different answers on purpose. See the numbers in src/batch.cpp.
+    CY_CHECK(simd::active_backend() != simd::Backend::Avx2);
+#else
     CY_CHECK_FALSE(simd::backend_compiled(simd::Backend::Avx2));
+#endif
 }
 
 CY_TEST_CASE("SIMD: every compiled backend is bit-identical to the reference on the primitives") {
@@ -154,6 +289,9 @@ CY_TEST_CASE("SIMD: every compiled backend is bit-identical to the reference on 
 #endif
 #if defined(CY_MATH_HAS_NEON)
     compare_primitives<simd::ReferenceOps, simd::NeonOps>();
+#endif
+#if defined(CY_MATH_HAS_AVX2)
+    compare_wide_against_reference<simd::Avx2Ops>();
 #endif
 }
 
@@ -271,6 +409,35 @@ CY_TEST_CASE("SIMD: the batch frustum cull is bit-identical and agrees with the 
     CY_CHECK_EQ(compacted, visible);
     for (cy::usize i = 0; i < compacted; ++i) {
         CY_REQUIRE(reference[indices[i]] != 0);
+    }
+}
+
+CY_TEST_CASE("SIMD: the batch transform is bit-identical at every short length") {
+    // The test above runs four thousand points through one shape of loop. This one runs every count
+    // from nothing to sixteen, which is where an off-by-one in a loop bound, a prologue or a tail
+    // lives — and which the four-thousand-point case would not notice. It is also the test that
+    // would catch a future vectorised loop writing one point past the count.
+    const std::vector<cy::Vec3> points = make_points(16);
+    const cy::Mat4 m =
+        cy::Mat4::from_trs(cy::Vec3{0.5f, -1.5f, 2.0f}, cy::Quat::from_axis_angle(cy::kAxisZ, 0.4f),
+                           cy::Vec3{2.0f, 0.5f, 1.25f});
+
+    for (cy::usize count = 0; count <= points.size(); ++count) {
+        std::vector<cy::Vec3> reference(points.size(), cy::Vec3{-7.0f, -7.0f, -7.0f});
+        std::vector<cy::Vec3> vectorised(points.size(), cy::Vec3{-7.0f, -7.0f, -7.0f});
+
+        cy::math::transform_points_reference(m, points.data(), reference.data(), count);
+        cy::math::transform_points_simd(m, points.data(), vectorised.data(), count);
+        // The whole buffer, not just the transformed prefix: a wide store that ran one point past
+        // the count would leave the sentinel overwritten, and comparing only the prefix would miss
+        // it.
+        CY_REQUIRE_EQ(
+            std::memcmp(reference.data(), vectorised.data(), points.size() * sizeof(cy::Vec3)), 0);
+
+        cy::math::transform_directions_reference(m, points.data(), reference.data(), count);
+        cy::math::transform_directions_simd(m, points.data(), vectorised.data(), count);
+        CY_REQUIRE_EQ(
+            std::memcmp(reference.data(), vectorised.data(), points.size() * sizeof(cy::Vec3)), 0);
     }
 }
 

@@ -15,6 +15,8 @@
 // fills the remainder and the record starts at zero. That costs a few bytes and buys a consumer
 // that reads a record with one pointer and no wrap arithmetic.
 
+#include "lifetime.h"
+
 #include <cy/core/diagnostics/format.h>
 #include <cy/core/diagnostics/prelude.h>
 #include <cy/core/diagnostics/trace.h>
@@ -55,6 +57,10 @@ public:
         if (data_ == nullptr) {
             return false;
         }
+        // Pooled for the life of the process: the slot that owns this buffer goes back on the free
+        // list when its thread ends, so the next thread reuses the buffer. Declared here rather
+        // than suppressed by a pattern, so a second ring allocated by a defect is still a finding.
+        declare_process_lifetime(data_);
         capacity_ = capacity;
         mask_ = capacity - 1;
         return true;

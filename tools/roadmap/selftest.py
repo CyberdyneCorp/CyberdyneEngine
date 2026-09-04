@@ -14,7 +14,12 @@ tests never touch docs/roadmap/status.yaml or openspec/specs/ — a test that ed
 prove a point is a test that fails halfway through and leaves it edited.
 
 The rest cover the data files these gates read: a criterion that names no CI job, a milestone that
-cannot be closed, an override with a missing field or a past expiry.
+cannot be closed, an override with a missing field or a past expiry — and the ladder itself: every
+milestone's ledger loads, every criterion in it names a gate that exists, and every milestone with a
+ledger has a gate its criteria join on close. That last group is here rather than only inside
+`just roadmap-milestone <id>` because `just roadmap-test` runs on every pull request and the
+milestone recipes take a working session each: a ledger that no longer loads should fail in minutes,
+not the next time somebody tries to close a milestone.
 
 Run directly, or through `just roadmap-test`.
 """
@@ -32,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import criteria as criteria_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import record as record_module  # noqa: E402
+import roadmap as roadmap_module  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROADMAP = HERE / "roadmap.py"
@@ -209,6 +215,84 @@ def test_criteria(root: Path) -> None:
         lambda: criteria_module.load("m99"))
 
 
+def test_exit_tiers(root: Path) -> None:
+    """An exit tier is a floor, so a closed milestone stays closed when a later one advances past it.
+
+    REGRESSION. `_check_tiers` compared for equality, so M1 raising `project-and-plugins` from Seed
+    to Working made `just roadmap-milestone m0` fail on a criterion M0 had satisfied. `milestone-m0`
+    is a permanent merge gate, so that turned an advance into a red build with no correct fix.
+    """
+    del root
+    criterion = criteria_module.Criterion(
+        id="tiers", describe="exit tiers", source="selftest", kind="tiers", ci_job="milestone-m0",
+        expect_tiers={"alpha": "seed"})
+
+    def entry(tier: str) -> tuple[record_module.Entry, ...]:
+        return (record_module.Entry(capability="alpha", tier=tier, milestone="M0", change="c"),)
+
+    at, _, _ = criteria_module._check_tiers(criterion, entry("seed"))
+    check("a capability exactly at the exit tier passes", at == criteria_module.OK)
+    above, _, _ = criteria_module._check_tiers(criterion, entry("working"))
+    check("a capability a later milestone advanced past the exit tier still passes",
+          above == criteria_module.OK)
+    complete, _, _ = criteria_module._check_tiers(criterion, entry("complete"))
+    check("a completed capability still satisfies an earlier milestone's exit tier",
+          complete == criteria_module.OK)
+    below, _, detail = criteria_module._check_tiers(criterion, entry("none"))
+    check("a capability below the exit tier fails, naming both tiers",
+          below == criteria_module.FAILED and "none" in detail and "seed" in detail, detail)
+    missing, _, detail = criteria_module._check_tiers(criterion, ())
+    check("a capability missing from the record fails",
+          missing == criteria_module.FAILED and "not in the record" in detail, detail)
+
+
+# --- The milestone ladder -------------------------------------------------------------------------
+
+
+def test_milestone_ladder(root: Path) -> None:
+    """Every ledger under milestones/ loads, is gated, and has a gate of its own.
+
+    `roadmap.py` already refuses to run a milestone whose criterion names a CI job that is not a
+    declared gate. Calling that same function here rather than restating the rule means the two
+    cannot disagree, and it moves the failure from "the day someone closes a milestone" to "every
+    pull request", which is the only place a data file that has stopped loading is cheap to fix.
+    """
+    milestones = criteria_module.available()
+    check("every milestone on the ladder so far has a ledger",
+          {"m0", "m1"} <= set(milestones), f"found: {', '.join(milestones) or 'none'}")
+
+    gate_set = gates_module.load()
+    milestone_gates = {gate.milestone for gate in gate_set.gates if gate.klass == "milestone"}
+    for identifier in milestones:
+        milestone = criteria_module.load(identifier)
+        check(f"{identifier.upper()}'s criteria load, and every one names a source and a CI job",
+              all(criterion.source and criterion.ci_job for criterion in milestone.criteria))
+        check(f"{identifier.upper()}: every criterion names a gate that is declared",
+              _gated(milestone), f"{identifier}.toml names a CI job that is not in gates.toml")
+        check(f"{identifier.upper()}'s criteria have a gate to join on close",
+              identifier in milestone_gates)
+        check(f"{identifier.upper()}: a criterion this host cannot evaluate carries a reason",
+              all(criterion.reason for criterion in milestone.criteria
+                  if criterion.where == "ci" or criterion.requires))
+
+    m1 = criteria_module.load("m1")
+    check("M1 has a criterion for each of the milestone's exit conditions",
+          len(m1.criteria) >= 15, f"{len(m1.criteria)} criteria")
+    # M1 broke M0's static analysis gate before this ledger existed. `delivery-roadmap` forbids that
+    # outright, so the rule is a criterion rather than a paragraph, and this is the check that it
+    # stays one.
+    check("M1's ledger runs M0's, so a milestone that breaks an earlier one cannot close",
+          any(criterion.run == "just roadmap-milestone m0" for criterion in m1.criteria))
+
+
+def _gated(milestone: criteria_module.Milestone) -> bool:
+    try:
+        roadmap_module._check_criteria_are_gated(milestone)
+    except criteria_module.CriteriaError:
+        return False
+    return True
+
+
 def test_gates(root: Path) -> None:
     gate_set = gates_module.load()
     ids = {gate.id for gate in gate_set.gates}
@@ -254,6 +338,8 @@ def main() -> int:
         test_drift(_area(root, "drift"))
         test_record_rules(_area(root, "record"))
         test_criteria(_area(root, "criteria"))
+        test_exit_tiers(_area(root, "tiers"))
+        test_milestone_ladder(_area(root, "ladder"))
         test_gates(_area(root, "gates"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")

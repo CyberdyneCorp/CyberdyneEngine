@@ -62,7 +62,7 @@ class DrivenBudgets {
 public:
     DrivenBudgets() noexcept {
         baseline_ = live_bytes();
-        budget_ = baseline_ * 10 + 1024;
+        budget_ = (baseline_ * 10) + 1024;
         step_ = (budget_ - baseline_) / 1024;
         step_ = (step_ == 0) ? 1 : step_;
         tree_.set(cy::MemoryDomain::Scripting, budget_, cy::BudgetKind::Soft);

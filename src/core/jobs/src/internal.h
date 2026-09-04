@@ -291,11 +291,18 @@ struct JobSystemImpl {
     void teardown() noexcept;
 
     // --- Records ------------------------------------------------------------------------------
-    u32 allocate_record(u32 participant) noexcept;
-    void retain(TaskRecord& record) noexcept;
-    void release(u32 index) noexcept;
+    //
+    // `const` on several members below is narrower than it reads. The state a job system owns
+    // — the record array, the participant array, the deques — lives behind raw pointers, so a
+    // member that mutates it changes nothing in the object's own bytes and is const in the
+    // language's sense. It is not a claim that the call has no effect; `allocate_record` takes a
+    // slot off a free list and `release` returns one to it. Read the qualifier as "does not
+    // repoint the system", never as "does not change anything".
+    u32 allocate_record(u32 participant) const noexcept;
+    static void retain(TaskRecord& record) noexcept;
+    void release(u32 index) const noexcept;
     /// Take a reference on the record `handle` names, or fail because it has completed.
-    bool acquire(JobHandle handle, u32& index) noexcept;
+    bool acquire(JobHandle handle, u32& index) const noexcept;
 
     u32 allocate_node() noexcept;
     void free_node(u32 index) noexcept;
@@ -304,15 +311,15 @@ struct JobSystemImpl {
     void enqueue(u32 task, u32 participant) noexcept;
     /// Propagate a completed dependency's chain into its successor. Takes the successor's path
     /// lock, because the length and the predecessor that supplied it must agree.
-    void propagate_path(u32 successor, u64 path_ns, u32 entry) noexcept;
+    void propagate_path(u32 successor, u64 path_ns, u32 entry) const noexcept;
     bool acquire_task(u32 participant, u32& task) noexcept;
     void execute(u32 participant, u32 task) noexcept;
     void complete(u32 participant, u32 task, bool ran) noexcept;
     /// Run one ready task if there is one. The unit both `wait()` and a worker loop are built from.
     bool run_one(u32 participant) noexcept;
 
-    u32 claim_participant() noexcept;
-    void release_participant(u32 participant) noexcept;
+    u32 claim_participant() const noexcept;
+    void release_participant(u32 participant) const noexcept;
 
     void wake_one() noexcept;
     void wake_all() noexcept;

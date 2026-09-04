@@ -176,6 +176,10 @@ public:
     [[nodiscard]] void* memory() noexcept { return memory_; }
 
 private:
+    // NOLINTBEGIN(bugprone-casting-through-void) — through void* on purpose. A chunk is a byte
+    // block whose header and version array are placed at computed, correctly aligned offsets; a
+    // direct reinterpret_cast from `u8*` is what -Wcast-align reports, and the engine builds with
+    // -Werror. The alignment is established by ChunkLayout, which is where it belongs.
     [[nodiscard]] ChunkHeader& header() noexcept {
         return *static_cast<ChunkHeader*>(static_cast<void*>(memory_));
     }
@@ -189,6 +193,7 @@ private:
         return static_cast<const u64*>(
             static_cast<const void*>(memory_ + layout_->versions_offset()));
     }
+    // NOLINTEND(bugprone-casting-through-void)
 
     void move_row_bytes(u32 target, u32 source) noexcept;
 
@@ -230,7 +235,7 @@ public:
     RowMove remove_row(u32 chunk, u32 row) noexcept;
 
     [[nodiscard]] u32 chunk_count() const noexcept { return static_cast<u32>(chunks_.size()); }
-    [[nodiscard]] ChunkView chunk(u32 index) noexcept { return ChunkView(chunks_[index], layout_); }
+    [[nodiscard]] ChunkView chunk(u32 index) noexcept { return {chunks_[index], layout_}; }
     [[nodiscard]] u64 row_count() const noexcept;
     [[nodiscard]] const ChunkLayout& layout() const noexcept { return layout_; }
 

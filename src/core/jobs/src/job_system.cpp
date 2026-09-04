@@ -8,19 +8,28 @@
 //
 //   1. the frame-log entry is appended, so the chain ending at this task exists;
 //   2. `completed_path_ns` and `frame_entry` are written, for a dependent that arrives late;
-//   3. the outcome is stored;
-//   4. the successor list is closed with a release exchange, which publishes 1-3;
-//   5. each successor inherits the chain, and only then has its dependency count decremented.
+//   3. the execution counters are incremented, so a thread released by step 4 sees this task in
+//      them;
+//   4. the outcome is stored;
+//   5. the successor list is closed with a release exchange, which publishes 1-4;
+//   6. each successor inherits the chain, and only then has its dependency count decremented.
 //
-// Step 5's order is why a task never starts before it knows the longest chain behind it. Reversing
+// Step 6's order is why a task never starts before it knows the longest chain behind it. Reversing
 // it would not lose work — the scheduling would still be correct — it would silently report a
 // critical path shorter than the real one, which is worse than reporting none.
+//
+// Step 3 is before step 4 for a reason found by running the suite under load: the store in step 4
+// is what `wait()` observes, so anything incremented after it can be missing from a `stats()` read
+// taken the instant `wait()` returns. `integration.jobs_diagnostics` asserted an exact
+// `tasks_executed` immediately after a wait and failed roughly one run in twenty-five on a loaded
+// machine. Counters that describe a finished task belong on the publishing side of that store.
 
 #include "internal.h"
 
 #include <cy/core/base/assert.h>
 #include <cy/core/jobs/job_system.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <new>
@@ -188,7 +197,7 @@ bool OrderedReadyQueue::pop(u32& task) noexcept {
     keys[0] = keys[size];
     u32 index = 0;
     for (;;) {
-        const u32 left = 2 * index + 1;
+        const u32 left = (2 * index) + 1;
         const u32 right = left + 1;
         u32 smallest = index;
         if (left < size && keys[left] < keys[smallest]) {
@@ -215,7 +224,8 @@ u32 OrderedReadyQueue::depth() noexcept {
     return size;
 }
 
-// --- Lifecycle ------------------------------------------------------------------------------------
+// --- Lifecycle
+// ------------------------------------------------------------------------------------
 
 Status JobSystemImpl::initialize(const JobSystemConfig& requested) noexcept {
     config = requested;
@@ -253,8 +263,9 @@ Status JobSystemImpl::initialize(const JobSystemConfig& requested) noexcept {
     node_count = record_count * 4;
     nodes = new (std::nothrow) SuccessorNode[node_count];
     if (nodes == nullptr) {
-        return fail(ErrorCode::OutOfMemory, "the job system's successor pool could not be "
-                                            "allocated");
+        return fail(ErrorCode::OutOfMemory,
+                    "the job system's successor pool could not be "
+                    "allocated");
     }
     for (u32 i = 0; i < node_count; ++i) {
         nodes[i].next = i + 1 == node_count ? kNoNode : i + 1;
@@ -270,8 +281,9 @@ Status JobSystemImpl::initialize(const JobSystemConfig& requested) noexcept {
     ordered.heap = new (std::nothrow) u32[record_count];
     ordered.keys = new (std::nothrow) u64[record_count];
     if (ordered.heap == nullptr || ordered.keys == nullptr) {
-        return fail(ErrorCode::OutOfMemory, "the job system's ordered queue could not be "
-                                            "allocated");
+        return fail(ErrorCode::OutOfMemory,
+                    "the job system's ordered queue could not be "
+                    "allocated");
     }
 
     for (u32 p = 0; p < participant_count; ++p) {
@@ -286,8 +298,7 @@ Status JobSystemImpl::initialize(const JobSystemConfig& requested) noexcept {
             records[i].owner = p;
             records[i].free_next = i + 1 == participant.slab_end ? kNoNode : i + 1;
         }
-        for (u32 priority = 0; priority < kPriorityCount; ++priority) {
-            Deque& queue = participant.queues[priority];
+        for (auto& queue : participant.queues) {
             queue.slots = new (std::nothrow) u32[config.deque_capacity];
             if (queue.slots == nullptr) {
                 return fail(ErrorCode::OutOfMemory, "a job system deque could not be allocated");
@@ -302,8 +313,9 @@ Status JobSystemImpl::initialize(const JobSystemConfig& requested) noexcept {
 
     workers = new (std::nothrow) Thread[worker_count > 0 ? worker_count : 1];
     if (workers == nullptr) {
-        return fail(ErrorCode::OutOfMemory, "the job system's worker threads could not be "
-                                            "allocated");
+        return fail(ErrorCode::OutOfMemory,
+                    "the job system's worker threads could not be "
+                    "allocated");
     }
     for (u32 w = 0; w < worker_count; ++w) {
         participants[w].claimed.store(true, std::memory_order_relaxed);
@@ -330,9 +342,9 @@ void JobSystemImpl::teardown() noexcept {
 
     if (participants != nullptr) {
         for (u32 p = 0; p < participant_count; ++p) {
-            for (u32 priority = 0; priority < kPriorityCount; ++priority) {
-                delete[] participants[p].queues[priority].slots;
-                participants[p].queues[priority].slots = nullptr;
+            for (auto& queue : participants[p].queues) {
+                delete[] queue.slots;
+                queue.slots = nullptr;
             }
         }
     }
@@ -350,9 +362,10 @@ void JobSystemImpl::teardown() noexcept {
     ordered.keys = nullptr;
 }
 
-// --- Records and nodes ----------------------------------------------------------------------------
+// --- Records and nodes
+// ----------------------------------------------------------------------------
 
-u32 JobSystemImpl::allocate_record(u32 participant) noexcept {
+u32 JobSystemImpl::allocate_record(u32 participant) const noexcept {
     Participant& owner = participants[participant];
     u32 index = kNoNode;
     {
@@ -386,7 +399,7 @@ void JobSystemImpl::retain(TaskRecord& record) noexcept {
     record.ref_count.fetch_add(1, std::memory_order_relaxed);
 }
 
-void JobSystemImpl::release(u32 index) noexcept {
+void JobSystemImpl::release(u32 index) const noexcept {
     TaskRecord& record = records[index];
     if (record.ref_count.fetch_sub(1, std::memory_order_acq_rel) != 1) {
         return;
@@ -407,7 +420,7 @@ void JobSystemImpl::release(u32 index) noexcept {
     owner.free_count.fetch_add(1, std::memory_order_relaxed);
 }
 
-bool JobSystemImpl::acquire(JobHandle handle, u32& index) noexcept {
+bool JobSystemImpl::acquire(JobHandle handle, u32& index) const noexcept {
     if (handle.is_null() || handle.index() >= record_count) {
         return false;
     }
@@ -420,9 +433,8 @@ bool JobSystemImpl::acquire(JobHandle handle, u32& index) noexcept {
         if (record.generation.load(std::memory_order_acquire) != handle.generation()) {
             return false;
         }
-        if (record.ref_count.compare_exchange_weak(references, references + 1,
-                                                   std::memory_order_acq_rel,
-                                                   std::memory_order_relaxed)) {
+        if (record.ref_count.compare_exchange_weak(
+                references, references + 1, std::memory_order_acq_rel, std::memory_order_relaxed)) {
             // The slot may have been freed and reallocated between the generation check and the
             // exchange. Re-reading is what turns that into a clean "already complete" rather than
             // into a dependency linked onto a stranger.
@@ -453,9 +465,10 @@ void JobSystemImpl::free_node(u32 index) noexcept {
     node_free_head = index;
 }
 
-// --- Scheduling ------------------------------------------------------------------------------------
+// --- Scheduling
+// ------------------------------------------------------------------------------------
 
-void JobSystemImpl::propagate_path(u32 successor, u64 path_ns, u32 entry) noexcept {
+void JobSystemImpl::propagate_path(u32 successor, u64 path_ns, u32 entry) const noexcept {
     TaskRecord& record = records[successor];
     ScopedLock<SpinLock> held(record.path_lock);
     if (path_ns > record.inherited_path_ns) {
@@ -548,8 +561,8 @@ bool JobSystemImpl::acquire_task(u32 participant, u32& task) noexcept {
 
     const PriorityOrder order = priority_order(config.mode, me, config.fairness_quantum);
 
-    for (u32 i = 0; i < kPriorityCount; ++i) {
-        if (me.queues[order.order[i]].pop_back(task)) {
+    for (const u32 priority : order.order) {
+        if (me.queues[priority].pop_back(task)) {
             ready_count.fetch_sub(1, std::memory_order_relaxed);
             return true;
         }
@@ -564,10 +577,10 @@ bool JobSystemImpl::acquire_task(u32 participant, u32& task) noexcept {
             continue;
         }
         me.steal_attempts.fetch_add(1, std::memory_order_relaxed);
-        for (u32 i = 0; i < kPriorityCount; ++i) {
+        for (const u32 priority : order.order) {
             // The oldest end: the task least likely to have its data still in the victim's cache,
             // and the one most likely to have a large subtree under it.
-            if (participants[victim].queues[order.order[i]].pop_front(task)) {
+            if (participants[victim].queues[priority].pop_front(task)) {
                 me.steal_successes.fetch_add(1, std::memory_order_relaxed);
                 ready_count.fetch_sub(1, std::memory_order_relaxed);
                 return true;
@@ -635,9 +648,10 @@ void JobSystemImpl::execute(u32 participant, u32 task) noexcept {
         context.name = record.name;
         context.priority = record.priority;
         context.deadline = record.deadline;
-        context.self = JobHandle::from_slot(task, record.generation.load(std::memory_order_relaxed));
-        context.data = record.inline_size != 0 ? static_cast<const void*>(record.inline_data)
-                                               : nullptr;
+        context.self =
+            JobHandle::from_slot(task, record.generation.load(std::memory_order_relaxed));
+        context.data =
+            record.inline_size != 0 ? static_cast<const void*>(record.inline_data) : nullptr;
 
         if (config.emit_trace) {
             trace_task_begin(record.name, context.worker, record.priority, record.sequence);
@@ -692,18 +706,30 @@ void JobSystemImpl::complete(u32 participant, u32 task, bool ran) noexcept {
     entry.priority = record.priority;
     const u32 entry_index = append_frame_entry(entry);
 
-    // Steps 2 and 3 of the completion order in this file's header comment.
+    // Step 2 of the completion order in this file's header comment.
     record.completed_path_ns = entry.path_ns;
     record.frame_entry = entry_index;
-    // RELEASE, and this is the single most load-bearing memory order in the module. `wait()` polls
-    // `outcome()`, which loads this with acquire; the release is what makes everything the task
-    // wrote — its results, the frame-log entry above, the coroutine frame it resumed — visible to
-    // the thread that waited for it. Relaxed here compiles and passes every functional test, and
-    // ThreadSanitizer reports it as a race in eight different places, because it is one.
+
+    // Step 3: the counters, BEFORE the release store below rather than after it. A thread returning
+    // from `wait()` has observed that store, so a counter incremented after it can be short by the
+    // very task the caller waited for. Relaxed is still right — no state is published through them
+    // — but they must be written on this side of the release.
+    tasks_executed.fetch_add(1, std::memory_order_relaxed);
+    executed_by_priority[static_cast<u32>(record.priority)].fetch_add(1, std::memory_order_relaxed);
+    if (!ran) {
+        tasks_cancelled.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // Step 4. RELEASE, and this is the single most load-bearing memory order in the module.
+    // `wait()` polls `outcome()`, which loads this with acquire; the release is what makes
+    // everything the task wrote — its results, the frame-log entry above, the coroutine frame it
+    // resumed — visible to the thread that waited for it. Relaxed here compiles and passes every
+    // functional test, and ThreadSanitizer reports it as a race in eight different places, because
+    // it is one.
     record.outcome.store(static_cast<u8>(ran ? TaskOutcome::Completed : TaskOutcome::Cancelled),
                          std::memory_order_release);
 
-    // Step 4: the release exchange publishes everything above to any thread that reads the closed
+    // Step 5: the release exchange publishes everything above to any thread that reads the closed
     // list with an acquire.
     u32 node = record.successors_head.exchange(kListClosed, std::memory_order_acq_rel);
     while (node != kNoNode && node != kListClosed) {
@@ -712,18 +738,13 @@ void JobSystemImpl::complete(u32 participant, u32 task, bool ran) noexcept {
         free_node(node);
 
         propagate_path(successor, entry.path_ns, entry_index);
-        if (records[successor].dependencies_remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        if (records[successor].dependencies_remaining.fetch_sub(1, std::memory_order_acq_rel) ==
+            1) {
             enqueue(successor, participant);
         }
         node = next;
     }
 
-    tasks_executed.fetch_add(1, std::memory_order_relaxed);
-    executed_by_priority[static_cast<u32>(record.priority)].fetch_add(1,
-                                                                     std::memory_order_relaxed);
-    if (!ran) {
-        tasks_cancelled.fetch_add(1, std::memory_order_relaxed);
-    }
     tasks_in_flight.fetch_sub(1, std::memory_order_acq_rel);
     release(task);
 }
@@ -737,12 +758,11 @@ bool JobSystemImpl::run_one(u32 participant) noexcept {
     return true;
 }
 
-u32 JobSystemImpl::claim_participant() noexcept {
+u32 JobSystemImpl::claim_participant() const noexcept {
     for (u32 p = worker_count; p < participant_count; ++p) {
         bool expected = false;
-        if (participants[p].claimed.compare_exchange_strong(expected, true,
-                                                            std::memory_order_acq_rel,
-                                                            std::memory_order_relaxed)) {
+        if (participants[p].claimed.compare_exchange_strong(
+                expected, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
             return p;
         }
     }
@@ -751,7 +771,7 @@ u32 JobSystemImpl::claim_participant() noexcept {
     return kNotAWorker;
 }
 
-void JobSystemImpl::release_participant(u32 participant) noexcept {
+void JobSystemImpl::release_participant(u32 participant) const noexcept {
     if (participant >= worker_count && participant < participant_count) {
         participants[participant].claimed.store(false, std::memory_order_release);
     }
@@ -844,7 +864,8 @@ void JobSystemImpl::watchdog_main() noexcept {
         for (u32 p = 0; p < participant_count; ++p) {
             Participant& participant = participants[p];
 
-            const i64 blocking_since = participant.blocking_since_ns.load(std::memory_order_relaxed);
+            const i64 blocking_since =
+                participant.blocking_since_ns.load(std::memory_order_relaxed);
             if (blocking_since != 0 && now - blocking_since > config.blocked_worker_threshold_ns &&
                 participant.blocking_reported_ns.load(std::memory_order_relaxed) !=
                     blocking_since) {
@@ -896,7 +917,8 @@ void JobSystemImpl::watchdog_main() noexcept {
 
 }  // namespace detail
 
-// --- JobSystem ------------------------------------------------------------------------------------
+// --- JobSystem
+// ------------------------------------------------------------------------------------
 
 JobSystem::JobSystem() noexcept = default;
 
@@ -1080,8 +1102,8 @@ Expected<JobHandle, cy::Error> JobSystem::submit(const JobDesc& desc) noexcept {
         impl.release(dependency);
     }
 
-    const u32 outstanding = record.dependencies_remaining.fetch_sub(satisfied + 1,
-                                                                   std::memory_order_acq_rel);
+    const u32 outstanding =
+        record.dependencies_remaining.fetch_sub(satisfied + 1, std::memory_order_acq_rel);
     if (outstanding == satisfied + 1) {
         impl.enqueue(slot, slab);
     }
@@ -1107,9 +1129,7 @@ u64 JobSystem::partition_count(u64 count, u64 grain) noexcept {
     u64 partitions = (count + effective_grain - 1) / effective_grain;
     // A cap, so that a one-element grain over a million elements does not become a million tasks.
     // It is a function of count and grain alone, which is what keeps the partitioning reproducible.
-    if (partitions > kMaxParallelPartitions) {
-        partitions = kMaxParallelPartitions;
-    }
+    partitions = std::min(partitions, kMaxParallelPartitions);
     return partitions;
 }
 
@@ -1123,12 +1143,8 @@ void JobSystem::partition_range(u64 count, u64 grain, u64 index, u64& begin, u64
     const u64 chunk = (count + partitions - 1) / partitions;
     begin = index * chunk;
     end = begin + chunk;
-    if (begin > count) {
-        begin = count;
-    }
-    if (end > count) {
-        end = count;
-    }
+    begin = std::min(begin, count);
+    end = std::min(end, count);
 }
 
 namespace {
@@ -1189,7 +1205,7 @@ Expected<JobHandle, cy::Error> JobSystem::submit_parallel_for(u64 count, u64 gra
     CY_ASSERT_MSG(partitions <= kMaxParallelPartitions, "partition_count exceeded its own cap");
 
     for (u64 i = 0; i < partitions; ++i) {
-        ParallelForArguments arguments;
+        ParallelForArguments arguments{};
         arguments.body = body;
         arguments.user = user;
         arguments.count = count;
@@ -1376,8 +1392,8 @@ JobSystemStats JobSystem::stats() const noexcept {
         out.worker_idle_ns += participant.idle_ns.load(std::memory_order_relaxed);
         out.steal_attempts += participant.steal_attempts.load(std::memory_order_relaxed);
         out.steal_successes += participant.steal_successes.load(std::memory_order_relaxed);
-        for (u32 i = 0; i < kPriorityCount; ++i) {
-            out.queue_depth += participant.queues[i].size();
+        for (const auto& queue : participant.queues) {
+            out.queue_depth += queue.size();
         }
     }
     return out;
@@ -1391,8 +1407,8 @@ void JobSystem::reset_stats() noexcept {
     impl.tasks_submitted.store(0, std::memory_order_relaxed);
     impl.tasks_executed.store(0, std::memory_order_relaxed);
     impl.tasks_cancelled.store(0, std::memory_order_relaxed);
-    for (u32 i = 0; i < kPriorityCount; ++i) {
-        impl.executed_by_priority[i].store(0, std::memory_order_relaxed);
+    for (auto& executed : impl.executed_by_priority) {
+        executed.store(0, std::memory_order_relaxed);
     }
     impl.queue_latency_ns.store(0, std::memory_order_relaxed);
     impl.queue_latency_samples.store(0, std::memory_order_relaxed);
@@ -1422,16 +1438,14 @@ CriticalPath JobSystem::critical_path() const noexcept {
     path.entries_dropped = impl.frame_log_dropped.load(std::memory_order_relaxed);
 
     u32 used = impl.frame_log_used.load(std::memory_order_acquire);
-    if (used > impl.config.frame_log_entries) {
-        used = impl.config.frame_log_entries;
-    }
+    used = std::min(used, impl.config.frame_log_entries);
     path.tasks_recorded = used;
 
     u32 longest = detail::kNoNode;
     for (u32 i = 0; i < used; ++i) {
         path.total_task_ns += impl.frame_log[i].duration_ns;
-        if (longest == detail::kNoNode || impl.frame_log[i].path_ns >
-                                              impl.frame_log[longest].path_ns) {
+        if (longest == detail::kNoNode ||
+            impl.frame_log[i].path_ns > impl.frame_log[longest].path_ns) {
             longest = i;
         }
     }

@@ -12,12 +12,13 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/allocator.h>
+#include <cy/core/memory/sanitizer.h>
 
 namespace cy {
 
 /// The default chunk size. 16 KiB is the figure `core-memory-and-containers` names for component
 /// storage; a handle pool with a different object size passes its own.
-inline constexpr usize kDefaultChunkBytes = 16u * 1024u;
+inline constexpr usize kDefaultChunkBytes = usize{16} * 1024;
 
 /// The most chunks one allocator addresses. The pointer array is fixed at this size and
 /// pre-reserved so that growth never reallocates it under a concurrent reader — the property
@@ -33,7 +34,7 @@ public:
 
     /// Point this allocator at the upstream it takes chunks from. Defaults to the system allocator
     /// for its own domain; call before the first acquire, or not at all.
-    void set_upstream(Allocator& upstream) noexcept;
+    void set_upstream(Allocator& source) noexcept;
 
     /// THE HOT PATH. One chunk, or null when upstream refuses. Non-virtual: a caller with the
     /// concrete type pays a load and a branch on the free list.

@@ -6,7 +6,7 @@ a change has to pass. Three recipes, four data files, and no judgement anywhere 
 ```
 just roadmap-status                # every capability's tier, milestone and change
 just roadmap-milestone m0          # M0's exit criteria, run
-just roadmap-milestone m0 --list   # what they are, without running them
+just roadmap-milestone m1 --list   # what M1's are, without running them
 just roadmap-gates                 # the permanent merge gates and any recorded override
 just roadmap-test                  # the tooling's own tests, including the three drift cases
 ```
@@ -16,7 +16,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | Path | Is |
 |---|---|
 | `docs/roadmap/status.yaml` | The record. One entry per capability: tier, the milestone that last advanced it, the change that did so. Not owned by this directory — owned by whoever advances a capability. |
-| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. M1 through M11 add a file each and change no code. |
+| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. `m0.toml` and `m1.toml` today; M2 through M11 add a file each and change no code. |
 | `tools/roadmap/gates.toml` | The permanent merge-gate set, and the overrides recorded against it. |
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
 | `roadmap.py` | The command line behind the recipes. |
@@ -71,9 +71,16 @@ Exit status: `0` every criterion this host evaluated passed, `1` one failed, `2`
 ## Gates, and overrides
 
 `gates.toml` is the permanent set `testing-and-quality` requires: the three-platform build and test,
-format, lint, layering, generated-code currency, spec validation, and the status record. It exists
-as data so that continuous integration, the contributor documentation and this tool name the same
-gates — three hand-maintained copies of a list diverge, and the copy that drifts is the one in CI.
+format, lint, layering, generated-code currency, spec validation, and the status record. M1 added
+seven more — type and field identity, the reflection round-trip goldens, the project graph's
+rejections, the sanitizers over the job suite, the job system's throughput benchmark, the three
+non-default profiles, and the workflow check itself. It exists as data so that continuous
+integration, the contributor documentation and this tool name the same gates — three
+hand-maintained copies of a list diverge, and the copy that drifts is the one in CI.
+
+`tools/ci/check_workflows.py` is the check that stops the CI copy from drifting: a gate declared
+`class = "permanent"` whose commands no job in `.github/workflows/` runs fails `just ci-check`. So a
+gate is declared and its job lands in the same change, or neither does.
 
 `just roadmap-gates --commands` prints exactly what a workflow must run, one command per line.
 
@@ -91,5 +98,17 @@ merge. That is recorded in `gates.toml` as a gate of `class = "milestone"`, carr
 `state = "joins-on-close"` until the milestone closes and `state = "green"` from then on. From that
 point a change that breaks `just roadmap-milestone m0` does not merge unless it lands the
 criterion's recorded replacement in the same change.
+
+M1 is the first milestone to have to obey that rule, and it did not: two of its modules landed with
+findings against the `lint` gate M0 closed with, which turned `just roadmap-milestone m0` red. So
+`m1.toml`'s first criterion runs `just roadmap-milestone m0` — the rule as something the closing
+recipe executes rather than something a reviewer is expected to remember. Every milestone ledger
+after this one should carry the same criterion for the milestone before it.
+
+`just roadmap-test` checks the ladder itself on every pull request: every ledger under
+`milestones/` loads, every criterion in it names a gate that exists, and every milestone with a
+ledger has a `class = "milestone"` gate for its criteria to join. The milestone recipes each take a
+working session, so a ledger that has stopped loading has to fail somewhere cheaper than the day
+somebody tries to close a milestone.
 
 **Governed by**: `delivery-roadmap`, `testing-and-quality` (Quality gates for merge).

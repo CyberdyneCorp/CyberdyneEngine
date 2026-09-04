@@ -19,6 +19,8 @@ ci-check *args:
     python3 tools/ci/check_workflows.py {{args}}
     echo "==> env-doctor  against deliberately broken environments"
     python3 tools/ci/test_env_doctor.py {{args}}
+    echo "==> recipes     invariants a gate downstream of a recipe depends on"
+    python3 tools/ci/test_recipes.py {{args}}
 
 # List the jobs of every workflow and the recipes each one invokes. The gate set, from the source.
 ci-jobs:

@@ -9,6 +9,9 @@
 #   startup_order  task 3.4.4 — the runtime's startup and shutdown order, compared across a hundred
 #                  processes. It belongs to this suite rather than to the unit set because the claim
 #                  is about a process's whole lifetime and only separate processes can make it.
+#   headless_host  tasks 5.3 and 5.4 — samples/01-headless-host: a clean exit and a budget report
+#                  with real figures in it, then the same run a hundred times over, compared line
+#                  for line. It is the M1 milestone gate.
 #
 # The binaries under test are passed as their generator expressions, so a test cannot be run against
 # a path that does not exist or against a stale copy somewhere else in the tree.
@@ -21,3 +24,7 @@ cy_add_test(NAME empty_sample KIND smoke
 cy_add_test(NAME startup_order KIND smoke
             SOURCES test_startup_order.cpp
             DEFINITIONS CY_STARTUP_PROBE="$<TARGET_FILE:cy_runtime_startup_probe>")
+
+cy_add_test(NAME headless_host KIND smoke
+            SOURCES test_headless_host.cpp
+            DEFINITIONS CY_SAMPLE_HEADLESS_HOST="$<TARGET_FILE:cy_sample_headless-host>")

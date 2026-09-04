@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "fixture-plugin",
+    "version": "0.1.0",
+    "engine_version": "0.0.0"
+  },
+  "modules": [
+    {
+      "name": "fx-core",
+      "path": "modules/fx-core",
+      "layer": "core",
+      "type": "runtime",
+      "registration_level": "Core",
+      "public_dependencies": [],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    }
+  ],
+  "plugins": [
+    {
+      "id": "com.example.legacy",
+      "version": "1.0.0",
+      "engine_api": ">=9.0.0"
+    }
+  ]
+}

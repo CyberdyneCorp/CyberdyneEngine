@@ -23,7 +23,7 @@ using namespace cy::jobs;
 using cy::jobs::test::ScopedJobSystem;
 
 void burn_ms(i64 milliseconds) noexcept {
-    const i64 until = monotonic_now_ns() + milliseconds * 1'000'000;
+    const i64 until = monotonic_now_ns() + (milliseconds * 1'000'000);
     volatile u64 sink = 0;
     while (monotonic_now_ns() < until) {
         for (u32 i = 0; i < 1000; ++i) {
@@ -87,10 +87,10 @@ CY_TEST_CASE("the critical path is the longest chain, not the sum of the duratio
     CY_REQUIRE(third.has_value());
 
     JobHandle beside[6];
-    for (u32 i = 0; i < 6; ++i) {
+    for (auto& neighbour : beside) {
         auto handle = system->submit(&short_step, nullptr, "beside");
         CY_REQUIRE(handle.has_value());
-        beside[i] = handle.value();
+        neighbour = handle.value();
     }
 
     system->wait(third.value());
@@ -206,8 +206,8 @@ CY_TEST_CASE("job and task events land on the M0 shared trace") {
         system->begin_frame(1);
 
         for (u32 i = 0; i < 32; ++i) {
-            auto handle = system->submit([](const TaskContext&, void*) noexcept {}, nullptr,
-                                         "traced");
+            auto handle =
+                system->submit([](const TaskContext&, void*) noexcept {}, nullptr, "traced");
             CY_REQUIRE(handle.has_value());
         }
         system->wait_for_idle();

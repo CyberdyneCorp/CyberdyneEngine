@@ -11,14 +11,17 @@ namespace cy {
 namespace detail {
 
 void BumpRegion::poison(usize offset, usize bytes) noexcept {
-#if defined(CY_DEVELOPMENT)
-    if (data_ != nullptr && bytes != 0) {
-        std::memset(data_ + offset, kArenaPoisonByte, bytes);
+    if (data_ == nullptr || bytes == 0) {
+        return;
     }
-#else
-    (void)offset;
-    (void)bytes;
+    // Unpoison first: the range being given up holds the alignment padding between the allocations
+    // that were in it, and that padding is poisoned. Writing the byte pattern over it without this
+    // would be the very use-after-poison the poisoning exists to report.
+    unpoison_memory(data_ + offset, bytes);
+#if defined(CY_DEVELOPMENT)
+    std::memset(data_ + offset, kArenaPoisonByte, bytes);
 #endif
+    poison_memory(data_ + offset, bytes);
 }
 
 }  // namespace detail
@@ -31,6 +34,7 @@ ArenaAllocator::~ArenaAllocator() {
 }
 
 void ArenaAllocator::release() noexcept {
+    region_.unpoison_all();
     if (upstream_ != nullptr && region_.data() != nullptr) {
         upstream_->deallocate(region_.data(), region_.capacity(), kDefaultAlignment);
     }
@@ -96,6 +100,7 @@ StackAllocator::~StackAllocator() {
 }
 
 void StackAllocator::release_block() noexcept {
+    region_.unpoison_all();
     if (upstream_ != nullptr && region_.data() != nullptr) {
         upstream_->deallocate(region_.data(), region_.capacity(), kDefaultAlignment);
     }

@@ -24,7 +24,8 @@ public:
     /// `slab_bytes` is the size of each block taken from upstream. An allocation larger than this
     /// gets a slab of its own, sized to it, so a large coroutine frame is served rather than
     /// refused.
-    SlabAllocator(MemoryDomain domain, AllocationTag tag, usize slab_bytes = 64u * 1024u) noexcept;
+    SlabAllocator(MemoryDomain domain, AllocationTag tag,
+                  usize slab_bytes = usize{64} * 1024) noexcept;
     ~SlabAllocator() override;
 
     void set_upstream(Allocator& upstream) noexcept;
@@ -62,8 +63,8 @@ private:
     /// One slab: its own bump region, and the link to the next. The header lives at the front of
     /// the block it describes, so a slab costs one upstream allocation rather than two.
     struct Slab {
-        Slab* next;
-        usize bytes;  // the whole block, header included
+        Slab* next = nullptr;
+        usize bytes = 0;  // the whole block, header included
         detail::BumpRegion region;
     };
 

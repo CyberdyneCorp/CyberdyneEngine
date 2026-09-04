@@ -169,8 +169,8 @@ CY_TEST_CASE("a parallel loop partitions by grain and covers every index exactly
         std::atomic<u32> partitions{0};
     };
     static Loop loop;
-    for (u64 i = 0; i < kCount; ++i) {
-        loop.visits[i].store(0);
+    for (auto& visit : loop.visits) {
+        visit.store(0);
     }
 
     auto handle = system->submit_parallel_for(
@@ -186,8 +186,8 @@ CY_TEST_CASE("a parallel loop partitions by grain and covers every index exactly
     CY_REQUIRE(handle.has_value());
     system->wait(handle.value());
 
-    for (u64 i = 0; i < kCount; ++i) {
-        CY_REQUIRE_EQ(loop.visits[i].load(), 1u);
+    for (auto& visit : loop.visits) {
+        CY_REQUIRE_EQ(visit.load(), 1u);
     }
     // Ranges of at least the grain, so a small loop does not pay more in scheduling than it saves.
     CY_CHECK_EQ(loop.partitions.load(), JobSystem::partition_count(kCount, 256));

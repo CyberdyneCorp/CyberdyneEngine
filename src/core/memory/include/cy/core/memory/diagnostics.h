@@ -69,9 +69,8 @@ void memory_trace_pressure(PressureLevel level, PressureLevel previous, MemoryDo
 
 /// Record that a hard budget refused a growth, or that a cache evicted rather than allocate. The
 /// "the eviction SHALL be reported" half of the budget requirement.
-void memory_trace_budget_violation(MemoryDomain domain, u64 wanted_bytes,
-                                   u64 budget_bytes) noexcept;
-void memory_trace_eviction(MemoryDomain domain, u64 bytes) noexcept;
+void memory_trace_budget_violation(MemoryDomain which, u64 wanted, u64 allowance) noexcept;
+void memory_trace_eviction(MemoryDomain which, u64 bytes) noexcept;
 
 /// Write the process's leak report to the log: one record per leaked allocation with its tag, size
 /// and call site, and a summary. Allocations declared through `lifetime.h` are counted as

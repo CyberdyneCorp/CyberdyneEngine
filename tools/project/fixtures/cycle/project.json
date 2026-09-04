@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "fixture-cycle",
+    "version": "0.1.0",
+    "engine_version": "0.0.0"
+  },
+  "modules": [
+    {
+      "name": "fx-alpha",
+      "path": "modules/fx-alpha",
+      "layer": "core",
+      "type": "runtime",
+      "registration_level": "Core",
+      "public_dependencies": [
+        "fx-beta"
+      ],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-beta",
+      "path": "modules/fx-beta",
+      "layer": "core",
+      "type": "runtime",
+      "registration_level": "Core",
+      "public_dependencies": [
+        "fx-gamma"
+      ],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    },
+    {
+      "name": "fx-gamma",
+      "path": "modules/fx-gamma",
+      "layer": "core",
+      "type": "runtime",
+      "registration_level": "Core",
+      "public_dependencies": [
+        "fx-alpha"
+      ],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    }
+  ]
+}

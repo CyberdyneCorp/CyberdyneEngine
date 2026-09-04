@@ -54,6 +54,10 @@ PROVISIONING = (
     "winget install",
     "choco install",
     "pipx install",
+    # The reflection generator's frontend bindings. `reflect_gen.py` prints this exact command when
+    # they are absent, and a runner needs the same answer a person gets.
+    "pip install",
+    "python3 -m pip install",
 )
 
 # Tools whose use in a workflow means the workflow is doing a recipe's job, and the recipe that
@@ -226,6 +230,60 @@ def gate_coverage(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str
     return uncovered
 
 
+# The recipes that will not run without the pinned LLVM tooling, and so may not appear in a job that
+# has not installed it. `env-doctor` is here because it requires the pin rather than merely using it.
+NEEDS_PINNED_LLVM = ("just env-doctor", "just quality-format-check", "just quality-lint")
+
+PINNED_INSTALL = re.compile(r"\b(clang-format|clang-tidy)==(?P<version>[0-9][0-9.]*)")
+PIN_IN_JUSTFILE = re.compile(r"^llvm_pin_version\s*:=\s*'(?P<version>[^']+)'", re.MULTILINE)
+
+
+def pinned_version(root: pathlib.Path) -> str | None:
+    """The LLVM version the justfile pins, which is the one the workflows must install."""
+    justfile = root / "justfile"
+    if not justfile.exists():
+        return None
+    match = PIN_IN_JUSTFILE.search(justfile.read_text(encoding="utf-8"))
+    return match.group("version") if match else None
+
+
+def pin_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
+    """The workflows install the version the justfile pins, in every job that needs it.
+
+    `developer-workflow-and-just` requires continuous integration to use the same pinned versions as
+    developers. The pin lives in the justfile, `just env-doctor` enforces it, and a workflow that
+    installed a different version would produce a gate result nobody can reproduce — which is
+    exactly the failure the pin exists to prevent, reintroduced one edit later.
+    """
+    pin = pinned_version(root)
+    if pin is None:
+        return ["the justfile declares no llvm_pin_version, so the workflows cannot be checked"]
+
+    problems = []
+    for path in workflows:
+        installed: set[str] = set()
+        needed: dict[str, tuple[int, str]] = {}
+        for command in commands_in(path):
+            for tool, version in PINNED_INSTALL.findall(command.text):
+                if version != pin:
+                    problems.append(
+                        f"{path.name}:{command.line} installs {tool}=={version}, but the justfile "
+                        f"pins {pin}"
+                    )
+                else:
+                    installed.add(command.job)
+            for recipe in NEEDS_PINNED_LLVM:
+                if recipe in command.text and command.job not in needed:
+                    needed[command.job] = (command.line, recipe)
+        for job, (line, recipe) in needed.items():
+            if job not in installed:
+                problems.append(
+                    f"{path.name}:{line} job '{job}' runs `{recipe}` without installing the pinned "
+                    f"LLVM tooling (pip install clang-format=={pin} clang-tidy=={pin})"
+                )
+    return problems
+
+
 # --- The check's own negative fixtures -------------------------------------------------------------
 #
 # A gate that has never been seen to fire is a gate nobody should trust. Each case below is a
@@ -282,7 +340,43 @@ def selftest(root: pathlib.Path) -> int:
             else:
                 print(f"ok   accepted: {step.splitlines()[0].strip()}")
 
-    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL)
+        # The pin's own negative fixtures. A workflow that installs the wrong version, and one that
+        # runs a gate needing the pinned tooling without installing it, must both be rejected; the
+        # correct one must not be.
+        pin = pinned_version(root) or "0.0.0"
+        pin_cases = (
+            (
+                f"run: |\n          pip install clang-format==1.2.3 clang-tidy=={pin}\n"
+                f"      - run: just quality-lint",
+                "but the justfile pins",
+            ),
+            ("run: just quality-lint", "without installing the pinned LLVM tooling"),
+        )
+        for step, expected in pin_cases:
+            scratch.write_text(
+                f"jobs:\n  case:\n    steps:\n      - {step}\n", encoding="utf-8"
+            )
+            found = pin_drift(root, [scratch])
+            if any(expected in problem for problem in found):
+                print(f"ok   rejected: {expected}")
+            else:
+                failed += 1
+                print(f"fail expected {expected!r}, got {found or ['nothing']}", file=sys.stderr)
+
+        scratch.write_text(
+            "jobs:\n  case:\n    steps:\n"
+            f"      - run: pip install clang-format=={pin} clang-tidy=={pin}\n"
+            "      - run: just quality-lint\n",
+            encoding="utf-8",
+        )
+        found = pin_drift(root, [scratch])
+        if found:
+            failed += 1
+            print(f"fail accepted workflow was rejected: {found}", file=sys.stderr)
+        else:
+            print("ok   accepted: a job that installs the pinned tooling before the gate")
+
+    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 3
     if failed:
         print(f"check-workflows selftest: {failed} of {total} cases failed", file=sys.stderr)
         return 1
@@ -332,13 +426,16 @@ def main() -> int:
                 violations.extend(check_segment(path, command, segment, recipes))
 
     uncovered = gate_coverage(root, workflows)
+    drift = pin_drift(root, workflows)
 
-    if violations or uncovered:
+    if violations or uncovered or drift:
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
         for gap in uncovered:
             print(f"  {gap}\n      `just roadmap-gates` prints the declared set.", file=sys.stderr)
+        for gap in drift:
+            print(f"  {gap}\n      the pin is `llvm_pin_version` in the justfile.", file=sys.stderr)
         return 1
 
     print(

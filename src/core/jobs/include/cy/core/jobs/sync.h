@@ -26,7 +26,8 @@
 
 namespace cy::jobs {
 
-// --- Atomics --------------------------------------------------------------------------------------
+// --- Atomics
+// --------------------------------------------------------------------------------------
 //
 // Named wrappers rather than aliases, so that the engine's atomics can grow an operation the
 // standard library spells differently — or none at all — without a rename across the tree. The
@@ -127,7 +128,8 @@ private:
     std::atomic<u32> count_{0};
 };
 
-// --- Locks ----------------------------------------------------------------------------------------
+// --- Locks
+// ----------------------------------------------------------------------------------------
 
 class Mutex {
 public:

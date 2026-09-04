@@ -19,6 +19,7 @@ SlabAllocator::~SlabAllocator() {
         Slab* next = slab->next;
         const usize bytes = slab->bytes;
         Allocator& source = (upstream_ != nullptr) ? *upstream_ : system_allocator(domain_);
+        slab->region.unpoison_all();  // upstream must not receive a block this one left poisoned
         slab->~Slab();
         source.deallocate(slab, bytes, kDefaultAlignment);
         slab = next;

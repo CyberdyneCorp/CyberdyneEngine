@@ -7,11 +7,11 @@
 // deterministic order otherwise — rather than being refused. Parallelism is therefore derived, not
 // declared: nobody writes down which systems may run together, and nobody can get that wrong.
 //
-// EVERYTHING IS DECIDED AT REGISTRATION. `add()` runs the conflict test against every system already
-// registered and records the ordering edge there and then; `build()` turns the edges into batches;
-// `run()` executes a plan that is already complete. Nothing about a system's access is discovered
-// while it runs, which is the whole difference between "safe by construction" and "safe because the
-// test happened to cover it".
+// EVERYTHING IS DECIDED AT REGISTRATION. `add()` runs the conflict test against every system
+// already registered and records the ordering edge there and then; `build()` turns the edges into
+// batches; `run()` executes a plan that is already complete. Nothing about a system's access is
+// discovered while it runs, which is the whole difference between "safe by construction" and "safe
+// because the test happened to cover it".
 //
 // WHAT `add()` AND `order()` REFUSE, each because there is no schedule that satisfies it:
 //   * a system with no name, no body, or a name another system already has;
@@ -133,7 +133,8 @@ private:
     u32 next_sequence_ = 0;
 };
 
-// --- Systems --------------------------------------------------------------------------------------
+// --- Systems
+// --------------------------------------------------------------------------------------
 
 class SystemSchedule;
 

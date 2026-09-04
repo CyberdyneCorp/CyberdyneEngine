@@ -1,0 +1,226 @@
+# M1 — Substrate: the exit criteria, as data. Task 6.9.
+#
+# The sources are section 6 of openspec/changes/implement-m1-substrate/tasks.md and the M1 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a
+# recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate. A criterion that cannot be
+# evaluated on the host running the recipe — another operating system, no display — carries a
+# `reason`, is reported as not evaluated rather than as passed, and is counted separately.
+#
+# M1's own history is why the first criterion below is M0's whole set. `delivery-roadmap` says a
+# later milestone may not break an earlier milestone's gate, and M1 broke M0's static analysis gate
+# in two modules before this file existed. The rule is now something this recipe runs.
+
+schema = 1
+id = "m1"
+name = "Substrate"
+artefact = "samples/01-headless-host — loads a package from the virtual filesystem, runs a parallel job graph over reflected data, prints its memory budget tree, and shuts down deterministically"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "tasks 6.9 — `just roadmap-milestone m1` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 6.10 — docs/roadmap/status.yaml and docs/roadmap/capability-matrix.md are corrected where M1 recorded an intention the implementation changed, and record what is thinner than the tasks claim. The tiers below check the record; no tool can tell an intention from its correction.",
+    "tasks 6.11 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "tasks 6.3, 6.7 — the sanitizer passes, the throughput benchmark and the three non-default profiles each cost a build of their own. They are criteria rather than notes because they are runnable; expect this recipe to take a working session rather than a coffee break.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. M1 adds identity, reflection, project-graph, sanitizers, job-throughput, profiles and workflows to it.",
+]
+
+# --- What M1 must not have broken -----------------------------------------------------------------
+
+[[criterion]]
+id = "m0-green"
+describe = "M0's exit criteria are still green — a later milestone may not break an earlier milestone's gate"
+source = "delivery-roadmap (Milestone gates do not regress)"
+kind = "recipe"
+run = "just roadmap-milestone m0"
+timeout_s = 5400
+ci_job = "milestone-m0"
+
+# --- The static gates M1 added: cheap, and they fail first -----------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes"
+source = "tasks 6.11"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "layering"
+describe = "a layering violation between core modules fails the build, and each deliberately introduced violation is still rejected"
+source = "tasks 6.6, ROADMAP M1"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "project-graph"
+describe = "the project graph rejects a cycle, an undeclared dependency, an upward layer dependency, and a shipping target that reaches editor code"
+source = "tasks 6.6, ROADMAP M1 (project-and-plugins)"
+kind = "recipe"
+run = "just test-integration -R project_graph"
+ci_job = "project-graph"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate M1 declared is run by a job in .github/workflows/, and no job reimplements a recipe"
+source = "tasks 6.8"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 6.10, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M1's exit tiers, each naming the change that advanced it"
+source = "tasks 6.10, ROADMAP M1"
+kind = "tiers"
+ci_job = "milestone-m1"
+
+# The M1 row of docs/ROADMAP.md, as data. An exit tier is a floor rather than an equality: a later
+# milestone advancing one of these past its M1 level must not make this recipe fail.
+[criterion.expect_tiers]
+core-type-system = "working"
+core-memory-and-containers = "working"
+core-math = "working"
+core-jobs-and-concurrency = "working"
+core-assets-and-io = "seed"
+project-and-plugins = "working"
+engine-architecture = "seed"
+
+# --- Identity, reflection and generated code -------------------------------------------------------
+
+[[criterion]]
+id = "identity-manifest"
+describe = "the identity manifest matches the tree and the revision it is diffed against: nothing unassigned, nothing removed silently, no identifier moved or recycled"
+source = "tasks 6.1, ROADMAP M1"
+kind = "recipe"
+run = "just quality-identity"
+ci_job = "identity"
+
+[[criterion]]
+id = "identity-rename"
+describe = "the identity gate fails a renamed field with no tombstone, and passes when tombstoned"
+source = "tasks 6.1, ROADMAP M1"
+kind = "recipe"
+run = "just test-integration -R reflect_generator"
+ci_job = "identity"
+
+[[criterion]]
+id = "reflection-goldens"
+describe = "the reflection round-trip goldens pass: the committed encoding, a reordered one, and a payload carrying a field this build has never seen"
+source = "tasks 6.2, ROADMAP M1"
+kind = "recipe"
+run = "just test-unit -R reflect_"
+ci_job = "reflection"
+
+[[criterion]]
+id = "generated-code"
+describe = "generated code is current and its regeneration is byte-reproducible"
+source = "tasks 6.2, ROADMAP M1"
+kind = "recipe"
+run = "just generate-check"
+ci_job = "generated-code"
+
+# --- The job system, memory and the runtime --------------------------------------------------------
+
+[[criterion]]
+id = "job-throughput"
+describe = "the job system throughput benchmark meets its committed thresholds"
+source = "tasks 6.3, ROADMAP M1"
+kind = "recipe"
+run = "just test-bench-jobs --profile profile"
+timeout_s = 3600
+ci_job = "job-throughput"
+
+[[criterion]]
+id = "tsan-jobs"
+describe = "ThreadSanitizer is clean over the job suite"
+source = "tasks 6.3, ROADMAP M1"
+kind = "recipe"
+run = "just test-sanitize --sanitizer thread --tests jobs"
+timeout_s = 5400
+ci_job = "sanitizers"
+
+[[criterion]]
+id = "asan-jobs"
+describe = "AddressSanitizer and UndefinedBehaviorSanitizer are clean over the job suite, with the intentional lifetime allocations declared"
+source = "tasks 6.8"
+kind = "recipe"
+run = "just test-sanitize --sanitizer address,undefined --tests jobs"
+timeout_s = 5400
+ci_job = "sanitizers"
+
+[[criterion]]
+id = "memory-budgets"
+describe = "memory budgets report, and an over-budget domain raises pressure"
+source = "tasks 6.5, ROADMAP M1"
+kind = "recipe"
+run = "just test-unit -R memory"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "startup-order"
+describe = "startup and shutdown order is identical across 100 runs, across processes rather than across iterations of one loop"
+source = "tasks 6.4, ROADMAP M1"
+kind = "recipe"
+run = "just test-smoke -R order"
+timeout_s = 3600
+ci_job = "build-and-test"
+
+# --- The closing artefact, and every profile it has to work in --------------------------------------
+
+[[criterion]]
+id = "headless-host"
+describe = "the closing sample loads a package, runs a job graph over reflected data, prints its budget tree and shuts down cleanly"
+source = "ROADMAP M1 (closing artefact)"
+kind = "recipe"
+run = "just test-smoke -R headless_host"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — M0's gate found this class of failure only because it looked outside dev"
+source = "tasks 6.7"
+kind = "command"
+run = "for p in debug dev profile release; do just build-engine --profile \"$p\" || exit 1; just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 10800
+ci_job = "profiles"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M1's modules in the tree"
+source = "ROADMAP M1, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be
+# most satisfied.
+[[criterion]]
+id = "m2-open"
+describe = "the M2 change exists — open, or closed and archived — so the ladder continues deliberately"
+source = "tasks 6.12"
+kind = "path"
+path = "openspec/changes/**/*m2*/proposal.md"
+ci_job = "milestone-m1"

@@ -19,6 +19,7 @@
 #include <cy/test/test.h>
 
 #include <cstring>
+#include <numbers>
 #include <string>
 
 namespace {
@@ -27,6 +28,10 @@ namespace {
 /// aggregate here, so a memcmp over its exact size compares the representation and nothing else.
 template <class T>
 bool identical(const T& a, const T& b) noexcept {
+    // `bugprone-suspicious-memory-comparison` is right that a float, a matrix and a transform have
+    // no unique object representation, and that is the point: the requirement under test is about
+    // the representation, so comparing the members instead would assert the weaker property.
+    // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
     return std::memcmp(&a, &b, sizeof(T)) == 0;
 }
 
@@ -46,7 +51,7 @@ CY_TEST_CASE("Var: scalars round-trip bit-identically") {
     CY_CHECK_EQ(*cy::Var::from_bool(true).as_bool(), true);
     CY_CHECK_EQ(*cy::Var::from_int(-9007199254740993LL).as_int(), -9007199254740993LL);
 
-    const cy::f64 pi = 3.14159265358979323846;
+    const cy::f64 pi = std::numbers::pi;
     const cy::f64 back = *cy::Var::from_float(pi).as_float();
     CY_CHECK(identical(pi, back));
 }
@@ -176,6 +181,8 @@ CY_TEST_CASE("Var: copying a heap kind shares the block; mutating detaches") {
 
 CY_TEST_CASE("Var: an inline kind is never shared") {
     const cy::Var value = cy::Var::from_int(5);
+    // The copy is the subject: a reference would test nothing.
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     const cy::Var copy = value;
     CY_CHECK_FALSE(value.is_shared());
     CY_CHECK_FALSE(copy.is_shared());
@@ -239,6 +246,9 @@ CY_TEST_CASE("Var: bytes round-trip, including the empty buffer") {
 CY_TEST_CASE("Var: moving leaves the source nil and frees nothing early") {
     cy::Var source = cy::Var::from_string("moved");
     const cy::Var destination = std::move(source);
+    // Reading a moved-from object is the assertion, not an accident: `Var`'s move constructor
+    // promises a nil source rather than an unspecified one, and this is what holds it to that.
+    // NOLINTNEXTLINE(bugprone-use-after-move, clang-analyzer-cplusplus.Move)
     CY_CHECK(source.is_nil());
     CY_CHECK_EQ(std::string(*destination.as_string()), std::string("moved"));
 }
@@ -252,6 +262,6 @@ CY_TEST_CASE("Var: a math type crosses through var_payload_cast") {
     const ExternalVec3 external{1.0f, 2.0f, 3.0f};
 
     const cy::Var value = cy::Var::from_vec3(cy::var_payload_cast<cy::VarVec3>(external));
-    const ExternalVec3 back = cy::var_payload_cast<ExternalVec3>(*value.as_vec3());
+    const auto back = cy::var_payload_cast<ExternalVec3>(*value.as_vec3());
     CY_CHECK(identical(external, back));
 }

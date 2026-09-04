@@ -108,7 +108,7 @@ private:
         usize low = 0;
         usize high = keys_.size();
         while (low < high) {
-            const usize middle = low + (high - low) / 2;
+            const usize middle = low + ((high - low) / 2);
             if (Less{}(keys_[middle], key)) {
                 low = middle + 1;
             } else {

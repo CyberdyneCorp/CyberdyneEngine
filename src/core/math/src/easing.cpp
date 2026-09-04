@@ -40,11 +40,11 @@ f32 quint_in(f32 t) noexcept {
 f32 expo_in(f32 t) noexcept {
     // Anchored at exactly 0, because 2^-10 is 0.00098 and an animation that starts one thousandth
     // of the way along is visibly not starting from rest.
-    return t <= 0.0f ? 0.0f : std::pow(2.0f, 10.0f * t - 10.0f);
+    return t <= 0.0f ? 0.0f : std::pow(2.0f, (10.0f * t) - 10.0f);
 }
 
 f32 circ_in(f32 t) noexcept {
-    return 1.0f - std::sqrt(math::max(0.0f, 1.0f - t * t));
+    return 1.0f - std::sqrt(math::max(0.0f, 1.0f - (t * t)));
 }
 
 f32 back_in(f32 t) noexcept {
@@ -52,7 +52,7 @@ f32 back_in(f32 t) noexcept {
     // the value Robert Penner's original table used and every implementation since has kept, so
     // changing it would make the engine's "back" ease subtly unlike every tool a designer knows.
     constexpr f32 kOvershoot = 1.70158f;
-    return t * t * ((kOvershoot + 1.0f) * t - kOvershoot);
+    return t * t * (((kOvershoot + 1.0f) * t) - kOvershoot);
 }
 
 f32 elastic_in(f32 t) noexcept {
@@ -63,7 +63,7 @@ f32 elastic_in(f32 t) noexcept {
     if (t >= 1.0f) {
         return 1.0f;
     }
-    return -std::pow(2.0f, 10.0f * t - 10.0f) * std::sin((t * 10.0f - 10.75f) * kPeriod);
+    return -std::pow(2.0f, (10.0f * t) - 10.0f) * std::sin(((t * 10.0f) - 10.75f) * kPeriod);
 }
 
 /// Bounce is conventionally *defined* as its Out form — a ball dropping and rebounding — so the In
@@ -76,15 +76,15 @@ f32 bounce_out_raw(f32 t) noexcept {
         return n1 * t * t;
     }
     if (t < 2.0f / d1) {
-        const f32 shifted = t - 1.5f / d1;
-        return n1 * shifted * shifted + 0.75f;
+        const f32 shifted = t - (1.5f / d1);
+        return (n1 * shifted * shifted) + 0.75f;
     }
     if (t < 2.5f / d1) {
-        const f32 shifted = t - 2.25f / d1;
-        return n1 * shifted * shifted + 0.9375f;
+        const f32 shifted = t - (2.25f / d1);
+        return (n1 * shifted * shifted) + 0.9375f;
     }
-    const f32 shifted = t - 2.625f / d1;
-    return n1 * shifted * shifted + 0.984375f;
+    const f32 shifted = t - (2.625f / d1);
+    return (n1 * shifted * shifted) + 0.984375f;
 }
 
 f32 bounce_in(f32 t) noexcept {
@@ -100,12 +100,12 @@ f32 out_of(f32 t) noexcept {
 
 template <f32 (*In)(f32)>
 f32 in_out_of(f32 t) noexcept {
-    return t < 0.5f ? In(t * 2.0f) * 0.5f : 1.0f - In(2.0f - t * 2.0f) * 0.5f;
+    return t < 0.5f ? In(t * 2.0f) * 0.5f : 1.0f - (In(2.0f - (t * 2.0f)) * 0.5f);
 }
 
 template <f32 (*In)(f32)>
 f32 out_in_of(f32 t) noexcept {
-    return t < 0.5f ? out_of<In>(t * 2.0f) * 0.5f : 0.5f + In(t * 2.0f - 1.0f) * 0.5f;
+    return t < 0.5f ? out_of<In>(t * 2.0f) * 0.5f : 0.5f + (In((t * 2.0f) - 1.0f) * 0.5f);
 }
 
 // --- The table --------------------------------------------------------------------------------
@@ -138,8 +138,8 @@ constexpr const char* kModeNames[static_cast<usize>(Mode::kCount)] = {"in", "out
 }  // namespace
 
 Function function(Kind kind, Mode mode) noexcept {
-    const usize kind_index = static_cast<usize>(kind);
-    const usize mode_index = static_cast<usize>(mode);
+    const auto kind_index = static_cast<usize>(kind);
+    const auto mode_index = static_cast<usize>(mode);
     if (kind_index >= static_cast<usize>(Kind::kCount) ||
         mode_index >= static_cast<usize>(Mode::kCount)) {
         // An out-of-range enumerator is a programmer error, and the honest response in a shipping
@@ -155,12 +155,12 @@ f32 evaluate(Kind kind, Mode mode, f32 t) noexcept {
 }
 
 const char* kind_name(Kind kind) noexcept {
-    const usize index = static_cast<usize>(kind);
+    const auto index = static_cast<usize>(kind);
     return index < static_cast<usize>(Kind::kCount) ? kKindNames[index] : "unknown";
 }
 
 const char* mode_name(Mode mode) noexcept {
-    const usize index = static_cast<usize>(mode);
+    const auto index = static_cast<usize>(mode);
     return index < static_cast<usize>(Mode::kCount) ? kModeNames[index] : "unknown";
 }
 

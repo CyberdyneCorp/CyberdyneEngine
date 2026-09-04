@@ -89,7 +89,9 @@ def run_doctor(root: pathlib.Path, binaries: pathlib.Path) -> subprocess.Complet
     environment = dict(os.environ)
     environment["PATH"] = str(binaries)
     # CXX would name a compiler outside the sandbox, and the no-compiler case would then find one.
-    for name in ("CXX", "CC", "CY_PROFILE", "CY_BUILD_DIR"):
+    # CY_CLANG_FORMAT and CY_CLANG_TIDY are here for the same reason: they name a binary by path, so
+    # a developer who has one set would sandbox the tooling cases into testing nothing.
+    for name in ("CXX", "CC", "CY_PROFILE", "CY_BUILD_DIR", "CY_CLANG_FORMAT", "CY_CLANG_TIDY"):
         environment.pop(name, None)
     return subprocess.run(
         ["just", "env-doctor"],
@@ -171,6 +173,31 @@ def cases() -> list[Case]:
             remove=("ninja", "openspec"),
             status=1,
             expected=(r"^\s+missing\s+ninja\s", r"^\s+missing\s+openspec\s", r"2 problem\(s\)"),
+        ),
+        # The LLVM pin. clang-tidy 18 and 22 do not report the same findings over the same sources,
+        # so a gate run at the wrong major is a gate whose verdict depends on the machine. The
+        # doctor has to say so before `just quality-lint` produces a result nobody can reproduce —
+        # and a pin that is only documented is a pin that drifts.
+        Case(
+            "a clang-tidy of the wrong major is a problem, not a version to run the gate at",
+            fake={"clang-tidy": "LLVM version 18.1.3"},
+            status=1,
+            expected=(
+                r"^\s+old\s+clang-tidy\s+18\.1\.3\s",
+                r"needs LLVM 22",
+                r"pip install clang-tidy==22",
+                r"env-doctor: 1 problem\(s\) — clang-tidy",
+            ),
+        ),
+        Case(
+            "a missing clang-format is a problem too: the format gate is not optional",
+            remove=("clang-format",),
+            status=1,
+            expected=(
+                r"^\s+missing\s+clang-format\s+-\s+not on PATH",
+                r"pip install clang-format==22",
+                r"env-doctor: 1 problem\(s\) — clang-format",
+            ),
         ),
     ]
 

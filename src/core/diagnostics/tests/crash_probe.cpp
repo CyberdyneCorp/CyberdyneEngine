@@ -15,6 +15,23 @@
 #include <cstdlib>
 #include <cstring>
 
+// UndefinedBehaviorSanitizer diagnoses the store below before the hardware faults, so the process
+// exits through the tool rather than through a signal and there is no crash artefact to read back.
+// That is the sanitizer working, not the handler failing, so this mode reports itself skipped in an
+// instrumented binary — the same shape the assertion mode already uses when CY_ASSERT is compiled
+// out. The other three modes still run, and an uninstrumented build still proves the signal path.
+// GCC defines no macro for it, so cmake/sanitizers.cmake defines CY_SANITIZE_UNDEFINED when the
+// build asked for it. Clang's __has_feature is checked too, so a hand-rolled clang build with
+// -fsanitize=undefined and no CMake still gets the right answer.
+#if defined(CY_SANITIZE_UNDEFINED)
+#    define CY_PROBE_UBSAN 1
+#endif
+#if !defined(CY_PROBE_UBSAN) && defined(__has_feature)
+#    if __has_feature(undefined_behavior_sanitizer)
+#        define CY_PROBE_UBSAN 1
+#    endif
+#endif
+
 using namespace cy::diag;
 
 namespace {
@@ -73,6 +90,10 @@ int main(int argc, char** argv) {
     if (std::strcmp(mode, "abort") == 0) {
         std::abort();
     }
+#if defined(CY_PROBE_UBSAN)
+    std::printf("mode-not-available\n");
+    return 0;
+#else
     // A real fault: a store through an address the compiler cannot fold to a literal null, so the
     // fault happens at run time rather than being diagnosed at compile time.
     const char* address = (argc > 3) ? argv[3] : "0";
@@ -82,4 +103,5 @@ int main(int argc, char** argv) {
     auto* target = reinterpret_cast<volatile int*>(std::strtoull(address, nullptr, 0));
     *target = 1;
     return 0;
+#endif
 }

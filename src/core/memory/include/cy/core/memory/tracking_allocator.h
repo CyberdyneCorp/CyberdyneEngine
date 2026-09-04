@@ -143,6 +143,11 @@ protected:
 private:
     /// Sits immediately before the payload. `padding` is the distance back to the block upstream
     /// actually returned, which is what `deallocate` needs and what alignment made variable.
+    ///
+    /// Never constructed: a header is a view placed over bytes the upstream allocator returned, and
+    /// every field is written by `do_allocate` immediately afterwards. Default member initialisers
+    /// here would be a claim that a constructor runs, and none does.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     struct Header {
         u64 magic;
         Header* previous;

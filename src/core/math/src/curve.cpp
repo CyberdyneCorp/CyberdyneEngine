@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 namespace cy {
 namespace {
@@ -15,15 +16,15 @@ namespace {
 [[nodiscard]] f32 hermite(f32 p0, f32 m0, f32 p1, f32 m1, f32 t) noexcept {
     const f32 t2 = t * t;
     const f32 t3 = t2 * t;
-    return (2.0f * t3 - 3.0f * t2 + 1.0f) * p0 + (t3 - 2.0f * t2 + t) * m0 +
-           (-2.0f * t3 + 3.0f * t2) * p1 + (t3 - t2) * m1;
+    return (((2.0f * t3) - (3.0f * t2) + 1.0f) * p0) + ((t3 - (2.0f * t2) + t) * m0) +
+           (((-2.0f * t3) + (3.0f * t2)) * p1) + ((t3 - t2) * m1);
 }
 
 /// The derivative of `hermite` with respect to its parameter.
 [[nodiscard]] f32 hermite_derivative(f32 p0, f32 m0, f32 p1, f32 m1, f32 t) noexcept {
     const f32 t2 = t * t;
-    return (6.0f * t2 - 6.0f * t) * p0 + (3.0f * t2 - 4.0f * t + 1.0f) * m0 +
-           (-6.0f * t2 + 6.0f * t) * p1 + (3.0f * t2 - 2.0f * t) * m1;
+    return (((6.0f * t2) - (6.0f * t)) * p0) + (((3.0f * t2) - (4.0f * t) + 1.0f) * m0) +
+           (((-6.0f * t2) + (6.0f * t)) * p1) + (((3.0f * t2) - (2.0f * t)) * m1);
 }
 
 /// The finite-difference step used for `Curve3D::tangent`, in spline-parameter units.
@@ -45,9 +46,8 @@ constexpr f32 kCentripetalAlpha = 0.5f;
 // ------------------------------------------------------------------------------------------
 
 usize Curve::add_key(const CurveKey& key) {
-    const auto position = std::upper_bound(
-        keys_.begin(), keys_.end(), key.time,
-        [](f32 time, const CurveKey& existing) noexcept { return time < existing.time; });
+    const auto position =
+        std::ranges::upper_bound(keys_, key.time, std::ranges::less{}, &CurveKey::time);
     const usize index = static_cast<usize>(position - keys_.begin());
     keys_.insert(position, key);
     return index;
@@ -55,8 +55,8 @@ usize Curve::add_key(const CurveKey& key) {
 
 void Curve::set_keys(const CurveKey* keys, usize count) {
     keys_.assign(keys, keys + count);
-    std::stable_sort(keys_.begin(), keys_.end(),
-                     [](const CurveKey& a, const CurveKey& b) noexcept { return a.time < b.time; });
+    std::ranges::stable_sort(
+        keys_, [](const CurveKey& a, const CurveKey& b) noexcept { return a.time < b.time; });
 }
 
 bool Curve::wrap_time(f32& time) const noexcept {
@@ -111,20 +111,19 @@ f32 Curve::evaluate(f32 time) const noexcept {
         if (sample_time < keys_.front().time) {
             const CurveKey& key = keys_.front();
             return before_ == CurveExtrapolation::Linear
-                       ? key.value + key.in_tangent * (sample_time - key.time)
+                       ? key.value + (key.in_tangent * (sample_time - key.time))
                        : key.value;
         }
         if (sample_time > keys_.back().time) {
             const CurveKey& key = keys_.back();
             return after_ == CurveExtrapolation::Linear
-                       ? key.value + key.out_tangent * (sample_time - key.time)
+                       ? key.value + (key.out_tangent * (sample_time - key.time))
                        : key.value;
         }
     }
 
     const auto upper =
-        std::upper_bound(keys_.begin(), keys_.end(), sample_time,
-                         [](f32 t, const CurveKey& key) noexcept { return t < key.time; });
+        std::ranges::upper_bound(keys_, sample_time, std::ranges::less{}, &CurveKey::time);
     if (upper == keys_.begin()) {
         return keys_.front().value;
     }
@@ -156,8 +155,7 @@ f32 Curve::derivative(f32 time) const noexcept {
             return after_ == CurveExtrapolation::Linear ? keys_.back().out_tangent : 0.0f;
         }
     }
-    auto upper = std::upper_bound(keys_.begin(), keys_.end(), sample_time,
-                                  [](f32 t, const CurveKey& key) noexcept { return t < key.time; });
+    auto upper = std::ranges::upper_bound(keys_, sample_time, std::ranges::less{}, &CurveKey::time);
     if (upper == keys_.begin()) {
         return 0.0f;
     }
@@ -282,7 +280,7 @@ Expected<void, Error> Curve3D::bake(u32 samples_per_segment) {
     }
 
     const usize segments = points_.size() - 1;
-    const usize sample_count = segments * samples_per_segment + 1;
+    const usize sample_count = (segments * samples_per_segment) + 1;
     arc_lengths_.reserve(sample_count);
     arc_parameters_.reserve(sample_count);
 
@@ -326,7 +324,7 @@ Expected<f32, Error> Curve3D::parameter_at_distance(f32 distance_along) const no
     // Binary search over the cumulative table, then one linear interpolation inside the interval.
     // This is the O(1)-per-sample the specification's constant-speed scenario asks for; the
     // alternative is integrating the speed every frame, which is both slower and drift-prone.
-    const auto upper = std::upper_bound(arc_lengths_.begin(), arc_lengths_.end(), distance_along);
+    const auto upper = std::ranges::upper_bound(arc_lengths_, distance_along);
     const usize index = static_cast<usize>(upper - arc_lengths_.begin());
     const f32 low_length = arc_lengths_[index - 1];
     const f32 high_length = arc_lengths_[index];
@@ -384,17 +382,15 @@ Expected<Vec2, Error> Curve2D::sample_by_distance(f32 distance_along) const noex
 
 void Gradient::add_color_key(f32 position, const Color& color) {
     const ColorKey key{math::saturate(position), color};
-    const auto at = std::upper_bound(
-        color_keys_.begin(), color_keys_.end(), key.position,
-        [](f32 p, const ColorKey& existing) noexcept { return p < existing.position; });
+    const auto at = std::ranges::upper_bound(color_keys_, key.position, std::ranges::less{},
+                                             &ColorKey::position);
     color_keys_.insert(at, key);
 }
 
 void Gradient::add_alpha_key(f32 position, f32 alpha) {
     const AlphaKey key{math::saturate(position), alpha};
-    const auto at = std::upper_bound(
-        alpha_keys_.begin(), alpha_keys_.end(), key.position,
-        [](f32 p, const AlphaKey& existing) noexcept { return p < existing.position; });
+    const auto at = std::ranges::upper_bound(alpha_keys_, key.position, std::ranges::less{},
+                                             &AlphaKey::position);
     alpha_keys_.insert(at, key);
 }
 
@@ -413,9 +409,8 @@ Color Gradient::evaluate(f32 position) const noexcept {
         } else if (at >= color_keys_.back().position) {
             result = color_keys_.back().color;
         } else {
-            const auto upper = std::upper_bound(
-                color_keys_.begin(), color_keys_.end(), at,
-                [](f32 p, const ColorKey& key) noexcept { return p < key.position; });
+            const auto upper =
+                std::ranges::upper_bound(color_keys_, at, std::ranges::less{}, &ColorKey::position);
             const ColorKey& low = *(upper - 1);
             const ColorKey& high = *upper;
             const f32 span = high.position - low.position;
@@ -431,9 +426,8 @@ Color Gradient::evaluate(f32 position) const noexcept {
         } else if (at >= alpha_keys_.back().position) {
             alpha = alpha_keys_.back().alpha;
         } else {
-            const auto upper = std::upper_bound(
-                alpha_keys_.begin(), alpha_keys_.end(), at,
-                [](f32 p, const AlphaKey& key) noexcept { return p < key.position; });
+            const auto upper =
+                std::ranges::upper_bound(alpha_keys_, at, std::ranges::less{}, &AlphaKey::position);
             const AlphaKey& low = *(upper - 1);
             const AlphaKey& high = *upper;
             const f32 span = high.position - low.position;

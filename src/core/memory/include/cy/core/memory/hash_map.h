@@ -92,7 +92,7 @@ public:
     /// Make room for `wanted` entries without further growth.
     [[nodiscard]] Status reserve(usize wanted) noexcept {
         const usize needed =
-            (wanted * 100 + detail::kHashMapLoadPercent - 1) / detail::kHashMapLoadPercent;
+            ((wanted * 100) + detail::kHashMapLoadPercent - 1) / detail::kHashMapLoadPercent;
         if (needed <= capacity_) {
             return ok();
         }
@@ -260,7 +260,7 @@ private:
         while (true) {
             if (hashes_[slot] == 0) {
                 hashes_[slot] = carried_hash;
-                Entry* placed = construct_at<Entry>(&entries_[slot], std::move(carried));
+                auto* placed = construct_at<Entry>(&entries_[slot], std::move(carried));
                 ++size_;
                 return (result != nullptr) ? result : &placed->value;
             }

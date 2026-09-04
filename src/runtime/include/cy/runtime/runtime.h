@@ -13,11 +13,20 @@
 // rather than choosing a new order. The order actually taken is recorded in a journal, shutdown
 // walks that journal backwards, and the two are asserted to be exact reverses of one another.
 // tests/smoke/test_startup_order.cpp compares the journal across a hundred separate processes.
+//
+// FOUR OF THE ELEVEN ARE MODULE STAGES — Core, Servers, Scene, Editor — and at M1 they stopped
+// being empty (task 4.5). Each brings up the project graph's modules at its registration level
+// through cy::config::ModuleRegistry, which orders them by (level, name) and journals what it
+// actually did. The order within a level is therefore the project graph's, not the host's, and it
+// is recorded rather than emergent; src/runtime/tests/test_module_order.cpp compares that journal
+// across a hundred processes too. A configuration with no registry leaves the four stages empty,
+// which is what a test that only wants the eleven asks for.
 
 #pragma once
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/config/module_registry.h>
 #include <cy/core/platform/display_server.h>
 #include <cy/core/platform/platform.h>
 
@@ -54,6 +63,16 @@ struct RuntimeConfig {
     /// and never names a backend. The host owns both objects for the runtime's whole lifetime.
     Platform* platform = nullptr;
     DisplayServer* display = nullptr;
+
+    /// Optional, and owned by the host for the runtime's whole lifetime. The four module stages
+    /// bring up the registry's levels — Core, Servers, Scene, Editor — in that order and take them
+    /// down in the exact reverse. Null leaves those stages empty: the sequence is unchanged, and a
+    /// host that has no modules does not have to invent an empty registry to say so.
+    ///
+    /// The registry is populated *before* startup(). Registration is an explicit call rather than a
+    /// static initialiser, because static initialisation order is link order — the very
+    /// non-determinism this requirement exists to remove.
+    config::ModuleRegistry* modules = nullptr;
 
     /// The window the Display stage opens. Ignored when `create_window` is false, which is what a
     /// test that only wants the startup sequence asks for.
@@ -144,10 +163,26 @@ private:
 
     Status enter_platform();
     void leave_platform();
+    Status enter_modules_core();
+    void leave_modules_core();
     Status enter_display();
     void leave_display();
+    Status enter_modules_servers();
+    void leave_modules_servers();
+    Status enter_modules_scene();
+    void leave_modules_scene();
+    Status enter_modules_editor();
+    void leave_modules_editor();
     Status enter_boot();
     void leave_boot();
+
+    // The four module stages differ only in which registration level they name, so they share one
+    // implementation and each is a one-line call into it. A level whose modules fail to register
+    // reports the failure as the stage's, and Runtime::startup() unwinds the stages below it.
+    // const because neither touches the runtime: the registry is the host's, reached through a
+    // pointer the configuration carries, and what they change is its state and not this one's.
+    Status start_modules(config::ModuleLevel level) const;
+    void stop_modules(config::ModuleLevel level) const;
 
     // tick()'s halves, so that neither the frame nor this class needs a reader to hold two things
     // at once.

@@ -26,8 +26,8 @@ class JobSystem;
 /// numbers: keeping five words alive across a task means allocating them, and
 /// `core-jobs-and-concurrency` requires that scheduling a task does not call the general allocator.
 /// Arguments up to this size are copied into the record instead, and reach the body through
-/// `TaskContext::data`. Forty-eight bytes is what `submit_parallel_for` needs for a partition, which
-/// is the case that would otherwise allocate once per loop.
+/// `TaskContext::data`. Forty-eight bytes is what `submit_parallel_for` needs for a partition,
+/// which is the case that would otherwise allocate once per loop.
 inline constexpr usize kMaxInlineArgumentBytes = 48;
 
 struct TaskContext {

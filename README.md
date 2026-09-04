@@ -5,10 +5,11 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: [M0 — Ground](docs/ROADMAP.md) has landed. M1 — Substrate is next.**
-> The build configures and runs on Linux: `just build-all`, `just test-all`, and a sample that opens
-> a window and writes a trace. Windows and macOS are authored and wait on their first CI run.
-> [`openspec/specs/`](openspec/specs/) holds **75 capabilities · 1,192 requirements · 2,624 scenarios**
+> **Status: [M0 — Ground](docs/ROADMAP.md) and [M1 — Substrate](docs/ROADMAP.md) are closed. M2 — World is next.**
+> Reflection with a committed identity manifest, memory domains and chunked storage, the math
+> conventions as executable tests, and a job system whose parallelism comes from declared access —
+> all green under ThreadSanitizer and AddressSanitizer, in four build profiles.
+> [`openspec/specs/`](openspec/specs/) holds **75 capabilities · 1,192 requirements · 2,631 scenarios**
 > that define what is being built and why, and are the contract the implementation must satisfy.
 > Start at [the specification index](openspec/specs/README.md), then
 > [the roadmap](docs/ROADMAP.md) for the order they are built in, and

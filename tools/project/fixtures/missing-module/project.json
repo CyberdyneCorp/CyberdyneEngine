@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "fixture-missing",
+    "version": "0.1.0",
+    "engine_version": "0.0.0"
+  },
+  "modules": [
+    {
+      "name": "fx-scene",
+      "path": "modules/fx-scene",
+      "layer": "scene",
+      "type": "runtime",
+      "registration_level": "Scene",
+      "public_dependencies": [
+        "fx-physics"
+      ],
+      "private_dependencies": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "hot_reload": false
+    }
+  ]
+}

@@ -62,7 +62,7 @@ struct IntrusiveNode {
 ///
 ///   struct Task { cy::IntrusiveNode link; ... };
 ///   cy::IntrusiveList<Task, &Task::link> ready;
-template <class T, IntrusiveNode T::*Member>
+template <class T, IntrusiveNode T::* Member>
 class IntrusiveList {
 public:
     IntrusiveList() noexcept {
@@ -131,6 +131,9 @@ private:
     /// The offset from an element to its node, computed once from a null-based address. This is the
     /// standard intrusive-container trick and is the only way back from a node to its element
     /// without storing a second pointer in every element.
+    // NOLINTBEGIN(bugprone-casting-through-void) — through void* on purpose: the element and its
+    // node are the same object at different offsets, and a direct reinterpret_cast between them is
+    // what -Wcast-align reports under the engine's -Werror.
     [[nodiscard]] static T* to_element(IntrusiveNode* node) noexcept {
         auto* base = static_cast<u8*>(static_cast<void*>(node));
         return static_cast<T*>(static_cast<void*>(base - member_offset()));
@@ -145,6 +148,7 @@ private:
         const auto* node = static_cast<const u8*>(static_cast<const void*>(&(element->*Member)));
         return static_cast<usize>(node - probe);
     }
+    // NOLINTEND(bugprone-casting-through-void)
 
     void insert_before(IntrusiveNode* position, T& element) noexcept {
         IntrusiveNode& node = element.*Member;

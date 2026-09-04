@@ -61,7 +61,7 @@ Random Random::from_entropy() noexcept {
 
 u32 Random::next_u32() noexcept {
     const u64 previous = state_.state;
-    state_.state = previous * kMultiplier + state_.increment;
+    state_.state = (previous * kMultiplier) + state_.increment;
     ++state_.draws;
     // XSH-RR: xorshift the high bits down, then rotate by an amount taken from the very highest
     // bits. The data-dependent rotation is what defeats the lattice structure a bare LCG has.
@@ -83,7 +83,7 @@ f32 Random::next_float() noexcept {
 }
 
 f32 Random::next_float_in(f32 low, f32 high) noexcept {
-    return low + (high - low) * next_float();
+    return low + ((high - low) * next_float());
 }
 
 u32 Random::next_u32_below(u32 bound) noexcept {
@@ -131,9 +131,9 @@ f32 Random::next_normal() noexcept {
     f32 v = 0.0f;
     f32 s = 0.0f;
     do {
-        u = next_float() * 2.0f - 1.0f;
-        v = next_float() * 2.0f - 1.0f;
-        s = u * u + v * v;
+        u = (next_float() * 2.0f) - 1.0f;
+        v = (next_float() * 2.0f) - 1.0f;
+        s = (u * u) + (v * v);
     } while (s >= 1.0f || s == 0.0f);
 
     const f32 factor = std::sqrt(-2.0f * std::log(s) / s);
@@ -143,7 +143,7 @@ f32 Random::next_normal() noexcept {
 }
 
 f32 Random::next_normal_in(f32 mean, f32 standard_deviation) noexcept {
-    return mean + standard_deviation * next_normal();
+    return mean + (standard_deviation * next_normal());
 }
 
 Vec3 Random::on_unit_sphere() noexcept {
@@ -151,9 +151,9 @@ Vec3 Random::on_unit_sphere() noexcept {
     // [-1, 1] and the azimuth uniformly gives a distribution uniform in area. Sampling two angles
     // uniformly would crowd the poles, which shows up immediately as a bright spot in any lighting
     // that uses it.
-    const f32 z = next_float() * 2.0f - 1.0f;
+    const f32 z = (next_float() * 2.0f) - 1.0f;
     const f32 azimuth = next_float() * math::kTwoPi;
-    const f32 radius = std::sqrt(math::max(0.0f, 1.0f - z * z));
+    const f32 radius = std::sqrt(math::max(0.0f, 1.0f - (z * z)));
     return Vec3{radius * std::cos(azimuth), radius * std::sin(azimuth), z};
 }
 

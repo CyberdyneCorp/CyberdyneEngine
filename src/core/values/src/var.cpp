@@ -19,6 +19,15 @@ namespace {
 
 using detail::VarBlock;
 
+// EVERY DOWNCAST FROM `VarBlock*` BELOW IS DELIBERATE, and the NOLINT regions that carry
+// `cppcoreguidelines-pro-type-static-cast-downcast` all point back here rather than repeating the
+// reason. The check asks for `dynamic_cast`, and there is none to ask for: the engine builds with
+// -fno-rtti, and a block has no vtable to carry the type information a checked cast would read —
+// giving it one would put a pointer in every block, which is the cost var_block.h exists to avoid.
+// The kind in the block header is the mechanism instead, and every cast below sits inside a switch
+// on that kind or behind a `type_` test that has already established it. What a `dynamic_cast`
+// would verify at run time is what the line above each cast establishes.
+
 /// The exact number of payload bytes a kind occupies inline. Equality and hashing compare this many
 /// rather than all sixteen, so a kind smaller than the payload is not compared against whatever the
 /// tail happens to hold. (`make_inline` zeroes the tail, so the two agree — but a comparison that
@@ -83,6 +92,8 @@ T* allocate_block(VarType type) noexcept {
 void destroy_block(VarBlock* block) noexcept {
     // One switch, in one place. Deleting through the base pointer is what a virtual destructor
     // would be for, and a virtual destructor would put a vtable pointer in every block.
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-static-cast-downcast) — see the note on block
+    // downcasts at the top of this file.
     switch (block->type) {
         case VarType::String:
             delete static_cast<detail::StringBlock*>(block);
@@ -116,11 +127,14 @@ void destroy_block(VarBlock* block) noexcept {
             CY_ASSERT_MSG(false, "Var block with an inline kind");
             break;
     }
+    // NOLINTEND(cppcoreguidelines-pro-type-static-cast-downcast)
     values::detail::bump(values::detail::counters().var_blocks_freed);
 }
 
 /// Copy a block's payload into a fresh block of the same kind. The copy-on-write step.
 VarBlock* clone_block(const VarBlock* block) noexcept {
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-static-cast-downcast) — see the note on block
+    // downcasts at the top of this file.
     switch (block->type) {
         case VarType::String: {
             auto* copy = allocate_block<detail::StringBlock>(VarType::String);
@@ -157,6 +171,7 @@ VarBlock* clone_block(const VarBlock* block) noexcept {
             CY_ASSERT_MSG(false, "Var kind has no mutable accessor and cannot need a detach");
             return nullptr;
     }
+    // NOLINTEND(cppcoreguidelines-pro-type-static-cast-downcast)
 }
 
 }  // namespace
@@ -241,7 +256,7 @@ bool var_type_is_heap(VarType type) noexcept {
 
 VarBlock* Var::block() const noexcept {
     VarBlock* pointer = nullptr;
-    std::memcpy(&pointer, storage_, sizeof(pointer));
+    std::memcpy(static_cast<void*>(&pointer), storage_, sizeof(VarBlock*));
     return pointer;
 }
 
@@ -251,7 +266,7 @@ void Var::set_block(VarBlock* new_block, VarType type) noexcept {
         type_ = VarType::Nil;
         return;
     }
-    std::memcpy(storage_, &new_block, sizeof(new_block));
+    std::memcpy(storage_, static_cast<const void*>(&new_block), sizeof(VarBlock*));
     type_ = type;
 }
 
@@ -482,7 +497,7 @@ Expected<AssetId, Error> Var::as_asset() const noexcept {
 Var Var::from_string(std::string_view text) noexcept {
     auto* block = allocate_block<detail::StringBlock>(VarType::String);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     block->text.assign(text.data(), text.size());
     Var result;
@@ -497,7 +512,7 @@ Var Var::from_name(Name name) noexcept {
 Var Var::from_bytes(const u8* data, usize size) noexcept {
     auto* block = allocate_block<detail::BytesBlock>(VarType::Bytes);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     if (data != nullptr && size > 0) {
         block->data.assign(data, data + size);
@@ -510,7 +525,7 @@ Var Var::from_bytes(const u8* data, usize size) noexcept {
 Var Var::empty_array() noexcept {
     auto* block = allocate_block<detail::ArrayBlock>(VarType::Array);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     Var result;
     result.set_block(block, VarType::Array);
@@ -524,11 +539,11 @@ Var Var::from_array(const Var* values, usize count) noexcept {
     }
     Expected<VarArray*, Error> items = result.array_mut();
     if (!items) {
-        return Var();
+        return {};
     }
     for (usize i = 0; i < count; ++i) {
         if (!(*items)->push(values[i])) {
-            return Var();
+            return {};
         }
     }
     return result;
@@ -537,7 +552,7 @@ Var Var::from_array(const Var* values, usize count) noexcept {
 Var Var::empty_dict() noexcept {
     auto* block = allocate_block<detail::DictBlock>(VarType::Dict);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     Var result;
     result.set_block(block, VarType::Dict);
@@ -547,7 +562,7 @@ Var Var::empty_dict() noexcept {
 Var Var::from_mat3(const VarMat3& value) noexcept {
     auto* block = allocate_block<detail::Mat3Block>(VarType::Mat3);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     block->value = value;
     Var result;
@@ -558,7 +573,7 @@ Var Var::from_mat3(const VarMat3& value) noexcept {
 Var Var::from_mat4(const VarMat4& value) noexcept {
     auto* block = allocate_block<detail::Mat4Block>(VarType::Mat4);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     block->value = value;
     Var result;
@@ -569,7 +584,7 @@ Var Var::from_mat4(const VarMat4& value) noexcept {
 Var Var::from_transform(const VarTransform& value) noexcept {
     auto* block = allocate_block<detail::TransformBlock>(VarType::Transform);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     block->value = value;
     Var result;
@@ -580,7 +595,7 @@ Var Var::from_transform(const VarTransform& value) noexcept {
 Var Var::from_aabb(const VarAabb& value) noexcept {
     auto* block = allocate_block<detail::AabbBlock>(VarType::Aabb);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     block->value = value;
     Var result;
@@ -591,13 +606,17 @@ Var Var::from_aabb(const VarAabb& value) noexcept {
 Var Var::from_callable(const Callable& callable) noexcept {
     auto* block = allocate_block<detail::CallableBlock>(VarType::Callable);
     if (block == nullptr) {
-        return Var();
+        return {};
     }
     block->value = callable;
     Var result;
     result.set_block(block, VarType::Callable);
     return result;
 }
+
+// Each accessor below has already established the kind with the `type_` test above its cast.
+// NOLINTBEGIN(cppcoreguidelines-pro-type-static-cast-downcast) — see the note on block downcasts at
+// the top of this file.
 
 Expected<VarMat3, Error> Var::as_mat3() const noexcept {
     if (type_ != VarType::Mat3) {
@@ -693,6 +712,8 @@ Expected<VarDict*, Error> Var::dict_mut() noexcept {
     return &static_cast<detail::DictBlock*>(block())->dict;
 }
 
+// NOLINTEND(cppcoreguidelines-pro-type-static-cast-downcast)
+
 std::span<const Var> var_array(const Var& value) noexcept {
     return std::span<const Var>{value.array_data(), value.array_size()};
 }
@@ -704,7 +725,15 @@ std::span<const Var> var_array(const Var& value) noexcept {
 // representations are identical: NaN equals itself and 0.0 does not equal -0.0. That is the right
 // rule for what this comparison is *for* — checking a value that crossed a boundary against the one
 // that came back — and it is the rule the round-trip test asserts.
+//
+// `bugprone-suspicious-memory-comparison` reads the memcmp over a matrix or a transform as a
+// mistake, because those types have no unique object representation: two payloads that compare
+// equal as numbers can differ as bytes. That is the stated rule here rather than a bug in it, so
+// the check is suppressed over this function. Comparing the members instead would give
+// NaN != NaN and -0.0 == 0.0, which is the comparison this one exists not to be.
 
+// NOLINTBEGIN(cppcoreguidelines-pro-type-static-cast-downcast)
+// NOLINTBEGIN(bugprone-suspicious-memory-comparison)
 bool operator==(const Var& a, const Var& b) noexcept {
     if (a.type_ != b.type_) {
         return false;
@@ -759,6 +788,8 @@ bool operator==(const Var& a, const Var& b) noexcept {
             return false;
     }
 }
+// NOLINTEND(bugprone-suspicious-memory-comparison)
+// NOLINTEND(cppcoreguidelines-pro-type-static-cast-downcast)
 
 // --- VarArray and VarDict
 // ---------------------------------------------------------------------------

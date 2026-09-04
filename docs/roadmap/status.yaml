@@ -14,29 +14,29 @@
 schema: 1
 capabilities:
   engine-architecture:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M1
+    change: implement-m1-substrate
   core-type-system:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M1
+    change: implement-m1-substrate
   core-memory-and-containers:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M1
+    change: implement-m1-substrate
   core-math:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M1
+    change: implement-m1-substrate
   core-jobs-and-concurrency:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M1
+    change: implement-m1-substrate
   core-assets-and-io:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M1
+    change: implement-m1-substrate
   core-platform-abstraction:
     tier: seed
     milestone: M0
@@ -274,9 +274,9 @@ capabilities:
     milestone: null
     change: null
   project-and-plugins:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
+    tier: working
+    milestone: M1
+    change: implement-m1-substrate
   build-and-packaging:
     tier: none
     milestone: null

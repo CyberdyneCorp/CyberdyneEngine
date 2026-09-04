@@ -104,7 +104,7 @@ public:
     // accepted, which is exactly the implicit boundary crossing this type is meant to be visible
     // at.
 
-    [[nodiscard]] static Var nil() noexcept { return Var(); }
+    [[nodiscard]] static Var nil() noexcept { return {}; }
     [[nodiscard]] static Var from_bool(bool value) noexcept;
     [[nodiscard]] static Var from_int(i64 value) noexcept;
     [[nodiscard]] static Var from_float(f64 value) noexcept;

@@ -16,7 +16,7 @@ namespace cy {
 namespace {
 
 [[nodiscard]] usize page_size() noexcept {
-    static const usize size = static_cast<usize>(sysconf(_SC_PAGESIZE));
+    static const auto size = static_cast<usize>(sysconf(_SC_PAGESIZE));
     return (size == 0) ? 4096 : size;
 }
 

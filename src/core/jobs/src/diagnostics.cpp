@@ -77,9 +77,9 @@ void emit_counter(const char* name, u64 value) noexcept {
 namespace detail {
 
 // TaskBegin and TaskEnd are Critical, unlike the counters below. That is the loss policy working as
-// designed: `diagnostics-profiling-and-crash` refuses sampled and verbose records first under buffer
-// pressure, and a timeline missing half a task's boundaries is worse than one missing a counter
-// snapshot — a begin without its end is read as a task that never finished.
+// designed: `diagnostics-profiling-and-crash` refuses sampled and verbose records first under
+// buffer pressure, and a timeline missing half a task's boundaries is worse than one missing a
+// counter snapshot — a begin without its end is read as a task that never finished.
 
 void trace_task_begin(const char* name, WorkerIndex worker, Priority priority,
                       u64 sequence) noexcept {
@@ -206,8 +206,7 @@ void jobs_log_watchdog(const char* what, const char* task_name_text, u64 duratio
     CY_LOG(category(), diag::LogLevel::Warning, "jobs.watchdog",
            diag::field_text(watchdog_finding(), what, text_length(what)),
            diag::field_text(task_name(), task_name_text, text_length(task_name_text)),
-           diag::field_u64(task_duration(), duration_ns),
-           diag::field_u64(worker_index(), worker));
+           diag::field_u64(task_duration(), duration_ns), diag::field_u64(worker_index(), worker));
 }
 
 }  // namespace cy::jobs

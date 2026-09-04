@@ -8,6 +8,10 @@
 # cy::core-platform is PUBLIC because Platform& and DisplayServer& are in the runtime's own
 # interface; cy::core-diagnostics is PRIVATE because the trace is something the runtime writes to,
 # not something a consumer of the runtime has to know about.
+#
+# cy::core-config is PUBLIC for the same reason as cy::core-platform: RuntimeConfig carries a
+# cy::config::ModuleRegistry*, so a host that populates one names the type. That registry is what
+# makes the four module stages of `engine-architecture`'s startup sequence do something (task 4.5).
 
 cy_add_module(
     NAME cy_runtime
@@ -15,7 +19,7 @@ cy_add_module(
     ALIAS cy::runtime
     SOURCES src/runtime.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-platform
+    PUBLIC_DEPENDENCIES cy::core-platform cy::core-config
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
 # The startup-order probe. It starts and stops a runtime, prints the journal, and exits — which is
@@ -30,4 +34,9 @@ if(CY_BUILD_TESTS)
         TYPE EXECUTABLE
         SOURCES probe/startup_order_probe.cpp
         PRIVATE_DEPENDENCIES cy::runtime cy::platform-headless cy::platform-desktop-sdl3)
+endif()
+
+# tests/ is read now and declares its suites later; see the comment at the top of it for why.
+if(CY_BUILD_TESTS)
+    add_subdirectory(tests)
 endif()

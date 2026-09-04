@@ -159,20 +159,139 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M0 eight capabilities have left `—`: `delivery-roadmap` is Working, and
-`build-system-and-platforms`, `core-platform-abstraction`, `developer-workflow-and-just`,
-`diagnostics-profiling-and-crash`, `project-and-plugins`, `testing-and-quality` and
-`thirdparty-dependencies` are Seed, each recorded against `implement-m0-ground`. The remaining 66
-have not started.
+As of M1 fourteen capabilities have left `—`. `core-jobs-and-concurrency`, `core-math`,
+`core-memory-and-containers`, `core-type-system`, `delivery-roadmap` and `project-and-plugins` are
+Working; `build-system-and-platforms`, `core-assets-and-io`, `core-platform-abstraction`,
+`developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `engine-architecture`,
+`testing-and-quality` and `thirdparty-dependencies` are Seed. The remaining 61 have not started.
+M1 advanced seven of them, each recorded against `implement-m1-substrate`.
 
-The tiers above are the plan and the record agrees with it; what the plan did not say is what M0's
-seeds are *thin* on, and that belongs here rather than in a commit message:
+## Where M1's tiers are thin
 
-- **`build-system-and-platforms`** is Seed on Linux only in practice. The Windows and macOS paths
-  are authored — the compiler matrix, the host files under `platform/desktop-sdl3/src/host/`, the
-  presets — and have never been compiled. The CI matrix is what will first execute them.
-- **`testing-and-quality`**'s sanitizer wiring works, but no CI job runs a suite under it, and
-  LeakSanitizer reports the trace's process-lifetime thread rings, so only the unit set is clean
-  under ASan today. See `risks.md` if this is still true at M1.
-- **`project-and-plugins`** is Seed on the module half. There is no project manifest yet; the
-  requirement that a project be described declaratively is M1's.
+The tiers above are the plan and the record agrees with it. What the plan did not say is where the
+implementation is **thinner than the tier claims**, and that belongs here rather than in a commit
+message. Every entry below was measured or reproduced while closing the milestone; where a number
+appears, it is a number this tree produced.
+
+- **The quality gates are pinned to one LLVM, and until M1's close they were not.** Two versions of
+  these tools do not agree, which makes an unpinned gate a gate whose verdict is a property of the
+  machine that ran it. clang-format 18.1.8 and 22.1.8 disagree about three
+  sites in this tree — `struct sigaction action {}` against `action{}`, and `IntrusiveNode T::*Member`
+  against `T::* Member` — and the disagreement has **no fixed point**: each version rewrites the
+  other's output back, so no spelling of those lines satisfies both. clang-tidy is worse: 18.1.3
+  reports two `bugprone-multi-level-implicit-pointer-conversion` findings in `src/core/values/src/var.cpp`
+  that 22.1.8 does not report at all, and over `src/core/math/` the same tree measured 404 findings
+  under 22 against 41 under 18. Until M1's close, `just quality-lint` ran whatever was on PATH and
+  continuous integration installed Ubuntu's 18.1.3, so the gate meant a different thing in each
+  place. It is now `llvm_pin` in the justfile, `just env-doctor` refuses a different major, and the
+  workflow installs the pinned version — `just ci-check` fails if those two disagree. **A clone
+  without the pinned tooling cannot run the format or lint gates**, by design: `pip install
+  clang-format==<pin> clang-tidy==<pin>` is the correction the doctor prints.
+- **The ladder could not survive its own last rung.** M0's `m1-open` criterion matched
+  `openspec/changes/*m1*/proposal.md`. `openspec archive` moves a closed change under
+  `openspec/changes/archive/`, and `*` does not match a path separator — so archiving
+  `implement-m1-substrate`, which is M1's task 6.11 and the final step of closing it, would have
+  turned that criterion red, taking `just roadmap-milestone m0` with it and then M1's own `m0-green`
+  criterion. The question the criterion asks is whether the next milestone was opened deliberately,
+  and a change that was opened and then closed answers it more strongly than one still open; both
+  M0's `m1-open` and M1's `m2-open` now match either, and each records why.
+- **`core-type-system`** is Working on a **two-type demonstration**. `identity/manifest.toml` holds
+  exactly `cy::demo::Health` and `cy::demo::Placement`; no engine type is reflected, and the only
+  consumer is `samples/01-headless-host`. The identity model, the manifest, the tombstones and the
+  generator are real and proved — renaming `Health::icon` with no tombstone fails both
+  `just quality-identity` and the build, naming the field, its `FieldId 5` and the two commands that
+  resolve it, and tombstoning it retires the number and lets the tree through — but none of it has
+  been exercised at the scale M2 will bring. `TypeRegistry::find` is a linear scan, and `read_record`
+  calls `find_field` once per field per record, so deserialisation is quadratic in the field count.
+  That is control plane today and asset-load path tomorrow.
+- **The reflection generator's frontend is an undeclared dependency.** It needs the `clang` Python
+  bindings pinned at 18.1.8 (`tools/gen/reflect/parse.py`) plus a libclang 18 shared library, looked
+  for at a hard-coded list of paths. Neither is in `deps/manifest.toml`, neither appears in
+  `THIRD_PARTY.md`, and `just env-doctor` does not check for either. A clone without them configures
+  and builds, silently compiling the committed metadata and never regenerating it. Note also that it
+  pins LLVM **18** while the quality gates pin **22**: the frontend has to match what it parses, but
+  nothing in the tree says so. `implement-m2-world` carries the spec delta that makes build-time
+  tooling a manifest entry; the entries themselves are M2 work.
+- **`core-math`**'s SIMD claim covers the backends this build compiles, which is **two of four**.
+  `SIMD: every compiled backend is bit-identical to the reference on the primitives` compares Scalar
+  against Scalar and, here, against SSE — and passes, 24,557 assertions over the integration suite.
+  NEON is compiled only on the two arm64 legs of the CI matrix. **AVX2 is compiled by nobody**:
+  `CY_MATH_HAS_AVX2` is gated on `__AVX2__`, no build in this repository sets `-mavx2`, and no CI job
+  does either, so the 256-bit path in `simd.h` has never been compiled, let alone compared against
+  the reference. The conventions are executable tests and they hold: a perspective projection maps
+  near to exactly 1.0 and far to within 1e-6 of 0, the infinite-far form maps 1e6 metres to 5e-09,
+  and a look-at down −Z is the identity quaternion and the identity `Mat4`.
+- **`core-jobs-and-concurrency`** is Working, and its **throughput thresholds are loose**. Measured
+  on this 24-core host in the `profile` configuration: parallel efficiency 0.3625 against a floor of
+  0.0809, `parallel_for` efficiency 0.6770 against 0.2090, dispatch overhead 0.0640 against a ceiling
+  of 0.2072. Every metric has three to four and a half times the headroom it needs, so a regression
+  to a quarter of today's speedup would still pass. The gate is real — raising a floor makes it fail
+  — but it will not notice a gradual loss.
+- **`core-jobs-and-concurrency`**'s non-blocking rule is enforced for **declared** blocking only.
+  `begin_blocking_region` refuses on a worker and counts the violation, which is what the
+  specification asks and what `test_blocking.cpp` proves. A worker that simply calls `read()`,
+  `mutex::lock()` or a GPU fence declares nothing and is caught only by the watchdog as a *long
+  task*, after `long_task_threshold_ns` — 250 ms by default. A 100 ms disk stall on a worker is
+  invisible.
+- **The sanitizer gate runs one suite.** The `sanitize` job runs TSan and then ASan+UBSan over
+  `--tests jobs`, where `testing-and-quality` asks for the unit and integration suites at least
+  nightly. Leak detection is on and M1 declared the trace's process-lifetime rings at their
+  allocation site, so a leak reported there is a defect rather than M0's standing false positive.
+  The nightly run the requirement describes does not exist, because this workflow has no schedule.
+- **`core-assets-and-io`** is Seed as intended, and its serialisation is where the milestone's first
+  real undefined behaviour was found: `VariantKey::parse` called `memcpy(dst, nullptr, 0)` for the
+  any-key on every package load. It is fixed and carries a regression test, but assume the class is
+  not exhausted — the tree holds two dozen `memcpy(dst, view.data(), view.size())` calls whose
+  sources can be empty, and only the one that UBSan happened to reach is guarded.
+- **`project-and-plugins`** is Working against the M1 row's scope — "layering enforced, modules and
+  dependencies, layered typed configuration" — and **not against the capability's name**. The
+  manifest, the graph, the cycle and undeclared-dependency rejections, the layered configuration and
+  the target-graph layer check are all real and proved by `tools/project/selftest.py` and by the
+  `project_graph` fixtures, but the only project that exercises them end to end is
+  `tools/project/fixtures/valid/`. Of the plugin half of the specification, the manifest reaches the
+  declaration: `tools/project/graph.py` gives a plugin a stable identifier, rejects a duplicate one,
+  and rejects an engine-API range the engine falls outside — each with a fixture. Everything past the
+  declaration is absent. There is no `dlopen` and no `LoadLibrary` anywhere in the tree, so per-project
+  enablement, phased registration, failure containment and hot reload have no mechanism, and **no
+  plugin has ever been loaded because nothing can load one.**
+- **`engine-architecture`** is Seed on ordering alone. Startup and shutdown order is deterministic
+  across 100 processes and asserted as such; the servers, the ECS/scene duality and the fixed-tick
+  loop are M2's.
+- **`build-system-and-platforms`** is unchanged from M0 and still **Linux-only in practice**.
+  Windows and macOS have still never compiled — every claim about them is the CI matrix's to make,
+  and it has not made one. M1 added roughly 190 more source files, so the first foreign build will be
+  a larger diff than it would have been. One smaller consequence is visible locally: the `release`
+  profile's link-time optimisation makes GCC drop zstd's own `-Wa,--noexecstack`, warning four times
+  per build, so a fetched dependency loses an assembler hardening flag in the one configuration that
+  ships.
+
+- **The sanitizer gate had two defects that hid each other, and one of them made the ledger break
+  the milestone it was checking.** `just test-sanitize` read `CY_BUILD_DIR` as the tree to build
+  *in*, so a run with the override set — which is what `just roadmap-milestone` propagates to every
+  criterion — configured the ordinary build tree with `-D CY_SANITIZE=address,undefined` and left it
+  that way. Everything downstream then ran against an instrumented tree: `just quality-lint` failed
+  on findings a non-sanitized compile database does not produce and on a missing
+  `sanitizer/asan_interface.h`, and `just run-sample empty` failed on LeakSanitizer reports from
+  inside SDL3's X11 backend. The symptom was `just roadmap-milestone m0` going red on the tree
+  `just roadmap-milestone m1` had just proved green — the regression the ledger exists to catch,
+  produced by the ledger.
+
+  Correcting that exposed the second: without an override the recipe builds in
+  `build/sanitize-address,undefined`, and SDL3 probes the linker with
+  `-Wl,--version-script=<path>.sym`. `-Wl,` splits its argument on commas, the linker is handed a
+  path truncated at `sanitize-address`, and SDL3 concludes that Linux does not support version
+  scripts and fails the configure. **Continuous integration sets no `CY_BUILD_DIR`, so
+  `just test-sanitize --sanitizer address,undefined` — a permanent gate since M1 and an M1 exit
+  criterion — could never have passed there.** It passed on every developer machine only because
+  each had set an override to a comma-free directory, which is the first defect. The override now
+  selects the sanitized tree's *parent* and the sanitizer's name is reduced to letters, digits and
+  hyphens; `tools/ci/test_recipes.py` holds both rules, fails against either old behaviour, and runs
+  inside `just ci-check`, which is a permanent gate.
+
+Carried from M0 and now closed: the trace's process-lifetime rings are declared to LeakSanitizer at
+the allocation site (`src/core/diagnostics/src/lifetime.h`), so `just test-sanitize` defaults to leak
+detection on. Closed at M1's gate rather than during it: `just quality-lint` is green over all 182
+translation units, `just quality-format-check` over all 367 files, and every one of M1's seven new
+permanent gates — identity, reflection, project-graph, sanitizers, job-throughput, profiles,
+workflows — is declared in `tools/roadmap/gates.toml` and run by a job in `.github/workflows/ci.yml`,
+which `just ci-check` now proves rather than assumes.

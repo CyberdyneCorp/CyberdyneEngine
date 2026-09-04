@@ -227,7 +227,9 @@ Expected<u32, Error> DynamicBvh::insert(const Aabb& bounds, u64 user_data) {
         return cy::fail(ErrorCode::InvalidArgument, "DynamicBvh::insert(): an empty bounding box");
     }
 
-    const Expected<u32, Error> leaf_node = allocate_node();
+    // Not const: `return leaf_node` is the error path, and a const local is copied where a
+    // non-const one is moved.
+    Expected<u32, Error> leaf_node = allocate_node();
     if (!leaf_node) {
         return leaf_node;
     }

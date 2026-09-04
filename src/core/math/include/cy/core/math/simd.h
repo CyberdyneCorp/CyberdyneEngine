@@ -20,13 +20,30 @@
 // requirement wants. If a shipping configuration later needs it, it belongs in one dispatch table
 // in batch.cpp and not in this header.
 //
-// WHAT IS DELIBERATELY 4-WIDE. `core-math` names SSE4.2, AVX2 and NEON as backends. The three
-// implemented here are the scalar reference, a 128-bit x86 path (SSE2 baseline, using the SSE4.1
-// instructions when the target has them) and a 128-bit NEON path. An AVX2 path is 8-wide and needs
-// an eight-lane type rather than a wider `Float4`; the batch functions are written over a lane
-// count so that adding one is a new `Ops` struct and a new instantiation, not a rewrite. Until it
-// exists, `backend_compiled(Backend::Avx2)` answers false rather than quietly reporting a 128-bit
-// path under a 256-bit name.
+// THE FOUR BACKENDS, AND WHAT EACH ONE COVERS. `core-math` names SSE4.2, AVX2 and NEON alongside
+// the portable fallback, and all four are here: the scalar reference, a 128-bit x86 path (SSE2
+// baseline, using the SSE4.1 instructions when the target has them), a 128-bit NEON path, and a
+// 256-bit AVX2 path.
+//
+// The first three share one vocabulary — `Float4`, one four-lane register holding one point or one
+// plane — and the batch algorithms in batch.cpp are one template over that vocabulary, instantiated
+// per backend. AVX2 cannot join that vocabulary: eight lanes is *two* points, not a wider one, so
+// its algorithms have a different loop shape and live alongside rather than inside the four-wide
+// template. `Avx2Ops` therefore offers the same primitive names at eight lanes, plus the three
+// helpers a two-points-at-a-time loop needs, and batch.cpp holds one extra template written over
+// it.
+//
+// **NO BATCH FUNCTION CURRENTLY USES THE 256-BIT BACKEND, AND THAT IS A MEASUREMENT RATHER THAN AN
+// OMISSION.** An eight-lane version of the array transform was written and measured against the
+// four-wide one in the same build; it is a wash, because the loop is store-bound at 24 bytes per
+// point long before it is arithmetic-bound. batch.cpp records the numbers at the point where the
+// decision bites, and src/core/math/README.md records how they were taken. The backend stays,
+// compiled and tested lane for lane against the reference wherever the build targets AVX2, because
+// the abstraction the specification asks for must have it and because the first arithmetic-bound
+// consumer — skinning, or culling over bounds already stored as component arrays — is where it
+// starts paying. `active_backend()` therefore answers `Sse` on an x86 build even when
+// `backend_compiled(Backend::Avx2)` answers true: the first is what the batch functions run, the
+// second is what the binary contains.
 
 #include <cy/core/base/types.h>
 #include <cy/core/math/scalar.h>
@@ -46,6 +63,9 @@
 #    if defined(__SSE4_1__)
 #        define CY_MATH_HAS_SSE41 1
 #    endif
+#    if defined(__AVX2__)
+#        define CY_MATH_HAS_AVX2 1
+#    endif
 #    if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(_M_ARM64)
 #        define CY_MATH_HAS_NEON 1
 #    endif
@@ -58,14 +78,19 @@
 #    endif
 #endif
 
+#if defined(CY_MATH_HAS_AVX2)
+#    include <immintrin.h>  // AVX2
+#endif
+
 #if defined(CY_MATH_HAS_NEON)
 #    include <arm_neon.h>
 #endif
 
 namespace cy::math::simd {
 
-/// The backends the engine knows about. `Avx2` is listed and is not implemented; see the header
-/// comment. `backend_compiled()` is the honest answer for every entry.
+/// The backends the engine knows about. `backend_compiled()` is the honest answer for every entry:
+/// a build that was not told to target an instruction set does not contain that backend's code and
+/// says so, rather than reporting a narrower path under a wider name.
 enum class Backend : u32 {
     Scalar = 0,
     Sse,
@@ -80,8 +105,12 @@ enum class Backend : u32 {
 /// Whether this build contains that backend's code at all.
 [[nodiscard]] bool backend_compiled(Backend backend) noexcept;
 
-/// The backend the batch functions in batch.h actually use in this build. Always a compiled one,
+/// The backend the batch functions in batch.h actually run in this build. Always a compiled one,
 /// and `Backend::Scalar` in a build that has no SIMD or that defined CY_MATH_FORCE_SCALAR.
+///
+/// Not the same question as `backend_compiled()`: an AVX2 build contains the 256-bit backend and
+/// this still answers `Sse`, because the batch loops are four-wide by measurement. The header
+/// comment has the reasoning and batch.cpp has the numbers.
 [[nodiscard]] Backend active_backend() noexcept;
 
 /// Every compiled backend, written into `out` and returned as a count. `Scalar` is always the
@@ -115,6 +144,9 @@ struct Float4 {
 /// Unaligned load, because the engine's arrays of `Vec3` are 12-byte-strided and nothing in them is
 /// 16-byte aligned. An aligned variant would be faster on hardware that no longer exists.
 [[nodiscard]] inline Float4 load(const f32* p) noexcept {
+    // Deliberately uninitialised: the memcpy on the next line writes every byte of it, and zeroing
+    // it first would put a store in front of the load this function exists to be.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     Float4 r;
     std::memcpy(r.v, p, sizeof(r.v));
     return r;
@@ -272,6 +304,125 @@ inline void store(f32* p, Float4 a) noexcept {
 }  // namespace sse
 #endif  // CY_MATH_HAS_SSE
 
+// --- The 256-bit x86 backend
+// -----------------------------------------------------------------------
+//
+// Eight lanes, which for this engine's data means **two points at a time** rather than one wider
+// point. Every arithmetic primitive below is the four-wide one applied twice, lane for lane, so a
+// value computed here is bit-identical to the reference computing the same lane — and that is
+// asserted, lane by lane, in tests/test_simd.cpp.
+//
+// Three helpers exist here that the four-wide backends do not need, and each one is why this path
+// is worth having at all:
+//
+//   broadcast_quad  loads a matrix column once into both halves. A column is invariant across the
+//                   whole batch, so this happens four times per call, not per point.
+//   spread_x/y/z    take eight floats loaded straight off a `Vec3` array — which is
+//                   [x0 y0 z0 x1 y1 z1 x2 y2] — and produce [x0 x0 x0 x0 | x1 x1 x1 x1]. One
+//                   `vpermps` each. This is the whole trick: a 12-byte-strided array needs no
+//                   transpose to feed a two-point register, only a permute, and the permute is one
+//                   instruction where a pair of scalar broadcasts is three.
+//
+// The eight-float load reads two floats beyond the second point, so the loop in batch.cpp stops
+// three points short of the end and lets the four-wide path finish. That is not a rounding
+// difference — the tail is the same arithmetic — it is only a bounds condition.
+
+#if defined(CY_MATH_HAS_AVX2)
+namespace avx2 {
+
+struct Float8 {
+    __m256 v;
+};
+
+[[nodiscard]] inline Float8 splat(f32 s) noexcept {
+    return Float8{_mm256_set1_ps(s)};
+}
+[[nodiscard]] inline Float8 zero() noexcept {
+    return Float8{_mm256_setzero_ps()};
+}
+/// The same four values in both halves, matching what `set` means four lanes at a time.
+[[nodiscard]] inline Float8 set(f32 a, f32 b, f32 c, f32 d) noexcept {
+    return Float8{_mm256_set_ps(d, c, b, a, d, c, b, a)};
+}
+/// Eight consecutive floats, unaligned. Lane 0 is `p[0]`, as everywhere else in this file.
+[[nodiscard]] inline Float8 load(const f32* p) noexcept {
+    return Float8{_mm256_loadu_ps(p)};
+}
+inline void store(f32* p, Float8 a) noexcept {
+    _mm256_storeu_ps(p, a.v);
+}
+
+/// Four consecutive floats copied into both halves — `VBROADCASTF128`, which does not require
+/// alignment. Used for a matrix column, which is a `Vec4` and so always has four floats to read.
+[[nodiscard]] inline Float8 broadcast_quad(const f32* p) noexcept {
+    return Float8{_mm256_broadcast_ps(reinterpret_cast<const __m128*>(p))};
+}
+
+/// From [x0 y0 z0 x1 y1 z1 x2 y2], the x of each of the first two points, filled across its half.
+[[nodiscard]] inline Float8 spread_x(Float8 packed) noexcept {
+    return Float8{_mm256_permutevar8x32_ps(packed.v, _mm256_setr_epi32(0, 0, 0, 0, 3, 3, 3, 3))};
+}
+[[nodiscard]] inline Float8 spread_y(Float8 packed) noexcept {
+    return Float8{_mm256_permutevar8x32_ps(packed.v, _mm256_setr_epi32(1, 1, 1, 1, 4, 4, 4, 4))};
+}
+[[nodiscard]] inline Float8 spread_z(Float8 packed) noexcept {
+    return Float8{_mm256_permutevar8x32_ps(packed.v, _mm256_setr_epi32(2, 2, 2, 2, 5, 5, 5, 5))};
+}
+
+[[nodiscard]] inline Float8 add(Float8 a, Float8 b) noexcept {
+    return Float8{_mm256_add_ps(a.v, b.v)};
+}
+[[nodiscard]] inline Float8 sub(Float8 a, Float8 b) noexcept {
+    return Float8{_mm256_sub_ps(a.v, b.v)};
+}
+[[nodiscard]] inline Float8 mul(Float8 a, Float8 b) noexcept {
+    return Float8{_mm256_mul_ps(a.v, b.v)};
+}
+[[nodiscard]] inline Float8 div(Float8 a, Float8 b) noexcept {
+    return Float8{_mm256_div_ps(a.v, b.v)};
+}
+[[nodiscard]] inline Float8 min(Float8 a, Float8 b) noexcept {
+    return Float8{_mm256_min_ps(a.v, b.v)};
+}
+[[nodiscard]] inline Float8 max(Float8 a, Float8 b) noexcept {
+    return Float8{_mm256_max_ps(a.v, b.v)};
+}
+
+/// A multiply and an add, NOT `_mm256_fmadd_ps`.
+///
+/// This is the one place where having AVX2 available makes the wrong instruction the obvious one.
+/// FMA rounds once where every other backend rounds twice, so using it here would break the
+/// bit-identity this whole abstraction is built on — and it would break it silently, on x86 only,
+/// in the last decimal place. An FMA path is welcome as its own backend with its own stated
+/// tolerance; it is not a faster spelling of this one.
+[[nodiscard]] inline Float8 madd(Float8 a, Float8 b, Float8 c) noexcept {
+    return Float8{_mm256_add_ps(_mm256_mul_ps(a.v, b.v), c.v)};
+}
+
+/// Eight bits, lane 0 in bit 0.
+[[nodiscard]] inline u32 mask_ge(Float8 a, Float8 b) noexcept {
+    return static_cast<u32>(_mm256_movemask_ps(_mm256_cmp_ps(a.v, b.v, _CMP_GE_OQ)));
+}
+
+[[nodiscard]] inline f32 lane(Float8 a, u32 i) noexcept {
+    alignas(32) f32 tmp[8];
+    _mm256_store_ps(tmp, a.v);
+    return tmp[i];
+}
+
+/// The horizontal sum of each half, in the same association order the four-wide backends use —
+/// (0+1) + (2+3) — because floating-point addition is not associative and a different order is a
+/// different answer.
+inline void hsum_halves(Float8 a, f32& low, f32& high) noexcept {
+    alignas(32) f32 tmp[8];
+    _mm256_store_ps(tmp, a.v);
+    low = (tmp[0] + tmp[1]) + (tmp[2] + tmp[3]);
+    high = (tmp[4] + tmp[5]) + (tmp[6] + tmp[7]);
+}
+
+}  // namespace avx2
+#endif  // CY_MATH_HAS_AVX2
+
 // --- The 128-bit ARM backend
 // ------------------------------------------------------------------------
 //
@@ -370,6 +521,7 @@ inline void store(f32* p, Float4 a) noexcept {
 
 struct ReferenceOps {
     using Vec = reference::Float4;
+    static constexpr u32 kLanes = 4;
     static constexpr Backend kBackend = Backend::Scalar;
 
     static Vec splat(f32 s) noexcept { return reference::splat(s); }
@@ -392,6 +544,7 @@ struct ReferenceOps {
 #if defined(CY_MATH_HAS_SSE)
 struct SseOps {
     using Vec = sse::Float4;
+    static constexpr u32 kLanes = 4;
     static constexpr Backend kBackend = Backend::Sse;
 
     static Vec splat(f32 s) noexcept { return sse::splat(s); }
@@ -412,9 +565,46 @@ struct SseOps {
 };
 #endif
 
+#if defined(CY_MATH_HAS_AVX2)
+/// The eight-lane vocabulary, for the pairwise batch template in batch.cpp.
+///
+/// Deliberately *not* interchangeable with `ReferenceOps` and friends: it has `kLanes = 8` and the
+/// three spread helpers, and it has no `hsum` returning one value because eight lanes hold two
+/// separate sums. A template written over "an Ops" and instantiated with this by mistake therefore
+/// fails to compile rather than computing something plausible.
+struct Avx2Ops {
+    using Vec = avx2::Float8;
+    static constexpr Backend kBackend = Backend::Avx2;
+    static constexpr u32 kLanes = 8;
+
+    static Vec splat(f32 s) noexcept { return avx2::splat(s); }
+    static Vec zero() noexcept { return avx2::zero(); }
+    static Vec set(f32 a, f32 b, f32 c, f32 d) noexcept { return avx2::set(a, b, c, d); }
+    static Vec load(const f32* p) noexcept { return avx2::load(p); }
+    static void store(f32* p, Vec a) noexcept { avx2::store(p, a); }
+    static Vec broadcast_quad(const f32* p) noexcept { return avx2::broadcast_quad(p); }
+    static Vec spread_x(Vec packed) noexcept { return avx2::spread_x(packed); }
+    static Vec spread_y(Vec packed) noexcept { return avx2::spread_y(packed); }
+    static Vec spread_z(Vec packed) noexcept { return avx2::spread_z(packed); }
+    static Vec add(Vec a, Vec b) noexcept { return avx2::add(a, b); }
+    static Vec sub(Vec a, Vec b) noexcept { return avx2::sub(a, b); }
+    static Vec mul(Vec a, Vec b) noexcept { return avx2::mul(a, b); }
+    static Vec div(Vec a, Vec b) noexcept { return avx2::div(a, b); }
+    static Vec min(Vec a, Vec b) noexcept { return avx2::min(a, b); }
+    static Vec max(Vec a, Vec b) noexcept { return avx2::max(a, b); }
+    static Vec madd(Vec a, Vec b, Vec c) noexcept { return avx2::madd(a, b, c); }
+    static u32 mask_ge(Vec a, Vec b) noexcept { return avx2::mask_ge(a, b); }
+    static f32 lane(Vec a, u32 i) noexcept { return avx2::lane(a, i); }
+    static void hsum_halves(Vec a, f32& low, f32& high) noexcept {
+        avx2::hsum_halves(a, low, high);
+    }
+};
+#endif
+
 #if defined(CY_MATH_HAS_NEON)
 struct NeonOps {
     using Vec = neon::Float4;
+    static constexpr u32 kLanes = 4;
     static constexpr Backend kBackend = Backend::Neon;
 
     static Vec splat(f32 s) noexcept { return neon::splat(s); }
@@ -435,8 +625,9 @@ struct NeonOps {
 };
 #endif
 
-/// The tag the `*_simd` entry points in batch.h are compiled from. Aliased to the reference in a
-/// build with no SIMD, so those entry points always exist and a caller never has to `#ifdef`.
+/// The four-wide tag the `*_simd` entry points in batch.h are compiled from. Aliased to the
+/// reference in a build with no SIMD, so those entry points always exist and a caller never has to
+/// `#ifdef`.
 #if defined(CY_MATH_HAS_SSE)
 using ActiveOps = SseOps;
 #elif defined(CY_MATH_HAS_NEON)

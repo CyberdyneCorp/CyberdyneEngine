@@ -177,8 +177,8 @@ Status parallel_exclusive_scan(JobSystem& jobs, const T* input, T* output, u64 c
 ///
 /// Each partition is sorted in parallel, then the sorted runs are merged pairwise on the calling
 /// thread. `scratch` must hold `count` elements; the caller supplies it so that sorting allocates
-/// nothing — which is also why the per-partition sort is `std::sort` rather than `std::stable_sort`,
-/// since the latter allocates a temporary buffer of its own.
+/// nothing — which is also why the per-partition sort is `std::sort` rather than
+/// `std::stable_sort`, since the latter allocates a temporary buffer of its own.
 ///
 /// The merge takes from the left run when two elements compare equal, so the *merge* is stable. The
 /// per-partition sort is not, so two elements a comparator cannot distinguish may swap within a
@@ -216,15 +216,15 @@ Status parallel_sort(JobSystem& jobs, T* data, T* scratch, u64 count, u64 grain,
     while (width < count) {
         for (u64 begin = 0; begin < count; begin += 2 * width) {
             const u64 middle = begin + width < count ? begin + width : count;
-            const u64 end = begin + 2 * width < count ? begin + 2 * width : count;
+            const u64 end = begin + (2 * width) < count ? begin + (2 * width) : count;
             u64 left = begin;
             u64 right = middle;
             u64 out = begin;
             while (left < middle && right < end) {
                 // `!less(right, left)` rather than `less(left, right)`: equal elements take the
                 // left run, which is what keeps the merge stable.
-                target[out++] = !less(source[right], source[left]) ? source[left++]
-                                                                   : source[right++];
+                target[out++] =
+                    !less(source[right], source[left]) ? source[left++] : source[right++];
             }
             while (left < middle) {
                 target[out++] = source[left++];

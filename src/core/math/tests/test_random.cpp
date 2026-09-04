@@ -55,6 +55,7 @@ CY_TEST_CASE("Random: streams are independent, so adding a system perturbs nothi
     constexpr cy::u64 kSeed = 0xA5A5A5A5ull;
     cy::Random alone(kSeed, 1ull);
     std::vector<cy::u32> without;
+    without.reserve(256);
     for (int i = 0; i < 256; ++i) {
         without.push_back(alone.next_u32());
     }
@@ -98,6 +99,7 @@ CY_TEST_CASE("Random: the whole state can be recorded, compared and restored") {
     CY_CHECK(saved.has_cached_normal);
 
     std::vector<cy::f32> expected;
+    expected.reserve(64);
     for (int i = 0; i < 64; ++i) {
         expected.push_back(generator.next_normal());
     }
@@ -154,6 +156,9 @@ CY_TEST_CASE("Random: bounded integers are unbiased and stay in range") {
     for (cy::usize i = 0; i < kDraws; ++i) {
         const cy::u32 value = generator.next_u32_below(kBound);
         CY_REQUIRE(value < kBound);
+        // The REQUIRE above is the bound check, and it ends the test case when it fails. The
+        // analyzer does not model the harness's abort, so it still considers the out-of-range path.
+        // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
         counts[value] += 1;
     }
     // Each bucket should be within a few percent of a third. A modulo bias at this bound is about
@@ -213,12 +218,12 @@ CY_TEST_CASE("Random: the normal distribution has the right mean and spread") {
     cy::f64 sum = 0.0;
     cy::f64 sum_squares = 0.0;
     for (cy::usize i = 0; i < kSamples; ++i) {
-        const cy::f64 value = static_cast<cy::f64>(generator.next_normal());
+        const auto value = static_cast<cy::f64>(generator.next_normal());
         sum += value;
         sum_squares += value * value;
     }
     const cy::f64 mean = sum / static_cast<cy::f64>(kSamples);
-    const cy::f64 variance = sum_squares / static_cast<cy::f64>(kSamples) - mean * mean;
+    const cy::f64 variance = (sum_squares / static_cast<cy::f64>(kSamples)) - (mean * mean);
     // The standard error of the mean at this sample size is about 0.003, so 0.02 is six sigma and
     // will not flake while still catching a shifted or mis-scaled distribution.
     CY_CHECK(std::fabs(mean) < 0.02);
@@ -230,7 +235,7 @@ CY_TEST_CASE("Random: the normal distribution has the right mean and spread") {
     for (cy::usize i = 0; i < 10000; ++i) {
         scaled_sum += static_cast<cy::f64>(scaled.next_normal_in(10.0f, 2.0f));
     }
-    CY_CHECK(std::fabs(scaled_sum / 10000.0 - 10.0) < 0.2);
+    CY_CHECK(std::fabs((scaled_sum / 10000.0) - 10.0) < 0.2);
 }
 
 CY_TEST_CASE("Random: geometric sampling produces unit-length and in-range results") {

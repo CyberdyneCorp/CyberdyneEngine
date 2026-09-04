@@ -54,7 +54,7 @@ void relocate(T* target, T* source, usize count) noexcept {
         }
     } else {
         for (usize index = 0; index < count; ++index) {
-            construct_at<T>(target + index, std::move(source[index]));
+            construct_at<T>(static_cast<void*>(target + index), std::move(source[index]));
             source[index].~T();
         }
     }
@@ -77,7 +77,7 @@ void relocate_overlapping(T* target, T* source, usize count) noexcept {
         // Forward, because the target is always before the source when a gap is being closed, so an
         // element is moved out before it is overwritten.
         for (usize index = 0; index < count; ++index) {
-            construct_at<T>(target + index, std::move(source[index]));
+            construct_at<T>(static_cast<void*>(target + index), std::move(source[index]));
             source[index].~T();
         }
     }
@@ -153,7 +153,7 @@ public:
             return make_unexpected(reserved.error());
         }
         for (usize index = 0; index < size_; ++index) {
-            construct_at<T>(copy.data_ + index, data_[index]);
+            construct_at<T>(static_cast<void*>(copy.data_ + index), data_[index]);
         }
         copy.size_ = size_;
         return copy;
@@ -191,7 +191,7 @@ public:
             return reserved;
         }
         for (usize index = size_; index < count; ++index) {
-            construct_at<T>(data_ + index);
+            construct_at<T>(static_cast<void*>(data_ + index));
         }
         size_ = count;
         return ok();
@@ -215,7 +215,7 @@ public:
                 return make_unexpected(grown.error());
             }
         }
-        return construct_at<T>(data_ + size_++, std::forward<Args>(args)...);
+        return construct_at<T>(static_cast<void*>(data_ + size_++), std::forward<Args>(args)...);
     }
 
     [[nodiscard]] Status append(Span<const T> values) noexcept {
@@ -223,7 +223,7 @@ public:
             return reserved;
         }
         for (const T& value : values) {
-            construct_at<T>(data_ + size_++, value);
+            construct_at<T>(static_cast<void*>(data_ + size_++), value);
         }
         return ok();
     }
@@ -305,7 +305,7 @@ private:
         T* fresh = static_cast<T*>(block);
         detail::relocate(fresh, data_, size_);
         if (data_ != nullptr) {
-            allocator_->deallocate(data_, capacity_ * sizeof(T), alignof(T));
+            allocator_->deallocate(static_cast<void*>(data_), capacity_ * sizeof(T), alignof(T));
         }
         data_ = fresh;
         capacity_ = new_capacity;
@@ -315,7 +315,7 @@ private:
     void release() noexcept {
         detail::destroy_range(data_, size_);
         if (data_ != nullptr) {
-            allocator_->deallocate(data_, capacity_ * sizeof(T), alignof(T));
+            allocator_->deallocate(static_cast<void*>(data_), capacity_ * sizeof(T), alignof(T));
         }
         data_ = nullptr;
         size_ = 0;
@@ -331,6 +331,9 @@ private:
 /// Inline capacity, no heap allocation, ever. `push_back` fails when it is full, which is the whole
 /// contract: a `FixedArray` is what a hot path uses when the maximum is known and an allocation
 /// would be a defect.
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init) — `storage_` is raw inline storage. Zeroing
+// N * sizeof(T) bytes on construction is exactly the cost this container exists to avoid, and
+// `size_` is what says which of those bytes hold objects.
 template <class T, usize N>
 class FixedArray {
 public:
@@ -369,7 +372,7 @@ public:
         if (size_ == N) {
             return fail(ErrorCode::OutOfRange, "FixedArray is full");
         }
-        return construct_at<T>(data() + size_++, std::forward<Args>(args)...);
+        return construct_at<T>(static_cast<void*>(data() + size_++), std::forward<Args>(args)...);
     }
 
     void pop_back() noexcept {
@@ -398,10 +401,14 @@ public:
     [[nodiscard]] T& operator[](usize index) noexcept { return data()[index]; }
     [[nodiscard]] const T& operator[](usize index) const noexcept { return data()[index]; }
 
+    // NOLINTBEGIN(bugprone-casting-through-void) — through void* on purpose: `storage_` is
+    // `alignas(T)`, and a direct reinterpret_cast from `u8*` to `T*` is what -Wcast-align reports.
+    // The engine builds with -Werror, so the compiler's opinion is the one that has to be met.
     [[nodiscard]] T* data() noexcept { return static_cast<T*>(static_cast<void*>(storage_)); }
     [[nodiscard]] const T* data() const noexcept {
         return static_cast<const T*>(static_cast<const void*>(storage_));
     }
+    // NOLINTEND(bugprone-casting-through-void)
     [[nodiscard]] usize size() const noexcept { return size_; }
     [[nodiscard]] static constexpr usize capacity() noexcept { return N; }
     [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
@@ -423,6 +430,9 @@ private:
 
 /// Inline for `N` elements, spilling to the heap beyond. The shape most engine code wants: the
 /// common case costs no allocation and the uncommon one still works.
+// NOLINTEND(cppcoreguidelines-pro-type-member-init)
+
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init) — as above: `storage_` is raw inline storage.
 template <class T, usize N>
 class SmallArray {
 public:
@@ -468,7 +478,7 @@ public:
                 return make_unexpected(grown.error());
             }
         }
-        return construct_at<T>(data_ + size_++, std::forward<Args>(args)...);
+        return construct_at<T>(static_cast<void*>(data_ + size_++), std::forward<Args>(args)...);
     }
 
     void pop_back() noexcept {
@@ -513,12 +523,14 @@ public:
     [[nodiscard]] Span<const T> span() const noexcept { return Span<const T>(data_, size_); }
 
 private:
+    // NOLINTBEGIN(bugprone-casting-through-void) — see the note on FixedArray::data().
     [[nodiscard]] T* inline_data() noexcept {
         return static_cast<T*>(static_cast<void*>(storage_));
     }
     [[nodiscard]] const T* inline_data() const noexcept {
         return static_cast<const T*>(static_cast<const void*>(storage_));
     }
+    // NOLINTEND(bugprone-casting-through-void)
 
     [[nodiscard]] Status grow_to(usize new_capacity) noexcept {
         void* block = allocator_->allocate(new_capacity * sizeof(T), alignof(T));
@@ -528,7 +540,7 @@ private:
         T* fresh = static_cast<T*>(block);
         detail::relocate(fresh, data_, size_);
         if (!is_inline()) {
-            allocator_->deallocate(data_, capacity_ * sizeof(T), alignof(T));
+            allocator_->deallocate(static_cast<void*>(data_), capacity_ * sizeof(T), alignof(T));
         }
         data_ = fresh;
         capacity_ = new_capacity;
@@ -555,7 +567,7 @@ private:
     void release() noexcept {
         detail::destroy_range(data_, size_);
         if (!is_inline()) {
-            allocator_->deallocate(data_, capacity_ * sizeof(T), alignof(T));
+            allocator_->deallocate(static_cast<void*>(data_), capacity_ * sizeof(T), alignof(T));
         }
         data_ = inline_data();
         capacity_ = N;
@@ -571,5 +583,6 @@ private:
     usize size_ = 0;
     usize capacity_ = 0;
 };
+// NOLINTEND(cppcoreguidelines-pro-type-member-init)
 
 }  // namespace cy

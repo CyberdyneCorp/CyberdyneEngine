@@ -139,26 +139,79 @@ quality-specs *args:
 
 # --- Shared implementation --------------------------------------------------------------------------
 
-# Resolve a tool: the override if one is given, otherwise the name on PATH. Fails naming both.
+# Resolve a pinned tool, or fail naming what was found, what is required, and how to correct it.
+#
+# The pin is `llvm_pin` in the justfile, and it is enforced here rather than reported: a gate that
+# quietly ran clang-tidy 18 where the project pins 22 is a gate whose result depends on the machine
+# it ran on, which is the whole reason `developer-workflow-and-just` asks for a pin. An explicit
+# CY_CLANG_FORMAT or CY_CLANG_TIDY names a binary but does not exempt it from the major it must be:
+# the override exists so a developer can point at a correct tool in an unusual place, not so a
+# wrong one can be smuggled past the check.
 [private]
 _tool name override:
     #!/usr/bin/env bash
     set -euo pipefail
-    tool="{{override}}"
-    if [ -n "${tool}" ]; then
-        just _report-override "CY_$(echo {{name}} | tr 'a-z-' 'A-Z_')" "${tool}"
+    IFS=$'\t' read -r status version path <<< "$(just _tool-resolve {{name}} "{{override}}")"
+    case "${status}" in
+        ok) echo "${path}" ;;
+        wrong)
+            echo "{{name}} ${version} is not the pinned LLVM {{llvm_pin}} (found ${path})." >&2
+            just _doctor-hint {{name}} "$(just _host-platform)" \
+                "the quality gates are run at one pinned version" >&2
+            echo "             or name a correct one: CY_$(echo {{name}} | tr 'a-z-' 'A-Z_')=/path/to/{{name}}" >&2
+            exit 1 ;;
+        *)
+            echo "{{name}} {{llvm_pin_version}} is not on PATH${path:+ (tried '${path}')}." >&2
+            just _doctor-hint {{name}} "$(just _host-platform)" \
+                "the quality gates are run at one pinned version" >&2
+            exit 1 ;;
+    esac
+
+# Resolve a pinned LLVM tool without failing: `status<TAB>version<TAB>path`, where status is ok,
+# wrong or missing. `just env-doctor` and `just _tool` both read this, so the version the doctor
+# reports and the binary the gates run are decided in one place and cannot disagree.
+#
+# Search order, first match wins: an explicit override, then `<name>-<pin>` on PATH, then the
+# LLVM distribution's own directory, then the unversioned name. Only the override is used when it
+# is set — naming a binary and then silently running a different one would be worse than failing.
+[private]
+_tool-resolve name override:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    candidates=()
+    if [ -n "{{override}}" ]; then
+        just _report-override "CY_$(echo {{name}} | tr 'a-z-' 'A-Z_')" "{{override}}"
+        candidates=("{{override}}")
     else
-        tool="{{name}}"
+        candidates=("{{name}}-{{llvm_pin}}"
+                    "/usr/lib/llvm-{{llvm_pin}}/bin/{{name}}"
+                    "/opt/homebrew/opt/llvm@{{llvm_pin}}/bin/{{name}}"
+                    "{{name}}")
     fi
-    if ! command -v "${tool}" >/dev/null 2>&1; then
-        echo "{{name}} is not on PATH (tried '${tool}')." >&2
-        echo "  Debian and Ubuntu: sudo apt install clang-format clang-tidy" >&2
-        echo "  macOS:             brew install llvm" >&2
-        echo "  Windows:           winget install LLVM.LLVM" >&2
-        echo "  Or name one: CY_CLANG_FORMAT=/path/to/clang-format just quality-format" >&2
-        exit 1
+    found_path=""
+    found_version=""
+    for candidate in "${candidates[@]}"; do
+        path="$(command -v "${candidate}" 2>/dev/null)" || continue
+        version=""
+        output="$("${path}" --version 2>&1 || true)"
+        if [[ "${output}" =~ ([0-9]+(\.[0-9]+)+) ]]; then
+            version="${BASH_REMATCH[1]}"
+        fi
+        if [ "${version%%.*}" = "{{llvm_pin}}" ]; then
+            printf 'ok\t%s\t%s\n' "${version}" "${path}"
+            exit 0
+        fi
+        # Remember the first tool that exists but is the wrong version, so the report can name it.
+        if [ -z "${found_path}" ]; then
+            found_path="${path}"
+            found_version="${version:-unknown}"
+        fi
+    done
+    if [ -n "${found_path}" ]; then
+        printf 'wrong\t%s\t%s\n' "${found_version}" "${found_path}"
+    else
+        printf 'missing\t-\t%s\n' "${candidates[0]}"
     fi
-    command -v "${tool}"
 
 # The directories the source gates cover when none are named. bindings/ and editor/ are here so that
 # they are covered the day they gain a file; a root that does not exist is skipped.

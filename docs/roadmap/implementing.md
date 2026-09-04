@@ -73,30 +73,42 @@ From [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md):
 
 ## Landed
 
-**[`implement-m0-ground`](../../openspec/changes/archive/)** — M0 · Ground. The repository skeleton
-and the CMake build with layering enforced at configure time, the `justfile` and the CI matrix, an
-SDL3-backed window and a headless one behind engine-owned interfaces, the trace and log with privacy
-classification required on every field, and the test and roadmap gates. Closes on
-`samples/00-empty`.
+**M1 · Substrate** — reflection with the committed identity manifest and its gate, the value types,
+memory domains and chunked storage, the math conventions as executable tests, the job system with
+access declarations, assets at Seed, and the project graph. Closes on `samples/01-headless-host`.
+19 exit criteria pass; `three-platforms` is left to the CI matrix on a single-OS host.
 
-Its spike — the profile mapping across four toolchains — resolved: the mapping is data in
-`cmake/profiles.cmake` and the `justfile`, checked against each other at configure time, with the
-Cargo column proven against a scratch crate rather than assumed.
+Its spike resolved: incremental reflection regeneration is 92–292 ms against a single-file rebuild
+that already costs 0.30–1.09 s, so it disappears into the noise. The cost is driven by how much STL
+each annotated header transitively includes, not by type count — which is now a contract on
+reflected headers.
 
-Worth reading before M1: the gate agent found five defects that individual agents had reported as
-green, the most serious being that traces carried the build machine's absolute paths through
-`__FILE__` — registered as a *name*, not a *field*, and therefore structurally unreachable by the
-writer's redaction. The lesson generalises: a privacy mechanism only covers the data model it can
-see. See `docs/roadmap/capability-matrix.md` for where M0's seeds are thin.
+**M0 · Ground** — the repository skeleton, the CMake build with layering enforced at configure time,
+the `justfile` and the CI matrix, SDL3-backed and headless display servers behind engine-owned
+interfaces, the trace with privacy classification required on every field, and the gates.
+
+Three lessons worth carrying, each found by a gate agent auditing work other agents reported green:
+
+- A privacy mechanism only covers the data model it can see. M0 shipped log sites built from
+  `__FILE__` and registered as event *names*, structurally beyond the writer's redaction.
+- A gate that is wired but never run is not a gate. M1's sanitizers were proven to catch bugs and
+  then run by no CI job.
+- A ledger can break the milestone it is checking. `just test-sanitize` left the ordinary build tree
+  instrumented, so running M1's gate made the next M0 gate fail — and every earlier "M0 green after
+  M1 green" had been luck of ordering.
 
 ## In flight
 
-**M1 · Substrate.** Types and reflection, memory, math, jobs, assets and the virtual filesystem —
-the services every later capability is written against. Its named risk, spiked first, is reflection
-generator incrementality: every capability after M1 pays the generator's cost on every build, so
-slow or non-reproducible generation is a tax that compounds silently.
+**M2 · World.** Entities, components, archetypes and queries; the node façade over them;
+serialization and prefabs; the fixed-tick loop; and the determinism seeds every later milestone
+assumes. Closes on a headless run that ticks 10,000 fixed steps, prints a hierarchical state hash,
+and reproduces it exactly on re-run and after snapshot restore.
 
-M1 also carries three invariants from
-[the table](../ROADMAP.md#the-invariants-that-cannot-wait): stable type and field identity with its
-committed manifest and CI gate, layering enforcement extended over the project graph, and
-access-declaration-driven scheduling.
+Its named risk, spiked first: **cook-time flattening**. Whether an authored hierarchy really lowers
+to chunk-shaped blocks without runtime fixup is the assumption the whole storage decision rests on —
+and M1's chunked storage is what it flattens into, which is why the spike is meaningful now rather
+than theoretical.
+
+M2 carries two invariants from [the table](../ROADMAP.md#the-invariants-that-cannot-wait): the fixed
+tick's commit boundary with seeded random streams and state-hash hooks, and cook-time flattening to
+archetype-native blocks.

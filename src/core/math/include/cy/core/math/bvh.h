@@ -374,8 +374,8 @@ u32 Bvh<T>::bucket_of(u32 index, u32 axis, f32 axis_min, f32 scale) const {
 }
 
 template <class T>
-typename Bvh<T>::SplitChoice Bvh<T>::choose_split(u32 first, u32 count, u32 axis, f32 axis_min,
-                                                  f32 scale) const {
+Bvh<T>::SplitChoice Bvh<T>::choose_split(u32 first, u32 count, u32 axis, f32 axis_min,
+                                         f32 scale) const {
     struct Bucket {
         u32 count = 0;
         Aabb bounds = Aabb::empty();
@@ -407,8 +407,8 @@ typename Bvh<T>::SplitChoice Bvh<T>::choose_split(u32 first, u32 count, u32 axis
         if (left_count == 0 || right_count == 0) {
             continue;
         }
-        const f32 cost = left.surface_area() * static_cast<f32>(left_count) +
-                         right.surface_area() * static_cast<f32>(right_count);
+        const f32 cost = (left.surface_area() * static_cast<f32>(left_count)) +
+                         (right.surface_area() * static_cast<f32>(right_count));
         if (cost < best_cost) {
             best_cost = cost;
             choice.bucket = split;
@@ -460,8 +460,17 @@ u32 Bvh<T>::build_range(u32 first, u32 count, u32 max_leaf_size) {
     // Split along the axis the centroids spread furthest over. A zero spread means every centroid
     // coincides and no plane separates them: emit a leaf rather than recursing forever.
     const Vec3 extent = centroid_bounds.size();
-    const u32 axis =
-        extent.x > extent.y ? (extent.x > extent.z ? 0u : 2u) : (extent.y > extent.z ? 1u : 2u);
+    // The nesting is the tie-breaking, so it is spelled out rather than folded into conditional
+    // operators: z wins every comparison it does not lose, which is what puts 2u in both
+    // fallthrough arms.
+    u32 axis = 2u;
+    if (extent.x > extent.y) {
+        if (extent.x > extent.z) {
+            axis = 0u;
+        }
+    } else if (extent.y > extent.z) {
+        axis = 1u;
+    }
     if (extent[axis] <= 0.0f) {
         return make_leaf();
     }
@@ -477,7 +486,7 @@ u32 Bvh<T>::build_range(u32 first, u32 count, u32 max_leaf_size) {
     // A partition that put everything on one side makes no progress; the median split always makes
     // both sides smaller and so always terminates.
     if (mid == first || mid == first + count) {
-        mid = first + count / 2;
+        mid = first + (count / 2);
     }
 
     const u32 left_child = build_range(first, mid - first, max_leaf_size);

@@ -101,6 +101,27 @@ test-bench *args:
 
 # --- Shared implementation ------------------------------------------------------------------------
 
+# The build tree for one sanitizer. Two rules, and each was a real failure before it was one.
+#
+# **Never CY_BUILD_DIR itself.** A sanitized tree carries -D CY_SANITIZE and instrumented binaries,
+# and handing it back as the ordinary build directory makes every later `just quality-lint` lint a
+# database full of sanitizer flags and every later `just run-sample` run an instrumented binary.
+# CY_BUILD_DIR selects the parent instead, so an override is honoured without an ordinary tree and a
+# sanitized one ever being the same directory.
+#
+# **Never a comma in the path.** `--sanitizer address,undefined` named a directory
+# `build/sanitize-address,undefined`, and SDL3 probes the linker with
+# `-Wl,--version-script=<path>.sym`. `-Wl,` splits its argument on commas, so the linker was handed
+# `<...>/sanitize-address` and reported that the platform does not support version scripts —
+# configuring SDL3 failed outright. It never fired locally only because everyone who ran that gate
+# had CY_BUILD_DIR set to a comma-free directory, which is the rule above being broken. Any
+# character that is not a letter, a digit or a hyphen becomes a hyphen.
+#
+# tools/ci/test_recipes.py holds both rules.
+[private]
+_sanitize-dir sanitizer:
+    @echo "${CY_BUILD_DIR:-build}/sanitize-$(echo '{{sanitizer}}' | tr -c 'a-zA-Z0-9-' '-' | sed 's/-*$//')"
+
 # Build, then run one kind of suite. Private: the graduated recipes above are the interface.
 #
 # CY_BUILD_DIR redirects the build tree, CY_JOBS sets the parallelism, and CY_TEST_JUNIT names a
@@ -215,7 +236,7 @@ test-sanitize *args:
     # — builds it, and runs the selected tests in it.
     sanitizer="thread"
     tests="."
-    leaks="off"
+    leaks="on"
     expecting=""
     ctest_args=()
     for argument in ${rest}; do
@@ -235,7 +256,18 @@ test-sanitize *args:
         esac
     done
 
-    build_dir="${CY_BUILD_DIR:-build/sanitize-${sanitizer}}"
+    # A sanitized tree is never an ordinary one, CY_BUILD_DIR or not. Reading the override as the
+    # tree to build *in* configures the developer's own build directory with -D CY_SANITIZE and
+    # leaves it that way: every later `just quality-lint` then lints a compile database carrying
+    # sanitizer flags, and every later `just run-sample` runs an instrumented binary. That is not
+    # hypothetical — it is how `just roadmap-milestone m1` turned `just roadmap-milestone m0` red on
+    # the tree it had just proved green, which is the exact regression the ledger exists to catch.
+    #
+    # So the override selects the *parent*, and the sanitizer names a subdirectory under it. An
+    # explicit CY_BUILD_DIR is still honoured — a developer who redirects the build tree gets their
+    # sanitized trees beside it — and the default is unchanged. The decision is `_sanitize-dir`
+    # rather than an expression here, so that tools/ci/test_recipes.py can hold it to the rule.
+    build_dir="$(just _sanitize-dir "${sanitizer}")"
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
     echo "==> sanitize    ${sanitizer}  profile=${profile}  tree=${build_dir}"
     CY_BUILD_DIR="${build_dir}" just build-engine --profile "${profile}" -D "CY_SANITIZE=${sanitizer}"
@@ -245,10 +277,11 @@ test-sanitize *args:
     # the intent explicit and gives CTest room too.
     export CY_TEST_BUDGET_SCALE="${CY_TEST_BUDGET_SCALE:-0}"
 
-    # LeakSanitizer is off by default and that is a recorded state, not an oversight: the trace's
-    # per-thread rings are pooled for the life of the process and are not yet declared to the
-    # detector (design.md §9, M1 task 2.12). Any suite that opens a trace therefore reports them.
-    # `--leaks on` turns detection on, and the change that closes task 2.12 makes that the default.
+    # LeakSanitizer is ON by default. It was off through M0 because the trace's per-thread rings are
+    # pooled for the life of the process and nothing declared them, so every suite that opened a
+    # trace reported them; M1 task 2.12 closed that in src/core/diagnostics/src/lifetime.h, which
+    # declares the slot and its ring at the allocation site. A leak reported here is now a defect.
+    # `--leaks off` turns detection off for a bisect; it is not a state anything should be left in.
     if [ "${leaks}" = "on" ]; then
         export ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=1"
     else

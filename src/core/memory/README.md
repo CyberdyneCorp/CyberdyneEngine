@@ -21,7 +21,8 @@ account for it, the containers written against it, and the storage machinery M2'
 | 2.9  | Virtual reservation, ownership conventions  | `virtual_memory.h`, `ownership.h`                               |
 | 2.10 | The general heap, by measurement            | `bench/heap_pattern.cpp`, and the numbers below                 |
 | 2.11 | Memory diagnostics on the shared trace      | `diagnostics.h`                                                 |
-| 2.12 | Process-lifetime declarations               | `lifetime.h`, `lsan.supp`                                       |
+| 2.11 | AddressSanitizer integration for the custom allocators | `sanitizer.h`                                        |
+| 2.12 | Process-lifetime declarations               | `lifetime.h`, and `src/core/diagnostics/src/lifetime.h`         |
 
 `memory.h` includes all of it and is for a subsystem's own translation unit; a header that needs one
 container should include that container.
@@ -106,6 +107,22 @@ against 0.72 — a 3.8% candidate advantage against a 5.3% noise floor. **The co
 depend on which set was used**, which is the only reason it is reported from a loaded machine at
 all.
 
+**Repeated independently.** The comparison was run again from scratch on a quieter machine (load
+average about 6, same binary, same mimalloc build), sixteen interleaved rounds at scale 2:
+
+| Workload | glibc 2.39 best / median | mimalloc 2.1.7 best / median | Difference (best) |
+|---|---|---|---|
+| `general-churn` | 56.97 / 66.42 ns/op | 54.46 / 61.20 ns/op | mimalloc 4.4% faster |
+| `frame-arena`   |  0.77 /  0.81 ns/op |  0.72 /  0.74 ns/op | mimalloc 6.5% faster |
+| `pool-churn`    |  0.76 /  1.31 ns/op |  0.76 /  1.31 ns/op | even |
+| `mixed-frame`   |  3.37 /  3.40 ns/op |  2.07 /  3.46 ns/op | mimalloc 38.6% faster |
+
+Read `frame-arena` first again: 6.5% on a workload that makes ONE heap call is the floor, and the
+4.4% on `general-churn` is under it. Same shape, same conclusion, from a third independent set. An
+eight-round set at scale 1 taken minutes earlier put the floor higher still — `frame-arena` 11.3%,
+`pool-churn` 18.6% — against 12.9% on `general-churn`. The figure that moves between sets is the
+noise, not the difference.
+
 The candidate is mimalloc 2.1.7, commit `8c532c32c3c96e5ba1f2283e032f69ead8add00f`, built Release
 and loaded with `LD_PRELOAD` so that the two runs differ in nothing else. It is the allocator with
 the strongest published results on multi-threaded small-block churn, which is the workload a general
@@ -153,6 +170,29 @@ allocator interface is what makes the choice reversible: `SystemAllocator::heap_
 `heap_free` in `src/system_allocator.cpp` are the only two functions that name the platform heap, so
 adopting a third-party allocator is a change to those two and an entry in `deps/manifest.toml`.
 
+## Where this is thinner than the specification
+
+Recorded rather than glossed, because M1's closing task asks what is thinner than the specification
+and this is the module's own answer.
+
+* **Attribution has three axes of the five the specification names.** Reporting is by domain, by
+  tag and by call site. "By type" needs the allocation record to carry a `TypeId`, "by world cell"
+  needs a world, and "by asset" needs the asset system — none of the three exists at M1, and a
+  placeholder axis that always reported "unknown" would be worse than its absence. The report struct
+  is where they go.
+* **Capture is a call SITE, not a call STACK.** `CaptureMode::Off / Sampled / Full` is the declared
+  mode the specification asks for, and it selects how often a record is kept, but the record holds
+  the file, function and line pushed by `CY_ALLOCATION_SITE` rather than an unwound stack. A real
+  stack needs the platform's unwinder, which is `src/core/platform/`, not this module.
+* **`MemoryDomain::Gpu` is budgeted and nothing reports into it.** "GPU memory SHALL participate in
+  the same pressure model" is structurally satisfied — the domain, its budget and its pressure
+  contribution all exist — and untested against a real allocator until M3.
+* **Paged subsystems reduce together** is the residency layer's scenario and is M6. `PressureMonitor`
+  broadcasts the level every one of them will respond to; nothing here weighs their reductions
+  against each other, and nothing should.
+* **Windows and macOS are UNVERIFIED.** `src/virtual_memory_windows.cpp` has never been compiled;
+  everything else is standard C++ or POSIX. Linux only on this machine.
+
 ## What another agent must do — files this module does not own
 
 1. **`src/core/CMakeLists.txt` registration order.** This module depends publicly on
@@ -167,7 +207,11 @@ adopting a third-party allocator is a change to those two and an entry in `deps/
    `cy_memory_heap_pattern`, in the same shape as `diagnose-overhead`. The target is built by
    `CY_BUILD_TESTS` and is at `<build>/src/core/memory/cy_memory_heap_pattern`.
 
-3. **`tests/CMakeLists.txt` or `src/core/diagnostics/`** — the last of task 2.12. See below.
+3. **`tests/CMakeLists.txt` or `src/core/diagnostics/`** — the last of task 2.12, and the nine
+   suites it still leaves red under `CY_SANITIZE=address`: `integration.values_diagnostics`,
+   `integration.jobs_diagnostics`, the five `diagnostics.*` suites that open a trace, and
+   `smoke.empty_sample`. One `LSAN_OPTIONS` line in `tests/CMakeLists.txt` closes all nine; two
+   calls to `cy::declare_process_lifetime` in `claim_slot` close them properly. See below.
 
 ## Task 2.12: the trace's process-lifetime rings
 
@@ -183,34 +227,57 @@ with the ring buffer under it from `ThreadRing::initialize`. Slots outlive the t
 them on purpose. They look unreachable at exit because `System::slots` is a `std::vector` inside a
 function-local static, whose destructor runs before LeakSanitizer's check.
 
-`src/core/diagnostics/` does not link `cy::core-memory`, so `claim_slot` has no way to reach the
-declaration. Two ways to close it, either of which is a one-line change to a file this module does
-not own:
+`src/core/diagnostics/` does not link `cy::core-memory` — it sits *below* it, since memory reports
+onto the trace — so `claim_slot` cannot reach this module's declaration without closing a cycle.
 
-* **Preferred** — `src/core/diagnostics/` links `cy::core-memory` (both are layer 0, so the layer
-  check permits it) and `claim_slot` calls
-  `cy::declare_process_lifetime(slot, sizeof(ThreadSlot), "trace.thread_slot")` and the same for the
-  ring's buffer. The declaration then shows up in the engine's own report as well.
-* **Otherwise** — `tests/CMakeLists.txt` sets `LSAN_OPTIONS=suppressions=<source>/src/core/memory/lsan.supp`
-  on the suites that open a trace. `lsan.supp` names exactly two functions and nothing broader.
+**Closed, in the module that allocates.** `src/core/diagnostics/src/lifetime.h` carries the tool half
+of this mechanism: `cy::diag::declare_process_lifetime(pointer)`, three lines around
+`__lsan_ignore_object`, empty in an uninstrumented binary. `ThreadRing::initialize` declares its
+buffer and `claim_slot` declares the slot, both at the allocation site. Nothing is suppressed by
+pattern, so a second ring allocated every frame by a defect is still a finding, and no test needs an
+`LSAN_OPTIONS` of its own. The suppression file this section used to describe is gone.
 
-Verified here: with `LSAN_OPTIONS=suppressions=src/core/memory/lsan.supp`, all five diagnostics
-integration binaries exit zero under `CY_SANITIZE=address`; without it, `cy_diag_test_trace` reports
-`197376 byte(s) leaked in 6 allocation(s)`. LeakSanitizer's own `print_suppressions=1` confirms both
-templates matched and nothing else did. The memory suites are green under ASan either way — they
-have nothing to declare.
+The general mechanism in this module, `cy::declare_process_lifetime(pointer, bytes, tag)`, remains
+the one to use anywhere above layer 0's diagnostics floor: it tells LeakSanitizer *and* the engine's
+own leak report, so a declared allocation is attributable in a build with no sanitizer at all.
 
-Note the spelling in `lsan.supp`: `claim_slot` carries no namespace because it has none in the
-symbol — it is in an anonymous namespace, so the frame LeakSanitizer matches against is the bare
-name, and `cy::diag::claim_slot` matches nothing.
+Verified: the whole 47-test suite under `CY_SANITIZE=address,undefined` with `detect_leaks=1`. Before
+the declaration, thirteen suites were red — `integration.values_diagnostics`,
+`integration.jobs_diagnostics`, `integration.assets_io`, `integration.assets_loading`, the seven
+`diagnostics.*` suites that open a trace, `smoke.empty_sample` and `smoke.headless_host` — every one
+reporting the same two frames, `cy::diag::ThreadRing::initialize` and `claim_slot`. After it, none.
 
 ## Sanitizers
 
 | Build | Suites | Result |
 |---|---|---|
-| `CY_SANITIZE=address` | all four memory suites | clean; the diagnostics suites need `lsan.supp` above |
+| `CY_SANITIZE=address` | all four memory suites | clean |
 | `CY_SANITIZE=address,undefined` | all four memory suites | clean |
-| `CY_SANITIZE=thread` | `unit.memory`, `memory_containers`, `memory_threads` | clean, under `setarch $(uname -m) -R` |
+| `CY_SANITIZE=thread` | all four memory suites | clean, under `setarch $(uname -m) -R` |
+
+### The allocators route through the tool's interface
+
+`sanitizer.h`, and the "Sanitiser build" scenario of the diagnostics requirement. AddressSanitizer
+knows about the blocks the platform heap hands out; an arena takes one such block and carves ten
+thousand allocations from it, so without help the whole region is one valid object and a write off
+the end of a bump allocation is not a finding. `poison_memory` / `unpoison_memory` mark what an
+allocator owns but has not handed out, and `ArenaAllocator`, `StackAllocator`, `SlabAllocator`,
+`PoolAllocator` and `ChunkAllocator` call them: the alignment padding between two bump allocations,
+everything past a reset, a pool block on the free list and a chunk on the free list are all
+use-after-poison rather than silently valid memory. Every function compiles to nothing in a binary
+that is not instrumented, so the calls on the hot paths cost the shipping build nothing.
+
+`VirtualArena` is deliberately excluded, and the header says why: its bytes are mapped rather than
+allocated, and shadow state for an address range that is later unmapped is not reliably reset for
+the next mapping.
+
+`tests/test_allocators.cpp` asserts the shadow state directly through `memory_is_poisoned` rather
+than by provoking an abort, so the case runs in every build and needs no second process. It found
+one thing immediately: the "use after reset" case in `test_lifetimes.cpp` read the arena's byte
+pattern back, which is itself the use-after-reset the tool now reports, so that case asks the shadow
+under ASan and reads the byte pattern otherwise.
+
+### Defects the sanitizers found
 
 Two defects were found by running them and are fixed here, each with a regression test:
 

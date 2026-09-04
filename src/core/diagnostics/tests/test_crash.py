@@ -17,8 +17,16 @@ import sys
 import tempfile
 
 
-# Printed by the probe when the mode it was asked for is compiled out of this configuration.
-SKIPPED = "assertions-compiled-out"
+# Printed by the probe when the mode it was asked for cannot run in this build. Two reasons, and
+# both are the build being honest rather than the handler being broken: Profile and Shipping compile
+# CY_ASSERT out, so the `assert` mode has nothing to fire; UndefinedBehaviorSanitizer diagnoses the
+# `segv` mode's null store before the hardware faults, so no signal reaches the handler.
+SKIPPED = ("assertions-compiled-out", "mode-not-available")
+
+SKIP_REASON = {
+    "assertions-compiled-out": "assertions are compiled out in this configuration",
+    "mode-not-available": "UndefinedBehaviorSanitizer diagnoses the fault before the signal",
+}
 
 REQUIRED = (
     ("cyberdyne-crash-report", "the artefact identifies itself"),
@@ -42,8 +50,9 @@ def run(probe: str, directory: str, mode: str) -> tuple[int, str]:
         return 1, ""
     # The probe prints the report path at installation, before it knows which mode it will take, so
     # a mode that cannot run says so on a later line rather than by withholding the path.
-    if SKIPPED in lines:
-        return completed.returncode, SKIPPED
+    for sentinel in SKIPPED:
+        if sentinel in lines:
+            return completed.returncode, sentinel
     return completed.returncode, lines[0]
 
 
@@ -85,10 +94,10 @@ def main() -> int:
             if not path:
                 failures += 1
                 continue
-            if path == SKIPPED:
-                # Profile and Shipping compile CY_ASSERT out, so this mode has nothing to fire.
-                # Skipping is the honest result; the other three modes still run here.
-                print(f"{mode}: skipped — assertions are compiled out in this configuration")
+            if path in SKIPPED:
+                # Skipping is the honest result; every other mode still runs here, and an
+                # ordinary development build runs all four.
+                print(f"{mode}: skipped — {SKIP_REASON[path]}")
                 continue
             if mode != "report" and status >= 0:
                 # A process killed by a signal reports a negative status through subprocess.

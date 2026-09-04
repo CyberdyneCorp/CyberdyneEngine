@@ -180,7 +180,8 @@ Status AsyncService::start(JobSystem& jobs, const Config& configuration) noexcep
                     "must be running first");
     }
     if (configuration.capacity == 0) {
-        return fail(ErrorCode::InvalidArgument, "an async service with no capacity accepts nothing");
+        return fail(ErrorCode::InvalidArgument,
+                    "an async service with no capacity accepts nothing");
     }
 
     auto* impl = new (std::nothrow) detail::AsyncServiceImpl();
@@ -249,7 +250,8 @@ u64 AsyncService::refused() const noexcept {
     return impl_ != nullptr ? impl_->refused.load(std::memory_order_relaxed) : 0;
 }
 
-// --- FenceSignal ----------------------------------------------------------------------------------
+// --- FenceSignal
+// ----------------------------------------------------------------------------------
 
 Status FenceSignal::arm(JobSystem& jobs, const char* name, Priority priority) noexcept {
     if (!handle_.is_null()) {

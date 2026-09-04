@@ -109,14 +109,14 @@ CY_TEST_CASE("frame arenas are per thread: one thread's reset does not touch ano
 
     std::vector<std::thread> workers;
     workers.reserve(kWorkers);
-    for (cy::u32 index = 0; index < kWorkers; ++index) {
-        workers.emplace_back([&, index] {
+    for (void*& slot : buffers) {
+        workers.emplace_back([&, mine_slot = &slot] {
             void* mine = cy::frame_arena().bump(4096, 16);
             if (mine == nullptr) {
                 failures.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
-            buffers[index] = mine;
+            *mine_slot = mine;
             ready.fetch_add(1, std::memory_order_release);
             while (!go.load(std::memory_order_acquire)) {
                 std::this_thread::yield();

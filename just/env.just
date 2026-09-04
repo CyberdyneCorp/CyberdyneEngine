@@ -24,12 +24,17 @@ env-doctor *args:
     openspec | openspec | -    | validates openspec/specs/; just quality-specs is a merge gate
     '
 
-    # Advisory: absent, the engine still builds. Present, a gate or a backend works that otherwise
-    # does not, so the report names them rather than leaving the developer to find out from a
-    # failure two commands later.
-    advisory='
-    clang-format | clang-format | - | just quality-format and its merge gate
-    clang-tidy   | clang-tidy   | - | just quality-lint and its merge gate
+    # The pinned LLVM tooling. Required rather than advisory since M1, and pinned to one version
+    # rather than to a minimum: clang-format 18 and 22 disagree about three sites in this tree with
+    # no spelling that satisfies both, and clang-tidy 18 and 22 do not report the same findings over
+    # the same sources. A merge gate whose verdict depends on which version the machine happened to
+    # have is not a gate, so `just quality-format-check` and `just quality-lint` refuse a tool of
+    # the wrong major and this report says so first.
+    #
+    # name | what the gate is | the recipes' override for it
+    pinned='
+    clang-format | just quality-format-check and its merge gate | CY_CLANG_FORMAT
+    clang-tidy   | just quality-lint and its merge gate         | CY_CLANG_TIDY
     '
 
     platform="$(just _host-platform)"
@@ -108,12 +113,42 @@ env-doctor *args:
         fi
     fi
 
+    # ---- the pinned LLVM tooling -----------------------------------------------------------------
+    # Resolved through `just _tool-resolve`, which is the same code path `just quality-lint` and
+    # `just quality-format-check` take. The doctor cannot report a version the gates would not run,
+    # and an override that names the wrong major is reported here rather than discovered by a gate
+    # that disagrees with the one continuous integration ran.
+    check_pinned() {
+        local name="$1" purpose="$2" override_name="$3"
+        local state version path
+        IFS=$'\t' read -r state version path \
+            <<< "$(just _tool-resolve "${name}" "${!override_name:-}")"
+        case "${state}" in
+            ok)
+                report ok "${name}" "${version}" "${path}  (pinned LLVM {{llvm_pin}})"
+                ;;
+            wrong)
+                report old "${name}" "${version}" \
+                       "${path}  (needs LLVM {{llvm_pin}}, pinned at {{llvm_pin_version}})"
+                just _doctor-hint "${name}" "${platform}" "${purpose}"
+                problems+=("${name}")
+                status=1
+                ;;
+            *)
+                report missing "${name}" "-" "not on PATH"
+                just _doctor-hint "${name}" "${platform}" "${purpose}"
+                problems+=("${name}")
+                status=1
+                ;;
+        esac
+    }
+
     echo
-    while IFS='|' read -r name binary minimum purpose; do
+    while IFS='|' read -r name purpose override_name; do
         [ -n "${name// /}" ] || continue
-        check_tool "${name// /}" "${binary// /}" "${minimum// /}" \
-                   "$(echo "${purpose}" | sed 's/^ *//; s/ *$//')" advisory
-    done <<< "${advisory}"
+        check_pinned "${name// /}" "$(echo "${purpose}" | sed 's/^ *//; s/ *$//')" \
+                     "${override_name// /}"
+    done <<< "${pinned}"
     just _doctor-window-system "${platform}"
 
     # ---- what this milestone deliberately does not check ------------------------------------------
@@ -176,8 +211,10 @@ env-bootstrap *args:
     # CY_BUILD_DIR=build/dev         a build tree other than the preset's build/<profile>/
     # CY_JOBS=8                      build and test parallelism
     # CY_TARGET_PLATFORM=linux       the platform builds target; must be the host until M9
-    # CY_CLANG_FORMAT=/usr/bin/clang-format-18
-    # CY_CLANG_TIDY=/usr/bin/clang-tidy-18
+    # The quality gates run at the LLVM major the justfile pins. These name a binary in an
+    # unusual place; they do not exempt it from that major, and env-doctor reports one that is.
+    # CY_CLANG_FORMAT=/usr/lib/llvm-22/bin/clang-format
+    # CY_CLANG_TIDY=/usr/lib/llvm-22/bin/clang-tidy
     SETTINGS
         sed -i.bak 's/^    //' .just.local && rm -f .just.local.bak
         echo ".just.local: written, every setting commented out"
@@ -238,6 +275,14 @@ _host-platform:
     esac
 
 # The correction for a missing or too-old tool, for this host. Never merely "it is absent".
+#
+# clang-format and clang-tidy give the same command on all three hosts, and it is a `pip install` of
+# an exact version rather than a distribution package. That is the point of the pin: `apt install
+# clang-format` on Ubuntu 24.04 is 18.1.3, `brew install llvm` is whatever is current, and the two
+# do not format this tree the same way. The PyPI wheels carry the upstream LLVM binaries for all
+# three platforms at a version anyone can name, need no root, and are the same command
+# .github/workflows/ci.yml runs — which is what `developer-workflow-and-just` means by continuous
+# integration using the same pinned versions as developers.
 [private]
 _doctor-hint tool platform purpose:
     #!/usr/bin/env bash
@@ -251,8 +296,8 @@ _doctor-hint tool platform purpose:
     just         | see https://just.systems/man/en/packages.html | brew install just | winget install Casey.Just
     openspec     | npm install -g @fission-ai/openspec    | npm install -g @fission-ai/openspec | npm install -g @fission-ai/openspec
     compiler     | sudo apt install g++-13               | xcode-select --install | Visual Studio 2022 17.8 or later, or winget install LLVM.LLVM
-    clang-format | sudo apt install clang-format         | brew install llvm   | winget install LLVM.LLVM
-    clang-tidy   | sudo apt install clang-tidy           | brew install llvm   | winget install LLVM.LLVM
+    clang-format | pip install clang-format=={{llvm_pin_version}} | pip install clang-format=={{llvm_pin_version}} | pip install clang-format=={{llvm_pin_version}}
+    clang-tidy   | pip install clang-tidy=={{llvm_pin_version}}   | pip install clang-tidy=={{llvm_pin_version}}   | pip install clang-tidy=={{llvm_pin_version}}
     '
     column=2
     case '{{platform}}' in

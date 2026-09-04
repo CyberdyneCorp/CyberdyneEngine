@@ -26,7 +26,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from record import REPO_ROOT, Entry
+from record import REPO_ROOT, TIERS, Entry
 
 MILESTONES_DIR = Path(__file__).resolve().parent / "milestones"
 SCHEMA = 1
@@ -232,14 +232,28 @@ def _check_path(criterion: Criterion) -> tuple[str, str, str]:
 
 
 def _check_tiers(criterion: Criterion, entries: tuple[Entry, ...]) -> tuple[str, str, str]:
+    """An exit tier is a FLOOR, not an equality.
+
+    `delivery-roadmap`'s ladder is ordered and a capability only ever moves up it, so "M0 exits with
+    `project-and-plugins` at Seed" is the claim that it had reached Seed by then — not that it must
+    stay there forever. Comparing for equality made a closed milestone's recipe fail the moment a
+    later one advanced anything it named: M1 raised `project-and-plugins` to Working and
+    `just roadmap-milestone m0` went red on a criterion M0 had satisfied, with no way back short of
+    editing M0's own criteria. A milestone's exit criteria must stay runnable after it closes,
+    because `milestone-m0` is a permanent merge gate.
+    """
     recorded = {entry.capability: entry for entry in entries}
     wrong = []
     for capability, expected in sorted(criterion.expect_tiers.items()):
         entry = recorded.get(capability)
         if entry is None:
             wrong.append(f"{capability}: not in the record")
-        elif entry.tier != expected:
-            wrong.append(f"{capability}: recorded '{entry.tier}', this milestone exits at '{expected}'")
+            continue
+        if expected not in TIERS:
+            wrong.append(f"{capability}: expected tier {expected!r} is not one of {', '.join(TIERS)}")
+        elif TIERS.index(entry.tier) < TIERS.index(expected):
+            wrong.append(
+                f"{capability}: recorded '{entry.tier}', below this milestone's exit of '{expected}'")
     if wrong:
-        return FAILED, f"{len(wrong)} capability tier(s) not at this milestone's exit", "\n".join(wrong)
+        return FAILED, f"{len(wrong)} capability tier(s) below this milestone's exit", "\n".join(wrong)
     return OK, "", ""

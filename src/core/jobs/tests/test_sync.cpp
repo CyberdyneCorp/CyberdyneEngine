@@ -93,7 +93,8 @@ CY_TEST_CASE("a manual-reset event stays set until it is reset") {
     CY_CHECK_FALSE(event.is_set());
 }
 
-// --- Double buffering ------------------------------------------------------------------------------
+// --- Double buffering
+// ------------------------------------------------------------------------------
 
 CY_TEST_CASE("a double buffer publishes only at the swap") {
     DoubleBuffered<int> buffered(0);
@@ -116,7 +117,8 @@ CY_TEST_CASE("a double buffer publishes only at the swap") {
     CY_CHECK_EQ(buffered.generation(), 2u);
 }
 
-// --- The single-producer, single-consumer queue -----------------------------------------------------
+// --- The single-producer, single-consumer queue
+// -----------------------------------------------------
 
 CY_TEST_CASE("an spsc queue reports full rather than overwriting") {
     SpscQueue<u32> queue;
@@ -151,7 +153,8 @@ CY_TEST_CASE("an spsc queue of fewer than two slots is refused") {
     CY_CHECK_EQ(refused.error().code, ErrorCode::InvalidArgument);
 }
 
-// --- Thread roles ------------------------------------------------------------------------------------
+// --- Thread roles
+// ------------------------------------------------------------------------------------
 
 CY_TEST_CASE("a thread role violation is counted in every configuration") {
     reset_thread_role_violations();

@@ -39,7 +39,7 @@ public:
         config.worker_count = workers;
         config.task_slots_per_participant = 2048;
         config.deque_capacity = 2048;
-        config.scratch_bytes_per_participant = 256 * 1024;
+        config.scratch_bytes_per_participant = usize{256} * 1024;
         started_ = system_.start(config).has_value();
     }
 

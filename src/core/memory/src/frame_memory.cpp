@@ -11,8 +11,8 @@ namespace {
 
 // The configured sizes. Atomics rather than a mutex because they are written once, at startup, and
 // read by every thread that creates its arenas afterwards.
-std::atomic<usize> g_frame_bytes{2u * 1024u * 1024u};
-std::atomic<usize> g_scratch_bytes{256u * 1024u};
+std::atomic<usize> g_frame_bytes{usize{2} * 1024 * 1024};
+std::atomic<usize> g_scratch_bytes{usize{256} * 1024};
 
 /// One thread's arenas, created on first use and destroyed when the thread exits.
 ///

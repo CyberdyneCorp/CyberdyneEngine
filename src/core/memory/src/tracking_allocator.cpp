@@ -4,6 +4,7 @@
 
 #include <cy/core/memory/lifetime.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace cy {
@@ -55,6 +56,7 @@ TrackingAllocator::~TrackingAllocator() {
     Header* header = live_;
     while (header != nullptr) {
         Header* following = header->next;
+        // NOLINTNEXTLINE(bugprone-casting-through-void) — see the note in do_allocate().
         u8* const block = static_cast<u8*>(static_cast<void*>(header)) - header->padding;
         upstream_->deallocate(block, header->block_bytes, header->alignment);
         header = following;
@@ -94,6 +96,10 @@ void* TrackingAllocator::do_allocate(usize size, usize alignment) noexcept {
 
     auto* const base = static_cast<u8*>(block);
     auto* const payload = static_cast<u8*>(align_up(base + sizeof(Header), block_alignment));
+    // Through void* on purpose: the header and its payload are one byte block seen at two offsets,
+    // and a direct reinterpret_cast between `u8*` and `Header*` is what -Wcast-align reports under
+    // the engine's -Werror. `block_alignment` is at least alignof(Header), established above.
+    // NOLINTNEXTLINE(bugprone-casting-through-void)
     auto* const header = static_cast<Header*>(static_cast<void*>(payload - sizeof(Header)));
 
     header->magic = kLiveMagic;
@@ -118,9 +124,7 @@ void* TrackingAllocator::do_allocate(usize size, usize alignment) noexcept {
 
     ++live_allocations_;
     live_bytes_ += size;
-    if (live_bytes_ > peak_bytes_) {
-        peak_bytes_ = live_bytes_;
-    }
+    peak_bytes_ = std::max(peak_bytes_, live_bytes_);
     return payload;
 }
 
@@ -147,12 +151,8 @@ void TrackingAllocator::unlink(Header& header) noexcept {
 }
 
 bool TrackingAllocator::was_recently_freed(const void* pointer) const noexcept {
-    for (const void* candidate : recent_frees_) {
-        if (candidate == pointer) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(recent_frees_,
+                               [pointer](const void* candidate) { return candidate == pointer; });
 }
 
 void TrackingAllocator::remember_free(const void* pointer) noexcept {
@@ -173,6 +173,7 @@ void TrackingAllocator::do_deallocate(void* pointer, usize size, usize alignment
     }
 
     auto* const payload = static_cast<u8*>(pointer);
+    // NOLINTNEXTLINE(bugprone-casting-through-void) — see the note in do_allocate().
     auto* const header = static_cast<Header*>(static_cast<void*>(payload - sizeof(Header)));
 
     if (header->magic != kLiveMagic) {
@@ -214,8 +215,10 @@ void TrackingAllocator::do_deallocate(void* pointer, usize size, usize alignment
 LeakReport TrackingAllocator::report_leaks(LeakSink sink, void* user) const noexcept {
     LeakReport report;
     for (const Header* header = live_; header != nullptr; header = header->next) {
+        // NOLINTBEGIN(bugprone-casting-through-void) — see the note in do_allocate().
         const auto* payload =
             static_cast<const u8*>(static_cast<const void*>(header)) + sizeof(Header);
+        // NOLINTEND(bugprone-casting-through-void)
         const bool intentional = is_process_lifetime(payload);
 
         ++report.live_allocations;

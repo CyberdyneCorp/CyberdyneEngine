@@ -134,7 +134,7 @@ struct Aabb {
             return 0.0f;
         }
         const Vec3 d = size();
-        return 2.0f * (d.x * d.y + d.y * d.z + d.z * d.x);
+        return 2.0f * ((d.x * d.y) + (d.y * d.z) + (d.z * d.x));
     }
 
     [[nodiscard]] constexpr f32 volume() const noexcept {

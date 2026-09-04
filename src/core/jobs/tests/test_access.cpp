@@ -96,7 +96,8 @@ CY_TEST_CASE("a contradictory self-declaration is refused where it is written") 
     CY_CHECK_EQ(duplicate.error().code, ErrorCode::AlreadyExists);
 }
 
-// --- The schedule ---------------------------------------------------------------------------------
+// --- The schedule
+// ---------------------------------------------------------------------------------
 
 CY_TEST_CASE("independent systems share a batch") {
     // The specification's scenario: one system writes Velocity while reading Input, another writes
@@ -267,7 +268,8 @@ CY_TEST_CASE("a system's undeclared access is caught and counted") {
     reset_undeclared_access_violations();
 }
 
-// --- Deferred structural changes -------------------------------------------------------------------
+// --- Deferred structural changes
+// -------------------------------------------------------------------
 
 CY_TEST_CASE("structural changes commit in a deterministic order, not in completion order") {
     DeferredCommands store;
