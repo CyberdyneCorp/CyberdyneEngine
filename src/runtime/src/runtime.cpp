@@ -24,6 +24,7 @@ CY_TRACE_FIELD(window_id, u64, cy::Privacy::Public)
 CY_TRACE_FIELD(window_event, string, cy::Privacy::Public)
 CY_TRACE_FIELD(frame_index, u64, cy::Privacy::Public)
 CY_TRACE_FIELD(discarded_ns, duration_ns, cy::Privacy::Public)
+CY_TRACE_FIELD(server_count, u64, cy::Privacy::Public)
 
 const char* window_event_type_name(WindowEventType type) {
     switch (type) {
@@ -97,10 +98,10 @@ const Runtime::StageOps Runtime::kStages[kStartupStageCount] = {
     {StartupStage::Core, nullptr, nullptr},
     {StartupStage::ModulesCore, &Runtime::enter_modules_core, &Runtime::leave_modules_core},
     {StartupStage::Display, &Runtime::enter_display, &Runtime::leave_display},
-    {StartupStage::Servers, nullptr, nullptr},
+    {StartupStage::Servers, &Runtime::enter_servers, &Runtime::leave_servers},
     {StartupStage::ModulesServers, &Runtime::enter_modules_servers,
      &Runtime::leave_modules_servers},
-    {StartupStage::EcsScene, nullptr, nullptr},
+    {StartupStage::EcsScene, &Runtime::enter_ecs_scene, &Runtime::leave_ecs_scene},
     {StartupStage::ModulesScene, &Runtime::enter_modules_scene, &Runtime::leave_modules_scene},
     {StartupStage::Scripting, nullptr, nullptr},
     {StartupStage::Editor, &Runtime::enter_modules_editor, &Runtime::leave_modules_editor},
@@ -119,6 +120,20 @@ Status Runtime::startup(const RuntimeConfig& config) {
     }
 
     config_ = config;
+
+    // The pacing clock, configured before any stage runs so that an invalid rate is a startup
+    // failure rather than a frame that never ticks. When a simulation is attached it carries its
+    // own clock and this one stays at tick zero; both are configured from the same three fields, so
+    // a runtime and its simulation cannot be paced differently.
+    determinism::ClockConfig clock;
+    clock.rate = config.tick_rate;
+    clock.max_ticks_per_frame = config.max_ticks_per_frame;
+    clock.mode = config.tick_mode;
+    clock.fixed_ticks_per_frame = config.fixed_ticks_per_frame;
+    if (Status paced = clock_.configure(clock); !paced) {
+        return paced;
+    }
+
     startup_count_ = 0;
     shutdown_count_ = 0;
     unwound_ = false;
@@ -357,6 +372,70 @@ void Runtime::leave_display() {
     }
 }
 
+// --- Stage 5: Servers ----------------------------------------------------------------------------
+//
+// Task 4.1.1. Every slot is filled from the host's registry: the requested backend, then the
+// documented default, then the null implementation that keeps handle bookkeeping valid. None of
+// those three is a startup failure — falling back is the documented behaviour, and a game that must
+// have a particular backend reads `ServerRegistry::outcome()` and says so itself.
+//
+// A configuration with no registry leaves the stage empty, exactly as a configuration with no
+// module registry leaves the four module stages empty. The sequence is unchanged either way, which
+// is the property the ordering journal exists to protect.
+
+Status Runtime::enter_servers() {
+    if (config_.servers == nullptr) {
+        return ok();
+    }
+    if (Status selected =
+            config_.servers->select_all(config_.server_backends, config_.server_backend_count);
+        !selected) {
+        return selected;
+    }
+    servers_selected_ = true;
+    CY_LOG(runtime_category(), diag::LogLevel::Info, "runtime.servers",
+           diag::field_u64(server_count(), config_.servers->live_backends()));
+    return ok();
+}
+
+void Runtime::leave_servers() {
+    if (servers_selected_ && config_.servers != nullptr) {
+        config_.servers->shutdown_all();
+    }
+    servers_selected_ = false;
+}
+
+// --- Stage 7: ECS and Scene ----------------------------------------------------------------------
+//
+// Task 4.1.1. "World creation, component and node type registration."
+//
+// The simulation is the host's, not the runtime's, and the reason is registration: a game registers
+// its components and systems between constructing the simulation and starting the runtime, and a
+// simulation the runtime constructed would give it nowhere to do that. So this stage brings up a
+// simulation the host has not brought up itself, and is a no-op for one the host initialised
+// earlier in order to register against it. Both are correct; what the stage fixes is the *position*
+// in the sequence at which a world exists.
+
+// Every entry in kStages is a `Status (Runtime::*)()`, so a stage that happens to touch nothing of
+// this object's own still has to have the signature the table declares.
+//
+// NOLINTNEXTLINE(readability-make-member-function-const)
+Status Runtime::enter_ecs_scene() {
+    if (config_.simulation == nullptr) {
+        return ok();
+    }
+    if (config_.simulation->initialized()) {
+        return ok();
+    }
+    return config_.simulation->initialize();
+}
+
+void Runtime::leave_ecs_scene() {
+    // Nothing: the simulation is the host's and outlives the runtime. Present so that the stage has
+    // a leave function for the journal to call and so that whoever gives the runtime ownership of a
+    // world has a place to release it.
+}
+
 // --- Stage 11: Boot ------------------------------------------------------------------------------
 //
 // "Load the startup scene or project, enter the main loop." There is no scene until M2 and the loop
@@ -364,21 +443,32 @@ void Runtime::leave_display() {
 // rather than from whenever the host happens to call it.
 
 Status Runtime::enter_boot() {
+    // Registration closes here, in the stage `engine-architecture` calls "load the startup scene or
+    // project", and before the first tick. `simulation-and-determinism` requires registries whose
+    // contents affect simulation to be "finalised in a deterministic order derived from stable
+    // identifiers **before simulation begins**"; doing it lazily on the first tick would close them
+    // at a point that depends on when the first tick happened to arrive.
+    if (config_.simulation != nullptr) {
+        if (Status closed = config_.simulation->finalize_registration(); !closed) {
+            return closed;
+        }
+    }
+
     last_frame_ns_ = config_.platform->monotonic_nanoseconds();
-    accumulator_ns_ = 0;
     frame_ = FrameStats{};
     return ok();
 }
 
-void Runtime::leave_boot() {
-    accumulator_ns_ = 0;
-}
+void Runtime::leave_boot() {}
 
 // --- The frame -----------------------------------------------------------------------------------
 
 Status Runtime::tick() {
     CY_ASSERT_MSG(started_, "Runtime::tick() before startup()");
 
+    // The one place in the engine where wall-clock time enters the simulation's sense of time: it
+    // is measured here and handed to a clock that cannot measure it itself. Everything downstream
+    // reads ticks.
     const Nanoseconds now = config_.platform->monotonic_nanoseconds();
     const Nanoseconds delta = now > last_frame_ns_ ? now - last_frame_ns_ : 0;
     last_frame_ns_ = now;
@@ -391,14 +481,37 @@ Status Runtime::tick() {
     frame_.ticks = 0;
 
     pump_events();
-    run_fixed_steps(delta);
+    Status stepped = run_fixed_steps(delta);
 
-    frame_.interpolation_alpha = static_cast<f32>(static_cast<f64>(accumulator_ns_) /
-                                                  static_cast<f64>(config_.fixed_step_ns));
+    // The alpha is computed before the variable half runs and handed to it, which is the shape
+    // `engine-architecture`'s "Smooth rendering between ticks" scenario needs: the render half is
+    // told where between two ticks it is, it does not go and ask.
+    frame_.interpolation_alpha = interpolation_alpha();
+    if (stepped && config_.simulation != nullptr) {
+        const Status framed = config_.simulation->frame(frame_.interpolation_alpha, config_.jobs);
+        if (!framed) {
+            diag::trace_frame_end(frame_.frame_index);
+            ++frame_.frame_index;
+            return framed;
+        }
+    }
 
     diag::trace_frame_end(frame_.frame_index);
     ++frame_.frame_index;
-    return ok();
+    return stepped;
+}
+
+const determinism::SimulationClock& Runtime::clock() const noexcept {
+    return config_.simulation != nullptr ? config_.simulation->clock() : clock_;
+}
+
+determinism::FrameTicks Runtime::accumulate(Nanoseconds delta_ns) noexcept {
+    return config_.simulation != nullptr ? config_.simulation->begin_frame(delta_ns)
+                                         : clock_.accumulate(delta_ns);
+}
+
+f32 Runtime::interpolation_alpha() const noexcept {
+    return clock().interpolation_alpha();
 }
 
 void Runtime::pump_events() {
@@ -430,33 +543,46 @@ void Runtime::pump_events() {
     }
 }
 
-void Runtime::run_fixed_steps(Nanoseconds delta_ns) {
-    accumulator_ns_ += delta_ns;
+Status Runtime::run_fixed_steps(Nanoseconds delta_ns) {
+    const u64 discarded_before = frame_.discarded_ns;
+    const determinism::FrameTicks ticks = accumulate(delta_ns);
 
-    while (accumulator_ns_ >= config_.fixed_step_ns && frame_.ticks < config_.max_ticks_per_frame) {
-        // The stages a tick runs — PreSimulation, Physics, Simulation, PostSimulation — arrive with
-        // the ECS at M2. The boundaries are on the timeline from M0 because a capture is read
-        // against them.
+    for (u32 index = 0; index < ticks.ticks; ++index) {
         diag::trace_tick_begin(frame_.total_ticks);
+        if (config_.simulation != nullptr) {
+            // The four fixed-step stages and the commit boundary. Everything a tick does is inside
+            // this call, deliberately: `simulation-and-determinism` requires one point per tick at
+            // which state becomes authoritative, and a second call site here would be a second one.
+            const auto committed = config_.simulation->step(config_.jobs);
+            if (!committed) {
+                diag::trace_tick_end(frame_.total_ticks);
+                return forward(committed.error());
+            }
+            frame_.committed = committed.value().point;
+            frame_.state_version = committed.value().state_version;
+        } else {
+            // No simulation: the loop still runs, and the clock still advances, so a host that only
+            // wants the frame pacing gets it. This is the M0 and M1 configuration.
+            clock_.advance();
+        }
         diag::trace_tick_end(frame_.total_ticks);
-        accumulator_ns_ -= config_.fixed_step_ns;
         ++frame_.ticks;
         ++frame_.total_ticks;
     }
 
-    if (accumulator_ns_ >= config_.fixed_step_ns) {
+    frame_.discarded_ns = ticks.discarded_ns;
+    if (frame_.discarded_ns != discarded_before) {
         // `engine-architecture`: exceeding the cap discards the excess so the loop cannot enter a
-        // death spiral, with a counter incremented rather than the time silently vanishing.
-        const u64 discarded = static_cast<u64>(accumulator_ns_);
-        frame_.discarded_ns += discarded;
-        accumulator_ns_ = 0;
+        // death spiral, with a counter incremented rather than the time silently vanishing. The
+        // clock did the discarding — it owns the accumulator — and this reports it.
         const diag::FieldValue fields[] = {
             diag::field_u64(frame_index(), frame_.frame_index),
-            diag::field_u64(discarded_ns(), discarded),
+            diag::field_u64(discarded_ns(), frame_.discarded_ns - discarded_before),
         };
         diag::trace_instant(tick_cap_name(), runtime_category(), diag::Channel::Critical, fields,
                             2);
     }
+    return ok();
 }
 
 void Runtime::trace_instant_shutdown() const {

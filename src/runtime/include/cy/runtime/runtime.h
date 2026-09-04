@@ -27,10 +27,19 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/config/module_registry.h>
+#include <cy/core/determinism/clock.h>
 #include <cy/core/platform/display_server.h>
 #include <cy/core/platform/platform.h>
+#include <cy/runtime/servers.h>
+#include <cy/runtime/simulation.h>
 
 #include <span>
+
+// NOTE ON THE NAMESPACE. `Runtime`, `RuntimeConfig` and `StartupStage` are `cy::`, which is where
+// M0 put them; the types M2 added are `cy::runtime::`, which is the convention every other module
+// follows (`cy::ecs`, `cy::scene`, `cy::determinism`). Moving the first three would rename them in
+// every sample, host and test that names one, for no benefit this milestone can point at — so the
+// split is recorded here rather than fixed under a milestone whose subject is something else.
 
 namespace cy {
 
@@ -92,10 +101,37 @@ struct RuntimeConfig {
     /// Install the crash handler in the Platform stage, and remove it when that stage is left.
     bool install_crash_handler = true;
 
-    /// The simulation step and the cap on ticks per frame, from `engine-architecture`: exceeding
-    /// the cap discards the excess time so the loop cannot enter a death spiral.
-    Nanoseconds fixed_step_ns = 16666667;  // 1/60 s
+    /// The simulation rate, as an exact rational, and the cap on ticks per frame — the two numbers
+    /// `engine-architecture` fixes at 1/60 s and 8. Exceeding the cap discards the excess time so
+    /// the loop cannot enter a death spiral; lengthening the step to catch up is on
+    /// `simulation-and-determinism`'s forbidden list and there is no field here that would let it.
+    determinism::TickRate tick_rate{60, 1};
     u32 max_ticks_per_frame = 8;
+    /// `engine-architecture`'s `--fixed-step <n>`: exactly this many ticks per frame regardless of
+    /// wall-clock time, "producing reproducible simulation for recording and automated tests".
+    determinism::TickMode tick_mode = determinism::TickMode::Realtime;
+    u32 fixed_ticks_per_frame = 1;
+
+    /// Optional, and owned by the host for the runtime's whole lifetime.
+    ///
+    /// The `Servers` stage fills every slot from this registry — requested backend, then documented
+    /// default, then the null implementation. Backends are registered *before* startup(), which is
+    /// what lets a module at level `Core` add one that the `Servers` stage then chooses. Null
+    /// leaves the stage empty and the sequence unchanged.
+    runtime::ServerRegistry* servers = nullptr;
+    /// One requested backend name per `ServerKind`, or null for "no preference". Borrowed.
+    const char* const* server_backends = nullptr;
+    u32 server_backend_count = 0;
+
+    /// Optional, and owned by the host. The `EcsScene` stage brings it up if the host has not, and
+    /// the `Boot` stage closes its registration; `tick()` then runs its fixed steps and its frame.
+    ///
+    /// Host-owned rather than runtime-owned on purpose: a game registers its components and systems
+    /// between constructing the simulation and starting the runtime, and a simulation the runtime
+    /// constructed would give it nowhere to do that.
+    runtime::Simulation* simulation = nullptr;
+    /// Optional. Null runs every stage serially on the calling thread, which is what a test does.
+    jobs::JobSystem* jobs = nullptr;
 };
 
 /// What the last frame did. Read by the host for a summary, and by a test for an assertion.
@@ -113,6 +149,10 @@ struct FrameStats {
     /// Time discarded because the tick cap was reached, in total. Non-zero means frames were slower
     /// than `max_ticks_per_frame` steps and the excess was dropped rather than chased.
     u64 discarded_ns = 0;
+    /// The simulation point the last tick of this frame committed at, and the state version it
+    /// published. Both zero when no simulation is attached.
+    determinism::SimulationPoint committed;
+    u64 state_version = 0;
 };
 
 class Runtime {
@@ -142,6 +182,8 @@ public:
     [[nodiscard]] bool is_running() const;
 
     [[nodiscard]] const FrameStats& frame() const { return frame_; }
+    /// The clock pacing the frame. The simulation's when one is attached; see `accumulate()`.
+    [[nodiscard]] const determinism::SimulationClock& clock() const noexcept;
     [[nodiscard]] WindowId main_window() const { return window_; }
     [[nodiscard]] const NativeSurface& main_surface() const { return surface_; }
 
@@ -167,6 +209,10 @@ private:
     void leave_modules_core();
     Status enter_display();
     void leave_display();
+    Status enter_servers();
+    void leave_servers();
+    Status enter_ecs_scene();
+    void leave_ecs_scene();
     Status enter_modules_servers();
     void leave_modules_servers();
     Status enter_modules_scene();
@@ -187,7 +233,12 @@ private:
     // tick()'s halves, so that neither the frame nor this class needs a reader to hold two things
     // at once.
     void pump_events();
-    void run_fixed_steps(Nanoseconds delta_ns);
+    [[nodiscard]] Status run_fixed_steps(Nanoseconds delta_ns);
+    /// The clock the frame is paced by: the simulation's when one is attached, the runtime's own
+    /// otherwise. There is exactly one — two would drift apart within a minute, and the tick number
+    /// a diagnostic printed would stop being the tick a system saw.
+    [[nodiscard]] determinism::FrameTicks accumulate(Nanoseconds delta_ns) noexcept;
+    [[nodiscard]] f32 interpolation_alpha() const noexcept;
 
     /// Leave the stages in `startup_journal_`, last first, recording each in `shutdown_journal_`.
     void unwind();
@@ -214,7 +265,11 @@ private:
     bool crash_handler_ = false;
 
     Nanoseconds last_frame_ns_ = 0;
-    Nanoseconds accumulator_ns_ = 0;
+    /// Paces the frame when no simulation is attached — the M0 and M1 configuration, and every
+    /// test that only wants the loop. When one is attached it is that simulation's clock that
+    /// advances and this one stays at tick zero.
+    determinism::SimulationClock clock_;
+    bool servers_selected_ = false;
     FrameStats frame_;
 };
 

@@ -6,3 +6,4 @@
 # to keep in step.
 add_subdirectory(00-empty)
 add_subdirectory(01-headless-host)
+add_subdirectory(02-headless-sim)

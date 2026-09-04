@@ -259,7 +259,7 @@ def test_milestone_ladder(root: Path) -> None:
     """
     milestones = criteria_module.available()
     check("every milestone on the ladder so far has a ledger",
-          {"m0", "m1"} <= set(milestones), f"found: {', '.join(milestones) or 'none'}")
+          {"m0", "m1", "m2"} <= set(milestones), f"found: {', '.join(milestones) or 'none'}")
 
     gate_set = gates_module.load()
     milestone_gates = {gate.milestone for gate in gate_set.gates if gate.klass == "milestone"}
@@ -278,11 +278,20 @@ def test_milestone_ladder(root: Path) -> None:
     m1 = criteria_module.load("m1")
     check("M1 has a criterion for each of the milestone's exit conditions",
           len(m1.criteria) >= 15, f"{len(m1.criteria)} criteria")
+    m2 = criteria_module.load("m2")
+    check("M2 has a criterion for each of the milestone's exit conditions",
+          len(m2.criteria) >= 20, f"{len(m2.criteria)} criteria")
     # M1 broke M0's static analysis gate before this ledger existed. `delivery-roadmap` forbids that
     # outright, so the rule is a criterion rather than a paragraph, and this is the check that it
-    # stays one.
-    check("M1's ledger runs M0's, so a milestone that breaks an earlier one cannot close",
-          any(criterion.run == "just roadmap-milestone m0" for criterion in m1.criteria))
+    # stays one. Every ledger from M1 on carries the previous milestone's recipe, so the whole ladder
+    # runs from whichever rung is being closed — checked here rather than left to the next author to
+    # notice, because the omission is invisible until the day it matters.
+    for later, earlier in (("m1", "m0"), ("m2", "m1")):
+        ledger = criteria_module.load(later)
+        check(f"{later.upper()}'s ledger runs {earlier.upper()}'s, so a milestone that breaks an "
+              f"earlier one cannot close",
+              any(criterion.run == f"just roadmap-milestone {earlier}"
+                  for criterion in ledger.criteria))
 
 
 def _gated(milestone: criteria_module.Milestone) -> bool:

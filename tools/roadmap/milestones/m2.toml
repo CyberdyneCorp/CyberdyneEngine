@@ -1,0 +1,305 @@
+# M2 — World: the exit criteria, as data. Task 6.9.
+#
+# The sources are section 6 of openspec/changes/implement-m2-world/tasks.md and the M2 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a
+# recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate. A criterion that cannot be
+# evaluated on the host running the recipe — another operating system, no display — carries a
+# `reason`, is reported as not evaluated rather than as passed, and is counted separately.
+#
+# The first criterion is M1's whole set, for the reason m1.toml records against M0's: a later
+# milestone may not break an earlier milestone's gate, and the way to keep that true is for the
+# closing recipe to run it rather than for a reviewer to remember it. M1's ledger runs M0's, so this
+# one criterion carries the whole ladder below it.
+
+schema = 1
+id = "m2"
+name = "World"
+artefact = "samples/02-headless-sim — authors a scene, cooks it into archetype blocks, ticks 10,000 fixed steps, and prints a hierarchical state hash that reproduces across processes and after snapshot restore"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "tasks 6.9 — `just roadmap-milestone m2` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 6.10 — docs/roadmap/status.yaml and docs/roadmap/capability-matrix.md are corrected where M2 recorded an intention the implementation changed, and record what is thinner than the tasks claim. `roadmap-tiers` below checks the record; no tool can tell an intention from its correction.",
+    "tasks 6.11 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "ROADMAP M2 — 'a bulk-copy activation is benchmarked' is `ecs-blocks` below, which runs the 100,000-row activation inside the integration suite's per-case time budget. That is a threshold a regression trips, but it is NOT a committed ns/entity figure compared against benchmarks/baseline.json: no benchmark runner exists for the ECS, only for the job system. The numbers the spike measured — 3.7 ns/entity for cell activation against 11.2 for a template spawn into partly full chunks — are recorded in openspec and in samples/02-headless-sim/README.md rather than gated. A `cy_add_benchmark(NAME ecs ...)` is the honest fix and it belongs to whoever owns src/ecs/.",
+    "tasks 6.1 — 'identical across restore-from-snapshot' is checked as the round trip: capture, diverge, restore, and the hash matches again. Re-running a restored snapshot and reproducing the trajectory needs the clock rewound to the same epoch, and `Simulation` exposes only `reset_epoch()`, which by design enters a new one. That is M9's, and samples/02-headless-sim/README.md says so where a reader of the hash will look.",
+    "tasks 6.3, 6.7, 6.8 — the sanitizer passes and the three non-default profiles each cost a build of their own. They are criteria rather than notes because they are runnable; expect this recipe to take a working session rather than a coffee break.",
+    "tasks 6.7 — FIXED AT THE GATE, AND THE RESIDUAL IS RECORDED. `just test-all --profile debug` failed 8 runs in 10 on `unit.reflect_registry` and, once that was fixed, 16 in 30 on `unit.scene`. Both were M2's own additions overrunning the taxonomy's one-millisecond unit budget at -O0: the registry's growth case does twenty thousand lookups and moved to integration.reflect_scaling, and three scene files whose cases walk the whole tree moved to integration.scene_scale. After both moves the same measurement is 1 failure in 30, on test_hierarchy.cpp's first case, which pays the process cold start. That residual is a property of a per-case wall-clock budget at -O0 rather than of any code M2 wrote; it is recorded in docs/roadmap/capability-matrix.md and in src/scene/tests/CMakeLists.txt, and until it is addressed `four-profiles` is flaky at roughly three per cent in the Debug configuration.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. M2 adds state-hash, cooked-blocks, scene-coherence and structural-deferral to it.",
+]
+
+# --- What M2 must not have broken -----------------------------------------------------------------
+
+[[criterion]]
+id = "m1-green"
+describe = "M1's exit criteria are still green, and M1's own first criterion is M0's — so the whole ladder below this milestone is run"
+source = "delivery-roadmap (Milestone gates do not regress)"
+kind = "recipe"
+run = "just roadmap-milestone m1"
+timeout_s = 14400
+ci_job = "milestone-m1"
+
+# --- The static gates: cheap, and they fail first --------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes"
+source = "tasks 6.11"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds over the four modules M2 added — core/serialize at 0, ecs at 1, scene at 4 — and each deliberately introduced violation is still rejected"
+source = "tasks 6.7, ROADMAP M2"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate M2 declared is run by a job in .github/workflows/, and no job reimplements a recipe"
+source = "delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 6.10, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M2's exit tiers, each naming the change that advanced it"
+source = "tasks 6.10, ROADMAP M2"
+kind = "tiers"
+ci_job = "milestone-m2"
+
+# The M2 row of docs/ROADMAP.md, as data. An exit tier is a floor rather than an equality: a later
+# milestone advancing one of these past its M2 level must not make this recipe fail.
+[criterion.expect_tiers]
+ecs-core = "working"
+scene-graph-and-nodes = "working"
+serialization-and-prefabs = "working"
+engine-architecture = "working"
+simulation-and-determinism = "seed"
+core-assets-and-io = "working"
+
+# --- The ECS ---------------------------------------------------------------------------------------
+
+[[criterion]]
+id = "ecs-core"
+describe = "entities, components, archetypes, queries, resources, relationships and multiple worlds — and a structural change attempted mid-iteration is refused rather than applied, in all four profiles"
+source = "tasks 6.6, ROADMAP M2 (ecs-core)"
+kind = "recipe"
+run = "just test-unit -R ecs"
+ci_job = "structural-deferral"
+
+[[criterion]]
+id = "ecs-scheduling"
+describe = "a system's access declaration is its query, the parallel and serial runs of a stage agree, and two systems iterating one world in parallel leave it not iterating"
+source = "tasks 6.6, ROADMAP M2 (ecs-core)"
+kind = "recipe"
+run = "just test-integration -R ecs_scheduling"
+ci_job = "structural-deferral"
+
+[[criterion]]
+id = "ecs-blocks"
+describe = "100,000 entities are created in bulk, and a cooked block of 100,000 rows activates as one memcpy per column per chunk, inside the integration suite's per-case budget"
+source = "tasks 6.4, ROADMAP M2 (cooked scenes load as archetype blocks)"
+kind = "recipe"
+run = "just test-integration -R ecs_scale"
+ci_job = "cooked-blocks"
+
+[[criterion]]
+id = "ecs-snapshots"
+describe = "a world round-trips through the self-describing byte stream, and a snapshot restores it verbatim with the same entity ids"
+source = "tasks 6.1, ROADMAP M2 (ecs-core: snapshots)"
+kind = "recipe"
+run = "just test-integration -R ecs_serialization"
+ci_job = "build-and-test"
+
+# --- The node façade ---------------------------------------------------------------------------------
+
+[[criterion]]
+id = "nodes"
+describe = "the node façade at unit cost: a Node is a tree pointer and an entity id and nothing else, hierarchy and naming, node types and templates, and the lifecycle callbacks. Visibility, groups and scene load/unload moved to the scene_scale suite at M2's close because their cases walk the whole tree and do not fit the unit budget in the Debug configuration; the `coherence` criterion below runs them"
+source = "ROADMAP M2 (scene-graph-and-nodes)"
+kind = "recipe"
+run = "just test-unit -R 'scene$'"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "coherence"
+describe = "the coherence invariants hold: no node duplicates component data, a destroyed entity invalidates its nodes, and no traversal order produces a state a direct query would not — plus the whole-tree suites that share their cost: visibility and enablement, groups and broadcast, scene load and unload, and the transform hierarchy. `check_coherence()` covers the specification's five numbered invariants; the orphan claim is carried by the scene cases ('unloading destroys exactly its entities', 'a node reparented out of its scene is still destroyed with it') rather than by the invariant checker"
+source = "tasks 6.5, ROADMAP M2 (the coherence invariants as tests)"
+kind = "recipe"
+run = "just test-integration -R scene_scale"
+ci_job = "scene-coherence"
+
+# --- Serialization, prefabs and the cook ---------------------------------------------------------------
+
+[[criterion]]
+id = "wire-format"
+describe = "the reflection-driven traversal and its two writers: field classification, unknown data preserved, schema versioning and value migration"
+source = "tasks 6.2, ROADMAP M2 (serialization-and-prefabs)"
+kind = "recipe"
+run = "just test-unit -R 'serialize$'"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "documents"
+describe = "a scene round-trips text to binary to text with no semantic change, and a prefab override authored against a stable identifier survives a field rename with a tombstone"
+source = "tasks 6.2, 6.3, ROADMAP M2"
+kind = "recipe"
+run = "just test-unit -R scene_serialization"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "cooking"
+describe = "cooking emits archetype blocks with no per-field tags and a reference site for every declared entity field; flattening is a walk to the root rather than a per-edge test; a template spawns as a copy with its intra-template references fixed up"
+source = "tasks 6.4, ROADMAP M2 (cook-time hierarchy flattening)"
+kind = "recipe"
+run = "just test-integration -R scene_cooking"
+ci_job = "cooked-blocks"
+
+[[criterion]]
+id = "cooked-assets"
+describe = "the cook path: cooked assets are produced, addressed by identity, and loaded back"
+source = "tasks 3.2.13, ROADMAP M2 (core-assets-and-io)"
+kind = "recipe"
+run = "just test-integration -R cook_path"
+ci_job = "build-and-test"
+
+# --- The loop and the determinism seeds ----------------------------------------------------------------
+
+[[criterion]]
+id = "determinism"
+describe = "the clock, epochs, the commit boundary, seeded streams that are pure functions of (stream, point, entity, index), state classification, hierarchical hashing, and stable tie-breaking"
+source = "ROADMAP M2 (simulation-and-determinism)"
+kind = "recipe"
+run = "just test-unit -R determinism"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "runtime"
+describe = "servers and the ECS/scene duality, the deferred frame command queue, and build-time feature slicing"
+source = "ROADMAP M2 (engine-architecture)"
+kind = "recipe"
+run = "just test-unit -R runtime"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "commit-boundary"
+describe = "the fixed-tick loop: N simulation ticks then one variable frame, the interpolation alpha, the eight-tick cap, and one commit point per tick past which the tick's state is authoritative"
+source = "tasks 4.1.2, 4.2.3, ROADMAP M2"
+kind = "recipe"
+run = "just test-integration -R runtime_simulation"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "state-hash"
+describe = "the tick-loop probe's state hash is identical across processes, and a different session seed produces a different one"
+source = "tasks 6.1, ROADMAP M2"
+kind = "recipe"
+run = "just test-smoke -R tick_loop"
+ci_job = "state-hash"
+
+# --- The closing artefact, and every profile it has to work in ------------------------------------------
+
+[[criterion]]
+id = "headless-sim"
+describe = "the closing sample authors a scene, cooks it into archetype blocks, ticks 10,000 fixed steps, and reports a state hash identical across twenty processes and identical again after a snapshot restore"
+source = "tasks 5.1, 5.3, ROADMAP M2 (closing artefact)"
+kind = "recipe"
+run = "just test-smoke -R headless_sim"
+ci_job = "state-hash"
+
+[[criterion]]
+id = "sample-recipe"
+describe = "just run-sample headless-sim runs the artefact through the workflow a contributor uses, rather than only through the test that spawns it"
+source = "tasks 5.2"
+kind = "recipe"
+run = "just run-sample headless-sim --ticks 200"
+ci_job = "build-and-test"
+
+# ONE INVOCATION PER SUITE, RATHER THAN ONE REGEX. `just` substitutes `{{args}}` as *text* into a
+# recipe's shell and then again into the private recipe it calls, so a `|` in a suite regex is
+# re-read as a pipe on the way down and the run silently becomes a different one — the first attempt
+# at this criterion ran the wrong sanitizer over the wrong suites and reported `scene: command not
+# found`. A loop in the criterion needs no quoting to survive anything, and it names what it covers.
+#
+# NOT `--tests .` — the whole set — although that is the stronger claim and takes 34 s here.
+# `just test-sanitize` exports CY_TEST_BUDGET_SCALE=0 to give a five-to-twenty-times-slower binary
+# room, and tests/unit/harness/test_assertions.cpp:60 asserts `budget_scale() > 0.0`, so the harness
+# suite fails under every sanitizer run that includes it. M1's gate never did (`--tests jobs`), so
+# nothing had met it. That is a defect in tests/unit/harness/ or in just/test.just and it is
+# reported rather than worked around; when it is fixed, this criterion becomes `--tests .`.
+[[criterion]]
+id = "asan-world"
+describe = "AddressSanitizer and UndefinedBehaviorSanitizer are clean over every suite M2 added, with the intentional lifetime allocations declared"
+source = "tasks 6.8"
+kind = "command"
+run = "for t in ecs scene serialize determinism runtime; do just test-sanitize --sanitizer address,undefined --tests \"$t\" || exit 1; done"
+timeout_s = 7200
+ci_job = "sanitizers"
+
+[[criterion]]
+id = "tsan-world"
+describe = "ThreadSanitizer is clean over the suite that runs two systems over one world at once — the first thing in the engine that does"
+source = "tasks 6.8"
+kind = "recipe"
+run = "just test-sanitize --sanitizer thread --tests ecs_scheduling"
+timeout_s = 7200
+ci_job = "sanitizers"
+
+# ONE BUILD DIRECTORY PER PROFILE, EVEN WHEN CY_BUILD_DIR IS SET. Without the `:+` below, a
+# developer who redirects the build tree gets all four profiles configured into that one directory,
+# each configure overwriting the last, and the criterion fails for a reason that has nothing to do
+# with the code. That is not hypothetical: it cost an agent an hour during M1 and is written into
+# this milestone's handoff notes as finding E. With CY_BUILD_DIR unset the recipes already pick
+# `build/<profile>`, so the expansion is empty and the default is unchanged.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — deferral is refused in Profile and Shipping too, where CY_ASSERT is compiled out"
+source = "tasks 6.7"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 14400
+ci_job = "profiles"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M2's modules in the tree"
+source = "ROADMAP M2, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be
+# most satisfied.
+[[criterion]]
+id = "m3-open"
+describe = "the M3 change exists — open, or closed and archived — so the ladder continues deliberately"
+source = "tasks 6.12"
+kind = "path"
+path = "openspec/changes/**/*m3*/proposal.md"
+ci_job = "milestone-m2"

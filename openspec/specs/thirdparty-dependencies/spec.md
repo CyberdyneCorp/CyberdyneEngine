@@ -410,14 +410,26 @@ and which feature gates it, whether a system version may be used, and a one-line
 The manifest SHALL be the source of truth for the build, the licence report, and the security
 audit.
 
+**Build-time tooling that determines what the build produces** — a code generator's compiler
+frontend, a formatter or static analyser a merge gate runs, a shader compiler — SHALL be recorded in
+the manifest too, at a pinned version, and marked as build-time so that the runtime licence report
+does not list it. Its absence from a developer's machine SHALL be reported by the environment
+diagnostic with the command that installs the pinned version, rather than by the silent use of a
+committed artefact that was never regenerated.
+
 #### Scenario: Licence report
 - **WHEN** a game is packaged
 - **THEN** a licence report SHALL be generated from the manifest, listing every dependency
-  actually linked into that build
+  actually linked into that build, and excluding build-time tooling
 
 #### Scenario: Dependency audit
 - **WHEN** a security advisory affects a dependency
 - **THEN** the manifest SHALL identify the pinned version and which features would be affected
+
+#### Scenario: A generator's frontend is missing
+- **WHEN** a clone lacks the version of a generator's compiler frontend the manifest pins
+- **THEN** the environment diagnostic SHALL report it with the correction, and the generator SHALL
+  fail rather than leave committed generated output unregenerated
 
 ### Requirement: Vendoring and patching
 Dependencies SHALL normally be fetched by pinned commit. A dependency SHALL be vendored only when

@@ -155,8 +155,10 @@ int main(int argument_count, char** arguments) {
     cy::HostLoopOptions loop;
     loop.frame_limit = options.frames;
     // Nothing presents until M3, so the loop paces itself at the simulation step rather than
-    // spinning a core for a window that is only sitting there.
-    loop.frame_interval_ns = config.fixed_step_ns;
+    // spinning a core for a window that is only sitting there. The step is derived from the tick
+    // rate, which M2 made an exact rational: `RuntimeConfig::fixed_step_ns` is gone because 1/60 s
+    // is not a whole number of nanoseconds and accumulating the rounded value drifts.
+    loop.frame_interval_ns = cy::determinism::step_nanoseconds(config.tick_rate);
     const cy::HostLoopResult result =
         cy::run_host_loop(platform, loop, [&runtime] { (void)runtime.tick(); });
 

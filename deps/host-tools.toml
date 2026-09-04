@@ -1,0 +1,96 @@
+# CyberdyneEngine — host-provided tool prerequisites.
+#
+# The second half of the dependency record, and the reason it is a second file is stated below
+# rather than left to be rediscovered.
+#
+# deps/manifest.toml records code the build **acquires and links**: cmake/dependencies.cmake fetches
+# each entry with FetchContent and wraps it in a `cy::dep::<name>` target. This file records
+# software the build **requires to be already on the machine** and never links: the reflection
+# generator's C++ frontend. Both are third-party software with a version, a licence and a
+# justification, and `thirdparty-dependencies` wants both written down.
+#
+# WHY THESE ARE NOT [[dependency]] ENTRIES. cmake/dependencies.cmake parses deps/manifest.toml
+# directly — it cannot use a TOML library — and every table it reads becomes a FetchContent_Declare
+# with a git repository and a 40-character commit. A PyPI wheel has no commit to pin and a
+# distribution's libclang package has no repository to fetch, so an entry for either would have to
+# carry three fabricated fields and would then be *fetched*, which is precisely what must not
+# happen. Widening that parser to skip entries it must not act on is a change to the build's most
+# security-relevant file for the sake of a tool that never enters a binary. A second file, parsed by
+# tools/deps/manifest.py alone, keeps deps/manifest.toml meaning exactly one thing — "this is fetched
+# and linked" — and gives these entries a schema that fits what they are.
+#
+# WHY LLVM 18 HERE AND LLVM 22 IN THE QUALITY GATES, AND WHY THAT IS NOT A CONTRADICTION.
+# The justfile pins clang-format and clang-tidy at 22.1.8; the generator pins its frontend at 18.
+# Both pins exist for the same reason — a gate whose verdict depends on which version the machine
+# happened to have is not a gate — but they are pins on different things and there is no reason for
+# them to move together:
+#
+#   * clang-format and clang-tidy are installed as PyPI wheels carrying their own upstream binaries.
+#     Any version is installable on any platform without root, so the pin can be an exact version
+#     and everybody can meet it. It is deliberately the newest the tree is clean under.
+#   * libclang is a shared library the *host* provides, and the Python bindings must match its
+#     major. Ubuntu 24.04 — the CI image and the platform the compiler matrix is written against —
+#     packages libclang1-18. Pinning the generator at 22 would mean every contributor installing an
+#     LLVM the distribution does not ship, to run a tool whose output is committed anyway.
+#
+# So the divergence is correct today and is not permanent: the version to hold this at is whatever
+# the reference platform packages, and it moves when that does. What would be wrong is the pins
+# living in three files and agreeing by luck, which is what this file exists to stop.
+#
+# WHAT READS THIS FILE
+#   tools/deps/manifest.py       loads and validates it
+#   tools/deps/attribution.py    generates THIRD_PARTY.md's host-prerequisite section from it
+#   just env-doctor              reports each entry's state, version and install command
+#
+# Format — the same deliberately small subset of TOML the dependency manifest uses: only
+# `[[host_tool]]` tables, one `key = value` per line, quoted strings or `true`/`false`, whole-line
+# comments only, `name` first.
+#
+# Fields
+#   name           lowercase identifier, and what `just env-doctor` calls it.
+#   version        the exact version required, or the major where a host's packaging fixes the rest.
+#   kind           python-package | system-library. What sort of thing has to be present.
+#   package        what the installer is asked for.
+#   upstream       where the software comes from.
+#   licence        SPDX identifier.
+#   licence_file   path to the full licence text in the upstream tree.
+#   required       true when the engine cannot be built without it. Both entries here are false:
+#                  the generated metadata is committed, so a clone builds and tests without them and
+#                  only regeneration needs them.
+#   consumer       the engine file that loads it. One place, so a version bump has one edit site.
+#   checked_by     the gate that fails when it is absent and something needed it.
+#   install_linux, install_macos, install_windows
+#                  the correction `just env-doctor` prints. Empty where there is none to give.
+#   justification  one line: why this is a host prerequisite rather than something the build fetches.
+
+[[host_tool]]
+name = "clang-python"
+version = "18.1.8"
+kind = "python-package"
+package = "clang"
+upstream = "https://github.com/llvm/llvm-project"
+licence = "Apache-2.0 WITH LLVM-exception"
+licence_file = "clang/LICENSE.TXT"
+required = false
+consumer = "tools/gen/reflect/parse.py"
+checked_by = "just generate-check"
+install_linux = "pip install --user clang==18.1.8"
+install_macos = "pip install --user clang==18.1.8"
+install_windows = "pip install --user clang==18.1.8"
+justification = "core-type-system requires annotated C++ to be parsed with a real C++ frontend rather than a text scanner. These are the upstream bindings to that frontend; they are a tool-time interface to a library the host provides and enter no artefact the engine ships."
+
+[[host_tool]]
+name = "libclang"
+version = "18"
+kind = "system-library"
+package = "libclang1-18"
+upstream = "https://github.com/llvm/llvm-project"
+licence = "Apache-2.0 WITH LLVM-exception"
+licence_file = "clang/LICENSE.TXT"
+required = false
+consumer = "tools/gen/reflect/parse.py"
+checked_by = "just generate-check"
+install_linux = "sudo apt install libclang1-18"
+install_macos = "brew install llvm@18"
+install_windows = "winget install LLVM.LLVM"
+justification = "The C++ frontend the bindings above load. Taken from the host rather than fetched because building LLVM is hours of build time for a library only the generator uses, and every supported platform packages it."

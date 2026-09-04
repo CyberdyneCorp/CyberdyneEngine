@@ -7,11 +7,14 @@
 // static_asserts below stop compiling.
 
 #include <cy/core/reflect/demo/types.reflect.h>
+#include <cy/core/reflect/field_index.h>
 #include <cy/core/reflect/reflect.h>
 #include <cy/test/test.h>
 
 #include <cstddef>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 namespace {
 
@@ -139,4 +142,61 @@ CY_TEST_CASE("the null identifier is never a valid registration") {
     const auto added = registry.add(nameless);
     CY_REQUIRE_FALSE(added.has_value());
     CY_CHECK_EQ(added.error().code, cy::ErrorCode::InvalidArgument);
+}
+
+// --- The index behind the lookups. M2 task 1.1. -------------------------------------------------
+//
+// The scaling suite (test_scaling.cpp) proves the *complexity*; these prove the *answers*, for the
+// cases a hash index can get wrong and a linear scan cannot: a key that hashes into an occupied
+// slot, and a duplicate that the scan would have found by walking past it.
+//
+// The third of those answers — that no entry is lost across the table rebuilds a growing registry
+// does — is checked in test_scaling.cpp instead, and the reason is the taxonomy's. It registers two
+// hundred types and looks every earlier one up after each, which is twenty thousand lookups: in the
+// Debug configuration that measured 1.0-2.3 ms against this suite's one-millisecond budget and
+// failed eight runs in ten, taking `just test-all --profile debug` — and with it the
+// `four-profiles` gate of two milestones — down with it. It is the same claim wherever it runs;
+// what it is not is a unit test.
+
+CY_TEST_CASE("the registry hands out the field index it built at registration") {
+    const auto registry = make_registry();
+    const cy::reflect::TypeId id = cy::reflect::type_id_of<Health>();
+
+    const cy::reflect::FieldIndex* fields = registry.fields(id);
+    CY_REQUIRE(fields != nullptr);
+    CY_CHECK_EQ(fields->type(), &cy::reflect::type_of<Health>());
+    CY_CHECK(registry.fields(cy::reflect::TypeId{0xFFFFFFFFU}) == nullptr);
+
+    const cy::reflect::TypeInfo& info = cy::reflect::type_of<Health>();
+    for (cy::u32 index = 0; index < info.field_count; ++index) {
+        CY_CHECK_EQ(fields->find(info.fields[index].id), &info.fields[index]);
+        CY_CHECK_EQ(fields->find(info.fields[index].name), &info.fields[index]);
+    }
+    CY_CHECK(fields->find(cy::reflect::FieldId{0xFFFFFFFFU}) == nullptr);
+    CY_CHECK(fields->find("no_such_field") == nullptr);
+}
+
+CY_TEST_CASE("two fields may not claim one identifier") {
+    // Unreachable through the generator — the manifest assigns field numbers and tombstones them on
+    // removal — and checked anyway, because this is the first code that can see it and a duplicate
+    // would decode one field's bytes into the other's storage.
+    const cy::reflect::TypeInfo& source = cy::reflect::type_of<Health>();
+    std::vector<cy::reflect::FieldInfo> fields(source.fields, source.fields + source.field_count);
+    CY_REQUIRE(fields.size() >= 2U);
+    fields[1].id = fields[0].id;
+
+    cy::reflect::TypeInfo clashing = source;
+    clashing.fields = fields.data();
+
+    cy::reflect::FieldIndex index;
+    const auto built = index.build(clashing);
+    CY_REQUIRE_FALSE(built.has_value());
+    CY_CHECK_EQ(built.error().code, cy::ErrorCode::AlreadyExists);
+
+    // And the registry refuses the type rather than registering one it cannot index.
+    cy::reflect::TypeRegistry registry;
+    const auto added = registry.add(clashing);
+    CY_REQUIRE_FALSE(added.has_value());
+    CY_CHECK_EQ(added.error().code, cy::ErrorCode::AlreadyExists);
+    CY_CHECK_EQ(registry.size(), 0U);
 }

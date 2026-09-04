@@ -23,6 +23,7 @@ templates**, so spawning is a bulk copy; shipping builds carry no prefab link, w
 builds keep provenance and can update live.
 
 ## Requirements
+
 ### Requirement: Prefab, scene, and world are distinct asset kinds
 The engine SHALL define three authoring asset kinds with distinct semantics, and SHALL NOT collapse
 them into one:
@@ -534,6 +535,26 @@ Spawning SHALL support **batch spawning**: many instances of one template create
 with per-instance transforms and parameters supplied as arrays.
 
 Spawn parameters SHALL be resolved to identifiers at cook or load time.
+
+**The cooker SHALL emit the reference sites beside each archetype block** — the column index and
+the byte offset of every entity-typed field within that column's component — so that fixup is a
+strided pass over known columns rather than a query about what each row contains.
+
+This is a correctness requirement for the flattening guarantee, not an optimisation. Measured on a
+102,000-entity cell, asking the component registry per row which columns hold references costs
+**4.7–5.2× more** than a cooked site table (268 µs against 58 µs), and that comparison already
+assumes a constant-time registry lookup. Without the table, activation degrades into exactly the
+per-entity reflection walk that cooking exists to eliminate — and with it, activation is one memcpy
+per chunk plus two linear passes.
+
+#### Scenario: Activation does not consult the registry per row
+- **WHEN** a cooked cell is activated
+- **THEN** reference fixup SHALL visit only the sites the cooker recorded, and SHALL NOT query the
+  component registry per entity
+
+#### Scenario: The cost is linear in what was actually cooked
+- **WHEN** a cell containing archetypes with no entity references is activated
+- **THEN** those archetypes SHALL activate as a copy and a key pass, with no reference work at all
 
 #### Scenario: A hundred-entity prefab spawns as a copy
 - **WHEN** a prefab containing a hundred entities is spawned

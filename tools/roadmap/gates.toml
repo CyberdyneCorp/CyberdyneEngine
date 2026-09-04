@@ -113,10 +113,12 @@ class = "permanent"
 
 [[gate]]
 id = "sanitizers"
-describe = "The job suite under ThreadSanitizer, and again under AddressSanitizer with UndefinedBehaviorSanitizer. `core-jobs-and-concurrency` requires a data-race detector, and a job system whose races are only detectable locally is a job system whose races reach a user. Leak detection is on: M1 declared the trace's pooled allocations at their allocation site, so a leak reported here is a defect rather than M0's standing false positive."
+describe = "The job suite under ThreadSanitizer, and again under AddressSanitizer with UndefinedBehaviorSanitizer. `core-jobs-and-concurrency` requires a data-race detector, and a job system whose races are only detectable locally is a job system whose races reach a user. Leak detection is on: M1 declared the trace's pooled allocations at their allocation site, so a leak reported here is a defect rather than M0's standing false positive. M2 widened it: `ecs_scheduling` is the first suite in the engine that runs two systems over one world at once, and a race there was found by exactly this tool and closed with atomics — a regression would be a corrupted chunk under a parallel reader, which no functional test reliably catches."
 runs = [
     "just test-sanitize --sanitizer thread --tests jobs",
     "just test-sanitize --sanitizer address,undefined --tests jobs",
+    "just test-sanitize --sanitizer thread --tests ecs_scheduling",
+    "just test-sanitize --sanitizer address,undefined --tests ecs",
 ]
 platforms = ["linux"]
 since = "m1"
@@ -153,6 +155,50 @@ platforms = ["linux"]
 since = "m1"
 class = "permanent"
 
+# --- The gates M2 — World added -----------------------------------------------------------------------
+#
+# The proposal's "New permanent gates": the state hash reproduces across runs and across snapshot
+# restore, a cooked scene loads as archetype blocks, the coherence invariants hold, and structural
+# changes are observable only at flush points. Four claims, four gates, and each is the check that
+# stops a decision this milestone made from being quietly undone by a later one — because every one
+# of them is a property that a change can break without breaking a single test that names it.
+#
+# Each names commands that already run in .github/workflows/ci.yml's `world` job. That is not a
+# coincidence: `just ci-check` fails when a permanent gate declared here is run by no job there, so
+# a gate is declared and its job lands in the same change, or neither does.
+
+[[gate]]
+id = "state-hash"
+describe = "The hierarchical state hash, compared across PROCESSES rather than across iterations of one loop: a fresh address space each time is what would expose a hash that depended on an allocation address, a container's iteration order or a per-process hash seed. Covers the tick-loop probe and the M2 artefact, which also checks the hash against a snapshot capture, a divergence and a restore. Eight milestones of simulation code are written against this number; a change that makes it non-reproducible has broken determinism for all of them, and this is where it is caught."
+runs = ["just test-smoke -R tick_loop", "just test-smoke -R headless_sim"]
+platforms = ["linux"]
+since = "m2"
+class = "permanent"
+
+[[gate]]
+id = "cooked-blocks"
+describe = "An authored hierarchy lowers to chunk-shaped archetype blocks, and a block activates as one memcpy per column per chunk. This is the assumption the whole storage decision rests on — the milestone's named spike — and it is the one that fails silently: a cook that started emitting per-field tags, or a flattening that became a per-edge test, would still produce a world that looks right and would cost M6 its bulk-copy activation. The flattening rule is a walk to the root, and the negative case (a static child of a moving parent keeps its relationship) is in this gate too."
+runs = ["just test-integration -R scene_cooking", "just test-integration -R ecs_scale"]
+platforms = ["linux"]
+since = "m2"
+class = "permanent"
+
+[[gate]]
+id = "scene-coherence"
+describe = "The invariants between the node façade and the storage it is a façade onto: no node duplicates component data, destroying an entity invalidates its nodes, no traversal order produces a state a direct query would not, and no orphaned entity survives — the last of those carried by the scene load/unload cases rather than by `check_coherence()`, whose five invariants are the specification's numbered ones. design.md §3's rule is that there is no shadow copy at all, and the moment one exists every bug after it is a debugging session about which representation was right."
+runs = ["just test-integration -R scene_scale"]
+platforms = ["linux"]
+since = "m2"
+class = "permanent"
+
+[[gate]]
+id = "structural-deferral"
+describe = "A structural change attempted while a query iterates is refused and counted, in ALL FOUR profiles — a returned error and a counter, never a CY_ASSERT, which is compiled out of Profile and Shipping. It is a correctness property rather than an optimisation: the scheduler parallelises systems from their declared access, and immediate structural mutation cannot coexist with that. The scheduling suite is in the same gate because it holds the case that reproduced the race — two systems iterating one world at once."
+runs = ["just test-unit -R ecs", "just test-integration -R ecs_scheduling"]
+platforms = ["linux"]
+since = "m2"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;
@@ -176,6 +222,19 @@ class = "milestone"
 milestone = "m0"
 state = "green"
 
+# M1 closed — openspec/changes/archive/…-implement-m1-substrate — and its gate was still
+# `joins-on-close` when M2 came to close, which is the same omission the paragraph above records
+# against M0. Flipped here, at M2's close, which is the milestone that is supposed to do it: M2's
+# own modules are compiled into and run by M1's `four-profiles` criterion, so this is exactly the
+# shape of regression the state exists to make unmergeable, and leaving it unflipped would have made
+# M1's ledger something nothing runs.
+#
+# What it costs is recorded in docs/roadmap/capability-matrix.md and is not small: this gate runs
+# `just roadmap-milestone m1`, a recipe of several minutes that contains `four-profiles`, and
+# `four-profiles` was measured at M2's close failing roughly one Debug run in thirty. A pull request
+# now has two independent exposures to that rate rather than one. Fixing the flake is the answer;
+# an override here would only hide it.
+
 [[gate]]
 id = "milestone-m1"
 describe = "M1 — Substrate: the exit criteria of the milestone that built reflection and identity, memory, math, the job system, the asset layer and the project graph."
@@ -184,6 +243,16 @@ platforms = ["linux", "windows", "macos"]
 since = "m1"
 class = "milestone"
 milestone = "m1"
+state = "green"
+
+[[gate]]
+id = "milestone-m2"
+describe = "M2 — World: the exit criteria of the milestone that built the ECS, the node façade, serialization and the cook, the fixed-tick loop and the determinism seeds."
+runs = ["just roadmap-milestone m2"]
+platforms = ["linux", "windows", "macos"]
+since = "m2"
+class = "milestone"
+milestone = "m2"
 state = "joins-on-close"
 
 # --- Recorded overrides ---------------------------------------------------------------------------

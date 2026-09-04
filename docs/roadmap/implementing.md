@@ -73,42 +73,45 @@ From [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md):
 
 ## Landed
 
+**M2 · World** — the archetype ECS over M1's chunks, the node façade that caches nothing,
+serialization and prefabs, the fixed-tick loop, and the determinism seeds. 26 exit criteria pass.
+
+Its spike **changed the specification**, which is what spikes are for. The claim that a cooked cell
+activates as a bulk copy was measured and found to be *a bulk copy plus a bounded fixup*: every
+row's key is a live entity the cooker cannot know, and a cooked reference holds a cell-local index.
+471 memcpys for 471 chunks at 2.5–2.7 ns/entity, then keys at 0.4 and reference slots at 0.6 —
+21.4% of the payload, 25–27% of activation. The capability specs had always said "bulk copy **and
+fix up references**"; the design note had compressed it. It also proved a new requirement: the
+cooker must emit the reference sites, because asking the registry per row costs 4.7–5.2× more and
+degrades activation into the reflection walk cooking exists to eliminate.
+
 **M1 · Substrate** — reflection with the committed identity manifest and its gate, the value types,
 memory domains and chunked storage, the math conventions as executable tests, the job system with
-access declarations, assets at Seed, and the project graph. Closes on `samples/01-headless-host`.
-19 exit criteria pass; `three-platforms` is left to the CI matrix on a single-OS host.
+access declarations. 19 criteria pass.
 
-Its spike resolved: incremental reflection regeneration is 92–292 ms against a single-file rebuild
-that already costs 0.30–1.09 s, so it disappears into the noise. The cost is driven by how much STL
-each annotated header transitively includes, not by type count — which is now a contract on
-reflected headers.
+**M0 · Ground** — the skeleton, the build with layering enforced at configure time, the workflow and
+the gates. 14 criteria pass.
 
-**M0 · Ground** — the repository skeleton, the CMake build with layering enforced at configure time,
-the `justfile` and the CI matrix, SDL3-backed and headless display servers behind engine-owned
-interfaces, the trace with privacy classification required on every field, and the gates.
+Four lessons, each found by a gate agent auditing work reported green:
 
-Three lessons worth carrying, each found by a gate agent auditing work other agents reported green:
-
-- A privacy mechanism only covers the data model it can see. M0 shipped log sites built from
-  `__FILE__` and registered as event *names*, structurally beyond the writer's redaction.
-- A gate that is wired but never run is not a gate. M1's sanitizers were proven to catch bugs and
-  then run by no CI job.
-- A ledger can break the milestone it is checking. `just test-sanitize` left the ordinary build tree
-  instrumented, so running M1's gate made the next M0 gate fail — and every earlier "M0 green after
-  M1 green" had been luck of ordering.
+- A privacy mechanism only covers the data model it can see.
+- A gate that is wired but never run is not a gate.
+- A ledger can break the milestone it is checking.
+- **A milestone's gate must actually be promoted when it closes.** `milestone-m1` sat at
+  `joins-on-close` through all of M2 — a ledger nothing ran, over code that changed underneath it.
 
 ## In flight
 
-**M2 · World.** Entities, components, archetypes and queries; the node façade over them;
-serialization and prefabs; the fixed-tick loop; and the determinism seeds every later milestone
-assumes. Closes on a headless run that ticks 10,000 fixed steps, prints a hierarchical state hash,
-and reproduces it exactly on re-run and after snapshot restore.
+**M3 · First light.** An explicit RHI with a null backend written *before* Vulkan, a render graph
+that computes its own barriers, Slang shaders, the render server and the GPU scene, clustered
+forward shading. Closes on a lit, textured, shadowed frame under golden-image tests, with the same
+frame rendered through the null backend in CI.
 
-Its named risk, spiked first: **cook-time flattening**. Whether an authored hierarchy really lowers
-to chunk-shaped blocks without runtime fixup is the assumption the whole storage decision rests on —
-and M1's chunked storage is what it flattens into, which is why the spike is meaningful now rather
-than theoretical.
+Its named risk, spiked first with veto power: **barrier and aliasing derivation under async
+compute**. If the model cannot derive correct semaphores across queues, the alternative is explicit
+synchronisation in every pass — the outcome the milestone exists to prevent.
 
-M2 carries two invariants from [the table](../ROADMAP.md#the-invariants-that-cannot-wait): the fixed
-tick's commit boundary with seeded random streams and state-hash hooks, and cook-time flattening to
-archetype-native blocks.
+M3 carries two invariants: barriers are computed and never written by a pass, and camera-relative
+rendering with reversed-Z asserted *from the device* rather than from arithmetic. Its section 1 is
+seven debts M2's gate recorded, including a `four-profiles` flake a pull request is now exposed to
+three times over.

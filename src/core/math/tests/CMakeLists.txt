@@ -82,6 +82,27 @@ function(cy_math_declare_tests)
         SOURCES "${cy_math_tests_dir}/test_simd.cpp"
         DEPENDENCIES cy::core-math)
 
+    # The same suite again, compiled for AVX2, so that the 256-bit backend is compiled by the
+    # ordinary build rather than by nobody. See the long comment in ../CMakeLists.txt for why this
+    # is a second binary and not a flag on the engine, and why src/simd.cpp is compiled into it.
+    #
+    # -ffp-contract=off for the same reason the module sets it: the bit-identity comparison this
+    # suite makes is only meaningful if neither side is allowed to fuse a multiply and an add.
+    # `-mavx2` does not by itself enable FMA on GCC or Clang, so today the flag changes nothing —
+    # which is exactly when it is cheap to set, rather than after `-march=x86-64-v3` arrives and the
+    # suite starts failing by one ULP.
+    get_property(cy_math_avx2_suite GLOBAL PROPERTY CY_MATH_AVX2_SUITE)
+    if(cy_math_avx2_suite)
+        cy_add_test(
+            NAME math_simd_avx2
+            KIND integration
+            SOURCES
+                "${cy_math_tests_dir}/test_simd.cpp"
+                "${cy_math_tests_dir}/../src/simd.cpp"
+            DEPENDENCIES cy::core-math)
+        target_compile_options(cy_test_integration_math_simd_avx2 PRIVATE -mavx2 -ffp-contract=off)
+    endif()
+
     cy_add_test(
         NAME math_spatial
         KIND integration

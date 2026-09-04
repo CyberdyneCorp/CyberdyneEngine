@@ -27,6 +27,7 @@ cy_add_module(
     SOURCES
         src/asset_system.cpp
         src/compression.cpp
+        src/cooked.cpp
         src/diagnostics.cpp
         src/file.cpp
         src/hash.cpp

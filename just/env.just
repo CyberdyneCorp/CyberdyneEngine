@@ -149,6 +149,21 @@ env-doctor *args:
         check_pinned "${name// /}" "$(echo "${purpose}" | sed 's/^ *//; s/ *$//')" \
                      "${override_name// /}"
     done <<< "${pinned}"
+
+    # ---- host prerequisites the build does not fetch ---------------------------------------------
+    # deps/host-tools.toml declares software the machine must provide and the build never acquires:
+    # today, the reflection generator's C++ frontend. Until M2 it was declared nowhere at all, so a
+    # fresh clone built happily against the committed metadata and silently never regenerated —
+    # only `just generate-check` noticed, and only if something annotated had changed.
+    #
+    # Reported here rather than made a hard failure, because the declaration says `required = false`
+    # and it is true: the generated metadata is committed, so the engine builds and its whole suite
+    # passes without a frontend. `_doctor-host-tools` fails only for an entry declared required, and
+    # this reads its verdict rather than second-guessing it.
+    if ! just _doctor-host-tools "${platform}"; then
+        problems+=("generator frontend")
+        status=1
+    fi
     just _doctor-window-system "${platform}"
 
     # ---- what this milestone deliberately does not check ------------------------------------------
@@ -354,6 +369,101 @@ _version-at-least found minimum:
             if (u < v) exit 1; \
         } \
         exit 0 }'
+
+# The host prerequisites deps/host-tools.toml declares: state, version and the correction.
+#
+# The declaration comes from the manifest through tools/deps/manifest.py, which owns its schema, and
+# the *state* comes from `reflect_gen.py --probe`, which is the identical code path the build takes
+# to decide whether it can regenerate. Neither is restated here: a doctor that reported a version the
+# build would not use, or looked for a library somewhere the generator does not, would be worse than
+# silence. Exits non-zero only when an entry declared `required` is absent.
+[private]
+_doctor-host-tools platform:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+
+    report() {
+        printf '  %-9s %-13s %-12s %s\n' "$1" "$2" "$3" "$4"
+    }
+
+    mapfile -t declared < <(CY_DOCTOR_PLATFORM='{{platform}}' python3 - <<'DECLARED'
+    import os
+    import sys
+
+    sys.path.insert(0, "tools/deps")
+    from manifest import load_host_tools
+
+    platform = os.environ.get("CY_DOCTOR_PLATFORM", "linux")
+    for tool in load_host_tools():
+        print("\t".join([tool.name, tool.version, tool.kind, tool.package,
+                         "required" if tool.required else "optional",
+                         tool.checked_by, tool.install(platform)]))
+    DECLARED
+    )
+
+    # One probe for both entries, because loading the library is how the bindings are found: the
+    # generator cannot report on the library without the bindings, and saying so is more honest than
+    # a second search that might disagree with the one that matters.
+    if probe="$(python3 tools/gen/reflect_gen.py --probe 2>/dev/null)"; then
+        probe_ok=1
+        library="${probe##*library }"
+    else
+        probe_ok=0
+        library=""
+    fi
+    installed="$(python3 -c 'import importlib.metadata as m; print(m.version("clang"))' \
+        2>/dev/null || true)"
+
+    echo
+    status=0
+    while IFS=$'\t' read -r name version kind package requirement gate fix; do
+        [ -n "${name}" ] || continue
+        state=missing
+        found="-"
+        detail="not installed"
+        case "${kind}" in
+            python-package)
+                if [ -n "${installed}" ]; then
+                    found="${installed}"
+                    if [ "${installed}" = "${version}" ]; then
+                        state=ok
+                        detail="${package}  (pinned ${version})"
+                    else
+                        state=old
+                        detail="${package}  (deps/host-tools.toml declares ${version})"
+                    fi
+                fi
+                ;;
+            system-library)
+                if [ "${probe_ok}" -eq 1 ] && [ -n "${library}" ]; then
+                    state=ok
+                    found="${version}"
+                    detail="${library}"
+                elif [ "${probe_ok}" -eq 0 ] && [ -n "${installed}" ]; then
+                    detail="the bindings are installed but could not load a libclang ${version}"
+                else
+                    detail="not searched: the bindings that load it are not installed"
+                fi
+                ;;
+        esac
+
+        if [ "${state}" = ok ]; then
+            report ok "${name}" "${found}" "${detail}"
+            continue
+        fi
+        if [ "${requirement}" = required ]; then
+            report "${state}" "${name}" "${found}" "${detail}"
+            status=1
+        else
+            report advisory "${name}" "${found}" "${detail}"
+        fi
+        echo "             regeneration needs it; ${gate} is what fails without it."
+        if [ -n "${fix}" ]; then
+            echo "             install it with: ${fix}"
+        fi
+    done < <(printf '%s\n' "${declared[@]}")
+    exit "${status}"
 
 # The window-system headers SDL3 compiles its desktop backends against. Advisory: without them the
 # engine still builds and the headless display server still runs, which is what CI uses.

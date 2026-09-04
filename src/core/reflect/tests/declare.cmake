@@ -45,6 +45,14 @@ function(cy_reflect_declare_tests)
         SOURCES "${CY_REFLECT_TESTS_DIR}/test_control_plane.cpp"
         DEPENDENCIES cy::core-reflect)
 
+    # The complexity contract in the M2 spec delta, measured against M1's implementations kept in
+    # the test as reference implementations. An integration suite because it builds a corpus of
+    # hundreds of types and decodes tens of thousands of records, which is the size the measurement
+    # has to be taken at and is not a unit test's millisecond.
+    cy_add_test(NAME reflect_scaling KIND integration
+        SOURCES "${CY_REFLECT_TESTS_DIR}/test_scaling.cpp"
+        DEPENDENCIES cy::core-reflect)
+
     # The goldens are committed inputs, so the test is told where they are rather than being run
     # from a working directory that happens to contain them.
     cy_add_test(NAME reflect_roundtrip KIND unit

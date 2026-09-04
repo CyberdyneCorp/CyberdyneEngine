@@ -51,6 +51,7 @@ cy_add_module(
     SOURCES
         src/attributes.cpp
         src/control_plane.cpp
+        src/field_index.cpp
         src/registry.cpp
         src/serialize.cpp
         src/type_info.cpp

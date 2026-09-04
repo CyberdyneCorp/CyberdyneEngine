@@ -112,8 +112,22 @@ is how the scalar path is exercised on a machine that has SIMD, and the suite ha
 
 `core-math` names SSE4.2, AVX2, NEON and a portable fallback. All four are here. `Avx2Ops` is a real
 256-bit backend — eight lanes, the full primitive set, no fused multiply-add so that it stays
-bit-identical — and `tests/test_simd.cpp` checks it lane for lane against the reference in any build
-that targets AVX2 (`cmake -B build/x -DCMAKE_CXX_FLAGS=-mavx2`, which is how it was verified here).
+bit-identical — and `tests/test_simd.cpp` checks it lane for lane against the reference.
+
+**Since M2 it is compiled and run by the ordinary build**, as `integration.math_simd_avx2`: the same
+suite a second time, compiled with `-mavx2`, with `src/simd.cpp` compiled into it so that
+`backend_compiled(Backend::Avx2)` is decided in the same translation unit that asserts on it. Two
+conditions are checked at configure time rather than assumed — the compiler accepts `-mavx2`, and
+the *host* executes AVX2, because the whole binary is compiled for it and a machine without it would
+meet a SIGILL rather than a skipped test. The probe that answers the second is compiled at the
+baseline, which also disables the suite when cross-compiling. `src/core/math/CMakeLists.txt` carries
+the reasoning; the engine's own translation units stay at the baseline instruction set, because
+which instruction set a game ships to is not a decision a test suite gets to make.
+
+Until M2 this backend was gated on `__AVX2__` and *nothing set it*: no preset, no recipe, no CI job.
+It had been verified once by hand and compiled by nobody since. That is the failure mode the second
+suite exists to close — a SIMD path behind a macro nobody sets is worse than no SIMD path, because
+the first person to enable it believes it works.
 
 **No batch function calls it.** An eight-lane array transform was written, tested bit-identical at
 every length from 0 to 16, and measured against the four-wide loop in the same `-mavx2` build:
@@ -139,10 +153,12 @@ batch loops run the 128-bit one. The first arithmetic-bound consumer — skinnin
 bounds already stored as component arrays rather than as `Aabb`s — is where that should be
 re-measured, in either direction, rather than assumed.
 
-**A CI gap this leaves, which is not this module's to close:** no configuration under
-`.github/workflows/` targets AVX2, so the 256-bit backend is compiled by nobody on the way in and
-will bit-rot the way NEON would. One job configuring with `-DCMAKE_CXX_FLAGS=-mavx2` and running the
-math suites is enough, and it belongs with whoever owns the workflow files.
+**The CI gap this used to leave is closed at the source rather than in the workflow.** No
+configuration under `.github/workflows/` targets AVX2, and none needs to: `integration.math_simd_avx2`
+is declared by this module and runs under `just test-all` and under every CI job that runs the
+integration label, on any x86-64 host that executes AVX2. A CI runner that does not — or an ARM one —
+configures without the suite and says so at configure time, which is the honest answer rather than a
+green run that tested nothing.
 
 ## What is not here, and is therefore not claimed
 
@@ -208,6 +224,8 @@ Four suites, declared from `tests/CMakeLists.txt`:
 The split is about cost, not subject: a unit test has a millisecond, and a suite that sweeps
 thousands of values or measures a distribution does not fit in one.
 
+| `integration.math_simd_avx2` | integration | The same suite compiled with `-mavx2`, so the 256-bit backend is compiled, linked and compared against the reference by the ordinary build. Declared only where the compiler accepts the flag and the host executes it. |
+
 Run in all four profiles — a convention test that only holds in `dev` is not a convention — under
-both GCC 13 and Clang 18, with `CY_MATH_FORCE_SCALAR` as a fifth configuration, `-mavx2` as a sixth,
-and under ASan and UBSan.
+both GCC 13 and Clang 18, with `CY_MATH_FORCE_SCALAR` as a fifth configuration, and under ASan and
+UBSan. `-mavx2` is no longer a configuration anyone has to remember: it is a suite.

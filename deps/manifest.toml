@@ -1,9 +1,19 @@
 # CyberdyneEngine — the dependency manifest.
 #
-# The single source of truth for third-party code: cmake/dependencies.cmake drives FetchContent
-# from it, tools/deps/attribution.py generates THIRD_PARTY.md from it, and a security audit answers
-# "which version, gated by what" from it. Nothing here is duplicated anywhere else; a version that
-# appears in a CMake file rather than in this table is a defect.
+# The single source of truth for third-party code the build **acquires and links**:
+# cmake/dependencies.cmake drives FetchContent from it, tools/deps/attribution.py generates
+# THIRD_PARTY.md from it, and a security audit answers "which version, gated by what" from it.
+# Nothing here is duplicated anywhere else; a version that appears in a CMake file rather than in
+# this table is a defect.
+#
+# ITS COMPANION: deps/host-tools.toml. Third-party software the build requires to be *already on the
+# machine* and never fetches or links — today, the reflection generator's C++ frontend — is declared
+# there, under a schema that fits what it is. It is a second file rather than more tables here for
+# one concrete reason: cmake/dependencies.cmake parses this file directly, without a TOML library,
+# and turns every table it reads into a FetchContent_Declare needing a git repository and a
+# 40-character commit. A PyPI wheel has neither, so an entry for one would carry fabricated fields
+# and would then be fetched. That file's own header carries the full reasoning. Both files are
+# loaded by tools/deps/manifest.py and both appear in THIRD_PARTY.md.
 #
 # `thirdparty-dependencies` fixes the required fields: name, version, commit, upstream URL, licence
 # identifier, licence file path, whether it is optional and which feature gates it, whether a system

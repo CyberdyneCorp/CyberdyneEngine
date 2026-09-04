@@ -14,6 +14,15 @@
 // a per-frame path is counted rather than merely discouraged. The per-frame path uses
 // TypedAccessor, which is resolved once and holds a byte offset: it carries no pointer into the
 // registry and it cannot perform a lookup, which is the structural half of task 1.1.4.
+//
+// **The two find_field() overloads below are scans, and they are the one-shot spelling.** The M2
+// spec delta requires that field lookup not be linear in the field count, and `FieldIndex`
+// (field_index.h) is where that requirement is met: built once per type, constant-time thereafter,
+// and already built for every registered type by `TypeRegistry::fields()`. These remain because a
+// caller who resolves one binding once — resolve_field(), a diagnostic, a unit test — should not
+// have to build a table to read one descriptor. Anything that looks a field up more than once for
+// the same type holds a FieldIndex instead; `read_record()` does, and that is the difference
+// between a scene load being linear in its data and quadratic in it.
 
 #ifndef CY_CORE_REFLECT_TYPE_INFO_H
 #define CY_CORE_REFLECT_TYPE_INFO_H
@@ -114,10 +123,14 @@ struct TypeInfo {
     const char* module = "";
 
     /// The field with this identifier, or null. A reflected lookup: control plane only.
+    ///
+    /// **Linear in the field count.** For one lookup that is the cheapest thing there is; for a
+    /// lookup that repeats, build a FieldIndex (field_index.h) or ask the registry for the one it
+    /// already built. The header comment above says which is which.
     [[nodiscard]] const FieldInfo* find_field(FieldId wanted) const noexcept;
 
     /// The field with this name, or null. Names are metadata, so this is for tooling and
-    /// diagnostics — never for anything that persists a reference.
+    /// diagnostics — never for anything that persists a reference. Linear, with the same caveat.
     [[nodiscard]] const FieldInfo* find_field(const char* wanted) const noexcept;
 };
 

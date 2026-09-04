@@ -229,6 +229,18 @@ hierarchical state hash, and reproduces the hash exactly on re-run and after sna
 **Risk spike**: cook-time flattening. Whether an authored hierarchy really lowers to chunk-shaped
 blocks without runtime fixup is the assumption the whole storage decision rests on.
 
+**Corrections recorded at M2's close.** The row above is the plan; where the implementation came out
+differently the difference is written down in
+[the capability matrix](roadmap/capability-matrix.md#where-m2s-tiers-are-thin) rather than edited
+away here. The four a reader of this row should know: the spike found that a cooked block needs a
+**reference fixup pass after the copy**, which the specifications already allowed for and which
+makes M6's activation a copy *plus* a pass rather than a copy; `core-assets-and-io` reaches Working
+on the cook path with **hot reload not implemented at all**, so two of its ten requirements are
+still at none; the state hash covers **only declared subjects**, which in the closing artefact is
+four of seventeen; and `engine-architecture` reaches Working with **all seven servers still the null
+implementation**, because the first backend is M3's — the loop, the ECS/scene duality, the deferred
+command queue and feature slicing are what is Working here.
+
 ---
 
 # First playable

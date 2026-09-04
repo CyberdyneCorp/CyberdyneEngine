@@ -145,7 +145,11 @@ Expected<RecordHeader, Error> peek_record(const u8* data, usize size) {
     return header;
 }
 
-Status read_record(const TypeInfo& type, const u8* data, usize size, void* object) {
+Status read_record(const FieldIndex& fields, const u8* data, usize size, void* object) {
+    const TypeInfo* type = fields.type();
+    if (type == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "read_record: the field index was never built");
+    }
     if (object == nullptr) {
         return fail(ErrorCode::InvalidArgument, "read_record: null object");
     }
@@ -153,13 +157,17 @@ Status read_record(const TypeInfo& type, const u8* data, usize size, void* objec
     if (!header) {
         return Unexpected<Error>(header.error());
     }
-    if (header->type != type.id) {
+    if (header->type != type->id) {
         return fail(ErrorCode::InvalidArgument,
                     "read_record: the record was written for a different TypeId");
     }
 
     // Walked as an offset into the payload rather than as two pointers, so that every bound is a
     // comparison of unsigned lengths and no cast is needed to make one true.
+    //
+    // One pass, one hash probe per field. M1 called TypeInfo::find_field() here, which scans, so
+    // the cost was the record's field count times the type's; the M2 spec delta requires this to be
+    // linear in the record, and the index is how it becomes so.
     const u8* payload = data + RecordHeader::header_size;
     const usize limit = header->payload_size;
     usize position = 0;
@@ -180,7 +188,7 @@ Status read_record(const TypeInfo& type, const u8* data, usize size, void* objec
         // A field the type no longer declares is skipped rather than rejected. Its number is
         // tombstoned in the manifest and will never be issued again, so skipping it can never mean
         // silently writing one field's bytes into another's.
-        if (const FieldInfo* field = type.find_field(id); field != nullptr) {
+        if (const FieldInfo* field = fields.find(id); field != nullptr) {
             if (field->kind != kind || static_cast<usize>(field->size) != width) {
                 return fail(ErrorCode::InvalidArgument,
                             "read_record: a field's recorded kind or width no longer matches the "
@@ -191,6 +199,14 @@ Status read_record(const TypeInfo& type, const u8* data, usize size, void* objec
         position += width;
     }
     return ok();
+}
+
+Status read_record(const TypeInfo& type, const u8* data, usize size, void* object) {
+    FieldIndex fields;
+    if (auto built = fields.build(type); !built) {
+        return built;
+    }
+    return read_record(fields, data, size, object);
 }
 
 Status write_opaque(const u8* data, usize size, ByteBuffer& out) {

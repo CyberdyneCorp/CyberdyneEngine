@@ -12,6 +12,10 @@
 #   headless_host  tasks 5.3 and 5.4 — samples/01-headless-host: a clean exit and a budget report
 #                  with real figures in it, then the same run a hundred times over, compared line
 #                  for line. It is the M1 milestone gate.
+#   headless_sim   M2 task 5.3 — samples/02-headless-sim: the flattening decision, the reference
+#                  fixup and the coherence invariant read off the run's own report, the whole report
+#                  compared across twenty processes, and the state hash checked against a snapshot
+#                  restore. It is the M2 milestone gate.
 #
 # The binaries under test are passed as their generator expressions, so a test cannot be run against
 # a path that does not exist or against a stale copy somewhere else in the tree.
@@ -28,3 +32,7 @@ cy_add_test(NAME startup_order KIND smoke
 cy_add_test(NAME headless_host KIND smoke
             SOURCES test_headless_host.cpp
             DEFINITIONS CY_SAMPLE_HEADLESS_HOST="$<TARGET_FILE:cy_sample_headless-host>")
+
+cy_add_test(NAME headless_sim KIND smoke
+            SOURCES test_headless_sim.cpp
+            DEFINITIONS CY_SAMPLE_HEADLESS_SIM="$<TARGET_FILE:cy_sample_headless-sim>")

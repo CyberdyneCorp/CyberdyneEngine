@@ -185,6 +185,15 @@ jobs:
         run: just test-sanitize --sanitizer thread --tests jobs
       - name: Memory errors and undefined behaviour over the job suite (ASan + UBSan)
         run: just test-sanitize --sanitizer address,undefined --tests jobs
+      # M2's suites, through the same two trees. `ecs_scheduling` is the first thing in the engine
+      # that runs two systems over one world at once, and the race that shape produced was found by
+      # this tool and closed with atomics; a regression there is a corrupted chunk under a parallel
+      # reader, which no functional test reliably catches. Both trees are already configured by the
+      # two steps above, so these are incremental builds rather than whole ones.
+      - name: Data races over the suite that iterates one world from two systems (TSan)
+        run: just test-sanitize --sanitizer thread --tests ecs_scheduling
+      - name: Memory errors and undefined behaviour over the ECS suites (ASan + UBSan)
+        run: just test-sanitize --sanitizer address,undefined --tests ecs
       # The throughput benchmark is a gate rather than a report: every metric it checks is
       # dimensionless — a speedup divided by the worker count, or a cost in units of a calibration
       # workload measured in the same process — precisely so that a two-core shared runner and a
@@ -194,6 +203,58 @@ jobs:
       # on is not the number the thresholds were recorded against, and the recipe says so.
       - name: Job system throughput against its thresholds
         run: just test-bench-jobs --profile profile
+
+  # --- The world: the ECS, the node façade, the cook, and the state hash ---------------------------
+  #
+  # M2's four new permanent gates, and they are a job of their own rather than steps in `test`
+  # because of what they are: `test` runs every suite once and reports that they passed, which is a
+  # different claim from "these particular properties still hold". Each command below is declared
+  # literally in tools/roadmap/gates.toml and `just ci-check` compares the two, so the gate set and
+  # this file cannot drift apart in the direction that matters.
+  #
+  # The suites run here also run inside `just test-all` in the test job. That duplication is
+  # deliberate and cheap: a gate has to name the command that checks it, and a gate whose only
+  # evidence is "some larger command included it" is a gate nobody can point at when it fails.
+  world:
+    name: world — ecs, nodes, cooking, state hash
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-world-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-world-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-world-
+      # A structural change attempted mid-iteration is refused and counted, in every profile — a
+      # returned error and a counter, never an assertion that two profiles compile out.
+      - name: Structural change is observable only at flush points
+        run: just test-unit -R ecs
+      # The case that reproduced the race: two systems iterating one world at once.
+      - name: Systems declare their access, and a stage runs them in parallel
+        run: just test-integration -R ecs_scheduling
+      # The milestone's named spike, as a gate: an authored hierarchy lowers to chunk-shaped blocks,
+      # flattening is a walk to the root, and a cooked reference is a site in a table.
+      - name: An authored hierarchy lowers to archetype blocks
+        run: just test-integration -R scene_cooking
+      - name: A cooked block activates as one memcpy per column per chunk
+        run: just test-integration -R ecs_scale
+      # No node duplicates component data, and no traversal produces a state a query would not.
+      - name: The coherence invariants between nodes and entities
+        run: just test-integration -R scene_scale
+      # Across processes, not across iterations of one loop: a fresh address space is what exposes a
+      # hash that depended on an allocation address or a per-process seed.
+      - name: The state hash reproduces across processes
+        run: just test-smoke -R tick_loop
+      - name: The milestone artefact, across processes and across a snapshot restore
+        run: just test-smoke -R headless_sim
 
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:

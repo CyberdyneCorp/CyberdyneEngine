@@ -192,12 +192,19 @@ kind = "recipe"
 run = "just test-smoke -R headless_host"
 ci_job = "build-and-test"
 
+# ONE BUILD DIRECTORY PER PROFILE, EVEN WHEN CY_BUILD_DIR IS SET — amended while closing M2, and it
+# is the criterion doing what its description always said. Without the `:+` below, a developer who
+# redirects the build tree gets all four profiles configured into that one directory, each configure
+# overwriting the last, and this criterion fails for a reason that has nothing to do with the code.
+# It cost an agent an hour during M1 and it is why `just roadmap-milestone m1` could not be run under
+# a redirected build tree at all. With CY_BUILD_DIR unset the recipes already pick `build/<profile>`,
+# so the expansion is empty and the default is unchanged.
 [[criterion]]
 id = "four-profiles"
 describe = "all four profiles build clean and just test-all is green in each — M0's gate found this class of failure only because it looked outside dev"
 source = "tasks 6.7"
 kind = "command"
-run = "for p in debug dev profile release; do just build-engine --profile \"$p\" || exit 1; just test-all --profile \"$p\" || exit 1; done"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
 timeout_s = 10800
 ci_job = "profiles"
 

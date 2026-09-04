@@ -1,8 +1,11 @@
 // Field lookup and kind names. Task 1.1.1.
 //
 // Both lookups are linear and both report themselves to the control-plane counter. Linear because
-// a reflected type has a handful of fields and this is not a hot path; reported because the only
-// way to know it is not on a hot path is to check.
+// this is the one-shot spelling — a caller resolving a single binding, a diagnostic printing one
+// descriptor — and building a hash table to read one entry would cost more than the scan it saves.
+// A lookup that repeats goes through FieldIndex (field_index.h) instead, which is what the M2 spec
+// delta's complexity contract requires and what read_record() uses. Reported because the only way
+// to know a lookup is not on a hot path is to check.
 
 #include <cy/core/reflect/type_info.h>
 

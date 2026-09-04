@@ -333,7 +333,14 @@ constexpr Vec3& operator/=(Vec3& a, f32 s) noexcept {
 
 /// `v` reflected about a unit-length `normal`, in the sense a mirror reflects: the component along
 /// the normal is negated. An incident ray travelling *into* a surface reflects back out.
-[[nodiscard]] constexpr Vec3 reflect(Vec3 v, Vec3 normal) noexcept {
+///
+/// NAMED `reflect_vector` AND NOT `reflect`, WHICH IS WHAT GLSL CALLS IT. `cy::reflect` is the
+/// reflection *system*'s namespace (`<cy/core/reflect/...>`), and a function and a namespace of one
+/// name in one scope is an error in either include order — so a single translation unit could not
+/// include both this header and any reflected type's. Nothing noticed while no module needed
+/// geometry and reflection at once; src/scene/ at M2 is the first that does. Do not reintroduce the
+/// short spelling, not even as an alias: an alias is the same declaration and the same collision.
+[[nodiscard]] constexpr Vec3 reflect_vector(Vec3 v, Vec3 normal) noexcept {
     return v - normal * (2.0f * dot(v, normal));
 }
 

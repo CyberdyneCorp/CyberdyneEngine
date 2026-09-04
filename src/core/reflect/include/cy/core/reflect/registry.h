@@ -1,4 +1,4 @@
-// The opt-in type registry. Task 1.1.1.
+// The opt-in type registry. Task 1.1.1, revised for M2 task 1.1.
 //
 // `core-type-system` requires a registry mapping a stable TypeId to type metadata, and requires
 // that types opt in **by declaration rather than by inheritance**. There is no common Object base
@@ -15,23 +15,37 @@
 // initialiser would make the contents of the registry depend on link order, which is exactly the
 // class of non-determinism `engine-architecture` spends its startup-ordering requirement removing.
 // The generated aggregate registers in sorted order, so two builds of the same tree produce the
-// same registry in the same order.
+// same registry in the same order — and `begin()`/`end()` still iterate in that order, because the
+// hash index added below is a second view onto the same entries rather than their storage.
 //
 // The specification offers `cy::reflect<T>()` as an alternative spelling of the opt-in. The
 // annotation is the route this engine takes, and `reflect` is the namespace, so the type-to-
 // metadata direction is spelled type_of<T>() below — a function template and a namespace cannot
 // share a name, and the namespace is the one every consumer types.
 //
-// Lookup is a linear scan. That is a deliberate non-optimisation: this is control-plane code, the
-// registry holds hundreds of entries rather than millions, and anything that needed it to be faster
-// would be doing per-frame work through reflection, which is the thing task 1.1.4 exists to catch.
+// --- LOOKUP COMPLEXITY IS PART OF THE CONTRACT
+// ------------------------------------------------------
+//
+// M1 shipped a linear scan here and said so, on the argument that the registry holds hundreds of
+// entries and this is control-plane code. That argument was wrong in one specific way, and the M2
+// spec delta closes it: "Type and field lookup SHALL NOT be linear in the number of registered
+// types or fields." A scene load calls find() once per record, so a linear scan makes loading cost
+// the product of the record count and the registry size — the registry does not have to be on a
+// per-frame path for its size to multiply into somebody else's loop.
+//
+// So both lookups go through an open-addressed index (probe_table.h) whose probe length does not
+// grow with the entry count, and the registry additionally builds a FieldIndex per type at
+// registration, so that the caller who has a TypeId and a stream of records — the scene loader —
+// never scans anything and never builds an index of its own.
 
 #ifndef CY_CORE_REFLECT_REGISTRY_H
 #define CY_CORE_REFLECT_REGISTRY_H
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/reflect/field_index.h>
 #include <cy/core/reflect/ids.h>
+#include <cy/core/reflect/probe_table.h>
 #include <cy/core/reflect/type_info.h>
 
 namespace cy::reflect {
@@ -49,7 +63,8 @@ public:
     TypeRegistry& operator=(TypeRegistry&& other) noexcept;
 
     /// Register a type. The descriptor is borrowed, not copied: it is constexpr data in a generated
-    /// translation unit and outlives the registry.
+    /// translation unit and outlives the registry. A FieldIndex for it is built here, so that no
+    /// consumer has to build one and no consumer is tempted to scan instead.
     ///
     /// Fails on an invalid TypeId, and on a second registration of the same TypeId by a different
     /// descriptor — which is the shape a recycled identifier takes at run time, and the last place
@@ -64,19 +79,39 @@ public:
     /// and diagnostics, never to persist a reference.
     [[nodiscard]] const TypeInfo* find(const char* name) const noexcept;
 
+    /// The field index built for this type at registration, or null when it is not registered.
+    ///
+    /// This is what a serializer or a scene loader holds for the duration of a load: it resolves a
+    /// FieldId without a scan, and it is already built, so decoding a thousand records of one type
+    /// costs one lookup here and a hash probe per field.
+    [[nodiscard]] const FieldIndex* fields(TypeId id) const noexcept;
+
     [[nodiscard]] usize size() const noexcept { return count_; }
     [[nodiscard]] const TypeInfo* const* begin() const noexcept { return entries_; }
     [[nodiscard]] const TypeInfo* const* end() const noexcept { return entries_ + count_; }
+
+    /// The longest probe chain either index holds, measured as it was filled. A diagnostic: it is
+    /// what lets a test assert that lookup cost does not grow with the registry without timing
+    /// anything. See detail::ProbeTable::longest_probe().
+    [[nodiscard]] u32 longest_probe() const noexcept;
 
     /// Forget every registration. For tests, and for a host that tears down and rebuilds.
     void clear() noexcept;
 
 private:
-    Status reserve(usize wanted);
+    Status grow(usize wanted);
+    Status rebuild_index(usize slot_count);
 
     const TypeInfo** entries_ = nullptr;
+    FieldIndex* field_indices_ = nullptr;
     usize count_ = 0;
     usize capacity_ = 0;
+
+    /// One block, two tables: `slot_count_` slots keyed by TypeId, then as many keyed by name.
+    u32* slots_ = nullptr;
+    u32 slot_count_ = 0;
+    detail::ProbeTable by_id_;
+    detail::ProbeTable by_name_;
 };
 
 /// The registry generated registration targets by default, and the one tooling reads.

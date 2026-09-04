@@ -14,9 +14,9 @@
 schema: 1
 capabilities:
   engine-architecture:
-    tier: seed
-    milestone: M1
-    change: implement-m1-substrate
+    tier: working
+    milestone: M2
+    change: implement-m2-world
   core-type-system:
     tier: working
     milestone: M1
@@ -34,25 +34,25 @@ capabilities:
     milestone: M1
     change: implement-m1-substrate
   core-assets-and-io:
-    tier: seed
-    milestone: M1
-    change: implement-m1-substrate
+    tier: working
+    milestone: M2
+    change: implement-m2-world
   core-platform-abstraction:
     tier: seed
     milestone: M0
     change: implement-m0-ground
   ecs-core:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M2
+    change: implement-m2-world
   scene-graph-and-nodes:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M2
+    change: implement-m2-world
   serialization-and-prefabs:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M2
+    change: implement-m2-world
   gameplay-framework:
     tier: none
     milestone: null
@@ -78,9 +78,9 @@ capabilities:
     milestone: null
     change: null
   simulation-and-determinism:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M2
+    change: implement-m2-world
   replay-and-rollback:
     tier: none
     milestone: null

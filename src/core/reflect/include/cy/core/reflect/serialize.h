@@ -26,6 +26,7 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
+#include <cy/core/reflect/field_index.h>
 #include <cy/core/reflect/ids.h>
 #include <cy/core/reflect/type_info.h>
 
@@ -79,13 +80,26 @@ Status write_record(const TypeInfo& type, const void* object, ByteBuffer& out);
 /// Read the header of the record at the front of `data`, without needing its type.
 Expected<RecordHeader, Error> peek_record(const u8* data, usize size);
 
-/// Apply the record at the front of `data` to `object`.
+/// Apply the record at the front of `data` to `object`, resolving fields through `fields`.
+///
+/// **This is the overload a loader uses.** Its cost is linear in the record: one hash probe per
+/// field the record carries, and no scan of the type's fields at all. A scene load holds one
+/// FieldIndex per type — `TypeRegistry::fields()` already built it — and decodes every record of
+/// that type through this call.
 ///
 /// A field the record carries that the type no longer has is skipped — that is a removed field, and
 /// the manifest's tombstone is what makes skipping it safe. A field the type has that the record
 /// does not carry is left at whatever the caller initialised it to, which is how a field added
 /// after the data was written gets its default. A field whose recorded kind or width no longer
 /// matches the type's is an error rather than a reinterpretation.
+Status read_record(const FieldIndex& fields, const u8* data, usize size, void* object);
+
+/// The same, for a caller that has a TypeInfo and one record.
+///
+/// It builds a FieldIndex, decodes through it, and throws the index away: linear in the type's
+/// field count plus linear in the record, rather than the product of the two that M1's
+/// find_field-per-field loop cost. **Decoding many records of one type through this overload pays
+/// that build every time** — hold a FieldIndex, or ask the registry for the one it built.
 Status read_record(const TypeInfo& type, const u8* data, usize size, void* object);
 
 /// Copy one record forward without understanding it. This is what a host does with a record whose

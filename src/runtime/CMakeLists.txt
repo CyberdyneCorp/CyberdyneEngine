@@ -13,13 +13,34 @@
 # cy::config::ModuleRegistry*, so a host that populates one names the type. That registry is what
 # makes the four module stages of `engine-architecture`'s startup sequence do something (task 4.5).
 
+# M2 (tasks 4.1.x and 4.2.x) filled three of the eleven startup stages and made the tick loop real,
+# so the target grew four sources and four dependencies. Each dependency is PUBLIC because each
+# appears in the runtime's own interface: `RuntimeConfig` names a `ServerRegistry` and a
+# `Simulation`, and a `Simulation` names an `ecs::World`, a `scene::SceneTree` and a
+# `determinism::SimulationClock`. cy::core-jobs is there because `RuntimeConfig::jobs` is a
+# `jobs::JobSystem*` — the runtime hands it to the schedule and never submits work itself.
+#
+# Sources are listed explicitly and never globbed: a file this list does not name is compiled by
+# nothing, which reads in a review exactly like a file that passes.
 cy_add_module(
     NAME cy_runtime
     LAYER runtime
     ALIAS cy::runtime
-    SOURCES src/runtime.cpp
+    SOURCES
+        src/features.cpp
+        src/frame_commands.cpp
+        src/runtime.cpp
+        src/servers.cpp
+        src/simulation.cpp
+        src/state_hash.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-platform cy::core-config
+    PUBLIC_DEPENDENCIES
+        cy::core-platform
+        cy::core-config
+        cy::core-determinism
+        cy::core-jobs
+        cy::ecs
+        cy::scene
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
 # The startup-order probe. It starts and stops a runtime, prints the journal, and exits — which is
@@ -33,6 +54,17 @@ if(CY_BUILD_TESTS)
         LAYER runtime
         TYPE EXECUTABLE
         SOURCES probe/startup_order_probe.cpp
+        PRIVATE_DEPENDENCIES cy::runtime cy::platform-headless cy::platform-desktop-sdl3)
+
+    # The tick-loop probe. It runs a real Runtime with a Simulation attached in fixed-step mode and
+    # prints the committed point, the state version and the state hash — which is the only way to
+    # compare a hash across *processes* rather than across iterations of one loop.
+    # tests/test_tick_loop.cpp runs it twenty times (tasks 4.1.2 and 4.2.6).
+    cy_add_module(
+        NAME cy_runtime_tick_loop_probe
+        LAYER runtime
+        TYPE EXECUTABLE
+        SOURCES probe/tick_loop_probe.cpp
         PRIVATE_DEPENDENCIES cy::runtime cy::platform-headless cy::platform-desktop-sdl3)
 endif()
 

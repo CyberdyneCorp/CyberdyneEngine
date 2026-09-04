@@ -47,13 +47,13 @@ CY_TEST_CASE("Vec3: the operations agree with their definitions") {
     }
 }
 
-CY_TEST_CASE("Vec3: reflect mirrors the component along the normal") {
+CY_TEST_CASE("Vec3: reflect_vector mirrors the component along the normal") {
     const cy::Vec3 incoming = normalize(cy::Vec3{1.0f, -1.0f, 0.0f});
-    const cy::Vec3 reflected = reflect(incoming, cy::kAxisUp);
+    const cy::Vec3 reflected = reflect_vector(incoming, cy::kAxisUp);
     CY_CHECK(nearly_equal(reflected, normalize(cy::Vec3{1.0f, 1.0f, 0.0f}), 1e-6f));
     // Reflection preserves length and is its own inverse.
     CY_CHECK_CLOSE(length(reflected), length(incoming), 1e-6f);
-    CY_CHECK(nearly_equal(reflect(reflected, cy::kAxisUp), incoming, 1e-6f));
+    CY_CHECK(nearly_equal(reflect_vector(reflected, cy::kAxisUp), incoming, 1e-6f));
 }
 
 CY_TEST_CASE("IVec3: floor_to_ivec3 puts negative coordinates in the cell below") {
