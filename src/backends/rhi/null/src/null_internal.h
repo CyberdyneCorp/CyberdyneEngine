@@ -125,6 +125,26 @@ struct NullSwapchain {
 
 class NullDevice;
 
+/// What a command buffer counted while it was being recorded.
+///
+/// THESE ARE PER BUFFER AND NOT PER DEVICE, AND THAT IS THE WHOLE POINT. A secondary is recorded on
+/// a job worker (task 2.2.5), so `++device_->mutable_statistics().draws` from inside `draw()` is
+/// several threads incrementing one `u64` — which ThreadSanitizer reported as a data race at M3's
+/// gate, four times over, out of `integration.render_graph_scale`. They travel the same route the
+/// recorded commands do: a secondary's counts fold into its primary at `execute_secondary()`, and a
+/// primary's fold into the device at `absorb()`, both on the submitting thread.
+struct RecordedCounts {
+    u64 draws = 0;
+    u64 dispatches = 0;
+    u64 validation_errors = 0;
+
+    void add(const RecordedCounts& other) noexcept {
+        draws += other.draws;
+        dispatches += other.dispatches;
+        validation_errors += other.validation_errors;
+    }
+};
+
 /// The recording interface. Every call appends to the device's log and returns; nothing executes.
 class NullCommandBuffer final : public CommandBuffer {
 public:
@@ -145,6 +165,14 @@ public:
     [[nodiscard]] u32 frame_slot() const noexcept { return frame_slot_; }
     [[nodiscard]] bool recording() const noexcept { return recording_; }
     void set_recording(bool value) noexcept { recording_ = value; }
+
+    /// Hand the counts over and reset them, so a buffer's work is folded in exactly once.
+    [[nodiscard]] RecordedCounts take_counts() noexcept {
+        const RecordedCounts taken = counts_;
+        counts_ = RecordedCounts{};
+        return taken;
+    }
+    void add_counts(const RecordedCounts& counts) noexcept { counts_.add(counts); }
 
     void begin_rendering(const RenderingInfo& info) noexcept override;
     void end_rendering() noexcept override;
@@ -201,6 +229,7 @@ public:
 private:
     NullDevice* device_ = nullptr;
     Array<RecordedCommand> log_;
+    RecordedCounts counts_;
     CommandBufferHandle handle_;
     QueueKind queue_ = QueueKind::Graphics;
     bool secondary_ = false;
@@ -383,6 +412,9 @@ private:
     void charge(GpuMemoryCategory category, u64 bytes) noexcept;
     void discharge(GpuMemoryCategory category, u64 bytes) noexcept;
     void report_validation(ValidationSeverity severity, const char* message) noexcept;
+    /// Drop `handle` from `live_storage_buffers_`. Order does not matter, so the last entry moves
+    /// into the hole rather than the tail shuffling down.
+    void forget_storage_buffer(BufferHandle handle) noexcept;
 
     Allocator* allocator_ = nullptr;
     DeviceCapabilities capabilities_;
@@ -417,6 +449,15 @@ private:
     Array<CommandBufferHandle> live_command_buffers_;
     Array<TextureHandle> live_transient_textures_;
     Array<BufferHandle> live_transient_buffers_;
+    /// Every buffer this device gave host storage to, so the destructor can give it back.
+    ///
+    /// `HandlePool` has no iteration — by design, since nothing else needs one — so a device that
+    /// owns heap outside the pool has to remember which handles carry it. Without this the
+    /// destructor returned nothing and a caller that let the device outlive its buffers leaked
+    /// their mapped storage: AddressSanitizer's leak check reported `Direct leak of 256 byte(s)`
+    /// out of `unit.rhi` at M3's gate, from a case that creates an upload buffer and lets the
+    /// fixture tear the device down. Destroying a device releases what the device owns.
+    Array<BufferHandle> live_storage_buffers_;
     Array<RecordedCommand> log_;
     u64 log_hash_ = 0;
     u64 transient_bytes_ = 0;

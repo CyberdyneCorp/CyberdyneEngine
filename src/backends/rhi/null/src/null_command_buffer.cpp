@@ -169,7 +169,7 @@ void NullCommandBuffer::bind_descriptor_sets(PipelineLayoutHandle layout, u32 fi
     // The limit is the engine's, not the device's, and it is checked where it is exceeded rather
     // than at the draw that would have used the ninth set. See types.h.
     if (first_set + sets.size() > kMaxDescriptorSets) {
-        device_->mutable_statistics().validation_errors++;
+        ++counts_.validation_errors;
     }
 }
 
@@ -185,7 +185,7 @@ void NullCommandBuffer::push_constants(PipelineLayoutHandle layout, ShaderStage 
     append(command);
 
     if (offset + data.size() > kMaxPushConstantBytes) {
-        device_->mutable_statistics().validation_errors++;
+        ++counts_.validation_errors;
     }
 }
 
@@ -223,7 +223,7 @@ void NullCommandBuffer::draw(u32 vertex_count, u32 instance_count, u32 first_ver
     command.c = first_vertex;
     command.d = first_instance;
     append(command);
-    device_->mutable_statistics().draws++;
+    ++counts_.draws;
 }
 
 void NullCommandBuffer::draw_indexed(u32 index_count, u32 instance_count, u32 first_index,
@@ -236,7 +236,7 @@ void NullCommandBuffer::draw_indexed(u32 index_count, u32 instance_count, u32 fi
     command.d = first_instance;
     command.handle_bits = static_cast<u64>(static_cast<u32>(vertex_offset));
     append(command);
-    device_->mutable_statistics().draws++;
+    ++counts_.draws;
 }
 
 void NullCommandBuffer::draw_indexed_indirect(BufferHandle arguments, u64 offset, u32 draw_count,
@@ -248,7 +248,7 @@ void NullCommandBuffer::draw_indexed_indirect(BufferHandle arguments, u64 offset
     command.c = stride;
     command.handle_bits = arguments.bits();
     append(command);
-    device_->mutable_statistics().draws++;
+    ++counts_.draws;
 }
 
 void NullCommandBuffer::dispatch(u32 groups_x, u32 groups_y, u32 groups_z) noexcept {
@@ -258,7 +258,7 @@ void NullCommandBuffer::dispatch(u32 groups_x, u32 groups_y, u32 groups_z) noexc
     command.b = groups_y;
     command.c = groups_z;
     append(command);
-    device_->mutable_statistics().dispatches++;
+    ++counts_.dispatches;
 }
 
 void NullCommandBuffer::dispatch_indirect(BufferHandle arguments, u64 offset) noexcept {
@@ -267,7 +267,7 @@ void NullCommandBuffer::dispatch_indirect(BufferHandle arguments, u64 offset) no
     command.a = static_cast<u32>(offset);
     command.handle_bits = arguments.bits();
     append(command);
-    device_->mutable_statistics().dispatches++;
+    ++counts_.dispatches;
 }
 
 // --- Copies

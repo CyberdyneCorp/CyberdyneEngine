@@ -194,11 +194,13 @@ reproduced at M3's gate on this tree; where a number appears, it is a number thi
 an NVIDIA RTX 5060 (driver 580.95.05, device API 1.4.312, loader 1.3.275) with the Khronos
 validation layers and synchronisation validation on.
 
-Three entries are defects the gate found by attacking what the milestone exists to establish, and
-each is fixed in this change with a regression test rather than recorded and left: a persistent
-descriptor set that the Vulkan backend recycled after two frames, a build-time barrier gate that
-only fired when the render graph itself relinked, and an XR seam check whose expected value came
-from the code it was checking.
+Six entries are defects the gate found by attacking what the milestone exists to establish rather
+than by reading it, and each is fixed in this change rather than recorded and left: a persistent
+descriptor set the Vulkan backend recycled after two frames, a build-time barrier gate that only
+fired when the render graph itself relinked, an XR seam check whose expected value came from the
+code it was checking, a leak and a use-after-free that only AddressSanitizer could see, a data race
+on the null backend's statistics under parallel recording, and the per-case budgets that made the
+whole milestone ladder flaky.
 
 - **The milestone's central invariant holds, and one of its two halves had a hole.** The passkey is
   the strong half and it is airtight: `rhi::GraphBarrierKey`'s constructor is private and
@@ -261,6 +263,52 @@ from the code it was checking.
   is a change to `rhi::null::RecordedCommand`; and **late-latching is proved for orientation only**
   — the per-object translation is camera-relative and does travel in a push constant, so a late
   correction to the predicted *position* would still require re-recording every draw.
+- **Three defects that only a sanitizer could see, in code every criterion was passing over.** The
+  `sanitizers-render` criterion is new at this milestone and it was red the first time it ran, on
+  three separate faults, none of which any functional test could detect:
+
+      ASan  Direct leak, 256 bytes   NullDevice::create_buffer   unit.rhi
+      ASan  heap-use-after-free      Compiler::build_dependencies  unit.render_forward
+      TSan  data race, x4            NullCommandBuffer::draw     integration.render_graph_scale
+
+  The leak: `NullDevice`'s destructor was `= default`, so a buffer still alive when the device went
+  away kept its mapped host storage. The use-after-free: `push(readers, readers[i])` in the graph
+  compiler's dependency build hands `Array::emplace_back` a reference into the array it is about to
+  reallocate — silent without a sanitizer, because the freed bytes are usually still intact. The
+  race: `draw()` and `dispatch()` did `++device_->mutable_statistics().draws` while several job
+  workers recorded secondaries at once, which is task 2.2.5's whole point. All three are fixed —
+  the device now tracks and releases host-backed buffers, the compiler copies before it pushes, and
+  a command buffer counts into its own `RecordedCounts` that fold in at `execute_secondary()` and
+  `absorb()` on the submitting thread. **The lesson is the gate rather than the bugs**: the RHI's
+  own report recorded ThreadSanitizer runs over this suite as clean, and the leak check had never
+  been run over it at all.
+- **The milestone ladder was flaky, and three per-case budgets were why.** `four-profiles` is run by
+  `milestone-m1`, `milestone-m2` and `milestone-m3`, and `m3`'s ledger nests all three — so one
+  flaky suite is a dozen exposures per pull request. Measured at this gate as **2 failures in 20**
+  `just test-all` runs across the four profiles, and every one was a case sitting on its budget
+  rather than anything intermittent:
+
+      test_brdf.cpp    'the L2 basis is orthonormal'    0.536-1.241 ms  vs 1 ms  dev
+      test_brdf.cpp    'a uniform environment gives'    2.262 ms        vs 1 ms  debug -O0
+      test_extract.cpp 'a static crowd is skipped'      0.873-1.032 ms  vs 1 ms  debug -O0
+      test_scaling.cpp CHECK_GT(scan_ns, index_ns*1.5)  a ratio of two single timings
+
+  The two spherical-harmonic cases moved to `integration.material_ibl`, where the taxonomy puts a
+  case that integrates something; the crowd shrank from 100 static entities to 32, which is more
+  than enough for the property it asserts; and the reflection ratio is now the best of three
+  repetitions, because contention can only make a run slower. After the fixes: **0 failures in 20**
+  rounds, and a sweep of every unit binary at `CY_TEST_BUDGET_SCALE=0.4` finds no case above 40% of
+  its budget in any profile.
+
+  **What is not fixed, and what the next author should know.** The budget is the case's own CPU
+  time, which is why the earlier wall-clock flake is gone — but CPU time is not load-free either:
+  the same case measured 0.87 ms alone and 1.03 ms inside `ctest -j24`, which is cache pressure, so
+  a case within 20% of its budget is still a case that will fail eventually. And the harness's
+  **stall ceiling is wall clock** (100x the budget), so a unit case descheduled for 100 ms fails
+  even though it did no work; nothing was observed hitting it here, and it remains the one
+  load-sensitive check left in the taxonomy. The closest thing to a canary is
+  `integration.scene_scale`'s behaviour case, which spends **868 ms of its 1 000 ms** budget at -O0.
+
 - **`rhi-and-render-graph` is Working over one backend, and the frame does not reach a window.**
   Vulkan is the only backend with a device behind it; the null backend executes nothing by design.
   `DisplayServer::create_surface(GraphicsApi::Vulkan, ...)` exists and works, and
@@ -715,16 +763,13 @@ run rather than read — the command or the file that decides each is named.
   two separate scene cases ("unloading destroys exactly its entities", "a node reparented out of its
   scene is still destroyed with it") rather than by the invariant checker. The claim holds; the
   gate's own wording overstates where it is checked.
-- **Closed at M3, in two steps, and the second was found by this gate.** Task 1.1 replaced the
-  harness's wall-clock budget with the case's own CPU time plus a stall ceiling, which removed the
-  load-induced failures — `tests/harness/src/budget.cpp`'s `cpu_now_ns()`. That was not the whole of
-  it: at M3's gate `just roadmap-milestone m0` failed on `unit.material` on an **idle** machine, and
-  the case was `test_brdf.cpp`'s spherical-harmonic orthonormality check, which integrates 4 096
-  directions against a nine-term basis and measured between 0.536 ms and 1.241 ms of CPU against a 1
-  ms budget — 1 failure in 10 standalone. It is moved to `integration.material_ibl`, where the
-  taxonomy puts a case that integrates something. After the move: **0 failures in 30**, and a sweep
-  of every unit and integration binary at `CY_TEST_BUDGET_SCALE=0.4` reports no case at all above
-  40% of its budget. The M2 finding:
+- **Closed at M3, and it took four more cases than anyone expected.** Task 1.1 replaced the
+  harness's wall-clock budget with the case's own CPU time plus a stall ceiling
+  (`tests/harness/src/budget.cpp`'s `cpu_now_ns()`), which removed the load-induced failures the
+  entry below describes. It did not remove the flake: at M3's gate `just roadmap-milestone m0`
+  failed on `unit.material` on an **idle** machine, and three more cases followed it across the four
+  profiles. All four are listed with their measurements in the M3 section above, and after the fixes
+  `four-profiles` ran **20 rounds out of 20** green. The M2 finding:
 
   **M2's own suites did not fit the test taxonomy, and the repair is a split rather than a fix.**
   `just test-all --profile debug` — an M1 *and* an M2 exit criterion, and the `profiles` permanent

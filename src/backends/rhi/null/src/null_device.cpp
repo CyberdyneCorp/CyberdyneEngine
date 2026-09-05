@@ -125,6 +125,7 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
       live_command_buffers_(allocator),
       live_transient_textures_(allocator),
       live_transient_buffers_(allocator),
+      live_storage_buffers_(allocator),
       log_(allocator),
       bindless_free_(allocator),
       barriers_(this),
@@ -204,7 +205,19 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
     memory_.device_heap_budget = memory_.device_heap_size;
 }
 
-NullDevice::~NullDevice() = default;
+NullDevice::~NullDevice() noexcept {
+    // A device that is destroyed while it still owns resources releases them. Only mapped buffers
+    // hold heap outside the pools — every other Null* record is a value inside its HandlePool, and
+    // the pool frees itself — so this is the whole of it. See `live_storage_buffers_`.
+    for (const BufferHandle handle : live_storage_buffers_) {
+        NullBuffer* buffer = buffers_.resolve(handle);
+        if (buffer != nullptr && buffer->storage != nullptr) {
+            allocator_->deallocate(buffer->storage, buffer->storage_bytes, kNullAlignment);
+            buffer->storage = nullptr;
+            buffer->storage_bytes = 0;
+        }
+    }
+}
 
 u32 NullDevice::queue_family(QueueKind queue) const noexcept {
     const auto index = static_cast<u32>(queue);
@@ -297,6 +310,13 @@ Expected<BufferHandle, Error> NullDevice::create_buffer(const BufferDescription&
         }
         return handle;
     }
+    if (buffer.storage != nullptr) {
+        if (Status remembered = live_storage_buffers_.push_back(*handle); !remembered) {
+            allocator_->deallocate(buffer.storage, buffer.storage_bytes, kNullAlignment);
+            (void)buffers_.destroy(*handle);
+            return make_unexpected(remembered.error());
+        }
+    }
     charge(buffer.category, align_to(desc.size, kNullAlignment));
     return handle;
 }
@@ -310,12 +330,25 @@ void NullDevice::destroy_buffer(BufferHandle handle) noexcept {
     }
     if (buffer->storage != nullptr) {
         allocator_->deallocate(buffer->storage, buffer->storage_bytes, kNullAlignment);
+        buffer->storage = nullptr;
+        forget_storage_buffer(handle);
     }
     if (!buffer->transient) {
         discharge(buffer->category, align_to(buffer->desc.size, kNullAlignment));
     }
     ++stats_.resources_freed;
     (void)buffers_.destroy(handle);
+}
+
+void NullDevice::forget_storage_buffer(BufferHandle handle) noexcept {
+    for (usize index = 0; index < live_storage_buffers_.size(); ++index) {
+        if (live_storage_buffers_[index].bits() != handle.bits()) {
+            continue;
+        }
+        live_storage_buffers_[index] = live_storage_buffers_[live_storage_buffers_.size() - 1];
+        live_storage_buffers_.pop_back();
+        return;
+    }
 }
 
 bool NullDevice::is_valid(BufferHandle handle) const noexcept {
@@ -948,6 +981,9 @@ Status NullDevice::execute_secondary(CommandBufferHandle primary,
         // And the secondary's own recording, spliced in where it executes. That is what makes the
         // stream depend on the plan rather than on which worker finished first.
         child->take_log_into(parent->mutable_log());
+        // And its counts, on this thread. See RecordedCounts: the secondary was recorded on a job
+        // worker, so this is where its draws and dispatches join a single-threaded total.
+        parent->add_counts(child->take_counts());
     }
     return ok();
 }
@@ -1224,6 +1260,10 @@ BarrierRecorder& NullDevice::barrier_recorder(const GraphBarrierKey& key) noexce
 void NullDevice::absorb(NullCommandBuffer& buffer) noexcept {
     const usize first = log_.size();
     buffer.take_log_into(log_);
+    const RecordedCounts counts = buffer.take_counts();
+    stats_.draws += counts.draws;
+    stats_.dispatches += counts.dispatches;
+    stats_.validation_errors += counts.validation_errors;
     for (usize index = first; index < log_.size(); ++index) {
         const RecordedCommand& command = log_[index];
         log_hash_ = hash_bytes(log_hash_ == 0 ? kFnvOffset : log_hash_, &command.kind,

@@ -46,7 +46,15 @@ set(CY_FEATURE_OPTIONS
     "CY_XR|OFF|Extended-reality sessions, tracking and stereo rendering (M11)"
     "CY_PROFILING|OFF|Tracy as a backend of the engine's own trace (M0 seam, M2 wiring)"
     "CY_SHADER_SLANG|OFF|The Slang shader front end: source to SPIR-V, for the cook step and development hot reload (M3)"
-    "CY_RENDERER_VULKAN|OFF|The Vulkan RHI backend (M3)"
+    # DELIVERED AT M3, AND THEREFORE ON BY DEFAULT. Every other row below is a milestone that has not
+    # happened yet; this one has. Left at OFF it took the whole backend out of the default build --
+    # the sample fell back to the null device and rendered black, `just test-render` ran two
+    # device-free suites in 0.03 s, and tests/render/references/first_light.png sat beside a gate
+    # that never compared anything to it. A delivered backend that is off by default is a backend
+    # nothing tests. Its dependencies are fetched rather than system-installed, so ON costs a
+    # machine with no Vulkan SDK nothing but the fetch, and the device suites skip loudly when there
+    # is no GPU to draw on.
+    "CY_RENDERER_VULKAN|ON|The Vulkan RHI backend (M3)"
     "CY_RENDERER_METAL|OFF|The Metal RHI backend (M7)"
     "CY_RENDERER_D3D12|OFF|The Direct3D 12 RHI backend (M7)"
     CACHE INTERNAL "The CY_* feature options: NAME|DEFAULT|description")

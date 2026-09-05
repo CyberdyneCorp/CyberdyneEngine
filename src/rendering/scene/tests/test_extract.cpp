@@ -164,10 +164,17 @@ CY_TEST_CASE("a static crowd is skipped whole and only the chunks that changed a
     // is not "two rows were re-extracted" but "the chunks that did not change were not read at
     // all", and the fixture makes that visible by putting the movers in a different ARCHETYPE — an
     // entity that opted into interpolation — from the hundred that stay still.
+    // THIRTY-TWO AND NOT A HUNDRED, and the number is a measurement rather than a preference. At a
+    // hundred this case cost 0.87 to 1.03 ms of CPU at the Debug profile's -O0 against the unit
+    // suite's 1 ms budget, so it failed `just test-all --profile debug` about one round in five and
+    // took `four-profiles` — and therefore every milestone ledger above it — with it. What the case
+    // asserts is that a chunk nothing wrote is not read at all, and that property needs more static
+    // entities than movers, not a hundred of them.
+    static constexpr u32 kStatic = 32;
     Fixture fixture;
     CY_REQUIRE(fixture.start());
 
-    for (u32 index = 0; index < 100; ++index) {
+    for (u32 index = 0; index < kStatic; ++index) {
         CY_REQUIRE(fixture.spawn(cy::Vec3{static_cast<f32>(index), 0.0F, 0.0F}).valid());
     }
     cy::Array<cy::ecs::Entity> movers(allocator());
@@ -179,7 +186,7 @@ CY_TEST_CASE("a static crowd is skipped whole and only the chunks that changed a
     }
 
     CY_REQUIRE(fixture.commit(1));
-    CY_CHECK_EQ(fixture.published().changed.size(), 104U);
+    CY_CHECK_EQ(fixture.published().changed.size(), kStatic + 4U);
 
     // A tick in which nothing changed: every chunk is skipped whole, and the snapshot is empty.
     CY_REQUIRE(fixture.commit(2));

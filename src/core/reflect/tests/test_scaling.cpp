@@ -413,26 +413,45 @@ CY_TEST_CASE("reflection scaling: the reflected path a scene load takes") {
     // would be checking, and asserting per record measures doctest rather than the decode.
     bool loaded = true;
 
-    // The M1 path: a scan for the type, then find_field() per field of every record.
-    Clock::time_point started = Clock::now();
-    for (const u32 which : stream) {
-        const TypeInfo* type = scanning_find(registry, TypeId{which + 1});
-        loaded = loaded && type != nullptr &&
-                 static_cast<bool>(scanning_read_record(*type, encoded[which].data(),
-                                                        encoded[which].size(), object.data()));
-    }
-    const f64 scan_ns = elapsed_ns(started);
-
-    // The M2 path: an indexed lookup that hands back the FieldIndex the registry built at
-    // registration, and a decode that probes it once per field in the record.
-    started = Clock::now();
-    for (const u32 which : stream) {
-        const FieldIndex* fields = registry.fields(TypeId{which + 1});
-        loaded = loaded && fields != nullptr &&
-                 static_cast<bool>(cy::reflect::read_record(*fields, encoded[which].data(),
+    // THE BEST OF THREE, NOT ONE RUN OF EACH. A ratio between two timings taken once is a
+    // measurement of whichever run was descheduled, and this assertion failed `just test-all
+    // --profile dev` about one round in five at M3's gate — inside `four-profiles`, which every
+    // milestone ledger runs, so a flake here is a flake in the whole ladder. The minimum of a few
+    // repetitions is the standard answer: contention can only ever make a run slower, so the
+    // smallest is the closest to the cost being compared, and it costs three passes over a corpus
+    // that already fits the integration budget several times over.
+    constexpr u32 kRepeats = 3;
+    f64 scan_ns = 0.0;
+    f64 index_ns = 0.0;
+    for (u32 repeat = 0; repeat < kRepeats; ++repeat) {
+        // The M1 path: a scan for the type, then find_field() per field of every record.
+        Clock::time_point started = Clock::now();
+        for (const u32 which : stream) {
+            const TypeInfo* type = scanning_find(registry, TypeId{which + 1});
+            loaded = loaded && type != nullptr &&
+                     static_cast<bool>(scanning_read_record(*type, encoded[which].data(),
                                                             encoded[which].size(), object.data()));
+        }
+        const f64 scan_run = elapsed_ns(started);
+
+        // The M2 path: an indexed lookup that hands back the FieldIndex the registry built at
+        // registration, and a decode that probes it once per field in the record.
+        started = Clock::now();
+        for (const u32 which : stream) {
+            const FieldIndex* fields = registry.fields(TypeId{which + 1});
+            loaded = loaded && fields != nullptr &&
+                     static_cast<bool>(cy::reflect::read_record(
+                         *fields, encoded[which].data(), encoded[which].size(), object.data()));
+        }
+        const f64 index_run = elapsed_ns(started);
+
+        if (repeat == 0 || scan_run < scan_ns) {
+            scan_ns = scan_run;
+        }
+        if (repeat == 0 || index_run < index_ns) {
+            index_ns = index_run;
+        }
     }
-    const f64 index_ns = elapsed_ns(started);
     CY_REQUIRE(loaded);
 
     const std::string line = report("scene load, 512 types", scan_ns, index_ns, record_count);

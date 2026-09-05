@@ -347,7 +347,15 @@ struct Compiler {
                                 const u32 old_count = entry.reader_count;
                                 entry.reader_offset = static_cast<u32>(readers.size());
                                 for (u32 offset = 0; offset < old_count; ++offset) {
-                                    if (!push(readers, readers[old_offset + offset])) {
+                                    // BY VALUE, NOT BY REFERENCE INTO THE ARRAY BEING GROWN.
+                                    // `push()` may reallocate, and `push(readers, readers[i])`
+                                    // hands `Array::emplace_back` a reference that the
+                                    // reallocation has already freed — a read of freed memory that
+                                    // AddressSanitizer reported out of `unit.render_forward` at
+                                    // M3's gate. Silent without a sanitizer: the copy usually
+                                    // finds the old bytes still intact.
+                                    const u32 moved = readers[old_offset + offset];
+                                    if (!push(readers, moved)) {
                                         return false;
                                     }
                                 }

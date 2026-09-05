@@ -108,10 +108,27 @@ forward shading. Closes on a lit, textured, shadowed frame under golden-image te
 frame rendered through the null backend in CI.
 
 Its named risk, spiked first with veto power: **barrier and aliasing derivation under async
-compute**. If the model cannot derive correct semaphores across queues, the alternative is explicit
-synchronisation in every pass — the outcome the milestone exists to prevent.
+compute**. The spike answered it on the device — two queue families, a coalesced ownership release,
+a cross-queue semaphore, 256/256 texels correct, zero validation errors — so the model held and no
+roadmap change was owed.
 
 M3 carries two invariants: barriers are computed and never written by a pass, and camera-relative
 rendering with reversed-Z asserted *from the device* rather than from arithmetic. Its section 1 is
 seven debts M2's gate recorded, including a `four-profiles` flake a pull request is now exposed to
 three times over.
+
+**Where it stands.** Every criterion of `tools/roadmap/milestones/m3.toml` passes except `m4-open`,
+which asks that the M4 change exist and is task 7.13 — the one step after archiving. `m0`, `m1` and
+`m2` are green on the same tree, `milestone-m2` and `milestone-m3` are `green` in
+`tools/roadmap/gates.toml`, and the nine exit tiers are in `status.yaml`. What the gate found by
+attacking the milestone rather than reading it is in
+[the capability matrix](capability-matrix.md#where-m3s-tiers-are-thin): a Vulkan descriptor pool
+that recycled persistent sets after two frames (24 validation errors a frame in the artefact, from
+frame 3, on a run that exited 0), a build-time barrier gate that only fired when the render graph
+itself relinked, an XR seam check whose expected value came from the code under test, a
+use-after-free in the graph compiler that only AddressSanitizer could see, a data race on the null
+backend's statistics from parallel recording, and three per-case budget overruns that made the whole
+milestone ladder flaky. Each is fixed with a regression rather than recorded and left.
+
+A fifth lesson for the list above: **a one-frame test cannot see a frames-in-flight defect**, and
+every device suite in this milestone was a one-frame test until the gate added one that is not.
