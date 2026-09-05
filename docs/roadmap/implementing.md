@@ -73,62 +73,46 @@ From [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md):
 
 ## Landed
 
-**M2 · World** — the archetype ECS over M1's chunks, the node façade that caches nothing,
-serialization and prefabs, the fixed-tick loop, and the determinism seeds. 26 exit criteria pass.
+**M3 · First light** — an explicit RHI with the null backend written before Vulkan, a render graph
+that derives barriers, aliasing and cross-queue semaphores from declared reads and writes, Slang
+shaders, the render server and GPU scene, clustered forward shading. 28 exit criteria pass.
 
-Its spike **changed the specification**, which is what spikes are for. The claim that a cooked cell
-activates as a bulk copy was measured and found to be *a bulk copy plus a bounded fixup*: every
-row's key is a live entity the cooker cannot know, and a cooked reference holds a cell-local index.
-471 memcpys for 471 chunks at 2.5–2.7 ns/entity, then keys at 0.4 and reference slots at 0.6 —
-21.4% of the payload, 25–27% of activation. The capability specs had always said "bulk copy **and
-fix up references**"; the design note had compressed it. It also proved a new requirement: the
-cooker must emit the reference sites, because asking the registry per row costs 4.7–5.2× more and
-degrades activation into the reflection walk cooking exists to eliminate.
+Its spike proved the invariant on the real device: 13 cases, 0 failures, with
+`SYNCHRONIZATION_VALIDATION` on across two queue families — including two compute passes writing
+different array layers of one exclusive image while a graphics pass samples both. Transient aliasing
+measured 64 MiB → 8 MiB, plan and device agreeing exactly.
 
-**M1 · Substrate** — reflection with the committed identity manifest and its gate, the value types,
-memory domains and chunked storage, the math conventions as executable tests, the job system with
-access declarations. 19 criteria pass.
+Two findings from it outlive the milestone. **Vulkan validation does not police queue ownership
+transfers or memory aliasing** — negative controls removing each produced zero errors and correct
+pixels, so both must be structurally guaranteed rather than tested for. And **aliasing creates
+dependencies the resource graph cannot see**: two independent chains on different queues whose
+transients share memory will race, which is why alias edges are added before submits are cut.
 
-**M0 · Ground** — the skeleton, the build with layering enforced at configure time, the workflow and
-the gates. 14 criteria pass.
+**M2 · World**, **M1 · Substrate**, **M0 · Ground** — see the archive.
 
-Four lessons, each found by a gate agent auditing work reported green:
+Six lessons, each found by auditing work that had been reported green:
 
 - A privacy mechanism only covers the data model it can see.
 - A gate that is wired but never run is not a gate.
 - A ledger can break the milestone it is checking.
-- **A milestone's gate must actually be promoted when it closes.** `milestone-m1` sat at
-  `joins-on-close` through all of M2 — a ledger nothing ran, over code that changed underneath it.
+- A milestone's gate must actually be promoted when it closes.
+- **A delivered backend that is off by default is a backend nothing tests.** `CY_RENDERER_VULKAN`
+  kept M0's placeholder `OFF` through all of M3, so the sample rendered black while exiting 0 and
+  `just test-render` passed in 0.03 s over two device-free suites.
+- **Don't touch the machine while a ledger runs.** Two "regressions" in this project were concurrent
+  builds contending for the same trees, not defects.
 
 ## In flight
 
-**M3 · First light.** An explicit RHI with a null backend written *before* Vulkan, a render graph
-that computes its own barriers, Slang shaders, the render server and the GPU scene, clustered
-forward shading. Closes on a lit, textured, shadowed frame under golden-image tests, with the same
-frame rendered through the null backend in CI.
+**M4 · Playable.** The versioned append-only C ABI and its compatibility gate, the generated
+`CyberdyneKit` Swift overlay, input with fixed-tick sampling, camera and audio at Seed, physics over
+Jolt, and one validated command stream into the simulation. Closes on `samples/04-character`: a
+third-person controller written entirely in Swift — move, jump, collide, hear it — with no C++ in the
+project.
 
-Its named risk, spiked first with veto power: **barrier and aliasing derivation under async
-compute**. The spike answered it on the device — two queue families, a coalesced ownership release,
-a cross-queue semaphore, 256/256 texels correct, zero validation errors — so the model held and no
-roadmap change was owed.
+Its named spike: **hot reload across the ABI with live Swift objects**. If reload cannot preserve
+state, M5's live-editing story changes shape, and that is cheaper to know now.
 
-M3 carries two invariants: barriers are computed and never written by a pass, and camera-relative
-rendering with reversed-Z asserted *from the device* rather than from arithmetic. Its section 1 is
-seven debts M2's gate recorded, including a `four-profiles` flake a pull request is now exposed to
-three times over.
-
-**Where it stands.** Every criterion of `tools/roadmap/milestones/m3.toml` passes except `m4-open`,
-which asks that the M4 change exist and is task 7.13 — the one step after archiving. `m0`, `m1` and
-`m2` are green on the same tree, `milestone-m2` and `milestone-m3` are `green` in
-`tools/roadmap/gates.toml`, and the nine exit tiers are in `status.yaml`. What the gate found by
-attacking the milestone rather than reading it is in
-[the capability matrix](capability-matrix.md#where-m3s-tiers-are-thin): a Vulkan descriptor pool
-that recycled persistent sets after two frames (24 validation errors a frame in the artefact, from
-frame 3, on a run that exited 0), a build-time barrier gate that only fired when the render graph
-itself relinked, an XR seam check whose expected value came from the code under test, a
-use-after-free in the graph compiler that only AddressSanitizer could see, a data race on the null
-backend's statistics from parallel recording, and three per-case budget overruns that made the whole
-milestone ladder flaky. Each is fixed with a regression rather than recorded and left.
-
-A fifth lesson for the list above: **a one-frame test cannot see a frames-in-flight defect**, and
-every device suite in this milestone was a one-frame test until the gate added one that is not.
+Two invariants bind here. The first published ABI symbol starts a compatibility obligation that
+never ends, so the gate exists before the first consumer. And replay, rollback and lockstep are one
+command log read three ways, which is only true if the simulation has exactly one input path.

@@ -245,6 +245,10 @@ capabilities:
     tier: none
     milestone: null
     change: null
+  editor-agent-interface:
+    tier: none
+    milestone: null
+    change: null
   editor-architecture:
     tier: none
     milestone: null
