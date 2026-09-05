@@ -46,6 +46,24 @@ build-engine *args:
         build=(--build "${CY_BUILD_DIR}")
     fi
 
+    # ONE BUILD AT A TIME PER TREE. Two CMake configures in one directory do not merely race, they
+    # corrupt: a half-populated FetchContent checkout looks exactly like a broken dependency, and the
+    # error it produces names SDL rather than the concurrency that caused it. This project lost an
+    # hour to that twice — once to orphaned processes from an interrupted gate, and once to a
+    # milestone ledger running while a developer built by hand — and both times the symptom was
+    # blamed on the code before the cause was found.
+    #
+    # A second build WAITS rather than failing: it is a legitimate thing to do, it just cannot happen
+    # at the same time. The wait is announced, because a build that silently blocks looks like a
+    # build that hung.
+    lock_dir="${CY_BUILD_DIR:-build/${profile}}"
+    mkdir -p "${lock_dir}"
+    exec 9>"${lock_dir}/.cy-build.lock"
+    if ! flock -n 9; then
+        echo "==> waiting     another build holds ${lock_dir}; waiting for it to finish" >&2
+        flock 9
+    fi
+
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"
     cmake "${configure[@]}" ${cmake_args[@]+"${cmake_args[@]}"}
     echo "==> build       profile=${profile}"

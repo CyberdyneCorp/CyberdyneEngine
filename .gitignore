@@ -69,3 +69,4 @@ venv/
 crash-reports/
 perf.data
 perf.data.old
+.cy-build.lock
