@@ -12,8 +12,13 @@
 # a file of its own, never behind an #ifdef in a shared one. A fourth desktop platform is a fourth
 # file and one branch below.
 
+# sdl3_input_source.cpp is M4's addition (task 4.1.1): the platform end of `input-and-actions`'
+# boundary. It is a *watch* on SDL's event stream rather than a second pump, so nothing in
+# sdl3_display_server.cpp changes — see the header for why a second SDL_PollEvent loop could not
+# have worked.
 set(cy_sdl3_sources
     src/sdl3_display_server.cpp
+    src/sdl3_input_source.cpp
     src/sdl3_platform.cpp)
 
 set(cy_sdl3_link_libraries "")
@@ -42,5 +47,11 @@ cy_add_module(
     SOURCES ${cy_sdl3_sources}
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    PUBLIC_DEPENDENCIES cy::core-platform
+    PUBLIC_DEPENDENCIES cy::core-platform cy::servers-input
     PRIVATE_DEPENDENCIES cy::dep::sdl3 ${cy_sdl3_link_libraries})
+
+# The input event source's suite (task 4.1.1). It needs no display — SDL's event subsystem is
+# independent of video — so it runs headless in CI. See tests/CMakeLists.txt.
+if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
+    add_subdirectory(tests)
+endif()

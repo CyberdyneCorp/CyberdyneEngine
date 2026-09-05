@@ -1,8 +1,9 @@
 // The convention probe: the smallest shader that can answer section 5's questions on a device.
 //
 // COMPILED OFFLINE AND CHECKED IN, exactly as src/backends/shader/tests/fixtures/probe.slang is, and
-// for the same reason: `CY_SHADER_SLANG` is off by default, and a suite that needed a shader compiler
-// would not run on the machines that most need to run it. `embed_spirv.py` beside this file is how
+// for the same reason: `CY_SHADER_SLANG` is off in Profile and Shipping and can be turned off
+// anywhere, and a suite that needed a shader compiler would not run on the machines that most need
+// to run it. `embed_spirv.py` beside this file is how
 // the header is regenerated; the invocation is at the bottom of this comment.
 //
 // ================================================================================================

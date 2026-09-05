@@ -150,6 +150,25 @@ env-doctor *args:
                      "${override_name// /}"
     done <<< "${pinned}"
 
+    # ---- the language toolchains -----------------------------------------------------------------
+    # Swift is required exactly when the build would use it, and CY_SCRIPTING is the option that
+    # decides. Its default is read out of cmake/features.cmake — the file that owns the option —
+    # for the same reason the compiler minimum is read out of cmake/compilers.cmake: a requirement
+    # written twice is a requirement that drifts. The day that default flips to ON, this becomes a
+    # hard requirement with no edit here.
+    swift_default="$(sed -n 's/^[[:space:]]*"CY_SCRIPTING|\([A-Z]*\)|.*/\1/p' cmake/features.cmake)"
+    swift_requirement=optional
+    case "${CY_SCRIPTING:-${swift_default:-OFF}}" in
+        # DEVELOPMENT is a default that resolves per configuration (cmake/features.cmake); a
+        # developer's build is one of those configurations, so it counts as required here.
+        ON | DEVELOPMENT) swift_requirement=required ;;
+    esac
+    echo
+    if ! just _doctor-swift "${platform}" "${swift_requirement}"; then
+        problems+=(swift)
+        status=1
+    fi
+
     # ---- host prerequisites the build does not fetch ---------------------------------------------
     # deps/host-tools.toml declares software the machine must provide and the build never acquires:
     # today, the reflection generator's C++ frontend. Until M2 it was declared nowhere at all, so a
@@ -173,8 +192,8 @@ env-doctor *args:
     echo
     echo "  not checked yet, and why:"
     echo "    rust, cargo     M5 — the editor workspace"
-    echo "    swift           M4 — the Swift overlay over the C ABI"
-    echo "    slangc          M3 — the shader toolchain"
+    echo "    slangc          M3 — the shader toolchain. CY_SHADER_SLANG builds Slang from source"
+    echo "                    through deps/manifest.toml, so no slangc on PATH is needed"
     echo "    validation      M3 — graphics validation layers arrive with the renderer"
     echo "    platform SDKs   M9, M10 — mobile and console-class targets"
 
@@ -369,6 +388,147 @@ _version-at-least found minimum:
             if (u < v) exit 1; \
         } \
         exit 0 }'
+
+# The Swift toolchain: whether it is present, which version, and — when it is installed but not on
+# PATH — why, which is the case this recipe exists for.
+#
+# "swift: not found" IS THE WRONG DIAGNOSIS ON THIS PROJECT'S OWN MACHINES, and a wrong diagnosis
+# here is expensive: it sends the reader to reinstall a toolchain that works, and the second install
+# lands in the same place and is equally invisible. `swiftly init` writes its environment line to
+# ~/.profile, which only *login* shells read; a shell spawned by `just`, by a build script or by CI
+# is neither a login shell nor an interactive one, so it reads neither ~/.profile nor ~/.bashrc and a
+# working Swift 6.3 is absent from its PATH.
+#
+# So this looks past PATH. If swiftly's environment file names a swiftc that runs, the toolchain is
+# present, the report says so with its version, and the correction it names is for the shell rather
+# than for the install.
+#
+# THREE STATES, AND ONLY ONE OF THEM IS A PROBLEM.
+#
+#   ok         reachable from this shell.
+#   off-path   installed and working, one sourced line away. Reported in full and never a failure,
+#              whatever `requirement` says: failing here would call an environment broken on a
+#              machine where every build works, and sourcing that file is what a build recipe and a
+#              CI step have to do anyway.
+#   missing    no toolchain runs at all. A problem when `requirement` is `required`, advisory
+#              otherwise — the engine builds without Swift for as long as CY_SCRIPTING is off.
+[private]
+_doctor-swift platform requirement:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    report() {
+        printf '  %-9s %-13s %-12s %s\n' "$1" "$2" "$3" "$4"
+    }
+
+    # The dotted version a swiftc reports, or nothing: it writes
+    # "Swift version 6.3.3 (swift-6.3.3-RELEASE)".
+    #
+    # REPORTED, NOT ENFORCED, and deliberately: this file's rule is that every version it enforces is
+    # read from the file that owns it, and no file owns a Swift minimum yet. When one does — a
+    # `swift` entry in deps/host-tools.toml is the natural home — the minimum belongs there and this
+    # recipe reads it, the way the compiler minimum is read out of cmake/compilers.cmake. Inventing a
+    # number here would be inventing a requirement.
+    swift_version() {
+        local text
+        text="$("$1" --version 2>&1 || true)"
+        if [[ "${text}" =~ ([0-9]+(\.[0-9]+)+) ]]; then
+            printf '%s' "${BASH_REMATCH[1]}"
+        fi
+    }
+
+    purpose() {
+        echo "             CyberdyneKit and the game modules compiled against the C ABI (M4)."
+    }
+
+    # Multi-line, so it does not fit _doctor-hint's one-command-per-host table. README.md carries
+    # the same procedure, including why --platform must be named on Ubuntu.
+    install_hint() {
+        case '{{platform}}' in
+            linux)
+                echo "             install it with: curl -O https://download.swift.org/swiftly/linux/swiftly-x86_64.tar.gz"
+                echo "                              tar zxf swiftly-x86_64.tar.gz && ./swiftly init"
+                echo "                              swiftly install --use latest --platform ubuntu24.04"
+                ;;
+            macos)
+                echo "             install it with: brew install swiftly && swiftly init  (or install Xcode)"
+                ;;
+            *)
+                echo "             install it with: the Swift 6 installer from https://www.swift.org/install/"
+                ;;
+        esac
+        echo "             README.md, under 'Swift toolchain', carries the whole procedure."
+    }
+
+    # Absence is a problem only when the build would use it. See the three states above.
+    absent_state=advisory
+    if [ '{{requirement}}' = required ]; then
+        absent_state=missing
+    fi
+
+    # ---- reachable from this shell ---------------------------------------------------------------
+    if path="$(command -v swiftc 2>/dev/null)"; then
+        version="$(swift_version "${path}")"
+        report ok swift "${version:-present}" "${path}"
+        exit 0
+    fi
+
+    # ---- installed, but this shell cannot reach it -----------------------------------------------
+    home="${SWIFTLY_HOME_DIR:-${HOME:-}/.local/share/swiftly}"
+    env_file="${home}/env.sh"
+    reachable=""
+    if [ -f "${env_file}" ]; then
+        # Sourced in a subshell, which is the whole question: is the toolchain there, and is PATH
+        # the only thing wrong? A file that exists but names nothing runnable is not an install.
+        reachable="$(bash -c '. "$1" >/dev/null 2>&1 || exit 0; command -v swiftc || true' \
+                     _ "${env_file}" 2>/dev/null || true)"
+    fi
+
+    if [ -n "${reachable}" ]; then
+        version="$(swift_version "${reachable}")"
+        report off-path swift "${version:-present}" "${reachable}"
+        echo "             INSTALLED AND WORKING — this shell cannot reach it. That is a PATH"
+        echo "             problem, not a missing toolchain; do not reinstall it."
+        mentions=""
+        for rc in "${HOME:-}/.profile" "${HOME:-}/.bash_profile" "${HOME:-}/.bashrc" \
+                  "${HOME:-}/.zshrc"; do
+            if [ -f "${rc}" ] && grep -q swiftly "${rc}" 2>/dev/null; then
+                mentions="${mentions}${mentions:+, }~/${rc##*/}"
+            fi
+        done
+        echo "             the swiftly environment line is in: ${mentions:-no shell startup file}"
+        echo "             ~/.profile is read by login shells only and ~/.bashrc by"
+        echo "             interactive ones, so a shell spawned by just, by a build script or by"
+        echo "             CI reads neither of them."
+        echo "             for one command:  bash -lc '. ${env_file}; swiftc --version'"
+        echo "             for a recipe or a CI step: source that file in it, which is the"
+        echo "             only form that works in a non-interactive shell."
+        # NOT a problem even when Swift is required, and the distinction is the point of this
+        # recipe: the toolchain is present and one sourced line reaches it, which is what a build
+        # recipe and a CI step have to do anyway. Failing here would report a broken environment on
+        # a machine where every build works. Absence is the problem; unreachability is a diagnosis.
+        exit 0
+    fi
+
+    # ---- swiftly is here, a toolchain is not -----------------------------------------------------
+    if [ -x "${home}/bin/swiftly" ] || command -v swiftly >/dev/null 2>&1; then
+        report "${absent_state}" swift - "swiftly is installed; no toolchain it provides runs"
+        purpose
+        echo "             install it with: swiftly install --use latest --platform ubuntu24.04"
+        if [ '{{requirement}}' = required ]; then
+            exit 1
+        fi
+        exit 0
+    fi
+
+    # ---- genuinely absent ------------------------------------------------------------------------
+    report "${absent_state}" swift - "not on PATH, and no swiftly installation was found"
+    purpose
+    install_hint
+    if [ '{{requirement}}' = required ]; then
+        exit 1
+    fi
+    exit 0
 
 # The host prerequisites deps/host-tools.toml declares: state, version and the correction.
 #

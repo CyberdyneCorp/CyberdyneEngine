@@ -1,0 +1,326 @@
+# M4 — Playable: the exit criteria, as data. Task 6.10.
+#
+# The sources are section 6 of openspec/changes/implement-m4-playable/tasks.md and the M4 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a
+# recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate. A criterion that cannot be
+# evaluated on the host running the recipe — another operating system, no display, no GPU — carries
+# a `reason`, is reported as not evaluated rather than as passed, and is counted separately.
+#
+# THIS MILESTONE ADDS A THIRD KIND OF HOST THIS FILE CANNOT SPEAK FOR, and unlike "no GPU" it has no
+# `requires` token. A machine with no Swift toolchain does not build samples/04-character AT ALL —
+# the sample's gameplay IS a Swift module, and bindings/swift/ and samples/04-character/ both decline
+# to register their suites rather than registering ones that skip. So on such a machine the criteria
+# below do not fail, they are absent: `just test-smoke -R character_sample` matches no test and ctest
+# exits zero. That is worth stating plainly rather than discovering: a green run of this recipe on a
+# machine with no Swift has not judged M4's artefact. `just env-doctor` reports the toolchain and
+# diagnoses the `~/.profile` case specifically, which is where that is caught.
+#
+# The first criterion is M3's whole set, for the reason m1.toml records against M0's: a later
+# milestone may not break an earlier milestone's gate, and the way to keep that true is for the
+# closing recipe to run it rather than for a reviewer to remember it. M3's ledger runs M2's, which
+# runs M1's, which runs M0's, so this one criterion carries the whole ladder below it.
+
+schema = 1
+id = "m4"
+name = "Playable"
+artefact = "samples/04-character — a third-person character controller written entirely in Swift: it moves, jumps, collides with a level, is heard, and is followed by a camera, with the same binary able to run the identical host over the identical level with no deciding behaviour at all and produce no motion"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "tasks 6.10 — `just roadmap-milestone m4` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 6.11 — docs/roadmap/status.yaml and docs/roadmap/capability-matrix.md are corrected where M4 recorded an intention the implementation changed, and record what is thinner than the tasks claim. `roadmap-tiers` below checks the record; no tool can tell an intention from its correction.",
+    "tasks 6.12 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "tasks 6.13 — opening the M5 change is `m5-open` below, which asks only that the change exists. Whether the live bridge's latency is the right named spike is a judgement.",
+    "ROADMAP M4, 'a Swift module hot-reloads WHILE THE SAMPLE RUNS, preserving world state' — HALF SATISFIED, and the missing half is named rather than glossed. `swift-reload` below loads a real Swift module, creates behaviours holding live state including an ARC-managed `String`, rebuilds it with a changed layout, reloads it and reads the state back through the module's own serializer — which is the whole of the claim except the words 'while the sample runs'. samples/04-character loads generation 0 and never reloads: it declares `hot_reload = true`, the loader supports it, and nothing calls `reload()`. Wiring a file watcher into that host is small and belongs to M5, where the editor needs one anyway. See samples/04-character/README.md, which says the same thing from the other side.",
+    "ROADMAP M4, 'the ABI gate rejects a reordered OR REMOVED entry and accepts an appended one' — the gate's own selftest is what proves all three, and it runs as `integration.abi_gate` inside the `abi` criterion below rather than as a criterion of its own. It edits the LIVE header in memory and runs the real gate against the real baseline; a fixture directory would go stale, and worse, a parser that stopped recognising the table would let a hand-written 'reordered' fixture and a hand-written 'correct' one both describe nothing.",
+    "THE SAMPLE DOES NOT OPEN A WINDOW AND DRAWS NOTHING, and this is M3's recorded gap rather than a choice made here. `cy::rhi::Device` exposes no way to obtain the graphics-API instance a window surface must be created against, so a host can create a window and a device and cannot join them; m3.toml records it and samples/03-first-light renders offscreen for the same reason. samples/04-character instead produces the `cy::render::ViewDescription` a renderer would draw, every tick, and counts it — so `camera-system`'s 'Render view production' is exercised on the camera's side and on no other. A criterion asserting that the character is visible does not exist because nothing could evaluate it.",
+    "PHYSICS RUNS OVER THE REFERENCE BACKEND IN THE SAMPLE, BY DEFAULT AND DELIBERATELY. `physics` requires that swapping the backend change no gameplay, so the artefact must be runnable over either; `--jolt` runs the same script over Jolt and was checked by hand at M4's close — 400 ticks over each backend produced THE SAME command-log hash (7c8c40b0be09a58c), the same input frame hash, the same 11 footsteps, 3 landings, 1 jump and 1 climbed step, and positions that differ in the metres, which is exactly the shape a backend swap should and should not change. It is not a criterion because CY_PHYSICS may be off in a build that is otherwise complete, and a criterion that silently passes when its subject is absent is the pattern this file exists to avoid. The CONFORMANCE claim is `physics-jolt` below, which runs the same cases against Jolt through the interface.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. M4 adds abi, swift-api, command-stream, input-fixed-tick, physics and character-artefact to it.",
+]
+
+# --- What M4 must not have broken -------------------------------------------------------------------
+
+[[criterion]]
+id = "m3-green"
+describe = "M3's exit criteria are still green, and M3's own first criterion is M2's — so the whole ladder below this milestone is run"
+source = "delivery-roadmap (Milestone gates do not regress)"
+kind = "recipe"
+run = "just roadmap-milestone m3"
+timeout_s = 28800
+ci_job = "milestone-m3"
+
+# --- The static gates: cheap, and they fail first -----------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes"
+source = "tasks 6.12"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over the modules M4 added"
+source = "tasks 6.8"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over the ABI, the input, physics, camera and audio servers, the gameplay command stream and the sample's host"
+source = "tasks 6.8"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds, and no SDL, Vulkan, Slang, Jolt or miniaudio type appears above the backend that owns it — each proven by introducing one and requiring the check to reject it"
+source = "tasks 6.8, design.md §4"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate M4 declared is run by a job in .github/workflows/, and no job reimplements a recipe"
+source = "delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 6.11, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M4's exit tiers, each naming the change that advanced it"
+source = "tasks 6.11, ROADMAP M4"
+kind = "tiers"
+ci_job = "milestone-m4"
+
+# The M4 row of docs/ROADMAP.md, as data. An exit tier is a floor rather than an equality: a later
+# milestone advancing one of these past its M4 level must not make this recipe fail.
+[criterion.expect_tiers]
+native-abi = "working"
+swift-scripting = "working"
+input-and-actions = "working"
+physics = "working"
+camera-system = "seed"
+audio = "seed"
+gameplay-framework = "seed"
+core-platform-abstraction = "working"
+
+# --- The boundary ---------------------------------------------------------------------------------------
+
+# TASK 6.2, AND IT IS THE CRITERION WITH THE LONGEST TAIL. Everything else on this list can be fixed
+# in the milestone that broke it. A reordered ABI entry cannot: by M5 the editor is compiled against
+# this table, and an ABI that has been reordered once is an ABI nobody can trust.
+[[criterion]]
+id = "abi-gate"
+describe = "the compatibility gate: the current interface table against its committed baseline, failing on anything but an append and printing the approval stanza a recorded break would take"
+source = "tasks 2.3, 6.2, design.md §1, ROADMAP M4"
+kind = "recipe"
+run = "just quality-abi"
+ci_job = "abi"
+
+[[criterion]]
+id = "abi"
+describe = "the flat C interface and everything that crosses it: opaque handles and POD structs, the versioned table read through a size prefix in both directions, values marshalled and released without a leak, errors as codes and never as exceptions, callbacks into modules, type registration from a module, and the reload sequence — including THE GATE'S OWN NEGATIVE CASES, which reorder an entry, remove one and append one against the real baseline"
+source = "tasks 2.1 to 2.8, 6.2, ROADMAP M4 (native-abi)"
+kind = "command"
+run = "just test-unit -R abi && just test-integration -R abi_"
+ci_job = "abi"
+
+[[criterion]]
+id = "swift-api"
+describe = "the Swift API tests in continuous integration: the overlay is what regeneration produces, the generator's own selftest, the package's cases under `swift test`, and a real Swift module loaded and driven by the engine's loader"
+source = "tasks 3.8, 6.7, ROADMAP M4 (Swift API tests run in continuous integration)"
+kind = "recipe"
+run = "just test-integration -R swift_"
+ci_job = "swift-api"
+
+# TASK 6.3, AS FAR AS IT GOES — see the note above about the half of it that is not satisfied.
+[[criterion]]
+id = "swift-reload"
+describe = "a Swift behaviour's state survives a reload across a LAYOUT CHANGE, carried by name through the module's own serializer — including an ARC-managed String, which the spike measured being read as 3.5e18 by the obvious implementation — and a module whose schema predates the blob is refused with the previous generation left live"
+source = "tasks 0.2, 3.7, 6.3, ROADMAP M4"
+kind = "recipe"
+run = "just test-integration -R swift_reload"
+ci_job = "swift-api"
+
+# TASK 3.9. Registered unconditionally and evaluated even on a machine with no Swift toolchain,
+# because it is a statement about the ENGINE's binaries — and it is most interesting exactly there,
+# where nobody would notice a Swift dependency until a user did.
+[[criterion]]
+id = "no-swift-runtime"
+describe = "the engine core links no Swift runtime, proven against the built binaries rather than asserted"
+source = "tasks 3.9"
+kind = "recipe"
+run = "just test-integration -R swift_no_runtime"
+ci_job = "swift-api"
+
+# --- The invariants this milestone pins ------------------------------------------------------------------
+
+# TASK 6.4. The suite holds it three independent ways, and the third is the one that matters: a
+# PARTIAL bypass — one axis through the command stream and one read from a side channel — runs
+# perfectly, validates, fills the log, and diverges only on replay. That is what the requirement is
+# actually protecting against, and it is invisible to every other kind of test.
+[[criterion]]
+id = "command-stream"
+describe = "the simulation reads input only through the validated command stream, proven by a test that bypasses it and fails: no input dependency on the gameplay module, no input member on the context a system is handed, and a partial bypass whose replay diverges"
+source = "tasks 4.4.3, 4.4.6, 6.4, design.md §3, ROADMAP M4"
+kind = "recipe"
+run = "just test-unit -R gameplay"
+ci_job = "command-stream"
+
+# TASK 6.6. The negative control at the end of the unit suite is what keeps this from passing
+# vacuously: it computes what "sample the current state each tick" would have answered on the same
+# events and requires the two to differ.
+[[criterion]]
+id = "input-fixed-tick"
+describe = "a press and a release between two ticks are both observed by the following tick, over the action layer and again against real SDL3 events — with the negative control that requires the level-sampling answer to differ"
+source = "tasks 4.1.4, 6.6, design.md §5, ROADMAP M4"
+kind = "command"
+run = "just test-unit -R input && just test-integration -R sdl3_input"
+ci_job = "input-fixed-tick"
+
+[[criterion]]
+id = "physics"
+describe = "the physics interface and the character controller: shapes, bodies, filtering, contact events, the four query kinds, fixed-step integration on the simulation clock, and DETERMINISM ACROSS RUNS ON ONE PLATFORM — the property M9's rollback is priced on"
+source = "tasks 4.2.1 to 4.2.6, 6.5, ROADMAP M4 (physics is deterministic across runs on one platform; the character controller test suite passes)"
+kind = "recipe"
+run = "just test-unit -R physics"
+ci_job = "physics"
+
+# The conformance half. The same cases, through the same interface, against Jolt — which is what
+# `physics`' "no gameplay code SHALL require changes" means as a check rather than as a promise.
+[[criterion]]
+id = "physics-jolt"
+describe = "the components, the events, the queries and the character controller over the Jolt backend, exercising the same interface the reference implementation satisfies"
+source = "tasks 4.2.2, 4.2.4, 4.2.5, ROADMAP M4"
+kind = "recipe"
+run = "just test-integration -R physics_"
+ci_job = "physics"
+
+# --- Camera and audio at Seed -------------------------------------------------------------------------------
+
+[[criterion]]
+id = "camera"
+describe = "the four separated concepts, the camera stack, follow and orbit, the lens model whose blend is over focal length rather than over field of view, the smoothing that composes over a variable step, and render view production"
+source = "tasks 4.3.1 to 4.3.3, ROADMAP M4 (camera-system)"
+kind = "recipe"
+run = "just test-unit -R camera"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "audio"
+describe = "the driver layer, the bus graph, playback, voice tiers and basic spatialisation — every case over the null backend, so they run on a machine with no sound card, and the miniaudio backend asserted on both outcomes rather than skipped"
+source = "tasks 4.3.4, 4.3.5, ROADMAP M4 (audio)"
+kind = "command"
+run = "just test-unit -R audio && just test-integration -R audio_"
+ci_job = "build-and-test"
+
+# --- The artefact ------------------------------------------------------------------------------------------
+
+# TASK 6.1, MEASURED RATHER THAN CLAIMED. The smoke test runs the sample, then runs THE SAME BINARY
+# with `--no-behaviours` — the same module, the same level built out of it, the same five servers,
+# the same scripted input through the same command stream, and neither deciding behaviour created.
+# The command log hashes identically and nothing moves. A grep can only fail on the words somebody
+# thought to forbid; this fails on any decision at all having leaked to the C++ side.
+[[criterion]]
+id = "sample-artefact"
+describe = "the artefact plays itself headless and exits cleanly — it moves, jumps, is blocked by the level, is heard and is followed by a camera — and the identical run with the Swift behaviours absent produces no motion, no sound and no camera movement while every line of the host still runs"
+source = "tasks 5.1, 5.3, 5.4, 6.1, ROADMAP M4"
+kind = "recipe"
+run = "just test-smoke -R character_sample"
+ci_job = "character-artefact"
+
+[[criterion]]
+id = "no-cpp-gameplay"
+describe = "the static half of the same claim: the Swift/C++ partition, one call into the game per tick, the direction of every component access against the boundary the game declares, and no copied tunable — with the check's own negative cases, which edit the live tree in memory and require each rule to reject its violation"
+source = "tasks 5.3, 6.1"
+kind = "recipe"
+run = "just test-integration -R character_no_cpp_gameplay"
+ci_job = "character-artefact"
+
+[[criterion]]
+id = "sample-recipe"
+describe = "just run-sample character runs the artefact through the workflow a contributor uses, rather than only through the test that links it"
+source = "tasks 5.2"
+kind = "recipe"
+run = "just run-sample character --ticks 120"
+ci_job = "character-artefact"
+
+# --- Every profile, and the sanitizers -------------------------------------------------------------------------
+
+# ONE BUILD DIRECTORY PER PROFILE, EVEN WHEN CY_BUILD_DIR IS SET — m2.toml's finding E, restated
+# because the failure it describes cost an agent an hour and would cost the next one the same.
+# CY_ASSERT is compiled out of Profile and Shipping, so a rule that is only an assertion is no rule
+# at all there: the ABI's borrow-epoch check, the command stream's validation and the input
+# resolver's arbitration are all comparisons rather than assertions for exactly that reason, and
+# this criterion is what would catch one that had quietly become an assertion.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including the Swift suites and the artefact's smoke test, which build the game module at swiftc -O in Profile and Shipping and at -Onone in the other two"
+source = "tasks 6.8"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# TASK 6.9, AND IT CARRIES A WORKAROUND THAT IS NOT MINE TO REMOVE. `just test-sanitize` builds the
+# dev profile, and CY_SHADER_SLANG now defaults to ON there (M3's carried-forward debt 1.4), so the
+# sanitized build compiles Slang's own code-generator tool under LeakSanitizer and the BUILD fails on
+# a third party's leak — `Slang::StringRepresentation::createWithCapacityAndLength` inside
+# `fiddle::Parser::parseFiddleNode`. It is a build-tool leak reached only because Slang is on by
+# default in dev, and it has nothing to do with the suites under test. So the sanitize tree is
+# configured with the front end off, which is what the ABI agent measured this against and what this
+# command does. THE REAL FIX belongs to whoever owns just/test.just: either exclude `_deps` from the
+# leak check, or have `test-sanitize` configure with -D CY_SHADER_SLANG=OFF itself.
+[[criterion]]
+id = "sanitizers"
+describe = "AddressSanitizer and UndefinedBehaviorSanitizer are clean over every suite M4 added — the ABI and its module loader, the input resolver, the physics interface and its character controller, the gameplay command stream, and the camera and audio servers"
+source = "tasks 6.9"
+kind = "command"
+run = "d=\"${CY_BUILD_DIR:-build}/m4-sanitize\"; for s in address undefined; do cmake -B \"$d/sanitize-$s\" -D CY_SHADER_SLANG=OFF > /dev/null || exit 1; done; for t in abi input physics gameplay camera audio; do CY_BUILD_DIR=\"$d\" just test-sanitize --sanitizer address --tests \"$t\" || exit 1; CY_BUILD_DIR=\"$d\" just test-sanitize --sanitizer undefined --tests \"$t\" || exit 1; done"
+timeout_s = 14400
+ci_job = "sanitizers"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M4's modules in the tree"
+source = "ROADMAP M4, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix, and neither has ever loaded a Swift game module"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be
+# most satisfied.
+[[criterion]]
+id = "m5-open"
+describe = "the M5 change exists — open, or closed and archived — so the ladder continues deliberately"
+source = "tasks 6.13"
+kind = "path"
+path = "openspec/changes/**/*m5*/proposal.md"
+ci_job = "milestone-m4"

@@ -8,6 +8,8 @@
 #   render.golden        the milestone's artefact photographed and compared against a committed
 #                        reference (task 6.3), plus the same frame through the null backend for a
 #                        structure-for-structure comparison (task 7.1).
+#   render.frames        MANY frames on the device, so a per-frame defect cannot survive to an
+#                        artefact as M3's recycled descriptor did (M4 task 1.3).
 #   render.null_frame    that same frame with NO GPU AT ALL (task 6.4).
 #   render.xr_prerequisites  the three deferred-scope checks tests/render/README.md has recorded
 #                        since M0 (task 6.5).
@@ -19,10 +21,10 @@
 #
 # TWO GROUPS, AND THE DIVIDING LINE IS WHETHER A DEVICE IS NEEDED.
 #
-#   conventions and golden need one to sample back from and to photograph, so they are declared only
-#   when CY_RENDERER_VULKAN is on — not declared and skipped, because a suite that always skips is a
-#   suite whose failure nobody would notice — and they SKIP loudly on a machine that has the backend
-#   compiled in and no GPU, naming the backend that was selected instead.
+#   conventions, golden and frames need one to sample back from and to photograph, so they are
+#   declared only when CY_RENDERER_VULKAN is on — not declared and skipped, because a suite that
+#   always skips is a suite whose failure nobody would notice — and they SKIP loudly on a machine
+#   that has the backend compiled in and no GPU, naming the backend that was selected instead.
 #
 #   null_frame and xr_prerequisites are declared ALWAYS. Everything they check is decided rather than
 #   drawn — which passes survive, how many barriers the derivation emitted, whether two runs agree,
@@ -57,7 +59,7 @@ function(cy_render_declare_tests)
         return()
     endif()
 
-    # --- The two suites that need one ------------------------------------------------------------
+    # --- The three suites that need one -----------------------------------------------------------
     cy_add_test(
         NAME golden
         KIND render
@@ -69,6 +71,16 @@ function(cy_render_declare_tests)
         # suite from its BINARY directory — so the source directory is compiled in rather than
         # reached by a relative path that would depend on where the run started.
         DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
+
+    # MANY FRAMES, task 1.3 of M4's carried-forward debt. Its own suite rather than another case in
+    # `render.golden`, because it needs no reference image at all: it compares the run against
+    # itself, which is an exact claim rather than one with a tolerance, and cannot be laundered by
+    # regenerating a golden file. See test_many_frames.cpp for what one-frame suites could not see.
+    cy_add_test(
+        NAME frames
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_many_frames.cpp"
+        DEPENDENCIES cy::sample-first-light cy::rhi-null cy::rhi-vulkan)
 
     cy_add_test(
         NAME conventions

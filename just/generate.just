@@ -9,6 +9,13 @@
 # headers and description (M4), the Swift overlay (M4) and the shader artefacts (M3) join these
 # recipes as they land.
 #
+# M4 added `generate-swift`, below. It is separate from `generate-headers` on purpose: the Swift
+# overlay is a function of the SOURCE — src/abi/include/cy/abi/cy_abi.h — and not of any build
+# configuration, so it needs no configured build directory and it is committed beside the reflection
+# metadata rather than written into a build tree. `just generate-swift --check` is the currency
+# gate, and it also runs as `integration.swift_overlay` under `just test-all`, so a stale overlay
+# fails for whoever builds the engine rather than only for whoever remembers this recipe.
+#
 # The two generators write to different places, for a reason worth stating. cy_features.h and
 # cy_modules.h are a function of the *configuration*, so they belong in the build directory and two
 # configurations of one checkout have different ones. The reflection metadata is a function of the
@@ -108,6 +115,19 @@ generate-check *args:
         exit 1
     fi
     echo "generation is reproducible"
+
+# Regenerate the CyberdyneKit Swift overlay from the C ABI. Pass --check to assert it is current.
+#
+# `swift-scripting`: "The overlay in `CyberdyneCore` SHALL be **generated** from the same ABI
+# description that produces the C headers, so the two cannot drift", and "Generated code SHALL be
+# committed to the repository so consumers do not need the generator, and CI SHALL verify it is up
+# to date."
+#
+# It needs no Swift toolchain: the generator is Python over the ABI description, and the check is a
+# diff over committed text. That is deliberate — the overlay's currency is everybody's problem, not
+# only that of the machines that can build Swift.
+generate-swift *args:
+    @cd "{{root}}" && python3 tools/gen/swift/overlay_gen.py {{args}}
 
 # Test the generators, the feature options and the module graph: dependencies, cycles, exclusion.
 generate-test *args:

@@ -144,9 +144,15 @@ endif()
 # above. A disabled option excludes the directory rather than compiling something that does nothing:
 # `build-system-and-platforms` requires exclusion, not a runtime stub.
 #
-# editor/ and bindings/ are absent here on purpose: Cargo owns the first and the Swift package
-# manager the second, and the C++ build does not reimplement either. CY_BUILD_EDITOR gates the
-# editor-layer modules (cmake/modules.cmake), not a subdirectory of this build.
+# editor/ is absent here on purpose: Cargo owns it, and the C++ build does not reimplement it.
+# CY_BUILD_EDITOR gates the editor-layer modules (cmake/modules.cmake), not a subdirectory.
+#
+# bindings/swift/ IS added, and it still does not build any Swift: the Swift package manager owns
+# that, and bindings/swift/CMakeLists.txt says so at length. What it adds is the CTest registration
+# for the Swift checks — the committed overlay's currency, `swift test`, the hot-reload fixture, and
+# task 3.9's proof that the engine core links no Swift runtime — so that `just test-all` runs them
+# rather than a second command nobody remembers. It comes after tests/ because it reads the test
+# taxonomy's budgets back out of tests/CMakeLists.txt instead of restating them.
 add_subdirectory(src)
 add_subdirectory(platform)
 add_subdirectory(modules)
@@ -159,6 +165,8 @@ if(CY_BUILD_TESTS)
     add_subdirectory(tests)
     add_subdirectory(benchmarks)
 endif()
+
+add_subdirectory(bindings/swift)
 
 add_subdirectory(samples)
 

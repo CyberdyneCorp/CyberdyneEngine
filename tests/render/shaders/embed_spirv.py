@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Turn the compiled convention probe into the checked-in C++ fixture header.
 
-The render suite must run in a build with no shader compiler — `CY_SHADER_SLANG` is off by default,
-and the machines that most need these checks are the ones least likely to have a Slang build — so
+The render suite must run in a build with no shader compiler — `CY_SHADER_SLANG` is off in Profile
+and Shipping, and the machines that most need these checks are the ones least likely to have a Slang
+build — so
 `conventions.slang` is compiled once, by hand, and embedded. This script is how that is done
 reproducibly rather than by pasting numbers.
 
@@ -28,7 +29,8 @@ HEADER = """#pragma once
 //
 // Produced by tests/render/shaders/embed_spirv.py from conventions.slang; that file's header comment
 // carries the exact slangc invocation. Checked in rather than compiled by the build because the
-// render suite must run with CY_SHADER_SLANG off, which is the default.
+// render suite must run in a build with NO shader compiler at all — which is every Profile and
+// Shipping build, and any build configured with -DCY_SHADER_SLANG=OFF.
 
 #include <cy/core/base/types.h>
 

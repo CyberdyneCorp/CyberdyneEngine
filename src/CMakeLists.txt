@@ -1,9 +1,9 @@
 # src/ — the engine layer stack. Subdirectories are added in layer order, low to high, so that a
 # target's dependencies are always already declared when it is.
 #
-# Only the directories that contain targets are added. servers/ and abi/ are still empty and are
-# added when they hold a target; adding an empty directory now would only hide which layers actually
-# exist.
+# Only the directories that contain targets are added; adding an empty directory would only hide
+# which layers actually exist. servers/ gained its first target at M3 and abi/ at M4, and both are
+# added below.
 add_subdirectory(core)
 
 # core/serialize and core/determinism are layer 0 and belong in src/core/CMakeLists.txt's list
@@ -31,4 +31,16 @@ add_subdirectory(servers)
 add_subdirectory(scene)
 add_subdirectory(rendering)
 
+# gameplay/ is layer 4 and arrives at M4 (section 4.4). It is read after scene/ and rendering/ and
+# before runtime/, which is where it sits in the stack: above the ECS and the servers, below the
+# loop that drives them. Its dependency list is short on purpose and the omission is the point —
+# see src/gameplay/CMakeLists.txt, and design.md §3.
+add_subdirectory(gameplay)
+
 add_subdirectory(runtime)
+
+# abi/ is layer 6 and arrives at M4 (section 2). It is read last because it is the top of the
+# engine's stack: the C ABI may name the ECS and the core, and nothing in the engine may name it
+# back. The comment at the top of this file said this directory would be added when it held a
+# target — it does now.
+add_subdirectory(abi)

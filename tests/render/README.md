@@ -30,7 +30,8 @@ round", which a picture cannot.
 The suite is **declared only when a rendering backend is compiled in**, and **skips loudly** on a
 machine that has one and no GPU, naming the backend that was selected instead. `shaders/` holds the
 Slang probe and its checked-in SPIR-V, compiled offline by `shaders/embed_spirv.py` for the same
-reason the shader suite's fixtures are: `CY_SHADER_SLANG` is off by default.
+reason the shader suite's fixtures are: a render suite must run in a build with no shader compiler,
+and `CY_SHADER_SLANG` is off in Profile and Shipping and can be turned off anywhere.
 
 ## The golden images — `render.golden`
 
@@ -45,6 +46,7 @@ the sample inside a milestone, and its references are then photographs of someth
 | the scene at 10<sup>6</sup> | it matches **the same reference file**. Not "close to": camera-relative rendering means the image is the same one, which is tasks 5.3 and 7.5 |
 | the sun's shadow off | it matches a *different* reference, **and** the two references differ. Without that control, a frame that had quietly stopped sampling the shadow map would pass the first two cases forever |
 | the null backend | the same frame through `cy::rhi-null`, compared to the device's structure for structure — passes, culls, submits, barriers, batches, ownership transfers, draws and triangles |
+| the frame after the ring turns | the same frame rendered `2 × frames_in_flight + 1` times still matches `references/first_light.png`. This is the regression case for the recycled-descriptor defect described below, and it is here rather than in `render.frames` because it is the one multi-frame claim that needs a committed image |
 
 **The tolerance is derived, not tuned.** `golden.h` carries the argument in full; in short:
 
@@ -77,10 +79,40 @@ writes each reference, prints its path, **and fails**. Failing is the mechanism:
 regenerated and then passed would let a run with that variable set in its environment launder a
 defect into the repository. Look at what it wrote, then commit it.
 
+## Many frames on the device — `render.frames`
+
+**M4 task 1.3, and it exists because of what M3's suites could not see.** Every device suite M3
+shipped rendered exactly one frame. That is how this reached the artefact:
+
+> `VulkanDevice::allocate_descriptor_set(layout, per_frame)` took the flag, recorded it, and then
+> allocated from the **current frame's** pool whichever value it had — and a frame pool is reset the
+> moment its slot comes round. A set the caller asked to be persistent was recycled after
+> `frames_in_flight` frames, and from that frame on every draw bound a `VkDescriptorSet` the driver
+> had already destroyed: **24 validation errors a frame from frame 3, on a run that still printed
+> "exit 0 (clean)"**.
+
+A one-frame suite cannot see a defect that begins at frame 3. Neither can a many-frame suite that
+looks at the error total afterwards without ever asking *which* frame broke.
+
+| Case | Asserts |
+|---|---|
+| validation stays clean over many turns of the ring | `frames_in_flight × 8 + 1` frames, each with a **different camera** so the per-frame uniform ring and descriptor pools genuinely turn over; validation is read **after every frame**, and the case reports the **first** frame at which it spoke. It also asserts the derivation does not change shape between steady-state frames — submits, passes, culls, barriers, batches, ownership transfers, transient bytes, `plan_hash`, draws and triangles — and that the upload pass is present on the first frame and absent afterwards, which `render.null_frame` asserts with no GPU and nothing asserted on one |
+| the frame at the end of a long run is bit-identical to the first | phase 0 captured before the orbit and again after it, compared **exactly**. No reference file and no tolerance: a descriptor that had quietly stopped naming the shadow map trips no validation layer, so silence is not the whole claim |
+| the orbit does change the image | the control. Without it, the case above would pass just as happily on a renderer that ignored the camera |
+
+**It compares the run against itself.** That is deliberate: nothing here can be laundered by
+regenerating a golden image, and "bit-identical" is a stronger claim than "within the tolerance".
+`device.h` is the shared fixture — a device with validation and **synchronisation** validation on,
+and a cumulative error count a case can read after each frame — and `render.golden` uses it too.
+
+The suite costs about half a second on an RTX 5060 and is declared, like the other device suites,
+only when `CY_RENDERER_VULKAN` is on; it skips loudly with no GPU.
+
 ## The same frame with no GPU — `render.null_frame`
 
-Task 6.4, and it matters more than the golden images. `render.golden` and `render.conventions` need
-a device and are not even declared without a backend; **this suite is declared always**, runs on
+Task 6.4, and it matters more than the golden images. `render.golden`, `render.conventions` and
+`render.frames` need a device and are not even declared without a backend; **this suite is declared
+always**, runs on
 every pull request on every platform, and checks the part of a frame that is decided rather than
 drawn.
 

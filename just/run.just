@@ -19,7 +19,10 @@ run-sample *args:
     # display server to choose between and takes a different command line entirely; M2's is
     # `just run-sample headless-sim` and M3's is `just run-sample first-light`, which renders the
     # milestone's frame through whichever RHI backend the build has — the null one on a default
-    # build, and Vulkan on a build configured with -D CY_RENDERER_VULKAN=ON.
+    # build, and Vulkan on a build configured with -D CY_RENDERER_VULKAN=ON. M4's is
+    # `just run-sample character`, whose gameplay is a Swift module the host loads over the C ABI:
+    # it is the one sample that is NOT BUILT AT ALL without a Swift toolchain, and the failure below
+    # then names it as an unbuilt sample rather than as a missing binary. `just env-doctor` says why.
     argv=(${rest})
     if [ "${#argv[@]}" -gt 0 ] && [[ "${argv[0]}" != --* ]]; then
         name="${argv[0]}"

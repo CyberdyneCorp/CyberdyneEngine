@@ -1,8 +1,8 @@
 # tests/smoke/ — the engine starts, does its job, and exits cleanly.
 #
 # Thirty seconds per test case, and the only suite that runs a whole binary rather than linking part
-# of one. Both tests here spawn a program and read what it produced, which is why the budget is what
-# it is: they measure the artefact, not a function.
+# of one. Every test here spawns a program and reads what it produced, which is why the budget is
+# what it is: they measure the artefact, not a function.
 #
 #   empty_sample   task 4.1.4 — samples/00-empty headless, a clean exit, and a trace with the shape
 #                  the capture format declares.
@@ -16,6 +16,18 @@
 #                  fixup and the coherence invariant read off the run's own report, the whole report
 #                  compared across twenty processes, and the state hash checked against a snapshot
 #                  restore. It is the M2 milestone gate.
+#
+#   character_sample  M4 task 5.4 — samples/04-character: a Swift character that moves, jumps,
+#                     collides, is heard and is followed, then THE SAME BINARY with
+#                     `--no-behaviours`, which is task 5.3's real check; then the same run twice,
+#                     compared line for line. It is the M4 milestone gate.
+#
+#                     ITS SOURCE IS HERE AND ITS DECLARATION IS NOT: see
+#                     samples/04-character/CMakeLists.txt. The root CMakeLists.txt adds tests/ before
+#                     samples/, so `cy_sample_character` does not exist yet at this point — and on a
+#                     machine with no Swift toolchain it never does, because the sample's gameplay IS
+#                     a Swift module. bindings/swift/ declares `integration.swift_reload` the same
+#                     way and for the same reason.
 #
 # The binaries under test are passed as their generator expressions, so a test cannot be run against
 # a path that does not exist or against a stale copy somewhere else in the tree.

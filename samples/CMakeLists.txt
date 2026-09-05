@@ -11,3 +11,9 @@ add_subdirectory(02-headless-sim)
 # host around it. tests/render/ links the first so that the golden images photograph the sample
 # rather than a copy of it — see 03-first-light/CMakeLists.txt for why that is worth the split.
 add_subdirectory(03-first-light)
+# M4's artefact is a THIRD shape again: one executable, and a game module that is not C++ at all.
+# samples/04-character/game/ is five Swift files built into a shared library by SwiftPM and loaded at
+# run time over the C ABI; host/ is the engine's side and decides nothing. The directory declares its
+# own smoke test and its own "no C++ gameplay" check, because on a machine with no Swift toolchain the
+# target does not exist and tests/ has already been added by the time this line runs.
+add_subdirectory(04-character)

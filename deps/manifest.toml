@@ -213,3 +213,37 @@ source_subdir = ""
 interface = "cy::shader::ShaderCompiler in src/backends/shader/slang/, which is the only directory that names a Slang symbol; the pipeline around it consumes SPIR-V"
 scope = "tool-time"
 justification = "The authoring language `shader-system` adopts, and the compiler that lowers it to SPIR-V. Writing a shading language is a multi-year commitment that competes directly with building the renderer; Slang supplies generics, interfaces, modules and multi-target output and is designed for exactly this use."
+
+[[dependency]]
+name = "jolt"
+version = "5.6.0"
+tag = "v5.6.0"
+commit = "e77f175595e64cb44218cc9d9d56fc365ad0e36a"
+repository = "https://github.com/jrouwe/JoltPhysics"
+licence = "MIT"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_PHYSICS"
+system_package = false
+cmake_target = "Jolt"
+source_subdir = "Build"
+interface = "cy::physics::PhysicsServer in src/servers/physics/, implemented by src/backends/physics-jolt/, which is the only directory that names a JPH symbol"
+scope = "runtime"
+justification = "A mature, multithreaded, deterministic rigid-body solver under a permissive licence. Writing a competitive solver is a multi-year effort with no differentiating value for this engine, and `physics` says so outright."
+
+[[dependency]]
+name = "miniaudio"
+version = "0.11.24"
+tag = "0.11.24"
+commit = "347321b27c58d42567e905c715de60ad43a6cb8e"
+repository = "https://github.com/mackron/miniaudio"
+licence = "MIT-0"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_AUDIO"
+system_package = false
+cmake_target = "miniaudio"
+source_subdir = ""
+interface = "cy::audio::AudioBackend in src/servers/audio/, implemented by src/backends/audio-miniaudio/, which is the only directory that names an ma_ symbol"
+scope = "runtime"
+justification = "Device I/O, sample-rate and channel conversion, decoding and streaming across every platform this engine targets, in one permissively licensed file. `audio` names it as the default backend and bounds what it is used for: the engine's own bus graph, voice management and spatialisation policy sit above it, and miniaudio's node graph, high-level engine API and 3D spatialisation are deliberately not used. Offered as public domain or MIT-0 and taken under MIT-0."

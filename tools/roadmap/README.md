@@ -16,7 +16,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | Path | Is |
 |---|---|
 | `docs/roadmap/status.yaml` | The record. One entry per capability: tier, the milestone that last advanced it, the change that did so. Not owned by this directory — owned by whoever advances a capability. |
-| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. `m0.toml` through `m3.toml` today; M4 through M11 add a file each and change no code — M3 added one line of code, the `gpu` requirement below, because it is the first milestone whose criteria need hardware. |
+| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. `m0.toml` through `m4.toml` today; M5 through M11 add a file each and should change no code — M3 added one line, the `gpu` requirement below, because it is the first milestone whose criteria need hardware, and M4 added the `MINIMUM_CRITERIA` floors below, because its ledger was otherwise covered by nothing. |
 | `tools/roadmap/gates.toml` | The permanent merge-gate set, and the overrides recorded against it. |
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
 | `roadmap.py` | The command line behind the recipes. |
@@ -124,24 +124,38 @@ M1 is the first milestone to have to obey that rule, and it did not: two of its 
 findings against the `lint` gate M0 closed with, which turned `just roadmap-milestone m0` red. So
 `m1.toml`'s first criterion runs `just roadmap-milestone m0` — the rule as something the closing
 recipe executes rather than something a reviewer is expected to remember. Every milestone ledger
-after this one carries the same criterion for the milestone before it, `m2.toml` and `m3.toml`
-included, and `selftest.py` checks each rung — **derived from the ledgers rather than listed**, so
+after this one carries the same criterion for the milestone before it, `m2.toml`, `m3.toml`
+and `m4.toml` included, and `selftest.py` checks each rung — **derived from the ledgers rather
+than listed**, so
 that the check itself is not one more thing the next author has to extend. The omission is invisible
 until the day it matters, which is the day somebody closes a milestone on a broken one.
 
-**The flip is the part that keeps being forgotten.** A milestone's gate carries
-`state = "joins-on-close"` until it closes and `state = "green"` from then on, and three times in a
-row the flip has been done a milestone late: M0's and M1's were both flipped while M2 was closing,
-and M2's while M3 was. The reminder in `gates.toml` demonstrably does not work. What would work is
-`roadmap-test` failing when a milestone has a ledger, an archived change under
-`openspec/changes/archive/`, and a gate still at `joins-on-close` — the archive path is the fact a
-tool can read. That check does not exist yet; it is recorded in `gates.toml` beside the M2 entry
-because it needs a rule about what "closed" means that this directory does not yet carry.
+**The flip used to be the part that kept being forgotten, and it is now a check.** A milestone's
+gate carries `state = "joins-on-close"` until it closes and `state = "green"` from then on, and three
+times in a row the flip was done a milestone late: M0's and M1's were both flipped while M2 was
+closing, and M2's while M3 was. The reminder in `gates.toml` demonstrably did not work — a comment
+addressed to whoever reads the file next is not a check.
+
+So `roadmap-test` now reads `openspec/changes/archive/` and fails when a milestone has a ledger, an
+archived change, and a gate still at `joins-on-close`. The archive path is the fact a tool can read,
+and M3's flip was the last one that depended on somebody remembering: **M3's own gate was already
+`green` when M4 came to close**, which is the first time in four milestones that has been true. The
+check does not fire for the milestone being closed right now, whose change is archived after its
+recipe passes — so the closing change still sets its own state, and the check catches it on the very
+next pull request if it did not.
 
 `just roadmap-test` checks the ladder itself on every pull request: every ledger under
 `milestones/` loads, every criterion in it names a gate that exists, every milestone with a ledger
 has a `class = "milestone"` gate for its criteria to join, and each rung runs the one below it. The
 milestone recipes each take a working session, so a ledger that has stopped loading has to fail
 somewhere cheaper than the day somebody tries to close a milestone.
+
+It also checks that no ledger is a token gesture: `selftest.py`'s `MINIMUM_CRITERIA` records the
+fewest criteria each milestone may carry, from its `ROADMAP.md` row and its section 6. That table
+used to be one hand-written check per milestone, which made it one more thing the next author had to
+extend — and it was not extended, so **M4's ledger landed covered by nothing**. The floors are now
+data and the last check over them is the one that matters: a ledger under `milestones/` with no
+floor recorded **fails**, rather than being quietly unchecked. Adding a milestone therefore forces a
+deliberate answer to "how many exit conditions does this have", which is the question the floor asks.
 
 **Governed by**: `delivery-roadmap`, `testing-and-quality` (Quality gates for merge).

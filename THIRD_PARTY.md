@@ -29,6 +29,8 @@ whole table.
 | [volk](https://github.com/zeux/volk) | 1.4.304 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
 | [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) | 3.3.0 | MIT | `CY_RENDERER_VULKAN` is on | a shipped game |
 | [slang](https://github.com/shader-slang/slang) | 2026.9.2 | Apache-2.0 WITH LLVM-exception | `CY_SHADER_SLANG` is on | the editor and the cooker only |
+| [jolt](https://github.com/jrouwe/JoltPhysics) | 5.6.0 | MIT | `CY_PHYSICS` is on | a shipped game |
+| [miniaudio](https://github.com/mackron/miniaudio) | 0.11.24 | MIT-0 | `CY_AUDIO` is on | a shipped game |
 
 ## Host prerequisites, which are not linked and not shipped
 
@@ -155,6 +157,30 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: `CY_SHADER_SLANG` is on
 - **Linked into**: the editor and the cooker only
 - **Why integrated rather than built**: The authoring language `shader-system` adopts, and the compiler that lowers it to SPIR-V. Writing a shading language is a multi-year commitment that competes directly with building the renderer; Slang supplies generics, interfaces, modules and multi-target output and is designed for exactly this use.
+
+### jolt 5.6.0
+
+- **Upstream**: https://github.com/jrouwe/JoltPhysics
+- **Pinned at**: `e77f175595e64cb44218cc9d9d56fc365ad0e36a` (`v5.6.0`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE`](https://github.com/jrouwe/JoltPhysics/blob/e77f175595e64cb44218cc9d9d56fc365ad0e36a/LICENSE), and
+  `LICENSE` at the root of the fetched source in any configured build tree
+- **Behind**: cy::physics::PhysicsServer in src/servers/physics/, implemented by src/backends/physics-jolt/, which is the only directory that names a JPH symbol
+- **Included when**: `CY_PHYSICS` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: A mature, multithreaded, deterministic rigid-body solver under a permissive licence. Writing a competitive solver is a multi-year effort with no differentiating value for this engine, and `physics` says so outright.
+
+### miniaudio 0.11.24
+
+- **Upstream**: https://github.com/mackron/miniaudio
+- **Pinned at**: `347321b27c58d42567e905c715de60ad43a6cb8e` (`0.11.24`)
+- **Licence**: MIT-0
+- **Licence text**: [`LICENSE`](https://github.com/mackron/miniaudio/blob/347321b27c58d42567e905c715de60ad43a6cb8e/LICENSE), and
+  `LICENSE` at the root of the fetched source in any configured build tree
+- **Behind**: cy::audio::AudioBackend in src/servers/audio/, implemented by src/backends/audio-miniaudio/, which is the only directory that names an ma_ symbol
+- **Included when**: `CY_AUDIO` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Device I/O, sample-rate and channel conversion, decoding and streaming across every platform this engine targets, in one permissively licensed file. `audio` names it as the default backend and bounds what it is used for: the engine's own bus graph, voice management and spatialisation policy sit above it, and miniaudio's node graph, high-level engine API and 3D spatialisation are deliberately not used. Offered as public domain or MIT-0 and taken under MIT-0.
 
 ### clang 18.1.8
 

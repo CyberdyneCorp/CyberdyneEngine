@@ -251,6 +251,78 @@ platforms = ["linux"]
 since = "m3"
 class = "permanent"
 
+# --- The gates M4 — Playable added ----------------------------------------------------------------
+#
+# The proposal's "New permanent gates" are three: the ABI compatibility check, Swift API tests, and a
+# check that the sample contains no C++ gameplay code. Declared below, together with the three
+# invariants M4 built and would otherwise have left ungated — the one command stream, fixed-tick
+# input, and physics determinism. Every one is a property a change can break without breaking a test
+# that names it, which is the standard the M1, M2 and M3 blocks above set.
+#
+# WHAT IS NOT HERE. There is no `camera` or `audio` gate. Both capabilities land at Seed, both are
+# covered by `just test-all` in the build-and-test gate, and neither carries an invariant that a
+# later milestone can silently undo — which is what separates a gate from a suite. A gate declared
+# for every module is a gate list nobody reads.
+#
+# Each names commands that already run in .github/workflows/ci.yml's `playable` job. That is not a
+# coincidence: `just ci-check` fails when a permanent gate declared here is run by no job there, so
+# a gate is declared and its job lands in the same change, or neither does.
+
+[[gate]]
+id = "abi"
+describe = "THE COMPATIBILITY OBLIGATION, AND IT IS THE ONE THAT NEVER ENDS. `just quality-abi` compares the current interface table against a committed baseline and fails on anything but an append — a reorder, a removal, a changed signature — printing the approval stanza it would take to record a break. The gate's own selftest edits the LIVE header in memory and runs the real gate against the real baseline, so a parser that stopped recognising the table fails there rather than passing two fixtures that both describe nothing. The suites beside it hold the rest: the layout the description is derived under is asserted against the compiler's own sizeof and offsetof, and the loader is held to the reload sequence over C modules. By M5 the editor is compiled against this table; the window in which reordering it is cheap closed at the first exported symbol."
+runs = [
+    "just quality-abi",
+    "just test-unit -R abi",
+    "just test-integration -R abi_",
+]
+platforms = ["linux"]
+since = "m4"
+class = "permanent"
+
+[[gate]]
+id = "swift-api"
+describe = "The Swift overlay and the game modules built against it. Two of these need no Swift toolchain and run everywhere — the committed overlay is what regeneration produces (a stale overlay is caught by whoever builds the ENGINE, not only by whoever builds Swift), and the engine's own binaries link no Swift runtime, which is most interesting on a machine that has none. The other three need one: the package's own tests, and a real Swift module hot-reloaded by the engine's loader across a layout change — carrying an ARC-managed `String` by name, which is the only migration the hot-reload spike found that works. `swift-scripting` also requires standard tooling to keep working, which is why the package is built by SwiftPM rather than by this build."
+runs = ["just test-integration -R swift_"]
+platforms = ["linux"]
+since = "m4"
+class = "permanent"
+
+[[gate]]
+id = "command-stream"
+describe = "ONE VALIDATED COMMAND STREAM, AND THE TEST THAT BYPASSES IT AND FAILS. `gameplay-framework`'s M4 invariant, and the reason it is a gate rather than a suite: replay, rollback and lockstep are one command log read three ways, which is only true if the log is complete. A single system that reads a device directly does not merely bypass the stream — it makes the M9 guarantees unachievable until somebody finds it, and nothing points at it, because everything works until a desync months later. The suite holds the invariant three independent ways: `cy::gameplay` declares no dependency on `cy::servers-input` so an input header is not on its include path, the gameplay context has no input member, and a PARTIAL bypass — one axis through the stream and one from a side channel — runs perfectly, validates, fills the log, and then diverges on replay."
+runs = ["just test-unit -R gameplay"]
+platforms = ["linux"]
+since = "m4"
+class = "permanent"
+
+[[gate]]
+id = "input-fixed-tick"
+describe = "A button pressed and released BETWEEN two ticks is observed as both by the tick that follows. design.md §5, and the requirement most likely to be implemented as `sample the current state each tick` — which passes every manual test and loses input precisely when the frame rate is uneven. The unit suite asserts it over the action layer and ends with a NEGATIVE CONTROL that computes what level sampling would have answered on the same events and requires the two to differ, so a refactor that made the accumulating path degenerate cannot leave the file passing vacuously. The integration suite asserts the platform half against real SDL3 events, which need no display and so run headless."
+runs = ["just test-unit -R input", "just test-integration -R sdl3_input"]
+platforms = ["linux"]
+since = "m4"
+class = "permanent"
+
+[[gate]]
+id = "physics"
+describe = "`PhysicsServer` and everything behind it, and the suites are CONFORMANCE suites rather than tests of one backend: the same cases run over the reference implementation that is always built and over Jolt, because `physics` requires that swapping the backend change no gameplay code, component or asset — and a character that walks differently after a swap has changed gameplay whether or not any code moved. The character controller is engine code over shape casts for exactly that reason. Determinism across runs on one platform is in here too, which is the property M9's rollback is priced on."
+runs = ["just test-unit -R physics", "just test-integration -R physics_"]
+platforms = ["linux"]
+since = "m4"
+class = "permanent"
+
+[[gate]]
+id = "character-artefact"
+describe = "THE SAMPLE CONTAINS NO C++ GAMEPLAY CODE, checked twice and the weaker check is the grep. The static half partitions the directory (Swift under game/, C++ under host/), requires exactly one call into the game per tick, checks THE DIRECTION OF EVERY COMPONENT ACCESS against the boundary the game declares — a host that wrote into `CharacterDrive` would be choosing the character's velocity — and refuses a copied tunable; it has its own negative cases, which edit the live tree in memory. The strong half is a RUN: the same binary with `--no-behaviours` loads the same module, builds the same level from it, brings up the same five servers and pushes the same scripted input through the same command stream with the two deciding behaviours not created. The command log hashes identically and nothing moves. A static check can only fail on the words somebody thought to forbid; this one fails on any decision at all having leaked to the C++ side. THE SAMPLE IS ABSENT WITHOUT A SWIFT TOOLCHAIN rather than skipping — its gameplay IS a Swift module — so this gate is a statement about a machine that can build one."
+runs = [
+    "just test-smoke -R character_sample",
+    "just test-integration -R character_no_cpp_gameplay",
+]
+platforms = ["linux"]
+since = "m4"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;
@@ -346,6 +418,33 @@ since = "m3"
 class = "milestone"
 milestone = "m3"
 state = "green"
+
+# M4 is NOT closed by the change that carries this line, and the state says so. Sections 5 and 6 of
+# openspec/changes/implement-m4-playable/tasks.md are separate: this change lands the artefact, the
+# ledger and the gates, and the milestone closes when `just roadmap-milestone m4` passes in every
+# profile and the change is archived — which is task 6.10 and task 6.12, and neither is a thing this
+# file can assert about itself.
+#
+# THE FLIP IS NO LONGER A THING SOMEBODY HAS TO REMEMBER. `just roadmap-test` reads
+# openspec/changes/archive/ and fails when a milestone whose change is archived still has a gate at
+# `joins-on-close`, which is the check M2's block above asked for and M3's block landed. So archiving
+# this change without flipping the line below turns `roadmap-test` red, in the `roadmap` job, on the
+# next pull request. That is the difference between this entry and the three above it, each of which
+# records an omission that had already cost something.
+#
+# What it will cost when it is flipped is the same as M1's, M2's and M3's: a pull request runs `just
+# roadmap-milestone m4`, whose first criterion is M3's whole set, which runs M2's, which runs M1's,
+# which runs M0's. One criterion carries the whole ladder, which is the point.
+
+[[gate]]
+id = "milestone-m4"
+describe = "M4 — Playable: the exit criteria of the milestone that opened the C ABI, generated the Swift overlay, and made gameplay something you write in Swift."
+runs = ["just roadmap-milestone m4"]
+platforms = ["linux", "windows", "macos"]
+since = "m4"
+class = "milestone"
+milestone = "m4"
+state = "joins-on-close"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

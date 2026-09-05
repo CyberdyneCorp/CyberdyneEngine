@@ -122,6 +122,45 @@ quality-identity *args:
     python3 tools/gen/reflect_gen.py --source-root . "${reflect_args[@]}" \
         --cache "${build_dir}/generated/cy_reflect_gate.json" --gate ${rest}
 
+# The ABI compatibility gate. `native-abi` requires that the build "generate a machine-readable
+# description of the ABI (function names, signatures, struct layouts, enum values)" and that CI
+# "diff it against the committed baseline", failing on "any change other than an append ... unless
+# accompanied by an explicit, reviewed approval entry".
+#
+# design.md §1 fixes WHEN it lands: with the first exported symbol, not the first consumer. The
+# obligation starts the moment anything links the table, and by M5 that is the editor — so the window
+# in which a reordering is cheap is M4 and no other.
+#
+# Three failures it produces, each naming the entry and the key an approval would use:
+#
+#   * a reordered or removed table entry, or one whose signature changed — a module calls the slot,
+#     not the name, and none of those fails to compile anywhere;
+#   * a struct member inserted, removed or retyped, or an enum value changed;
+#   * a table that grew without CY_ABI_MINOR being incremented, which would make
+#     `cy_get_interface(1, 0)` and `cy_get_interface(1, 1)` return the same table while meaning
+#     different things.
+#
+# It needs no build: the description is computed from the declarations in cy/abi/cy_abi.h under the
+# layout model the C ABI fixes, and src/abi/tests/test_layout.cpp is what checks that model against
+# the compiler. So this recipe runs on a bare checkout, which is what lets it be the cheapest gate in
+# the set.
+#
+#   just quality-abi              check the header against src/abi/abi_baseline.json
+#   just quality-abi --selftest   prove the gate still refuses a reorder, a removal and a break
+#   just quality-abi --update     accept the current header as the new baseline
+
+# Check the C ABI against its committed baseline: appends pass, everything else is named and refused.
+quality-abi *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if [ "{{args}}" = "--selftest" ]; then
+        echo "==> abi-gate    the gate's own negative fixtures"
+        exec python3 tools/abi/selftest.py
+    fi
+    echo "==> abi-gate    src/abi/include/cy/abi/cy_abi.h against src/abi/abi_baseline.json"
+    python3 tools/abi/abi_gate.py {{args}}
+
 # Validate the specification set: openspec validate --specs --strict. Seconds.
 quality-specs *args:
     #!/usr/bin/env bash
@@ -222,6 +261,13 @@ _cpp-roots *paths:
 # Every C and C++ file under those roots, one per line. Build trees are excluded by name rather than
 # by location, because a developer's build/ is not always where the presets put it.
 #
+# `.build` is the Swift package manager's scratch directory, and it is named here for the same
+# reason: `swift build` in bindings/swift/ checks out swift-syntax into it, whose C shim headers are
+# a third party's and are not formatted to this project's .clang-format. Without this, a machine that
+# had ever run `swift test` failed the formatting gate on somebody else's headers.
+# bindings/swift/tools/cy_swift_module.py points SwiftPM's scratch at build/ so that the engine's own
+# recipes never create one, but a developer running `swift build` by hand still does.
+#
 # tools/layercheck/fixtures/ is excluded for the same reason tools/layercheck/layercheck.py excludes
 # it from its own scan: those files are inputs to a checker rather than engine code, and several are
 # deliberately malformed.
@@ -233,7 +279,7 @@ _cpp-files *paths:
     for target in $(just _cpp-roots {{paths}}); do
         [ -e "${target}" ] || continue
         find "${target}" \
-            \( -type d \( -name 'build*' -o -name '.git' -o -name '_deps' \) -prune \) -o \
+            \( -type d \( -name 'build*' -o -name '.build' -o -name '.git' -o -name '_deps' \) -prune \) -o \
             \( -type d -path '*/layercheck/fixtures' -prune \) -o \
             -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' -o -name '*.c' \
                      -o -name '*.h' -o -name '*.hpp' -o -name '*.inl' \) -print

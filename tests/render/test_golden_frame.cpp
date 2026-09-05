@@ -45,12 +45,9 @@
 
 #include <cy/test/test.h>
 
-#include <cy/backends/rhi/backend.h>
-#include <cy/backends/rhi/null/null_device.h>
-#include <cy/backends/rhi/validation.h>
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
-#include <cy/core/memory/system_allocator.h>
+#include <cy/backends/rhi/device.h>
 
+#include "device.h"
 #include "golden.h"
 #include "renderer.h"
 #include "scene.h"
@@ -60,6 +57,7 @@
 
 namespace {
 
+using cy::render_test::DeviceFixture;
 using cy::sample::first_light::Camera;
 using cy::sample::first_light::FrameReport;
 using cy::sample::first_light::Renderer;
@@ -85,75 +83,12 @@ bool updating_references() noexcept {
     return value != nullptr && value[0] != '\0' && value[0] != '0';
 }
 
-void print_validation(cy::rhi::ValidationSeverity severity, const char* message,
-                      void* user) noexcept {
-    if (severity == cy::rhi::ValidationSeverity::Error) {
-        ++*static_cast<cy::u32*>(user);
-    }
-    std::fprintf(stderr, "vulkan validation %s: %s\n",
-                 severity == cy::rhi::ValidationSeverity::Error ? "error" : "warning",
-                 message != nullptr ? message : "");
-}
-
-/// A device and the sample's renderer over it. Every case builds its own, for the reason
-/// probe.h records: synchronisation validation keeps per-queue state for the process's lifetime and
-/// recycled handles across two devices produce phantom cross-test hazards. (M3 spike, gotcha 6e.)
-class GoldenFixture {
-public:
-    explicit GoldenFixture(const char* backend) noexcept
-        : allocator_(cy::system_allocator(cy::MemoryDomain::Gpu)) {
-        (void)cy::rhi::vulkan::register_vulkan_backend();
-        (void)cy::rhi::null::register_null_backend();
-
-        cy::rhi::DeviceDescription description;
-        description.application_name = "cy_test_render_golden";
-        description.enable_validation = true;
-        description.enable_synchronisation_validation = true;
-        description.request_async_compute = false;
-        device_ = cy::rhi::create_device(allocator_, backend, description, selection_);
-        if (device_.has_value()) {
-            device_.value()->set_validation_callback(&print_validation, &validation_errors_);
-        }
-    }
-
-    ~GoldenFixture() {
-        if (device_.has_value()) {
-            (void)device_.value()->wait_idle();
-            cy::rhi::destroy_device(allocator_, device_.value());
-        }
-    }
-
-    GoldenFixture(const GoldenFixture&) = delete;
-    GoldenFixture& operator=(const GoldenFixture&) = delete;
-
-    [[nodiscard]] bool is(cy::rhi::BackendKind kind) const noexcept {
-        return device_.has_value() && device_.value()->capabilities().backend() == kind;
-    }
-    [[nodiscard]] cy::rhi::Device& device() const noexcept { return *device_.value(); }
-    [[nodiscard]] cy::Allocator& allocator() const noexcept { return allocator_; }
-    [[nodiscard]] cy::u32 validation_errors() const noexcept { return validation_errors_; }
-
-    void report_skip() const noexcept {
-        std::fprintf(stderr,
-                     "no Vulkan device on this machine; the backend selected was '%s' because %s\n",
-                     selection_.selected != nullptr ? selection_.selected : "(none)",
-                     selection_.reason != nullptr ? selection_.reason : "(no reason given)");
-    }
-
-private:
-    cy::Allocator& allocator_;
-    cy::rhi::BackendSelection selection_{};
-    cy::u32 validation_errors_ = 0;
-    cy::Expected<cy::rhi::Device*, cy::Error> device_ =
-        cy::fail(cy::ErrorCode::Unavailable, "not created");
-};
-
 /// Render the sample's frame once, at the first phase of its orbit, and hand back the colour
 /// target.
 ///
 /// Phase 0 rather than a phase somebody liked: it is the only phase a reader can reproduce from the
 /// scene alone, and `--frames 1` on the sample is the same frame.
-cy::Status render_scene(GoldenFixture& fixture, const SceneDescription& description,
+cy::Status render_scene(DeviceFixture& fixture, const SceneDescription& description,
                         cy::render_test::Image& out, FrameReport& report) {
     Scene scene(fixture.allocator());
     if (cy::Status built = scene.build(description); !built) {
@@ -230,7 +165,7 @@ bool check_against_reference(const cy::render_test::Image& rendered, const char*
 }  // namespace
 
 CY_TEST_CASE("render.golden: the lit, textured, shadowed scene matches its reference") {
-    GoldenFixture fixture("vulkan");
+    DeviceFixture fixture("vulkan", "cy_test_render_golden");
     if (!fixture.is(cy::rhi::BackendKind::Vulkan)) {
         fixture.report_skip();
         return;
@@ -271,7 +206,7 @@ CY_TEST_CASE("render.golden: the lit, textured, shadowed scene matches its refer
 // notice a set that had quietly stopped naming the shadow map.
 // ==================================================================================================
 CY_TEST_CASE("render.golden: the frame survives more frames than the device holds in flight") {
-    GoldenFixture fixture("vulkan");
+    DeviceFixture fixture("vulkan", "cy_test_render_golden");
     if (!fixture.is(cy::rhi::BackendKind::Vulkan)) {
         fixture.report_skip();
         return;
@@ -302,7 +237,7 @@ CY_TEST_CASE("render.golden: the frame survives more frames than the device hold
 }
 
 CY_TEST_CASE("render.golden: the same scene a million units out is the same image") {
-    GoldenFixture fixture("vulkan");
+    DeviceFixture fixture("vulkan", "cy_test_render_golden");
     if (!fixture.is(cy::rhi::BackendKind::Vulkan)) {
         fixture.report_skip();
         return;
@@ -324,7 +259,7 @@ CY_TEST_CASE("render.golden: the same scene a million units out is the same imag
 }
 
 CY_TEST_CASE("render.golden: with the sun's shadow off the image is a different one") {
-    GoldenFixture fixture("vulkan");
+    DeviceFixture fixture("vulkan", "cy_test_render_golden");
     if (!fixture.is(cy::rhi::BackendKind::Vulkan)) {
         fixture.report_skip();
         return;
@@ -354,7 +289,7 @@ CY_TEST_CASE("render.golden: with the sun's shadow off the image is a different 
 }
 
 CY_TEST_CASE("render.golden: the null backend derives the same frame the device does") {
-    GoldenFixture vulkan("vulkan");
+    DeviceFixture vulkan("vulkan", "cy_test_render_golden");
     if (!vulkan.is(cy::rhi::BackendKind::Vulkan)) {
         vulkan.report_skip();
         return;
@@ -363,7 +298,7 @@ CY_TEST_CASE("render.golden: the null backend derives the same frame the device 
     FrameReport device_report{};
     CY_REQUIRE(render_scene(vulkan, SceneDescription{}, on_device, device_report).has_value());
 
-    GoldenFixture null("null");
+    DeviceFixture null("null", "cy_test_render_golden");
     CY_REQUIRE(null.is(cy::rhi::BackendKind::Null));
     cy::render_test::Image on_null(null.allocator());
     FrameReport null_report{};

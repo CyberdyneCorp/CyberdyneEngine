@@ -1,0 +1,981 @@
+{
+  "abi": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "functions": [
+    {
+      "name": "cy_result_name",
+      "parameters": [
+        "CyResult"
+      ],
+      "returns": "const char*"
+    },
+    {
+      "name": "cy_get_interface",
+      "parameters": [
+        "uint32_t",
+        "uint32_t"
+      ],
+      "returns": "const CyInterface*"
+    }
+  ],
+  "table": {
+    "entries": [
+      {
+        "index": 0,
+        "name": "header",
+        "type": "CyInterfaceHeader"
+      },
+      {
+        "index": 1,
+        "name": "log",
+        "type": "void(*)(CyEngine, uint32_t, const char*)"
+      },
+      {
+        "index": 2,
+        "name": "get_last_error",
+        "type": "const char*(*)()"
+      },
+      {
+        "index": 3,
+        "name": "get_last_error_code",
+        "type": "CyResult(*)()"
+      },
+      {
+        "index": 4,
+        "name": "set_last_error",
+        "type": "void(*)(CyResult, const char*)"
+      },
+      {
+        "index": 5,
+        "name": "var_make_string",
+        "type": "CyVar(*)(CyEngine, const char*, uint64_t)"
+      },
+      {
+        "index": 6,
+        "name": "var_make_bytes",
+        "type": "CyVar(*)(CyEngine, const void*, uint64_t)"
+      },
+      {
+        "index": 7,
+        "name": "var_clone",
+        "type": "CyVar(*)(const CyVar*)"
+      },
+      {
+        "index": 8,
+        "name": "var_release",
+        "type": "void(*)(CyVar*)"
+      },
+      {
+        "index": 9,
+        "name": "var_live_count",
+        "type": "uint64_t(*)(CyEngine)"
+      },
+      {
+        "index": 10,
+        "name": "engine_world",
+        "type": "CyWorld(*)(CyEngine)"
+      },
+      {
+        "index": 11,
+        "name": "world_create_entity",
+        "type": "CyEntity(*)(CyWorld)"
+      },
+      {
+        "index": 12,
+        "name": "world_destroy_entity",
+        "type": "CyResult(*)(CyWorld, CyEntity)"
+      },
+      {
+        "index": 13,
+        "name": "world_entity_alive",
+        "type": "bool(*)(CyWorld, CyEntity)"
+      },
+      {
+        "index": 14,
+        "name": "world_epoch",
+        "type": "uint64_t(*)(CyWorld)"
+      },
+      {
+        "index": 15,
+        "name": "world_register_component",
+        "type": "CyComponentTypeId(*)(CyWorld, const CyComponentTypeDesc*)"
+      },
+      {
+        "index": 16,
+        "name": "world_find_component",
+        "type": "CyComponentTypeId(*)(CyWorld, const char*)"
+      },
+      {
+        "index": 17,
+        "name": "world_add_component",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, const void*)"
+      },
+      {
+        "index": 18,
+        "name": "world_remove_component",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId)"
+      },
+      {
+        "index": 19,
+        "name": "world_has_component",
+        "type": "bool(*)(CyWorld, CyEntity, CyComponentTypeId)"
+      },
+      {
+        "index": 20,
+        "name": "world_borrow_component",
+        "type": "CyBorrow(*)(CyWorld, CyEntity, CyComponentTypeId)"
+      },
+      {
+        "index": 21,
+        "name": "borrow_valid",
+        "type": "bool(*)(CyWorld, CyBorrow)"
+      },
+      {
+        "index": 22,
+        "name": "component_get_var",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyVar*)"
+      },
+      {
+        "index": 23,
+        "name": "component_set_var",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, const CyVar*)"
+      },
+      {
+        "index": 24,
+        "name": "component_get_f32",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float*)"
+      },
+      {
+        "index": 25,
+        "name": "component_set_f32",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float)"
+      },
+      {
+        "index": 26,
+        "name": "component_get_vec3",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float*)"
+      },
+      {
+        "index": 27,
+        "name": "component_set_vec3",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, const float*)"
+      },
+      {
+        "index": 28,
+        "name": "register_behaviour",
+        "type": "CyBehaviourType(*)(CyEngine, const char*, const CyBehaviourVTable*)"
+      },
+      {
+        "index": 29,
+        "name": "find_behaviour",
+        "type": "CyBehaviourType(*)(CyEngine, const char*)"
+      },
+      {
+        "index": 30,
+        "name": "behaviour_generation",
+        "type": "uint32_t(*)(CyBehaviourType)"
+      }
+    ],
+    "name": "CyInterface",
+    "size": 256
+  },
+  "types": [
+    {
+      "kind": "handle",
+      "name": "CyEngine",
+      "tag": "CyEngine_T"
+    },
+    {
+      "kind": "handle",
+      "name": "CyWorld",
+      "tag": "CyWorld_T"
+    },
+    {
+      "kind": "handle",
+      "name": "CyBehaviourType",
+      "tag": "CyBehaviourType_T"
+    },
+    {
+      "kind": "alias",
+      "name": "CyInstance",
+      "underlying": "void*"
+    },
+    {
+      "kind": "alias",
+      "name": "CyEntity",
+      "underlying": "uint64_t"
+    },
+    {
+      "kind": "alias",
+      "name": "CyComponentTypeId",
+      "underlying": "uint32_t"
+    },
+    {
+      "kind": "enum",
+      "name": "CyResult",
+      "values": [
+        {
+          "name": "CY_RESULT_OK",
+          "value": 0
+        },
+        {
+          "name": "CY_RESULT_UNKNOWN",
+          "value": 1
+        },
+        {
+          "name": "CY_RESULT_INVALID_ARGUMENT",
+          "value": 2
+        },
+        {
+          "name": "CY_RESULT_OUT_OF_RANGE",
+          "value": 3
+        },
+        {
+          "name": "CY_RESULT_NOT_FOUND",
+          "value": 4
+        },
+        {
+          "name": "CY_RESULT_ALREADY_EXISTS",
+          "value": 5
+        },
+        {
+          "name": "CY_RESULT_PERMISSION_DENIED",
+          "value": 6
+        },
+        {
+          "name": "CY_RESULT_UNSUPPORTED",
+          "value": 7
+        },
+        {
+          "name": "CY_RESULT_NOT_IMPLEMENTED",
+          "value": 8
+        },
+        {
+          "name": "CY_RESULT_UNAVAILABLE",
+          "value": 9
+        },
+        {
+          "name": "CY_RESULT_TIMEOUT",
+          "value": 10
+        },
+        {
+          "name": "CY_RESULT_OUT_OF_MEMORY",
+          "value": 11
+        },
+        {
+          "name": "CY_RESULT_BUFFER_TOO_SMALL",
+          "value": 12
+        },
+        {
+          "name": "CY_RESULT_IO",
+          "value": 13
+        },
+        {
+          "name": "CY_RESULT_INTERNAL",
+          "value": 14
+        },
+        {
+          "name": "CY_RESULT_VERSION_MISMATCH",
+          "value": 100
+        },
+        {
+          "name": "CY_RESULT_SCHEMA_TOO_NEW",
+          "value": 101
+        },
+        {
+          "name": "CY_RESULT_SCHEMA_UNMIGRATABLE",
+          "value": 102
+        },
+        {
+          "name": "CY_RESULT_MODULE_LOAD_FAILED",
+          "value": 103
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyVarType",
+      "values": [
+        {
+          "name": "CY_VAR_NIL",
+          "value": 0
+        },
+        {
+          "name": "CY_VAR_BOOL",
+          "value": 1
+        },
+        {
+          "name": "CY_VAR_I64",
+          "value": 2
+        },
+        {
+          "name": "CY_VAR_F32",
+          "value": 3
+        },
+        {
+          "name": "CY_VAR_F64",
+          "value": 4
+        },
+        {
+          "name": "CY_VAR_VEC2",
+          "value": 5
+        },
+        {
+          "name": "CY_VAR_VEC3",
+          "value": 6
+        },
+        {
+          "name": "CY_VAR_VEC4",
+          "value": 7
+        },
+        {
+          "name": "CY_VAR_QUAT",
+          "value": 8
+        },
+        {
+          "name": "CY_VAR_STRING",
+          "value": 9
+        },
+        {
+          "name": "CY_VAR_BYTES",
+          "value": 10
+        },
+        {
+          "name": "CY_VAR_ENTITY",
+          "value": 11
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "union",
+      "members": [
+        {
+          "alignment": 1,
+          "name": "as_bool",
+          "offset": 0,
+          "size": 1,
+          "type": "bool"
+        },
+        {
+          "alignment": 8,
+          "name": "as_i64",
+          "offset": 0,
+          "size": 8,
+          "type": "int64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "as_f64",
+          "offset": 0,
+          "size": 8,
+          "type": "double"
+        },
+        {
+          "alignment": 4,
+          "name": "as_f32",
+          "offset": 0,
+          "size": 4,
+          "type": "float"
+        },
+        {
+          "alignment": 4,
+          "name": "as_f32x4",
+          "offset": 0,
+          "size": 16,
+          "type": "float[4]"
+        },
+        {
+          "alignment": 8,
+          "name": "as_entity",
+          "offset": 0,
+          "size": 8,
+          "type": "CyEntity"
+        },
+        {
+          "alignment": 8,
+          "name": "as_bytes",
+          "offset": 0,
+          "size": 8,
+          "type": "const void*"
+        }
+      ],
+      "name": "CyVarPayload",
+      "size": 16
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "type",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "flags",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "length",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        },
+        {
+          "alignment": 8,
+          "name": "payload",
+          "offset": 16,
+          "size": 16,
+          "type": "CyVarPayload"
+        }
+      ],
+      "name": "CyVar",
+      "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "type",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "offset",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "size",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "name",
+          "offset": 16,
+          "size": 8,
+          "type": "const char*"
+        }
+      ],
+      "name": "CyFieldDesc",
+      "size": 24
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "size",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "alignment",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "field_count",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "name",
+          "offset": 16,
+          "size": 8,
+          "type": "const char*"
+        },
+        {
+          "alignment": 8,
+          "name": "fields",
+          "offset": 24,
+          "size": 8,
+          "type": "const CyFieldDesc*"
+        }
+      ],
+      "name": "CyComponentTypeDesc",
+      "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "schema_version",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "create",
+          "offset": 8,
+          "size": 8,
+          "type": "CyInstance(*)(CyEngine, CyEntity, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "destroy",
+          "offset": 16,
+          "size": 8,
+          "type": "void(*)(CyInstance, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "fixed_update",
+          "offset": 24,
+          "size": 8,
+          "type": "void(*)(CyInstance, float, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "serialize",
+          "offset": 32,
+          "size": 8,
+          "type": "uint32_t(*)(CyInstance, uint8_t*, uint32_t, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "deserialize",
+          "offset": 40,
+          "size": 8,
+          "type": "int32_t(*)(CyInstance, const uint8_t*, uint32_t, uint32_t, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "user_data",
+          "offset": 48,
+          "size": 8,
+          "type": "void*"
+        }
+      ],
+      "name": "CyBehaviourVTable",
+      "size": 56
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 8,
+          "name": "data",
+          "offset": 0,
+          "size": 8,
+          "type": "void*"
+        },
+        {
+          "alignment": 8,
+          "name": "epoch",
+          "offset": 8,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyBorrow",
+      "size": 16
+    },
+    {
+      "alignment": 4,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "abi_major",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "abi_minor",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "abi_patch",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "table_size",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        }
+      ],
+      "name": "CyInterfaceHeader",
+      "size": 16
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "header",
+          "offset": 0,
+          "size": 16,
+          "type": "CyInterfaceHeader"
+        },
+        {
+          "alignment": 8,
+          "name": "log",
+          "offset": 16,
+          "size": 8,
+          "type": "void(*)(CyEngine, uint32_t, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "get_last_error",
+          "offset": 24,
+          "size": 8,
+          "type": "const char*(*)()"
+        },
+        {
+          "alignment": 8,
+          "name": "get_last_error_code",
+          "offset": 32,
+          "size": 8,
+          "type": "CyResult(*)()"
+        },
+        {
+          "alignment": 8,
+          "name": "set_last_error",
+          "offset": 40,
+          "size": 8,
+          "type": "void(*)(CyResult, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "var_make_string",
+          "offset": 48,
+          "size": 8,
+          "type": "CyVar(*)(CyEngine, const char*, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "var_make_bytes",
+          "offset": 56,
+          "size": 8,
+          "type": "CyVar(*)(CyEngine, const void*, uint64_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "var_clone",
+          "offset": 64,
+          "size": 8,
+          "type": "CyVar(*)(const CyVar*)"
+        },
+        {
+          "alignment": 8,
+          "name": "var_release",
+          "offset": 72,
+          "size": 8,
+          "type": "void(*)(CyVar*)"
+        },
+        {
+          "alignment": 8,
+          "name": "var_live_count",
+          "offset": 80,
+          "size": 8,
+          "type": "uint64_t(*)(CyEngine)"
+        },
+        {
+          "alignment": 8,
+          "name": "engine_world",
+          "offset": 88,
+          "size": 8,
+          "type": "CyWorld(*)(CyEngine)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_create_entity",
+          "offset": 96,
+          "size": 8,
+          "type": "CyEntity(*)(CyWorld)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_destroy_entity",
+          "offset": 104,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_entity_alive",
+          "offset": 112,
+          "size": 8,
+          "type": "bool(*)(CyWorld, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_epoch",
+          "offset": 120,
+          "size": 8,
+          "type": "uint64_t(*)(CyWorld)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_register_component",
+          "offset": 128,
+          "size": 8,
+          "type": "CyComponentTypeId(*)(CyWorld, const CyComponentTypeDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_find_component",
+          "offset": 136,
+          "size": 8,
+          "type": "CyComponentTypeId(*)(CyWorld, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_add_component",
+          "offset": 144,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, const void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_remove_component",
+          "offset": 152,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_has_component",
+          "offset": 160,
+          "size": 8,
+          "type": "bool(*)(CyWorld, CyEntity, CyComponentTypeId)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_borrow_component",
+          "offset": 168,
+          "size": 8,
+          "type": "CyBorrow(*)(CyWorld, CyEntity, CyComponentTypeId)"
+        },
+        {
+          "alignment": 8,
+          "name": "borrow_valid",
+          "offset": 176,
+          "size": 8,
+          "type": "bool(*)(CyWorld, CyBorrow)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_get_var",
+          "offset": 184,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, CyVar*)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_set_var",
+          "offset": 192,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, const CyVar*)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_get_f32",
+          "offset": 200,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_set_f32",
+          "offset": 208,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_get_vec3",
+          "offset": 216,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "component_set_vec3",
+          "offset": 224,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, const float*)"
+        },
+        {
+          "alignment": 8,
+          "name": "register_behaviour",
+          "offset": 232,
+          "size": 8,
+          "type": "CyBehaviourType(*)(CyEngine, const char*, const CyBehaviourVTable*)"
+        },
+        {
+          "alignment": 8,
+          "name": "find_behaviour",
+          "offset": 240,
+          "size": 8,
+          "type": "CyBehaviourType(*)(CyEngine, const char*)"
+        },
+        {
+          "alignment": 8,
+          "name": "behaviour_generation",
+          "offset": 248,
+          "size": 8,
+          "type": "uint32_t(*)(CyBehaviourType)"
+        }
+      ],
+      "name": "CyInterface",
+      "size": 256
+    },
+    {
+      "kind": "enum",
+      "name": "CyInitLevel",
+      "values": [
+        {
+          "name": "CY_INIT_LEVEL_CORE",
+          "value": 0
+        },
+        {
+          "name": "CY_INIT_LEVEL_SERVERS",
+          "value": 1
+        },
+        {
+          "name": "CY_INIT_LEVEL_SCENE",
+          "value": 2
+        },
+        {
+          "name": "CY_INIT_LEVEL_EDITOR",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "abi_major",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "abi_minor",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "reserved",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "initialize",
+          "offset": 16,
+          "size": 8,
+          "type": "void(*)(CyEngine, CyInitLevel, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "shutdown",
+          "offset": 24,
+          "size": 8,
+          "type": "void(*)(CyEngine, CyInitLevel, void*)"
+        },
+        {
+          "alignment": 8,
+          "name": "user_data",
+          "offset": 32,
+          "size": 8,
+          "type": "void*"
+        }
+      ],
+      "name": "CyModuleInit",
+      "size": 40
+    },
+    {
+      "kind": "function_pointer",
+      "name": "CyModuleEntryFn",
+      "parameters": [
+        "const CyInterface*",
+        "CyEngine",
+        "CyModuleInit*"
+      ],
+      "returns": "bool"
+    },
+    {
+      "kind": "function_pointer",
+      "name": "CyModuleShutdownFn",
+      "parameters": [],
+      "returns": "void"
+    }
+  ]
+}

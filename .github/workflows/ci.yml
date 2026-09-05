@@ -379,6 +379,71 @@ jobs:
       - name: The milestone's frame with no GPU, and the XR prerequisite seams
         run: just test-render
 
+  # --- M4: the boundary, the Swift overlay, and the invariants that cross it ---------------------
+  #
+  # The `abi`, `swift-api`, `command-stream`, `input-fixed-tick`, `physics` and `character-artefact`
+  # gates of tools/roadmap/gates.toml. Every step here is one of their declared commands; `just
+  # ci-check` fails if a permanent gate is declared there and run by no job here, which is what keeps
+  # the two files from drifting in the direction that matters.
+  #
+  # THE SWIFT TOOLCHAIN IS INSTALLED IN THIS JOB AND NOWHERE ELSE. Three of the five `swift_` suites
+  # need one; the other two — the overlay's currency and the engine linking no Swift runtime — are
+  # registered unconditionally and are most interesting on a runner that has none. The sample and its
+  # smoke test are NOT REGISTERED AT ALL without a toolchain, because their gameplay is a Swift
+  # module, so this job is the one that judges the milestone's artefact.
+  playable:
+    name: playable — abi, swift, input, physics, gameplay
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      # swiftly writes its environment line to ~/.profile, which only login shells read — which is
+      # why bindings/swift/tools/cy_swift_module.py sources it explicitly on every invocation rather
+      # than trusting PATH. `just env-doctor` diagnoses the same case for a developer.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-playable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-playable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-playable-
+      # The compatibility obligation, and it needs no build: it is a comparison between the header
+      # and a committed baseline, so it runs first and costs nothing.
+      - name: The C ABI's compatibility gate
+        run: just quality-abi
+      - name: The ABI's layout, values, errors and callbacks
+        run: just test-unit -R abi
+      - name: Module loading, type registration and the reload sequence
+        run: just test-integration -R abi_
+      # The overlay, the package, and a real Swift module hot-reloaded across a layout change.
+      - name: The Swift overlay, its generator, the package and a live reload
+        run: just test-integration -R swift_
+      # The three invariants M4 pins, each of which a later milestone can undo silently.
+      - name: One command stream, and the test that bypasses it and fails
+        run: just test-unit -R gameplay
+      - name: A press and a release between two ticks are both observed by the next
+        run: just test-unit -R input
+      - name: The same, against real SDL3 events, headless
+        run: just test-integration -R sdl3_input
+      - name: The physics interface, its two backends, and determinism across runs
+        run: just test-unit -R physics
+      - name: Physics components, events, queries and the character controller
+        run: just test-integration -R physics_
+      # The artefact. The smoke test runs the sample, then runs it again with the deciding
+      # behaviours absent and requires nothing to happen — which is task 5.3 as a measurement.
+      - name: The sample plays itself, and its control run decides nothing
+        run: just test-smoke -R character_sample
+      - name: The sample contains no C++ gameplay code
+        run: just test-integration -R character_no_cpp_gameplay
+
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:
     name: quality

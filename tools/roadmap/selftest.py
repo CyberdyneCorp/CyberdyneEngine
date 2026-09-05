@@ -177,6 +177,12 @@ def test_record_rules(root: Path) -> None:
 
 # --- The criteria and the gate set ------------------------------------------------------------------
 
+# The fewest criteria each milestone's ledger may carry, from its row in docs/ROADMAP.md and its
+# section 6. A floor rather than an equality: a ledger that grows a criterion is a ledger that got
+# better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
+# requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
+MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20}
+
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
     directory = root / name
@@ -189,8 +195,6 @@ def test_criteria(root: Path) -> None:
     milestone = criteria_module.load("m0")
     check("M0's criteria load, and every one names a source and a CI job",
           all(criterion.source and criterion.ci_job for criterion in milestone.criteria))
-    check("M0 has a criterion for each of the milestone's exit conditions",
-          len(milestone.criteria) >= 10, f"{len(milestone.criteria)} criteria")
     check("a criterion that this host cannot evaluate carries a reason",
           all(criterion.reason for criterion in milestone.criteria
               if criterion.where == "ci" or criterion.requires))
@@ -302,15 +306,21 @@ def test_milestone_ladder(root: Path) -> None:
               f"gates.toml records milestone-{identifier} as "
               f"'{states.get(identifier, '(no gate)')}'")
 
-    m1 = criteria_module.load("m1")
-    check("M1 has a criterion for each of the milestone's exit conditions",
-          len(m1.criteria) >= 15, f"{len(m1.criteria)} criteria")
-    m2 = criteria_module.load("m2")
-    check("M2 has a criterion for each of the milestone's exit conditions",
-          len(m2.criteria) >= 20, f"{len(m2.criteria)} criteria")
-    m3 = criteria_module.load("m3")
-    check("M3 has a criterion for each of the milestone's exit conditions",
-          len(m3.criteria) >= 20, f"{len(m3.criteria)} criteria")
+    # A LEDGER IS NOT A TOKEN GESTURE, and the floor is per milestone because the number of exit
+    # conditions is: it is the count of the milestone's row in docs/ROADMAP.md plus its section 6.
+    # The floors used to be written out one `check` at a time, which made this itself something the
+    # next author had to remember to extend — M4's ledger landed and was covered by nothing. So the
+    # numbers are data and the LAST check below is the one that matters: a ledger under milestones/
+    # with no floor recorded here FAILS, rather than being quietly unchecked. Adding a milestone
+    # therefore forces a deliberate answer to "how many exit conditions does it have", which is the
+    # question the floor is asking.
+    for identifier, floor in sorted(MINIMUM_CRITERIA.items()):
+        ledger = criteria_module.load(identifier)
+        check(f"{identifier.upper()} has a criterion for each of the milestone's exit conditions",
+              len(ledger.criteria) >= floor, f"{len(ledger.criteria)} criteria, floor {floor}")
+    check("every ledger under milestones/ has a floor recorded, so a new one is not unchecked",
+          set(criteria_module.available()) == set(MINIMUM_CRITERIA),
+          f"no floor for: {sorted(set(criteria_module.available()) - set(MINIMUM_CRITERIA))}")
     # M1 broke M0's static analysis gate before this ledger existed. `delivery-roadmap` forbids that
     # outright, so the rule is a criterion rather than a paragraph, and this is the check that it
     # stays one. Every ledger from M1 on carries the previous milestone's recipe, so the whole ladder

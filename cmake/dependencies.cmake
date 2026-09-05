@@ -337,6 +337,50 @@ function(cy__finalise_slang target)
     endif()
 endfunction()
 
+function(cy__configure_jolt)
+    # WHAT IS TURNED OFF, AND WHY EACH ONE. The engine wants one thing from this dependency: the
+    # solver, as a static library. Everything else upstream is a sample, a viewer or a test runner,
+    # and several of them pull in a window and a rendering path the engine already owns.
+    set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+    set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
+    set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
+    set(TARGET_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(TARGET_VIEWER OFF CACHE BOOL "" FORCE)
+    # Jolt compiles without exceptions and without RTTI by default — it has its own reflection — so
+    # unlike Slang it needs no scope that clears the engine's -fno-exceptions/-fno-rtti. Stated
+    # rather than left to be rediscovered: the absence of a cy__jolt_allow_exceptions() below is a
+    # fact about Jolt, not an omission.
+    set(CPP_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
+    set(CPP_RTTI_ENABLED OFF CACHE BOOL "" FORCE)
+    # DETERMINISM IS THE REASON THIS OPTION EXISTS AND THE REASON IT IS ON. `physics` requires
+    # `SamePlatformDeterministic` as the default policy. Jolt's cross-platform determinism switch
+    # also fixes the floating-point mode within one platform — no fused multiply-add reassociation,
+    # no fast-math — which is what makes two runs of the same binary agree. The engine claims only
+    # the same-platform half (determinism.h says why), and this is what buys even that.
+    set(CROSS_PLATFORM_DETERMINISTIC ON CACHE BOOL "" FORCE)
+    # Object streams are Jolt's own serialisation format. The engine serialises through
+    # `serialization-and-prefabs` and would otherwise carry a second one into every build.
+    set(ENABLE_OBJECT_STREAM OFF CACHE BOOL "" FORCE)
+    # Jolt's profiler and debug renderer are a second timeline and a second draw path beside the
+    # engine's trace and `cy::physics::DebugDrawSink`. Physics statistics reach the engine through
+    # `StepStatistics`, and shapes reach it through the sink.
+    set(PROFILER_ENABLED OFF CACHE BOOL "" FORCE)
+    set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+    set(DEBUG_RENDERER_IN_DISTRIBUTION OFF CACHE BOOL "" FORCE)
+    # JOLT'S GPU COMPUTE BACKENDS, ALL FOUR OFF. They exist for its GPU-accelerated soft-body hair
+    # solver, which this engine does not use and could not use where it sits: JPH_USE_VK would put a
+    # second Vulkan surface inside a physics dependency, above nothing and beside `cy::rhi`, which
+    # is exactly what the layer checker's `gpuapi` rule exists to prevent.
+    #
+    # It is also not merely unwanted — with JPH_USE_VK on, Jolt's build tries to compile HLSL
+    # compute shaders with `Vulkan_GLSLC_EXECUTABLE`, and on a machine with no Vulkan SDK on PATH
+    # that is `-NOTFOUND` and the BUILD FAILS. Measured here before this line existed.
+    set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+    set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+    set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+    set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+endfunction()
+
 function(cy__configure_vma)
     set(VMA_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
     set(VMA_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)

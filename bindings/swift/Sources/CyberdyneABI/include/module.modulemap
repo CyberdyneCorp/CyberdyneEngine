@@ -1,0 +1,8 @@
+// GENERATED FILE — DO NOT EDIT. See tools/gen/swift/overlay_gen.py.
+//
+// Written out rather than left to SwiftPM's inference, so that what `import CyberdyneABI` brings in
+// is stated in one place: exactly the C ABI header, and nothing that happens to be beside it.
+module CyberdyneABI {
+    header "cy/abi/cy_abi.h"
+    export *
+}

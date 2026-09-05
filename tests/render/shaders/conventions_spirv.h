@@ -3,7 +3,8 @@
 //
 // Produced by tests/render/shaders/embed_spirv.py from conventions.slang; that file's header
 // comment carries the exact slangc invocation. Checked in rather than compiled by the build because
-// the render suite must run with CY_SHADER_SLANG off, which is the default.
+// the render suite must run in a build with NO shader compiler at all — which is every Profile and
+// Shipping build, and any build configured with -DCY_SHADER_SLANG=OFF.
 
 #include <cy/core/base/types.h>
 

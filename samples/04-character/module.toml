@@ -1,0 +1,30 @@
+# The game module's manifest. `native-abi`: "module name, entry symbol, minimum ABI version,
+# per-platform library paths, and whether the module is hot-reloadable".
+#
+# THE HOST DOES NOT RESOLVE `library` FROM HERE, and the reason is the reload model rather than
+# laziness. A reload needs a DIFFERENT FILE each generation — `dlopen` of a path already open returns
+# the same image — and the file the build produced is named for the generation it belongs to
+# (`libCyGame_g0.so`, `libCyGame_g1.so`, ...) by
+# bindings/swift/tools/cy_swift_module.py, which is also what gives each one a unique Swift
+# `-module-name`. So the path comes from the build, through `CY_CHARACTER_MODULE_LIBRARY`, and this
+# entry names generation zero: what a shipping build with no reload would load, and what a reader
+# looking for the library should find.
+#
+# `hot_reload = true` is what `BehaviourRuntime::reload` refuses without. Nothing in this sample calls
+# it — reload is exercised by `integration.swift_reload`, over a fixture built for it — but a module
+# that declared itself unreloadable and then was reloaded is a failure worth having the flag for.
+
+name = "character"
+entry_symbol = "cy_module_entry"
+min_abi_major = 1
+min_abi_minor = 0
+hot_reload = true
+
+[platform.linux]
+library = "libCyGame_g0.so"
+
+[platform.windows]
+library = "CyGame_g0.dll"
+
+[platform.macos]
+library = "libCyGame_g0.dylib"

@@ -1,0 +1,24 @@
+# Reviewed, recorded exceptions to the ABI compatibility gate. Task 2.3, `native-abi`.
+#
+# `native-abi`: "Any change other than an append SHALL fail CI unless accompanied by an explicit,
+# reviewed approval entry recording the rationale and the version bump."
+#
+# THIS FILE IS THE ESCAPE HATCH, AND IT IS A FILE RATHER THAN A FLAG ON PURPOSE. A `--force`
+# argument would let a break through with the same keystrokes and none of the record; an entry here
+# is in the diff, has an author, and has to survive review. `just quality-abi` prints the exact
+# stanza to paste when it refuses something, so adding one is never guesswork about the key.
+#
+# Each entry:
+#
+#   [[approval]]
+#   change    = "the key the gate printed, e.g. table.world_epoch.signature"
+#   rationale = "why this could not have been an append"
+#   version   = "the ABI version this lands in"
+#
+# AN ENTRY IS NOT A LICENCE TO BREAK COMPATIBILITY. It records that somebody decided to, and what
+# every module compiled against the old shape is expected to do about it. Before adding one, the
+# question to answer is the one `native-abi`'s "Signature change is forbidden" scenario answers for
+# you: append a new entry and keep the old one working.
+#
+# It is empty, and the intention is that it stays that way. The first entry in it will be the day
+# this project learned something about its own boundary.
