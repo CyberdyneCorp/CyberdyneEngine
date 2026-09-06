@@ -5,11 +5,11 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: M0 through M4 are closed. [M5 — Authorable](docs/ROADMAP.md) is next.**
-> Gameplay is written in Swift. A third-person character controller — move, jump, collide, hear it —
-> loaded over a versioned append-only C ABI whose gate refuses a reordered entry, deciding every tick
-> through one validated command stream, on a renderer whose graph derives its own barriers.
-> [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,678 scenarios**
+> **Status: M0 through M5 are closed. [M5.5 — Operable](docs/ROADMAP.md) is next.**
+> The editor exists as a client: documents, transactions as the only write path, a command registry
+> with declared effect classes, and a session that survives its hosted runtime being killed. It has
+> no window yet — that is what M5.5 is for.
+> [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,680 scenarios**
 > that define what is being built and why, and are the contract the implementation must satisfy.
 > Start at [the specification index](openspec/specs/README.md), then
 > [the roadmap](docs/ROADMAP.md) for the order they are built in, and

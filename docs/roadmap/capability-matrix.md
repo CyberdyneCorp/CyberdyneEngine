@@ -92,7 +92,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | 16 |  |  |  |  |  | W |  |  |  |  |  | **C** | M11 |
 | [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | 16 |  |  |  |  |  | W |  |  |  |  |  | **C** | M11 |
 | [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  | **C** |  |  |  |  | M7 |
-| [`editor-visual-language`](../../openspec/specs/editor-visual-language/spec.md) | 22 |  |  |  |  |  | W |  |  |  |  |  | **C** | M11 |
+| [`editor-visual-language`](../../openspec/specs/editor-visual-language/spec.md) | 22 |  |  |  |  |  | S |  |  |  |  |  | **C** | M11 |
 | [`live-editing`](../../openspec/specs/live-editing/spec.md) | 11 |  |  |  |  |  | W |  |  | **C** |  |  |  | M8 |
 | [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | 11 | S | W |  |  |  | **C** |  |  |  |  |  |  | M5 |
 | [`build-and-packaging`](../../openspec/specs/build-and-packaging/spec.md) | 19 |  |  |  |  |  |  | W |  |  |  |  | **C** | M11 |
@@ -160,55 +160,345 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M4 thirty-three capabilities have left `—`, and one has reached Complete.
+As of M5 forty-three capabilities have left `—`, and four have reached Complete.
 
-- **Complete (1)**: `core-math`.
-- **Working (21)**: `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
-  `core-platform-abstraction`, `core-type-system`, `delivery-roadmap`, `ecs-core`,
-  `engine-architecture`, `input-and-actions`, `native-abi`, `physics`, `project-and-plugins`,
+- **Complete (4)**: `core-math`, `core-type-system`, `native-abi`, `scene-graph-and-nodes`.
+- **Working (22)**: `asset-import-pipeline`, `core-assets-and-io`, `core-jobs-and-concurrency`,
+  `core-memory-and-containers`, `core-platform-abstraction`, `delivery-roadmap`, `ecs-core`,
+  `editor-documents-and-transactions`, `editor-rust-application`, `editor-viewport-and-gizmos`,
+  `engine-architecture`, `input-and-actions`, `physics`, `project-and-plugins`,
   `rendering-architecture`, `rendering-forward-clustered`, `rendering-geometry-and-resources`,
-  `rendering-materials-and-shading`, `rhi-and-render-graph`, `scene-graph-and-nodes`,
-  `serialization-and-prefabs`, `shader-system`, `swift-scripting`.
-- **Seed (11)**: `audio`, `build-system-and-platforms`, `camera-system`,
-  `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `gameplay-framework`,
-  `rendering-culling-and-lod`, `rendering-lighting-and-shadows`, `simulation-and-determinism`,
-  `testing-and-quality`, `thirdparty-dependencies`.
+  `rendering-materials-and-shading`, `rhi-and-render-graph`, `serialization-and-prefabs`,
+  `shader-system`, `swift-scripting`.
+- **Seed (17)**: `audio`, `build-system-and-platforms`, `camera-system`,
+  `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `editor-agent-interface`,
+  `editor-architecture`, `editor-ui-ux`, `editor-visual-language`, `gameplay-framework`,
+  `live-editing`, `rendering-culling-and-lod`, `rendering-lighting-and-shadows`,
+  `simulation-and-determinism`, `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
 
-The remaining 43 have not started. M4 advanced eight — `native-abi`, `swift-scripting`,
-`input-and-actions` and `physics` to Working, `camera-system`, `audio` and `gameplay-framework` to
-Seed, and `core-platform-abstraction` from Seed to Working — each recorded against
-`implement-m4-playable`. Seven of the eight are capabilities that had never started, which is why
-M4 is the milestone with the largest single jump in the record so far and why the section below is
-the longest of the three.
+The remaining 33 have not started. **M5 advanced thirteen** — the largest single jump in the record
+so far, and ten of the thirteen are capabilities that had never started. Three reached Complete
+(`core-type-system`, `native-abi`, `scene-graph-and-nodes`), four reached Working
+(`editor-rust-application`, `editor-documents-and-transactions`, `editor-viewport-and-gizmos`,
+`asset-import-pipeline`) and six reached Seed (`editor-architecture`, `editor-ui-ux`,
+`editor-visual-language`, `editor-agent-interface`, `live-editing`, `text-and-fonts`), each recorded
+against `implement-m5-authorable`.
 
-**Two capabilities the matrix plans for M4 did not advance, and the record says so rather than the
-plan.** The M4 column above marks `simulation-and-determinism` **W** and `build-system-and-platforms`
-**W**. Neither appears in [the M4 row of the roadmap](../ROADMAP.md#m4--playable), neither is in
-`tools/roadmap/milestones/m4.toml`'s exit tiers, and neither is true:
+**Four capabilities the plan marked for M5 did not reach the tier the plan gave them, and the record
+says so rather than the plan.** The amendment, with the evidence for each, is written into
+`tools/roadmap/milestones/m5.toml` beside `[criterion.expect_tiers]` — that file asked whoever closed
+M5 to "either finish it or amend this table with the reason", and this is the amendment. In short:
 
-- `simulation-and-determinism` is still Seed. M4 delivered two of the things it asks for — physics
-  that reproduces bit-for-bit across processes on one platform, and gameplay random streams derived
-  from M2's seeded ones — but the state hash still does not see them. `samples/04-character` opens
-  every run with `[info] runtime: 22 component types have no reflected descriptor and are not in the
-  state hash` — nine more than `samples/02-headless-sim` reports through the same mechanism, and the
-  nine are the character's own, registered from the Swift module across the ABI. A determinism
-  guarantee that cannot see the character's position is not the guarantee the capability describes.
-- `build-system-and-platforms` is still Seed for the reason recorded at M2 and M3 and unchanged
-  here: Windows and macOS have still never compiled. Everything M4 added — the Swift toolchain, two
-  fetched libraries, a shared-library loader and `dlopen` — is new platform surface that exactly one
-  operating system has ever built.
+- `live-editing` is **Seed**, not Working. The live bridge has only one side. `cy-runtime-stub` —
+  the process the closing artefact kills — is a Rust binary in `cy-editor-testhost` whose own header
+  says "What it is not: an engine. It holds no world, and it echoes what it is asked to apply. The
+  real hosted runtime is a C++ binary over `cy::abi::Host`, and it arrives with `live-editing` at
+  task 5.2." It did not arrive: nothing under `src/` or `tools/` binds a Unix domain socket, so no
+  engine binary can accept a bridge connection and **the editor has never spoken to this engine**.
+  Play modes have no implementation in any process; the per-field live edit policy is absent, by the
+  importer's own statement. What is real — a module reloading while a loop runs with world state
+  crossing it, runtime inspection from outside the owning process, an edited source re-cooking behind
+  a stable handle, shader reload from M3 — is Seed's definition exactly.
+- `editor-ui-ux` is **Seed**, not Working. This is not the gate's finding:
+  `openspec/changes/implement-m5b-operable/`, committed to `main` before the gate ran, says "the row
+  was wrong when it was written" and inserts M5.5 · Operable to deliver it. `cy-editor-interface`'s
+  own header agrees: docking, workspaces, the palette, keyboard-first operation and the generated
+  inspector exist "as models a test can drive, with no window, no graphics device and no interface
+  toolkit."
+- `editor-architecture` is **Seed**, not Working, and for the same reason as `live-editing`: its first
+  requirement puts the authoring, preview and runtime worlds *in the runtime*, and all three are in
+  the editor process because there is no runtime process to put them in. Play mode, the content
+  browser, project settings, build and deployment, the specialised editors and the debugging and
+  profiling tools have no implementation. Undo/redo and the inspector are Working-grade and are why
+  this is Seed rather than nothing.
+- `project-and-plugins` stays at **Working**, where M1 left it. Nothing in M5 touched it, and no task
+  in `implement-m5-authorable/tasks.md` asked anything of it. Four of its eleven requirements —
+  `Plugins`, `Plugin lifecycle`, `Plugin resolution and lockfile`, `Trust tiers for extensions` —
+  have no implementation anywhere in the tree; `find src tools -iname '*plugin*'` returns one
+  layercheck fixture.
 
-**`testing-and-quality` is still Seed, and M4 closed one of the three reasons it was not Working.**
-The M3 section below records three requirements with no prerequisite in the tree: **ABI and API
-stability gates**, **Documentation as a gate**, and **Golden-image rendering tests**. The first is
-now satisfied — `just quality-abi` diffs the interface table against a committed baseline, refuses a
-reorder even between two entries with identical C signatures, refuses a removal, and refuses to
-launder either through its own `--update` path; `integration.abi_gate` runs the whole demonstration
-against the live header on every pull request. The other two are unchanged: there is still no
-undocumented-symbol check in `.github/workflows/`, and golden images are still one backend, an
-exact-match comparison and no path-traced reference. M4 also changed what a budget *means* — see
-the `testing-and-quality` delta in `openspec/changes/implement-m4-playable/` — which is movement
-inside Seed, not Working.
+**Three sources disagreed about what M5's scope was, and nothing checks them against each other.**
+The M5 row of [ROADMAP.md](../ROADMAP.md#m5--authorable) lists nine capabilities;
+`tools/roadmap/milestones/m5.toml`'s exit tiers list fourteen; the M5 column of the matrix above
+lists sixteen, and the Milestone load table two sections up counts fourteen of them, so the matrix
+does not agree with its own summary either. The matrix is the only one of the three that marks `editor-visual-language` at
+Working — the proposal and the ledger both say Seed, and the cell is corrected above — and the only
+one that marks `developer-workflow-and-just` and `diagnostics-profiling-and-crash` at Working at M5,
+which no task and no criterion covers. Both stay at Seed. `just roadmap-status` compares the record
+with `openspec/specs/` and nothing compares the three plan documents with the ledger; that is a gap
+worth a check rather than a paragraph.
+
+**The table above has no column for M5.5.** `implement-m5b-operable` inserts a milestone between M5
+and M6 rather than renumbering, which keeps every reference to M6 through M11 valid and leaves this
+table one column short. `editor-visual-language` is where that shows: its M5 cell is corrected to
+**S** above and the **W** it reaches belongs to M5.5, so the row now goes S at M5 and C at M11 with
+Working in a column that does not exist yet. Adding the column is `implement-m5b-operable`'s to do,
+along with the M5.5 row of [ROADMAP.md](../ROADMAP.md); it is named here so the gap is deliberate
+rather than discovered.
+
+## Where M5's tiers are thin
+
+The thirteen tiers M5 advanced are in the record above, and for four capabilities the record and the
+plan disagree — that is stated there rather than here. What follows is where the implementation is
+**thinner than the tier it did reach**. Every entry was measured or reproduced at M5's gate on this
+tree: Linux 6.8, GCC 13.3.0 and Clang 18.1.3, clang-format and clang-tidy pinned at 22.1.8, Swift
+6.3.3 through `swiftly`, Cargo 1.92.0, and an NVIDIA RTX 5060 with Vulkan 1.4.312. The machine was
+not quiet — an unrelated benchmark held about five cores for part of the run — and that is recorded
+because two of the entries below are about load-sensitive tests.
+
+### What the gate found
+
+- **A lost runtime could be dropped in silence, and the fourth profile is what caught it.** `just
+  roadmap-milestone m5`'s `editor-profiles` criterion — the one that exists because two Cargo
+  profiles compile `debug_assertions` out — failed in the `debug` profile after `editor` had passed
+  in `dev`. The failing case is
+  `cy_editor_services::runtime::tests::a_runtime_that_dies_becomes_a_notification_and_the_editor_returns_to_no_runtime`,
+  which is the milestone's headline mechanism written as a test. Measured failure rate on this
+  machine: 1 in 10 in the `dev` Cargo profile, 1 in 10 in `profiling`, 0 in 10 in the other two.
+
+  **The defect, not the flake.** `Session::lose` marks the state `Lost` and *then* sends
+  `SessionEvent::Lost`. `RuntimeSession::pump` polled the event queue, then dropped the session on
+  `!state().is_connected()`. A pump landing between the two calls polls an empty queue, sees a state
+  that is no longer connected, and drops the session — so the event is delivered to a receiver
+  nothing will ever read again, and every later pump returns early because there is no session. The
+  editor falls back to `NoRuntime` with no notification, which is the half of
+  `editor-rust-application`'s requirement that is not "survive": *"the editor SHALL survive, surface
+  the crash artefact ... and offer to restart the runtime"*. The offer was what went missing.
+
+  **And a second, deterministic path to the same silence, which the race led to.**
+  `Session::spawn_writer` calls `mark_lost` and sends **no event at all**, reasoning in a comment
+  that "the reader thread will notice too and is the one that reports". It does not always: a peer
+  that stops reading while its own write end stays open fails the write and never closes the stream,
+  so the reader blocks forever and the state is the only record. On that path the notification was
+  lost on every run, not one in ten.
+
+  **Fixed at the pump**, which is where both paths meet: the state is now the authority and the event
+  is the fast path, and `announced` keeps it to one notification when both arrive. The regression
+  test is the writer-side case —
+  `a_write_side_failure_is_surfaced_even_though_the_reader_never_posts_an_event` — because it fails
+  deterministically rather than one run in ten: 3 of 3 against the unfixed `pump`, 0 of 30 against
+  the fixed one, and the racy sibling is 0 of 30 in both `dev` and `profiling` afterwards.
+
+### The one that shapes everything else
+
+- **The editor has never spoken to this engine.** Every claim M5 makes about being a client is
+  demonstrated against `cy-runtime-stub`, a Rust binary in `cy-editor-testhost` whose own header
+  says: "What it is not: an engine. It holds no world, and it echoes what it is asked to apply. The
+  real hosted runtime is a C++ binary over `cy::abi::Host`, and it arrives with `live-editing` at
+  task 5.2." It did not arrive. Nothing under `src/` or `tools/` binds a Unix domain socket, so
+  there is no engine binary a bridge can connect to. The same is true of the SDK's embedded mode:
+  `cy-editor-sdk` reaches a `CyInterface` table by `dlopen`, and the only library it is ever pointed
+  at in a test is `libcy_editor_testhost.so`, a Rust reimplementation of the ABI.
+
+  **What that does and does not undermine.** It does not undermine the boundary: the editor binary
+  links `libc`, `libgcc_s` and nothing else, carries zero `cy::` symbols, and reaches the ABI
+  through `dlsym` on a string — which is what rule 6 asks for, verified rather than asserted. It
+  does not undermine the crash claim either: killing a real process and surviving it is a property
+  of the editor, and the process being a stub makes the test *harder* rather than easier, because a
+  stub cannot lose state the editor could then blame it for. What it undermines is every claim of
+  the form "the editor and the engine agree" — the ABI's two ends have never been in the same
+  session, and the first time they are will be the first time anything checks that the Rust SDK's
+  reading of `CyVar`, of a chunk, or of a component schema matches what `src/abi/src/interface.cpp`
+  actually writes. The layout tests on each side compare against the same header, which is a
+  narrower claim than it looks.
+
+### `editor-documents-and-transactions` at Working
+
+- **The transaction invariant covers a document's content and not its schema or its asset list.**
+  `DocumentContent`'s only mutator takes a `WriteToken` whose constructor is `pub(crate)`, and a
+  probe outside the crate cannot get one: forging it by struct literal is `E0451: field
+  `transaction` of struct `WriteToken` is private`, calling `WriteToken::issue` is `E0624:
+  associated function `issue` is private`, and `Document::record` with no transaction open returns
+  "no transaction is open, and there is no other write path". That is as strong as the tier claims.
+  `Document::schema_mut()` is not. Against a saved, clean document, this sequence —
+
+  ```rust
+  document.schema_mut().rename_field(transform, position, "translation")?;
+  document.schema_mut().set_writable(transform, position, false)?;
+  document.add_asset("worlds/probe.layer2.cyworld");
+  ```
+
+  leaves `is_dirty() == false`, `history().entries().len()` unchanged, nothing in the journal, and
+  `Audit::of(&document).is_clean() == true`. A field rename and a read-only flag are persistent
+  document state that a user would expect to undo; the asset list decides which files a world is
+  stored across. None of the six mechanisms the invariant is supposed to buy — undo, autosave,
+  recovery, diff, merge, live editing — sees any of it, and nothing points at it. The audit counts
+  only content writes, so it cannot: `Audit::of_content` reads `DocumentContent::write_counts()`.
+  The fix is small (route schema edits through an operation) and the cost of not doing it is exactly
+  what the capability's own text warns about.
+
+### `editor-rust-application` at Working, and `editor-ui-ux` at Seed
+
+- **The command surface has six commands, and not one of them is an action the milestone is about.**
+  `cy_editor_services::builtin::register` registers `scene.create-entity`, `scene.delete-entity`,
+  `edit.select`, `edit.undo`, `edit.redo` and `file.save`. There is no transform command, no play
+  command and no import command, so "commands are the single action surface" is satisfied by a
+  surface that cannot drive the milestone's own closing artefact. The machinery for all three exists
+  and is tested — `cy_editor_viewport::gizmo` produces exactly one transaction per drag,
+  `cy_editor_viewport::play` models the play states, `tools/import/` cooks glTF — and nothing
+  reaches any of it through a command. The artefact says so on every run, which is the right
+  behaviour, but a green artefact and a green ledger both report a session that did not manipulate
+  anything.
+
+- **Two of the three hosting modes are reachable from the binary, and the third is an enum variant.**
+  `cyberdyne-editor` parses `--host <socket>` and nothing else: `HostingMode::Embedded` — the engine
+  in the editor's own process through a loaded library — is defined in the SDK, is documented, is the
+  one mode for which `shares_the_editors_fate()` is true, and no code path in `cy-editor-app` or
+  `cy-editor-services` can enter it. The SDK's `dlopen`/`dlsym` half is exercised only by tests, and
+  the shipped binary does not even link `dlopen`: `nm -D --undefined-only` on it lists `dlsym` and no
+  `dlopen`, because nothing outside the test targets calls `RuntimeLibrary::open`.
+
+### `editor-viewport-and-gizmos` at Working
+
+- **Picking is the strongest thing in the milestone and it has no consumer.** `pick_ray`, `pick_rect`
+  and `pick_polygon` resolve against the `Span<const DrawItem>` that `collect_draws` produced, so
+  the candidate set is by construction a subset of what was drawn — a frustum-culled, layer-excluded
+  or invisible instance cannot be picked because it is not in the list, and an instance published by
+  a producer the picker has never heard of is pickable with no code knowing what produced it. Twelve
+  cases in `unit.render_server` hold that, including "what the renderer did not draw cannot be
+  picked, whatever the reason". Nothing in the editor calls it: the editor's own `picking.rs` builds
+  rays that are checked to agree with the engine's, and the engine-side resolve is reached by no
+  editor code path, because there is no runtime to reach it through.
+- **A hit is a bounding-volume hit, not a triangle hit**, and `picking.h` says so: a `GpuInstance`
+  carries a world-space sphere and no local box, so overlapping volumes produce several candidates
+  and cycling is the answer. The exact answer is a GPU identifier buffer written by the pass that
+  shaded the pixel, and it waits on M6.
+
+### `asset-import-pipeline` at Working
+
+- **None of the libraries the roadmap named was integrated, and the tier is over engine-owned code.**
+  The M5 row asks for "texture and model import via glTF and meshoptimizer"; `deps/manifest.toml`
+  carries neither, nor cgltf, nor a BC7 or ASTC encoder, and records the decision in the file that
+  would carry them. What that costs, in its own words: "The simplifier is less tuned than
+  meshoptimizer's at aggressive ratios; the texture importer reads Targa and not PNG; the text
+  server lays out Latin and refuses Arabic." Every gap is reported by the code that cannot close it
+  rather than approximated, which is what makes it safe to carry — but a project cannot import a PNG
+  and a cooked texture is uncompressed pixels.
+
+### `live-editing` at Seed
+
+- **`cy::abi::LiveReloadSession` has one test and no consumer.** `grep -rl live_reload.h` over
+  `src tools bindings samples tests` returns exactly its own header, its own source and its own test.
+  The engine's runtime does not use it, the sample does not use it, and the editor cannot: it is C++
+  behind the ABI rather than in front of it.
+- **"A Swift module reloads while the runtime is live" is two tests that do not meet.** The live half
+  — a loop that never stops, a swap at a nameable tick, state crossing it, and a deferral when the
+  world is iterating — is `integration.abi_live_reload`, over **C** modules; `test_live_reload.cpp`
+  says why, and it is a real reason (the watcher looks for `<stem>_g<N>.so` and a *copy* is a
+  legitimate new image for C and not for Swift). The Swift half —
+  `integration.swift_reload`, over three images built with distinct `-module-name`s, ARC-managed
+  state carried by name, and a schema downgrade refused — calls `Runtime::reload()` directly between
+  `fixed_update` calls and never goes near the watcher. Both halves are excellent and the
+  intersection is untested.
+
+### `core-type-system`, `scene-graph-and-nodes` and `native-abi` at Complete
+
+- **`identity/manifest.toml` holds nine live types and no tombstones.** M2's record called
+  `core-type-system` "still a two-type demonstration"; M5 took it to nine by reflecting the scene's
+  components, which is what the state hash needed and what the inspector reads. Nine is the whole
+  engine's opted-in surface. Reflection is opt-in by design, so this is not a defect of the
+  capability — but "Complete" for a registry whose corpus is nine types is a claim about the
+  mechanism, not about coverage, and the first large opt-in wave is where a stable-identity rule
+  gets tested for real.
+- **The orphan invariant is still not in the coherence checker**, unchanged since M2:
+  `check_coherence()` covers the specification's five invariants and the orphan claim is carried by
+  two scene cases. The claim holds; `gates.toml`'s `scene-coherence` description still overstates
+  where it is checked.
+- **The two ends of the ABI have never met**, as above. The gate compares the header with a committed
+  baseline and both overlays are generated from that header, which is a strong drift check and not a
+  behavioural one.
+
+### The ledger, which this milestone rewrote
+
+- **The flattening is real and the "exactly once" is about declarations, not work.** One run of
+  `just roadmap-milestone m5` merges 137 declarations from six ledgers into 101 distinct criteria,
+  36 deduplicated, and `four-profiles` — declared by M1, M2, M3, M4 and M5 — is evaluated once, as
+  `m1:four-profiles`. Under chaining the same run would have evaluated it five times. What the
+  fingerprint cannot see is a criterion whose command *contains* another's: `just build-editor-check`
+  runs five times in one m5 run (once as `m5:editor`, four times inside `m5:editor-profiles`),
+  `just generate-check` twice (`m0:generated-code`, and again inside `m4:generated-code`'s compound
+  command), and `just build-engine` and `just test-all` each run in `dev` twice — once standalone and
+  once inside `four-profiles`. That is a much smaller residue than chaining left, and the file's
+  "each distinct check run exactly once" should be read as "each distinct *declaration*".
+- **A criterion's `ci_job` is checked to name a gate, not to be run by it.** `roadmap.py`'s
+  `_check_criteria_are_gated` verifies the id exists in `gates.toml`; `check_workflows.py`'s
+  `gate_coverage` verifies each permanent gate's `runs` list appears in a workflow. Nothing joins
+  the two, and the join is where a criterion goes quiet. **Concretely: the sanitizer criteria of
+  M3, M4 and M5 are run by no job on a pull request.** The `sanitizers` gate lists four commands —
+  thread and address+undefined over `jobs`, thread over `ecs_scheduling`, address+undefined over
+  `ecs` — which covers M1's two criteria and M2's `tsan-world` exactly, and M2's `asan-world`
+  partially (it names five suites; the gate runs one of them). `m3:sanitizers-render`,
+  `m4:sanitizers` and `m5:sanitizers` name that same gate and run eleven suites between them that
+  no command in it mentions. The only job that reaches them is `sanitize-nightly`, which runs
+  `--tests .`, is triggered by `schedule` and `workflow_dispatch` and not by `pull_request`, and
+  appears in no gate's `runs` list — so `just ci-check` would not notice if it were deleted.
+- **The ladder still holds, and it holds by a different mechanism than before.** Chaining enforced it
+  by construction; the flat plan enforces it by `gates.permanent_milestones` returning every
+  milestone gate at `state = "green"`. A milestone gate left at `joins-on-close` after its milestone
+  closed would now silently remove that rung from every later ledger. `selftest.py` checks the
+  containment property statically and checks that no ledger with a green gate lacks a TOML; there is
+  no check that a *closed* milestone's gate was flipped. M2's record already names that exact
+  omission happening once.
+
+  **The ladder was tested rather than argued.** Two independent M0 regressions were introduced and
+  `just roadmap-milestone m5` was run in full against them: `just quality-layers` made to exit 1
+  through a `PATH` shim, and a scratch copy of the record with `delivery-roadmap` knocked from
+  `working` back to `seed`, passed as `--record` — the repository's own record was never edited.
+  Both failed the M5 run, reported under their own labels and once each:
+
+  ```
+  ==> m0:layering              just quality-layers
+      FAILED           exit 1  (0.0 s)
+      declared by M0, M1, M2, M3, M4, M5 — one failure, not one per milestone
+  ==> m0:roadmap-tiers         the status record is at this milestone's exit tiers
+      FAILED           1 capability tier(s) below this milestone's exit  (0.0 s)
+        | delivery-roadmap: recorded 'seed', below this milestone's exit of 'working'
+  M5 is not closed: 3 of 99 evaluated criteria failed.
+  ```
+
+  The third was the `physics_jolt` flake above. Both probes were removed and `just quality-layers`
+  is green again. **The flattening did not weaken enforcement**; what it changed is where the
+  enforcement lives, which is the paragraph before this one.
+
+### Carried forward, and where each is written down
+
+- **`CY_BUILD_EDITOR` is `OFF` and its description names something it does not gate.** It reads
+  "Build the editor application (the Rust workspace, from M5)"; the Rust workspace is built by
+  `just build-editor`, which never consults it, and `just build-all` calls that unconditionally.
+  What the option actually gates is editor-layer C++ modules, of which there are none. So a
+  configured tree writes `CY_BUILD_EDITOR 0` into `cy_features.h` in a build that has just built the
+  editor — the same inverse lie `cmake/features.cmake` documents against `CY_SCRIPTING` and fixed
+  there. Nothing is excluded by it, so this is a truth defect rather than a coverage one.
+- **`CY_PROFILING` is delivered and off**, which `cmake/features.cmake` records at the site as the
+  one finding M5's option audit could not fix from where it sat. It is the last delivered feature in
+  the table that is off by default.
+- **Load-sensitive assertions are now the single most common cause of a red ledger run on this
+  machine, and there are at least six of them.** Three were reported by earlier workstreams —
+  `integration.physics_jolt` (SIGTRAP), `integration.reflect_scaling` and `unit.physics_server` —
+  and this gate added three more, all in one run, while an unrelated workload held about six cores
+  and the load average sat above 30:
+
+  | criterion | what failed | in isolation |
+  |---|---|---|
+  | `m1:asan-jobs` | `integration.jobs_schedule`, "independent systems run concurrently on different workers": `peak_concurrent` was 1, expected 2 | 3 of 3 passed |
+  | `m1:four-profiles` | `smoke.editor_session` and one integration case, **Debug** tree | `just test-all --profile debug`: 34 / 70 / 10 / 5, all green |
+  | `m1:four-profiles` | `integration.physics_jolt`, **Debug** tree, a later run | 5 of 5 passed |
+  | `m5:editor-profiles` | `cy_editor_services::runtime::tests::a_runtime_that_dies…` | a **real defect**, fixed above — the one time this shape was not a flake |
+
+  **`m1:four-profiles` failed in two of the four full ledger runs this gate made, on a different test
+  each time, and neither reproduced.** That is a permanent merge gate — declared by M1, M2, M3, M4
+  and M5, and now evaluated once rather than five times, which is the only reason the number is two
+  and not ten.
+
+  The distinction the last row draws matters, and it is why it is in the table: on a busy machine
+  every one of these looks identical, and the only thing that separated them was rerunning each in
+  isolation rather than assuming. `peak_concurrent >= 2` is not a budget — it is a scheduling
+  assertion that an oversubscribed machine defeats with no defect present. A gate whose failures are
+  usually noise is a gate that trains people to rerun rather than to look, which is exactly how the
+  defect above could have been missed.
+- **`samples/05-editor-session/README.md` says "Nothing here is a mock"** two lines before naming the
+  runtime, and the runtime is the one thing there that is. `session.py`'s own docstring is accurate;
+  the README is not.
 
 ## Where M4's tiers are thin
 

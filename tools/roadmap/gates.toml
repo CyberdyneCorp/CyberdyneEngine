@@ -541,7 +541,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m5"
 class = "milestone"
 milestone = "m5"
-state = "joins-on-close"
+state = "green"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

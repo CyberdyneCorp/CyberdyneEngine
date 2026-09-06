@@ -125,18 +125,43 @@ impl RuntimeSession {
             return Vec::new();
         };
         let mut messages = Vec::new();
+        let mut announced = false;
         for event in session.poll() {
             match event {
                 SessionEvent::Message(message) => messages.push(message),
                 SessionEvent::Lost(problem) => {
                     notifications.post(Notification::error("The hosted runtime stopped", problem));
+                    announced = true;
                 }
             }
         }
         // A session that has been lost is dropped rather than kept in a broken state: the editor
         // returns to NoRuntime, which is a mode it works perfectly well in, and the notification
         // carries the offer to restart.
-        if !session.state().is_connected() {
+        //
+        // THE STATE IS THE AUTHORITY AND THE EVENT IS ONLY THE FAST PATH, which is not a nicety —
+        // it is the difference between the editor saying its runtime died and the editor going
+        // quiet. Two interleavings lose the event, and the session is dropped here, so anything
+        // the event was carrying is gone for good:
+        //
+        //   * `Session::lose` marks the state lost and *then* sends `SessionEvent::Lost`. A pump
+        //     that lands between the two polls an empty queue, sees a state that is no longer
+        //     connected, and drops the session; the event is delivered to a receiver nobody will
+        //     read again. Reproduced at roughly one run in ten of
+        //     `a_runtime_that_dies_becomes_a_notification_and_the_editor_returns_to_no_runtime`
+        //     in the `dev` and `profiling` Cargo profiles, which is how it was found.
+        //   * The writer thread calls `mark_lost` and sends NO event at all, deliberately — see
+        //     `Session::spawn_writer`, which reasons that "the reader thread will notice too and
+        //     is the one that reports". It does not always: a peer that stops reading while its
+        //     own write end stays open fails the write and never closes the stream, so the reader
+        //     blocks forever and the only record of the failure is the state.
+        //
+        // So the loss is announced from whichever of the two arrived, and `announced` keeps it to
+        // one notification when both do.
+        if let SessionState::Lost(problem) = session.state() {
+            if !announced {
+                notifications.post(Notification::error("The hosted runtime stopped", problem));
+            }
             self.session = None;
             self.mode = HostingMode::NoRuntime;
         }
@@ -196,5 +221,63 @@ mod tests {
         assert_eq!(posted.len(), 1);
         assert_eq!(posted[0].message, "The hosted runtime stopped");
         assert!(posted[0].problem.as_ref().unwrap().remedy.is_some());
+    }
+
+    /// A writer that always fails, so the write side of a session dies while the read side does not.
+    struct RefusesToWrite;
+
+    impl std::io::Write for RefusesToWrite {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "the runtime stopped reading",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// REGRESSION, and the deterministic half of the defect the racy sibling above caught.
+    ///
+    /// `Session::spawn_writer` marks the state lost and sends no `SessionEvent::Lost`, reasoning
+    /// that the reader will notice. Here the reader cannot: the pipe's write end is held open for
+    /// the whole test, so the reader blocks and the *only* record of the failure is the state.
+    /// `pump` used to drop the session on that state without saying anything, which returned the
+    /// editor to `NoRuntime` in silence and threw away the offer to restart —
+    /// `editor-rust-application` requires a runtime failure to be surfaced, not merely survived.
+    /// Before the fix this failed on every run rather than one in ten.
+    #[test]
+    fn a_write_side_failure_is_surfaced_even_though_the_reader_never_posts_an_event() {
+        let (editor_reader, runtime_writer) = std::io::pipe().unwrap();
+        let mut runtime = RuntimeSession::over(Session::over(editor_reader, RefusesToWrite));
+        assert!(runtime.is_connected());
+        runtime
+            .apply(vec![1, 2, 3], ApplyWhen::OnArrival)
+            .expect("the send is queued; the failure happens on the writer thread");
+
+        let mut notifications = NotificationService::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while runtime.is_connected() && std::time::Instant::now() < deadline {
+            runtime.pump(&mut notifications);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime.pump(&mut notifications);
+
+        assert_eq!(runtime.mode(), HostingMode::NoRuntime);
+        let mut cursor = cy_editor_core::observe::Cursor::default();
+        let posted = notifications.drain_from(&mut cursor);
+        assert_eq!(
+            posted.len(),
+            1,
+            "a lost runtime is announced once, whichever half of the session noticed it"
+        );
+        assert_eq!(posted[0].message, "The hosted runtime stopped");
+        assert!(posted[0].problem.as_ref().unwrap().remedy.is_some());
+
+        // Held to the end on purpose: it is what keeps the reader thread blocked, which is what
+        // makes this test about the writer.
+        drop(runtime_writer);
     }
 }

@@ -141,23 +141,76 @@ ci_job = "milestone-m5"
 # rather than an equality: a later milestone advancing one of these past its M5 level must not make
 # this recipe fail.
 #
-# READ `live-editing = "working"` AS A CLAIM SOMEBODY STILL HAS TO EARN. It is what the ROADMAP row
-# and the proposal both say, so it is what this ledger asks for; the import workstream's own report
-# says that only the asset half is delivered and that marking it Working "would be the first thing a
-# reviewer finds untrue". Whoever closes M5 either finishes it or amends this table with the reason —
-# what must not happen is the table being quietly relaxed to match whatever the record says.
+# --- AMENDED AT THE GATE, WITH THE REASON, WHICH IS WHAT THIS FILE ASKED FOR ----------------------
+#
+# The paragraph that stood here said: "READ `live-editing = "working"` AS A CLAIM SOMEBODY STILL HAS
+# TO EARN ... Whoever closes M5 either finishes it or amends this table with the reason — what must
+# not happen is the table being quietly relaxed to match whatever the record says." Four rows were
+# amended. Each is written down here with what was looked at, because a table that moves without its
+# argument is the quiet relaxation that sentence forbids.
+#
+#   live-editing        working -> seed.  The bridge has no engine side. `cy-runtime-stub`, the
+#       process the artefact kills, is a Rust binary in cy-editor-testhost whose own header says
+#       "What it is not: an engine. It holds no world, and it echoes what it is asked to apply. The
+#       real hosted runtime is a C++ binary over `cy::abi::Host`, and it arrives with `live-editing`
+#       at task 5.2." It did not arrive: `grep -rl 'AF_UNIX\|sockaddr_un' src tools samples` returns
+#       nothing, so no engine binary can accept a bridge connection and the editor has never spoken
+#       to this engine. Of the capability's eleven requirements, `Play modes` has no implementation
+#       in any process (`PlayState` in cy-editor-viewport is a presentation enum), `Live edit policy`
+#       is absent by the importer's own statement — tools/import/include/cy/import/live_import.h:
+#       "It owns the ASSET half of live editing. The rest ... the per-field live edit policy, entity
+#       and component deltas, play modes and the bridge's message set — is not here" — and
+#       `Live bridge protocol` is delivered on one side of a boundary that has one participant.
+#       WHAT IS REAL, and why this is Seed rather than nothing: a module reloads while a loop runs
+#       and world state crosses it (integration.abi_live_reload), the world is inspectable from
+#       outside the process that owns it (integration.abi_inspector), an edited source re-cooks and
+#       replaces the resource behind a stable handle (cy::import::LiveImport), and shaders reload
+#       from M3. Interfaces and invariants exist and dependents can be built against them, which is
+#       the Seed definition exactly.
+#
+#   editor-ui-ux        working -> seed.  Not this gate's finding: `openspec/changes/
+#       implement-m5b-operable/`, committed to main before this gate ran, says it outright — "M5's
+#       row claimed editor-ui-ux at Working while closing on a scripted session ... The row was
+#       wrong when it was written" — and inserts M5.5 to deliver it. `cy-editor-interface`'s own
+#       header agrees: docking, workspaces, the palette, keyboard-first operation and the generated
+#       inspector exist "as models a test can drive, with no window, no graphics device and no
+#       interface toolkit." Of sixteen requirements, `Familiarity is a feature`, `Density over
+#       decoration`, `Theming and accessibility` and `Discoverability without documentation` are
+#       claims about what a person sees, and nothing in this tree renders. The models are real and
+#       measured against the capability's own interaction targets; that is Seed.
+#
+#   editor-architecture working -> seed.  The capability's first requirement puts the authoring,
+#       preview and runtime worlds in the RUNTIME and the interface state in the editor. All three
+#       are in the editor process (cy-editor-documents::worlds), because there is no runtime process
+#       to put them in — the same gap as `live-editing` above. Play mode does not exist; the content
+#       browser is a string in cy-editor-visual::vocabulary and a comment in problems.rs; project
+#       settings, build and deployment, specialised editors and the debugging and profiling tools
+#       have no implementation. Undo/redo and the inspector are Working-grade and are the reason
+#       this is Seed rather than none.
+#
+#   project-and-plugins complete -> working (unchanged from M1).  Nothing in M5 touched it. Four of
+#       its eleven requirements — `Plugins`, `Plugin lifecycle`, `Plugin resolution and lockfile`,
+#       `Trust tiers for extensions` — have no implementation anywhere in the tree: `find src tools
+#       -iname '*plugin*'` returns one layercheck fixture. The M5 row planned Complete over "plugins
+#       over the C ABI, extension points, lifecycle, resolution and lockfile, trust tiers" and no
+#       task in this milestone's tasks.md asked for any of it.
+#
+# The three Complete rows that stayed are the three the code supports: `native-abi` closed its last
+# open requirement here (`Rust SDK overlay`, the generated cy-editor-sdk) and its table grew the
+# chunk and node entries M4 recorded as missing; `core-type-system` and `scene-graph-and-nodes` gained
+# the reflected scene components that M2's record named as the gap and that the state hash needed.
 [criterion.expect_tiers]
 editor-rust-application = "working"
 editor-documents-and-transactions = "working"
-editor-architecture = "working"
+editor-architecture = "seed"
 editor-viewport-and-gizmos = "working"
-editor-ui-ux = "working"
+editor-ui-ux = "seed"
 asset-import-pipeline = "working"
-live-editing = "working"
+live-editing = "seed"
 text-and-fonts = "seed"
 editor-agent-interface = "seed"
 editor-visual-language = "seed"
-project-and-plugins = "complete"
+project-and-plugins = "working"
 core-type-system = "complete"
 scene-graph-and-nodes = "complete"
 native-abi = "complete"
@@ -337,10 +390,23 @@ ci_job = "build-and-test"
 # closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
 # turns red on the day the next milestone closes — which is the one day this criterion should be
 # most satisfied.
+# AMENDED AT THE GATE, AND THE AMENDMENT IS THE POINT OF THE CRITERION RATHER THAN A WEAKENING OF IT.
+# This asked for `*m6*` when it was written, because M6 was the next rung. It is not any more:
+# `implement-m5b-operable` — commit bc4f233, on main before this gate ran — INSERTS M5.5 · Operable
+# between M5 and M6, and says why in its own proposal ("M5's row claimed editor-ui-ux at Working
+# while closing on a scripted session ... the window becomes M5.5"). So the change that has to exist
+# for the ladder to continue deliberately after M5 is M5.5's, and asking for M6's would ask for a
+# change two rungs ahead — a criterion that fails for being out of date rather than for anything
+# being wrong. Renamed and repointed rather than deleted: every earlier ledger carries the same
+# criterion naming its own successor, and this one now names M5's.
+#
+# WHAT THIS DOES NOT DO: excuse task 7.12. Opening M6 remains the task, and this criterion will name
+# `*m6*` again the moment M5.5's ledger is written — at which point it becomes M5.5's `m6-open`,
+# exactly as M0's `m1-open` became M1's `m2-open`.
 [[criterion]]
-id = "m6-open"
-describe = "the M6 change exists — open, or closed and archived — so the ladder continues deliberately"
-source = "tasks 7.12"
+id = "m5b-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M5.5 · Operable, inserted between M5 and M6 by implement-m5b-operable"
+source = "tasks 7.12, implement-m5b-operable"
 kind = "path"
-path = "openspec/changes/**/*m6*/proposal.md"
+path = "openspec/changes/**/*m5b*/proposal.md"
 ci_job = "milestone-m5"

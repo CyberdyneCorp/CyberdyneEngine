@@ -367,6 +367,33 @@ the hosted runtime killed mid-session — recover without losing work.
 **Risk spike**: the live bridge — latency and state synchronisation over the out-of-process
 boundary, including the console-shaped case where the runtime is not local.
 
+*Measured, and the answer is that out of process is affordable.* Against a runtime holding 1,000
+entities and applying every drag through the real `CyInterface` table, the process boundary costs
+about 60 microseconds at the median — 0.001 ms in process against 0.059 ms over a Unix domain
+socket. What dominates is the runtime's own frame: correctly frame-coupled, in process and out of
+process are within 0.3–1.3 ms at p50 and 1.4–3.5 ms at p99, and the 8.6 ms median is paid
+identically with no boundary at all. Two traps were found and are written down rather than
+rediscovered: an editor running at exactly the runtime's tick rate **phase-locks** into a stable
+full-frame stall, which a vsynced editor on a 60 Hz monitor walks straight into; and 1% packet loss
+at TCP's minimum retransmit timeout costs a 7x worse tail than a tuned application retransmit on the
+same link, which is the common case during a paced drag because nothing else is in flight to trigger
+a fast retransmit. The viewport transport was measured separately at task 4.1 and is where the
+decision actually bites: a queue rather than a mailbox puts the image the user is dragging against
+half a second behind.
+
+**What closed, and what did not.** The table above is the plan M5 was written against. The record of
+what the milestone actually reached is [`status.yaml`](roadmap/status.yaml), and where the two differ
+the record wins: `editor-architecture`, `editor-ui-ux` and `live-editing` reached **Seed** rather
+than Working, and `project-and-plugins` did not move from Working — the evidence for each is in
+[the capability matrix](roadmap/capability-matrix.md#where-m5s-tiers-are-thin) and in
+`tools/roadmap/milestones/m5.toml` beside `[criterion.expect_tiers]`. Three capabilities the row
+above does not name reached **Complete**: `core-type-system`, `scene-graph-and-nodes` and
+`native-abi`. The single fact behind three of the four shortfalls is that the hosted runtime the
+editor talks to is a test stub: no engine binary accepts a live-bridge connection, so play mode, the
+runtime-owned worlds and the bridge's engine half are all absent. Correcting this row itself belongs
+to [`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposal.md), which inserts
+**M5.5 · Operable** between M5 and M6 and gives its own reasoning for the `editor-ui-ux` correction.
+
 ---
 
 # Production scale

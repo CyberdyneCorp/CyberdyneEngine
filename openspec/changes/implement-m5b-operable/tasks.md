@@ -15,15 +15,35 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 
 ### 1.0 Three things the spike handed back, before any panel exists
 
-- [ ] 1.0.1 **Cross-process synchronisation.** wgpu does not enable `VK_KHR_external_semaphore_fd`,
-      so an imported semaphore cannot be created on its device as configured. Fence waits are correct
-      but serialise. Use `WgpuSetup::Existing` to supply our own `VkDevice`, or establish that
-      serialising is acceptable and say why. **First task of the viewport work, not a later
-      discovery** (`design.md` §1).
-- [ ] 1.0.2 **Widen `FrameImage::SharedTexture`** from `{ handle: u64 }` to carry fd, DRM format
-      modifier, stride, offset, size and fourcc. Vulkan and DRM facts, not toolkit facts, so the
-      layer stays toolkit-agnostic. `DRM_FORMAT_MOD_LINEAR` is **not** supported on this hardware,
-      so the negotiated modifier must travel with the image.
+- [ ] 1.0.1 **Cross-process synchronisation** — no longer a discovery, an implementation with a
+      measured design (`design.md`). `Adapter::open_with_callback` to push
+      `VK_KHR_external_semaphore_fd`, then `create_device_from_hal` and `WgpuSetupExisting`. Timeline
+      semaphores over `OPAQUE_FD`; `SYNC_FD` is binary-only. Check that the **extension was enabled**,
+      never that a function pointer is non-null — ash installs a panicking stub, so the obvious check
+      returns true and the call aborts the process.
+- [ ] 1.0.1b **A bounded host wait, not a GPU wait.** `add_wait_semaphore` on the editor's queue is
+      one bad value from an editor that renders nothing and cannot be closed — measured, including a
+      shutdown that hangs forever in `vkDeviceWaitIdle`. `vkWaitSemaphores` with a 2 ms timeout gets
+      97% of the newest frames at the same latency and cannot wedge anything.
+- [ ] 1.0.1c **Three images minimum, four preferred**, and the runtime **drops on a full ring rather
+      than blocking** — the editor must never throttle the runtime. One image wedges; two cost a
+      whole editor frame of latency.
+- [ ] 1.0.1d **Announce after `vkQueueSubmit`, never before.** Surviving a runtime SIGKILL depends
+      entirely on it: every value the editor can wait on is then already submitted and will signal
+      even though the process is gone. Six kill runs survived because of this and nothing recorded it.
+- [ ] 1.0.2 **Widen `FrameImage::SharedTexture`** from `{ handle: u64 }`. The memory half needs fd,
+      DRM modifier, stride, offset, **allocation** size (not width×height×4), fourcc, width, height.
+      `DRM_FORMAT_MOD_LINEAR` is not available on this hardware. The synchronisation half adds two
+      timeline semaphore fds, a memfd for the shared announcement page, `buffer_count`, and a
+      **generation/epoch** so a resize cannot be sampled against a destroyed image.
+- [ ] 1.0.2b **Per-frame state goes in a shared page under a seqlock, not on the socket.** A partial
+      write desynchronises the reader, which then stages a wait on a garbage timeline value — the
+      unrecoverable failure above. The socket carries the handshake and liveness only; EOF is how the
+      editor learns the runtime died.
+- [ ] 1.0.2c **`held = (frame_id, slot)` flows editor → runtime**, which the current one-directional
+      framing does not anticipate. A monotonic release counter alone is not sufficient: an editor
+      still sampling a released frame will have it overwritten underneath. Reproduced as real
+      corruption before the field was added.
 - [ ] 1.0.3 **A toolkit-containment test**, in the shape of `cy-editor-app/tests/layering.rs`, that
       fails if `egui`, `eframe`, `egui_dock` or `wgpu` appears in any crate's dependencies except the
       one render crate. Without it the boundary erodes, because importing `egui::Color32` into

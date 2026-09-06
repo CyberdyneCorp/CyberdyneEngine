@@ -71,23 +71,53 @@ localised panel — **we should steal that idea for our own `PanelId` ↔ title 
 Losing ImGuizmo is close to a non-loss: `editor-viewport-and-gizmos` puts gizmo geometry, depth
 handling and drawing in the engine, so it would have been the wrong tool anyway.
 
-### Three things the spike found that will bite if ignored
+### Cross-process synchronisation — solved, and measured
 
-**Cross-process synchronisation is unsolved, and it is the largest open item.** The spike proved the
-*memory* path. wgpu enables `VK_KHR_external_memory_fd` and `VK_EXT_external_memory_dma_buf` but
-**not `VK_KHR_external_semaphore_fd`**, so an imported semaphore cannot be created on wgpu's device
-as it configures itself. The producer used fence waits — correct but serialising. The escape hatch
-exists (`WgpuSetup::Existing`, building the `VkDevice` ourselves). **This is the first task of the
-viewport work, not a later discovery.**
+The toolkit spike left this as the largest open item. A second spike answered it, on this hardware,
+by building and running.
 
-**`DRM_FORMAT_MOD_LINEAR` is not supported on this hardware.** NVIDIA advertises seven modifiers for
-RGBA8, six usable, and linear is not among them. Hardcoding linear — the obvious thing to do from
-documentation — would have failed. The transport must carry the negotiated modifier.
+**Timeline semaphores work across processes, without forking wgpu.** The escape hatch is smaller
+than `WgpuSetup::Existing` implies: `wgpu_hal::vulkan::Adapter::open_with_callback` hands you the
+extension list before `vkCreateDevice`, so pushing `VK_KHR_external_semaphore_fd` and passing the
+result to `create_device_from_hal` is about thirty lines. `VK_KHR_timeline_semaphore` needs no work —
+wgpu enables it unconditionally at API ≥ 1.2, and its own `Fence` *is* a timeline semaphore.
+Timelines export and import over `OPAQUE_FD`; `SYNC_FD` is binary-only and must not be planned on.
 
-**`FrameImage::SharedTexture { handle: u64 }` is insufficient.** A dma-buf import needs fd, DRM
-format modifier, stride, offset, size and fourcc. These are Vulkan and DRM facts rather than toolkit
-facts, so widening the variant keeps the layer toolkit-agnostic. Cheap now; expensive after four
-panels are built on the `u64`.
+**It is worth the work.** The fence wait the first spike fell back to costs 2.69× on a cheap frame.
+With an editor attached: fence and one image gives 1,287 runtime fps, 0.85 ms latency and **99.9%
+corruption**; timelines with three images give **1,727 fps, 0.42 ms, and 0%**. There is no trade-off
+to argue about.
+
+**Three images minimum, four preferred.** One wedges. Two throttle the runtime to the editor's
+refresh rate and cost a whole editor frame — 16 ms — of latency. Three is where pipelining starts;
+four removes the last stalls for 8.4 MB. And the editor must never throttle the runtime, so the
+runtime drops on a full ring rather than blocking.
+
+### The failure mode that decides the wait policy
+
+`add_wait_semaphore` on the editor's wgpu queue is **one bad value away from an editor that renders
+nothing and cannot be closed**. Measured: an unsatisfiable wait returns from `submit` in 0.19 ms
+because the wait is on the GPU, then every later independent submission times out, and shutdown
+hangs forever in `vkDeviceWaitIdle`. That is a direct violation of `editor-rust-application`'s
+requirement that a runtime failure not terminate the editor.
+
+**So the wait is a bounded host wait, not a GPU wait.** `vkWaitSemaphores` with a 2 ms timeout shows
+97% of the newest frames at the same latency as the GPU wait's 100%, and can never leave an
+unsatisfiable wait in a queue. Trading three frames in 360 for an editor that cannot be wedged is
+not a close call.
+
+Process death, separately, is survivable — six SIGKILL runs, all six survived, the editor freezing on
+the last complete frame with a banner. But it is survivable **only because the protocol announces
+after `vkQueueSubmit`**, so every value the editor can wait on is already submitted and will
+eventually signal. That invariant was not written down anywhere; announce-before-submit, or a runtime
+whose own GPU work hangs, lands in the unrecoverable case. It is written down now.
+
+### One thing that passed by luck, and is worth remembering
+
+The spike's first capability check asked whether ash's `import_semaphore_fd_khr` function pointer was
+non-null. It returned true **without the extension enabled**, because ash installs a panicking stub
+rather than a null pointer — and calling it aborts the process rather than returning an error. The
+only honest check is whether the extension was enabled.
 
 ### Reversibility, checked rather than assumed
 

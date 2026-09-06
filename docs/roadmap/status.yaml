@@ -18,9 +18,9 @@ capabilities:
     milestone: M2
     change: implement-m2-world
   core-type-system:
-    tier: working
-    milestone: M1
-    change: implement-m1-substrate
+    tier: complete
+    milestone: M5
+    change: implement-m5-authorable
   core-memory-and-containers:
     tier: working
     milestone: M1
@@ -46,9 +46,9 @@ capabilities:
     milestone: M2
     change: implement-m2-world
   scene-graph-and-nodes:
-    tier: working
-    milestone: M2
-    change: implement-m2-world
+    tier: complete
+    milestone: M5
+    change: implement-m5-authorable
   serialization-and-prefabs:
     tier: working
     milestone: M2
@@ -122,9 +122,9 @@ capabilities:
     milestone: null
     change: null
   native-abi:
-    tier: working
-    milestone: M4
-    change: implement-m4-playable
+    tier: complete
+    milestone: M5
+    change: implement-m5-authorable
   swift-scripting:
     tier: working
     milestone: M4
@@ -234,49 +234,49 @@ capabilities:
     milestone: M4
     change: implement-m4-playable
   text-and-fonts:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M5
+    change: implement-m5-authorable
   ui-system:
     tier: none
     milestone: null
     change: null
   asset-import-pipeline:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M5
+    change: implement-m5-authorable
   editor-agent-interface:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M5
+    change: implement-m5-authorable
   editor-architecture:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M5
+    change: implement-m5-authorable
   editor-documents-and-transactions:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M5
+    change: implement-m5-authorable
   editor-rust-application:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M5
+    change: implement-m5-authorable
   editor-ui-ux:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M5
+    change: implement-m5-authorable
   editor-visual-language:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M5
+    change: implement-m5-authorable
   editor-viewport-and-gizmos:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M5
+    change: implement-m5-authorable
   live-editing:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M5
+    change: implement-m5-authorable
   project-and-plugins:
     tier: working
     milestone: M1

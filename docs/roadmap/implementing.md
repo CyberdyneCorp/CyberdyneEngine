@@ -73,20 +73,29 @@ From [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md):
 
 ## Landed
 
-**M4 · Playable** — the versioned append-only C ABI and its gate, the generated `CyberdyneKit`
-overlay, input with fixed-tick sampling, physics over Jolt, camera and audio at Seed, and one
-validated command stream. 26 exit criteria pass. Closes on `samples/04-character`: a controller
-written entirely in Swift.
+**M5 · Authorable** — the editor as a Rust client over the C ABI: documents, transactions as the
+only persistent write path, a command registry with typed parameters and declared effect classes,
+engine-side picking, asset import, and a scripted session that survives its hosted runtime being
+SIGKILLed mid-edit. 99 of 101 criteria pass; the two skipped are CI-matrix-only.
 
-Its spike returned a more useful answer than yes. Hot reload works, but **not in place** — state
-survives by serialize, migrate-by-name, recreate, measured across 40 consecutive edit/rebuild/reload
-cycles at 0.13 ms mean. In-place preservation *looks perfect* until a type layout changes and then
-corrupts silently: v2 code reading v1 objects reported `health=17` (v1's `ammo`) and a String field's
-raw bit pattern as an integer, with no trap and no diagnostic. And `dlclose` of a Swift image is
-unsafe on Linux — the next module maps over the same addresses, so a stale call jumps into unrelated
-live code. A 20-cycle test passed *by luck* because two images were the same size.
+**It also flattened the milestone ledger.** A ledger now evaluates the permanent set once,
+deduplicated, plus its own criteria, and invokes no other ledger — `four-profiles` runs once against
+four times before. The subtle part is what flattening loses: *every criterion of every green earlier
+milestone is in the newest ledger* was free under chaining and is silent when lost, so it now has a
+regression test of its own.
 
-**M3 · First light**, **M2 · World**, **M1 · Substrate**, **M0 · Ground** — see the archive.
+Its gate demoted **four of its own tiers** rather than accepting them, because *the editor has never
+spoken to this engine* — the process the artefact kills is a Rust stub that holds no world.
+`live-editing`, `editor-ui-ux` and `editor-architecture` fell to Seed, `project-and-plugins` to
+Working, each with the argument recorded beside the criterion.
+
+And the fourth profile caught a real defect in the milestone's headline mechanism: a race in
+`Session::lose` meant the editor fell back to no-runtime **in silence**, losing the offer to restart
+that `editor-rust-application` requires. Fixed at the pump, with a regression test that fails 3/3
+against the old code and 0/30 with the fix.
+
+**M4 · Playable**, **M3 · First light**, **M2 · World**, **M1 · Substrate**, **M0 · Ground** — see
+the archive.
 
 Seven lessons, each found by auditing work that had been reported green:
 
@@ -95,23 +104,26 @@ Seven lessons, each found by auditing work that had been reported green:
 - A ledger can break the milestone it is checking.
 - A milestone's gate must actually be promoted when it closes.
 - A delivered backend that is off by default is a backend nothing tests.
-- Don't touch the machine while a ledger runs.
-- **A criterion that runs a different configuration from its gate cannot speak for it.** M4's
-  sanitizer criterion pre-configured its tree with the Slang front end off to work around one known
-  failure — and thereby hid two nobody had found, while the CI job it stands for went on failing.
+- A criterion that runs a different configuration from its gate cannot speak for it.
+- **Don't touch the machine while a ledger runs** — two "regressions" were concurrent builds.
 
 ## In flight
 
-**M5 · Authorable.** The editor as a Rust client of a hosted runtime — documents and transactions as
-the only write path, viewport and gizmos with engine-side picking, asset import, live editing over
-M4's proven reload model. Closes on a scripted session that survives having the runtime killed
-mid-edit.
+**M5.5 · Operable.** The editor a person can see and operate, and one an agent can drive. Inserted
+rather than renumbered, because M5's row claimed `editor-ui-ux` at Working while closing on a
+scripted session — the row was wrong when it was written, and `delivery-roadmap` requires an artefact
+that exercises its capabilities *through the entry points a user would use*.
 
-Scheduled **first**, before any editor code: the **flattened milestone ledger**. A ledger currently
-begins by running the previous one's, twelve deep by M11 — 123 criterion invocations over 89 distinct
-criteria, with `four-profiles` executed four times by a single run. M4's gate found a unit case that
-failed four ledgers at once purely through that nesting. Deduplication is a correctness property
-here, not an optimisation.
+The toolkit question, deferred for five milestones as an implementation detail, is answered:
+**egui + egui_dock over wgpu**, chosen not on the zero-copy criterion — all three candidates passed
+that — but because `dear-imgui-wgpu` gamma-corrects the imported frame, so proving the viewport image
+is the engine's becomes a tolerance rather than an equality, and because Dear ImGui exposes nothing
+to any accessibility tree.
 
-Its named risk is the live bridge: every selection, gizmo drag and property edit crosses a process
-boundary, and whether that feels local is measured rather than argued.
+It also brings `editor-agent-interface` to Working rather than M8. The capability is the loop, not
+the tools: compose a scene, write a gameplay script, build and reload, play, **look**, decide.
+
+Design references are binding: `docs/design/` now carries the identity, the transform gizmo, the
+scene orientation gizmo and the editor scene view. Two things in them are deliberately not followed —
+the active-state red, which collides with red meaning both the X axis and error, and the ban on
+arrows in the orientation widget, which was my error rather than the reference's.
