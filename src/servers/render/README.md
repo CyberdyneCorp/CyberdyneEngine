@@ -4,9 +4,10 @@ The handle-based render server: all renderable state, behind generational handle
 knowledge of entities, nodes or scripts**.
 
 **Governed by**: `rendering-architecture` (the server, the scene/view/instance model, the snapshot,
-the GPU scene, debug visualisation and statistics) and `rendering-geometry-and-resources` (mesh
-representation, vertex compression, texture formats). Arrived at M3, tasks 4.1.1–4.1.6, 4.2.1,
-4.2.2.
+the GPU scene, debug visualisation and statistics), `rendering-geometry-and-resources` (mesh
+representation, vertex compression, texture formats) and, from M5, `editor-viewport-and-gizmos` (the
+editor's two entry points: picking and the viewport transport). Arrived at M3, tasks 4.1.1–4.1.6,
+4.2.1, 4.2.2; extended at M5, tasks 4.1 and 4.2.
 
 ## The one rule, and the layer number that enforces it
 
@@ -41,6 +42,32 @@ mock:
 | `debug_draw.h` | debug primitives, double buffered, compiled out in Profile and Shipping |
 | `statistics.h` | the seven frame stages, per-view and per-frame counters, memory by category |
 | `server.h` | the handle pools, the scene/view/instance model, snapshot application, draw collection |
+| `picking.h` | **engine-side picking**, resolved against the draw list a view produced (M5, task 4.2) |
+| `viewport_transport.h` | the viewport transport's publishing endpoint: the frame's identity, its view state, its pacing (M5, task 4.1) |
+
+## The editor's two entry points, and why they are here rather than in the editor
+
+`editor-viewport-and-gizmos` requires picking to be **engine-side**, "so that what is picked matches
+what is rendered — including virtual geometry, instanced content, foliage, terrain, and skinned
+meshes", and names "editor-side picking that does not match what the engine rendered" as a forbidden
+pattern. So the resolution lives here, and it is made true by construction rather than by care:
+
+**`pick_ray` resolves against the DRAW LIST, not against the scene.** It takes the
+`Span<const DrawItem>` that `collect_draws` produced for the view and considers nothing else, so the
+candidate set is a subset of what was actually drawn. An instance culled, hidden, or on a layer the
+view does not draw is absent because it never reached the list — and an instance published by a
+producer this file has never heard of is present for the same reason. There is no second traversal to
+drift out of step with the first.
+
+**`viewport_transport.h` publishes a frame's IDENTITY and VIEW STATE alongside its image**, because
+the specification requires a click to be "resolved against the view state of the frame shown, not a
+newer one". `ViewportViewState::to_view()` hands back the `View` a pick should use, which is the one
+thing a caller has to remember; passing its own camera instead compiles and is wrong, and that is
+what the frame identifier exists to make detectable.
+
+Neither file names a device, an encoder or a shared-handle API, because this is still layer 2. What
+the editor's side of the transport measured about all this is in
+`editor/crates/cy-editor-viewport/README.md`.
 
 ## Three decisions worth knowing before changing anything
 

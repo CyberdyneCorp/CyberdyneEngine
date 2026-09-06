@@ -17,6 +17,8 @@
 #include <cy/abi/host.h>
 #include <cy/abi/var.h>
 #include <cy/core/base/diagnostic_sink.h>
+#include <cy/ecs/archetype.h>
+#include <cy/ecs/system.h>
 #include <cy/ecs/world.h>
 
 #include <cstring>
@@ -33,6 +35,31 @@ using cy::abi::to_abi;
 static_assert(sizeof(CyInterface) % sizeof(void*) == 0, "the table is a whole number of pointers");
 static_assert(offsetof(CyInterface, header) == 0, "the header is first, so table_size is readable");
 
+// THE TWO ENUMS THE OVERLAY USED TO COPY BY HAND, PINNED TO THE ENGINE'S OWN. M5 task 1.2.
+//
+// `CySeverity` shipped as a six-enumerator copy in CyberdyneKit against the engine's three, and
+// every `Log.info` from a Swift behaviour arrived as `[error]` on a run that reported green. These
+// assertions are what makes that impossible rather than unlikely: adding a level to
+// `cy::DiagnosticSeverity` or a stage to `cy::ecs::Stage` now fails to compile here, naming the
+// enumerator, instead of relabelling somebody's log line or scheduling a system into the wrong
+// phase.
+static_assert(static_cast<cy::u32>(cy::DiagnosticSeverity::Info) == CY_SEVERITY_INFO);
+static_assert(static_cast<cy::u32>(cy::DiagnosticSeverity::Warning) == CY_SEVERITY_WARNING);
+static_assert(static_cast<cy::u32>(cy::DiagnosticSeverity::Error) == CY_SEVERITY_ERROR);
+
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::PreSimulation) == CY_STAGE_PRE_SIMULATION);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::Physics) == CY_STAGE_PHYSICS);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::Simulation) == CY_STAGE_SIMULATION);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::PostSimulation) == CY_STAGE_POST_SIMULATION);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::Frame) == CY_STAGE_FRAME);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::Animation) == CY_STAGE_ANIMATION);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::UI) == CY_STAGE_UI);
+static_assert(static_cast<cy::u32>(cy::ecs::Stage::Render) == CY_STAGE_RENDER);
+// And the count, so that ADDING a stage without extending this list is also a compile error rather
+// than a stage the ABI silently cannot name.
+static_assert(cy::ecs::kStageCount == CY_STAGE_RENDER + 1U,
+              "a stage was added to cy::ecs::Stage; append it to CyStage and assert it here");
+
 // --- Resolving handles ---------------------------------------------------------------------------
 //
 // A handle that is null, or a world that has no ECS world behind it, is a module's mistake. It is
@@ -48,7 +75,10 @@ cy::abi::World* world_of(CyWorld world) noexcept {
 
 const cy::abi::ComponentRecord* component_of(cy::abi::World& world,
                                              CyComponentTypeId component) noexcept {
-    const cy::abi::ComponentRecord* record = world.record(component);
+    // `record_or_import` rather than `record`: at 1.1 the table can address a component the ENGINE
+    // registered as well as one a module described, and the difference is one import on first use.
+    // See cy/abi/host.h for why that is an import and not a second lookup path.
+    const cy::abi::ComponentRecord* record = world.record_or_import(component);
     if (record == nullptr) {
         (void)cy::abi::report(CY_RESULT_NOT_FOUND, "no such component type in this world");
     }
@@ -112,10 +142,32 @@ CyVar var_from_field(const cy::abi::FieldRecord& field, const cy::u8* bytes) noe
     switch (field.type) {
         case CY_VAR_BOOL:
             return cy::abi::var_bool(*bytes != 0);
-        case CY_VAR_I64: {
+        // THE EIGHT INTEGER KINDS, WIDENED INTO ONE SLOT. A `u8` in the chunk becomes a `CyVar`
+        // tagged CY_VAR_U8 whose payload is the value in `as_i64` — zero-extended for the unsigned
+        // kinds, sign-extended for the signed ones. The tag says how wide the storage is, which is
+        // what `var_into_field` needs to write it back without touching a neighbouring field.
+        case CY_VAR_I8:
+        case CY_VAR_I16:
+        case CY_VAR_I32:
+        case CY_VAR_I64:
+        case CY_VAR_U8:
+        case CY_VAR_U16:
+        case CY_VAR_U32:
+        case CY_VAR_U64: {
+            cy::u64 raw = 0;
+            std::memcpy(&raw, bytes, field.size);
             cy::i64 value = 0;
-            std::memcpy(&value, bytes, sizeof(value));
-            return cy::abi::var_i64(value);
+            if (cy::abi::var_type_is_signed(field.type) && field.size < sizeof(cy::u64)) {
+                // Sign extension, written as a shift pair rather than as a cast chain so that the
+                // width is a value and not eight copies of this function.
+                const auto spare = static_cast<cy::u32>((sizeof(cy::u64) - field.size) * 8U);
+                value = static_cast<cy::i64>(raw << spare) >> spare;
+            } else {
+                value = static_cast<cy::i64>(raw);
+            }
+            CyVar var = cy::abi::var_i64(value);
+            var.type = static_cast<cy::u32>(field.type);
+            return var;
         }
         case CY_VAR_F32: {
             cy::f32 value = 0;
@@ -163,9 +215,34 @@ CyResult var_into_field(const cy::abi::FieldRecord& field, const CyVar& value,
         case CY_VAR_BOOL:
             *bytes = value.payload.as_bool ? 1U : 0U;
             break;
+        case CY_VAR_I8:
+        case CY_VAR_I16:
+        case CY_VAR_I32:
         case CY_VAR_I64:
-            std::memcpy(bytes, &value.payload.as_i64, sizeof(cy::i64));
+        case CY_VAR_U8:
+        case CY_VAR_U16:
+        case CY_VAR_U32:
+        case CY_VAR_U64: {
+            // NARROWED WITH A RANGE CHECK, NOT TRUNCATED. Writing 300 into a `u8` field is a
+            // caller's mistake, and silently storing 44 is the shape of bug that is found weeks
+            // later in a save file. The check is the round trip: narrow, widen back, compare.
+            const cy::i64 given = value.payload.as_i64;
+            auto raw = static_cast<cy::u64>(given);
+            if (field.size < sizeof(cy::u64)) {
+                const auto spare = static_cast<cy::u32>((sizeof(cy::u64) - field.size) * 8U);
+                const cy::u64 masked = raw & (~cy::u64{0} >> spare);
+                const cy::i64 restored = cy::abi::var_type_is_signed(field.type)
+                                             ? (static_cast<cy::i64>(masked << spare) >> spare)
+                                             : static_cast<cy::i64>(masked);
+                if (restored != given) {
+                    return cy::abi::report(CY_RESULT_OUT_OF_RANGE,
+                                           "the value does not fit the field's width");
+                }
+                raw = masked;
+            }
+            std::memcpy(bytes, &raw, field.size);
             break;
+        }
         case CY_VAR_F32:
             std::memcpy(bytes, &value.payload.as_f32, sizeof(cy::f32));
             break;
@@ -188,6 +265,44 @@ CyResult var_into_field(const cy::abi::FieldRecord& field, const CyVar& value,
     }
     cy::abi::clear_last_error();
     return CY_RESULT_OK;
+}
+
+/// Fill `out_chunks` from one archetype's non-empty chunks, and report how many there were.
+///
+/// Writes only while `written + result` is below `capacity`, and counts regardless — which is what
+/// makes `world_chunks` answer "how many are there" and "give me as many as fit" with one walk
+/// instead of two. Split out of the thunk because the nesting it removes is most of that function's
+/// complexity, and because "what one archetype contributes" is the sentence the loop is made of.
+cy::u32 count_chunks(cy::ecs::Archetype& archetype, CyComponentTypeId component, cy::u64 epoch,
+                     CyChunk* out_chunks, cy::u32 capacity, cy::u32 written) noexcept {
+    // A column exists only for the kinds that have one — a tag and a shared component do not, and
+    // reporting a null `data` for them is the honest answer rather than an error, because the
+    // ENTITIES are still what the caller asked for.
+    const cy::i32 column = archetype.column_of(component);
+    const bool has_column = column >= 0;
+    const auto column_index = static_cast<cy::u32>(has_column ? column : 0);
+
+    cy::u32 found = 0;
+    for (cy::u32 chunk_index = 0; chunk_index < archetype.chunk_count(); ++chunk_index) {
+        cy::ChunkView chunk = archetype.chunk(chunk_index);
+        if (chunk.count() == 0) {
+            continue;
+        }
+        const cy::u32 slot_index = written + found;
+        ++found;
+        if (out_chunks == nullptr || slot_index >= capacity) {
+            continue;
+        }
+        CyChunk& slot = out_chunks[slot_index];
+        slot.struct_size = static_cast<uint32_t>(sizeof(CyChunk));
+        slot.entity_count = chunk.count();
+        slot.entities = static_cast<const CyEntity*>(chunk.keys());
+        slot.data = has_column ? chunk.column(column_index) : nullptr;
+        slot.stride = has_column ? archetype.layout().column_size(column_index) : 0U;
+        slot.archetype = archetype.id();
+        slot.epoch = epoch;
+    }
+    return found;
 }
 
 }  // namespace
@@ -339,8 +454,19 @@ static CyComponentTypeId abi_world_find_component(CyWorld world_handle, const ch
     }
     const cy::abi::ComponentRecord* record = world->find(name);
     if (record == nullptr) {
-        (void)cy::abi::report(CY_RESULT_NOT_FOUND, "no component of that name in this world");
-        return CY_COMPONENT_TYPE_INVALID;
+        // AT 1.1 THE SEARCH CONTINUES INTO THE ENGINE'S OWN REGISTRY. Before it, this entry saw
+        // only what a module had described to the ABI, so an editor looking for
+        // `cy::scene::LocalTransform` in a world full of them was told there was none. Finding more
+        // than it used to is additive: every name that resolved before resolves to the same id, and
+        // a name that used to fail may now succeed.
+        const cy::ecs::ComponentInfo* engine =
+            (name != nullptr) ? world->world.components().find(name) : nullptr;
+        if (engine == nullptr) {
+            (void)cy::abi::report(CY_RESULT_NOT_FOUND, "no component of that name in this world");
+            return CY_COMPONENT_TYPE_INVALID;
+        }
+        cy::abi::clear_last_error();
+        return static_cast<CyComponentTypeId>(engine->id);
     }
     cy::abi::clear_last_error();
     return static_cast<CyComponentTypeId>(record->id);
@@ -558,6 +684,165 @@ static uint32_t abi_behaviour_generation(CyBehaviourType type) {
     return (type != nullptr) ? type->generation : 0;
 }
 
+// --- 1.1: describing a world the caller did not build --------------------------------------------
+
+static uint32_t abi_world_component_count(CyWorld world_handle) {
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return 0;
+    }
+    cy::abi::clear_last_error();
+    return world->world.components().size();
+}
+
+static CyResult abi_world_component_info(CyWorld world_handle, CyComponentTypeId component,
+                                         CyComponentInfo* out_info) {
+    if (out_info == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "out_info is null");
+    }
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return CY_RESULT_INVALID_ARGUMENT;
+    }
+    const cy::abi::ComponentRecord* record = world->record_or_import(component);
+    if (record == nullptr) {
+        return cy::abi::report(CY_RESULT_NOT_FOUND, "no such component type in this world");
+    }
+    const cy::ecs::ComponentInfo& info = world->world.components().info(component);
+
+    CyComponentInfo filled;
+    filled.struct_size = static_cast<uint32_t>(sizeof(CyComponentInfo));
+    filled.size = info.size;
+    filled.alignment = info.alignment;
+    filled.field_count = record->field_count;
+    filled.name = record->name;
+
+    // ONLY THE PREFIX BOTH SIDES AGREE ON, which is the same rule `register_behaviour` applies to a
+    // vtable. A caller compiled against a shorter struct passes its own size and gets that many
+    // bytes; a zero means "the size I know", for a caller that zeroed the struct and did not read
+    // this paragraph.
+    const cy::usize wanted = (out_info->struct_size == 0)
+                                 ? sizeof(CyComponentInfo)
+                                 : static_cast<cy::usize>(out_info->struct_size);
+    std::memcpy(static_cast<void*>(out_info), static_cast<const void*>(&filled),
+                wanted < sizeof(CyComponentInfo) ? wanted : sizeof(CyComponentInfo));
+    cy::abi::clear_last_error();
+    return CY_RESULT_OK;
+}
+
+static CyResult abi_world_component_field(CyWorld world_handle, CyComponentTypeId component,
+                                          uint32_t field, CyFieldDesc* out_field) {
+    if (out_field == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "out_field is null");
+    }
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return CY_RESULT_INVALID_ARGUMENT;
+    }
+    const cy::abi::ComponentRecord* record = world->record_or_import(component);
+    if (record == nullptr) {
+        return cy::abi::report(CY_RESULT_NOT_FOUND, "no such component type in this world");
+    }
+    const cy::abi::FieldRecord* found = world->field(*record, field);
+    if (found == nullptr) {
+        return cy::abi::report(CY_RESULT_OUT_OF_RANGE, "no such field on that component");
+    }
+    out_field->struct_size = static_cast<uint32_t>(sizeof(CyFieldDesc));
+    out_field->type = static_cast<uint32_t>(found->type);
+    out_field->offset = found->offset;
+    out_field->size = found->size;
+    out_field->name = found->name;
+    cy::abi::clear_last_error();
+    return CY_RESULT_OK;
+}
+
+// --- 1.1: the hierarchy --------------------------------------------------------------------------
+
+static CyEntity abi_world_parent(CyWorld world_handle, CyEntity entity) {
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return CY_ENTITY_NULL;
+    }
+    cy::abi::clear_last_error();
+    return to_abi(world->world.parent_of(from_abi(entity)));
+}
+
+static CyResult abi_world_set_parent(CyWorld world_handle, CyEntity child, CyEntity parent) {
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return CY_RESULT_INVALID_ARGUMENT;
+    }
+    const cy::Status changed = world->world.set_parent(from_abi(child), from_abi(parent));
+    if (!changed) {
+        return cy::abi::report(changed.error());
+    }
+    // Structural: a reparent moves the child between archetypes, so every borrow taken before it is
+    // stale and must be detectable as such.
+    world->bump_epoch();
+    cy::abi::clear_last_error();
+    return CY_RESULT_OK;
+}
+
+static uint32_t abi_world_child_count(CyWorld world_handle, CyEntity entity) {
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return 0;
+    }
+    cy::abi::clear_last_error();
+    return static_cast<uint32_t>(world->world.children_of(from_abi(entity)).size());
+}
+
+static CyEntity abi_world_child(CyWorld world_handle, CyEntity entity, uint32_t index) {
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return CY_ENTITY_NULL;
+    }
+    const cy::Span<const cy::ecs::Entity> children = world->world.children_of(from_abi(entity));
+    if (index >= children.size()) {
+        (void)cy::abi::report(CY_RESULT_OUT_OF_RANGE, "no child at that index");
+        return CY_ENTITY_NULL;
+    }
+    cy::abi::clear_last_error();
+    return to_abi(children[index]);
+}
+
+// --- 1.1: chunks ---------------------------------------------------------------------------------
+
+static CyResult abi_world_chunks(CyWorld world_handle, CyComponentTypeId component,
+                                 CyChunk* out_chunks, uint32_t capacity, uint32_t* out_count) {
+    if (out_count == nullptr) {
+        return cy::abi::report(CY_RESULT_INVALID_ARGUMENT, "out_count is null");
+    }
+    *out_count = 0;
+    cy::abi::World* world = world_of(world_handle);
+    if (world == nullptr) {
+        return CY_RESULT_INVALID_ARGUMENT;
+    }
+    if (!world->world.components().registered(component)) {
+        return cy::abi::report(CY_RESULT_NOT_FOUND, "no such component type in this world");
+    }
+
+    cy::ecs::ArchetypeTable& archetypes = world->world.archetypes();
+    uint32_t total = 0;
+    for (cy::u32 index = 0; index < archetypes.size(); ++index) {
+        cy::ecs::Archetype& archetype = archetypes.at(index);
+        if (archetype.mask().test(component)) {
+            total += count_chunks(archetype, component, world->epoch, out_chunks, capacity, total);
+        }
+    }
+    *out_count = total;
+    // A NULL BUFFER IS A QUESTION, NOT A FAILED ANSWER. The two-call sizing pattern asks how many
+    // there are before it has anywhere to put them, and reporting BUFFER_TOO_SMALL for a buffer the
+    // caller deliberately did not pass would make the ordinary path an error path.
+    if (out_chunks != nullptr && total > capacity) {
+        // A partial result rather than a discarded one: the caller has `capacity` valid chunks and
+        // the number it needed, which is the whole of the two-call sizing pattern.
+        return cy::abi::report(CY_RESULT_BUFFER_TOO_SMALL, "more chunks than the buffer holds");
+    }
+    cy::abi::clear_last_error();
+    return CY_RESULT_OK;
+}
+
 }  // extern "C"
 
 namespace {
@@ -604,6 +889,18 @@ const CyInterface kInterface = {
     &abi_register_behaviour,
     &abi_find_behaviour,
     &abi_behaviour_generation,
+
+    // --- 1.1 ------------------------------------------------------------------------------------
+    &abi_world_component_count,
+    &abi_world_component_info,
+    &abi_world_component_field,
+
+    &abi_world_parent,
+    &abi_world_set_parent,
+    &abi_world_child_count,
+    &abi_world_child,
+
+    &abi_world_chunks,
 };
 
 }  // namespace
@@ -622,7 +919,7 @@ extern "C" const CyInterface* cy_get_interface(uint32_t requested_major, uint32_
     // so the message names them rather than saying "version mismatch".
     if (requested_minor > CY_ABI_MINOR) {
         (void)cy::abi::report(CY_RESULT_VERSION_MISMATCH,
-                              "this engine exports ABI 1.0 and the module requires a later minor");
+                              "this engine exports ABI 1.1 and the module requires a later minor");
         return nullptr;
     }
     // A MINOR THE ENGINE HAS PASSED IS THE "newer engine, older module" CASE, and it is the one the

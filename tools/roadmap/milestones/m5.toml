@@ -1,0 +1,346 @@
+# M5 — Authorable: the exit criteria, as data. Task 7.9.
+#
+# The sources are section 7 of openspec/changes/implement-m5-authorable/tasks.md and the M5 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a
+# recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate. A criterion that cannot be
+# evaluated on the host running the recipe — another operating system, no display, no GPU — carries
+# a `reason`, is reported as not evaluated rather than as passed, and is counted separately.
+#
+# --- THIS IS THE FIRST LEDGER WRITTEN AGAINST A FLAT PERMANENT SET --------------------------------
+#
+# Every earlier ledger opened with an `m<n-1>-green` criterion that ran the previous milestone's
+# recipe, so closing M4 ran M3's ledger, which ran M2's, which ran M1's, which ran M0's. That is
+# gone — task 0.1 of this milestone removed it — and there is deliberately NO `m4-green` criterion
+# below. `just roadmap-milestone m5` evaluates the permanent set directly: the criteria of every
+# milestone whose `class = "milestone"` gate in gates.toml carries `state = "green"` and which sits
+# below M5 on the ladder, merged and deduplicated, each distinct check run exactly once, plus the
+# criteria in this file. `criteria.build_plan` is the rule and tools/roadmap/README.md states it.
+#
+# What that changes for the reader of this file: a criterion here whose `run` string is identical to
+# one an earlier ledger declared COLLAPSES INTO IT and is reported under the earlier milestone's
+# label — `m0:format` rather than `m5:format`. The static gates below are declared anyway, as M3's
+# and M4's are, because a ledger that does not name the checks its milestone had to satisfy is a
+# ledger nobody can read; they cost nothing to declare and one run each.
+#
+# --- WHERE THE EDITOR'S OWN TESTS ARE, AND WHY THEY ARE ONE CRITERION -----------------------------
+#
+# The editor is a Rust workspace and its tests are Cargo's: 505 of them across fourteen crates,
+# including the ones that hold this milestone's invariants — that a document can only be mutated
+# through a transaction, that the workspace's layers cannot be depended on upward, that every crate
+# but the audited SDK forbids `unsafe`, that the four build profiles mean in Cargo what they mean in
+# CMake, and that the editor survives its runtime being killed. They run under ONE command,
+# `just build-editor-check`, so they are one criterion (`editor`) with a long description rather
+# than nine criteria that would all pass and fail together. That is the same shape as M4's `abi`.
+#
+# THE GAP THIS CLOSES IS THE ONE THREE SEPARATE REPORTS NAMED: until this milestone nothing ran
+# `just build-editor-check` automatically. It was green in all four profiles, called by no CI job
+# and by no other recipe, so a change that broke the editor's clippy, its rustfmt or its 505 tests
+# merged silently. The `editor` gate and the `editor` job in .github/workflows/ci.yml land with this
+# file for that reason.
+
+schema = 1
+id = "m5"
+name = "Authorable"
+artefact = "samples/05-editor-session — a scripted editor session across three processes: it opens a project, imports a glTF asset, authors a scene against a hosted runtime, outlives that runtime being killed with SIGKILL mid-session, and recovers and saves the unsaved work in a new editor process"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "tasks 7.9 — `just roadmap-milestone m5` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 7.10 — docs/roadmap/status.yaml and docs/roadmap/capability-matrix.md are corrected where M5 recorded an intention the implementation changed, and record what is thinner than the tasks claim. `roadmap-tiers` below checks the record; no tool can tell an intention from its correction.",
+    "tasks 7.11 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "tasks 7.12 — opening the M6 change is `m6-open` below, which asks only that the change exists. Whether the derivation key model is the right named spike is a judgement.",
+    "ROADMAP M5, 'Picking returns the object the renderer actually drew' — EVALUATED BY THIS RECIPE, and deliberately not as a criterion of its own. Engine-side picking and the viewport transport are cases inside `unit.render_server`, and m3.toml already declares `just test-unit -R render_server` as its `render-server` criterion. That criterion is in the permanent set, so this ledger runs it — once, labelled `m3:render-server`. Declaring the identical command here would collapse into it and lose this file's wording; declaring a NARROWER one would run the same suite twice to say less. This note is the honest form: the check exists, this recipe evaluates it, and the milestone it is filed under is M3's. It is also the clearest demonstration of what the flat ledger bought.",
+    "ROADMAP M5, 'The generated inspector edits a reflected type with no per-type editor code' — HELD BY `editor` BELOW rather than by a criterion of its own, because it is a Cargo test: cy-editor-interface's suite builds a catalogue out of a real `CyInterface` table reached through dlopen and generates a form from it. What is thinner than the task list is that the inspector VIEW MODEL reads a document's schema rather than a reflected engine type over the SDK — the SDK's `ComponentSchema` is built and tested and not yet wired to it. Recorded here because it is exactly the kind of gap a green recipe hides.",
+    "ROADMAP M5, 'manipulate it with gizmos ... enter play mode' IN THE ARTEFACT — NOT SATISFIED, and the artefact says so on every run rather than being quietly narrowed. `cy_editor_services::builtin::register` registers six commands and none of them transforms anything, starts a simulation or imports; the machinery for all three exists and is tested (`cy_editor_viewport::gizmo`, `cy_editor_viewport::play`, tools/import/). session.py names the three command identifiers it wants, reports each as present or missing, and runs them the day they are registered. samples/05-editor-session/README.md carries the whole argument.",
+    "THERE IS NO `text` GATE, and text-and-fonts reaches Seed. The suite runs — `text` below is a criterion — and it is covered by `just test-all` in the build-and-test gate. M4 made the same call for camera and audio and stated the rule: what separates a gate from a suite is an invariant a later milestone can silently undo, and a gate list that names every module is a gate list nobody reads.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. M5 adds editor, editor-session, asset-import and live-editing to it.",
+]
+
+# --- What M5 must not have broken -----------------------------------------------------------------
+#
+# No criterion, and for the first time no `m<n>-green` criterion either. M4's, M3's, M2's and M1's
+# criteria are in the permanent set and `just roadmap-milestone m5` evaluates that set directly,
+# once and deduplicated, before it reaches the criteria below. The rule the old chaining criterion
+# enforced is unchanged and still enforced; the nesting is what went, and this is the first ledger
+# written after it did.
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes"
+source = "tasks 7.11"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over the modules M5 added — the importer, the text server, the derived cache and the render server's picking and viewport transport"
+source = "tasks 7.7"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over the C and C++ M5 added. It says nothing about the editor, which is Rust: `editor` below is that half, and the two are separate criteria because they are separate toolchains with separate failure modes"
+source = "tasks 7.7"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with the editor layer occupied for the first time — and the editor is not in this check at all, because it reaches the engine ONLY over the C ABI and links no engine target. That is enforced by the editor workspace containing no path to one, and by its own layering test, not by this recipe"
+source = "tasks 7.7, design.md"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate M5 declared is run by a job in .github/workflows/, and no job reimplements a recipe. This is the criterion that fails if a gate is declared and its job is not, which is why the two land in the same change"
+source = "delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifest. M5 adds a fourth generator — the Rust SDK's — whose currency is checked by `editor` below, because it is a Cargo test rather than a recipe"
+source = "tasks 7.7, delivery-roadmap (a gate a ledger does not run is a gate a milestone can break invisibly)"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 7.10, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M5's exit tiers, each naming the change that advanced it"
+source = "tasks 7.10, ROADMAP M5"
+kind = "tiers"
+ci_job = "milestone-m5"
+
+# The M5 row of docs/ROADMAP.md and the proposal's capability list, as data. An exit tier is a FLOOR
+# rather than an equality: a later milestone advancing one of these past its M5 level must not make
+# this recipe fail.
+#
+# READ `live-editing = "working"` AS A CLAIM SOMEBODY STILL HAS TO EARN. It is what the ROADMAP row
+# and the proposal both say, so it is what this ledger asks for; the import workstream's own report
+# says that only the asset half is delivered and that marking it Working "would be the first thing a
+# reviewer finds untrue". Whoever closes M5 either finishes it or amends this table with the reason —
+# what must not happen is the table being quietly relaxed to match whatever the record says.
+[criterion.expect_tiers]
+editor-rust-application = "working"
+editor-documents-and-transactions = "working"
+editor-architecture = "working"
+editor-viewport-and-gizmos = "working"
+editor-ui-ux = "working"
+asset-import-pipeline = "working"
+live-editing = "working"
+text-and-fonts = "seed"
+editor-agent-interface = "seed"
+editor-visual-language = "seed"
+project-and-plugins = "complete"
+core-type-system = "complete"
+scene-graph-and-nodes = "complete"
+native-abi = "complete"
+
+# --- The editor, which is the milestone ------------------------------------------------------------
+
+# TASKS 7.1, 7.2, 7.3, 7.5 AND 6.3, ALL UNDER ONE COMMAND, AND THE DESCRIPTION IS THE LIST BECAUSE
+# THE COMMAND IS ONE. `just build-editor-check` runs the SDK generator's own selftest, rustfmt over
+# the hand-written sources, clippy with the workspace's pedantic lint table as errors, and 505 tests.
+[[criterion]]
+id = "editor"
+describe = "the editor's own gates and its whole test suite: the generated SDK bindings are what regeneration produces, rustfmt and clippy are clean, and every invariant this milestone pins is held by a test — a document mutated only through a transaction and the test that writes around it and fails, undo and redo round-tripping a session, the journal replaying after an abnormal termination, no crate depending upward or sideways on another, every crate but the audited SDK forbidding unsafe code, the four profiles meaning in Cargo what they mean in CMake, the generated inspector built from a real CyInterface table reached through dlopen, and the editor surviving a runtime process killed under it"
+source = "tasks 2.x, 3.x, 4.6, 6.3, 7.1, 7.2, 7.3, 7.5, ROADMAP M5"
+kind = "recipe"
+run = "just build-editor-check"
+timeout_s = 3600
+ci_job = "editor"
+
+# HARD-WON, AND THE REASON IT IS A SEPARATE CRITERION: `debug-assertions` is off in two of the four
+# Cargo profiles, exactly as CY_ASSERT is compiled out of Profile and Shipping. A rule that is only
+# a `debug_assert!` is no rule at all there, and `panic = "abort"` was deliberately kept OUT of the
+# shipping profile so that `cargo test` can run in it — which would be worth nothing if nothing ever
+# ran the tests there. This is what runs them there.
+[[criterion]]
+id = "editor-profiles"
+describe = "the editor's gates and tests in all four profiles, so the two configurations that compile the assertions out are configurations something has been run in"
+source = "tasks 2.1, 7.7"
+kind = "command"
+run = "for p in debug dev profile release; do just build-editor-check --profile \"$p\" || exit 1; done"
+timeout_s = 7200
+ci_job = "editor"
+
+[[criterion]]
+id = "editor-three-platforms"
+describe = "the editor's headless tests run in continuous integration on Linux, Windows and macOS — the ROADMAP's exit criterion, and the reason the `editor` gate names three platforms while `editor-session` names one"
+source = "ROADMAP M5 (Editor headless tests run in continuous integration on all three platforms)"
+kind = "recipe"
+run = "just build-editor-check"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix, and neither has ever built this workspace"
+ci_job = "editor"
+
+# --- The artefact --------------------------------------------------------------------------------------
+
+# TASK 6.1 AND TASK 6.2, AND 6.2 IS THE ONE THE MILESTONE IS ABOUT. The session runs three real
+# processes — the engine's importer, the editor, and a hosted runtime on the other side of a Unix
+# domain socket — and kills the runtime with SIGKILL while the editor is connected to it and has not
+# yet run its act. The kill is ORDERED rather than timed: the act reaches the editor through a FIFO,
+# so every command in it provably runs after the runtime died. The first attempt at this raced and
+# killed the runtime after the editor had already exited, which is a green run that proves nothing.
+[[criterion]]
+id = "artefact"
+describe = "the scripted session: a project opened and its manifest validated, a glTF imported to six sub-assets with both sidecars written and a second import served from the cache, a scene authored against a hosted runtime, that runtime killed mid-session with the editor completing every command afterwards and surfacing the loss with a remedy, and the unsaved work offered back and saved in a new editor process"
+source = "tasks 6.1, 6.2, 7.1, ROADMAP M5"
+kind = "recipe"
+run = "just test-smoke -R editor_session"
+ci_job = "editor-session"
+
+# AND THE ARTEFACT'S OWN NEGATIVE CASES. The test above can only report that the session passed; it
+# says nothing about whether the two assertions that carry it still FIRE. This requires the act that
+# kills the runtime to REJECT a run where the runtime was left alive, and the act that authors
+# against a hosted runtime to reject a session whose runtime never answered. Separate rather than a
+# flag, so that a failure names which half broke: "the editor stopped surviving its runtime" and
+# "the check that would have noticed has stopped working" are different defects.
+[[criterion]]
+id = "artefact-selftest"
+describe = "the session driver's own negative cases, which require its two load-bearing assertions to fail when they should"
+source = "tasks 6.2, testing-and-quality"
+kind = "recipe"
+run = "just test-integration -R editor_session_selftest"
+ci_job = "editor-session"
+
+[[criterion]]
+id = "sample-recipe"
+describe = "just run-editor-session runs the artefact through the workflow a contributor uses, rather than only through the test that registers it — the act that kills the runtime, which is the one worth watching"
+source = "tasks 6.1"
+kind = "recipe"
+run = "just run-editor-session --only survive"
+ci_job = "editor-session"
+
+# --- Import ---------------------------------------------------------------------------------------------
+
+[[criterion]]
+id = "asset-import"
+describe = "the importer framework and what it refuses: an importer that is handed bytes and cannot open a file, a second file read only through the resolver that records it as a dependency in the same act, two importers refused one extension, an option refused that the schema does not declare, setting an option to its default producing the same cache key as never setting it, mesh welding that keeps a hard edge and a texture seam, cache-order-independent simplification, glTF to meshes and materials and a hierarchy with collision proxies from the naming convention, and a failed import that is NOT cached"
+source = "tasks 5.1, ROADMAP M5 (asset-import-pipeline)"
+kind = "command"
+run = "just test-unit -R import && just test-integration -R import_"
+ci_job = "asset-import"
+
+[[criterion]]
+id = "derived-cache"
+describe = "the one derived-data cache under the importer: a derivation key whose every contribution is framed so that two different inputs cannot collide, a miss that is not an error, a record that cannot be read being deleted rather than reported as a build failure, dependencies re-digested through the caller's resolver because the key cannot cover what a producer discovered while running, and a hit that REPRODUCES the output rather than skipping it"
+source = "tasks 5.1, ROADMAP M5 (the cook cache, dependency tracking)"
+kind = "command"
+run = "just test-unit -R assets && just test-integration -R assets_io"
+ci_job = "asset-import"
+
+# --- Live editing ----------------------------------------------------------------------------------------
+
+# TASK 1.1 AND TASK 7.6. M4 proved the reload model — serialize, migrate by name, recreate, never
+# dlclose — and left the milestone with nothing that reloaded a module while the runtime was live.
+# That was M4's recorded half-satisfied criterion and it is this milestone's first requirement.
+[[criterion]]
+id = "live-reload"
+describe = "a module reloads while the runtime is live and world state survives it, applied at a frame boundary rather than under a system, over a directory of generations rather than one file — because a Swift image needs a distinct module name per generation and copying a file cannot produce one"
+source = "tasks 1.1, 5.2, 7.6, ROADMAP M5 (live-editing)"
+kind = "recipe"
+run = "just test-integration -R live_reload"
+ci_job = "live-editing"
+
+[[criterion]]
+id = "runtime-inspection"
+describe = "runtime inspection over the ABI: the world's components, their fields and their chunks read from outside the process that owns them, which is what an editor attached to a running game actually does"
+source = "tasks 1.2, 5.2, ROADMAP M5 (runtime inspection)"
+kind = "recipe"
+run = "just test-integration -R abi_inspector"
+ci_job = "live-editing"
+
+# --- Text at Seed ------------------------------------------------------------------------------------------
+
+[[criterion]]
+id = "text"
+describe = "the text server at Seed: a backend that refuses a shaping level it cannot provide BY NAME rather than silently downgrading, a right-to-left or vertical request refused rather than laid out wrongly, a glyph key that is a face and a size and a subpixel position and nothing else, and an atlas that counts thrashes — which is the number that says it is too small, and not its occupancy"
+source = "tasks 5.3, ROADMAP M5 (text-and-fonts)"
+kind = "recipe"
+run = "just test-unit -R text"
+ci_job = "build-and-test"
+
+# --- Every profile, and the sanitizers -------------------------------------------------------------------------
+
+# ONE BUILD DIRECTORY PER PROFILE, EVEN WHEN CY_BUILD_DIR IS SET — m2.toml's finding E, restated
+# because the failure it describes cost an agent an hour. The command is identical to the one M1, M2,
+# M3 and M4 declare, so the plan collapses all five into ONE run of it and reports it as
+# `m1:four-profiles`: this is the deduplication the milestone's task 0.1 was for, and the reason the
+# same string is written here rather than a variation of it.
+#
+# It now covers the editor too, without saying so: `just test-all` includes `smoke.editor_session`,
+# which builds the editor in the profile under test before running the session.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including the M5 artefact's session, which builds the editor in the profile under test"
+source = "tasks 7.7"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# TASK 7.8. NO PRE-CONFIGURED TREE AND NO FLAGS, WHICH IS THE WHOLE POINT — M4's equivalent
+# criterion passed by configuring its own tree with `-D CY_SHADER_SLANG=OFF` while the CI job it
+# stood for passed no such flag and went on failing, and because the workaround covered the one
+# failure somebody had noticed, two others survived undetected. `just test-sanitize` already builds a
+# sanitized tree of its own and honours CY_BUILD_DIR as the PARENT of it, so this command is the one
+# a person or a job runs with nothing in front of it.
+[[criterion]]
+id = "sanitizers"
+describe = "AddressSanitizer and UndefinedBehaviorSanitizer are clean over every C++ suite M5 added: the importer and its glTF reader and mesh operations, the text server and its glyph atlas, the derived-data cache, and live reload over the ABI"
+source = "tasks 7.8"
+kind = "command"
+run = "for t in import text assets abi_live_reload; do just test-sanitize --sanitizer address,undefined --tests \"$t\" || exit 1; done"
+timeout_s = 14400
+ci_job = "sanitizers"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M5's modules in the tree"
+source = "ROADMAP M5, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be
+# most satisfied.
+[[criterion]]
+id = "m6-open"
+describe = "the M6 change exists — open, or closed and archived — so the ladder continues deliberately"
+source = "tasks 7.12"
+kind = "path"
+path = "openspec/changes/**/*m6*/proposal.md"
+ci_job = "milestone-m5"

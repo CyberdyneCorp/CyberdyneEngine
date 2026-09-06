@@ -1,0 +1,10 @@
+# Formatting for the editor workspace.
+#
+# `max_width = 100` matches .clang-format's ColumnLimit for the engine, so that a file's shape does
+# not change meaning when a reader moves between the two languages in one repository.
+#
+# Everything else is rustfmt's default, deliberately. `developer-workflow-and-just` requires the
+# workflow to pin the toolchains that decide whether a change merges, and the cheapest way to keep a
+# formatter's behaviour stable across machines is to configure as little of it as possible: every
+# option set here is one more thing two rustfmt versions can disagree about.
+max_width = 100

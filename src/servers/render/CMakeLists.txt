@@ -12,7 +12,10 @@
 #
 # WHAT BELONGS HERE. The object families and their handles; the scene, view and instance model; the
 # GPU scene as a publication interface; the simulation-to-render snapshot; mesh representation and
-# vertex compression; the deterministic sort key; debug draw; frame and view statistics.
+# vertex compression; the deterministic sort key; debug draw; frame and view statistics. M5 adds the
+# editor's two entry points — engine-side picking against the draw list a view produced, and the
+# viewport transport's publishing endpoint — which are here rather than in the editor because
+# `editor-viewport-and-gizmos` requires picking to run engine-side and forbids a second renderer.
 #
 # WHAT DOES NOT. A pass, a pipeline, a barrier, an upload, an ECS query, a node. Extraction from the
 # ECS is src/rendering/scene/'s, because it needs an ECS world and this module is forbidden one —
@@ -27,11 +30,13 @@ cy_add_module(
         src/gpu_scene.cpp
         src/mesh.cpp
         src/model.cpp
+        src/picking.cpp
         src/server.cpp
         src/snapshot.cpp
         src/sort.cpp
         src/statistics.cpp
         src/types.cpp
+        src/viewport_transport.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
                         cy::core-values

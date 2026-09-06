@@ -68,7 +68,14 @@ extension Value {
         switch kind {
         case .nil: self = .none
         case .bool: self = .bool(variable.payload.as_bool)
-        case .i64: self = .i64(variable.payload.as_i64)
+        // THE EIGHT INTEGER TAGS COLLAPSE ONTO ONE SWIFT CASE, AND THAT IS DELIBERATE. ABI 1.1
+        // appended seven narrow integer kinds so that the engine can say how WIDE a component's
+        // field is; the payload is always the widened value in `as_i64`, so a reader loses nothing
+        // by treating them as one. A writer does not: `Value.i64` sent back into a `u8` field is
+        // range-checked by the engine and refused rather than truncated, which is where the width
+        // is enforced — see `var_into_field` in src/abi/src/interface.cpp.
+        case .i64, .i8, .i16, .i32, .u8, .u16, .u32, .u64:
+            self = .i64(variable.payload.as_i64)
         case .f32: self = .f32(variable.payload.as_f32)
         case .f64: self = .f64(variable.payload.as_f64)
         case .vec2: self = .vec2(Value.vector(variable, Vec2.init(lanes:)))

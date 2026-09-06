@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <new>
 #include <type_traits>
+#include <utility>
 
 namespace cy::reflect {
 namespace {
@@ -64,7 +65,7 @@ constexpr FieldInfo fields_0_[] = {
         .kind = FieldKind::F32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type0, maximum)),
-        .size = static_cast<u32>(sizeof(Type0::maximum)),
+        .size = static_cast<u32>(sizeof(std::declval<Type0&>().maximum)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category
                         | AttributeKind::Persistence
@@ -84,7 +85,7 @@ constexpr FieldInfo fields_0_[] = {
         .kind = FieldKind::F32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type0, current)),
-        .size = static_cast<u32>(sizeof(Type0::current)),
+        .size = static_cast<u32>(sizeof(std::declval<Type0&>().current)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category
                         | AttributeKind::Persistence
@@ -103,7 +104,7 @@ constexpr FieldInfo fields_0_[] = {
         .kind = FieldKind::F32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type0, displayed)),
-        .size = static_cast<u32>(sizeof(Type0::displayed)),
+        .size = static_cast<u32>(sizeof(std::declval<Type0&>().displayed)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Hidden
                         | AttributeKind::Persistence
@@ -118,7 +119,7 @@ constexpr FieldInfo fields_0_[] = {
         .kind = FieldKind::U8,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type0, last_damage)),
-        .size = static_cast<u32>(sizeof(Type0::last_damage)),
+        .size = static_cast<u32>(sizeof(std::declval<Type0&>().last_damage)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category
                         | AttributeKind::Enum
@@ -136,7 +137,7 @@ constexpr FieldInfo fields_0_[] = {
         .kind = FieldKind::U64,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type0, icon)),
-        .size = static_cast<u32>(sizeof(Type0::icon)),
+        .size = static_cast<u32>(sizeof(std::declval<Type0&>().icon)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::AssetRef | AttributeKind::Category,
             .category = TextAttribute{"Presentation"},
@@ -205,7 +206,7 @@ constexpr FieldInfo fields_1_[] = {
         .kind = FieldKind::F32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type1, x)),
-        .size = static_cast<u32>(sizeof(Type1::x)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().x)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category | AttributeKind::Unit,
             .category = TextAttribute{"Transform"},
@@ -219,7 +220,7 @@ constexpr FieldInfo fields_1_[] = {
         .kind = FieldKind::F32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type1, y)),
-        .size = static_cast<u32>(sizeof(Type1::y)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().y)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category | AttributeKind::Unit,
             .category = TextAttribute{"Transform"},
@@ -233,7 +234,7 @@ constexpr FieldInfo fields_1_[] = {
         .kind = FieldKind::F32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type1, rotation)),
-        .size = static_cast<u32>(sizeof(Type1::rotation)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().rotation)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category
                         | AttributeKind::Range
@@ -250,7 +251,7 @@ constexpr FieldInfo fields_1_[] = {
         .kind = FieldKind::U32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type1, flags)),
-        .size = static_cast<u32>(sizeof(Type1::flags)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().flags)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category | AttributeKind::Flags,
             .enumeration = EnumAttribute{enumerators_1_3_, 4},
@@ -265,7 +266,7 @@ constexpr FieldInfo fields_1_[] = {
         .kind = FieldKind::U32,
         .type = TypeId{},
         .offset = static_cast<u32>(offsetof(Type1, tile)),
-        .size = static_cast<u32>(sizeof(Type1::tile)),
+        .size = static_cast<u32>(sizeof(std::declval<Type1&>().tile)),
         .attributes = FieldAttributes{
             .declared = AttributeKind::Category | AttributeKind::Persistence,
             .category = TextAttribute{"Streaming"},

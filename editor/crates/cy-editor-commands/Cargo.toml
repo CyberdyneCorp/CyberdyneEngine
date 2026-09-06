@@ -1,0 +1,24 @@
+# The command registry: the single action surface, with metadata sufficient for machine invocation.
+#
+# Layer 2. It knows about documents because a command that mutates project state must execute through
+# a transaction, and it knows nothing about services, panels or a toolkit — which is what lets a
+# test invoke every command in the editor with no window and no engine.
+[package]
+name = "cy-editor-commands"
+description = "CyberEditor's command registry: one action surface for menus, shortcuts, scripts, tests and agents."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 2
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+
+[lints]
+workspace = true

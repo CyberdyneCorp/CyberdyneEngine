@@ -10,9 +10,12 @@ write, so a currency check cannot disagree with the generator it checks.
 |---|---|---|
 | `generate_headers.py` | `<build>/generated/cy_generated_inputs.txt`, written by `cmake/features.cmake` | `<build>/generated/include/cy_features.h`, `cy_modules.h` |
 | `reflect_gen.py` (`reflect/`) | annotated C++ headers, `identity/manifest.toml`, module attribute schemas | `src/core/reflect/generated/*.reflect.{h,cpp}`, the aggregate registration, and appended manifest entries |
+| `swift/overlay_gen.py` (`swift/`) | the ABI description from `tools/abi/abi_describe.py` | `bindings/swift/Sources/CyberdyneCore/Generated/`, the C header copy, the generated layout suite |
+| `rust/sdk_gen.py` (`rust/`) | the same ABI description | `editor/crates/cy-editor-sdk/src/generated/`: the FFI mirrors, the enums, one typed call per table entry, the layout assertions |
 
-Later milestones add the shader artefacts (M3) and the C ABI headers and Swift overlay (M4) to this
-directory.
+The Swift overlay arrived at M4 and the Rust SDK at M5; both read the ABI description rather than the
+C header, so `tools/abi/abi_describe.py` remains the only reader of `cy_abi.h` in the repository. The
+shader artefacts (M3) are the remaining entry this table expects.
 
 ## The reflection generator
 
@@ -65,6 +68,11 @@ sources, a missing feature dependency fails the configure naming the option, and
 dependency, a disabled one, a cycle, a layer violation, an undeclared link and a malformed manifest
 are each configure errors — plus reproducibility, stale detection, registration ordering, and
 out-of-tree module discovery.
+
+`swift/tests/run_tests.py` and `rust/tests/run_tests.py` cover the two overlay generators. Neither
+has a fixture directory: every case edits the live `cy_abi.h` in memory and runs the real generator
+over the result, because a committed "broken header" fixture goes stale and, if the parser ever
+stopped recognising the table, a broken fixture and a correct one would both describe nothing.
 
 `src/core/reflect/tests/test_generator.py` covers the reflection generator: identifier assignment,
 the rename and tombstone routes, the gate, reproducibility across build directories, staleness,

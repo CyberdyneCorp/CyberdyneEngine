@@ -1,0 +1,35 @@
+# The agent interface: the projection of the command registry, and the read surface beside it.
+#
+# Layer 4, beside the view models and the panels — and depending on none of them. An agent is a
+# CLIENT of the editor in exactly the sense a panel is, so it sits where a panel sits; and
+# `cy-editor-app`'s tests/layering.rs fails a manifest that names a peer at layer 4, which is what
+# keeps "an agent is not a privileged peer" from being a sentence in a comment.
+#
+# WHAT IS NOT IN THE DEPENDENCY LIST, AND WHY IT MATTERS. `cy-editor-sdk`. Nothing here reaches the
+# engine: an agent's viewport observation is a REQUEST that the runtime answers over the same
+# transport the human's viewport uses, and a request is a value. A crate that held the workspace's
+# one unsafe crate in order to render for an agent would be the second renderer
+# `editor-agent-interface` forbids, arrived at by the back door.
+[package]
+name = "cy-editor-agent"
+description = "CyberEditor's agent interface: the command registry projected as tools, the services projected as resources."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 4
+
+[dependencies]
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
+
+[lints]
+workspace = true

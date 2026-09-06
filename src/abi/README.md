@@ -23,8 +23,40 @@ Everything else is reached through the returned table. A module is a shared libr
 | `include/cy/abi/host.h` | What is behind `CyEngine`, `CyWorld` and `CyBehaviourType` |
 | `include/cy/abi/var.h` | `CyVar` marshalling: the reference-counted heap payload and the inline constructors |
 | `include/cy/abi/module.h` | Manifests, images, **generations**, and the reload sequence |
+| `include/cy/abi/live_reload.h` | Performing that sequence against a runtime that is still ticking |
 | `abi_baseline.json` | The committed machine-readable description. The gate diffs against it; the Swift overlay and the Rust SDK are generated from it. |
 | `abi_approvals.toml` | Reviewed, recorded exceptions to the gate. Empty, and meant to stay that way. |
+
+## What ABI 1.1 added, and why
+
+M5's task 1.2. The table had 31 entries and no way to look at a component the *engine* registered,
+no way to read a chunk, and no `CyStage` or `CySeverity` — so two Swift enums were hand-copied from
+engine enums with nothing to check them against, and **one of them was wrong**: `Severity` carried
+six enumerators against the engine's three, `Log.info` put 2 on the wire, and every informational
+line from a Swift behaviour arrived in the engine's log as `[error]` on a run that reported green.
+
+| Added | Why |
+|---|---|
+| `CySeverity`, `CyStage` | The two enums the overlay copied by hand. Generated now, and `src/interface.cpp` asserts every value — and the stage *count* — against `cy::DiagnosticSeverity` and `cy::ecs::Stage`. |
+| `CY_VAR_I8` … `CY_VAR_U64` | One integer width was not enough: every reflected engine component disagrees with it. The payload is always the widened value in `as_i64`; the tag is the storage width, and a write that does not fit is refused rather than truncated. |
+| `world_component_count`, `world_component_info`, `world_component_field` | A generated inspector is "enumerate what is there, describe each field, read it, write it". Two of those four did not exist. |
+| `world_parent`, `world_set_parent`, `world_child_count`, `world_child` | An outliner. |
+| `world_chunks`, `CyChunk` | The bulk read. `Systems.swift` said it plainly: at 1.0 "NONE of them hands a module a chunk". |
+
+**A component the engine registered is now reachable through every existing entry**, not only
+through the three above. `CyWorld_T::record_or_import` turns the engine's `reflect::TypeInfo` into
+the same `ComponentRecord` a module registration produces, once, on first use — so
+`component_get_var`, the typed fast paths and `world_borrow_component` all work on a scene's
+`LocalTransform` without thirteen thunks learning about a second kind of component. See
+`include/cy/abi/host.h`.
+
+## Reload while the runtime is live
+
+`include/cy/abi/live_reload.h`, M5's task 1.1. `module.h` has the reload *sequence* and M4 proved
+it; nothing performed it against a runtime that had not stopped. `LiveReload` is the three things
+that were missing — noticing a new generation on disk, deciding that a frame boundary is one
+(`apply_at_frame_boundary` refuses while the world is iterating), and remembering what happened —
+and `integration.abi_live_reload` is a tick loop that never stops while the image under it changes.
 
 ## The compatibility gate
 

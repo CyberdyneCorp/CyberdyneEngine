@@ -55,6 +55,12 @@ ENUM_SPECS = {
     "CyResult": ("Status", "CY_RESULT_", "Int32"),
     "CyVarType": ("VarType", "CY_VAR_", "UInt32"),
     "CyInitLevel": ("InitLevel", "CY_INIT_LEVEL_", "UInt32"),
+    # ADDED AT ABI 1.1, AND EACH REPLACES A HAND-WRITTEN COPY IN CyberdyneKit. `Severity`'s copy had
+    # six enumerators against the engine's three and put every `Log.info` on the wire as an error;
+    # `SystemStage`'s copy said in its own comment that nothing checked it. The Swift names are the
+    # ones those copies already had, so deleting them is a deletion and not a rename.
+    "CySeverity": ("Severity", "CY_SEVERITY_", "UInt32"),
+    "CyStage": ("SystemStage", "CY_STAGE_", "UInt32"),
 }
 
 
@@ -129,10 +135,27 @@ def enums(description: dict) -> str:
 /// `CyVarType`: the kinds a value may carry across the boundary.""")
     init_level = _enum(description, "CyInitLevel", """\
 /// `CyInitLevel`: when a module registers what. Types are registered at `.scene`.""")
+    severity = _enum(description, "CySeverity", """\
+/// `CySeverity`: the levels the engine's diagnostic system carries, and the wire values `log` takes.
+///
+/// GENERATED, BECAUSE THE COPY WAS WRONG. CyberdyneKit hand-wrote this enum with six cases —
+/// trace, debug, info, warning, error, fatal — against the engine's three, so `Log.info` put 2 on
+/// the wire and every informational line from a behaviour arrived in the engine's log as `[error]`.
+/// It ran green for a milestone. There is nothing to copy now: cy_abi.h declares `CySeverity`,
+/// src/abi/src/interface.cpp asserts each value against `cy::DiagnosticSeverity`, and this file is
+/// generated from the same description the compatibility gate diffs.""")
+    stage = _enum(description, "CyStage", """\
+/// `CyStage`: the stages of one frame, in execution order.
+///
+/// Also generated, and also replacing a copy. `SystemStage` was hand-written in CyberdyneKit with a
+/// comment saying "there is no `CyStage` in `cy_abi.h`, so nothing checks that this list still
+/// matches"; the fix was the appended enum rather than more care.""")
     return f"""{BANNER}
 {status}
 {var_type}
 {init_level}
+{severity}
+{stage}
 /// The error every throwing overlay call raises.
 ///
 /// `swift-scripting`: "the overlay SHALL throw a typed `CyberdyneError` carrying the status and the

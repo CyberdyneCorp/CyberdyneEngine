@@ -42,15 +42,24 @@ REPOSITORY = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPOSITORY / "src" / "abi" / "include" / "cy" / "abi" / "cy_abi.h"
 BASELINE = REPOSITORY / "src" / "abi" / "abi_baseline.json"
 
-# The marker the table's entries end at. Everything above it is the ABI's committed order.
+# The marker that says where a new entry goes. It is a signpost inside the table rather than its
+# end: at ABI 1.0 nothing had been appended yet, so the marker WAS the last line of the struct and
+# the two were indistinguishable. ABI 1.1 appended eight entries below it and they became different
+# things — so the table's body now ends at the closing brace, and `append_entry` inserts there.
+#
+# The distinction is not pedantry: while these helpers treated the marker as the end, this selftest
+# inserted its probe entry ABOVE eight committed ones and then asserted that the gate had accepted
+# an append. The gate correctly reported sixteen reorders, and the selftest reported that the gate
+# was broken.
 APPEND_MARKER = "/* --- Append new entries below this line."
+TABLE_END = "} CyInterface;"
 
 
 def table_entry_lines(text: str) -> tuple[int, int]:
-    """The half-open line range of the interface table's body."""
+    """The half-open line range of the interface table's body — the whole of it."""
     lines = text.splitlines(keepends=True)
     start = next(i for i, line in enumerate(lines) if "typedef struct CyInterface {" in line)
-    end = next(i for i, line in enumerate(lines) if APPEND_MARKER in line)
+    end = next(i for i, line in enumerate(lines) if line.startswith(TABLE_END))
     return start, end
 
 
@@ -92,8 +101,9 @@ def remove_entry(text: str, name: str) -> str:
 
 
 def append_entry(text: str, declaration: str) -> str:
-    """Add an entry in the one place an entry may be added."""
-    return text.replace(APPEND_MARKER, f"{declaration}\n\n    {APPEND_MARKER}", 1)
+    """Add an entry in the one place an entry may be added: after every existing one."""
+    assert APPEND_MARKER in text, "the table has lost its append marker"
+    return text.replace(f"\n{TABLE_END}", f"\n{declaration}\n{TABLE_END}", 1)
 
 
 def bump_minor(text: str) -> str:

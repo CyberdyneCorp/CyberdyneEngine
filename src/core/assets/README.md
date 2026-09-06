@@ -7,6 +7,12 @@ Section 3.3 of `openspec/changes/implement-m1-substrate/tasks.md`, governed by `
 filesystem, the package format's read path, asynchronous loading, file and directory access, the two
 serialization forms, and compression. What is deliberately absent is listed under *Seams* below.
 
+**The derived-data cache joined it at M5** (task 5.1). `asset-import-pipeline` and
+`build-and-packaging` both require ONE content-addressed cache over every derived artefact — cooked
+assets, shaders, material programs, geometry and texture pages — rather than one per producer, so it
+is here at layer 0 beneath all of them rather than inside the importer. `derivation.h` is what
+addresses an entry and `derived_cache.h` is what stores it; `tools/import/` is its first client.
+
 **Hot reload joined it at M3** (task 1.4, carried forward from M2's gate). `FileWatcher` watches the
 virtual filesystem and reports added, modified and removed paths; `AssetSystem::reload()` replaces a
 resident asset's bytes **inside the object every `Ref` already points at** and tells registered
@@ -20,6 +26,8 @@ dependents so they can rebuild what they derived. Both halves are exercised by
 | `path.h` | `VirtualPath` — normalised, case-sensitive, traversal-proof, fixed capacity |
 | `hash.h` | `ContentHash`, `ContentHasher` — BLAKE3 behind an engine-owned type |
 | `identity.h` | `AssetKind`, `VariantKey`, `AssetMeta` and its sidecar text form, `AssetDatabase`, placeholders |
+| `derivation.h` | `DerivationKey` and its builder — what makes two pieces of derived data the same piece |
+| `derived_cache.h` | The **one** derived-data cache: local, shared and remote tiers, recorded dependencies, disposable by construction |
 | `compression.h` | `CompressionMethod`, block and **seekable framed** compression, the recompression policy |
 | `file.h` | `File`, `MappedFile`, `fs::` directory operations, `fs::write_atomic` |
 | `vfs.h` | `Mount`, `DirectoryMount`, `MemoryMount`, `RemoteMount`, `VirtualFileSystem` |

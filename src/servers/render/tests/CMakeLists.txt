@@ -41,11 +41,13 @@ function(cy_render_server_declare_tests)
             "${cy_server_tests_dir}/test_debug_draw.cpp"
             "${cy_server_tests_dir}/test_gpu_scene.cpp"
             "${cy_server_tests_dir}/test_mesh.cpp"
+            "${cy_server_tests_dir}/test_picking.cpp"
             "${cy_server_tests_dir}/test_server.cpp"
             "${cy_server_tests_dir}/test_snapshot.cpp"
             "${cy_server_tests_dir}/test_sort.cpp"
             "${cy_server_tests_dir}/test_texture.cpp"
             "${cy_server_tests_dir}/test_view.cpp"
+            "${cy_server_tests_dir}/test_viewport_transport.cpp"
         DEPENDENCIES cy::servers-render)
 endfunction()
 

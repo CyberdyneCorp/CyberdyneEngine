@@ -7,8 +7,11 @@ Tasks 4.3.1 to 4.3.4 and 4.4.1. Three subcommands, one behind each recipe in jus
                       that did so, from docs/roadmap/status.yaml. Exits non-zero when the record and
                       openspec/specs/ disagree — a capability added, renamed or removed without a
                       record entry is drift, and drift fails the build.
-  milestone <id>      a milestone's full exit criteria, from tools/roadmap/milestones/<id>.toml.
-                      Exits non-zero if any criterion this host can evaluate fails.
+  milestone <id>      a milestone's full exit criteria: the permanent set — every closed
+                      milestone's criteria, deduplicated — plus the ones this milestone adds, each
+                      evaluated exactly once. Exits non-zero if any criterion this host can
+                      evaluate fails. It invokes no other ledger; `criteria.build_plan` is the rule
+                      and the change that flattened it records what chaining cost.
   gates               the permanent merge-gate set and any recorded override.
 
 Nothing here decides anything: the record, the criteria and the gates are data, and the milestones
@@ -124,50 +127,65 @@ def _status_document(entries: tuple[record_module.Entry, ...], drift: record_mod
 
 
 def command_milestone(arguments: argparse.Namespace) -> int:
-    milestone = criteria_module.load(arguments.id)
-    _check_criteria_are_gated(milestone)
+    gate_set = gates_module.load()
+    plan = criteria_module.build_plan(arguments.id, gates_module.permanent_milestones(gate_set))
+    _check_criteria_are_gated(plan, gate_set)
     if arguments.list:
-        return _list_criteria(milestone, arguments.json)
+        return _list_criteria(plan, arguments.json)
 
     entries = record_module.load(arguments.record)
-    print(f"{milestone.id.upper()} — {milestone.name}: {len(milestone.criteria)} exit criteria")
-    if milestone.artefact:
-        print(f"artefact: {milestone.artefact}")
+    _print_plan(plan)
+    results = [_evaluate_and_report(entry, entries, arguments.ci) for entry in plan.entries]
+    print()
+    return _summarise(plan, results, arguments.json)
+
+
+def _print_plan(plan: criteria_module.Plan) -> None:
+    """What is about to run, and — the point of the flattening — what is NOT about to run twice."""
+    print(f"{plan.milestone.id.upper()} — {plan.milestone.name}: "
+          f"{len(plan.entries)} exit criteria, each evaluated once")
+    if plan.inherited:
+        inherited = ", ".join(name.upper() for name in plan.ledgers[:-1])
+        print(f"  {len(plan.inherited):>3} from the permanent set ({inherited})")
+        print(f"  {len(plan.own):>3} new in {plan.milestone.id.upper()}")
+        print(f"  {plan.deduplicated:>3} of {plan.declarations} declarations deduplicated; "
+              f"no ledger runs another")
+    if plan.milestone.artefact:
+        print(f"artefact: {plan.milestone.artefact}")
     print()
 
-    results = []
-    for criterion in milestone.criteria:
-        results.append(_evaluate_and_report(criterion, entries, arguments.ci))
-    print()
-    return _summarise(milestone, results, arguments.json)
 
-
-def _check_criteria_are_gated(milestone: criteria_module.Milestone) -> None:
+def _check_criteria_are_gated(plan: criteria_module.Plan, gate_set: gates_module.GateSet) -> None:
     """Every criterion names a gate in gates.toml. A criterion no gate runs is a criterion in prose."""
-    declared = {gate.id for gate in gates_module.load().gates}
-    for criterion in milestone.criteria:
-        if criterion.ci_job not in declared:
+    declared = {gate.id for gate in gate_set.gates}
+    for entry in plan.entries:
+        if entry.criterion.ci_job not in declared:
             raise criteria_module.CriteriaError(
-                f"{milestone.id}.toml: criterion '{criterion.id}' names CI job "
-                f"'{criterion.ci_job}', which is not a gate in tools/roadmap/gates.toml"
+                f"{entry.declared_by[0]}.toml: criterion '{entry.criterion.id}' names CI job "
+                f"'{entry.criterion.ci_job}', which is not a gate in tools/roadmap/gates.toml"
             )
 
 
-def _evaluate_and_report(criterion, entries, force_ci: bool) -> criteria_module.Result:
-    print(f"==> {criterion.id:<18} {criterion.command}", flush=True)
+def _evaluate_and_report(entry: criteria_module.PlanEntry, entries,
+                         force_ci: bool) -> criteria_module.Result:
+    criterion = entry.criterion
+    print(f"==> {entry.label:<24} {criterion.command}", flush=True)
     result = criteria_module.evaluate(criterion, entries, force_ci)
     if result.status == criteria_module.OK:
         print(f"    ok               {criterion.describe}  ({result.seconds:.1f} s)")
     elif result.status == criteria_module.NOT_EVALUATED:
         print(f"    not evaluated    {result.detail}")
     else:
-        _print_failure(result)
+        _print_failure(entry, result)
     return result
 
 
-def _print_failure(result: criteria_module.Result) -> None:
+def _print_failure(entry: criteria_module.PlanEntry, result: criteria_module.Result) -> None:
     print(f"    FAILED           {result.detail}  ({result.seconds:.1f} s)")
     print(f"    {result.criterion.describe}")
+    if len(entry.declared_by) > 1:
+        print(f"    declared by {', '.join(name.upper() for name in entry.declared_by)} — "
+              f"one failure, not one per milestone")
     lines = [line for line in result.output.splitlines() if line.strip()]
     for line in lines[-FAILURE_OUTPUT_LINES:]:
         print(f"      | {line}")
@@ -176,63 +194,76 @@ def _print_failure(result: criteria_module.Result) -> None:
               f"reproduce with: {result.criterion.command}")
 
 
-def _list_criteria(milestone: criteria_module.Milestone, as_json: bool) -> int:
+def _list_criteria(plan: criteria_module.Plan, as_json: bool) -> int:
     if as_json:
-        print(json.dumps(_milestone_document(milestone), indent=2))
+        print(json.dumps(_milestone_document(plan), indent=2))
         return OK_EXIT
-    print(f"{milestone.id.upper()} — {milestone.name}")
-    for criterion in milestone.criteria:
+    print(f"{plan.milestone.id.upper()} — {plan.milestone.name}: {len(plan.entries)} criteria, "
+          f"{len(plan.inherited)} from the permanent set and {len(plan.own)} new here")
+    for entry in plan.entries:
+        criterion = entry.criterion
         where = "CI only" if criterion.where == "ci" else criterion.requires or "here"
-        print(f"  {criterion.id:<18} {where:<9} {criterion.ci_job:<16} {criterion.source}")
-        print(f"  {'':<18} {criterion.describe}")
+        print(f"  {entry.label:<24} {where:<9} {criterion.ci_job:<16} {criterion.source}")
+        print(f"  {'':<24} {criterion.describe}")
     return OK_EXIT
 
 
-def _milestone_document(milestone: criteria_module.Milestone, results=()) -> dict:
-    by_id = {result.criterion.id: result for result in results}
+def _milestone_document(plan: criteria_module.Plan, results=()) -> dict:
     return {
-        "milestone": milestone.id,
-        "name": milestone.name,
-        "artefact": milestone.artefact,
-        "notes": list(milestone.notes),
+        "milestone": plan.milestone.id,
+        "name": plan.milestone.name,
+        "artefact": plan.milestone.artefact,
+        "notes": list(plan.milestone.notes),
+        "ledgers": list(plan.ledgers),
+        "declarations": plan.declarations,
+        "deduplicated": plan.deduplicated,
         "criteria": [
-            {
-                "id": criterion.id,
-                "describe": criterion.describe,
-                "source": criterion.source,
-                "kind": criterion.kind,
-                "command": criterion.command,
-                "where": criterion.where,
-                "ci_job": criterion.ci_job,
-                "status": by_id[criterion.id].status if criterion.id in by_id else None,
-                "detail": by_id[criterion.id].detail if criterion.id in by_id else "",
-            }
-            for criterion in milestone.criteria
+            _criterion_document(entry, result)
+            for entry, result in zip(plan.entries, results or (None,) * len(plan.entries))
         ],
     }
 
 
-def _summarise(milestone, results, as_json: bool) -> int:
-    failed = [result for result in results if result.status == criteria_module.FAILED]
-    skipped = [result for result in results if result.status == criteria_module.NOT_EVALUATED]
-    passed = len(results) - len(failed) - len(skipped)
+def _criterion_document(entry: criteria_module.PlanEntry, result) -> dict:
+    criterion = entry.criterion
+    return {
+        "id": criterion.id,
+        "label": entry.label,
+        "declared_by": list(entry.declared_by),
+        "permanent": entry.permanent,
+        "describe": criterion.describe,
+        "source": criterion.source,
+        "kind": criterion.kind,
+        "command": criterion.command,
+        "where": criterion.where,
+        "ci_job": criterion.ci_job,
+        "status": result.status if result else None,
+        "detail": result.detail if result else "",
+    }
+
+
+def _summarise(plan: criteria_module.Plan, results, as_json: bool) -> int:
+    paired = tuple(zip(plan.entries, results))
+    failed = [pair for pair in paired if pair[1].status == criteria_module.FAILED]
+    skipped = [pair for pair in paired if pair[1].status == criteria_module.NOT_EVALUATED]
+    passed = len(paired) - len(failed) - len(skipped)
 
     if as_json:
-        print(json.dumps(_milestone_document(milestone, results), indent=2))
+        print(json.dumps(_milestone_document(plan, results), indent=2))
         return FAILED_EXIT if failed else OK_EXIT
 
-    identifier = milestone.id.upper()
+    identifier = plan.milestone.id.upper()
     if failed:
-        print(f"{identifier} is not closed: {len(failed)} of {len(results) - len(skipped)} "
+        print(f"{identifier} is not closed: {len(failed)} of {len(paired) - len(skipped)} "
               f"evaluated criteria failed.")
-        for result in failed:
-            print(f"  {result.criterion.id:<18} {result.criterion.describe}  "
+        for entry, result in failed:
+            print(f"  {entry.label:<24} {result.criterion.describe}  "
                   f"[{result.criterion.source}]")
     else:
         print(f"{identifier}: {passed} criteria pass.")
-    for result in skipped:
-        print(f"  not evaluated here: {result.criterion.id} — {result.detail}")
-    for note in milestone.notes:
+    for entry, result in skipped:
+        print(f"  not evaluated here: {entry.label} — {result.detail}")
+    for note in plan.milestone.notes:
         print(f"  note: {note}")
     return FAILED_EXIT if failed else OK_EXIT
 

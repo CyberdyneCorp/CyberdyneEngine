@@ -36,6 +36,45 @@ set(cy_reflect_generator "${CMAKE_SOURCE_DIR}/tools/gen/reflect_gen.py")
 set(cy_reflect_annotated_headers
     "${CMAKE_CURRENT_SOURCE_DIR}/include/cy/core/reflect/demo/types.h")
 
+# --- Annotated headers that belong to OTHER modules -------------------------------------------------
+#
+# M5's task 1.3. One generator invocation covers the whole tree — the identity manifest is shared and
+# the drift check is only meaningful over every header a run parsed — but the OUTPUT cannot all live
+# here. A generated translation unit `#include`s the header it describes, so the file describing
+# `cy::scene::LocalTransform` includes <cy/scene/components.h>: written under this directory it
+# would be a layer-0 file including a layer-4 header, which tools/layercheck/layercheck.py refuses
+# and is right to.
+#
+# So each row names the module the generated code belongs to, the directory it goes in, and the
+# header. The generator's `--module NAME:OUTPUT_DIR:HEADER` takes it from there: the per-header files
+# land in that module's own generated/ directory, and the aggregate is `register_<NAME>_types`
+# rather than a second definition of `register_generated_types`.
+#
+# THE LIST IS HERE RATHER THAN IN EACH MODULE'S CMakeLists.txt for one reason: `just
+# generate-headers` reads ONE argument vector, written below at configure time, and a second file
+# appending to it would make the generator's input depend on the order CMake happened to process
+# directories in. The module that owns the header still owns the SOURCES entry that compiles the
+# result — see src/scene/CMakeLists.txt.
+#
+# Each row is NAME|OUTPUT_DIR|HEADER, source-root relative.
+set(cy_reflect_module_headers
+    "scene|src/scene/generated|src/scene/include/cy/scene/components.h")
+
+# The include directories the frontend needs to parse those headers. A reflected header at layer 4
+# reaches most of the engine's lower layers, and the generator parses with a real C++ frontend: a
+# missing include directory is a parse error naming a file, not a silently smaller type set.
+set(cy_reflect_module_includes
+    src/core/base/include
+    src/core/memory/include
+    src/core/values/include
+    src/core/math/include
+    src/core/jobs/include
+    src/core/determinism/include
+    src/core/diagnostics/include
+    src/core/reflect/include
+    src/ecs/include
+    src/scene/include)
+
 set(cy_reflect_attribute_schemas
     "${CMAKE_CURRENT_SOURCE_DIR}/reflect_attributes.toml")
 
@@ -120,10 +159,43 @@ foreach(annotated IN LISTS cy_reflect_annotated_headers)
 ${relative}
 ")
 endforeach()
+foreach(include IN LISTS cy_reflect_module_includes)
+    string(APPEND cy_reflect_argument_lines "--include
+${include}
+")
+endforeach()
+foreach(row IN LISTS cy_reflect_module_headers)
+    string(REPLACE "|" ";" fields "${row}")
+    list(GET fields 0 module_name)
+    list(GET fields 1 module_output)
+    list(GET fields 2 module_header)
+    string(APPEND cy_reflect_argument_lines "--module
+${module_name}:${module_output}:${module_header}
+")
+endforeach()
 string(APPEND cy_reflect_argument_lines "--engine-version
 ${PROJECT_VERSION}
 ")
 file(WRITE "${cy_reflect_inputs}" "${cy_reflect_argument_lines}")
+
+# The same two lists again, as an argument vector for the build step. Built from the same rows the
+# inputs file is built from, so the recipe and the build cannot be given different sets.
+set(cy_reflect_module_arguments "")
+set(cy_reflect_module_include_arguments "")
+set(cy_reflect_module_generated "")
+foreach(include IN LISTS cy_reflect_module_includes)
+    list(APPEND cy_reflect_module_include_arguments --include "${CMAKE_SOURCE_DIR}/${include}")
+endforeach()
+foreach(row IN LISTS cy_reflect_module_headers)
+    string(REPLACE "|" ";" fields "${row}")
+    list(GET fields 0 module_name)
+    list(GET fields 1 module_output)
+    list(GET fields 2 module_header)
+    list(APPEND cy_reflect_module_arguments
+         --module
+         "${module_name}:${CMAKE_SOURCE_DIR}/${module_output}:${CMAKE_SOURCE_DIR}/${module_header}")
+    list(APPEND cy_reflect_module_generated "${CMAKE_SOURCE_DIR}/${module_header}")
+endforeach()
 
 if(CY_REFLECT_GENERATE)
     set(cy_reflect_stamp "${CMAKE_CURRENT_BINARY_DIR}/reflect_generated.stamp")
@@ -141,8 +213,10 @@ if(CY_REFLECT_GENERATE)
                 --output-dir "${CMAKE_CURRENT_SOURCE_DIR}/generated"
                 --include "${CMAKE_SOURCE_DIR}/src/core/base/include"
                 --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
+                ${cy_reflect_module_include_arguments}
                 --attributes ${cy_reflect_attribute_schemas}
                 --header ${cy_reflect_annotated_headers}
+                ${cy_reflect_module_arguments}
                 --engine-version "${PROJECT_VERSION}"
                 --cache "${CMAKE_CURRENT_BINARY_DIR}/reflect_cache.json"
                 --stamp "${cy_reflect_stamp}"
@@ -151,6 +225,7 @@ if(CY_REFLECT_GENERATE)
             "${cy_reflect_generator}"
             ${cy_reflect_generator_sources}
             ${cy_reflect_annotated_headers}
+            ${cy_reflect_module_generated}
             ${cy_reflect_attribute_schemas}
             "${CMAKE_SOURCE_DIR}/identity/manifest.toml"
         COMMENT "Generating reflection metadata"

@@ -110,6 +110,26 @@ struct CyWorld_T {
 
     [[nodiscard]] const cy::abi::ComponentRecord* find(const char* name) const noexcept;
     [[nodiscard]] const cy::abi::ComponentRecord* record(CyComponentTypeId id) const noexcept;
+
+    /// The record for `id`, IMPORTING IT FROM THE ENGINE'S OWN REGISTRY when this binding has not
+    /// seen it before. M5 task 1.2.
+    ///
+    /// WHY AN IMPORT AND NOT A SECOND LOOKUP PATH. Every entry of the table that reads or writes a
+    /// field goes through `record()` and `field()`. A component the ENGINE registered — a scene's
+    /// `LocalTransform`, a game's reflected component — had no record here at all, so the editor
+    /// could enumerate nothing and read nothing: the ABI could only see what a module had described
+    /// to it. Importing turns the engine's `reflect::TypeInfo` into the same `ComponentRecord` and
+    /// `FieldRecord`s a module registration produces, once, on first use, and every entry then
+    /// works on it unchanged. The alternative — teaching thirteen thunks about a second kind of
+    /// component — is thirteen chances to teach twelve of them.
+    ///
+    /// Returns null when there is no such component, and a record with `field_count == 0` when the
+    /// component has no reflection metadata to import (`Parent`, `Children`, a tag). That is not an
+    /// error: it is what "the engine knows this type is here and cannot describe its insides" looks
+    /// like, and `world_component_info` reports it as a describable field count of zero.
+    ///
+    /// NOT `const`, because importing appends. A caller that must not mutate uses `record()`.
+    [[nodiscard]] const cy::abi::ComponentRecord* record_or_import(CyComponentTypeId id) noexcept;
     [[nodiscard]] const cy::abi::FieldRecord* field(const cy::abi::ComponentRecord& component,
                                                     cy::u32 index) const noexcept;
 
@@ -194,5 +214,14 @@ using BehaviourRecord = ::CyBehaviourType_T;
 /// have no fixed width in storage — nil, string and bytes — which is what makes a field of one of
 /// those a registration error rather than a silent misread.
 [[nodiscard]] u32 var_type_storage_size(CyVarType type) noexcept;
+
+/// True for the eight integer kinds. They share one payload slot (`as_i64`) and differ only in
+/// storage width and signedness, so nearly everything that handles one handles all eight — which is
+/// exactly why the predicate exists rather than eight case labels at each site.
+[[nodiscard]] bool var_type_is_integer(CyVarType type) noexcept;
+
+/// True for the four signed integer kinds. Decides sign extension on the way out of storage and the
+/// range check on the way in.
+[[nodiscard]] bool var_type_is_signed(CyVarType type) noexcept;
 
 }  // namespace cy::abi

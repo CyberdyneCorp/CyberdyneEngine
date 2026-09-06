@@ -1,0 +1,48 @@
+# A runtime image that is not the engine: `cy_get_interface` implemented in Rust, over a world small
+# enough to reason about.
+#
+# Layer 2. This is a TEST FIXTURE and it is a crate rather than a module because the thing it has to
+# be is a shared library — `cy-editor-sdk`'s embedded path resolves symbols out of a file on disk,
+# and a fixture compiled into the test binary would exercise none of that.
+#
+# WHAT IT IS FOR, AND WHAT IT IS NOT. It is for proving that the generated table layout, the calling
+# convention, the header check, the schema reader and the value marshalling all agree with a real
+# `#[repr(C)]` `CyInterface` reached through `dlopen` and `dlsym`. It is NOT a second engine and
+# nothing may grow here that the engine has: its world is three component types and a parent link,
+# and if a test needs more than that, the test needs the engine.
+[package]
+name = "cy-editor-testhost"
+description = "A minimal in-process implementation of the Cyberdyne C ABI, for exercising the SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 2
+
+[lib]
+# `cdylib` so there is a `.so` to open, `rlib` so the SDK's tests can ask it where that `.so` is.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+# A hosted runtime as a real process, so that "kill it and the editor survives" can be tested by
+# killing a process rather than by dropping a socket. The engine's own hosted runtime is a C++
+# binary and arrives with `live-editing` at task 5.2; this speaks the same protocol over the same
+# encoding, so the editor's side of that test is written once.
+name = "cy-runtime-stub"
+path = "src/bin/cy_runtime_stub.rs"
+
+[dependencies]
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+cy-editor-sdk = { path = "../cy-editor-sdk" }
+
+# The integration tests speak in editor values, which is layer 0's vocabulary. A dev-dependency
+# rather than a dependency: the fixture's own code needs only the ABI mirrors.
+[dev-dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+
+[lints]
+workspace = true

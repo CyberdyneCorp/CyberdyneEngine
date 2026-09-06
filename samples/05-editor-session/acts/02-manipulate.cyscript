@@ -1,0 +1,13 @@
+# Act 2 — the session that outlives its runtime. Task 6.2.
+#
+# Every line below runs AFTER the hosted runtime has been killed with SIGKILL, and the editor does
+# not know it yet: session.py holds this act at a Unix FIFO until the kill has happened, so the
+# ordering is decided rather than raced. What the act asserts is not that these commands are clever
+# — it is that they all still work, that the loss is surfaced with something to act on, and that the
+# document ends the act intact and unsaved.
+scene.create-entity
+scene.create-entity
+edit.undo
+edit.redo
+scene.create-entity
+edit.undo

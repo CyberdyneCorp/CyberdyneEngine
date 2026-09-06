@@ -16,7 +16,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | Path | Is |
 |---|---|
 | `docs/roadmap/status.yaml` | The record. One entry per capability: tier, the milestone that last advanced it, the change that did so. Not owned by this directory — owned by whoever advances a capability. |
-| `tools/roadmap/milestones/<id>.toml` | One milestone's exit criteria. `m0.toml` through `m4.toml` today; M5 through M11 add a file each and should change no code — M3 added one line, the `gpu` requirement below, because it is the first milestone whose criteria need hardware, and M4 added the `MINIMUM_CRITERIA` floors below, because its ledger was otherwise covered by nothing. |
+| `tools/roadmap/milestones/<id>.toml` | One milestone's **new** exit criteria — what it adds to the permanent set, not what it inherits. `m0.toml` through `m4.toml` today; M5 through M11 add a file each and should change no code — M3 added one line, the `gpu` requirement below, because it is the first milestone whose criteria need hardware, M4 added the `MINIMUM_CRITERIA` floors below, because its ledger was otherwise covered by nothing, and M5 removed the `m<n>-green` chaining criteria for the reason under "A ledger is flat". |
 | `tools/roadmap/gates.toml` | The permanent merge-gate set, and the overrides recorded against it. |
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
 | `roadmap.py` | The command line behind the recipes. |
@@ -121,14 +121,77 @@ point a change that breaks `just roadmap-milestone m0` does not merge unless it 
 criterion's recorded replacement in the same change.
 
 M1 is the first milestone to have to obey that rule, and it did not: two of its modules landed with
-findings against the `lint` gate M0 closed with, which turned `just roadmap-milestone m0` red. So
-`m1.toml`'s first criterion runs `just roadmap-milestone m0` — the rule as something the closing
-recipe executes rather than something a reviewer is expected to remember. Every milestone ledger
-after this one carries the same criterion for the milestone before it, `m2.toml`, `m3.toml`
-and `m4.toml` included, and `selftest.py` checks each rung — **derived from the ledgers rather
-than listed**, so
-that the check itself is not one more thing the next author has to extend. The omission is invisible
-until the day it matters, which is the day somebody closes a milestone on a broken one.
+findings against the `lint` gate M0 closed with, which turned `just roadmap-milestone m0` red. So the
+rule became something the closing recipe executes rather than something a reviewer is expected to
+remember. **How it executes changed at M5**, and the section below is why.
+
+## A ledger is flat, and every distinct criterion runs once
+
+`just roadmap-milestone <id>` evaluates two things: the **permanent set** — the criteria of every
+milestone whose gate in `gates.toml` is `state = "green"` and which sits below this one on the
+ladder — and the milestone's **own** criteria. The two are merged, the declarations that do the same
+work are collapsed, and each distinct check runs exactly once. `criteria.build_plan` is that rule;
+`gates.permanent_milestones` is where it reads what has joined the set. **No ledger invokes another
+ledger.**
+
+It used to. Each ledger's first criterion ran the previous milestone's recipe — `m1.toml` ran
+`just roadmap-milestone m0`, `m2.toml` ran M1's, and so on — so closing M4 ran a chain five deep.
+Measured on this repository before the flattening, one run of `just roadmap-milestone m4` was:
+
+| | chained | flat |
+|---|---|---|
+| criterion evaluations | 118 | **87** |
+| distinct checks among them | 91 | 87 |
+| redundant evaluations | 27 | **0** |
+| `four-profiles` — a four-configuration build and test | **4×** | **1×** |
+| profiled `build-engine` / `test-all` invocations | 16 / 16 | **4 / 4** |
+| ledger invocations nested inside the run | 4 | **0** |
+| wall clock, one workstation, warm trees | 70.9 min | **56.8 min** |
+| wall clock if every repeat paid its first run's cost | 142.4 min | **56.8 min** |
+
+Take the **failure count, not the clock, as the finding**. The flat run is 3,405 s measured; the
+chained run is derived from the same per-criterion measurements, with the three repeats of
+`four-profiles` priced at the 206 s a second run over already-built trees actually costs rather than
+at the 1,637 s the first one did. That is a fifth of the time — worth having, not the point. The
+point is the 27 redundant evaluations: 27 extra chances for something unrelated to the change under
+test to go red, four of them on the one criterion this repository has measured flaking.
+
+It compounds with the ladder, which is why M5 was the cheapest place to stop it — every rung below
+pays for every rung above it:
+
+| ledger | chained evaluations | flat |
+|---|---|---|
+| `m0` | 15 | 15 |
+| `m1` | 35 | 29 |
+| `m2` | 62 | 49 |
+| `m3` | 91 | 69 |
+| `m4` | 118 | **87** |
+
+The chained column is quadratic in the length of the ladder and the flat column is the number of
+distinct checks that exist. At M11 the chain would have been twelve deep.
+
+The cost is not only time. Re-running one criterion n times multiplies its failure probability by n,
+and a `unit.scene` case sitting on the taxonomy's per-case budget at `-O0` duly became a flake that
+failed four ledgers at once — diagnosed as four problems before the multiplication was recognised as
+the cause. Deduplication is a correctness property here, not an optimisation.
+
+Two things had to survive the change, and each is silent when lost, so both are checks in
+`selftest.py` (`test_flat_ledger`) rather than paragraphs:
+
+- **Deduplication.** Each distinct check appears once, however many milestones declared it. The
+  fingerprint is the *work* — the kind, the command or path or tier table, and the conditions it runs
+  under — never the id: `sample-recipe` names a different sample in M2, M3 and M4, and collapsing
+  those three by name would drop two milestones' closing artefacts. Where declarations differ only in
+  `timeout_s`, the most generous budget wins; a budget is not a check.
+- **The ladder.** An earlier milestone's criteria are still *in* the newest ledger, so a regression
+  against M0 still fails it. Chaining provided this by construction; nothing but the check provides
+  it now. A closed milestone's own ledger stays its own criteria — widening `milestone-m0`, a
+  permanent merge gate, with everything a later milestone added would turn it red for work M0 never
+  claimed.
+
+Criteria merged from an earlier milestone are labelled by the milestone that declared them first, so
+a failure reads `m0:layering`, once, rather than as a `m3-green` → `m2-green` → `m1-green` cascade
+with the real failure buried in a truncated capture thirty lines down.
 
 **The flip used to be the part that kept being forgotten, and it is now a check.** A milestone's
 gate carries `state = "joins-on-close"` until it closes and `state = "green"` from then on, and three
@@ -146,9 +209,10 @@ next pull request if it did not.
 
 `just roadmap-test` checks the ladder itself on every pull request: every ledger under
 `milestones/` loads, every criterion in it names a gate that exists, every milestone with a ledger
-has a `class = "milestone"` gate for its criteria to join, and each rung runs the one below it. The
-milestone recipes each take a working session, so a ledger that has stopped loading has to fail
-somewhere cheaper than the day somebody tries to close a milestone.
+has a `class = "milestone"` gate for its criteria to join, no ledger invokes another, and the newest
+ledger evaluates every closed milestone's criteria exactly once. The milestone recipes each take a
+working session, so a ledger that has stopped loading has to fail somewhere cheaper than the day
+somebody tries to close a milestone.
 
 It also checks that no ledger is a token gesture: `selftest.py`'s `MINIMUM_CRITERIA` records the
 fewest criteria each milestone may carry, from its `ROADMAP.md` row and its section 6. That table

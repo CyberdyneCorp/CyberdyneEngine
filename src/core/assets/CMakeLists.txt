@@ -28,6 +28,8 @@ cy_add_module(
         src/asset_system.cpp
         src/compression.cpp
         src/cooked.cpp
+        src/derivation.cpp
+        src/derived_cache.cpp
         src/diagnostics.cpp
         src/file.cpp
         src/hash.cpp

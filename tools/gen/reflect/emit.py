@@ -27,7 +27,11 @@ from .attrspec import PARAMETER_TYPES as _PARAMETER_CPP
 from .attrspec import Attributes, CustomValue
 from .model import ParsedHeader, ParsedType
 
-GENERATOR_VERSION = "1"
+# Bumped whenever the emitter's OUTPUT changes, because the incremental cache keys on it: a warm
+# cache from before a generator change would otherwise reproduce last week's metadata and the
+# currency gate would pass over it. "2" is M5's task 1.3 — flattened aggregate fields, and the
+# `sizeof` spelling that makes their designators legal.
+GENERATOR_VERSION = "2"
 
 BANNER = """\
 // clang-format off
@@ -152,6 +156,7 @@ def render_source(parsed: ParsedHeader, identity) -> Output:
         "#include <cstddef>",
         "#include <new>",
         "#include <type_traits>",
+        "#include <utility>",
         "",
         "namespace cy::reflect {",
         "namespace {",
@@ -285,7 +290,12 @@ def _render_field(type_index: int, position: int, alias: str, parsed_field,
         f"        .kind = FieldKind::{parsed_field.kind},",
         "        .type = TypeId{},",
         f"        .offset = static_cast<u32>(offsetof({alias}, {parsed_field.name})),",
-        f"        .size = static_cast<u32>(sizeof({alias}::{parsed_field.name})),",
+        # `sizeof(std::declval<T&>().member)` rather than `sizeof(T::member)`, because a FLATTENED
+        # field's name is a member designator — `value.translation.x` — and `T::value.translation.x`
+        # is not an expression C++ accepts. `offsetof` takes a designator directly and always did.
+        # An unevaluated `declval` reference is the one spelling that works for both shapes, so both
+        # shapes are emitted the same way rather than the emitter branching on a dot.
+        f"        .size = static_cast<u32>(sizeof(std::declval<{alias}&>().{parsed_field.name})),",
         "        .attributes = FieldAttributes{",
         f"            .declared = {_declared(attributes)},",
     ]
@@ -329,22 +339,34 @@ def _custom_array_lines(type_index: int, position: int, attributes: Attributes) 
     ]
 
 
-def render_aggregate(headers: list[ParsedHeader]) -> Output:
-    """The one translation unit that registers everything, in a fixed order."""
+def render_aggregate(headers: list[ParsedHeader], module: str, stem: str) -> list[Output]:
+    """The translation unit that registers one module's types, in a fixed order.
+
+    The DEFAULT group (`module == ""`) defines `cy::reflect::register_generated_types`, which
+    `reflect.h` declares and which every existing caller uses. A NAMED group defines
+    `register_<module>_types` instead and emits a header declaring it, because two modules cannot
+    both define the same symbol and because a module's types are registered by whoever brings that
+    module up rather than by core reflection — M5's task 1.3.
+    """
     ordered = sorted(headers, key=lambda parsed: parsed.include_path)
+    function = "register_generated_types" if not module else f"register_{module}_types"
+    outputs: list[Output] = []
+
     lines = [
         BANNER.format(source="every annotated header this module named"),
         "",
         "#include <cy/core/reflect/reflect.h>",
         "",
     ]
+    if module:
+        lines.append(f"#include <{stem}.h>")
     for parsed in ordered:
         lines.append(f"#include <{outputs_for(parsed.include_path)[0]}>")
     lines += [
         "",
         "namespace cy::reflect {",
         "",
-        "Status register_generated_types(TypeRegistry& registry) {",
+        f"Status {function}(TypeRegistry& registry) {{",
     ]
     for parsed in ordered:
         slug = slug_of(parsed.include_path)
@@ -357,13 +379,36 @@ def render_aggregate(headers: list[ParsedHeader]) -> Output:
         "    return ok();",
         "}",
         "",
-        "Status register_generated_types() {",
-        "    return register_generated_types(default_registry());",
+        f"Status {function}() {{",
+        f"    return {function}(default_registry());",
         "}",
         "",
         "}  // namespace cy::reflect",
     ]
-    return Output("cy_reflect_generated.cpp", _document(lines))
+    outputs.append(Output(f"{stem}.cpp", _document(lines)))
+
+    if module:
+        guard = f"CY_GENERATED_{stem.upper()}_H"
+        header_lines = [
+            BANNER.format(source="every annotated header this module named"),
+            "",
+            f"#ifndef {guard}",
+            f"#define {guard}",
+            "",
+            "#include <cy/core/reflect/registry.h>",
+            "",
+            "namespace cy::reflect {",
+            "",
+            f"/// Register every reflected type this module declares. Idempotent.",
+            f"Status {function}(TypeRegistry& registry);",
+            f"Status {function}();",
+            "",
+            "}  // namespace cy::reflect",
+            "",
+            f"#endif  // {guard}",
+        ]
+        outputs.append(Output(f"{stem}.h", _document(header_lines)))
+    return outputs
 
 
 # --- Literals -----------------------------------------------------------------------------------

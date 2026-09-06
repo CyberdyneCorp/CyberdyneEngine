@@ -1,0 +1,17 @@
+# Act 1 — placing what the importer produced, with a hosted runtime attached.
+#
+# One entity per drawable sub-asset `cy_import` cooked out of assets/lamppost.gltf: the post, the
+# lantern above it, and the collision proxy the `_collision` naming convention turned into a
+# collider rather than something drawn. session.py reads those names out of the `.import` sidecar
+# and fails if they are not the ones this script assumes, so the two halves of the artefact cannot
+# drift apart silently.
+#
+# EVERY ONE OF THESE IS A ROOT, AND NOT BECAUSE THE LAMPPOST HAS NO HIERARCHY. `scene.create-entity`
+# takes `parent=<identity>` and returns the identity it created — on `Outcome::values["entity"]`,
+# which `cy_editor_app::run_script` does not bind to anything a later line could name. So a script
+# cannot yet say "parent it to the one you just made", and the three commands that take an identity
+# (`edit.select`, `scene.delete-entity`, and this one's `parent`) are unscriptable for the same
+# reason. Recorded in the sample's README as a finding rather than worked around here.
+scene.create-entity
+scene.create-entity
+scene.create-entity

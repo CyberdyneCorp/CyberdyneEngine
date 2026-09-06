@@ -1,0 +1,28 @@
+# The services: authoritative state, and the only things a view model is allowed to read it from.
+#
+# Layer 3. It is the first crate that may name both the SDK and the protocol, because it is where
+# hosting mode is decided — and it is the last crate below the presentation layer, which is what
+# makes "a view model is not a second source of truth" a statement about a dependency edge rather
+# than about discipline.
+[package]
+name = "cy-editor-services"
+description = "CyberEditor's services: documents, selection, workspace, notifications, operations, runtime sessions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 3
+
+[dependencies]
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+cy-editor-sdk = { path = "../cy-editor-sdk" }
+
+[lints]
+workspace = true

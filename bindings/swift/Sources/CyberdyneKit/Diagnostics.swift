@@ -17,31 +17,18 @@
 import CyberdyneABI
 import CyberdyneCore
 
-/// The severities the engine's diagnostic system carries.
-///
-/// THESE THREE, AND EXACTLY THESE NUMBERS, BECAUSE THEY ARE THE WIRE FORMAT. `cy_abi.h` says of the
-/// `log` entry: "`severity` is `cy::DiagnosticSeverity`'s value", and that enum
-/// (`src/core/base/include/cy/core/base/diagnostic_sink.h`) has three enumerators — Info 0,
-/// Warning 1, Error 2. The host's thunk clamps anything above Error TO Error, silently, which is
-/// what makes a wrong number here invisible: it does not fail, it relabels.
-///
-/// A SIX-LEVEL VERSION OF THIS ENUM SHIPPED IN THIS FILE AND WAS WRONG. `trace`/`debug`/`info`/
-/// `warning`/`error`/`fatal` numbered 0-5 put `.info` on the wire as 2, and every `Log.info` from a
-/// behaviour arrived in the engine's log as `[error]` — visible in the reload suite's output as
-/// `[error] abi: SwiftCounter restored ammo, health, label`, a line that is neither an error nor
-/// wrong-looking enough for anybody to read twice. `integration.swift_reload`'s "a behaviour's
-/// Log.info arrives as Info" case is the regression test.
-///
-/// A SECOND COPY, LIKE `SystemStage`, AND FOR THE SAME REASON: there is no `CySeverity` in
-/// `cy_abi.h`, so the generated overlay cannot produce this and nothing checks it at compile time.
-/// The check is the C++ case named above, which installs a diagnostic sink and reads the severity
-/// the engine actually received. Appending a `CySeverity` enum to the ABI would let the generator
-/// own this, and that is the fix rather than more care here.
-public enum Severity: UInt32, Sendable, CaseIterable {
-    case info = 0
-    case warning = 1
-    case error = 2
-}
+// `Severity` USED TO BE DECLARED HERE, AND WAS WRONG. It carried six enumerators —
+// trace/debug/info/warning/error/fatal, numbered 0-5 — against `cy::DiagnosticSeverity`'s three, so
+// `Log.info` put 2 on the wire and every informational line from a behaviour arrived in the engine's
+// log labelled `[error]`. It ran green for a whole milestone; the reload suite's output carried
+// `[error] abi: SwiftCounter restored ammo, health, label`, a line that is neither an error nor
+// wrong-looking enough for anybody to read twice.
+//
+// It is now GENERATED, in CyberdyneCore/Generated/Enums.swift, from the `CySeverity` appended to
+// cy_abi.h at ABI 1.1 — and src/abi/src/interface.cpp static_asserts each of its three values
+// against the engine's own enum, so a fourth level in the engine is a compile error rather than a
+// relabelled line. `integration.swift_reload`'s "a behaviour's Log.info arrives as Info" case
+// remains as the regression, because a generated enum still has to be the one that is sent.
 
 /// Logging into the engine's diagnostic stream.
 ///

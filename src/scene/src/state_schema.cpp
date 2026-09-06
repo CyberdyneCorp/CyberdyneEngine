@@ -108,6 +108,47 @@ Status declare_scene_state(determinism::StateSchema& schema,
                     "invalid component id would address nothing");
     }
 
+    // ALREADY-DECLARED SUBJECTS ARE LEFT ALONE, WHICH IS NEW AT M5 AND IS THE POINT OF TASK 1.3.
+    //
+    // Seven of the twelve are reflected now, so `declare_reflected_components()` — which a caller
+    // runs first — has already derived their schemas from the same `TypeInfo` the inspector and the
+    // serializer read. Declaring them a second time here would refuse (a duplicate subject is two
+    // callers each believing they own the schema) and, worse, a version that overwrote would make
+    // the hash's field set depend on which of two files was edited last.
+    //
+    // What remains is exactly the five reflection cannot describe. They are still declared by hand,
+    // and the header says why each one has to be.
+    const auto declared_already = [&schema](ComponentTypeId component) noexcept {
+        return schema.find(SchemaSubject{component}) != nullptr;
+    };
+
+    if (declared_already(components.child_order)) {
+        // The reflected route ran. Everything it covers is covered; declare the rest and stop.
+        if (Status declared = declare_name(schema, components.node_name, kNodeNameComponentName,
+                                           offsetof(NodeName, value));
+            !declared) {
+            return declared;
+        }
+        if (Status declared = declare_name(schema, components.node_alias, kNodeAliasComponentName,
+                                           offsetof(NodeAlias, value));
+            !declared) {
+            return declared;
+        }
+        if (Status declared = declare_transform(
+                schema, components.interpolated_transform, kInterpolatedTransformComponentName,
+                offsetof(InterpolatedTransform, previous), SimulationClass::Presentation);
+            !declared) {
+            return declared;
+        }
+        if (Status declared = declare_empty(schema, components.hidden, kHiddenComponentName);
+            !declared) {
+            return declared;
+        }
+        return declare_empty(schema, components.disabled, kDisabledComponentName);
+    }
+
+    // THE OTHER ARM: a caller that declared no reflected components at all — a test that wants the
+    // scene's schema and nothing else. All twelve, exactly as M2 wrote them.
     if (Status declared = declare_name(schema, components.node_name, kNodeNameComponentName,
                                        offsetof(NodeName, value));
         !declared) {

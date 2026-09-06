@@ -30,6 +30,11 @@ from .cache import Cache, digest_of, digest_of_text
 from .manifest import IdentityError
 
 
+# Where the DEFAULT group's generated code lives. A `--module` group names its own directory and is
+# unaffected by `--output-dir`; see `_groups`.
+DEFAULT_OUTPUT_DIR = Path("src/core/reflect/generated")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="reflect_gen.py",
@@ -38,9 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-root", type=Path, default=Path.cwd(),
                         help="the repository root; every recorded path is relative to it")
     parser.add_argument("--manifest", type=Path, default=Path("identity/manifest.toml"))
-    parser.add_argument("--output-dir", type=Path, default=Path("src/core/reflect/generated"))
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--header", type=Path, action="append", default=[],
                         help="an annotated header; repeat for each. Never a glob.")
+    parser.add_argument("--module", action="append", default=[], metavar="NAME:OUTPUT_DIR:HEADER",
+                        help="an annotated header belonging to another module: its aggregate is "
+                             "named for NAME and its generated code is written under OUTPUT_DIR, "
+                             "which is that module's own directory. Repeat for each header.")
     parser.add_argument("--include", type=Path, action="append", default=[],
                         help="an include directory, passed to the frontend and used to derive a "
                              "header's include path")
@@ -93,7 +102,7 @@ def _run(arguments) -> int:
         print(frontend.probe())
         return 0
 
-    if not arguments.header:
+    if not arguments.header and not arguments.module:
         raise Failure(
             "no annotated headers were named.\n"
             "  Every mode of this generator is a gate, and a gate that examined nothing would "
@@ -110,6 +119,73 @@ def _run(arguments) -> int:
         return _generate(arguments, source_root, manifest_path)
 
 
+# --- Groups ------------------------------------------------------------------------------------------
+#
+# A GROUP IS A MODULE'S GENERATED CODE, AND M5 IS WHERE THERE STOPPED BEING ONE OF THEM.
+#
+# Until task 1.3 every annotated header in the tree belonged to src/core/reflect/ and its generated
+# translation unit was compiled into `cy::core-reflect` at layer 0. The first reflected engine
+# component is `cy::scene::LocalTransform` at layer 4, and its generated file `#include`s
+# <cy/scene/components.h>: written under src/core/reflect/generated/ it is a file at layer 0
+# including a header at layer 4, which `tools/layercheck/layercheck.py` refuses — correctly.
+#
+# So a header may name the module whose directory its generated code belongs in, and its aggregate
+# is named for that module rather than colliding with `register_generated_types`. One invocation
+# still does all of it, because the identity manifest is shared and the drift check is only
+# meaningful over every header a run parsed.
+
+
+class Group:
+    """One module's generated output: a name, a directory, and the headers that go into it."""
+
+    def __init__(self, name: str, output_dir: Path) -> None:
+        self.name = name
+        self.output_dir = output_dir
+        self.headers: list[Path] = []
+
+    @property
+    def aggregate(self) -> str:
+        """The file the aggregate is written to, and the stem its symbol is named from."""
+        return "cy_reflect_generated" if self.name == "" else f"cy_reflect_generated_{self.name}"
+
+
+def _groups(arguments, source_root: Path) -> list[Group]:
+    """The default group, plus one per `--module` name, in a fixed order.
+
+    A MODULE'S DIRECTORY IS USED EXACTLY AS GIVEN, and `--output-dir` does not move it. The
+    alternative — redirecting module groups under `--output-dir` so that a run into a scratch
+    directory is entirely self-contained — was written and removed: it made the destination of a
+    module's output depend on a flag that names something else, which is the kind of rule that is
+    correct in the recipe that motivated it and surprising everywhere else.
+
+    What that costs, stated rather than hidden: `just generate-check`'s two-run determinism diff
+    covers the default group only, because both runs write a module group to the same place. It
+    cannot DIRTY the tree, because that recipe runs `--check` first and stops on a failure, so by
+    the time the two runs happen the committed output is already known to be current and both runs
+    reproduce it byte for byte — `_write_outputs` then writes nothing at all. Currency for a module
+    group is covered; reproducibility across two directories is not, and the property it would be
+    proving is the same one the default group proves about the same emitter.
+    """
+    default = Group("", _absolute(arguments.output_dir, source_root))
+    default.headers = list(arguments.header)
+    by_name: dict[str, Group] = {}
+    for entry in arguments.module:
+        name, separator, rest = entry.partition(":")
+        directory, separator2, header = rest.partition(":")
+        if not separator or not separator2 or not name or not directory or not header:
+            raise Failure(
+                f"--module takes NAME:OUTPUT_DIR:HEADER; '{entry}' does not have three parts.")
+        if not name.replace("_", "").isalnum():
+            raise Failure(f"--module name '{name}' is used as a C++ identifier fragment; it may "
+                          f"hold only letters, digits and underscores.")
+        group = by_name.get(name)
+        if group is None:
+            group = Group(name, _absolute(Path(directory), source_root))
+            by_name[name] = group
+        group.headers.append(Path(header))
+    return [default] + [by_name[name] for name in sorted(by_name)]
+
+
 def _generate(arguments, source_root: Path, manifest_path: Path) -> int:
     schemas = load_schemas([_absolute(p, source_root) for p in arguments.attributes], source_root)
     manifest = identity_manifest.load(manifest_path)
@@ -120,7 +196,10 @@ def _generate(arguments, source_root: Path, manifest_path: Path) -> int:
         for line in edits:
             _say(arguments, f"identity: {line}")
 
-    headers = _parse_all(arguments, source_root, schemas)
+    groups = _groups(arguments, source_root)
+    parsed_by_group = [(group, _parse_all(arguments, source_root, schemas, group.headers))
+                       for group in groups]
+    headers = [parsed for _, parsed_headers in parsed_by_group for parsed in parsed_headers]
     parsed_types = [parsed_type for header in headers for parsed_type in header.types]
 
     assign = not (arguments.check or arguments.gate)
@@ -139,20 +218,35 @@ def _generate(arguments, source_root: Path, manifest_path: Path) -> int:
             + "\nRun `just generate-headers` and commit identity/manifest.toml with the change."
         )
 
-    outputs = _render(headers, reconciliation.identity, schemas)
-    output_dir = _absolute(arguments.output_dir, source_root)
+    return _emit(arguments, source_root, manifest_path, manifest, reconciliation, schemas,
+                 parsed_by_group)
+
+
+def _emit(arguments, source_root: Path, manifest_path: Path, manifest, reconciliation, schemas,
+          parsed_by_group) -> int:
+    """Render every group, then either check what is committed or write it.
+
+    Split out of `_generate` because the two halves answer different questions — one decides WHAT
+    the metadata is, this one decides where it goes — and because keeping them in one function put
+    it past the complexity this project accepts for anything that is not a parser.
+    """
+    rendered = [(group.output_dir, _render(parsed_headers, reconciliation.identity, schemas, group))
+                for group, parsed_headers in parsed_by_group]
 
     if arguments.check:
-        return _check_outputs(arguments, output_dir, outputs, source_root)
+        return _check_outputs(arguments, rendered, source_root)
 
     if reconciliation.changed:
         _write_manifest(manifest_path, manifest)
         for name in reconciliation.appended:
             _say(arguments, f"identity: assigned an identifier to {name}")
 
-    written = _write_outputs(output_dir, outputs)
-    _say(arguments, f"reflect: {len(parsed_types)} type(s) from {len(headers)} header(s); "
-                    f"{written} generated file(s) updated")
+    written = sum(_write_outputs(directory, outputs) for directory, outputs in rendered)
+    headers = sum(len(parsed_headers) for _, parsed_headers in parsed_by_group)
+    types = sum(len(parsed.types) for _, parsed_headers in parsed_by_group
+                for parsed in parsed_headers)
+    _say(arguments, f"reflect: {types} type(s) from {headers} header(s) in "
+                    f"{len(parsed_by_group)} module(s); {written} generated file(s) updated")
     _touch(arguments.stamp)
     return 0
 
@@ -160,7 +254,7 @@ def _generate(arguments, source_root: Path, manifest_path: Path) -> int:
 # --- Parsing -----------------------------------------------------------------------------------------
 
 
-def _parse_all(arguments, source_root: Path, schemas):
+def _parse_all(arguments, source_root: Path, schemas, wanted):
     include_dirs = [_absolute(directory, source_root) for directory in arguments.include]
     engine = frontend.Frontend(source_root, include_dirs, arguments.define)
     cache = Cache(_absolute(arguments.cache, source_root) if arguments.cache else None)
@@ -172,7 +266,7 @@ def _parse_all(arguments, source_root: Path, schemas):
     manifest_digest = digest_of(_absolute(arguments.manifest, source_root))
 
     headers = []
-    for header in sorted(arguments.header, key=lambda p: p.as_posix()):
+    for header in sorted(wanted, key=lambda p: p.as_posix()):
         absolute = _absolute(header, source_root)
         if not absolute.exists():
             raise Failure(f"{header}: no such header. Source lists are explicit and never globbed, "
@@ -207,13 +301,13 @@ def _include_path(header: Path, include_dirs: list[Path], relative: str) -> str:
 # --- Output ------------------------------------------------------------------------------------------
 
 
-def _render(headers, identity, schemas) -> list[emit.Output]:
+def _render(headers, identity, schemas, group) -> list[emit.Output]:
     outputs: list[emit.Output] = []
     for header in headers:
         used = _schemas_used(header, schemas)
         outputs.append(emit.render_header(header, identity, used))
         outputs.append(emit.render_source(header, identity))
-    outputs.append(emit.render_aggregate(headers))
+    outputs += emit.render_aggregate(headers, group.name, group.aggregate)
     return sorted(outputs, key=lambda output: output.path)
 
 
@@ -241,20 +335,24 @@ def _write_outputs(output_dir: Path, outputs: list[emit.Output]) -> int:
     return written
 
 
-def _check_outputs(arguments, output_dir: Path, outputs, source_root: Path) -> int:
+def _check_outputs(arguments, rendered, source_root: Path) -> int:
     stale = []
-    for output in outputs:
-        path = output_dir / output.path
-        if not path.exists():
-            stale.append(f"  {_relative(path, source_root)} — missing")
-        elif path.read_text(encoding="utf-8") != output.text:
-            stale.append(f"  {_relative(path, source_root)} — differs from what the source says")
+    total = 0
+    for output_dir, outputs in rendered:
+        total += len(outputs)
+        for output in outputs:
+            path = output_dir / output.path
+            if not path.exists():
+                stale.append(f"  {_relative(path, source_root)} — missing")
+            elif path.read_text(encoding="utf-8") != output.text:
+                stale.append(
+                    f"  {_relative(path, source_root)} — differs from what the source says")
     if stale:
         raise Failure(
             "generated reflection metadata is stale:\n" + "\n".join(stale) +
             "\n\nRegenerate and commit it:\n      just generate-headers"
         )
-    _say(arguments, f"reflect: {len(outputs)} generated file(s) are current")
+    _say(arguments, f"reflect: {total} generated file(s) are current")
     return 0
 
 

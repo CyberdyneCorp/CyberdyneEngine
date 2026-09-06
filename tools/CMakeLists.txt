@@ -8,3 +8,9 @@
 # SHALL load only cooked assets": the package format's write path was M1's and the thing that
 # produces cooked bytes is M2's, and this is what joins them.
 add_subdirectory(cook)
+
+# import/ is M5 task 5.1: the importer framework, the cook cache's client, glTF and texture import,
+# and the mesh processing beneath them. Like cook/ it is a library plus a thin front end, and like
+# cook/ nothing links it into a runtime — a source-format parser is tool-time only, which is what
+# layer 7 means here.
+add_subdirectory(import)

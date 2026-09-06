@@ -21,6 +21,11 @@ ledger has a gate its criteria join on close. That last group is here rather tha
 milestone recipes take a working session each: a ledger that no longer loads should fail in minutes,
 not the next time somebody tries to close a milestone.
 
+`test_flat_ledger` covers the property that replaced ledger chaining, and it is two halves that are
+each silent when lost: every distinct criterion runs ONCE however many milestones declared it, and
+an earlier milestone's criteria are still IN the newest ledger so a regression against M0 still
+fails it. Chaining gave the second for free and paid for it four times over in the first.
+
 Run directly, or through `just roadmap-test`.
 """
 
@@ -181,7 +186,7 @@ def test_record_rules(root: Path) -> None:
 # section 6. A floor rather than an equality: a ledger that grows a criterion is a ledger that got
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
-MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20}
+MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -321,22 +326,123 @@ def test_milestone_ladder(root: Path) -> None:
     check("every ledger under milestones/ has a floor recorded, so a new one is not unchecked",
           set(criteria_module.available()) == set(MINIMUM_CRITERIA),
           f"no floor for: {sorted(set(criteria_module.available()) - set(MINIMUM_CRITERIA))}")
-    # M1 broke M0's static analysis gate before this ledger existed. `delivery-roadmap` forbids that
-    # outright, so the rule is a criterion rather than a paragraph, and this is the check that it
-    # stays one. Every ledger from M1 on carries the previous milestone's recipe, so the whole ladder
-    # runs from whichever rung is being closed — checked here rather than left to the next author to
-    # notice, because the omission is invisible until the day it matters.
-    # DERIVED FROM THE LEDGERS RATHER THAN LISTED. The pairs used to be written out here, which
-    # made this check itself something the next author had to remember to extend — the same class of
-    # omission it exists to catch. `available()` is sorted, so zipping it against its own tail is
-    # every rung, and a ledger added under milestones/ is checked the moment it is added.
-    rungs = criteria_module.available()
-    for later, earlier in zip(rungs[1:], rungs[:-1]):
-        ledger = criteria_module.load(later)
-        check(f"{later.upper()}'s ledger runs {earlier.upper()}'s, so a milestone that breaks an "
-              f"earlier one cannot close",
-              any(criterion.run == f"just roadmap-milestone {earlier}"
-                  for criterion in ledger.criteria))
+
+
+# --- The flat ledger ------------------------------------------------------------------------------
+
+
+def test_flat_ledger(root: Path) -> None:
+    """A ledger evaluates the permanent set once, plus its own criteria, and invokes no other one.
+
+    REGRESSION, and the reason this group exists. Each ledger used to open with a criterion running
+    the previous milestone's recipe, so closing M4 ran M3's ledger, which ran M2's, which ran M1's,
+    which ran M0's. One run of M4's ledger was 118 criterion evaluations over 91 distinct checks —
+    27 of them redundant — `four-profiles`, a full four-configuration build and test, ran four times
+    because four ledgers declared it, and every criterion's failure probability was multiplied by
+    the number of ledgers naming it. A unit case sitting on its time budget duly failed four
+    ledgers at once. The same run is now 87 evaluations, one per distinct check.
+
+    Two properties have to hold together, and losing either is silent. Deduplication: each distinct
+    check appears once however many milestones declared it. The ladder: an earlier milestone's
+    criteria are still IN the newest ledger, so a regression against M0 still fails it. Chaining
+    provided the second by construction; nothing but these checks provides it now.
+    """
+    del root
+    milestones = criteria_module.ladder_order(criteria_module.available())
+    newest = milestones[-1]
+    permanent = gates_module.permanent_milestones(gates_module.load())
+
+    for identifier in milestones:
+        ledger = criteria_module.load(identifier)
+        chained = [criterion.id for criterion in ledger.criteria
+                   if criterion.run.startswith("just roadmap-milestone")]
+        check(f"{identifier.upper()}'s ledger invokes no other milestone's ledger",
+              not chained, f"{identifier}.toml chains through: {', '.join(chained)}")
+
+    # A gate flipped green for a milestone with no ledger would shrink the permanent set silently:
+    # `build_plan` would fail to load it, and the newest ledger would stop evaluating that rung.
+    orphans = [identifier for identifier in permanent if identifier not in milestones]
+    check("every milestone whose gate is green has a ledger for the permanent set to inherit",
+          not orphans, f"gates.toml is green for {', '.join(orphans)}, with no milestones/*.toml")
+
+    plan = criteria_module.build_plan(newest, permanent)
+    prints = [criteria_module.fingerprint(entry.criterion) for entry in plan.entries]
+    check(f"{newest.upper()}'s ledger evaluates each distinct criterion exactly once",
+          len(prints) == len(set(prints)),
+          f"{len(prints) - len(set(prints))} check(s) appear more than once")
+    check(f"{newest.upper()}'s ledger deduplicates the declarations it merges",
+          plan.deduplicated == plan.declarations - len(plan.entries) and plan.deduplicated > 0,
+          f"{plan.declarations} declarations, {len(plan.entries)} entries")
+
+    # THE LADDER, which is what the chaining was for. Every criterion of every milestone whose gate
+    # is green is in the newest ledger, so breaking one of M0's still fails the newest recipe.
+    merged = set(prints)
+    for identifier in permanent:
+        if criteria_module.rung(identifier) >= criteria_module.rung(newest):
+            continue
+        missing = [criterion.id for criterion in criteria_module.load(identifier).criteria
+                   if criteria_module.fingerprint(criterion) not in merged]
+        check(f"every criterion {identifier.upper()} closed with is in {newest.upper()}'s ledger",
+              not missing, f"{identifier}.toml: {', '.join(missing)} would not be evaluated")
+
+    # A closed milestone's ledger keeps meaning ITS OWN criteria. `milestone-m0` is a permanent
+    # merge gate; widening it with everything a later milestone added would turn it red for work M0
+    # never claimed, with no correct fix — the same shape as the exit-tier equality bug above.
+    oldest = criteria_module.build_plan(milestones[0], permanent)
+    check(f"{milestones[0].upper()}'s ledger is still only {milestones[0].upper()}'s criteria",
+          len(oldest.entries) == len(criteria_module.load(milestones[0]).criteria)
+          and not oldest.inherited,
+          f"{len(oldest.entries)} entries, {len(oldest.inherited)} inherited")
+
+    _check_four_profiles(plan)
+    _check_collapse_rules()
+
+
+def _check_four_profiles(plan: criteria_module.Plan) -> None:
+    """The measured case: four ledgers declare `four-profiles`, and one run must execute it once."""
+    declared = sum(
+        1
+        for identifier in criteria_module.available()
+        for criterion in criteria_module.load(identifier).criteria
+        if criterion.id == "four-profiles"
+    )
+    entries = [entry for entry in plan.entries if entry.criterion.id == "four-profiles"]
+    check("`four-profiles` is declared by several ledgers and evaluated once",
+          declared > 1 and len(entries) == 1,
+          f"declared {declared} time(s), planned {len(entries)} time(s)")
+    if len(entries) == 1:
+        check("`four-profiles` keeps the most generous of the budgets its declarers gave it",
+              entries[0].criterion.timeout_s == max(
+                  criterion.timeout_s
+                  for identifier in criteria_module.available()
+                  for criterion in criteria_module.load(identifier).criteria
+                  if criterion.id == "four-profiles"),
+              f"{entries[0].criterion.timeout_s} s")
+
+
+def _check_collapse_rules() -> None:
+    """Two declarations collapse when they do the same work, and only then."""
+    def criterion(identifier: str, run: str, timeout: int = 60) -> criteria_module.Criterion:
+        return criteria_module.Criterion(
+            id=identifier, describe="d", source="s", kind="recipe", ci_job="lint", run=run,
+            timeout_s=timeout)
+
+    same = criteria_module._collapse(
+        [("m0", criterion("specs", "just quality-specs", 60)),
+         ("m3", criterion("specs", "just quality-specs", 900))], "m3")
+    check("two declarations of the same command collapse into one permanent entry",
+          same.declared_by == ("m0", "m3") and same.permanent and same.criterion.timeout_s == 900,
+          f"{same.declared_by}, permanent={same.permanent}, {same.criterion.timeout_s} s")
+    check("a collapsed entry is labelled by the milestone that declared it first",
+          same.label == "m0:specs", same.label)
+
+    # `sample-recipe` names a different sample in M2, M3 and M4. Collapsing by id would drop two
+    # milestones' closing artefacts, which is why the fingerprint is the work rather than the name.
+    prints = {
+        criteria_module.fingerprint(criterion("sample-recipe", "just run-sample headless-sim")),
+        criteria_module.fingerprint(criterion("sample-recipe", "just run-sample first-light")),
+    }
+    check("two criteria sharing an id but not a command stay two checks", len(prints) == 2)
 
 
 def test_requirements(root: Path) -> None:
@@ -377,8 +483,10 @@ def test_requirements(root: Path) -> None:
 
 
 def _gated(milestone: criteria_module.Milestone) -> bool:
+    """The runner's own check, over just this milestone's criteria — an empty permanent set."""
+    plan = criteria_module.build_plan(milestone.id)
     try:
-        roadmap_module._check_criteria_are_gated(milestone)
+        roadmap_module._check_criteria_are_gated(plan, gates_module.load())
     except criteria_module.CriteriaError:
         return False
     return True
@@ -431,6 +539,7 @@ def main() -> int:
         test_criteria(_area(root, "criteria"))
         test_exit_tiers(_area(root, "tiers"))
         test_milestone_ladder(_area(root, "ladder"))
+        test_flat_ledger(_area(root, "flat"))
         test_requirements(_area(root, "requirements"))
         test_gates(_area(root, "gates"))
     passed = len(_cases) - len(_failures)

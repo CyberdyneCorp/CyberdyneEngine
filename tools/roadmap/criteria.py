@@ -13,7 +13,21 @@ tiers, since a milestone that does not update the record has not closed.
 whether or not this machine can evaluate it. A criterion that cannot run here — another operating
 system, no display, no GPU — says so, names that job, and is counted separately in the summary.
 
-Governed by: delivery-roadmap (Milestone exit criteria are executable, Forbidden roadmap patterns).
+**A ledger is flat, and every distinct criterion in it runs once.** `build_plan` below is that rule:
+it merges the permanent set — the criteria of every milestone whose gate is already green — with the
+milestone's own, collapses the declarations that do the same work, and hands back one entry per
+distinct check. Chaining was the previous implementation: each ledger's first criterion ran the
+previous milestone's recipe, so closing M4 ran M3's ledger, which ran M2's, which ran M1's, which
+ran M0's. That is measured in the change that removed it — one run of M4's ledger was 118 criterion
+evaluations over 91 distinct checks, 27 of them re-running something another ledger had already run,
+with `four-profiles`, a full four-configuration build and test, executed four times because four
+ledgers declared it. The same run is now 87 evaluations, one per distinct check. Re-running one
+criterion n times also multiplies its failure probability by n, and a marginal test in this
+repository duly became a flake that failed four ledgers at once: deduplication is a correctness
+property rather than an optimisation.
+
+Governed by: delivery-roadmap (Milestone exit criteria are executable, Milestone gates do not
+regress, Forbidden roadmap patterns).
 """
 
 from __future__ import annotations
@@ -24,10 +38,10 @@ import subprocess
 import sys
 import time
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from record import REPO_ROOT, TIERS, Entry
+from record import MILESTONES, REPO_ROOT, TIERS, Entry
 
 MILESTONES_DIR = Path(__file__).resolve().parent / "milestones"
 SCHEMA = 1
@@ -174,6 +188,110 @@ def _check_scope(table: dict, where: str) -> None:
     # A criterion this machine cannot evaluate has to say why, or the report reads as a silent cap.
     if (table.get("where") == "ci" or table.get("requires")) and not table.get("reason"):
         raise CriteriaError(f"{where}: a criterion not evaluated everywhere needs a 'reason'")
+
+
+# --- The flat, deduplicated plan ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PlanEntry:
+    """One distinct check in a ledger, and every milestone that declared it."""
+
+    criterion: Criterion
+    declared_by: tuple[str, ...]
+    permanent: bool
+
+    @property
+    def label(self) -> str:
+        """`m1:four-profiles`. The id alone is ambiguous once several ledgers are merged."""
+        return f"{self.declared_by[0]}:{self.criterion.id}"
+
+
+@dataclass(frozen=True)
+class Plan:
+    """What one run of a milestone's ledger evaluates: each distinct criterion, exactly once."""
+
+    milestone: Milestone
+    ledgers: tuple[str, ...]
+    entries: tuple[PlanEntry, ...]
+    declarations: int
+
+    @property
+    def deduplicated(self) -> int:
+        """Declarations that a chaining ledger would have executed a second time."""
+        return self.declarations - len(self.entries)
+
+    @property
+    def inherited(self) -> tuple[PlanEntry, ...]:
+        """The permanent set: criteria an already-closed milestone declared first."""
+        return tuple(entry for entry in self.entries if entry.permanent)
+
+    @property
+    def own(self) -> tuple[PlanEntry, ...]:
+        """The criteria this milestone is the first to declare."""
+        return tuple(entry for entry in self.entries if not entry.permanent)
+
+
+def fingerprint(criterion: Criterion) -> tuple:
+    """What makes two declarations the same check: the work, and the conditions it runs under.
+
+    The id is deliberately not part of it. `sample-recipe` names a different sample in M2, M3 and
+    M4, so collapsing the three by id would drop two milestones' closing artefacts; and `specs`
+    running `just quality-specs` is the same check whichever ledger declared it. `timeout_s` is not
+    part of it either — a budget is not a check — and `_collapse` keeps the most generous one.
+    """
+    if criterion.kind == "tiers":
+        work: object = tuple(sorted(criterion.expect_tiers.items()))
+    elif criterion.kind == "path":
+        work = criterion.path
+    else:
+        work = criterion.run
+    return (criterion.kind, work, criterion.where, criterion.requires)
+
+
+def rung(identifier: str) -> int:
+    """Where a milestone sits on the ladder. Text order is wrong: 'm10' sorts before 'm2'."""
+    return MILESTONES.index(identifier) if identifier in MILESTONES else len(MILESTONES)
+
+
+def ladder_order(identifiers) -> tuple[str, ...]:
+    return tuple(sorted(set(identifiers), key=lambda identifier: (rung(identifier), identifier)))
+
+
+def build_plan(milestone_id: str, permanent=(), directory: Path = MILESTONES_DIR) -> Plan:
+    """The flat evaluation plan for one milestone: the permanent set once, plus its own criteria.
+
+    `permanent` names the milestones whose criteria have already joined the permanent set — in
+    `gates.toml`, a `class = "milestone"` gate at `state = "green"`. Only the ones BELOW this
+    milestone on the ladder are inherited: a closed milestone's ledger has to keep meaning its own
+    criteria, or `milestone-m0` — a permanent merge gate — would go red for something M4 did, with
+    no correct fix. Running this milestone's ledger therefore evaluates the ladder up to and
+    including it, once each, and invokes no other ledger.
+    """
+    target = load(milestone_id, directory)
+    earlier = tuple(name for name in ladder_order(permanent) if rung(name) < rung(target.id))
+    declared: dict[tuple, list[tuple[str, Criterion]]] = {}
+    declarations = 0
+    for source_id in (*earlier, target.id):
+        ledger = target if source_id == target.id else load(source_id, directory)
+        for criterion in ledger.criteria:
+            declarations += 1
+            declared.setdefault(fingerprint(criterion), []).append((source_id, criterion))
+    entries = tuple(_collapse(group, target.id) for group in declared.values())
+    return Plan(milestone=target, ledgers=(*earlier, target.id), entries=entries,
+                declarations=declarations)
+
+
+def _collapse(group: list[tuple[str, Criterion]], target_id: str) -> PlanEntry:
+    """One check from its declarations: the earliest declarer reports it, the largest budget
+    wins."""
+    milestones = tuple(source_id for source_id, _ in group)
+    criterion = group[0][1]
+    budget = max(candidate.timeout_s for _, candidate in group)
+    if budget != criterion.timeout_s:
+        criterion = replace(criterion, timeout_s=budget)
+    return PlanEntry(criterion=criterion, declared_by=milestones,
+                     permanent=milestones[0] != target_id)
 
 
 # --- Evaluation -----------------------------------------------------------------------------------

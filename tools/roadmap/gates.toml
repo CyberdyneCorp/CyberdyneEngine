@@ -324,6 +324,64 @@ platforms = ["linux"]
 since = "m4"
 class = "permanent"
 
+# --- The gates M5 — Authorable added ---------------------------------------------------------------
+#
+# M5 is the milestone that put a second application in the tree, in a second language, and the first
+# gate below is the one this project should have had the moment it did. The other three are the
+# invariants M5 built that a later milestone can break without breaking any test that names it —
+# which is the standard the M1, M2, M3 and M4 blocks above set.
+#
+# WHAT IS NOT HERE. There is no `text` gate: `text-and-fonts` lands at Seed, its suite is covered by
+# `just test-all` in build-and-test, and it carries no invariant a later milestone can silently undo.
+# M4 made the same call for camera and audio and stated the rule. There is no `picking` gate either,
+# and that one is worth being precise about: engine-side picking and the viewport transport are
+# cases inside `unit.render_server`, which the `render-frame` gate already runs — adding a second
+# gate over the same suite would say less and cost more.
+
+[[gate]]
+id = "editor"
+describe = "THE EDITOR'S OWN GATES, AND THE GAP THIS CLOSES WAS REPORTED THREE TIMES BEFORE IT WAS SHUT. `just build-editor-check` runs the Rust SDK generator's selftest, rustfmt over the hand-written sources, clippy with the workspace's pedantic lint table as errors, and 505 tests — and until this gate existed it was green in all four profiles, called by no job and by no other recipe, so a change that broke any of it merged silently. What the tests hold is the milestone's whole invariant set: a document mutated ONLY through a transaction and the test that writes around it and fails, undo and redo round-tripping a session, the journal replaying after an abnormal termination, no crate depending upward or sideways, every crate but the audited SDK forbidding unsafe code, the four profiles meaning in Cargo what they mean in CMake — which matters because two of them compile the assertions out — and the editor surviving a runtime process killed under it. Three platforms, because the ROADMAP's exit criterion is that the editor's headless tests run in continuous integration on all three, and a workspace that needs no window, no graphics device and no toolkit is exactly the thing that can."
+runs = ["just build-editor-check"]
+platforms = ["linux", "windows", "macos"]
+since = "m5"
+class = "permanent"
+
+[[gate]]
+id = "editor-session"
+describe = "KILL THE HOSTED RUNTIME MID-SESSION AND THE EDITOR SURVIVES WITH THE DOCUMENT INTACT. This is the argument for the editor being a client rather than part of the engine, and it is a statement about PROCESSES: a test that dropped a socket would prove the protocol handles an end of stream, and only killing a process proves the editor's fate is not tied to the runtime's. The session runs three real binaries — the engine's importer, the editor, and a runtime on the other side of a Unix domain socket — and the kill is ORDERED rather than timed, because a scripted session is over in three milliseconds and the first attempt at this raced and killed the runtime after the editor had already exited. The act is delivered through a FIFO, so every command in it provably runs after the runtime died. The selftest beside it requires the two assertions that carry the claim to FAIL when they should; a check that has never been seen to fire is a check nobody should trust. Linux and macOS only, because the live bridge is a Unix domain socket and the stub refuses to pretend otherwise."
+runs = [
+    "just test-smoke -R editor_session",
+    "just test-integration -R editor_session_selftest",
+    "just run-editor-session --only survive",
+]
+platforms = ["linux"]
+since = "m5"
+class = "permanent"
+
+[[gate]]
+id = "asset-import"
+describe = "THE IMPORTER'S PURITY AND THE CACHE'S HONESTY, both of which are properties a later change can lose without any functional test noticing. An importer is handed BYTES and cannot open a file; a second file is read only through the resolver that records it as a dependency in the same act, so the dependency list cannot fall out of step with what was read. Two importers may not claim one extension, an option the schema does not declare is refused, and setting an option to its default produces the SAME cache key as never setting it — so a designer who opens the dialog and touches nothing does not invalidate the project. A derivation key frames every contribution, so two different inputs cannot collide and serve one computation's artefact for another's with no diagnostic. A miss is not an error, an unreadable record is deleted rather than reported as a build failure, and a HIT REPRODUCES THE OUTPUT rather than skipping it, so a developer who deleted their cooked directory and kept their cache gets their content back. A failed import is not cached, because a cached failure is one you cannot clear by fixing the source."
+runs = [
+    "just test-unit -R import",
+    "just test-integration -R import_",
+    "just test-unit -R assets",
+    "just test-integration -R assets_io",
+]
+platforms = ["linux"]
+since = "m5"
+class = "permanent"
+
+[[gate]]
+id = "live-editing"
+describe = "A MODULE RELOADS WHILE THE RUNTIME IS LIVE AND WORLD STATE SURVIVES IT. M4's spike proved the model — serialize, migrate by name, recreate, never dlclose — and M4 closed with nothing that reloaded a module while a runtime was running, which it recorded as its one half-satisfied criterion. This is the other half: reload applied at a frame boundary rather than under a system, over a DIRECTORY of generations rather than one file, because a Swift image needs a distinct module name per generation and copying a file cannot produce one. Beside it is runtime inspection over the ABI — the world's components, their fields and their chunks read from outside the process that owns them, which is what an editor attached to a running game actually does, and the reason the ABI grew a chunk entry at M4."
+runs = [
+    "just test-integration -R live_reload",
+    "just test-integration -R abi_inspector",
+]
+platforms = ["linux"]
+since = "m5"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;
@@ -331,11 +389,20 @@ class = "permanent"
 # same change (`testing-and-quality`, Quality gates for merge). Until then the state below says so,
 # and `just roadmap-milestone <id>` is the recipe that decides it.
 #
+# `state = "green"` HERE IS WHAT A LEDGER READS. Since M5 a ledger evaluates the permanent set —
+# every green milestone's criteria, merged and deduplicated — plus its own, each check exactly once,
+# and invokes no other ledger — `criteria.build_plan`, and tools/roadmap/README.md under
+# "A ledger is flat".
+# So `just roadmap-milestone m4` alone evaluates every criterion M0, M1, M2 and M3 closed with; the
+# gates below are the same set sliced per milestone, for naming a failure, not four runs to make.
+# Running the newest ledger is how a person or a job satisfies all of them without re-multiplying.
+#
 # M0 closed — openspec/changes/archive/2026-09-03-implement-m0-ground — so its gate is `green` and
 # permanent from here on, which is what the class exists to record. It was left at
 # `joins-on-close` when M0 was archived, and M1 then landed static-analysis findings in two modules
 # that turned `just roadmap-milestone m0` red: exactly the regression this state is meant to make
-# unmergeable. M1's ledger runs M0's whole set as its first criterion for the same reason.
+# unmergeable. M1's ledger evaluates M0's whole set for the same reason — through the permanent set
+# since M5, and before that through an `m0-green` criterion that ran M0's recipe outright.
 
 [[gate]]
 id = "milestone-m0"
@@ -359,6 +426,11 @@ state = "green"
 # `four-profiles` was measured at M2's close failing roughly one Debug run in thirty. A pull request
 # now has two independent exposures to that rate rather than one. Fixing the flake is the answer;
 # an override here would only hide it.
+#
+# CORRECTED AT M5. "Two independent exposures" counted the ledgers that each ran `four-profiles`,
+# and the count kept growing because each ledger also ran the one below it. It does not any more:
+# one run of the newest ledger runs `four-profiles` once, so the exposure is one per run of it
+# rather than one per rung. The flake is still the answer and still unfixed — m2.toml records it.
 
 [[gate]]
 id = "milestone-m1"
@@ -387,6 +459,7 @@ state = "green"
 # What it costs is the same as M1's and is not small: this gate runs `just roadmap-milestone m2`, a
 # recipe of a working session that contains `four-profiles`, which M2 measured failing roughly one
 # Debug run in thirty. A pull request now has three independent exposures to that rate.
+# (CORRECTED AT M5, as under `milestone-m1`: the newest ledger runs `four-profiles` once.)
 
 [[gate]]
 id = "milestone-m2"
@@ -446,6 +519,29 @@ since = "m4"
 class = "milestone"
 milestone = "m4"
 state = "green"
+
+# M5 is NOT closed by the change that carries this line, and the state says so. `just roadmap-test`
+# reads openspec/changes/archive/ and fails when a milestone whose change is archived still has a
+# gate at `joins-on-close`, so archiving this change without flipping the line below turns the
+# `roadmap` job red on the next pull request — which is the check M2's block above asked for and
+# M3's landed.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED IS, FOR THE FIRST TIME, NOT MORE THAN THE ONE BEFORE IT. Through
+# M4 each new milestone gate added a ledger that ran the ledger below it, so a pull request accrued
+# one more full traversal of the ladder per milestone. Since the flattening a pull request runs each
+# distinct criterion once however many milestones declare it: flipping this line adds M5's own
+# criteria to the permanent set and nothing else. That is the arithmetic task 0.1 of this milestone
+# was for.
+
+[[gate]]
+id = "milestone-m5"
+describe = "M5 — Authorable: the exit criteria of the milestone that made the editor a separate application in a second language, talking to a hosted runtime it can survive the death of."
+runs = ["just roadmap-milestone m5"]
+platforms = ["linux", "windows", "macos"]
+since = "m5"
+class = "milestone"
+milestone = "m5"
+state = "joins-on-close"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

@@ -208,4 +208,44 @@ public struct Interface: @unchecked Sendable {
     public func behaviourGeneration(type: CyBehaviourType) -> UInt32 {
         table.pointee.behaviour_generation(type)
     }
+
+    @inlinable
+    public func worldComponentCount(world: CyWorld) -> UInt32 {
+        table.pointee.world_component_count(world)
+    }
+
+    @inlinable
+    public func worldComponentInfo(world: CyWorld, component: CyComponentTypeId, into: UnsafeMutablePointer<CyComponentInfo>?) throws {
+        try check(table.pointee.world_component_info(world, component, into))
+    }
+
+    @inlinable
+    public func worldComponentField(world: CyWorld, component: CyComponentTypeId, field: UInt32, into: UnsafeMutablePointer<CyFieldDesc>?) throws {
+        try check(table.pointee.world_component_field(world, component, field, into))
+    }
+
+    @inlinable
+    public func worldParent(world: CyWorld, entity: CyEntity) -> CyEntity {
+        table.pointee.world_parent(world, entity)
+    }
+
+    @inlinable
+    public func worldSetParent(world: CyWorld, child: CyEntity, parent: CyEntity) throws {
+        try check(table.pointee.world_set_parent(world, child, parent))
+    }
+
+    @inlinable
+    public func worldChildCount(world: CyWorld, entity: CyEntity) -> UInt32 {
+        table.pointee.world_child_count(world, entity)
+    }
+
+    @inlinable
+    public func worldChild(world: CyWorld, entity: CyEntity, index: UInt32) -> CyEntity {
+        table.pointee.world_child(world, entity, index)
+    }
+
+    @inlinable
+    public func worldChunks(world: CyWorld, component: CyComponentTypeId, into: UnsafeMutablePointer<CyChunk>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try check(table.pointee.world_chunks(world, component, into, capacity, count))
+    }
 }

@@ -1,0 +1,24 @@
+# The live bridge's control path: framing, messages, and a session that never blocks a UI frame.
+#
+# Layer 1. It depends on `cy-editor-core` for the codec and the problem type, and on nothing else —
+# in particular not on the SDK, because a hosted runtime is reached over a transport rather than
+# through a symbol table, and not on documents, because the protocol carries bytes that a document
+# produced rather than documents themselves.
+[package]
+name = "cy-editor-protocol"
+description = "The CyberEditor live bridge: framing, messages, and an asynchronous client session."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 1
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+
+[lints]
+workspace = true

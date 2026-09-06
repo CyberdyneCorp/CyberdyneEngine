@@ -1,0 +1,27 @@
+# View models: presentation state and user intents, and nothing authoritative.
+#
+# Layer 4. It depends on the services and on nothing beside it, which is how
+# `editor-rust-application`'s "No peer dependencies between panels" is enforced by the workspace
+# rather than by review: there is no crate here for one panel to depend on another through, and
+# `cy-editor-app`'s `tests/layering.rs` fails a manifest that adds one.
+[package]
+name = "cy-editor-viewmodels"
+description = "CyberEditor's view models: presentation state derived from services, never a second source of truth."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 4
+
+[dependencies]
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-services = { path = "../cy-editor-services" }
+
+[lints]
+workspace = true

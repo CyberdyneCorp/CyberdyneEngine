@@ -33,6 +33,43 @@ include_guard(GLOBAL)
 # Descriptions may not contain a semicolon or a vertical bar: CMake splits lists on the first and
 # this table on the second.
 
+# --- The milestone annotation in a description, and what it means -------------------------------
+#
+# Every row that is not yet delivered carries the milestone it is expected at, in parentheses. That
+# number is not decoration: it is the only place in the build that says when a `#if defined(CY_X)`
+# is expected to start being true, and a reader who plans work from it is reading a fact.
+#
+# THE RULE. The number is the milestone at which the option's capability first reaches **Working**
+# in docs/roadmap/capability-matrix.md — a Seed where the capability never goes past Seed on the
+# ladder — and NOT the milestone at which it reaches Complete. Two rows are exceptions and say so
+# in place: `CY_RENDERER_METAL`, which `delivery-roadmap` seeds at M7 and delivers at M11, and
+# `CY_XR`, whose capability is deferred by decision rather than scheduled.
+#
+# AUDITED AT M5 (task 1.5), row by row, against the matrix. Seven were wrong, and each of them had
+# the shape that makes this worth doing: harmless while the option is off, and exactly the kind of
+# drift that misleads whoever plans against it later.
+#
+#   CY_ANIMATION           M6  -> M8    animation-and-skinning is Working at M8
+#   CY_AUDIO_STEAM_AUDIO   M7  -> M8    delivery-roadmap's dependency table puts Steam Audio at M8
+#   CY_UI                  M9  -> M8    ui-system is Working at M8
+#   CY_VFX                 M7  -> M8    vfx-system is Working at M8
+#   CY_VIRTUAL_GEOMETRY    M10 -> M7    virtual-geometry is Working at M7
+#   CY_XR                  M11 -> deferred, with the prerequisites at M11
+#   CY_RENDERER_D3D12      M7  -> M11   delivery-roadmap: "Last, because it adds no capability the
+#                                       first two do not exercise"
+#
+# The rest were already right: CY_BUILD_EDITOR (M5), CY_NAVIGATION (M8), CY_AI (M8), CY_ML (M8,
+# Seed), CY_NETWORKING (M9), CY_SHADER_SLANG (M3), CY_RENDERER_VULKAN (M3), CY_SCRIPTING (M4),
+# CY_PHYSICS (M4), CY_AUDIO (M4). CY_RENDERER_METAL kept M7 and gained the M11 delivery beside it.
+#
+# ONE FINDING THIS AUDIT CANNOT FIX FROM HERE, recorded rather than quietly left. CY_PROFILING is
+# DELIVERED — src/core/diagnostics/src/tracy_sink.cpp is a real Tracy backend of the engine's own
+# trace, and README.md there carries its measured cost — and it defaults OFF, which is the shape
+# rule 3 of this milestone's brief warns about: `#ifdef CY_PROFILING` compiles the whole republish
+# path to nothing in every default build, so nothing tests it. Flipping it is not this task's to
+# make: it adds a Tracy fetch to every configure, and `diagnostics-profiling-and-crash` reaches
+# Working at M5 under a different task, which is where that decision belongs with its evidence.
+
 set(CY_FEATURE_OPTIONS
     "CY_BUILD_EDITOR|OFF|Build the editor application (the Rust workspace, from M5)"
     "CY_BUILD_TESTS|ON|Build the unit, integration and smoke test suites"
@@ -79,7 +116,7 @@ set(CY_FEATURE_OPTIONS
     "CY_NAVIGATION|OFF|Navigation meshes, path queries and NavigationServer (M8)"
     "CY_AI|OFF|Behaviour graphs, perception and the AI runtime (M8)"
     "CY_ML|OFF|Machine-learning inference nodes (M8)"
-    "CY_ANIMATION|OFF|Skeletal animation, blending and the animation graph (M6)"
+    "CY_ANIMATION|OFF|Skeletal animation, blending and the animation graph (M8)"
     # DELIVERED AT M4, AND THEREFORE ON BY DEFAULT — rule 3, the same reading the physics option
     # above and CY_RENDERER_VULKAN below were given. src/backends/audio-miniaudio/ is a real device
     # backend over a pinned miniaudio and `integration.audio_miniaudio` drives it; left at OFF the
@@ -98,13 +135,13 @@ set(CY_FEATURE_OPTIONS
     # WHAT IT COSTS: miniaudio is one source file and one header, about 5 MB of source and a few
     # seconds of compilation. It is the cheapest dependency in the manifest.
     "CY_AUDIO|ON|Audio: the miniaudio device backend behind cy::audio::AudioBackend (M4). The AudioServer, the bus graph, spatialisation and the null backend are always built — this gates miniaudio and its fetch"
-    "CY_AUDIO_STEAM_AUDIO|OFF|Steam Audio spatial acoustics inside CY_AUDIO (M7)"
-    "CY_UI|OFF|The retained-mode UI runtime (M9)"
-    "CY_VFX|OFF|The VFX runtime, its compiler and its renderers (M7)"
-    "CY_VIRTUAL_GEOMETRY|OFF|The virtualised geometry path inside the renderer (M10)"
+    "CY_AUDIO_STEAM_AUDIO|OFF|Steam Audio spatial acoustics inside CY_AUDIO (M8)"
+    "CY_UI|OFF|The retained-mode UI runtime (M8)"
+    "CY_VFX|OFF|The VFX runtime, its compiler and its renderers (M8)"
+    "CY_VIRTUAL_GEOMETRY|OFF|The virtualised geometry path inside the renderer (M7)"
     "CY_NETWORKING|OFF|Replication, transport and the network runtime (M9)"
-    "CY_XR|OFF|Extended-reality sessions, tracking and stereo rendering (M11)"
-    "CY_PROFILING|OFF|Tracy as a backend of the engine's own trace (M0 seam, M2 wiring)"
+    "CY_XR|OFF|Extended-reality sessions, tracking and stereo rendering (deferred by decision — M11 carries the prerequisites)"
+    "CY_PROFILING|OFF|Tracy as a backend of the engine's own trace (M0 seam, M2 wiring, delivered)"
     # DELIVERED AT M3, AND THEREFORE ON WHEREVER IT CAN BE. src/backends/shader/slang/ is a real
     # front end over a pinned Slang, `smoke.shader_slang` is four cases that drive a Slang session,
     # and with the option off none of it was built by anybody — M3's own record: "a Slang
@@ -136,8 +173,8 @@ set(CY_FEATURE_OPTIONS
     # machine with no Vulkan SDK nothing but the fetch, and the device suites skip loudly when there
     # is no GPU to draw on.
     "CY_RENDERER_VULKAN|ON|The Vulkan RHI backend (M3)"
-    "CY_RENDERER_METAL|OFF|The Metal RHI backend (M7)"
-    "CY_RENDERER_D3D12|OFF|The Direct3D 12 RHI backend (M7)"
+    "CY_RENDERER_METAL|OFF|The Metal RHI backend (seeded M7, delivered M11)"
+    "CY_RENDERER_D3D12|OFF|The Direct3D 12 RHI backend (M11)"
     CACHE INTERNAL "The CY_* feature options: NAME|DEFAULT|description")
 
 # --- Feature dependencies ---------------------------------------------------------------------

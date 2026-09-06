@@ -1,0 +1,13 @@
+# Act 3 — a new editor process over the same journal: recovery is offered, then the session is saved.
+#
+# The recovery offer is not a command. It is posted when the document is opened, and `--journal`
+# is what makes it possible: `editor-documents-and-transactions` requires the editor to "offer
+# recovery from the last saved revision plus its journal, reporting how many transactions are
+# recoverable", and session.py asserts that the offer names a count.
+#
+# `file.save` is available only while the document is dirty, so the act makes a change first. It
+# writes no backing asset at M5 — `cy_editor_services::builtin`'s own source says so — and what it
+# does do is the half with a correctness argument: the journal is discarded only after the write
+# reports success, which is why act 4 of session.py finds no recoverable transactions afterwards.
+scene.create-entity
+file.save

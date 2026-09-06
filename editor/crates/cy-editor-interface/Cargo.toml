@@ -1,0 +1,41 @@
+# The editor's interface: docking, the command palette, the generated inspector, notifications.
+#
+# Layer 4, beside the view models and depending on none of them — `editor-rust-application` forbids a
+# panel from naming another panel's crate, and `cy-editor-app`'s tests/layering.rs fails a manifest
+# that adds one. What two panels share, they share through a service.
+#
+# WHAT IS NOT IN THE DEPENDENCY LIST, AND WHY IT MATTERS. `cy-editor-sdk`. The generated inspector
+# reads a reflected *engine* type, and it reads it as a `cy_editor_reflection::ReflectedType` — a
+# plain value produced by a crate that may name the SDK. A presentation crate holding the workspace's
+# one unsafe crate is exactly the reach-through the specification forbids, and this manifest is where
+# that is decided.
+[package]
+name = "cy-editor-interface"
+description = "CyberEditor's interface: docking and workspaces, the command palette, the generated inspector, problems and notifications."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 4
+
+[dependencies]
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-reflection = { path = "../cy-editor-reflection" }
+cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-visual = { path = "../cy-editor-visual" }
+
+# The end-to-end proof that the inspector is generated rather than written: `tests/` builds a
+# catalogue out of a real `CyInterface` table reached through dlopen, and generates a form from it.
+# A dev-dependency, so the shipping crate still names neither the SDK nor a fixture.
+[dev-dependencies]
+cy-editor-sdk = { path = "../cy-editor-sdk" }
+cy-editor-testhost = { path = "../cy-editor-testhost" }
+
+[lints]
+workspace = true

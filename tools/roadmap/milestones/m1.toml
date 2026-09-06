@@ -12,9 +12,11 @@
 # evaluated on the host running the recipe — another operating system, no display — carries a
 # `reason`, is reported as not evaluated rather than as passed, and is counted separately.
 #
-# M1's own history is why the first criterion below is M0's whole set. `delivery-roadmap` says a
-# later milestone may not break an earlier milestone's gate, and M1 broke M0's static analysis gate
-# in two modules before this file existed. The rule is now something this recipe runs.
+# M1's own history is why M0's criteria are evaluated by this recipe at all. `delivery-roadmap` says
+# a later milestone may not break an earlier milestone's gate, and M1 broke M0's static analysis gate
+# in two modules before this file existed. The rule is something the recipe runs rather than
+# something a reviewer remembers — but it is the RUNNER that merges M0's criteria into this ledger,
+# deduplicated, not a criterion in this file that re-runs M0's whole recipe. See the section below.
 
 schema = 1
 id = "m1"
@@ -32,15 +34,20 @@ notes = [
 ]
 
 # --- What M1 must not have broken -----------------------------------------------------------------
-
-[[criterion]]
-id = "m0-green"
-describe = "M0's exit criteria are still green — a later milestone may not break an earlier milestone's gate"
-source = "delivery-roadmap (Milestone gates do not regress)"
-kind = "recipe"
-run = "just roadmap-milestone m0"
-timeout_s = 5400
-ci_job = "milestone-m0"
+#
+# No criterion, deliberately. M0's criteria are in the permanent set — M0 is the rung below this one
+# and its gate is green — and `just roadmap-milestone m1` evaluates that set directly, once and
+# deduplicated, before it reaches the criteria below. `criteria.build_plan` is the rule; `gates.toml`
+# is where a milestone says its criteria have joined the set, by carrying `state = "green"`.
+#
+# This file used to open with an `m0-green` criterion running `just roadmap-milestone m0`, and that
+# is how the ladder chained: M4's ledger ran M3's, which ran M2's, which ran M1's, which ran M0's.
+# One run of M4's ledger was then 118 criterion evaluations over 91 distinct checks — 27 of them
+# re-running something another ledger had already run — with `four-profiles`, a full
+# four-configuration build and test, executed four times because four ledgers declared it, and every
+# criterion's failure probability multiplied by the number of ledgers naming it. The same run is now
+# 87 evaluations, one per distinct check. The rule the criterion enforced is unchanged and is still
+# enforced; the nesting is what went. See openspec/changes/implement-m5-authorable, delivery-roadmap.
 
 # --- The static gates M1 added: cheap, and they fail first -----------------------------------------
 

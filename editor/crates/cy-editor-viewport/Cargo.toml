@@ -1,0 +1,47 @@
+# The viewport: what the editor decides should be shown, and how it asks for it.
+#
+# Layer 2, beside `cy-editor-commands` and below the services. That number is the interesting part of
+# this manifest, so it is worth saying why it is 2 and not 3:
+#
+#   * The viewport model — view states, transports, navigation, picking requests, gizmo manipulation,
+#     snapping, view modes, overlays and budgets — depends on documents (a drag writes a transaction)
+#     and on the protocol's framing (a pick crosses the bridge). Both are layer 1.
+#   * It depends on NO service. A service aggregates authoritative state and a viewport is a thing a
+#     service holds, not the other way round — `cy-editor-services` at layer 3 may hold a
+#     `Viewports`, and this crate can never name a `SelectionService`. That is the dependency edge
+#     that keeps "the editor decides what should be shown" from turning into "the viewport reaches
+#     into everything to find out".
+#   * It is not layer 4 either. A view model is presentation and holds no authoritative state; a
+#     drag's captured start state IS authoritative for the duration of the drag, and putting it in a
+#     view model would make a panel the owner of an in-flight edit.
+#
+# It names no toolkit, no window and no graphics device, and could not: `editor-viewport-and-gizmos`
+# forbids the editor constructing render passes or issuing draw calls, and the way to make that
+# checkable is for the crate that would do it to have nothing to do it with. Every test in this
+# crate runs headlessly.
+[package]
+name = "cy-editor-viewport"
+description = "CyberEditor's viewport: transports, view states, navigation, picking, gizmos, snapping and budgets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 2
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+
+[lints]
+workspace = true
+
+# The frame-age probe: a real second process, so that task 4.1's measurement is a measurement rather
+# than a simulation of one. See `src/bin/cy_viewport_probe.rs` and `tests/frame_age.rs`.
+[[bin]]
+name = "cy-viewport-probe"
+path = "src/bin/cy_viewport_probe.rs"

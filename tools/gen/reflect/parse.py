@@ -136,31 +136,115 @@ class Frontend:
             if child._kind_id in _KIND.records and _declared_in(child, relative):
                 self._record(child, relative, into, schemas)
             elif child._kind_id == _KIND.field:
-                field = _field(child, relative, name, schemas)
-                if field is not None:
-                    parsed.fields.append(field)
+                parsed.fields += _field(child, relative, name, schemas)
         into.types.append(parsed)
 
 
 def _field(cursor, relative: str, type_name: str,
-           schemas: dict[str, CustomSchema]) -> ParsedField | None:
+           schemas: dict[str, CustomSchema]) -> list[ParsedField]:
+    """One annotated member as one or more reflected fields.
+
+    ONE MEMBER MAY BE SEVERAL FIELDS, which is M5's task 1.3. `cy::scene::LocalTransform` holds a
+    single `cy::Transform`, and `cy::Transform` holds a `Quat` and two `Vec3`s: a generator that
+    only accepted scalars could reflect nothing an inspector or a gizmo actually edits, and the
+    alternative — annotating `cy::Transform` itself and giving `FieldKind` a Struct case — would
+    mean reflecting types in src/core/math/ and teaching every consumer of `FieldInfo` about
+    nesting.
+
+    So an aggregate member is FLATTENED into its leaf scalars, each with a dotted name
+    (`value.translation.x`) and its own manifest identifier. The offsets stay exact because the
+    emitter spells them as `offsetof(T, value.translation.x)` and lets the compiler compute them, and
+    every existing consumer — the serializer, the state hasher, the ABI's field import — keeps
+    seeing a flat list of scalars, which is the only shape any of them can use.
+
+    THE ATTRIBUTES ARE THE ANNOTATED MEMBER'S, repeated on each leaf. `Persistence(Authoring)` on a
+    transform means the same thing about all nine floats; `Unit(Metres)` is right for the
+    translation and meaningless for the rotation, and that is the price of annotating the member
+    rather than the leaf. Annotating the leaf would mean annotating `cy::Vec3`.
+    """
     annotation = _annotation_of(cursor, "cy.field:")
     if annotation is None:
-        return None
+        return []
     where = f"{relative}:{cursor.location.line}: field '{type_name}::{cursor.spelling}'"
     attributes = _validate(annotation, where, on_type=False, schemas=schemas)
     kind = _field_kind(cursor.type, attributes)
-    if kind is None:
-        raise ParseError(
-            f"{where} has type '{cursor.type.spelling}', which reflection cannot carry.\n"
-            f"  A reflected field is a fixed-width scalar, a bool, or an enumeration. Strings, "
-            f"pointers and containers cross the boundary as a cy::Var, which the values module "
-            f"introduces at task 1.3.1.\n"
-            f"  Remove CY_REFLECT_FIELD from it, or mark it Transient and give the type a "
-            f"reflected field that carries the same information."
-        )
-    return ParsedField(name=cursor.spelling, kind=kind, attributes=attributes,
-                       line=cursor.location.line)
+    if kind is not None:
+        return [ParsedField(name=cursor.spelling, kind=kind, attributes=attributes,
+                            line=cursor.location.line)]
+
+    leaves = _flatten(cursor.type, cursor.spelling, attributes, cursor.location.line, 0)
+    if leaves:
+        return leaves
+    raise ParseError(
+        f"{where} has type '{cursor.type.spelling}', which reflection cannot carry.\n"
+        f"  A reflected field is a fixed-width scalar, a bool, an enumeration, or an aggregate "
+        f"whose members are recursively all of those and all public — that one is flattened into "
+        f"its leaves. Strings, pointers and containers cross the boundary as a cy::Var, which the "
+        f"values module introduces at task 1.3.1.\n"
+        f"  Remove CY_REFLECT_FIELD from it, or mark it Transient and give the type a "
+        f"reflected field that carries the same information."
+    )
+
+
+# How deep an aggregate may nest before this refuses. `LocalTransform.value.translation.x` is three,
+# and a member designator much longer than that is a component that wants to be several.
+_MAX_FLATTEN_DEPTH = 4
+
+
+def _flatten(type_, prefix: str, attributes, line: int, depth: int) -> list[ParsedField] | None:
+    """An aggregate member's leaf scalars, or None when it is not flattenable.
+
+    None rather than an exception: the caller has a better diagnostic, because it knows the field's
+    name and the header it is in.
+    """
+    if depth >= _MAX_FLATTEN_DEPTH:
+        return None
+    canonical = type_.get_canonical()
+    if canonical._kind_id != _KIND.record_type:
+        return None
+    declaration = canonical.get_declaration()
+    if declaration is None or declaration._kind_id not in _KIND.records:
+        return None
+
+    leaves: list[ParsedField] = []
+    for child in declaration.get_children():
+        if child._kind_id != _KIND.field:
+            continue
+        # A PRIVATE MEMBER IS NOT FLATTENABLE, and that is a rule rather than a limitation:
+        # `offsetof` would compile from inside the class and not from the generated file, and a
+        # type that hides its representation is a type whose representation is not the contract.
+        # `cy::Name` and `cy::ecs::Entity` are the two this refuses today, and both are right to be
+        # refused — they are handles, not data.
+        if not _is_public(child):
+            return None
+        # A bitfield has no address, so `offsetof` cannot name it and a byte offset would be a lie.
+        if _is_bitfield(child):
+            return None
+        name = f"{prefix}.{child.spelling}"
+        kind = _field_kind(child.type, attributes)
+        if kind is not None:
+            leaves.append(ParsedField(name=name, kind=kind, attributes=attributes, line=line))
+            continue
+        nested = _flatten(child.type, name, attributes, line, depth + 1)
+        if nested is None:
+            return None
+        leaves += nested
+    return leaves or None
+
+
+def _is_public(cursor) -> bool:
+    """True when a member is publicly accessible. False on anything this cannot determine."""
+    try:
+        return cursor.access_specifier.name == "PUBLIC"
+    except (AttributeError, ValueError):
+        return False
+
+
+def _is_bitfield(cursor) -> bool:
+    try:
+        return bool(cursor.is_bitfield())
+    except (AttributeError, ValueError):
+        return False
 
 
 def _validate(annotation: str, where: str, *, on_type: bool,
@@ -306,6 +390,7 @@ class _Kinds:
         self.annotate = 0
         self.translation_unit = 0
         self.enum_type = 0
+        self.record_type = 0
         self.ready = False
 
     def bind(self, cindex) -> None:
@@ -318,6 +403,7 @@ class _Kinds:
         self.annotate = cursor.ANNOTATE_ATTR.value
         self.translation_unit = cursor.TRANSLATION_UNIT.value
         self.enum_type = cindex.TypeKind.ENUM.value
+        self.record_type = cindex.TypeKind.RECORD.value
         self.ready = True
 
 

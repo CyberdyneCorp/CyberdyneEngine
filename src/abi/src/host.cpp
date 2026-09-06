@@ -14,12 +14,20 @@ namespace cy::abi {
 u32 var_type_storage_size(CyVarType type) noexcept {
     switch (type) {
         case CY_VAR_BOOL:
+        case CY_VAR_I8:
+        case CY_VAR_U8:
             return 1;
+        case CY_VAR_I16:
+        case CY_VAR_U16:
+            return 2;
         case CY_VAR_F32:
+        case CY_VAR_I32:
+        case CY_VAR_U32:
             return 4;
         // Grouped rather than written one arm each: two arms with the same body are two chances for
         // one of them to be edited and the other forgotten.
         case CY_VAR_I64:
+        case CY_VAR_U64:
         case CY_VAR_F64:
         case CY_VAR_VEC2:
         case CY_VAR_ENTITY:
@@ -37,6 +45,26 @@ u32 var_type_storage_size(CyVarType type) noexcept {
             return 0;
     }
     return 0;
+}
+
+bool var_type_is_integer(CyVarType type) noexcept {
+    switch (type) {
+        case CY_VAR_I8:
+        case CY_VAR_I16:
+        case CY_VAR_I32:
+        case CY_VAR_I64:
+        case CY_VAR_U8:
+        case CY_VAR_U16:
+        case CY_VAR_U32:
+        case CY_VAR_U64:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool var_type_is_signed(CyVarType type) noexcept {
+    return type == CY_VAR_I8 || type == CY_VAR_I16 || type == CY_VAR_I32 || type == CY_VAR_I64;
 }
 
 }  // namespace cy::abi
@@ -74,6 +102,111 @@ const FieldRecord* CyWorld_T::field(const ComponentRecord& component,
         return nullptr;
     }
     return &fields[component.field_first + index];
+}
+
+namespace {
+
+/// One reflected field kind as a `CyVarType`, or CY_VAR_NIL for a kind this ABI cannot name.
+///
+/// `Enum` and `Flags` are integers whose width is the field's, so they are decided by the size
+/// rather than by the kind — an enumeration with a `u8` underlying type is a `u8` in the chunk, and
+/// describing it as anything else would read three bytes that belong to the next field.
+CyVarType var_type_of(cy::reflect::FieldKind kind, cy::u32 size) noexcept {
+    using cy::reflect::FieldKind;
+    switch (kind) {
+        case FieldKind::Bool:
+            return CY_VAR_BOOL;
+        case FieldKind::I8:
+            return CY_VAR_I8;
+        case FieldKind::I16:
+            return CY_VAR_I16;
+        case FieldKind::I32:
+            return CY_VAR_I32;
+        case FieldKind::I64:
+            return CY_VAR_I64;
+        case FieldKind::U8:
+            return CY_VAR_U8;
+        case FieldKind::U16:
+            return CY_VAR_U16;
+        case FieldKind::U32:
+            return CY_VAR_U32;
+        case FieldKind::U64:
+            return CY_VAR_U64;
+        case FieldKind::F32:
+            return CY_VAR_F32;
+        case FieldKind::F64:
+            return CY_VAR_F64;
+        case FieldKind::Enum:
+        case FieldKind::Flags:
+            switch (size) {
+                case 1:
+                    return CY_VAR_U8;
+                case 2:
+                    return CY_VAR_U16;
+                case 4:
+                    return CY_VAR_U32;
+                case 8:
+                    return CY_VAR_U64;
+                default:
+                    return CY_VAR_NIL;
+            }
+        case FieldKind::Unsupported:
+            break;
+    }
+    return CY_VAR_NIL;
+}
+
+}  // namespace
+
+const ComponentRecord* CyWorld_T::record_or_import(CyComponentTypeId id) noexcept {
+    if (const ComponentRecord* existing = record(id); existing != nullptr) {
+        return existing;
+    }
+    if (!world.components().registered(id)) {
+        return nullptr;
+    }
+    const cy::ecs::ComponentInfo& info = world.components().info(id);
+
+    // The fields are appended first and the record afterwards, so a failure part-way through leaves
+    // the arrays trimmed rather than half-describing a component. The same discipline as
+    // `register_component` below, and for the same reason.
+    const auto first = static_cast<cy::u32>(fields.size());
+    cy::u32 described = 0;
+    if (info.type != nullptr) {
+        for (cy::u32 index = 0; index < info.type->field_count; ++index) {
+            const cy::reflect::FieldInfo& field_info = info.type->fields[index];
+            const CyVarType type = var_type_of(field_info.kind, field_info.size);
+            // A field this ABI cannot name is SKIPPED rather than described wrongly. The count the
+            // caller is given is the count it can address, which is what stops an inspector from
+            // asking for a field index that means nothing.
+            if (type == CY_VAR_NIL || cy::abi::var_type_storage_size(type) != field_info.size ||
+                field_info.offset + field_info.size > info.size) {
+                continue;
+            }
+            FieldRecord record_field;
+            record_field.name = field_info.name;
+            record_field.type = type;
+            record_field.offset = field_info.offset;
+            record_field.size = field_info.size;
+            if (cy::Status pushed = fields.push_back(record_field); !pushed) {
+                (void)fields.resize(first);
+                return nullptr;
+            }
+            ++described;
+        }
+    }
+
+    ComponentRecord imported;
+    imported.id = id;
+    imported.name = info.name;
+    imported.size = info.size;
+    imported.field_first = first;
+    imported.field_count = described;
+    if (cy::Status pushed = components.push_back(imported); !pushed) {
+        (void)fields.resize(first);
+        return nullptr;
+    }
+    return &components[components.size() - 1];
 }
 
 cy::Expected<CyComponentTypeId, cy::Error> CyWorld_T::register_component(

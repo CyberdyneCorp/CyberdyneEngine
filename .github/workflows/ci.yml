@@ -52,6 +52,43 @@ env:
 
 jobs:
   # --- The three-platform, two-architecture build ------------------------------------------------
+  #
+  # THE SWIFT DECISION, M5 TASK 1.4 — recorded here because this matrix is what it is about.
+  #
+  # M4 left the question open: Swift is a hard requirement of `swift-scripting` and of the M4
+  # artefact, and it was installed on exactly one job. Making it hard across the matrix means every
+  # leg can install a toolchain, and two of the six cannot.
+  #
+  # THE ANSWER IS: HARD WHERE A TOOLCHAIN EXISTS, OPTIONAL WHERE ONE DOES NOT, AND THE MATRIX SAYS
+  # WHICH IS WHICH. The `swift` column below is that statement, one value per leg:
+  #
+  #   action        the leg installs a toolchain through swift-actions/setup-swift.
+  #   preinstalled  the runner image already has one, from Xcode. Installing a second would be
+  #                 slower and would test a toolchain no macOS developer uses.
+  #   none          no toolchain is obtainable on this leg today. The Swift suites and the M4
+  #                 sample are NOT REGISTERED there — bindings/swift/CMakeLists.txt declines rather
+  #                 than registering suites that skip — so the leg still builds and still runs every
+  #                 other suite, and the absence is visible as a shorter test list rather than as a
+  #                 green tick over nothing.
+  #
+  # WHY THE TWO `none` LEGS ARE none, precisely, because "ARM" is not the reason and repeating it
+  # would be wrong:
+  #
+  #   linux-arm64    swift-actions/setup-swift resolves its toolchains from the Swift.org release
+  #                  index, and this project has not verified that it selects an aarch64 Ubuntu
+  #                  build on an `ubuntu-24.04-arm` runner. Swift.org DOES publish aarch64 Ubuntu
+  #                  toolchains, so this is the leg that can be closed next, by installing swiftly
+  #                  directly rather than through the action. Unverified from this machine: it is a
+  #                  runner-image property and cannot be measured locally.
+  #   windows-arm64  Swift for Windows publishes an x86_64 installer; an arm64-native Windows
+  #                  toolchain is not part of a released Swift 6.0 distribution. This leg is
+  #                  `none` by absence rather than by policy, and it is the one that stops Swift
+  #                  from being a hard requirement of the whole matrix at M5.
+  #
+  # NOTHING HERE WAS EXECUTED. This file is edited on a Linux workstation with no runner; every
+  # claim above is about a GitHub-hosted image and is verifiable only by running the workflow. The
+  # `playable` job below keeps its own explicit toolchain install for exactly that reason — it is
+  # the job that judges the Swift artefact, and it does not depend on this matrix being right.
   build:
     name: build ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
@@ -59,12 +96,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-          - { label: linux-arm64, os: ubuntu-24.04-arm }
-          - { label: macos-x86_64, os: macos-13 }
-          - { label: macos-arm64, os: macos-14 }
-          - { label: windows-x86_64, os: windows-2022, msvc: x64 }
-          - { label: windows-arm64, os: windows-11-arm, msvc: arm64 }
+          - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
+          - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
+          - { label: macos-x86_64, os: macos-13, swift: preinstalled }
+          - { label: macos-arm64, os: macos-14, swift: preinstalled }
+          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: action }
+          - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v3
@@ -72,6 +109,12 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc }}
+      # The `swift` column of the matrix above, applied. `preinstalled` and `none` install nothing:
+      # one because the image already has a toolchain, the other because none exists for the leg.
+      - if: matrix.swift == 'action'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
       - name: Install the tools the doctor requires
         run: npm install -g @fission-ai/openspec
       # The pinned LLVM tooling. `just env-doctor` requires it on every host — the format and lint
@@ -121,12 +164,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-          - { label: linux-arm64, os: ubuntu-24.04-arm }
-          - { label: macos-x86_64, os: macos-13 }
-          - { label: macos-arm64, os: macos-14 }
-          - { label: windows-x86_64, os: windows-2022, msvc: x64 }
-          - { label: windows-arm64, os: windows-11-arm, msvc: arm64 }
+          - { label: linux-x86_64, os: ubuntu-24.04, swift: action }
+          - { label: linux-arm64, os: ubuntu-24.04-arm, swift: none }
+          - { label: macos-x86_64, os: macos-13, swift: preinstalled }
+          - { label: macos-arm64, os: macos-14, swift: preinstalled }
+          - { label: windows-x86_64, os: windows-2022, msvc: x64, swift: action }
+          - { label: windows-arm64, os: windows-11-arm, msvc: arm64, swift: none }
     env:
       # The machine-readable results `testing-and-quality` requires of a continuous integration run.
       # The recipe already knows how to produce them; the job only says where to put them.
@@ -138,6 +181,12 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc }}
+      # The `swift` column of the matrix above, applied. `preinstalled` and `none` install nothing:
+      # one because the image already has a toolchain, the other because none exists for the leg.
+      - if: matrix.swift == 'action'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
       - name: Install the window-system headers SDL3 builds against
         if: runner.os == 'Linux'
         run: |
@@ -448,6 +497,93 @@ jobs:
       # criterion which passes locally and runs nowhere else is not a gate.
       - name: The sample runs through the workflow recipe
         run: just run-sample character --ticks 120
+
+  # --- M5: the editor, its session, the importer and live reload ---------------------------------
+  #
+  # THE `editor` JOB IS THE ONE THIS PROJECT SHOULD HAVE HAD THE DAY THE RUST WORKSPACE LANDED.
+  # `just build-editor-check` — the SDK generator's selftest, rustfmt, clippy with the workspace's
+  # pedantic table as errors, and 505 tests — was green in all four profiles and run by nothing,
+  # which three separate reports named before this job existed.
+  #
+  # THREE PLATFORMS, because that is the ROADMAP's M5 exit criterion — "editor headless tests run in
+  # continuous integration on all three platforms" — and because a workspace that needs no window,
+  # no graphics device and no interface toolkit is exactly the thing that can run anywhere. It is a
+  # job of its own rather than a step in the `test` matrix so that a Windows-specific failure names
+  # itself instead of failing six legs of an unrelated matrix.
+  #
+  # NOT VERIFIED FROM A DEVELOPER MACHINE. This file is edited on Linux; that the macOS and Windows
+  # runner images carry cargo, rustfmt and clippy is a property of a GitHub-hosted image and is
+  # verifiable only by running the workflow. `editor-three-platforms` in tools/roadmap/milestones/
+  # m5.toml is the criterion that says so, and it is reported as not evaluated on this host rather
+  # than as passed.
+  editor:
+    name: editor ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux, os: ubuntu-24.04 }
+          - { label: macos, os: macos-14 }
+          - { label: windows, os: windows-2022 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - uses: actions/cache@v4
+        with:
+          path: build/editor
+          key: cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
+          restore-keys: |
+            cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
+            cy-editor-${{ matrix.label }}-
+      # No `cargo install` step and no registry access: [workspace.dependencies] is empty, so the
+      # workspace builds offline in a bare checkout. That is a decision editor/Cargo.toml argues.
+      - name: The editor's gates and its whole test suite
+        run: just build-editor-check
+
+  # The rest of M5, on Linux. The session needs a Unix domain socket — the live bridge is one, and
+  # cy-runtime-stub refuses to pretend otherwise — so this job is not a matrix.
+  authorable:
+    name: authorable — the session, the importer, live reload
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-authorable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-authorable-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-authorable-
+      # The importer's purity and the cache's honesty, neither of which a functional test notices
+      # being lost.
+      - name: The importer framework, its options and its glTF reader
+        run: just test-unit -R import
+      - name: Mesh operations, the glTF document and the pipeline end to end
+        run: just test-integration -R import_
+      - name: The derivation key and the derived-data cache
+        run: just test-unit -R assets
+      - name: A cache hit reproduces the output rather than skipping it
+        run: just test-integration -R assets_io
+      # M4 closed with the reload model proven and nothing reloading a module while a runtime ran.
+      - name: A module reloads while the runtime is live, preserving world state
+        run: just test-integration -R live_reload
+      - name: The world's components, fields and chunks read from outside the process
+        run: just test-integration -R abi_inspector
+      # The artefact, and then the check that its own assertions still fire.
+      - name: The scripted session outlives its runtime being killed
+        run: just test-smoke -R editor_session
+      - name: The session driver's own negative cases
+        run: just test-integration -R editor_session_selftest
+      # The recipe a contributor uses, rather than only the test that registers the same driver.
+      - name: The artefact runs through the workflow recipe
+        run: just run-editor-session --only survive
 
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:

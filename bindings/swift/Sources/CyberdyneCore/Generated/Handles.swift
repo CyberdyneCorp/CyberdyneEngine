@@ -174,6 +174,46 @@ public struct World: @unchecked Sendable {
     public func componentSetVec3(entity: CyEntity, component: CyComponentTypeId, field: UInt32, xyz: UnsafePointer<Float>?) throws {
         try interface.componentSetVec3(world: raw, entity: entity, component: component, field: field, xyz: xyz)
     }
+
+    @inlinable
+    public func componentCount() -> UInt32 {
+        interface.worldComponentCount(world: raw)
+    }
+
+    @inlinable
+    public func componentInfo(component: CyComponentTypeId, into: UnsafeMutablePointer<CyComponentInfo>?) throws {
+        try interface.worldComponentInfo(world: raw, component: component, into: into)
+    }
+
+    @inlinable
+    public func componentField(component: CyComponentTypeId, field: UInt32, into: UnsafeMutablePointer<CyFieldDesc>?) throws {
+        try interface.worldComponentField(world: raw, component: component, field: field, into: into)
+    }
+
+    @inlinable
+    public func parent(entity: CyEntity) -> CyEntity {
+        interface.worldParent(world: raw, entity: entity)
+    }
+
+    @inlinable
+    public func setParent(child: CyEntity, parent: CyEntity) throws {
+        try interface.worldSetParent(world: raw, child: child, parent: parent)
+    }
+
+    @inlinable
+    public func childCount(entity: CyEntity) -> UInt32 {
+        interface.worldChildCount(world: raw, entity: entity)
+    }
+
+    @inlinable
+    public func child(entity: CyEntity, index: UInt32) -> CyEntity {
+        interface.worldChild(world: raw, entity: entity, index: index)
+    }
+
+    @inlinable
+    public func chunks(component: CyComponentTypeId, into: UnsafeMutablePointer<CyChunk>?, capacity: UInt32, count: UnsafeMutablePointer<UInt32>?) throws {
+        try interface.worldChunks(world: raw, component: component, into: into, capacity: capacity, count: count)
+    }
 }
 
 /// An entity, as the ABI carries it. `native-abi` fixes the encoding: the 32-bit index low and the

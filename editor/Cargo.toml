@@ -1,0 +1,160 @@
+# CyberEditor — the Rust workspace. Task 2.1, `editor-rust-application`.
+#
+# --- WHY A WORKSPACE AND NOT A CRATE --------------------------------------------------------------
+#
+# `editor-rust-application`: "The editor SHALL be a multi-crate workspace rather than one crate, with
+# dependencies flowing toward shared foundations ... Dependency direction SHALL be enforced by the
+# workspace, and a cycle or an upward dependency SHALL be a build error rather than a review
+# comment."
+#
+# Cargo gives half of that for free: a dependency cycle between crates is a hard error, not a lint.
+# The other half — an *upward* dependency, which Cargo is perfectly happy with — is enforced by
+# `crates/cy-editor-app/tests/layering.rs`, which reads the `[package.metadata.cy] layer` of every
+# member and fails when any crate depends on one at its own level or above. That is the same shape
+# as the engine's `tools/layercheck/layercheck.py`, and it is a test rather than a review comment
+# for the same reason.
+#
+# --- THE PROFILE TABLE, FINALLY EXERCISED ---------------------------------------------------------
+#
+# M0's spike wrote the Cargo column of the profile table in `justfile` and reserved it unused for
+# five milestones. This is where it is spent. The four names mean the same thing here that they mean
+# in CMake:
+#
+#   just profile | CMake configuration | assertions | Cargo profile
+#   -------------|---------------------|------------|--------------
+#   debug        | Debug               | on         | dev
+#   dev          | Development         | on         | development
+#   profile      | Profile             | off        | profiling
+#   release      | Shipping            | off        | shipping
+#
+# "Assertions" is `CY_ASSERT` in C++ and `debug_assertions` in Rust, and the mapping is exact: the
+# two configurations that compile `CY_ASSERT` out are the two that set `debug-assertions = false`.
+# That is checked rather than documented — `crates/cy-editor-app/tests/profiles.rs` reads the table
+# out of `justfile` and asserts that each row's Cargo profile exists here with the assertion setting
+# the row claims, so the two tables cannot drift.
+#
+# --- NO THIRD-PARTY DEPENDENCIES, DELIBERATELY ----------------------------------------------------
+#
+# This workspace depends on nothing but the Rust standard library, and `[workspace.dependencies]`
+# below is empty rather than absent so that adding the first one is a visible edit in a reviewed
+# file. Three reasons, in the order they matter:
+#
+#   * The interface toolkit is an implementation detail (`editor-rust-application`), and the crates
+#     delivered here — core, sdk, protocol, documents, commands, services, view models — are the
+#     ones that must be *testable headlessly with no window, no graphics device and no interface
+#     toolkit*. None of them needs a crate to do that, and picking one now would put a toolkit's
+#     types in the layer that is specified never to see them.
+#   * `thirdparty-dependencies` requires every dependency to be justified, and a dependency added
+#     "because it is what one uses" cannot be. When the viewport and the panels arrive, the
+#     toolkit's dependency tree will be a real decision with real measurement behind it.
+#   * `cargo build --offline` works in a fresh checkout, so a continuous-integration leg needs no
+#     registry access to build or test the editor, and a lockfile churn cannot break a milestone.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.5.0"
+edition = "2024"
+rust-version = "1.92"
+license = "Apache-2.0"
+repository = "https://github.com/leonardoaraujosantos/CyberdyneEngine"
+publish = false
+
+# Empty on purpose. See the note above.
+[workspace.dependencies]
+
+# --- The profiles ---------------------------------------------------------------------------------
+#
+# `dev` and `release` are Cargo's own names and cannot be renamed, so `dev` IS the `debug` row and
+# every other row is a custom profile that inherits from one of them. A recipe never says `--profile
+# release`: `just build-editor --profile release` maps the workflow's `release` to Cargo's
+# `shipping`, which is why the mapping is a table and not a coincidence of names.
+
+# `just --profile debug` — unoptimised, assertions on, overflow checks on.
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+
+# `just --profile dev` — the working profile. Light optimisation so tests run at a usable speed,
+# assertions still on. This is the one a developer builds all day.
+[profile.development]
+inherits = "dev"
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+
+# `just --profile profile` — optimised with symbols, assertions OFF. Measurements come from here,
+# and so does the answer to "does it still work with the assertions compiled out", which is the
+# question hard-won experience says to ask of every profile a gate does not run.
+[profile.profiling]
+inherits = "release"
+opt-level = 2
+debug = true
+debug-assertions = false
+overflow-checks = false
+
+# `just --profile release` — what ships. Note that what ships is the EDITOR: a packaged game
+# contains none of this workspace, which follows from it being a separate binary rather than from a
+# compilation flag.
+[profile.shipping]
+inherits = "release"
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "thin"
+codegen-units = 1
+# NOT `panic = "abort"`, for two reasons that both point the same way.
+#
+# The editor deliberately CATCHES panics at two boundaries: `OperationService::start` wraps
+# background work so that a defect in an importer settles that operation as failed instead of taking
+# the editor down, and an editor plugin compiled from source is exactly the kind of code that has
+# such a defect. Aborting would remove a designed resilience in the one configuration where it
+# matters most — which is the same argument the engine makes for `borrow_valid` being a comparison
+# rather than an assertion: a protection that only holds in some configurations is not a protection.
+#
+# And `cargo test` needs unwinding, so `panic = "abort"` would make this profile the one nothing is
+# tested in. That is the shape of defect this project has already paid for twice.
+
+# --- Lints, workspace-wide ------------------------------------------------------------------------
+#
+# `editor-rust-application` lists ten "forbidden editor application patterns" and requires that each
+# "SHALL be checkable". Four of them are checkable by the compiler, and are set here so that they are
+# checked in every crate rather than in the crates somebody remembered:
+#
+#   * `unsafe_code = "forbid"` is set PER CRATE rather than here, because exactly one crate is
+#     allowed it — `cy-editor-sdk`, the audited interoperation overlay — and `forbid` cannot be
+#     lifted by an inner `allow`, which is the property that makes it worth using. `cy-editor-app`'s
+#     `tests/safety.rs` asserts that every other crate carries it.
+#   * missing documentation on a public item is denied: the SDK and the command registry are read by
+#     callers who cannot see the interface, per `editor-agent-interface`.
+#   * `clippy::pedantic` is on, with the handful of lints that fight the house style turned back off
+#     below and each one saying why.
+[workspace.lints.rust]
+missing_docs = "deny"
+unreachable_pub = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# The editor's error enums are documented per variant and read better as prose than as a table of
+# `# Errors` sections repeated on every wrapper; the crate-level documentation says what fails.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# `#[must_use]` on every accessor is noise in a crate whose accessors are all pure by construction.
+must_use_candidate = "allow"
+# Long literal blocks of prose in documentation are the house style; see any file in src/.
+doc_markdown = "allow"
+# A module named after the type it contains is the convention this workspace and the engine share.
+module_name_repetitions = "allow"
+# A vector's lanes are x, y, z and w. Renaming them to satisfy a lint about single-character
+# bindings would make every vector site harder to read than the lint is worth, and this workspace
+# destructures vectors constantly.
+many_single_char_names = "allow"

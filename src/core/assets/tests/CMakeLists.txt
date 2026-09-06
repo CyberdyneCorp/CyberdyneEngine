@@ -51,6 +51,7 @@ function(cy_assets_declare_tests)
         NAME assets
         KIND unit
         SOURCES
+            "${cy_assets_tests_dir}/test_derivation.cpp"
             "${cy_assets_tests_dir}/test_identity.cpp"
             "${cy_assets_tests_dir}/test_path.cpp"
             "${cy_assets_tests_dir}/test_serialization.cpp"
@@ -66,6 +67,7 @@ function(cy_assets_declare_tests)
         NAME assets_io
         KIND integration
         SOURCES
+            "${cy_assets_tests_dir}/test_derived_cache.cpp"
             "${cy_assets_tests_dir}/test_file.cpp"
             "${cy_assets_tests_dir}/test_package.cpp"
             "${cy_assets_tests_dir}/test_vfs.cpp"

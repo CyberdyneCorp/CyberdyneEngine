@@ -17,3 +17,10 @@ add_subdirectory(03-first-light)
 # own smoke test and its own "no C++ gameplay" check, because on a machine with no Swift toolchain the
 # target does not exist and tests/ has already been added by the time this line runs.
 add_subdirectory(04-character)
+# M5's artefact is a FOURTH shape, and the only one that declares no C++ target at all: the session
+# is three processes in two languages — the importer, the editor, and a hosted runtime on the other
+# side of a Unix domain socket — and what is being demonstrated is what happens when one of them is
+# killed. samples/05-editor-session/session.py is the artefact and `just run-editor-session` is the
+# recipe; this directory contributes the two CTest entries that run it, which is also where task
+# 6.3's headless editor tests are declared. Its CMakeLists.txt says why it is shaped that way.
+add_subdirectory(05-editor-session)

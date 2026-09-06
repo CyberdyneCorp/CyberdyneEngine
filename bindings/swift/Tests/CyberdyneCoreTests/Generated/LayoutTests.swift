@@ -52,6 +52,28 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyComponentTypeDesc>.offset(of: \CyComponentTypeDesc.fields), 24, "CyComponentTypeDesc.fields offset")
     }
 
+    func testComponentInfoLayout() {
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.size, 24, "CyComponentInfo size")
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.alignment, 8, "CyComponentInfo alignment")
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.offset(of: \CyComponentInfo.struct_size), 0, "CyComponentInfo.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.offset(of: \CyComponentInfo.size), 4, "CyComponentInfo.size offset")
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.offset(of: \CyComponentInfo.alignment), 8, "CyComponentInfo.alignment offset")
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.offset(of: \CyComponentInfo.field_count), 12, "CyComponentInfo.field_count offset")
+        XCTAssertEqual(MemoryLayout<CyComponentInfo>.offset(of: \CyComponentInfo.name), 16, "CyComponentInfo.name offset")
+    }
+
+    func testChunkLayout() {
+        XCTAssertEqual(MemoryLayout<CyChunk>.size, 40, "CyChunk size")
+        XCTAssertEqual(MemoryLayout<CyChunk>.alignment, 8, "CyChunk alignment")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.struct_size), 0, "CyChunk.struct_size offset")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.entity_count), 4, "CyChunk.entity_count offset")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.entities), 8, "CyChunk.entities offset")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.data), 16, "CyChunk.data offset")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.stride), 24, "CyChunk.stride offset")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.archetype), 28, "CyChunk.archetype offset")
+        XCTAssertEqual(MemoryLayout<CyChunk>.offset(of: \CyChunk.epoch), 32, "CyChunk.epoch offset")
+    }
+
     func testBehaviourVTableLayout() {
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.size, 56, "CyBehaviourVTable size")
         XCTAssertEqual(MemoryLayout<CyBehaviourVTable>.alignment, 8, "CyBehaviourVTable alignment")
@@ -82,7 +104,7 @@ final class GeneratedLayoutTests: XCTestCase {
     }
 
     func testInterfaceLayout() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 256, "CyInterface size")
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 320, "CyInterface size")
         XCTAssertEqual(MemoryLayout<CyInterface>.alignment, 8, "CyInterface alignment")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.header), 0, "CyInterface.header offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.log), 16, "CyInterface.log offset")
@@ -115,6 +137,14 @@ final class GeneratedLayoutTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.register_behaviour), 232, "CyInterface.register_behaviour offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.find_behaviour), 240, "CyInterface.find_behaviour offset")
         XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.behaviour_generation), 248, "CyInterface.behaviour_generation offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_component_count), 256, "CyInterface.world_component_count offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_component_info), 264, "CyInterface.world_component_info offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_component_field), 272, "CyInterface.world_component_field offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_parent), 280, "CyInterface.world_parent offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_set_parent), 288, "CyInterface.world_set_parent offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_child_count), 296, "CyInterface.world_child_count offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_child), 304, "CyInterface.world_child offset")
+        XCTAssertEqual(MemoryLayout<CyInterface>.offset(of: \CyInterface.world_chunks), 312, "CyInterface.world_chunks offset")
     }
 
     func testModuleInitLayout() {
@@ -132,7 +162,7 @@ final class GeneratedLayoutTests: XCTestCase {
     /// The table itself. `Interface` reads entries by name through the imported struct, so if Swift
     /// laid `CyInterface` out differently from the engine, every call would go to the wrong entry.
     func testInterfaceTableSize() {
-        XCTAssertEqual(MemoryLayout<CyInterface>.size, 256,
+        XCTAssertEqual(MemoryLayout<CyInterface>.size, 320,
                        "CyInterface size")
         XCTAssertEqual(Int(ABI.interfaceTableSize), MemoryLayout<CyInterface>.size,
                        "the generated table size and the imported one")
@@ -178,8 +208,8 @@ final class GeneratedLayoutTests: XCTestCase {
     /// this is the same claim from Swift's side, and it is what makes `ABI.entryNames` — which a
     /// diagnostic uses to say *which* entry a short table stops at — worth trusting.
     func testEntryNameCount() {
-        XCTAssertEqual(ABI.entryNames.count, 30)
+        XCTAssertEqual(ABI.entryNames.count, 38)
         XCTAssertEqual(ABI.entryNames.first, "log")
-        XCTAssertEqual(ABI.entryNames.last, "behaviour_generation")
+        XCTAssertEqual(ABI.entryNames.last, "world_chunks")
     }
 }

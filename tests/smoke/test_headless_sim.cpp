@@ -119,8 +119,16 @@ CY_TEST_CASE("samples/02-headless-sim authors, cooks, ticks and exits cleanly") 
 
     // The hash covered the entities the world holds, and says how much of the world it is silent
     // about rather than reporting a healthy-looking number over a tenth of the state.
+    //
+    // TEN, NOT FOUR. M5's task 1.3 reflected seven of the scene's twelve built-in components, so
+    // `declare_reflected_components()` now derives a schema for the six of them this world's
+    // entities actually carry — `NodeAlias` is optional and no entity here has one, and the walk
+    // counts subjects it VISITS. Undeclared falls from thirteen to seven, and those seven are the
+    // ECS's `Parent` and `Children` and the five components components.h says reflection cannot
+    // describe. The number is asserted rather than described because it is the coverage claim: a
+    // regression that stopped reflecting a component would put it back.
     CY_CHECK(contains(result.output, "entities=530"));
-    CY_CHECK(contains(result.output, "schema   subjects declared=4"));
+    CY_CHECK(contains(result.output, "schema   subjects declared=10 undeclared=7"));
     // The hierarchy is a hierarchy: a world node with archetypes under it, not one number.
     CY_CHECK(contains(result.output, "level    world"));
     CY_CHECK(contains(result.output, "level      archetype"));

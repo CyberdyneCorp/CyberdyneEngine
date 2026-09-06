@@ -324,10 +324,12 @@ int main(int argument_count, char** arguments) {
                  "%s: hash     %016llx  archetypes=%u entities=%u components=%u fields=%u\n", kTag,
                  static_cast<unsigned long long>(hash.value()), walk.archetypes_visited,
                  walk.entities_hashed, walk.components_hashed, walk.fields_hashed);
-    // Undeclared subjects are the honest half of the number above: `Parent`, `Children` and eleven
-    // of the scene's twelve built-ins have no reflected descriptor, so nothing derives a schema for
-    // them and the hash says nothing about them. A hash that quietly covered a tenth of the world
-    // would be worse than one that reports the gap.
+    // Undeclared subjects are the honest half of the number above. At M2 that was `Parent`,
+    // `Children` and eleven of the scene's twelve built-ins — thirteen subjects the hash said
+    // nothing about. M5's task 1.3 reflected seven of the twelve, so what remains undeclared here
+    // is `Parent`, `Children` and the five components cy/scene/components.h explains reflection
+    // cannot describe. A hash that quietly covered a tenth of the world would be worse than one
+    // that reports the gap, so the gap is still printed.
     std::fprintf(stdout, "%s: schema   subjects declared=%u undeclared=%u nodes=%u\n", kTag,
                  walk.subjects_declared, walk.subjects_undeclared, tree.node_count());
     sample::print_hash_tree(tree, kTag);

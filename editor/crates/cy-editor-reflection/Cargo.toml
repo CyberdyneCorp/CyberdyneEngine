@@ -1,0 +1,33 @@
+# One description of a type, whatever described it — and the input the generated inspector reads.
+#
+# Layer 3. It sits beside the services rather than above them because of what it must be able to
+# name: the SDK, so that a component type the *engine* registered can be described without the
+# panels above ever holding the one crate in this workspace that may say `unsafe`. That is the
+# reach-through `editor-rust-application` forbids, and inverting it here is what keeps
+# `cy-editor-interface` free of it while still generating an inspector for a reflected engine type.
+#
+# It depends on no service and no service depends on it: a catalogue is a value read out of a schema
+# or a world, and a value has no business knowing what is open.
+[package]
+name = "cy-editor-reflection"
+description = "CyberEditor's type descriptions: one shape for a document's schema and for the engine's reflected components."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 3
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-sdk = { path = "../cy-editor-sdk" }
+
+[dev-dependencies]
+cy-editor-testhost = { path = "../cy-editor-testhost" }
+
+[lints]
+workspace = true

@@ -1,0 +1,31 @@
+# The editor's visual language: what it looks like, what its colours mean, and what it calls things.
+#
+# Layer 1. It depends on `cy-editor-core` for `Problem` and on nothing else — deliberately, because
+# every layer above needs it: a service reporting a warning, a view model labelling an axis field and
+# a viewport overlay all draw from the same vocabulary, and a vocabulary that lived beside the panels
+# would be one the layers below could not obey.
+#
+# WHAT IS NOT HERE: a widget, a font file, an icon bitmap, a rendering call. This crate states the
+# language — roles, hues, forms, terms, metrics — and the toolkit that eventually draws it is an
+# implementation detail chosen on measurement, per `editor-rust-application`. That is what makes the
+# whole of `editor-visual-language` testable at M5 with no window and no graphics device: a
+# specification that says "gold means selection" and "the orientation widget is not a manipulator" is
+# a statement about data, and data can be asserted on.
+[package]
+name = "cy-editor-visual"
+description = "CyberEditor's visual language: the semantic palette, the axis language, gizmo forms, chrome placement and engine vocabulary."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 1
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+
+[lints]
+workspace = true

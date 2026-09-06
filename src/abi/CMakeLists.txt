@@ -33,15 +33,20 @@ cy_add_module(
         src/errors.cpp
         src/host.cpp
         src/interface.cpp
+        src/live_reload.cpp
         src/manifest.cpp
         src/module.cpp
         src/var.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    # cy::core-assets is the directory listing cy/abi/live_reload.h scans for the next generation
+    # (M5 task 1.1). PRIVATE would be wrong only if the header exposed it, and it does not: the
+    # watcher's interface is three `const char*` and a report, so nothing that includes
+    # cy/abi/live_reload.h needs the filesystem on its include path.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::ecs
     # The dynamic loader. `${CMAKE_DL_LIBS}` is empty on the platforms whose libc already has
     # dlopen, and is `dl` on the ones that keep it separate — which is why it is spelled with the
     # variable rather than with the name.
-    PRIVATE_DEPENDENCIES ${CMAKE_DL_LIBS})
+    PRIVATE_DEPENDENCIES cy::core-assets ${CMAKE_DL_LIBS})
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

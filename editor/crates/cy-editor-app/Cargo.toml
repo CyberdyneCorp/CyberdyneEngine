@@ -1,0 +1,39 @@
+# The editor application: the binary, and the tests that hold the workspace's own rules.
+#
+# Layer 5, the top. It is the only crate that may name every other, and it is where the three
+# structural checks live — layering, safety, and the profile mapping — because a check that lives in
+# the crate it checks can be disabled by the same edit that breaks it.
+[package]
+name = "cy-editor-app"
+description = "CyberEditor: a Rust client of the Cyberdyne engine over its stable C ABI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 5
+
+[[bin]]
+name = "cyberdyne-editor"
+path = "src/main.rs"
+
+[dependencies]
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+cy-editor-sdk = { path = "../cy-editor-sdk" }
+cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-viewmodels = { path = "../cy-editor-viewmodels" }
+
+# The runtime stub is a separate PROCESS in the integration tests, not a linked dependency: the
+# claim under test is that the editor survives the runtime's death, and a linked fixture could not
+# die. Declared here so that `cargo test -p cy-editor-app` builds it.
+[dev-dependencies]
+cy-editor-testhost = { path = "../cy-editor-testhost" }
+
+[lints]
+workspace = true

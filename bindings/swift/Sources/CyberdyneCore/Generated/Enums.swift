@@ -46,6 +46,13 @@ public enum VarType: UInt32, Sendable, CaseIterable {
     case string = 9
     case bytes = 10
     case entity = 11
+    case i8 = 12
+    case i16 = 13
+    case i32 = 14
+    case u8 = 15
+    case u16 = 16
+    case u32 = 17
+    case u64 = 18
 }
 
 /// `CyInitLevel`: when a module registers what. Types are registered at `.scene`.
@@ -54,6 +61,36 @@ public enum InitLevel: UInt32, Sendable, CaseIterable {
     case servers = 1
     case scene = 2
     case editor = 3
+}
+
+/// `CySeverity`: the levels the engine's diagnostic system carries, and the wire values `log` takes.
+///
+/// GENERATED, BECAUSE THE COPY WAS WRONG. CyberdyneKit hand-wrote this enum with six cases —
+/// trace, debug, info, warning, error, fatal — against the engine's three, so `Log.info` put 2 on
+/// the wire and every informational line from a behaviour arrived in the engine's log as `[error]`.
+/// It ran green for a milestone. There is nothing to copy now: cy_abi.h declares `CySeverity`,
+/// src/abi/src/interface.cpp asserts each value against `cy::DiagnosticSeverity`, and this file is
+/// generated from the same description the compatibility gate diffs.
+public enum Severity: UInt32, Sendable, CaseIterable {
+    case info = 0
+    case warning = 1
+    case error = 2
+}
+
+/// `CyStage`: the stages of one frame, in execution order.
+///
+/// Also generated, and also replacing a copy. `SystemStage` was hand-written in CyberdyneKit with a
+/// comment saying "there is no `CyStage` in `cy_abi.h`, so nothing checks that this list still
+/// matches"; the fix was the appended enum rather than more care.
+public enum SystemStage: UInt32, Sendable, CaseIterable {
+    case preSimulation = 0
+    case physics = 1
+    case simulation = 2
+    case postSimulation = 3
+    case frame = 4
+    case animation = 5
+    case ui = 6
+    case render = 7
 }
 
 /// The error every throwing overlay call raises.

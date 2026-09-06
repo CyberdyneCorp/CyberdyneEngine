@@ -90,6 +90,17 @@ ENTRIES: dict[str, Entry] = {
     "register_behaviour": Entry(("engine", "name", "vtable")),
     "find_behaviour": Entry(("engine", "name")),
     "behaviour_generation": Entry(("type",)),
+    # 1.1: describing a world the caller did not build
+    "world_component_count": Entry(("world",)),
+    "world_component_info": Entry(("world", "component", "into"), result="throwing"),
+    "world_component_field": Entry(("world", "component", "field", "into"), result="throwing"),
+    # 1.1: the hierarchy
+    "world_parent": Entry(("world", "entity")),
+    "world_set_parent": Entry(("world", "child", "parent"), result="throwing"),
+    "world_child_count": Entry(("world", "entity")),
+    "world_child": Entry(("world", "entity", "index")),
+    # 1.1: chunks
+    "world_chunks": Entry(("world", "component", "into", "capacity", "count"), result="throwing"),
 }
 
 RESULT_KINDS = frozenset({"value", "throwing"})

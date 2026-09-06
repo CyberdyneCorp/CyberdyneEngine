@@ -12,6 +12,11 @@
 #                     the reload sequence, which opens real shared libraries from disk. It is an
 #                     integration test because dlopen is, not because it is slow: the whole suite is
 #                     a few milliseconds.
+#   integration.abi_live_reload
+#                     the same sequence performed against a runtime that never stops ticking — M5's
+#                     task 1.1. It publishes generations into a staging directory under the build
+#                     tree and lets the watcher find them, which is the only suite here that writes
+#                     files.
 #
 # --- THE FOUR TEST MODULES, AND WHY THEY ARE C ---------------------------------------------------
 #
@@ -98,6 +103,42 @@ function(cy_abi_declare_tests)
     add_dependencies(cy_test_integration_abi_reload
                      cy_abi_test_module_v1 cy_abi_test_module_v2
                      cy_abi_test_module_refuse cy_abi_test_module_renamed)
+
+    # M5 task 1.1: the same modules, reloaded WITHOUT the loop stopping. Separate from abi_reload
+    # because it asks a different question — abi_reload asks whether the sequence is correct, this
+    # asks whether anything performs it against a live runtime — and because it is the only suite in
+    # this directory that writes to the filesystem.
+    #
+    # CY_ABI_TEST_STAGE_DIR is under the build tree rather than in a temporary directory so that a
+    # failed run leaves the generations it published where a developer can look at them, and so that
+    # two build directories of one checkout cannot stage over each other.
+    cy_add_test(
+        NAME abi_live_reload
+        KIND integration
+        SOURCES "${tests_dir}/test_live_reload.cpp"
+        DEPENDENCIES cy::abi cy::core-assets
+        DEFINITIONS
+            "CY_ABI_TEST_MODULE_V1=\"$<TARGET_FILE:cy_abi_test_module_v1>\""
+            "CY_ABI_TEST_MODULE_V2=\"$<TARGET_FILE:cy_abi_test_module_v2>\""
+            "CY_ABI_TEST_MODULE_RENAMED=\"$<TARGET_FILE:cy_abi_test_module_renamed>\""
+            "CY_ABI_TEST_STAGE_DIR=\"${CMAKE_BINARY_DIR}/abi-live-reload\"")
+
+    add_dependencies(cy_test_integration_abi_live_reload
+                     cy_abi_test_module_v1 cy_abi_test_module_v2 cy_abi_test_module_renamed)
+
+    # M5 tasks 1.2 and 1.3, together: the inspector's read/write path over a SCENE world, entirely
+    # through the table. It links cy::scene because it has to build the world it then refuses to
+    # know anything about — every assertion after the fixture is over names and offsets discovered
+    # at run time, which is what "no per-type editor code" has to mean.
+    #
+    # An integration test rather than a unit one because it spans three modules (reflection, the
+    # scene and the ABI) and because a unit suite in src/abi/ that linked layer 4 would be claiming
+    # a dependency src/abi/ does not have.
+    cy_add_test(
+        NAME abi_inspector
+        KIND integration
+        SOURCES "${tests_dir}/test_inspector.cpp"
+        DEPENDENCIES cy::abi cy::scene)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_abi_declare_tests)

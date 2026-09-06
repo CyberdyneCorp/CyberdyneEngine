@@ -426,6 +426,117 @@ def collect() -> list:
     return [value for name, value in sorted(globals().items()) if name.startswith("test_")]
 
 
+# --- Flattened aggregates and module groups, M5 task 1.3 ---------------------------------------------
+
+
+AGGREGATE = """\
+// A fixture for tools/gen/reflect_gen.py. Not part of the engine.
+#pragma once
+
+#include <cy/core/reflect/annotations.h>
+
+namespace fx {
+
+struct Inner {
+    float x = 0.0F;
+    float y = 0.0F;
+};
+
+struct Outer {
+    Inner inner;
+    unsigned int tag = 0;
+};
+
+struct Sealed {
+    float visible = 0.0F;
+
+private:
+    float hidden_ = 0.0F;
+};
+
+struct CY_REFLECT_TYPE(Category("Fixture")) Holder {
+    CY_REFLECT_FIELD(Category("Nested"), Persistence(Authoring)) Outer outer;
+    CY_REFLECT_FIELD(Tooltip("plain")) unsigned int plain = 0;
+};
+
+}  // namespace fx
+"""
+
+
+def test_an_aggregate_field_is_flattened_into_its_leaves(tree: Tree) -> None:
+    """The property M5 needs: `LocalTransform`'s one `Transform` member is nine editable floats."""
+    tree.header.write_text(AGGREGATE, encoding="utf-8")
+    tree.succeed()
+    manifest = tree.manifest.read_text(encoding="utf-8")
+    for leaf in ("outer.inner.x", "outer.inner.y", "outer.tag", "plain"):
+        check_in(f'name = "{leaf}"', manifest,
+                 "every leaf of a flattened aggregate gets its own identifier")
+    # And the emitted offsets are member designators the COMPILER resolves, never numbers the
+    # generator measured on the machine it happened to run on.
+    source = (tree.generated / "fx" / "widget.reflect.cpp").read_text(encoding="utf-8")
+    check_in("offsetof(Type0, outer.inner.x)", source, "the offset is a designator")
+    check_in("sizeof(std::declval<Type0&>().outer.inner.x)", source,
+             "the size is taken through an unevaluated reference, which a designator needs")
+    # The nesting is flattened rather than described: nothing here is a Struct kind, because
+    # FieldKind has none and every consumer of FieldInfo expects a scalar.
+    check_in("FieldKind::F32", source, "a leaf keeps its own kind")
+    check_in("FieldKind::U32", source, "a leaf keeps its own kind")
+
+
+def test_an_aggregate_with_a_private_member_is_refused_naming_the_field(tree: Tree) -> None:
+    """`cy::Name` and `cy::ecs::Entity` are why: a hidden representation is not a contract."""
+    tree.header.write_text(
+        AGGREGATE.replace("    CY_REFLECT_FIELD(Tooltip(\"plain\")) unsigned int plain = 0;",
+                          "    CY_REFLECT_FIELD(Tooltip(\"sealed\")) Sealed sealed;"),
+        encoding="utf-8",
+    )
+    output = tree.fail()
+    check_in("fx::Holder::sealed", output, "the failure must name the field")
+    check_in("cannot carry", output, "the failure must say why")
+
+
+def test_a_module_group_writes_its_own_directory_and_its_own_aggregate(tree: Tree) -> None:
+    """The half of task 1.3 that makes a layer-4 component reflectable at all.
+
+    A generated translation unit includes the header it describes, so a module's output has to live
+    in that module's directory or the layering check refuses it — correctly.
+    """
+    other = tree.root / "include" / "fx" / "other.h"
+    other.write_text(
+        AGGREGATE.replace("Holder", "Elsewhere").replace("struct Inner", "struct OtherInner")
+        .replace("Inner inner;", "OtherInner inner;").replace("struct Outer", "struct OtherOuter")
+        .replace("Outer outer;", "OtherOuter outer;"),
+        encoding="utf-8",
+    )
+    elsewhere = tree.root / "elsewhere"
+    tree.succeed("--module", f"other:{elsewhere}:{other}")
+
+    # The default group is where it was, and its aggregate still defines the symbol reflect.h
+    # declares.
+    default_aggregate = (tree.generated / "cy_reflect_generated.cpp").read_text(encoding="utf-8")
+    check_in("Status register_generated_types(TypeRegistry& registry)", default_aggregate,
+             "the default group keeps its symbol")
+    if "fx/other" in default_aggregate:
+        raise Failure("the module group's header leaked into the default aggregate")
+
+    # The module group is in its own directory, with its own symbol and a header declaring it.
+    module_aggregate = (elsewhere / "cy_reflect_generated_other.cpp").read_text(encoding="utf-8")
+    check_in("Status register_other_types(TypeRegistry& registry)", module_aggregate,
+             "a module group defines its own symbol, not a second register_generated_types")
+    check_in("Status register_other_types(TypeRegistry& registry);",
+             (elsewhere / "cy_reflect_generated_other.h").read_text(encoding="utf-8"),
+             "a module group emits the header that declares its aggregate")
+    if not (elsewhere / "fx" / "other.reflect.cpp").exists():
+        raise Failure("the module group's per-header output is not in the module's directory")
+    if (tree.generated / "fx" / "other.reflect.cpp").exists():
+        raise Failure("the module group's output was also written to the default directory")
+
+
+def test_a_malformed_module_argument_is_refused(tree: Tree) -> None:
+    output = tree.fail("--module", "other:only-two-parts")
+    check_in("three parts", output, "the failure must say what the argument's shape is")
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, default=REPO)

@@ -183,7 +183,13 @@ struct BlobReader {
         switch kind {
         case .nil: return .none
         case .bool: return .bool(try take(1)[0] != 0)
-        case .i64: return .i64(Int64(bitPattern: try doubleWord()))
+        // The narrow integer tags ABI 1.1 appended. THIS FORMAT WIDENS THEM, and it must: a record
+        // written by one generation of a module is read by the next, so a field whose width changed
+        // from `u16` to `u32` between two builds has to decode either way. Eight bytes on the wire
+        // for a `u8` costs a serialized record nothing that matters and removes a whole class of
+        // migration that would otherwise be silent.
+        case .i64, .i8, .i16, .i32, .u8, .u16, .u32, .u64:
+            return .i64(Int64(bitPattern: try doubleWord()))
         case .f32: return .f32(Float(bitPattern: try word()))
         case .f64: return .f64(Double(bitPattern: try doubleWord()))
         case .vec2: return .vec2(Vec2(lanes: try lanes(2)))

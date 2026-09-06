@@ -1,7 +1,7 @@
 {
   "abi": {
     "major": 1,
-    "minor": 0,
+    "minor": 1,
     "patch": 0
   },
   "functions": [
@@ -177,10 +177,50 @@
         "index": 30,
         "name": "behaviour_generation",
         "type": "uint32_t(*)(CyBehaviourType)"
+      },
+      {
+        "index": 31,
+        "name": "world_component_count",
+        "type": "uint32_t(*)(CyWorld)"
+      },
+      {
+        "index": 32,
+        "name": "world_component_info",
+        "type": "CyResult(*)(CyWorld, CyComponentTypeId, CyComponentInfo*)"
+      },
+      {
+        "index": 33,
+        "name": "world_component_field",
+        "type": "CyResult(*)(CyWorld, CyComponentTypeId, uint32_t, CyFieldDesc*)"
+      },
+      {
+        "index": 34,
+        "name": "world_parent",
+        "type": "CyEntity(*)(CyWorld, CyEntity)"
+      },
+      {
+        "index": 35,
+        "name": "world_set_parent",
+        "type": "CyResult(*)(CyWorld, CyEntity, CyEntity)"
+      },
+      {
+        "index": 36,
+        "name": "world_child_count",
+        "type": "uint32_t(*)(CyWorld, CyEntity)"
+      },
+      {
+        "index": 37,
+        "name": "world_child",
+        "type": "CyEntity(*)(CyWorld, CyEntity, uint32_t)"
+      },
+      {
+        "index": 38,
+        "name": "world_chunks",
+        "type": "CyResult(*)(CyWorld, CyComponentTypeId, CyChunk*, uint32_t, uint32_t*)"
       }
     ],
     "name": "CyInterface",
-    "size": 256
+    "size": 320
   },
   "types": [
     {
@@ -297,6 +337,24 @@
     },
     {
       "kind": "enum",
+      "name": "CySeverity",
+      "values": [
+        {
+          "name": "CY_SEVERITY_INFO",
+          "value": 0
+        },
+        {
+          "name": "CY_SEVERITY_WARNING",
+          "value": 1
+        },
+        {
+          "name": "CY_SEVERITY_ERROR",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "kind": "enum",
       "name": "CyVarType",
       "values": [
         {
@@ -346,6 +404,34 @@
         {
           "name": "CY_VAR_ENTITY",
           "value": 11
+        },
+        {
+          "name": "CY_VAR_I8",
+          "value": 12
+        },
+        {
+          "name": "CY_VAR_I16",
+          "value": 13
+        },
+        {
+          "name": "CY_VAR_I32",
+          "value": 14
+        },
+        {
+          "name": "CY_VAR_U8",
+          "value": 15
+        },
+        {
+          "name": "CY_VAR_U16",
+          "value": 16
+        },
+        {
+          "name": "CY_VAR_U32",
+          "value": 17
+        },
+        {
+          "name": "CY_VAR_U64",
+          "value": 18
         }
       ]
     },
@@ -534,6 +620,106 @@
       ],
       "name": "CyComponentTypeDesc",
       "size": 32
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "size",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "alignment",
+          "offset": 8,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "field_count",
+          "offset": 12,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "name",
+          "offset": 16,
+          "size": 8,
+          "type": "const char*"
+        }
+      ],
+      "name": "CyComponentInfo",
+      "size": 24
+    },
+    {
+      "alignment": 8,
+      "kind": "struct",
+      "members": [
+        {
+          "alignment": 4,
+          "name": "struct_size",
+          "offset": 0,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "entity_count",
+          "offset": 4,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "entities",
+          "offset": 8,
+          "size": 8,
+          "type": "const CyEntity*"
+        },
+        {
+          "alignment": 8,
+          "name": "data",
+          "offset": 16,
+          "size": 8,
+          "type": "void*"
+        },
+        {
+          "alignment": 4,
+          "name": "stride",
+          "offset": 24,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 4,
+          "name": "archetype",
+          "offset": 28,
+          "size": 4,
+          "type": "uint32_t"
+        },
+        {
+          "alignment": 8,
+          "name": "epoch",
+          "offset": 32,
+          "size": 8,
+          "type": "uint64_t"
+        }
+      ],
+      "name": "CyChunk",
+      "size": 40
     },
     {
       "alignment": 8,
@@ -877,10 +1063,66 @@
           "offset": 248,
           "size": 8,
           "type": "uint32_t(*)(CyBehaviourType)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_component_count",
+          "offset": 256,
+          "size": 8,
+          "type": "uint32_t(*)(CyWorld)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_component_info",
+          "offset": 264,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyComponentTypeId, CyComponentInfo*)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_component_field",
+          "offset": 272,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyComponentTypeId, uint32_t, CyFieldDesc*)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_parent",
+          "offset": 280,
+          "size": 8,
+          "type": "CyEntity(*)(CyWorld, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_set_parent",
+          "offset": 288,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyEntity, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_child_count",
+          "offset": 296,
+          "size": 8,
+          "type": "uint32_t(*)(CyWorld, CyEntity)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_child",
+          "offset": 304,
+          "size": 8,
+          "type": "CyEntity(*)(CyWorld, CyEntity, uint32_t)"
+        },
+        {
+          "alignment": 8,
+          "name": "world_chunks",
+          "offset": 312,
+          "size": 8,
+          "type": "CyResult(*)(CyWorld, CyComponentTypeId, CyChunk*, uint32_t, uint32_t*)"
         }
       ],
       "name": "CyInterface",
-      "size": 256
+      "size": 320
     },
     {
       "kind": "enum",
@@ -901,6 +1143,44 @@
         {
           "name": "CY_INIT_LEVEL_EDITOR",
           "value": 3
+        }
+      ]
+    },
+    {
+      "kind": "enum",
+      "name": "CyStage",
+      "values": [
+        {
+          "name": "CY_STAGE_PRE_SIMULATION",
+          "value": 0
+        },
+        {
+          "name": "CY_STAGE_PHYSICS",
+          "value": 1
+        },
+        {
+          "name": "CY_STAGE_SIMULATION",
+          "value": 2
+        },
+        {
+          "name": "CY_STAGE_POST_SIMULATION",
+          "value": 3
+        },
+        {
+          "name": "CY_STAGE_FRAME",
+          "value": 4
+        },
+        {
+          "name": "CY_STAGE_ANIMATION",
+          "value": 5
+        },
+        {
+          "name": "CY_STAGE_UI",
+          "value": 6
+        },
+        {
+          "name": "CY_STAGE_RENDER",
+          "value": 7
         }
       ]
     },

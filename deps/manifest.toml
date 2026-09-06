@@ -55,6 +55,46 @@
 #   scope          runtime | tool-time | test | development. What links it.
 #   justification  one line: why this is integrated rather than built.
 
+# --- THE SET M5 NAMED AND DID NOT INTEGRATE ------------------------------------------------------
+#
+# `asset-import-pipeline` and `text-and-fonts` both reach a tier at M5 over libraries this file does
+# not yet carry, and the omission is a decision rather than an oversight. It is recorded here, in the
+# file that would carry them, because the next person to ask "why is there a JSON parser in
+# tools/import/" should find the answer in one place.
+#
+#   meshoptimizer   mesh simplification, vertex cache and fetch optimisation, meshlet generation.
+#                   The right dependency and the one `thirdparty-dependencies` names. M5 delivers
+#                   engine-owned implementations of the three steps the importer needs, behind free
+#                   functions over `cy::import::MeshData` — so integrating it is a change to one
+#                   `.cpp` and to nothing that calls it. See tools/import/include/cy/import/mesh.h,
+#                   which states what the engine-owned simplifier costs against a tuned one.
+#   cgltf           a glTF parser, including its own JSON reader. tools/import/src/json.cpp is a
+#                   strict JSON reader written to be deleted when this lands; its header says so.
+#   texture codecs  BC7 and ASTC encoders. `cy::import::select_format` already names the format a
+#                   cook WOULD produce and records `CookedTexture::encoded = false` beside the
+#                   uncompressed payload, so a build that links an encoder produces a different
+#                   derivation key and re-cooks rather than serving uncompressed pixels from the
+#                   cache.
+#   harfbuzz        shaping. `cy::text::TextServer`'s minimal backend reports
+#   icu             the Unicode algorithms.        `complex_shaping`, `bidirectional` and
+#   freetype        rasterisation and hinting.     `dictionary_line_breaking` as FALSE rather than
+#                   approximating any of them, which is the specification's own carve-out for a
+#                   minimal backend. They belong in src/backends/text-*/ at layer 3 when they land.
+#
+# WHY NOT NOW, IN ONE SENTENCE EACH. Integrating a dependency here is not adding a table: it is a
+# `cy__configure_<name>` block in cmake/dependencies.cmake deciding what upstream builds, an
+# attribution row, a licence review and a fetch on every configure — and ICU in particular is an
+# autotools project whose CMake support is somebody else's build system wearing a hat. M5's task
+# statement asks for interfaces before libraries, "as PhysicsServer was defined before Jolt was
+# linked", and that is what was delivered: four seams with working implementations behind them and a
+# test suite each, rather than four fetches and no time left to use them.
+#
+# WHAT THAT COSTS, STATED. The simplifier is less tuned than meshoptimizer's at aggressive ratios;
+# the texture importer reads Targa and not PNG; the text server lays out Latin and refuses Arabic.
+# Every one of those is reported by the code that cannot do it — a capability query, a diagnostic
+# naming the missing decoder, a `false` in a struct — rather than approximated, which is the
+# property that makes the gap safe to carry.
+
 [[dependency]]
 name = "sdl3"
 version = "3.4.16"

@@ -151,6 +151,18 @@ def _date(value, where: str) -> _datetime.date:
         raise GateError(f"{where}: 'expires' is a date, YYYY-MM-DD ({error})") from error
 
 
+def permanent_milestones(gate_set: GateSet) -> tuple[str, ...]:
+    """The milestones whose criteria have joined the permanent set: a milestone gate that is green.
+
+    `delivery-roadmap` puts a milestone's checks into the permanent continuous-integration set the
+    moment it closes, and `state = "green"` on its gate is that fact as data. A ledger reads this
+    to know what it inherits, which is why the flip from `joins-on-close` is checked rather than
+    remembered: a milestone left unflipped would silently stop being part of every later ledger.
+    """
+    return tuple(gate.milestone for gate in gate_set.gates
+                 if gate.klass == "milestone" and gate.state == "green")
+
+
 def commands(gate_set: GateSet) -> tuple[str, ...]:
     """Every command the gate set requires, in order, deduplicated. What CI runs, and nothing else."""
     ordered: list[str] = []

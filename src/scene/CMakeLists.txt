@@ -22,12 +22,26 @@
 # authored/derived line the whole module is organised around — identity, naming and hierarchy on one
 # side, transforms and the two inherited flags on the other — and it keeps the file a reviewer opens
 # to check "does a Node cache anything" down to something they can read in one sitting.
+# --- The reflection metadata for this module's components -------------------------------------------
+#
+# M5's task 1.3. `src/core/reflect/CMakeLists.txt` owns the generator invocation — one run covers the
+# whole tree because the identity manifest is shared — and it writes this module's output HERE,
+# under src/scene/generated/, because a generated translation unit includes the header it describes
+# and a layer-0 file may not include <cy/scene/components.h>.
+#
+# Listed explicitly like every other source, and committed like every other generated artefact, so a
+# checkout without libclang still builds and an identity change is a reviewable diff.
+set(cy_scene_generated_sources
+    generated/cy_reflect_generated_scene.cpp
+    generated/cy/scene/components.reflect.cpp)
+
 cy_add_module(
     NAME cy_scene
     LAYER scene
     ALIAS cy::scene
     TYPE STATIC
     SOURCES
+        ${cy_scene_generated_sources}
         src/behaviour.cpp
         src/coherence.cpp
         src/components.cpp
@@ -39,8 +53,18 @@ cy_add_module(
         src/scene.cpp
         src/state_schema.cpp
         src/tree.cpp
-    PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-values cy::ecs)
+    PUBLIC_INCLUDE_DIRS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/generated"
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-reflect
+                        cy::core-values cy::ecs)
+
+# The generator runs from src/core/reflect/, which the top-level adds before this directory, so the
+# target exists by now. Without this edge a build with CY_REFLECT_GENERATE on could compile last
+# run's committed metadata while the generator was still rewriting it.
+if(TARGET cy_core_reflect_generate)
+    add_dependencies(cy_scene cy_core_reflect_generate)
+endif()
 
 # The authoring side: prefabs, scenes, worlds, and the cooker that flattens them. Read after the
 # façade it serialises, so cy::scene is already declared when cy::scene-serialization links it.

@@ -69,9 +69,10 @@ build-engine *args:
     echo "==> build       profile=${profile}"
     cmake "${build[@]}" ${CY_JOBS:+--parallel "${CY_JOBS}"}
 
-# Build everything this milestone has: the engine and its tools. Editor and shaders join at M5 and M3.
+# Build everything this milestone has: the engine, its tools, and the editor. Shaders join at M3.
 build-all *args:
     @just build-engine {{args}}
+    @just build-editor {{args}}
 
 # Build the engine's command-line tools and code generators. CY_BUILD_TOOLS is on by default.
 build-tools *args:
@@ -83,9 +84,134 @@ build-tools *args:
     # compiled half, under tools/, which CY_BUILD_TOOLS gates.
     just build-engine {{args}} -D CY_BUILD_TOOLS=ON
 
-# Build the Rust editor workspace against the engine library. No editor exists before M5.
+# Cargo owns the editor's compilation, as the justfile's header says: this recipe orchestrates and
+# does not reimplement it. What it adds is the two things `just` is for — mapping the workflow's
+# profile onto Cargo's, and putting the output where a milestone's build trees go rather than in
+# editor/target/.
+#
+# `--generate` rewrites the SDK bindings from the ABI description before building. It is a flag
+# rather than a separate recipe because generation is a step of building the editor: the alternative
+# is a developer who edits `src/abi/include/cy/abi/cy_abi.h` and discovers the mismatch as a test
+# failure with no obvious cause. `cargo test -p cy-editor-sdk` fails when the committed bindings are
+# stale, so the currency check runs whether or not this flag was passed.
+
+# Build the Rust editor workspace. Usage: just build-editor [--profile <p>] [--generate] [cargo args...]
 build-editor *args:
-    @just _not-implemented build-editor 'M5 — the Rust editor workspace'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-overrides
+
+    generate=""
+    cargo_args=()
+    for argument in ${rest}; do
+        case "${argument}" in
+            --generate) generate=yes ;;
+            *) cargo_args+=("${argument}") ;;
+        esac
+    done
+
+    if [ -n "${generate}" ]; then
+        echo "==> generate    the Rust SDK bindings from src/abi/include/cy/abi/cy_abi.h"
+        python3 tools/gen/rust/sdk_gen.py
+    fi
+
+    cargo_profile="$(just _cargo-profile "${profile}")"
+    export CARGO_TARGET_DIR="$(just _editor-target-dir)"
+    # Passed to the workspace so that `tests/profiles.rs` can assert that the binary it is running
+    # in was compiled with the assertions its row of the profile table declares. Without it the
+    # mapping is checked as text and never as behaviour.
+    export CY_EDITOR_PROFILE="${profile}"
+
+    echo "==> cargo build profile=${profile}  cargo-profile=${cargo_profile}  target=${CARGO_TARGET_DIR}"
+    cargo build --manifest-path editor/Cargo.toml --profile "${cargo_profile}" \
+        ${CY_JOBS:+--jobs "${CY_JOBS}"} ${cargo_args[@]+"${cargo_args[@]}"}
+
+# WHY THESE LIVE HERE RATHER THAN IN just/quality.just AND just/test.just. They belong there, and
+# whoever owns those files should call this recipe from them — `quality-format-check`,
+# `quality-lint` and `test-all` cover C and C++ only, and an editor whose Rust is linted by nobody
+# is the shape of defect this project has already paid for twice. They are here because this change
+# owns just/build.just and not those two, and a gate that exists in a file nobody runs is worse than
+# one that exists in the wrong file.
+#
+# Four gates, in increasing cost:
+#   * the SDK generator's own selftest, which edits the live C header in memory and checks that the
+#     generator refuses what it should. It is first because it is the cheapest and because a broken
+#     generator makes every failure after it harder to read.
+#   * rustfmt. Note that it formats a crate by walking the module tree from the crate root and has
+#     no stable way to skip a module, so it reaches the generated bindings whatever file list it is
+#     given. That is why `tools/gen/rust/sdk_gen.py` writes its output THROUGH rustfmt: the
+#     formatting gate and the currency gate would otherwise disagree by construction, each undoing
+#     what the other requires.
+#   * clippy with the workspace's lint table, which denies pedantic. Warnings are errors.
+#   * the tests, which include the layering, safety and profile-mapping checks.
+
+# Check the editor: rustfmt, clippy and its tests. Usage: just build-editor-check [--profile <p>]
+build-editor-check *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-overrides
+
+    cargo_profile="$(just _cargo-profile "${profile}")"
+    export CARGO_TARGET_DIR="$(just _editor-target-dir)"
+    export CY_EDITOR_PROFILE="${profile}"
+
+    echo "==> generator   tools/gen/rust/tests/run_tests.py"
+    python3 tools/gen/rust/tests/run_tests.py
+
+    echo "==> rustfmt     the editor's hand-written sources"
+    mapfile -t sources < <(just _editor-rust-files)
+    rustfmt --edition 2024 --check "${sources[@]}"
+    echo "rustfmt: ${#sources[@]} file(s) match editor/rustfmt.toml"
+
+    echo "==> clippy      profile=${profile}"
+    cargo clippy --manifest-path editor/Cargo.toml --profile "${cargo_profile}" \
+        --all-targets ${CY_JOBS:+--jobs "${CY_JOBS}"} ${rest}
+
+    echo "==> cargo test  profile=${profile}"
+    cargo test --manifest-path editor/Cargo.toml --profile "${cargo_profile}" \
+        ${CY_JOBS:+--jobs "${CY_JOBS}"} ${rest}
+
+# Format the editor's hand-written Rust in place.
+build-editor-format:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    mapfile -t sources < <(just _editor-rust-files)
+    rustfmt --edition 2024 "${sources[@]}"
+    echo "build-editor-format: formatted ${#sources[@]} file(s)"
+
+# The Cargo profile a workflow profile maps to, from the profile table. Column 5.
+[private]
+_cargo-profile profile:
+    @just _profile-column {{profile}} 5
+
+# Where the editor's build output goes.
+#
+# `build/editor/` by default, never editor/target/: a build tree belongs under build/ with the
+# others, so that `just build-clean` and a milestone's per-label trees mean the same thing for
+# Cargo as they do for CMake. CY_BUILD_DIR redirects it the way it redirects the engine's.
+[private]
+_editor-target-dir:
+    @echo "{{root}}/${CY_BUILD_DIR:-build}/editor"
+
+# The files rustfmt is pointed at.
+#
+# It reaches more than these: rustfmt walks each crate's module tree from its root, so naming
+# src/lib.rs also formats every `mod` below it, including the generated bindings. The list excludes
+# src/generated/ anyway, because naming a file rustfmt would reach regardless says something untrue
+# about who owns it — and the generator, which writes its output through rustfmt, is what keeps the
+# two gates agreeing.
+[private]
+_editor-rust-files:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    find editor -type d \( -name target -o -name generated \) -prune -o \
+        -type f -name '*.rs' -print | sort
 
 # Compile the Slang shader set for a profile. No shader toolchain exists before M3.
 build-shaders *args:

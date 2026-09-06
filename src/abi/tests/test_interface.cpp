@@ -11,6 +11,7 @@
 #include <cy/abi/var.h>
 #include <cy/core/base/diagnostic_sink.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/ecs/system.h>
 #include <cy/ecs/world.h>
 #include <cy/test/test.h>
 
@@ -129,7 +130,7 @@ CY_TEST_CASE("an older engine refuses a newer module, naming both versions") {
     // `native-abi`'s "Older engine, newer module": null, and the loader can report both numbers.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR, CY_ABI_MINOR + 1) == nullptr);
     CY_CHECK_EQ(cy::abi::last_error_code(), CY_RESULT_VERSION_MISMATCH);
-    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.0") != nullptr);
+    CY_CHECK(std::strstr(cy::abi::last_error_message(), "1.1") != nullptr);
 
     // A different major is a different ABI and there is nothing to negotiate.
     CY_CHECK(cy_get_interface(CY_ABI_MAJOR + 1, 0) == nullptr);
@@ -147,8 +148,15 @@ CY_TEST_CASE("a failure is a returned code and an untouched output") {
 
     // `native-abi`'s "Failure is reported by return value": NOT_FOUND, and the output is left
     // alone.
+    //
+    // THE ID IS DELIBERATELY ONE NO WORLD HAS. It used to be 0, and 0 stopped meaning "not a
+    // component" at ABI 1.1: `record_or_import` reaches the engine's own registry now, and every
+    // world registers `cy::ecs::Parent` at index 0 before anybody asks. Component 0 therefore
+    // resolves and the failure moves to the FIELD, which is OUT_OF_RANGE and a different sentence.
+    // A component id past `kMaxComponentTypes` cannot be registered by anything, so it says what
+    // this case means rather than what it used to happen to say.
     CyVar out = cy::abi::var_i64(4242);
-    const CyResult result = iface.component_get_var(world, entity, 0, 0, &out);
+    const CyResult result = iface.component_get_var(world, entity, 4096, 0, &out);
     CY_CHECK_EQ(result, CY_RESULT_NOT_FOUND);
     CY_CHECK_EQ(out.type, static_cast<cy::u32>(CY_VAR_I64));
     CY_CHECK_EQ(out.payload.as_i64, 4242);
@@ -426,4 +434,238 @@ CY_TEST_CASE("a module's log line reaches the engine's diagnostic sink") {
 
     CY_CHECK_EQ(seen, 1);
     CY_CHECK(std::strcmp(last, "from a module") == 0);
+}
+
+// --- ABI 1.1 ------------------------------------------------------------------------------------
+//
+// The entries M5's task 1.2 appended, and the two enums it appended beside them. Every case here is
+// still through the table: an editor is a module in this respect — it did not build the world, it
+// has to discover what is in it.
+
+CY_TEST_CASE("the appended enums carry the engine's own values") {
+    // The static assertions in src/abi/src/interface.cpp already make a mismatch a compile error.
+    // This is the other half: that the NUMBERS a consumer reads out of the header are the numbers
+    // the engine puts on the wire. `Log.info` arriving as `[error]` for a whole milestone is what
+    // happens when only one of those two is checked.
+    Bound bound;
+    const CyInterface& iface = table();
+
+    static cy::DiagnosticSeverity observed = cy::DiagnosticSeverity::Error;
+    cy::DiagnosticSink previous =
+        cy::set_diagnostic_sink([](cy::DiagnosticSeverity severity, const char*, const char*,
+                                   void*) { observed = severity; },
+                                nullptr);
+    iface.log(&bound.host, CY_SEVERITY_INFO, "informational");
+    (void)cy::set_diagnostic_sink(previous, nullptr);
+    CY_CHECK_EQ(observed, cy::DiagnosticSeverity::Info);
+
+    CY_CHECK_EQ(static_cast<cy::u32>(CY_STAGE_PRE_SIMULATION),
+                static_cast<cy::u32>(cy::ecs::Stage::PreSimulation));
+    CY_CHECK_EQ(static_cast<cy::u32>(CY_STAGE_RENDER),
+                static_cast<cy::u32>(cy::ecs::Stage::Render));
+    CY_CHECK_EQ(cy::ecs::kStageCount, static_cast<cy::u32>(CY_STAGE_RENDER) + 1U);
+}
+
+CY_TEST_CASE("a caller can enumerate and describe every component in a world it did not build") {
+    // THE INSPECTOR'S WHOLE READ PATH. Before 1.1 the table could only describe what a module had
+    // itself registered, so an editor attached to a running engine could enumerate nothing.
+    Bound bound;
+    const CyInterface& iface = table();
+    const CyComponentTypeDesc desc = probe_desc();
+    const CyComponentTypeId probe = iface.world_register_component(&bound.binding, &desc);
+    CY_REQUIRE(probe != CY_COMPONENT_TYPE_INVALID);
+
+    // Every id in the world, not only the one this caller registered: the count is the ECS
+    // registry's, and the ids are 0 .. count - 1.
+    const cy::u32 count = iface.world_component_count(&bound.binding);
+    CY_CHECK_GE(count, 1U);
+    CY_CHECK_LT(probe, count);
+
+    CyComponentInfo info{};
+    info.struct_size = sizeof(CyComponentInfo);
+    CY_CHECK_EQ(iface.world_component_info(&bound.binding, probe, &info), CY_RESULT_OK);
+    CY_CHECK_EQ(info.size, static_cast<cy::u32>(sizeof(Probe)));
+    CY_CHECK_EQ(info.alignment, static_cast<cy::u32>(alignof(Probe)));
+    CY_CHECK_EQ(info.field_count, 3U);
+    CY_CHECK(std::strcmp(info.name, "Probe") == 0);
+
+    CyFieldDesc field{};
+    CY_CHECK_EQ(iface.world_component_field(&bound.binding, probe, 1, &field), CY_RESULT_OK);
+    CY_CHECK(std::strcmp(field.name, "speed") == 0);
+    CY_CHECK_EQ(field.type, static_cast<cy::u32>(CY_VAR_F32));
+    CY_CHECK_EQ(field.offset, 12U);
+    CY_CHECK_EQ(field.size, 4U);
+
+    // Out of range is reported, not guessed at.
+    CY_CHECK_EQ(iface.world_component_field(&bound.binding, probe, 3, &field),
+                CY_RESULT_OUT_OF_RANGE);
+    CY_CHECK_EQ(iface.world_component_info(&bound.binding, 4096, &info), CY_RESULT_NOT_FOUND);
+}
+
+CY_TEST_CASE("a component the engine registered is describable and readable through the table") {
+    // The case that only exists because of `record_or_import`. `register_builtin` is the route the
+    // ECS's own structural components take; a reflected engine component takes the same route with
+    // a `TypeInfo` behind it, and this is what the table can say about one without reflection.
+    Bound bound;
+    const CyInterface& iface = table();
+    cy::Expected<cy::ecs::ComponentTypeId, cy::Error> registered =
+        bound.world.components().register_builtin("cy::test::Engine", 8, 8);
+    CY_REQUIRE(registered.has_value());
+
+    // Found by name through the table, which it was not before 1.1: `world_find_component` only saw
+    // what a module had described.
+    const CyComponentTypeId found = iface.world_find_component(&bound.binding, "cy::test::Engine");
+    CY_CHECK_EQ(found, registered.value());
+
+    CyComponentInfo info{};
+    info.struct_size = sizeof(CyComponentInfo);
+    CY_CHECK_EQ(iface.world_component_info(&bound.binding, found, &info), CY_RESULT_OK);
+    CY_CHECK_EQ(info.size, 8U);
+    // Zero DESCRIBABLE fields, which is the honest answer for a component with no reflection
+    // metadata rather than an error: the engine knows the type is there and cannot say what is in
+    // it.
+    CY_CHECK_EQ(info.field_count, 0U);
+}
+
+CY_TEST_CASE("the hierarchy is readable and writable through the table") {
+    Bound bound;
+    const CyInterface& iface = table();
+
+    const CyEntity parent = iface.world_create_entity(&bound.binding);
+    const CyEntity first = iface.world_create_entity(&bound.binding);
+    const CyEntity second = iface.world_create_entity(&bound.binding);
+    CY_REQUIRE(parent != CY_ENTITY_NULL);
+
+    CY_CHECK_EQ(iface.world_parent(&bound.binding, first), CY_ENTITY_NULL);
+    CY_CHECK_EQ(iface.world_set_parent(&bound.binding, first, parent), CY_RESULT_OK);
+    CY_CHECK_EQ(iface.world_set_parent(&bound.binding, second, parent), CY_RESULT_OK);
+
+    CY_CHECK_EQ(iface.world_parent(&bound.binding, first), parent);
+    CY_CHECK_EQ(iface.world_child_count(&bound.binding, parent), 2U);
+    // The order is the ECS's, so the assertion is on the SET rather than on the sequence — the
+    // header says so at the entry, and a test that pinned the order would be pinning something
+    // `ecs-core` explicitly leaves unspecified.
+    const CyEntity zero = iface.world_child(&bound.binding, parent, 0);
+    const CyEntity one = iface.world_child(&bound.binding, parent, 1);
+    const bool both_present = (zero == first && one == second) || (zero == second && one == first);
+    CY_CHECK(both_present);
+    CY_CHECK_EQ(iface.world_child(&bound.binding, parent, 2), CY_ENTITY_NULL);
+
+    // Reparenting to null makes a root again.
+    CY_CHECK_EQ(iface.world_set_parent(&bound.binding, first, CY_ENTITY_NULL), CY_RESULT_OK);
+    CY_CHECK_EQ(iface.world_parent(&bound.binding, first), CY_ENTITY_NULL);
+    CY_CHECK_EQ(iface.world_child_count(&bound.binding, parent), 1U);
+}
+
+CY_TEST_CASE("chunks come back as columns, sized in two calls") {
+    // The entry a Swift system's inner loop and an editor's bulk read both wanted and 1.0 did not
+    // have. `Systems.swift` said so in as many words: "CyInterface at 1.0 has thirty entries and
+    // NONE of them hands a module a chunk".
+    Bound bound;
+    const CyInterface& iface = table();
+    const CyComponentTypeDesc desc = probe_desc();
+    const CyComponentTypeId probe = iface.world_register_component(&bound.binding, &desc);
+    CY_REQUIRE(probe != CY_COMPONENT_TYPE_INVALID);
+
+    for (cy::u32 index = 0; index < 8; ++index) {
+        const CyEntity entity = iface.world_create_entity(&bound.binding);
+        CY_REQUIRE(entity != CY_ENTITY_NULL);
+        Probe initial;
+        initial.speed = static_cast<float>(index);
+        CY_REQUIRE(iface.world_add_component(&bound.binding, entity, probe, &initial) ==
+                   CY_RESULT_OK);
+    }
+
+    // The sizing call: no buffer, no capacity, and the count comes back anyway.
+    cy::u32 total = 0;
+    CY_CHECK_EQ(iface.world_chunks(&bound.binding, probe, nullptr, 0, &total), CY_RESULT_OK);
+    CY_CHECK_EQ(total, 1U);
+
+    CyChunk chunks[4] = {};
+    cy::u32 filled = 0;
+    CY_CHECK_EQ(iface.world_chunks(&bound.binding, probe, chunks, 4, &filled), CY_RESULT_OK);
+    CY_REQUIRE(filled == 1U);
+    CY_CHECK_EQ(chunks[0].entity_count, 8U);
+    CY_CHECK_EQ(chunks[0].stride, static_cast<cy::u32>(sizeof(Probe)));
+    CY_REQUIRE(chunks[0].data != nullptr);
+    CY_REQUIRE(chunks[0].entities != nullptr);
+
+    // THE COLUMN IS THE STORAGE, not a copy: the values written one entity at a time above are
+    // contiguous here, which is the whole reason the entry exists.
+    float speeds = 0.0F;
+    for (cy::u32 row = 0; row < chunks[0].entity_count; ++row) {
+        const auto* probes = static_cast<const Probe*>(chunks[0].data);
+        speeds += probes[row].speed;
+        CY_CHECK(iface.world_entity_alive(&bound.binding, chunks[0].entities[row]));
+    }
+    CY_CHECK_EQ(speeds, 28.0F);  // 0 + 1 + ... + 7
+
+    // And the borrow carries the epoch, so a structural change makes it detectably stale.
+    const CyBorrow borrow{chunks[0].data, chunks[0].epoch};
+    CY_CHECK(iface.borrow_valid(&bound.binding, borrow));
+    (void)iface.world_create_entity(&bound.binding);
+    CY_CHECK_FALSE(iface.borrow_valid(&bound.binding, borrow));
+}
+
+CY_TEST_CASE("a narrow integer field round-trips at its own width and refuses what will not fit") {
+    // ABI 1.1's seven appended `CyVarType`s. Before them the only integer was 64 bits wide, and
+    // every reflected engine component disagrees with that — `cy::scene::ChildOrder` is a u32 and
+    // `cy::scene::NodeState` a u8.
+    struct Narrow {
+        cy::u8 flags = 0;
+        cy::i16 offset = 0;
+        cy::u32 index = 0;
+    };
+    static const CyFieldDesc fields[] = {
+        {sizeof(CyFieldDesc), CY_VAR_U8, offsetof(Narrow, flags), 1, "flags"},
+        {sizeof(CyFieldDesc), CY_VAR_I16, offsetof(Narrow, offset), 2, "offset"},
+        {sizeof(CyFieldDesc), CY_VAR_U32, offsetof(Narrow, index), 4, "index"},
+    };
+    Bound bound;
+    const CyInterface& iface = table();
+    CyComponentTypeDesc desc{};
+    desc.struct_size = sizeof(CyComponentTypeDesc);
+    desc.size = sizeof(Narrow);
+    desc.alignment = alignof(Narrow);
+    desc.field_count = 3;
+    desc.name = "Narrow";
+    desc.fields = fields;
+
+    const CyComponentTypeId narrow = iface.world_register_component(&bound.binding, &desc);
+    CY_REQUIRE(narrow != CY_COMPONENT_TYPE_INVALID);
+    const CyEntity entity = iface.world_create_entity(&bound.binding);
+    CY_REQUIRE(iface.world_add_component(&bound.binding, entity, narrow, nullptr) == CY_RESULT_OK);
+
+    CyVar value = cy::abi::var_i64(200);
+    value.type = CY_VAR_U8;
+    CY_CHECK_EQ(iface.component_set_var(&bound.binding, entity, narrow, 0, &value), CY_RESULT_OK);
+
+    // NEGATIVE, so that sign extension is exercised rather than assumed: a 16-bit -3 read back as
+    // 65533 is exactly the bug the width tag exists to prevent.
+    CyVar negative = cy::abi::var_i64(-3);
+    negative.type = CY_VAR_I16;
+    CY_CHECK_EQ(iface.component_set_var(&bound.binding, entity, narrow, 1, &negative),
+                CY_RESULT_OK);
+
+    CyVar wide = cy::abi::var_i64(4000000000LL);
+    wide.type = CY_VAR_U32;
+    CY_CHECK_EQ(iface.component_set_var(&bound.binding, entity, narrow, 2, &wide), CY_RESULT_OK);
+
+    CyVar read{};
+    CY_CHECK_EQ(iface.component_get_var(&bound.binding, entity, narrow, 0, &read), CY_RESULT_OK);
+    CY_CHECK_EQ(read.type, static_cast<cy::u32>(CY_VAR_U8));
+    CY_CHECK_EQ(read.payload.as_i64, 200);
+    CY_CHECK_EQ(iface.component_get_var(&bound.binding, entity, narrow, 1, &read), CY_RESULT_OK);
+    CY_CHECK_EQ(read.payload.as_i64, -3);
+    CY_CHECK_EQ(iface.component_get_var(&bound.binding, entity, narrow, 2, &read), CY_RESULT_OK);
+    CY_CHECK_EQ(read.payload.as_i64, 4000000000LL);
+
+    // TRUNCATION IS REFUSED RATHER THAN PERFORMED. Storing 300 in a u8 as 44 is the kind of defect
+    // that is found in a save file weeks later.
+    CyVar overflow = cy::abi::var_i64(300);
+    overflow.type = CY_VAR_U8;
+    CY_CHECK_EQ(iface.component_set_var(&bound.binding, entity, narrow, 0, &overflow),
+                CY_RESULT_OUT_OF_RANGE);
+    CY_CHECK_EQ(iface.component_get_var(&bound.binding, entity, narrow, 0, &read), CY_RESULT_OK);
+    CY_CHECK_EQ(read.payload.as_i64, 200);  // unchanged by the refused write
 }

@@ -51,6 +51,12 @@ _POINTERS = {
     "float*": "UnsafeMutablePointer<Float>",
     "const uint8_t*": "UnsafePointer<UInt8>",
     "uint8_t*": "UnsafeMutablePointer<UInt8>",
+    # ABI 1.1's `world_chunks` reports its count through an out-parameter, which is the two-call
+    # sizing pattern the C header describes. Added here rather than by a rule over `_SCALARS`,
+    # because a rule would silently accept every scalar pointer this table has deliberately not
+    # decided a spelling for.
+    "const uint32_t*": "UnsafePointer<UInt32>",
+    "uint32_t*": "UnsafeMutablePointer<UInt32>",
 }
 
 

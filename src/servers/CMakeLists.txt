@@ -45,3 +45,12 @@ add_subdirectory(input)
 # every build, so the suites that exercise them run in every configuration rather than in the ones
 # somebody remembered to turn an option on for.
 add_subdirectory(physics)
+
+# CyberText: `TextServer`, the glyph atlas, shaping, line breaking and the layout objects. M5 task
+# 5.3, at Seed.
+#
+# Like CyberPhysics it is NOT gated by an option, and for the same reason: the interface and its
+# minimal backend compile in every build, so their suites run in every configuration. HarfBuzz, ICU
+# and FreeType are not integrated at M5 and will live in src/backends/ when they are — no
+# third-party text type may appear above the backend, which is the rule this layer exists to keep.
+add_subdirectory(text)

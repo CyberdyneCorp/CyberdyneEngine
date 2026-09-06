@@ -1,0 +1,25 @@
+# Documents, transactions, history, the journal, semantic diff, and the three kinds of world.
+#
+# Layer 1. It depends on `cy-editor-core` and on nothing else — not on the SDK, not on the protocol.
+# That is deliberate and it is what makes the milestone's invariant testable: the transaction system
+# can be exercised in full with no engine, no process boundary and no interface, which is exactly the
+# "headlessly, with no window, no graphics device, and no interface toolkit" that
+# `editor-rust-application` requires of it.
+[package]
+name = "cy-editor-documents"
+description = "Documents and transactions: the only path by which CyberEditor changes persistent state."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 1
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+
+[lints]
+workspace = true

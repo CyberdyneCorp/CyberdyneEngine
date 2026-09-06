@@ -92,6 +92,42 @@ through it, and pretending otherwise would repeat M5's mistake in a different sh
 The second is scriptable and therefore CI-testable; the first needs a display and is honest about
 skipping where there is none, in the manner `tests/render/` already established.
 
+## 5b — The visual references are binding, and this is the milestone that uses them
+
+`docs/design/` has held a specification and two reference images since M3, waiting for the milestone
+that would draw something. This is it, and the imagery is normative rather than inspirational —
+`editor-visual-language` says so in as many words.
+
+**Read before writing any interface code**: `docs/design/editor-visual-language.md`, and look at
+`docs/design/images/editor-rts-desertfrontier.png` and `editor-adventure-ancientfrontier.png`. The
+document reads both images region by region; the specification states the rules they embody.
+
+The constraints that will be got wrong if nobody looks:
+
+| | |
+|---|---|
+| **Viewport first** | The scene carries the screen's colour and luminance range. Every panel is charcoal. This is the single easiest property to erode, one accent at a time. |
+| **Selection** | A thin gold outline that does not glow and does not obscure the material beneath — you must be able to judge a surface while it is selected. |
+| **Axis language** | X red, Y green, Z blue in the gizmo, in the inspector's vector fields, in the orientation widget, in debug views. Not user-remappable. |
+| **Gizmos by shape** | Arrows translate, arcs rotate, boxes scale. The active mode is identifiable from the gizmo with the toolbar cropped out of the picture. |
+| **The orientation widget is not a manipulator** | Three axes, no rings, no boxes, visually quieter than the transform gizmo. |
+| **Chrome is overlay** | Projection, rendering mode and show flags float *in* the viewport. No second full-width toolbar. Every pixel not spent on chrome is viewport. |
+| **Surfaces** | Small luminance steps, spacing and subtle separators. No cards, no gradients, no heavy shadows. |
+| **Density** | More compact than consumer software, less cramped than legacy engineering tools. |
+| **Vocabulary** | Node and entity, not Actor. Graph, not Blueprint. Content browser, not Content Drawer. |
+
+**Four things in the references must NOT be copied**, and `docs/design/editor-visual-language.md`
+records why: the mockups use Unreal's product vocabulary throughout; the panel labelled "World
+Partition" in the adventure image contains a profiler; the two images brand the header differently
+and `cyberdyne-mark.png` is the normative one; and the universal gizmo shown on a slender column sits
+at the edge of readability, which is the case the "readable or it degrades" rule was written for.
+
+**A reference states visual language, not feature completeness.** Both images depict volumetric
+clouds, procedural forests and thousands of instanced units — none of which exists before M7–M10.
+Every constraint above is implementable now against whatever the renderer can produce, including a
+grey box on a flat plane. The chrome, the colour, the density and the vocabulary do not depend on
+what is in the scene.
+
 ## 6 — What M5.5 deliberately does not do
 
 - **No editor feature completeness.** Docking works; every panel a shipping editor eventually has

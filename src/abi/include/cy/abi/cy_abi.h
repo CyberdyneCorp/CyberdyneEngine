@@ -69,7 +69,7 @@ extern "C" {
 /* The version this header declares. A module records it at compile time and the loader compares it
  * with what the engine exports; see `cy_module_entry` for which direction each check runs in. */
 #define CY_ABI_MAJOR 1u
-#define CY_ABI_MINOR 0u
+#define CY_ABI_MINOR 1u
 #define CY_ABI_PATCH 0u
 
 /* One comparable number, so a `#if` in a module can ask "is this at least 1.3?" without arithmetic
@@ -149,6 +149,27 @@ typedef enum CyResult {
 /* Never null, for every value including one this build does not know. */
 const char* cy_result_name(CyResult result);
 
+/* --- Diagnostics ------------------------------------------------------------------------------ */
+
+/* The severities the `log` entry carries. ADDED AT 1.1, AND THE REASON IS A BUG THAT SHIPPED.
+ *
+ * `log`'s `severity` has always been "`cy::DiagnosticSeverity`'s value", and until 1.1 there was no
+ * enum here to say what those values are. The Swift overlay therefore could not generate one, so
+ * CyberdyneKit hand-wrote a copy — and the copy had SIX enumerators (`trace`, `debug`, `info`,
+ * `warning`, `error`, `fatal`) against the engine's three. `Log.info` put 2 on the wire, the host
+ * clamped nothing because 2 is in range, and every informational line from a Swift behaviour
+ * arrived in the engine's log labelled `[error]`. It ran green for a whole milestone.
+ *
+ * The fix is not more care in the copy; it is that there is no copy. These three enumerators are
+ * generated into the overlay like everything else, and src/abi/src/interface.cpp asserts each one
+ * against `cy::DiagnosticSeverity`'s own value, so a fourth level in the engine is a compile error
+ * here rather than a relabelled line somewhere else. */
+typedef enum CySeverity {
+    CY_SEVERITY_INFO = 0,
+    CY_SEVERITY_WARNING = 1,
+    CY_SEVERITY_ERROR = 2
+} CySeverity;
+
 /* --- Values ---------------------------------------------------------------------------------- */
 
 /* The kinds a value may carry. A deliberate subset of `cy::VarType` (cy/core/values/var.h) with
@@ -167,7 +188,28 @@ typedef enum CyVarType {
     CY_VAR_QUAT = 8,
     CY_VAR_STRING = 9, /* UTF-8, `length` bytes, not required to be NUL-terminated */
     CY_VAR_BYTES = 10,
-    CY_VAR_ENTITY = 11
+    CY_VAR_ENTITY = 11,
+
+    /* --- Appended at 1.1: the narrow integers a reflected engine component actually holds -------
+     *
+     * 1.0 carried one integer width, and every reflected type in the engine disagrees with it:
+     * `cy::scene::ChildOrder` is a u32, `cy::scene::NodeState` a u8,
+     * `cy::demo::Health::last_damage` a u8 behind an Enum attribute. A generated inspector that can
+     * only read i64 fields can read none of them.
+     *
+     * THE PAYLOAD IS ALWAYS `as_i64`, AND THE TYPE TAG IS ALWAYS THE STORAGE WIDTH. A value
+     * crossing the boundary is widened into the 64-bit slot — sign-extended for the signed kinds,
+     * zero- extended for the unsigned ones — and narrowed back on the way in, with a range check
+     * that refuses rather than truncates. So a consumer that only understands integers may treat
+     * all eight kinds as one, and a consumer that writes has to be told the width, which is exactly
+     * what the tag is for. */
+    CY_VAR_I8 = 12,
+    CY_VAR_I16 = 13,
+    CY_VAR_I32 = 14,
+    CY_VAR_U8 = 15,
+    CY_VAR_U16 = 16,
+    CY_VAR_U32 = 17,
+    CY_VAR_U64 = 18
 } CyVarType;
 
 /* The receiver owns this value and must pass it to `var_release` exactly once. Set by every
@@ -224,6 +266,46 @@ typedef struct CyComponentTypeDesc {
     const char* name;     /* must outlive the registration */
     const CyFieldDesc* fields;
 } CyComponentTypeDesc;
+
+/* --- Reading the world back, added at 1.1 -------------------------------------------------------
+ *
+ * WHY THESE EXIST. 1.0 let a MODULE describe its own components and then address them; it gave
+ * nothing that could look at a component the ENGINE registered. An editor is on the other side of
+ * that: it did not write the scene's components, it has to discover them, and a generated inspector
+ * is exactly "enumerate what is there, describe each field, read it, write it". Two of those four
+ * halves were missing, so the whole was.
+ *
+ * `CyComponentInfo` is `CyComponentTypeDesc` read back rather than written down — the same facts
+ * without the `fields` pointer, because the caller does not own that storage and asks for the
+ * fields one at a time through `world_component_field`. */
+typedef struct CyComponentInfo {
+    uint32_t struct_size; /* sizeof(CyComponentInfo) as the engine wrote it */
+    uint32_t size;        /* bytes per row; zero for a tag, which has no column */
+    uint32_t alignment;
+    uint32_t field_count; /* fields this ABI can describe — see `world_component_field` */
+    const char* name;     /* the engine's own, valid for the life of the world */
+} CyComponentInfo;
+
+/* One chunk of one archetype, borrowed.
+ *
+ * THE ENTRY THAT WAS MISSING FROM 1.0 AND THAT EVERY BULK READER NEEDS. `CyInterface` at 1.0 could
+ * reach one component of one entity per call; a Swift system's inner loop and an editor's viewport
+ * both want a column. This is that column: `entities` and `data` are parallel arrays of
+ * `entity_count` rows, contiguous, in the storage the ECS actually holds.
+ *
+ * IT IS A BORROW AND IT CARRIES ITS EPOCH FOR THE SAME REASON `CyBorrow` DOES. Chunk storage moves
+ * when an entity changes archetype, so `data` is valid only until the next structural change; check
+ * it with `borrow_valid` against a `CyBorrow{data, epoch}` rather than remembering when that was.
+ */
+typedef struct CyChunk {
+    uint32_t struct_size;
+    uint32_t entity_count;
+    const CyEntity* entities; /* `entity_count` entities, in row order */
+    void* data;               /* the requested component's column, or null for a kind with none */
+    uint32_t stride;          /* bytes per row in `data`; zero when `data` is null */
+    uint32_t archetype;       /* which archetype this chunk belongs to, for grouping */
+    uint64_t epoch;           /* the world's structural epoch when the chunk was taken */
+} CyChunk;
 
 /* --- Behaviours --------------------------------------------------------------------------------
  *
@@ -393,6 +475,54 @@ typedef struct CyInterface {
     uint32_t (*behaviour_generation)(CyBehaviourType type);
 
     /* --- Append new entries below this line. Never above it, never between. ------------------ */
+
+    /* --- 1.1: describing a world the caller did not build ------------------------------------ */
+
+    /* Every component type registered in this world, including the engine's own. The ids are
+     * `0 .. count - 1`, because `cy::ecs::ComponentRegistry` numbers in registration order. */
+    uint32_t (*world_component_count)(CyWorld world);
+    /* Describe one. The caller sets `out_info->struct_size` to its own `sizeof(CyComponentInfo)`
+     * and the engine writes only that prefix, so a module compiled against a shorter struct is
+     * filled in rather than overrun. Zero is accepted and means "the size I know", for a caller
+     * that zeroed the struct. */
+    CyResult (*world_component_info)(CyWorld world, CyComponentTypeId component,
+                                     CyComponentInfo* out_info);
+    /* One field of one component. `field` is `0 .. field_count - 1` from `world_component_info`.
+     * `out_field->name` is borrowed from the engine and outlives the call.
+     *
+     * A COMPONENT MAY HAVE FEWER FIELDS HERE THAN IT HAS MEMBERS. Only fields whose type has a
+     * fixed width this ABI can name are described, so the count is what is describable rather than
+     * what the C++ struct holds — and a caller never has to guess whether an index is real. */
+    CyResult (*world_component_field)(CyWorld world, CyComponentTypeId component, uint32_t field,
+                                      CyFieldDesc* out_field);
+
+    /* --- 1.1: the hierarchy, which is what an outliner is ------------------------------------ */
+
+    /* The entity's parent, or CY_ENTITY_NULL when it is a root or does not exist. */
+    CyEntity (*world_parent)(CyWorld world, CyEntity entity);
+    /* Reparent. `parent` of CY_ENTITY_NULL makes `child` a root. Structural: it bumps the epoch,
+     * and the ECS refuses it while a query is iterating rather than performing it late. */
+    CyResult (*world_set_parent)(CyWorld world, CyEntity child, CyEntity parent);
+    /* How many children `entity` has. Zero for an entity with none and for one that is not alive,
+     * which are the same answer to "what is below it". */
+    uint32_t (*world_child_count)(CyWorld world, CyEntity entity);
+    /* The child at `index`, or CY_ENTITY_NULL. THE ORDER IS THE ECS'S AND IT IS NOT THE AUTHORED
+     * ORDER: `ecs-core` leaves the children buffer unordered and removing a child swaps the last
+     * one into the gap. A tool that shows children in the order a designer set them reads
+     * `cy::scene::ChildOrder`, which is the component that exists to say so. */
+    CyEntity (*world_child)(CyWorld world, CyEntity entity, uint32_t index);
+
+    /* --- 1.1: chunks ------------------------------------------------------------------------- */
+
+    /* Every chunk holding `component`, in archetype then chunk order.
+     *
+     * Writes at most `capacity` chunks and always reports the total in `out_count`, so the
+     * two-call sizing pattern works: once with a NULL buffer to learn the count — which is a
+     * question and answers CY_RESULT_OK — then again with room. With a non-null buffer that is too
+     * small it returns CY_RESULT_BUFFER_TOO_SMALL having filled `capacity` of them, which is a
+     * partial result the caller can use rather than an error that discards the work. */
+    CyResult (*world_chunks)(CyWorld world, CyComponentTypeId component, CyChunk* out_chunks,
+                             uint32_t capacity, uint32_t* out_count);
 } CyInterface;
 
 /* THE ONE EXPORTED SYMBOL.
@@ -413,6 +543,27 @@ typedef enum CyInitLevel {
     CY_INIT_LEVEL_SCENE = 2,   /* after the world exists — where types are registered */
     CY_INIT_LEVEL_EDITOR = 3   /* tools builds only */
 } CyInitLevel;
+
+/* The stages of one frame, in execution order. `cy::ecs::Stage`'s own values.
+ *
+ * ADDED AT 1.1 FOR THE REASON `CySeverity` WAS. `CyberdyneKit`'s `SystemStage` was a hand-written
+ * copy of this list with nothing to check it against, and its own comment said so: "there is no
+ * `CyStage` in `cy_abi.h`, so nothing checks that this list still matches". Now there is, the
+ * overlay generates it, and src/abi/src/interface.cpp asserts each enumerator against the engine's.
+ *
+ * The first four run on the fixed simulation step. That split is `cy::ecs::stage_is_fixed_step`'s
+ * and it is a property of the ORDER rather than of a flag, which is why it needs no entry here: a
+ * stage is fixed-step exactly when its value is at most CY_STAGE_POST_SIMULATION. */
+typedef enum CyStage {
+    CY_STAGE_PRE_SIMULATION = 0,
+    CY_STAGE_PHYSICS = 1,
+    CY_STAGE_SIMULATION = 2,
+    CY_STAGE_POST_SIMULATION = 3,
+    CY_STAGE_FRAME = 4,
+    CY_STAGE_ANIMATION = 5,
+    CY_STAGE_UI = 6,
+    CY_STAGE_RENDER = 7
+} CyStage;
 
 /* What a module hands back from its entry point. `struct_size` is checked by the loader the same
  * way `table_size` is checked by the module, so this struct can grow too. */
@@ -450,6 +601,8 @@ CY_ABI_STATIC_ASSERT(sizeof(CyFieldDesc) == 24, "CyFieldDesc is 24 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyComponentTypeDesc) == 32, "CyComponentTypeDesc is 32 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyBehaviourVTable) == 56, "CyBehaviourVTable is 56 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyBorrow) == 16, "CyBorrow is 16 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyComponentInfo) == 24, "CyComponentInfo is 24 bytes");
+CY_ABI_STATIC_ASSERT(sizeof(CyChunk) == 40, "CyChunk is 40 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyInterfaceHeader) == 16, "CyInterfaceHeader is 16 bytes");
 CY_ABI_STATIC_ASSERT(sizeof(CyModuleInit) == 40, "CyModuleInit is 40 bytes");
 

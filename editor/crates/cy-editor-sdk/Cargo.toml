@@ -1,0 +1,28 @@
+# The editor SDK: the one crate in this workspace that may say `unsafe`.
+#
+# Layer 1. `editor-rust-application`: "The engine SHALL expose an **editor SDK**: a Rust layer over
+# the stable C ABI providing typed handles, typed errors, reflection access ... Editor code SHALL use
+# the SDK; it SHALL NOT call the C ABI directly outside the SDK crate. The SDK SHALL be usable by
+# tools other than the editor."
+#
+# `src/generated/` is produced by `tools/gen/rust/sdk_gen.py` from the ABI description, exactly as
+# `bindings/swift/Sources/CyberdyneCore/Generated/` is. `tests/generated_is_current.rs` fails when
+# the committed files are not what regeneration produces, so the SDK and the ABI cannot drift.
+[package]
+name = "cy-editor-sdk"
+description = "A safe Rust layer over the Cyberdyne C ABI: typed handles, typed errors, worlds, schemas."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 1
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+
+[lints]
+workspace = true

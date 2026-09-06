@@ -34,25 +34,21 @@
 import CyberdyneABI
 import CyberdyneCore
 
-/// The stages, in execution order.
-///
-/// A COPY, AND IT SAYS SO. These are `cy::ecs::Stage`'s own values from
-/// `src/ecs/include/cy/ecs/system.h`, and the ABI does not carry them: there is no `CyStage` in
-/// `cy_abi.h`, so nothing checks that this list still matches. That is exactly the drift the
-/// generated overlay exists to prevent, and the fix is an appended enum rather than more care here.
-/// Until then, this file is the one place in the package that a reviewer has to read against the
-/// engine.
-public enum SystemStage: UInt32, Sendable, CaseIterable {
-    case preSimulation = 0
-    case physics = 1
-    case simulation = 2
-    case postSimulation = 3
-    case frame = 4
-    case animation = 5
-    case ui = 6
-    case render = 7
-
-    /// True for the four stages that run on the fixed simulation step.
+// `SystemStage` USED TO BE DECLARED HERE as a copy of `cy::ecs::Stage`, and its own comment said
+// what was wrong with that: "there is no `CyStage` in `cy_abi.h`, so nothing checks that this list
+// still matches. That is exactly the drift the generated overlay exists to prevent, and the fix is
+// an appended enum rather than more care here."
+//
+// ABI 1.1 appended it. `SystemStage` is now generated into CyberdyneCore/Generated/Enums.swift from
+// `CyStage`, and src/abi/src/interface.cpp asserts each enumerator — and the stage COUNT — against
+// the engine's own, so adding a stage without extending the ABI is a compile error in the engine
+// rather than a Swift system scheduled into the wrong phase.
+//
+// The one thing the enum cannot carry is the fixed-step split, because it is a property of the
+// order rather than of a value. It lives here as an extension, next to the systems that ask.
+extension SystemStage {
+    /// True for the four stages that run on the fixed simulation step. `cy::ecs::stage_is_fixed_step`
+    /// spells the same comparison, and cy_abi.h states the rule where `CyStage` is declared.
     public var isFixedStep: Bool { rawValue <= SystemStage.postSimulation.rawValue }
 }
 

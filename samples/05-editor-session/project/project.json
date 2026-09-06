@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "editor-session",
+    "version": "0.5.0",
+    "engine_version": "0.0.0",
+    "description": "The M5 artefact's project: one glTF source asset and one authoring world."
+  },
+  "content_roots": [
+    "assets",
+    "worlds"
+  ],
+  "modules": [],
+  "plugins": [],
+  "targets": [
+    {
+      "name": "client",
+      "kind": "client",
+      "shipping": true,
+      "modules": []
+    },
+    {
+      "name": "editor",
+      "kind": "editor",
+      "shipping": false,
+      "modules": []
+    }
+  ]
+}

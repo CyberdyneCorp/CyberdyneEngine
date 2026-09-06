@@ -18,7 +18,7 @@
 
 
 version = 1
-next_type_id = 3
+next_type_id = 10
 
 [[type]]
 id = 1
@@ -84,4 +84,190 @@ status = "live"
 [[type.field]]
 id = 5
 name = "tile"
+status = "live"
+
+[[type]]
+id = 3
+name = "cy::scene::BehaviourRef"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 2
+
+[[type.field]]
+id = 1
+name = "instance"
+status = "live"
+
+[[type]]
+id = 4
+name = "cy::scene::ChildOrder"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 2
+
+[[type.field]]
+id = 1
+name = "value"
+status = "live"
+
+[[type]]
+id = 5
+name = "cy::scene::LocalTransform"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 11
+
+[[type.field]]
+id = 1
+name = "value.rotation.x"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "value.rotation.y"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "value.rotation.z"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "value.rotation.w"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "value.translation.x"
+status = "live"
+
+[[type.field]]
+id = 6
+name = "value.translation.y"
+status = "live"
+
+[[type.field]]
+id = 7
+name = "value.translation.z"
+status = "live"
+
+[[type.field]]
+id = 8
+name = "value.scale.x"
+status = "live"
+
+[[type.field]]
+id = 9
+name = "value.scale.y"
+status = "live"
+
+[[type.field]]
+id = 10
+name = "value.scale.z"
+status = "live"
+
+[[type]]
+id = 6
+name = "cy::scene::NodeFlags"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 3
+
+[[type.field]]
+id = 1
+name = "visible"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "enabled"
+status = "live"
+
+[[type]]
+id = 7
+name = "cy::scene::NodeState"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 2
+
+[[type.field]]
+id = 1
+name = "dirty"
+status = "live"
+
+[[type]]
+id = 8
+name = "cy::scene::SceneRef"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 2
+
+[[type.field]]
+id = 1
+name = "scene"
+status = "live"
+
+[[type]]
+id = 9
+name = "cy::scene::WorldTransform"
+module = "scene-include"
+header = "src/scene/include/cy/scene/components.h"
+status = "live"
+next_field_id = 11
+
+[[type.field]]
+id = 1
+name = "value.rotation.x"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "value.rotation.y"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "value.rotation.z"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "value.rotation.w"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "value.translation.x"
+status = "live"
+
+[[type.field]]
+id = 6
+name = "value.translation.y"
+status = "live"
+
+[[type.field]]
+id = 7
+name = "value.translation.z"
+status = "live"
+
+[[type.field]]
+id = 8
+name = "value.scale.x"
+status = "live"
+
+[[type.field]]
+id = 9
+name = "value.scale.y"
+status = "live"
+
+[[type.field]]
+id = 10
+name = "value.scale.z"
 status = "live"

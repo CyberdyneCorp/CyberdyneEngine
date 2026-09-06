@@ -1,0 +1,20 @@
+# The editor's shared foundations: identity, values, errors, change propagation, progress, actors.
+#
+# Layer 0. Nothing in the workspace is below it and it depends on nothing but the standard library,
+# which is what lets every other crate name it without creating a direction anybody has to think
+# about.
+[package]
+name = "cy-editor-core"
+description = "Shared foundations for CyberEditor: stable identity, values, errors, change propagation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 0
+
+[lints]
+workspace = true

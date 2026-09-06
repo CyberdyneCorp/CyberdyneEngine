@@ -18,8 +18,20 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 - [ ] 1.3 The hierarchy, the inspector generated from reflection, the content browser
 - [ ] 1.4 The command palette over the registry M5 built; keyboard-first operation with chords
 - [ ] 1.5 Density modes; validation surfacing; notifications that do not interrupt
-- [ ] 1.6 `editor-visual-language` → Working: the semantic palette, the axis language, chrome as
-      overlay, the orientation widget that is not a manipulator, engine vocabulary throughout
+- [ ] 1.6 **Read `docs/design/editor-visual-language.md` and look at both reference images in
+      `docs/design/images/` before writing interface code.** They have waited since M3 for this
+      milestone and they are normative, not inspirational (`design.md` §5b).
+- [ ] 1.7 `editor-visual-language` → Working: viewport-first hierarchy with charcoal chrome; the
+      semantic palette (gold selection, green live, orange warning, red error); **X red, Y green,
+      Z blue everywhere** including the inspector's vector fields; selection as a thin gold outline
+      that does not glow; gizmos distinguishable by **shape** — arrows translate, arcs rotate, boxes
+      scale; the orientation widget that shows three axes and is **not** a manipulator; chrome as
+      overlay rather than a second toolbar; surfaces by luminance step rather than cards; tabular
+      figures; engine vocabulary throughout
+- [ ] 1.8 Do **not** copy the four things the references get wrong, each recorded in
+      `docs/design/editor-visual-language.md`: Unreal's vocabulary, the profiler mislabelled as
+      "World Partition", the inconsistent branding, and the universal gizmo at the edge of
+      readability
 
 ## 2. The viewport shows the engine's frame
 
@@ -54,7 +66,11 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 - [ ] 4.2 `samples/05b-agent-authoring` — an agent composes a scene from an empty project, writes a
       gameplay script, reloads it, enters play mode, and **captures the viewport to confirm what it
       built**. Scriptable, and therefore in CI.
-- [ ] 4.3 A screenshot of each, committed, so the milestone can be evaluated by looking
+- [ ] 4.3 A screenshot of each, committed under `docs/design/images/`, so the milestone can be
+      evaluated by looking — and so the concept art can be compared against what was actually built
+- [ ] 4.4 Where the built editor and the reference imagery differ, say which is right. If the
+      implementation is right, replace the reference; `editor-visual-language` requires a reference
+      that no longer reflects the product to be replaced rather than left to decay.
 
 ## 5. Closing the milestone
 
