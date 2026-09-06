@@ -1,0 +1,71 @@
+# Tasks: M5.5 — Operable
+
+Ordered. The toolkit spike first, because it is the one decision here that is expensive to reverse.
+
+## 0. Spike — the toolkit, on one criterion
+
+- [ ] 0.1 Evaluate candidate Rust interface toolkits against the criterion that dominates:
+      **can the viewport present an engine-rendered GPU image without a copy through the CPU?**
+- [ ] 0.2 Measure the alternative honestly — device-to-host-to-device per frame at 1080p — so the
+      cost of the wrong choice is a number rather than an intuition
+- [ ] 0.3 Choose, and record the reasoning where a future reader will find it
+- [ ] 0.4 Confirm the layer above stays toolkit-agnostic, so the decision remains reversible
+
+## 1. The editor opens — `editor-ui-ux` → Working
+
+- [ ] 1.1 A window, and the application shell
+- [ ] 1.2 Docking, floating, tabbing, and named workspaces that persist and reset
+- [ ] 1.3 The hierarchy, the inspector generated from reflection, the content browser
+- [ ] 1.4 The command palette over the registry M5 built; keyboard-first operation with chords
+- [ ] 1.5 Density modes; validation surfacing; notifications that do not interrupt
+- [ ] 1.6 `editor-visual-language` → Working: the semantic palette, the axis language, chrome as
+      overlay, the orientation widget that is not a manipulator, engine vocabulary throughout
+
+## 2. The viewport shows the engine's frame
+
+- [ ] 2.1 The viewport presents the engine's own rendered image (`design.md` §2) — **no second
+      renderer, no toolkit-drawn approximation**. If the transport is not ready it says so.
+- [ ] 2.2 Camera navigation
+- [ ] 2.3 Selection by clicking, over M5's engine-side picking
+- [ ] 2.4 Translate, rotate and scale by gizmo, at the latency M5's bridge spike measured — one
+      transaction per manipulation, and a drag returned to its origin restores exact values
+- [ ] 2.5 View modes and overlays; degradation under load
+
+## 3. The agent interface — `editor-agent-interface` → Working
+
+- [ ] 3.1 The MCP transport behind an engine-owned interface, gated at build time
+- [ ] 3.2 Tools projected from the command registry, with declared exclusions carrying reasons
+- [ ] 3.3 Resources: scene hierarchy, an entity's properties, selection, assets, diagnostics
+- [ ] 3.4 **Viewport observation** returning the engine-rendered image, with overlay state declared
+- [ ] 3.5 Manipulation through the interactive path — pivot, space, snapping, constraints
+- [ ] 3.6 **Source authoring** (`design.md` §4): create and edit project scripts as transactions,
+      with the effect class computed from whether the prior contents can be restored
+- [ ] 3.7 Build and reload triggered by the agent, over M4's proven model
+- [ ] 3.8 Play mode entered and left
+- [ ] 3.9 Transactions carry actor, session and intent; history shows them
+- [ ] 3.10 Scope and effect class enforced; confirmation only where undo cannot reach
+- [ ] 3.11 The editor stays usable while an agent works; a human action wins a conflict
+- [ ] 3.12 Budget: invocation rate, render cost, concurrency, reported to the agent
+
+## 4. The artefacts
+
+- [ ] 4.1 `samples/05b-editor-window` — open a project, select an object, drag a gizmo, undo, save.
+      Needs a display; skips loudly where there is none.
+- [ ] 4.2 `samples/05b-agent-authoring` — an agent composes a scene from an empty project, writes a
+      gameplay script, reloads it, enters play mode, and **captures the viewport to confirm what it
+      built**. Scriptable, and therefore in CI.
+- [ ] 4.3 A screenshot of each, committed, so the milestone can be evaluated by looking
+
+## 5. Closing the milestone
+
+- [ ] 5.1 The editor opens on a project and a person can select and manipulate
+- [ ] 5.2 The viewport image is the engine's, proven by comparison against a direct render
+- [ ] 5.3 A gizmo drag returned to its origin restores exact values, in one transaction
+- [ ] 5.4 An agent composes a scene, writes and reloads a script, and observes the result
+- [ ] 5.5 An agent's source write is a transaction with an actor and an intent
+- [ ] 5.6 No agent capability exceeds a human one
+- [ ] 5.7 All four profiles build clean and `just test-all` is green in each
+- [ ] 5.8 `just roadmap-milestone m5b` exits zero
+- [ ] 5.9 Update `status.yaml` and `capability-matrix.md`, including M5's corrected `editor-ui-ux` row
+- [ ] 5.10 `openspec validate --specs --strict` passes; archive this change
+- [ ] 5.11 Open the M6 change — the derivation key model is its named spike
