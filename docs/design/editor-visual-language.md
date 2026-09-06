@@ -209,6 +209,21 @@ A **universal** mode combining all three is permitted and constrained: it stays 
 acquirable or it degrades to a simpler presentation. Explicit Move / Rotate / Scale modes are always
 available.
 
+### The reference
+
+![The Cyberdyne transform gizmo](images/transform-gizmo.png)
+
+Normative for the gizmo: four modes on `W`/`E`/`R`/`T`, planar handles at the axis pairs, rotation
+rings plus an outer screen-space ring, a centre cube for uniform scale, world and local space, four
+pivot modes, snapping with `Ctrl`/`Shift`/`Alt` modifiers and `X`/`Y`/`Z` axis lock, per-axis numeric
+entry, **constant screen size regardless of camera distance**, and three states — normal, hover,
+active — with the hovered handle emphasised before it is pressed.
+
+**One thing in it is not followed literally.** The reference tints the active state red, and red
+already means both the X axis and error. The active state is instead a luminance and saturation lift
+on the handle being dragged, so a dragged X arrow is a brighter red and a dragged Y arrow a brighter
+green. The hue identifies the axis and nothing else; red means error everywhere in the product.
+
 ### The orientation widget is not a manipulator
 
 ```text

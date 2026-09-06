@@ -196,6 +196,41 @@ Every constraint above is implementable now against whatever the renderer can pr
 grey box on a flat plane. The chrome, the colour, the density and the vocabulary do not depend on
 what is in the scene.
 
+## 5c — The transform gizmo, and one thing in its reference to resolve
+
+`docs/design/images/transform-gizmo.png` is now normative and it settles a great deal that the
+capability spec left open: four modes on `W`/`E`/`R`/`T`, planar handles at the axis pairs, a centre
+that carries three separate affordances, world and local space, four pivot modes, snapping with
+`Ctrl` temporary and `Shift` precision and `Alt` duplicate-and-transform, per-axis numeric entry, and
+constant screen size regardless of camera distance.
+
+Two properties in it are worth calling out as load-bearing rather than decorative:
+
+**Constant screen size** is what makes a scene at real scale editable at all. Drawn in world units, a
+gizmo on a distant object becomes unusable exactly when precision matters most, and the failure is
+gradual enough that nobody files it as a bug.
+
+**Hover emphasis before the press.** The reference shows normal, hover and active as three distinct
+states. Without the middle one a user learns which axis they grabbed by dragging the wrong one, and
+then undoing — a small cost paid on every single manipulation.
+
+### The one conflict, and how it resolves
+
+The reference tints the **active** state red. `editor-visual-language`'s semantic palette assigns red
+to **error and destructive consequence**, and the axis language assigns red to **X**. Three meanings
+on one hue, on the same object, at the moment of manipulation.
+
+**Decision.** The active state is expressed by **luminance and saturation lift on the handle already
+being dragged**, not by recolouring it. A dragged X arrow gets brighter and more saturated red; a
+dragged Y arrow gets brighter green. Hover uses the same mechanism at lower intensity, which is what
+the reference's gold hover is approximating.
+
+That keeps the axis language intact — the whole point of X red, Y green, Z blue is that the hue
+identifies the axis and nothing else — and it keeps red meaning error everywhere in the product. The
+reference is right about *that there are three states* and wrong about *how the third is encoded*;
+`editor-visual-language` requires a reference that no longer reflects the intended language to be
+corrected, so this one gets a note beside it rather than being followed literally.
+
 ## 6 — What M5.5 deliberately does not do
 
 - **No editor feature completeness.** Docking works; every panel a shipping editor eventually has

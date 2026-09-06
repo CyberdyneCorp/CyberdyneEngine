@@ -63,6 +63,22 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 - [ ] 2.3 Selection by clicking, over M5's engine-side picking
 - [ ] 2.4 Translate, rotate and scale by gizmo, at the latency M5's bridge spike measured — one
       transaction per manipulation, and a drag returned to its origin restores exact values
+- [ ] 2.4.1 **Build the gizmo against `docs/design/images/transform-gizmo.png`**, which is normative:
+      Move `W`, Rotate `E`, Scale `R`, Universal `T`; axis arrows with **planar handles** at the axis
+      pairs; rotation rings plus an outer screen-space ring; box handles with a **centre cube for
+      uniform scale**; and a centre carrying three separately targetable affordances — screen move,
+      uniform scale, screen rotate
+- [ ] 2.4.2 **Constant screen size regardless of camera distance.** Drawn in world units a gizmo
+      becomes unusable exactly when precision matters most, and the failure is gradual enough that
+      nobody files it (`design.md` §5c)
+- [ ] 2.4.3 **Three states: normal, hover, active** — the hovered handle emphasised *before* the
+      press. Encode the active state by luminance and saturation lift on the handle being dragged,
+      **not** by recolouring it: the reference tints active red, which collides with red meaning both
+      the X axis and error (`design.md` §5c)
+- [ ] 2.4.4 World and Local space; Pivot, Centre, Bounds and Individual pivot modes
+- [ ] 2.4.5 Snapping with configurable increments, grid and surface; `Ctrl` temporary snap, `Shift`
+      precision, `Alt` duplicate-and-transform, `X`/`Y`/`Z` axis lock
+- [ ] 2.4.6 Per-axis numeric entry for position, rotation and scale
 - [ ] 2.5 View modes and overlays; degradation under load
 
 ## 3. The agent interface — `editor-agent-interface` → Working
