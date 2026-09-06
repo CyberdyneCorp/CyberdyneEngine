@@ -1,5 +1,50 @@
 ## MODIFIED Requirements
 
+### Requirement: The orientation widget is not a manipulator
+The viewport's view-orientation widget SHALL be **unmistakable for the transform gizmo**, because
+reaching for one and getting the other is a cost paid on every glance.
+
+What makes a manipulator is **rotation rings, planar handles and scale boxes**. The widget SHALL
+carry none of them. Axis arrows are not what make a gizmo a manipulator — the transform gizmo is
+identified by its rings and planes — and the widget SHALL be free to use arrows, a cube body and
+axis labels, as `docs/design/images/scene-orientation-gizmo.png` does.
+
+The two SHALL be separated by **form, size and position together**: the widget is small and fixed in
+a viewport corner, the transform gizmo is large and centred on the selection. Neither separation
+alone is sufficient.
+
+The widget SHALL hold a **constant screen size**, in the range 56–96 pixels with 72 as the default,
+and SHALL NOT scale with camera distance.
+
+Its interactions SHALL be, per the reference: **click an axis to snap the camera to that view**,
+**drag anywhere to orbit**, scroll to zoom, and modifier-drag to pan. It SHALL offer the seven view
+presets — perspective, top, bottom, front, back, left, right — and SHALL show the current view as
+text that can be cycled.
+
+Dragging it orbits the **camera**, never the selection. That is not a contradiction of this
+requirement; it is what the widget is for.
+
+The widget SHALL have normal, hover, active and disabled states, and SHALL be legible in both
+themes.
+
+#### Scenario: The widget is not mistaken for a gizmo
+- **WHEN** both the widget and a transform gizmo are visible in one viewport
+- **THEN** they SHALL be distinguishable by form as well as by size and position — the widget
+  carrying no rings, no planar handles and no scale boxes
+
+#### Scenario: Dragging orbits the camera and moves nothing
+- **WHEN** a user drags the widget while an object is selected
+- **THEN** the camera SHALL orbit, the selection SHALL be unchanged, and no transaction SHALL be
+  produced
+
+#### Scenario: Clicking an axis snaps the view
+- **WHEN** a user clicks the widget's Y axis
+- **THEN** the camera SHALL move to the top view, and the current-view label SHALL say so
+
+#### Scenario: Rings are rejected
+- **WHEN** an orientation widget with rotation rings is proposed
+- **THEN** it SHALL be flagged against this requirement
+
 ### Requirement: Gizmo legibility
 Transform gizmos SHALL be **acquirable without precision** — handles sized for confident grabbing
 rather than for minimal footprint, in the manner of a modern game editor rather than a CAD

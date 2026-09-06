@@ -226,6 +226,39 @@ green. The hue identifies the axis and nothing else; red means error everywhere 
 
 ### The orientation widget is not a manipulator
 
+![The scene orientation gizmo](images/scene-orientation-gizmo.png)
+
+Normative. Click an axis to snap the camera to that view; drag anywhere to orbit; scroll to zoom;
+modifier-drag to pan. Seven presets — perspective, top, bottom, front, back, left, right — and the
+current view shown as cycleable text. **Constant screen size, 56–96 px with 72 the default.** Normal,
+hover, active and disabled states, legible in both themes.
+
+**A correction to this document.** An earlier draft said the widget "SHALL NOT display… translation
+arrows." That was wrong, and the reference is right. What makes a manipulator is **rings, planar
+handles and scale boxes** — not arrows. The transform gizmo is identified by its rings and planes,
+and the widget carries none of them, so arrows cost nothing. The requirement now separates the two
+by form, size and position together, which is what the editor scene view below actually demonstrates.
+
+Dragging the widget orbits the **camera**, never the selection, and produces no transaction. That is
+what the widget is for, not an exception to it.
+
+### The two gizmos, in one viewport
+
+![The editor scene view](images/editor-scene-view.png)
+
+This is the case the requirement exists to protect: both gizmos visible at once, and unmistakable —
+the transform gizmo large and centred with rings, planes and a centre cube; the orientation widget
+small, cornered, arrows and a cube and nothing else.
+
+It also shows a **third layout variant**. The RTS and adventure references put the content browser
+bottom-left with the outliner above it; this one puts the hierarchy bottom-left, the project browser
+centre, and the inspector right, with the view presets and a rotation read-out floating in the
+viewport. The composition requirement fixes *regions*, not pixel positions, and all three satisfy it
+— but if one is meant to be the default, it should be said rather than left to whichever a
+contributor opens first.
+
+
+
 ```text
         Y
         ▲

@@ -79,6 +79,17 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 - [ ] 2.4.5 Snapping with configurable increments, grid and surface; `Ctrl` temporary snap, `Shift`
       precision, `Alt` duplicate-and-transform, `X`/`Y`/`Z` axis lock
 - [ ] 2.4.6 Per-axis numeric entry for position, rotation and scale
+- [ ] 2.4.7 **The scene orientation widget**, against
+      `docs/design/images/scene-orientation-gizmo.png`: click an axis to snap the camera, drag
+      anywhere to orbit, scroll to zoom, modifier-drag to pan; seven view presets; the current view
+      as cycleable text; constant screen size 56–96 px, 72 default; normal, hover, active and
+      disabled states in both themes. **Dragging orbits the camera and produces no transaction.**
+- [ ] 2.4.8 Prove the two gizmos are unmistakable with both on screen at once
+      (`docs/design/images/editor-scene-view.png` is the case), separated by form as well as by size
+      and position — the widget carrying no rings, no planar handles, no scale boxes
+- [ ] 2.4.9 Decide which of the three reference layouts is the shipped default, and say so. The
+      composition requirement fixes regions rather than pixel positions and all three satisfy it,
+      but a default left unstated becomes whichever reference a contributor opens first.
 - [ ] 2.5 View modes and overlays; degradation under load
 
 ## 3. The agent interface — `editor-agent-interface` → Working
