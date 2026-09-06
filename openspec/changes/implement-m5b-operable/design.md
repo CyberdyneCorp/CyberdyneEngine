@@ -17,23 +17,91 @@ So M5 closes on what it achieved, its row is corrected to Seed, and the window b
 milestone. Inserting rather than renumbering keeps every reference to M6–M11 valid, and the
 fractional number says plainly that the ladder gained an entry rather than always having had one.
 
-## 1 — The toolkit decision, finally taken
+## 1 — The toolkit decision, taken and measured
 
 `editor-rust-application` says the interface toolkit is an implementation detail and deliberately
-does not name one. That deferral has been free for five milestones. It stops being free here.
+does not name one. That deferral was free for five milestones. The spike took the decision.
 
-**Decision.** The toolkit is chosen in this milestone by spike, against one criterion that dominates
-every other consideration: **can the viewport present an engine-rendered image without a round trip
-through the CPU?**
+**Chosen: egui 0.36.1 + egui_dock 0.21.1 over wgpu 30.0.1.** Runner-up: Dear ImGui via
+`dear-imgui-rs`. Third and closer than expected: GTK 4.
 
-The editor renders through the engine — no second renderer, per `editor-viewport-and-gizmos` — so
-the frame arrives as a GPU image from the runtime process. A toolkit that can only display a CPU
-bitmap turns every frame into a device-to-host-to-device copy, and at that point the viewport's cost
-is set by the toolkit rather than by the scene. Everything else — widget richness, styling, ecosystem
-— is subordinate, because it can be worked around and this cannot.
+### The dominant criterion did not decide it
 
-The choice is recorded with its reasoning, and the layer above it stays toolkit-agnostic so the
-decision remains reversible. That is what "implementation detail" has to mean in practice.
+All three present an engine-rendered GPU image with **no CPU copy**, proven by running rather than
+read: a separate process allocates a 1920×1080 `VkImage` with DRM-format-modifier tiling, exports
+the memory as a dma-buf fd, passes it over a unix socket with `SCM_RIGHTS`, and the editor composites
+it into a docked panel. Presenting it costs **below the measurement floor — 0.44 ms with the image
+and 0.44 ms without, and the same at 4K.**
+
+The counterfactual is what the deferral has been costing us in the abstract:
+
+| leg, 1080p | quiet | under load |
+|---|---|---|
+| runtime device→host | 0.86 ms | 3.28 ms |
+| IPC (shared mapping) | 0.32 ms | 2.30 ms |
+| editor upload | 0.78 ms | 1.17 ms |
+| **total overhead** | **≈ 2.0 ms/frame** | ≈ 6.8 ms |
+
+That is 2.75× the editor's own frame cost, plus a frame of latency — and it scales with pixels:
+**≈ 8.9 ms at 4K, more than half a 60 Hz budget before anything is drawn.**
+
+### What actually decided it
+
+**Byte-exactness.** The runtime clears to `(200, 100, 50)`. egui and GTK present exactly that.
+`dear-imgui-wgpu` applies a gamma curve to the whole draw list including the imported frame, giving
+`(201, 100, 46)` in its default mode and `(229, 168, 122)` in the other — **neither supplied mode
+passes the image through unchanged.** Task 5.2 asks us to prove the viewport image is the engine's
+by comparing against a direct render; with egui that comparison is `==`, with Dear ImGui it is a
+tolerance, and a tolerance hides exactly the regressions the comparison exists to catch. The error is
+worst in dark regions, which is the worst possible shape for a tool used to judge lighting.
+
+**Accessibility.** eframe ships AccessKit on by default with AT-SPI, UIA and NSAccessibility
+backends. **The Dear ImGui ecosystem exposes nothing to any platform accessibility tree** —
+structurally, because it draws its own pixels. `editor-ui-ux` requires accessibility hooks.
+
+### What we give up, named
+
+Immediate mode, so a 30,000-row outliner needs deliberate virtualisation (`virtualise.rs` already
+exists and is the right shape). Docking is a third-party crate on its own cadence. **No complex-script
+text shaping** — egui has no HarfBuzz, so RTL and Indic scripts are unhandled; a real ceiling we
+cannot lift ourselves. And Dear ImGui's docking is genuinely better: its `WindowKey` separates stable
+identity from display title, which is exactly what a persisted workspace needs across a renamed or
+localised panel — **we should steal that idea for our own `PanelId` ↔ title mapping.**
+
+Losing ImGuizmo is close to a non-loss: `editor-viewport-and-gizmos` puts gizmo geometry, depth
+handling and drawing in the engine, so it would have been the wrong tool anyway.
+
+### Three things the spike found that will bite if ignored
+
+**Cross-process synchronisation is unsolved, and it is the largest open item.** The spike proved the
+*memory* path. wgpu enables `VK_KHR_external_memory_fd` and `VK_EXT_external_memory_dma_buf` but
+**not `VK_KHR_external_semaphore_fd`**, so an imported semaphore cannot be created on wgpu's device
+as it configures itself. The producer used fence waits — correct but serialising. The escape hatch
+exists (`WgpuSetup::Existing`, building the `VkDevice` ourselves). **This is the first task of the
+viewport work, not a later discovery.**
+
+**`DRM_FORMAT_MOD_LINEAR` is not supported on this hardware.** NVIDIA advertises seven modifiers for
+RGBA8, six usable, and linear is not among them. Hardcoding linear — the obvious thing to do from
+documentation — would have failed. The transport must carry the negotiated modifier.
+
+**`FrameImage::SharedTexture { handle: u64 }` is insufficient.** A dma-buf import needs fd, DRM
+format modifier, stride, offset, size and fourcc. These are Vulkan and DRM facts rather than toolkit
+facts, so widening the variant keeps the layer toolkit-agnostic. Cheap now; expensive after four
+panels are built on the `u64`.
+
+### Reversibility, checked rather than assumed
+
+None of M5's fourteen crates names a toolkit. `docking.rs` owns `Layout` as the editor's own tree —
+its header already says *"a dock manager renders a Layout; it does not decide one"* — and
+`cy-editor-visual` owns colour, density and the axis language. Swapping the toolkit means changing
+one render crate plus four adapters.
+
+**That boundary is not self-enforcing.** Without a test, `egui::Color32` will appear in
+`cy-editor-visual` within a milestone, because it is locally reasonable every single time. Hence the
+containment test in task 1.0 below.
+
+Also required: **the MSRV moves to 1.95.** egui 0.36 refuses to build on 1.92, which is this
+machine's `stable` and what `editor/Cargo.toml` currently declares.
 
 ## 2 — The viewport shows the engine's image, or it shows nothing
 

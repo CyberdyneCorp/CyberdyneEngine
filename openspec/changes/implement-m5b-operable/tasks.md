@@ -13,6 +13,28 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 
 ## 1. The editor opens — `editor-ui-ux` → Working
 
+### 1.0 Three things the spike handed back, before any panel exists
+
+- [ ] 1.0.1 **Cross-process synchronisation.** wgpu does not enable `VK_KHR_external_semaphore_fd`,
+      so an imported semaphore cannot be created on its device as configured. Fence waits are correct
+      but serialise. Use `WgpuSetup::Existing` to supply our own `VkDevice`, or establish that
+      serialising is acceptable and say why. **First task of the viewport work, not a later
+      discovery** (`design.md` §1).
+- [ ] 1.0.2 **Widen `FrameImage::SharedTexture`** from `{ handle: u64 }` to carry fd, DRM format
+      modifier, stride, offset, size and fourcc. Vulkan and DRM facts, not toolkit facts, so the
+      layer stays toolkit-agnostic. `DRM_FORMAT_MOD_LINEAR` is **not** supported on this hardware,
+      so the negotiated modifier must travel with the image.
+- [ ] 1.0.3 **A toolkit-containment test**, in the shape of `cy-editor-app/tests/layering.rs`, that
+      fails if `egui`, `eframe`, `egui_dock` or `wgpu` appears in any crate's dependencies except the
+      one render crate. Without it the boundary erodes, because importing `egui::Color32` into
+      `cy-editor-visual` is locally reasonable every single time.
+- [ ] 1.0.4 Move the MSRV to 1.95 in `editor/Cargo.toml` and on every CI leg; egui 0.36 refuses to
+      build on 1.92.
+- [ ] 1.0.5 Adopt Dear ImGui's `WindowKey` idea for our own `PanelId` ↔ title mapping — stable
+      identity separated from display title, which is what a persisted workspace needs across a
+      renamed or localised panel.
+
+
 - [ ] 1.1 A window, and the application shell
 - [ ] 1.2 Docking, floating, tabbing, and named workspaces that persist and reset
 - [ ] 1.3 The hierarchy, the inspector generated from reflection, the content browser
