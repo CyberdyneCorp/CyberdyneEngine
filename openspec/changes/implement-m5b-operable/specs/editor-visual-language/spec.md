@@ -1,5 +1,50 @@
 ## MODIFIED Requirements
 
+### Requirement: Cyberdyne identity, not an engine emblem
+The editor SHALL present the product's own visual identity. The normative artwork is
+`docs/design/images/cyberengine-logo.png`, which supersedes the bare mark previously named here: it
+is a complete identity system rather than a single symbol.
+
+**The product is CyberEngine; the publisher is Cyberdyne.** The lockup reads "CyberEngine — by
+Cyberdyne", and interface text SHALL follow it: the application is CyberEngine, and Cyberdyne is
+named only where a publisher is named. The repository directory retains its historical name; that is
+a filesystem artefact and not a product name.
+
+The identity provides four lockups, and each SHALL be used where it fits rather than one being
+scaled to serve all:
+
+| Lockup | Where |
+|---|---|
+| **Horizontal** | The editor's application header, and anywhere width is available |
+| **Vertical** | Splash, about, and other centred contexts |
+| **Monochrome** | Where the surface cannot carry the full mark, and in print |
+| **App icon** | The desktop icon, the taskbar, and the window's own icon |
+
+The mark's geometry SHALL NOT be redesigned, and no separate engine emblem SHALL be introduced. In
+the editor header the mark identifies the product; it occupies the header and no larger surface, and
+it SHALL NOT compete with the viewport for attention.
+
+The identity is rendered with metallic gradients and a blue emissive core. **Those are properties of
+the logo, not licence for the interface.** The surrounding chrome remains charcoal and flat per the
+surface system; a header that picks up the logo's gradients has misread it.
+
+#### Scenario: The lockup fits its context
+- **WHEN** the identity appears in a narrow or a centred context
+- **THEN** the lockup made for that shape SHALL be used, rather than the horizontal one scaled
+
+#### Scenario: The mark is not redrawn
+- **WHEN** a compact header presentation is needed
+- **THEN** the mark SHALL be cropped or scaled, and SHALL NOT be substituted with a new symbol
+
+#### Scenario: No second brand
+- **WHEN** editor branding is proposed
+- **THEN** it SHALL use this identity, and an engine-specific logo SHALL be rejected
+
+#### Scenario: The logo's treatment does not spread
+- **WHEN** the interface is styled
+- **THEN** the metallic gradient and emissive core SHALL remain confined to the mark, and the chrome
+  SHALL stay charcoal and flat
+
 ### Requirement: The orientation widget is not a manipulator
 The viewport's view-orientation widget SHALL be **unmistakable for the transform gizmo**, because
 reaching for one and getting the other is a cost paid on every glance.

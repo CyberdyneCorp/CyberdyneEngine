@@ -84,15 +84,25 @@ What this reference adds beyond the first:
 
 ---
 
-## The mark
+## The identity
 
-<img src="images/cyberdyne-mark.png" width="72" alt="The Cyberdyne mark">
+![CyberEngine identity](images/cyberengine-logo.png)
 
-The normative artwork is [`images/cyberdyne-mark.png`](images/cyberdyne-mark.png). It appears in the
-upper-left application area, adjacent to the menus.
+Normative: [`images/cyberengine-logo.png`](images/cyberengine-logo.png). It supersedes the bare
+`cyberdyne-mark.png` this document previously named, because it is a complete system rather than a
+single symbol — **horizontal, vertical, monochrome and app icon**, each to be used where it fits
+rather than one scaled to serve all.
 
-It may be cropped or simplified for a compact header. Its geometry is **not** redesigned for the
-editor, and the editor does **not** get a separate engine emblem in the manner of competing engines.
+**The product is CyberEngine; the publisher is Cyberdyne.** The lockup says so, and interface text
+follows it: the application is CyberEngine, and Cyberdyne is named where a publisher is named. The
+repository directory keeps its historical name — a filesystem artefact, not a product name.
+
+The horizontal lockup sits in the editor header. It identifies the product and occupies the header
+and no more.
+
+**One thing that does not travel.** The mark is rendered with metallic gradients and a blue emissive
+core. Those belong to the logo, not to the interface. The chrome around it stays charcoal and flat,
+per the surface system — a header that picks up the logo's gradients has misread it.
 
 ---
 

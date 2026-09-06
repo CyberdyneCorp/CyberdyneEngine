@@ -40,6 +40,11 @@ Ordered. The toolkit spike first, because it is the one decision here that is ex
 - [ ] 1.3 The hierarchy, the inspector generated from reflection, the content browser
 - [ ] 1.4 The command palette over the registry M5 built; keyboard-first operation with chords
 - [ ] 1.5 Density modes; validation surfacing; notifications that do not interrupt
+- [ ] 1.5b **The identity**, from `docs/design/images/cyberengine-logo.png`: the horizontal lockup
+      in the application header, the app icon on the window and taskbar, and the vertical and
+      monochrome lockups where they fit. Interface text says **CyberEngine** for the product and
+      names Cyberdyne only as publisher. The logo's metallic gradient and emissive core stay in the
+      mark; the chrome around it stays charcoal and flat.
 - [ ] 1.6 **Read `docs/design/editor-visual-language.md` and look at both reference images in
       `docs/design/images/` before writing interface code.** They have waited since M3 for this
       milestone and they are normative, not inspirational (`design.md` §5b).
