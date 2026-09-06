@@ -1,3 +1,62 @@
+## ADDED Requirements
+
+### Requirement: The milestone gate, and when it may shrink
+Every milestone SHALL end with an audit performed by an agent whose brief is to **disbelieve the
+work**, not to confirm it. The suites have already run — every implementing agent reports its own
+lint, format and test output — so the audit exists for a different question: **does anything claim
+more than it checked?**
+
+Six of the first six milestones answered yes, and none of the six findings was a defect in the
+engine. Each was a gate, a default or a report that claimed more than it verified: a privacy
+mechanism that could not see the field it was meant to redact; two modules reported green without
+the lint gate being run; a ledger that broke the milestone it was checking; a gate left unpromoted
+for an entire milestone; a delivered backend that defaulted off, so its sample rendered black and
+exited zero; and three permanent gates red in continuous integration while every milestone ledger
+reported green.
+
+**Through M8 the audit SHALL be performed in full**: every ledger, a clean build of every profile
+from empty, every gate run by hand, an adversarial pass that attempts to violate each invariant the
+milestone establishes, and re-verification after any fix. M6, M7 and M8 carry the milestones the
+risk register ranks highest, and they are the least affordable places to discover a claim late.
+
+**From M9 the audit MAY be reduced** to the newest ledger run once, an adversarial pass on that
+milestone's own invariants, and the records — provided both of these hold, and the reduction SHALL
+be refused if either does not:
+
+- continuous integration has actually executed, so that cross-platform and cross-configuration
+  claims are verified by something other than an agent's reasoning, and
+- the permanent gate set covers what the by-hand sweep would otherwise repeat.
+
+**The adversarial pass on the current milestone's own invariants SHALL NOT be removed at any
+milestone.** Judging what a *new* invariant's failure mode looks like is the part no accumulated
+check can inherit, and it is what found the privacy leak and the black frame.
+
+**Every audit finding SHALL be converted into an automated check where its shape admits one**, and
+the conversion is the real path to a shorter audit: a finding that becomes a check is an audit step
+that never needs performing again. Four shapes are already known and SHALL be checked rather than
+re-discovered:
+
+| Shape | The check |
+|---|---|
+| A closed milestone's gate left unpromoted | Fails when a closed milestone's gate is not in the permanent set |
+| A delivered capability whose build option defaults off | Fails when a capability at Working has its `CY_*` option off |
+| A criterion configured differently from the gate it stands for | Fails when a criterion's configuration differs from the job it represents |
+| A suite that passes over nothing | Fails when a declared gate executes zero assertions |
+
+#### Scenario: The audit is not reduced on schedule alone
+- **WHEN** M9 is reached and continuous integration has still never executed
+- **THEN** the full audit SHALL continue, because the reduction's premise is that something other
+  than the audit is checking those claims
+
+#### Scenario: A finding becomes a check
+- **WHEN** an audit finds a class of defect that a check could detect
+- **THEN** the check SHALL be built, and the audit step it replaces SHALL be retired with it
+
+#### Scenario: New invariants are always attacked
+- **WHEN** a milestone establishes an invariant
+- **THEN** its audit SHALL attempt to violate that invariant directly, however small the audit has
+  otherwise become
+
 ## MODIFIED Requirements
 
 ### Requirement: The milestone ladder

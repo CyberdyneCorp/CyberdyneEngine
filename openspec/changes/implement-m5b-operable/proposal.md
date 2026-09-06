@@ -71,6 +71,15 @@ exercised for the first time.
   `editor-ui-ux` at Working while closing on a scripted artefact that cannot exercise docking,
   workspaces, the palette or keyboard-first operation. The insertion is recorded rather than
   renumbering M6 through M11, so every existing reference stays valid.
+- `delivery-roadmap` — **specify the gate, and the conditions under which it may shrink.** The audit
+  exists because six of six milestones produced a claim that exceeded what was checked, and none of
+  the six was a defect in the engine. It runs in full through **M8** — M6, M7 and M8 carry the
+  milestones the risk register ranks highest — and **may** reduce from M9, but only if continuous
+  integration has actually executed and the permanent set covers the by-hand sweep. Reduction on
+  schedule alone is refused. The adversarial pass on a milestone's own invariants is never removed,
+  because judging what a *new* invariant's failure mode looks like is the part no accumulated check
+  inherits. And every finding whose shape admits a check becomes one — four such shapes are already
+  known and named, which is the real path to a shorter audit.
 - `editor-agent-interface` — reaches Working at M5.5 rather than M8. The reasoning changes with it:
   the interface was placed at M8 on the assumption that driving an editor is only worth anything once
   there is a substantial project to drive. That is wrong in a way worth writing down — the agent
