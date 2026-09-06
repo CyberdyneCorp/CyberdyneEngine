@@ -15,11 +15,22 @@
 # THIS MILESTONE ADDS A THIRD KIND OF HOST THIS FILE CANNOT SPEAK FOR, and unlike "no GPU" it has no
 # `requires` token. A machine with no Swift toolchain does not build samples/04-character AT ALL —
 # the sample's gameplay IS a Swift module, and bindings/swift/ and samples/04-character/ both decline
-# to register their suites rather than registering ones that skip. So on such a machine the criteria
-# below do not fail, they are absent: `just test-smoke -R character_sample` matches no test and ctest
-# exits zero. That is worth stating plainly rather than discovering: a green run of this recipe on a
-# machine with no Swift has not judged M4's artefact. `just env-doctor` reports the toolchain and
-# diagnoses the `~/.profile` case specifically, which is where that is caught.
+# to register their suites rather than registering ones that skip.
+#
+# WHAT THAT DOES TO THE CRITERIA BELOW, MEASURED RATHER THAN ASSUMED. Through M4's close this
+# paragraph said they "do not fail, they are absent: `just test-smoke -R character_sample` matches no
+# test and ctest exits zero". THAT IS WRONG, and in the safer direction: just/test.just passes
+# `--no-tests=error` for every kind but `unclassified` and `render`, so
+#     ctest --label-regex "^smoke$" --no-tests=error -R zzz_nonexistent   ->  exit 8
+# and `sample-artefact`, `no-cpp-gameplay` and `swift-reload` all FAIL on such a machine rather than
+# passing vacuously. The one that really does pass having judged less is `swift-api`: its `swift_`
+# regex still matches the three suites that need no toolchain — the overlay's currency, the
+# generator's selftest, and the engine linking no Swift runtime — while integration.swift_package and
+# integration.swift_reload are simply not there, so it reports green over three of five.
+#
+# `just env-doctor` reports the toolchain and diagnoses the `~/.profile` case specifically. It is
+# ADVISORY and deliberately so — just/env.just carries the reasoning, which is that this recipe is
+# the first criterion of every ledger including four closed ones.
 #
 # The first criterion is M3's whole set, for the reason m1.toml records against M0's: a later
 # milestone may not break an earlier milestone's gate, and the way to keep that true is for the
@@ -41,7 +52,7 @@ notes = [
     "ROADMAP M4, 'a Swift module hot-reloads WHILE THE SAMPLE RUNS, preserving world state' — HALF SATISFIED, and the missing half is named rather than glossed. `swift-reload` below loads a real Swift module, creates behaviours holding live state including an ARC-managed `String`, rebuilds it with a changed layout, reloads it and reads the state back through the module's own serializer — which is the whole of the claim except the words 'while the sample runs'. samples/04-character loads generation 0 and never reloads: it declares `hot_reload = true`, the loader supports it, and nothing calls `reload()`. Wiring a file watcher into that host is small and belongs to M5, where the editor needs one anyway. See samples/04-character/README.md, which says the same thing from the other side.",
     "ROADMAP M4, 'the ABI gate rejects a reordered OR REMOVED entry and accepts an appended one' — the gate's own selftest is what proves all three, and it runs as `integration.abi_gate` inside the `abi` criterion below rather than as a criterion of its own. It edits the LIVE header in memory and runs the real gate against the real baseline; a fixture directory would go stale, and worse, a parser that stopped recognising the table would let a hand-written 'reordered' fixture and a hand-written 'correct' one both describe nothing.",
     "THE SAMPLE DOES NOT OPEN A WINDOW AND DRAWS NOTHING, and this is M3's recorded gap rather than a choice made here. `cy::rhi::Device` exposes no way to obtain the graphics-API instance a window surface must be created against, so a host can create a window and a device and cannot join them; m3.toml records it and samples/03-first-light renders offscreen for the same reason. samples/04-character instead produces the `cy::render::ViewDescription` a renderer would draw, every tick, and counts it — so `camera-system`'s 'Render view production' is exercised on the camera's side and on no other. A criterion asserting that the character is visible does not exist because nothing could evaluate it.",
-    "PHYSICS RUNS OVER THE REFERENCE BACKEND IN THE SAMPLE, BY DEFAULT AND DELIBERATELY. `physics` requires that swapping the backend change no gameplay, so the artefact must be runnable over either; `--jolt` runs the same script over Jolt and was checked by hand at M4's close — 400 ticks over each backend produced THE SAME command-log hash (7c8c40b0be09a58c), the same input frame hash, the same 11 footsteps, 3 landings, 1 jump and 1 climbed step, and positions that differ in the metres, which is exactly the shape a backend swap should and should not change. It is not a criterion because CY_PHYSICS may be off in a build that is otherwise complete, and a criterion that silently passes when its subject is absent is the pattern this file exists to avoid. The CONFORMANCE claim is `physics-jolt` below, which runs the same cases against Jolt through the interface.",
+    "PHYSICS RUNS OVER THE REFERENCE BACKEND IN THE SAMPLE, BY DEFAULT AND DELIBERATELY. `physics` requires that swapping the backend change no gameplay, so the artefact must be runnable over either; `--jolt` runs the same script over Jolt and was checked by hand at M4's close — 400 ticks over each backend produced THE SAME command-log hash (7c8c40b0be09a58c), the same input frame hash, the same 11 footsteps, 3 landings, 1 jump and 1 climbed step, and positions that differ in the metres, which is exactly the shape a backend swap should and should not change. READ THE CUE COUNTS AS A COINCIDENCE OF 400 TICKS RATHER THAN AS A PROPERTY: at 900 ticks the same two runs give 22 footsteps / 11 landings / 9 climbed steps over the reference backend and 30 / 4 / 1 over Jolt, while the command log (0e4d14a10f4582a9) and the input frame hash (269545449d8dd9f3) stay identical. What the requirement asks to be invariant is the gameplay and the log, not the trajectory. It is not a criterion because CY_PHYSICS may be off in a build that is otherwise complete, and a criterion that silently passes when its subject is absent is the pattern this file exists to avoid. The CONFORMANCE claim is `physics-jolt` below, which runs the same cases against Jolt through the interface.",
     "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. M4 adds abi, swift-api, command-stream, input-fixed-tick, physics and character-artefact to it.",
 ]
 
@@ -97,6 +108,28 @@ source = "delivery-roadmap, testing-and-quality (Quality gates for merge)"
 kind = "recipe"
 run = "just ci-check"
 ci_job = "workflows"
+
+# ADDED AT M4'S GATE, AND THE REASON IS A DEFECT THIS FILE DID NOT CATCH. M0's `generated-code`
+# criterion runs `just generate-check` — one of the THREE commands its own gate declares in
+# tools/roadmap/gates.toml. The other two are `just generate-test` and `just maintenance-deps-check`,
+# and no milestone ledger ran either. So when M4 turned CY_AUDIO on by default — correctly; it
+# delivered the miniaudio backend — `tools/gen/tests/run_tests.py`'s
+# `test_optional_backend_requires_its_subsystem` went red, because it asserted that
+# `-DCY_AUDIO_STEAM_AUDIO=ON` fails and relied on CY_AUDIO defaulting off to make that true. It
+# stayed red through the whole milestone with every ledger green: 20 of 21, in a permanent gate that
+# has existed since M0.
+#
+# The test is fixed (it now names `-DCY_AUDIO=OFF`, so it asserts the rule rather than the default),
+# and this criterion is here so that the next flip of a default is caught by the recipe that closes
+# the milestone rather than by the pull request after it. It runs the gate's commands verbatim.
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifest"
+source = "delivery-roadmap (a gate a ledger does not run is a gate a milestone can break invisibly)"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
 
 [[criterion]]
 id = "roadmap-record"
@@ -283,21 +316,44 @@ run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR
 timeout_s = 28800
 ci_job = "profiles"
 
-# TASK 6.9, AND IT CARRIES A WORKAROUND THAT IS NOT MINE TO REMOVE. `just test-sanitize` builds the
-# dev profile, and CY_SHADER_SLANG now defaults to ON there (M3's carried-forward debt 1.4), so the
-# sanitized build compiles Slang's own code-generator tool under LeakSanitizer and the BUILD fails on
-# a third party's leak — `Slang::StringRepresentation::createWithCapacityAndLength` inside
-# `fiddle::Parser::parseFiddleNode`. It is a build-tool leak reached only because Slang is on by
-# default in dev, and it has nothing to do with the suites under test. So the sanitize tree is
-# configured with the front end off, which is what the ABI agent measured this against and what this
-# command does. THE REAL FIX belongs to whoever owns just/test.just: either exclude `_deps` from the
-# leak check, or have `test-sanitize` configure with -D CY_SHADER_SLANG=OFF itself.
+# TASK 6.9. THIS CRITERION CARRIED A WORKAROUND UNTIL M4'S GATE, AND THE WORKAROUND IS WHY THE
+# CRITERION COULD NOT HAVE CAUGHT THE THING IT WAS WORKING AROUND. `just test-sanitize` builds the
+# dev profile, and M4's task 1.4 turned CY_SHADER_SLANG on there, so from that commit the sanitized
+# configuration compiled Slang — a thousand targets of third-party C++, including generators the
+# build itself runs — with whichever sanitizer was asked for. THREE MODES, THREE FAILURES:
+#
+#   address     LeakSanitizer failed the BUILD on slang-fiddle: 818 214 bytes in 3 617 allocations
+#               inside `fiddle::Parser::parseFiddleNode`.
+#   thread      slang-embed could not start: "FATAL: ThreadSanitizer: unexpected memory mapping".
+#               cmake/sanitizers.cmake prints that diagnosis at configure time and just/test.just
+#               applied `setarch -R` to the TESTS; nothing applied it to the build, because until
+#               now no instrumented binary ran during one.
+#   undefined   smoke.shader_slang failed on Slang's own COM smart pointer —
+#               "member call on address … object has invalid vptr", slang-com-ptr.h:193.
+#
+# This file's answer was to pre-configure the sanitize tree with `-D CY_SHADER_SLANG=OFF`, which made
+# the criterion pass while `.github/workflows/ci.yml`'s `sanitize` job — the permanent gate this
+# criterion stands for, and the thing that actually runs on a pull request — went on failing, because
+# it passes no such flag. A criterion that runs a different configuration from its own gate is a
+# criterion that cannot speak for it; and because the workaround covered the one mode somebody had
+# noticed, the other two survived to M4's gate undetected.
+#
+# FIXED AT THE ROOT, IN just/test.just, which configures the sanitized tree with
+# -D CY_SHADER_SLANG=OFF. What that costs is that `smoke.shader_slang` is not sanitized, and it
+# cannot be: with the vptr check quietened the suite fails again on Slang failing to dlopen its own
+# downstream plugins in that tree. `shader-system` calls the front end a tool-time dependency whose
+# shipping path is the SPIR-V passthrough, so what a sanitized run is for is unaffected. Two one-line
+# wrappers land with it and stay although Slang's absence makes both inert today, because both are
+# properties of any dependency that runs a binary during its own build: the build runs with
+# `detect_leaks=0` (turned back on before ctest, so every suite is still leak-checked) and under
+# `setarch -R` when the sanitizer is thread. This command is now the same one CI runs, with nothing
+# in front of it.
 [[criterion]]
 id = "sanitizers"
 describe = "AddressSanitizer and UndefinedBehaviorSanitizer are clean over every suite M4 added — the ABI and its module loader, the input resolver, the physics interface and its character controller, the gameplay command stream, and the camera and audio servers"
 source = "tasks 6.9"
 kind = "command"
-run = "d=\"${CY_BUILD_DIR:-build}/m4-sanitize\"; for s in address undefined; do cmake -B \"$d/sanitize-$s\" -D CY_SHADER_SLANG=OFF > /dev/null || exit 1; done; for t in abi input physics gameplay camera audio; do CY_BUILD_DIR=\"$d\" just test-sanitize --sanitizer address --tests \"$t\" || exit 1; CY_BUILD_DIR=\"$d\" just test-sanitize --sanitizer undefined --tests \"$t\" || exit 1; done"
+run = "d=\"${CY_BUILD_DIR:-build}/m4-sanitize\"; for t in abi input physics gameplay camera audio; do CY_BUILD_DIR=\"$d\" just test-sanitize --sanitizer address --tests \"$t\" || exit 1; CY_BUILD_DIR=\"$d\" just test-sanitize --sanitizer undefined --tests \"$t\" || exit 1; done"
 timeout_s = 14400
 ci_job = "sanitizers"
 

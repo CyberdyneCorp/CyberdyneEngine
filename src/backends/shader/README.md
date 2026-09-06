@@ -23,6 +23,16 @@ consuming an already-compiled module *is* the shipping path. It is also what let
 integration exercise reflection, permutations, the cache, the library, hot reload and the pipeline
 manifest on a machine with no shader toolchain — which is how the two default suites run.
 
+**`smoke.shader_slang` does not run under a sanitizer, and that is a stated exclusion.**
+`just test-sanitize` configures its tree with `-D CY_SHADER_SLANG=OFF`, so `cy::shader-slang` and
+this suite are not built there at all. Three independent reasons, each measured at M4's gate and all
+of them in Slang rather than here: LeakSanitizer fails the BUILD on `slang-fiddle`, ThreadSanitizer's
+shadow mapping stops `slang-embed` from starting, and under UndefinedBehaviorSanitizer the suite
+fails first on Slang's own COM smart pointer and then — with that quietened — on Slang failing to
+`dlopen` its downstream plugins in that tree. `just/test.just` carries the reproductions. The
+passthrough front end and everything above it *are* sanitized, which is where the engine's own code
+is.
+
 ## Why layer 3
 
 Reflection reads the SPIR-V binary, and a SPIR-V header is a graphics-API header by

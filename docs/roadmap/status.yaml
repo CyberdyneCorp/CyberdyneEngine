@@ -38,9 +38,9 @@ capabilities:
     milestone: M2
     change: implement-m2-world
   core-platform-abstraction:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
+    tier: working
+    milestone: M4
+    change: implement-m4-playable
   ecs-core:
     tier: working
     milestone: M2
@@ -54,9 +54,9 @@ capabilities:
     milestone: M2
     change: implement-m2-world
   gameplay-framework:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M4
+    change: implement-m4-playable
   gameplay-abilities-and-effects:
     tier: none
     milestone: null
@@ -70,13 +70,13 @@ capabilities:
     milestone: null
     change: null
   input-and-actions:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M4
+    change: implement-m4-playable
   camera-system:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M4
+    change: implement-m4-playable
   simulation-and-determinism:
     tier: seed
     milestone: M2
@@ -122,13 +122,13 @@ capabilities:
     milestone: null
     change: null
   native-abi:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M4
+    change: implement-m4-playable
   swift-scripting:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M4
+    change: implement-m4-playable
   rhi-and-render-graph:
     tier: working
     milestone: M3
@@ -210,9 +210,9 @@ capabilities:
     milestone: null
     change: null
   physics:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M4
+    change: implement-m4-playable
   animation-and-skinning:
     tier: none
     milestone: null
@@ -230,9 +230,9 @@ capabilities:
     milestone: null
     change: null
   audio:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M4
+    change: implement-m4-playable
   text-and-fonts:
     tier: none
     milestone: null

@@ -443,6 +443,11 @@ jobs:
         run: just test-smoke -R character_sample
       - name: The sample contains no C++ gameplay code
         run: just test-integration -R character_no_cpp_gameplay
+      # The recipe a contributor uses, rather than only the test that links the same binary.
+      # m4.toml's `sample-recipe` criterion names this job, and m4.toml's own rule is that a
+      # criterion which passes locally and runs nowhere else is not a gate.
+      - name: The sample runs through the workflow recipe
+        run: just run-sample character --ticks 120
 
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:
@@ -467,6 +472,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      # THE THIRD JOB THAT INSTALLS SWIFT, AND THE REASON IS THE LINT GATE'S INPUT.
+      # `just quality-lint` runs clang-tidy against compile_commands.json, and without a Swift
+      # toolchain samples/04-character/ and bindings/swift/ never declare their targets — so four
+      # C++ translation units, 1 990 lines including the sample host that M4's whole "no C++
+      # gameplay" claim is about, were formatted by the gate above (which walks the tree) and linted
+      # by nobody. The format gate is a tree walk and needs nothing; this one needs the build.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -617,6 +631,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      # THE SECOND JOB THAT INSTALLS SWIFT, AND M4'S GATE IS WHY. Without a toolchain,
+      # bindings/swift/ and samples/04-character/ do not register their suites at all — so this job
+      # was reporting three profiles green with the milestone's own artefact absent from the tree,
+      # while `tools/roadmap/milestones/m4.toml`'s `four-profiles` criterion claimed it built "the
+      # game module at swiftc -O in Profile and Shipping". It does now: the sample's Swift
+      # configuration follows the engine profile, so `release` and `profile` here are the only place
+      # in continuous integration where a Swift module is built optimised.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
       - uses: actions/cache@v4
         with:
           path: |

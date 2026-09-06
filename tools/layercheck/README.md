@@ -32,6 +32,21 @@ python3 tools/layercheck/selftest.py                   # the fixtures alone
   engine-owned `Platform` and `DisplayServer` interfaces, and a native backend at M11 validates the
   abstraction against a second implementation. The layer rule alone does not cover this — `platform/`
   is layer 3, so `src/runtime/` including SDL is *downward* and legal by layer, and wrong.
+- **gpuapi** — no Vulkan, Slang or SPIR-V header appears outside `src/backends/`. The same argument
+  as `sdl`, made at M3: the RHI's synchronisation vocabulary is engine-owned so that the render graph
+  above it compiles without a graphics SDK, and so that Metal and D3D12 are a directory rather than a
+  rewrite. `SDL3/SDL_vulkan.h` is not a finding — it is an SDL header and `sdl` already governs it.
+- **thirdparty** — no Jolt or miniaudio header appears outside the backend that owns it. The same
+  argument again, made at M4, and the rule is **per library**: a `miniaudio.h` inside
+  `src/backends/physics-jolt/` is as wrong as one inside `src/servers/`, so a rule that named only
+  `src/backends/` would accept it. It was true before this check existed, but only because
+  `cy::dep::jolt` and `cy::dep::miniaudio` are `PRIVATE` dependencies — a guarantee a `PUBLIC`
+  dependency turns off silently.
+- **barriers** — no barrier-emitting call appears outside the render graph and the RHI. The
+  grep-level half of M3's invariant; the C++ half is a passkey whose only friend is
+  `cy::rendering::GraphExecutor`. A passkey cannot stop somebody declaring a class of that name, and
+  a backend-level `vkCmdPipelineBarrier2` bypasses the RHI's types entirely, which is why both
+  halves exist.
 - **targets** — no bare `add_library` or `add_executable` in the engine tree. Every engine target is
   declared through `cy_add_module()`, which records its layer; a bare target has no layer, so nothing
   constrains what it links. `cmake/` is out of scope: it is the build system itself, and it declares
@@ -40,8 +55,9 @@ python3 tools/layercheck/selftest.py                   # the fixtures alone
 
 ## Cost
 
-Under 100 ms on the M0 tree; excluded directories are pruned rather than filtered, so a build tree
-beside the sources costs nothing to skip. It is meant to run on every pull request and it does.
+Under a second on the M4 tree — 1 002 files at the time of writing, against 100 ms and 600 files at
+M0; excluded directories are pruned rather than filtered, so a build tree beside the sources costs
+nothing to skip. It is meant to run on every pull request and it does.
 
 ## Adding a layer or a directory
 

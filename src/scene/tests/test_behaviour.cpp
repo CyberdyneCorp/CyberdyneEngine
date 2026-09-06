@@ -111,6 +111,23 @@ CY_TEST_CASE("the batching decision is a function of the declaration alone") {
 }
 
 CY_TEST_CASE("many instances of a batched behaviour cost one system, not one call each") {
+    // 128 RATHER THAN 500, AND THE NUMBER IS A BUDGET DECISION RATHER THAN A PROPERTY.
+    //
+    // What this case asserts is that a batched behaviour lowers to ONE system whose body runs once
+    // per chunk — `0 < g_batch_calls < kInstances` — and that every instance was updated. Neither
+    // needs a particular instance count; it needs more instances than calls, which any count above
+    // one gives.
+    //
+    // What 500 did need was time. M3's gate measured this case at 868 ms of its 1 000 ms budget at
+    // -O0 and recorded it as "the closest thing to a canary" — a case within 20% of its budget is a
+    // case that will fail eventually. It did, at M4's gate: 1 021 / 1 114 / 1 563 ms across three
+    // runs of the Debug profile, which failed `four-profiles` and therefore M1's, M2's, M3's and
+    // M4's ledgers at once. The harness's own message names the two fixes — move it to the suite
+    // whose budget fits, or make it cheaper — and there is no suite above `integration` that this
+    // belongs in, so it is cheaper. M3 made the same call for `test_extract.cpp`'s crowd, which
+    // went from 100 static entities to 32.
+    constexpr cy::u32 kInstances = 128;
+
     g_batch_calls = 0;
     Fixture fixture;
     CY_REQUIRE(fixture.start());
@@ -123,7 +140,7 @@ CY_TEST_CASE("many instances of a batched behaviour cost one system, not one cal
     CY_REQUIRE(type.has_value());
     CY_CHECK(fixture.tree.behaviours().dispatch_of(*type) == cy::scene::BehaviourDispatch::Batched);
 
-    for (cy::u32 index = 0; index < 500; ++index) {
+    for (cy::u32 index = 0; index < kInstances; ++index) {
         cy::scene::Node node = make_child(fixture.tree, fixture.tree.root(), "Unit");
         CY_REQUIRE(node.valid());
         const Health initial{0};
@@ -140,9 +157,9 @@ CY_TEST_CASE("many instances of a batched behaviour cost one system, not one cal
     CY_CHECK_EQ(schedule.system_count(cy::ecs::Stage::Frame), 2U);
 
     CY_REQUIRE(schedule.run_serial(cy::ecs::Stage::Frame).has_value());
-    // 500 instances, and the body ran once per chunk rather than 500 times.
+    // The body ran once per chunk rather than once per instance.
     CY_CHECK_GT(g_batch_calls, 0U);
-    CY_CHECK_LT(g_batch_calls, 500U);
+    CY_CHECK_LT(g_batch_calls, kInstances);
 
     cy::u32 updated = 0;
     cy::Array<cy::scene::Node> children(cy::scene::test::allocator());
@@ -150,7 +167,7 @@ CY_TEST_CASE("many instances of a batched behaviour cost one system, not one cal
     for (const cy::scene::Node node : children) {
         updated += (node.get_as<Health>(*health)->value == 1) ? 1U : 0U;
     }
-    CY_CHECK_EQ(updated, 500U);
+    CY_CHECK_EQ(updated, kInstances);
 }
 
 CY_TEST_CASE("a behaviour that cannot batch falls back to a system that dispatches per instance") {

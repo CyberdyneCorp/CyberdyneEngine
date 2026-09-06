@@ -73,46 +73,45 @@ From [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md):
 
 ## Landed
 
-**M3 · First light** — an explicit RHI with the null backend written before Vulkan, a render graph
-that derives barriers, aliasing and cross-queue semaphores from declared reads and writes, Slang
-shaders, the render server and GPU scene, clustered forward shading. 28 exit criteria pass.
+**M4 · Playable** — the versioned append-only C ABI and its gate, the generated `CyberdyneKit`
+overlay, input with fixed-tick sampling, physics over Jolt, camera and audio at Seed, and one
+validated command stream. 26 exit criteria pass. Closes on `samples/04-character`: a controller
+written entirely in Swift.
 
-Its spike proved the invariant on the real device: 13 cases, 0 failures, with
-`SYNCHRONIZATION_VALIDATION` on across two queue families — including two compute passes writing
-different array layers of one exclusive image while a graphics pass samples both. Transient aliasing
-measured 64 MiB → 8 MiB, plan and device agreeing exactly.
+Its spike returned a more useful answer than yes. Hot reload works, but **not in place** — state
+survives by serialize, migrate-by-name, recreate, measured across 40 consecutive edit/rebuild/reload
+cycles at 0.13 ms mean. In-place preservation *looks perfect* until a type layout changes and then
+corrupts silently: v2 code reading v1 objects reported `health=17` (v1's `ammo`) and a String field's
+raw bit pattern as an integer, with no trap and no diagnostic. And `dlclose` of a Swift image is
+unsafe on Linux — the next module maps over the same addresses, so a stale call jumps into unrelated
+live code. A 20-cycle test passed *by luck* because two images were the same size.
 
-Two findings from it outlive the milestone. **Vulkan validation does not police queue ownership
-transfers or memory aliasing** — negative controls removing each produced zero errors and correct
-pixels, so both must be structurally guaranteed rather than tested for. And **aliasing creates
-dependencies the resource graph cannot see**: two independent chains on different queues whose
-transients share memory will race, which is why alias edges are added before submits are cut.
+**M3 · First light**, **M2 · World**, **M1 · Substrate**, **M0 · Ground** — see the archive.
 
-**M2 · World**, **M1 · Substrate**, **M0 · Ground** — see the archive.
-
-Six lessons, each found by auditing work that had been reported green:
+Seven lessons, each found by auditing work that had been reported green:
 
 - A privacy mechanism only covers the data model it can see.
 - A gate that is wired but never run is not a gate.
 - A ledger can break the milestone it is checking.
 - A milestone's gate must actually be promoted when it closes.
-- **A delivered backend that is off by default is a backend nothing tests.** `CY_RENDERER_VULKAN`
-  kept M0's placeholder `OFF` through all of M3, so the sample rendered black while exiting 0 and
-  `just test-render` passed in 0.03 s over two device-free suites.
-- **Don't touch the machine while a ledger runs.** Two "regressions" in this project were concurrent
-  builds contending for the same trees, not defects.
+- A delivered backend that is off by default is a backend nothing tests.
+- Don't touch the machine while a ledger runs.
+- **A criterion that runs a different configuration from its gate cannot speak for it.** M4's
+  sanitizer criterion pre-configured its tree with the Slang front end off to work around one known
+  failure — and thereby hid two nobody had found, while the CI job it stands for went on failing.
 
 ## In flight
 
-**M4 · Playable.** The versioned append-only C ABI and its compatibility gate, the generated
-`CyberdyneKit` Swift overlay, input with fixed-tick sampling, camera and audio at Seed, physics over
-Jolt, and one validated command stream into the simulation. Closes on `samples/04-character`: a
-third-person controller written entirely in Swift — move, jump, collide, hear it — with no C++ in the
-project.
+**M5 · Authorable.** The editor as a Rust client of a hosted runtime — documents and transactions as
+the only write path, viewport and gizmos with engine-side picking, asset import, live editing over
+M4's proven reload model. Closes on a scripted session that survives having the runtime killed
+mid-edit.
 
-Its named spike: **hot reload across the ABI with live Swift objects**. If reload cannot preserve
-state, M5's live-editing story changes shape, and that is cheaper to know now.
+Scheduled **first**, before any editor code: the **flattened milestone ledger**. A ledger currently
+begins by running the previous one's, twelve deep by M11 — 123 criterion invocations over 89 distinct
+criteria, with `four-profiles` executed four times by a single run. M4's gate found a unit case that
+failed four ledgers at once purely through that nesting. Deduplication is a correctness property
+here, not an optimisation.
 
-Two invariants bind here. The first published ABI symbol starts a compatibility obligation that
-never ends, so the gate exists before the first consumer. And replay, rollback and lockstep are one
-command log read three ways, which is only true if the simulation has exactly one input path.
+Its named risk is the live bridge: every selection, gizmo drag and property edit crosses a process
+boundary, and whether that feels local is measured rather than argued.

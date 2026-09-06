@@ -5,12 +5,14 @@ Task 1.3.3. The second half of the layer enforcement: `cmake/module.cmake` sees 
 declares, and this sees every `#include` a translation unit writes, including one that reaches
 upward through an include path CMake was never told about.
 
-Five checks, all of them cheap enough to run on every pull request:
+Six checks, all of them cheap enough to run on every pull request:
 
   includes      a file may include a header at its own layer or below, never above
   sdl           no SDL header appears outside platform/ — design.md §4
   gpuapi        no Vulkan, Slang or SPIR-V header appears outside src/backends/ — the same rule as
                 `sdl`, for the same reason, and M3's task 2.3.1
+  thirdparty    no Jolt or miniaudio header appears outside the backend that owns it — the same
+                rule again, and M4's tasks 4.2.2 and 4.3.4
   barriers      no barrier-emitting call appears outside the render graph and the RHI — M3's task
                 2.2.4, the structural half of "a pass has no API to emit a barrier"
   targets       no bare add_library or add_executable, because that is a target that opted out of
@@ -104,6 +106,30 @@ GPU_API_FILES = frozenset({"volk.h", "volk.c", "vk_mem_alloc.h", "vulkan.h", "vu
 
 # Where a graphics API may be named. Only the backend that owns it.
 GPU_API_ROOTS = ("src/backends/",)
+
+# --- The simulation-library rule (M4, tasks 4.2.2 and 4.3.4) ----------------------------------------
+#
+# The third statement of the same rule, and the one M4 needed: `physics` requires "no Jolt type
+# SHALL appear above src/backends/" and `audio` requires that no backend type appear in any engine
+# or game-facing header outside the module that owns it. Both were true when M4 closed and both were
+# true only because `cy::dep::jolt` and `cy::dep::miniaudio` are PRIVATE dependencies, so the
+# libraries' include directories are not inherited and the include does not resolve elsewhere.
+#
+# That is a real structural guarantee, but it is not the same guarantee. A link-time accident — a
+# PUBLIC dependency, a target that names the library directly, an include directory added by hand —
+# turns it off silently, and the first symptom is that the engine no longer builds without a physics
+# SDK. `sdl` and `gpuapi` exist because the same argument was made about them. So does this.
+#
+# Per library rather than one shared root: a miniaudio header inside src/backends/physics-jolt/ is
+# as wrong as one inside src/servers/, and a rule that named only `src/backends/` would accept it.
+#
+# Each row is the library's name, the one directory it may be named from, and the engine-owned
+# interface it sits beneath — the third is in the diagnostic because "why" is what a reader needs.
+JOLT = ("Jolt", "src/backends/physics-jolt/", "cy::physics::PhysicsServer")
+MINIAUDIO = ("miniaudio", "src/backends/audio-miniaudio/", "cy::audio::AudioBackend")
+
+THIRD_PARTY_DIRECTORIES = {"Jolt": JOLT}
+THIRD_PARTY_FILES = {"Jolt.h": JOLT, "miniaudio.h": MINIAUDIO}
 
 # --- The barrier rule (task 2.2.4) ------------------------------------------------------------------
 #
@@ -206,6 +232,18 @@ def is_gpu_api_include(include: str) -> bool:
     return path.parts[0] in GPU_API_DIRECTORIES or path.name in GPU_API_FILES
 
 
+def third_party_library_of(include: str) -> tuple[str, str, str] | None:
+    """The library an include names, the directory it may be named from, and its interface.
+
+    Matched by the include's leading directory or by its file name, the way `gpuapi` is, so
+    `<Jolt/Physics/Body/Body.h>` and `"Jolt.h"` are both the same finding.
+    """
+    path = PurePosixPath(include.replace("\\", "/"))
+    if path.parts and path.parts[0] in THIRD_PARTY_DIRECTORIES:
+        return THIRD_PARTY_DIRECTORIES[path.parts[0]]
+    return THIRD_PARTY_FILES.get(path.name)
+
+
 def line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
@@ -257,6 +295,17 @@ def check_source_file(relative: str, text: str) -> list[Violation]:
                 f"(cy/backends/rhi/types.h) precisely so that the render graph above it needs no "
                 f"graphics SDK, and so that Metal and D3D12 are a directory rather than a rewrite "
                 f"(rhi-and-render-graph, 'Backend roadmap')."))
+            continue
+
+        library = third_party_library_of(include)
+        if library is not None and not relative.startswith(library[1]):
+            name, owner, interface = library
+            violations.append(Violation(relative, line, "thirdparty",
+                f"includes '{include}'. No {name} header appears outside {owner} — {name} sits "
+                f"beneath {interface}, which is what lets a trivial implementation of that "
+                f"interface run the same suites in continuous integration, and what makes a second "
+                f"backend a directory rather than a rewrite (physics, audio, "
+                f"thirdparty-dependencies)."))
             continue
 
         target_layer = include_layer(include)
@@ -321,7 +370,7 @@ def run(root: Path, checks: set[str]) -> tuple[list[Violation], int]:
     violations: list[Violation] = []
     scanned = 0
 
-    if {"includes", "sdl", "gpuapi", "barriers"} & checks:
+    if {"includes", "sdl", "gpuapi", "thirdparty", "barriers"} & checks:
         for path, relative in walk(root, names=set(), suffixes=SOURCE_SUFFIXES):
             scanned += 1
             text = read(path)
@@ -343,13 +392,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2],
                         help="tree to check (default: the repository root)")
     parser.add_argument("--check", action="append",
-                        choices=["includes", "sdl", "gpuapi", "barriers", "targets", "all"],
+                        choices=["includes", "sdl", "gpuapi", "thirdparty", "barriers",
+                                 "targets", "all"],
                         help="run only this check; repeatable (default: all)")
     parser.add_argument("-q", "--quiet", action="store_true", help="print nothing when clean")
     args = parser.parse_args(argv)
 
     selected = set(args.check or ["all"])
-    checks = ({"includes", "sdl", "gpuapi", "barriers", "targets"} if "all" in selected
+    checks = ({"includes", "sdl", "gpuapi", "thirdparty", "barriers", "targets"}
+              if "all" in selected
               else selected)
 
     root = args.root.resolve()

@@ -151,18 +151,31 @@ env-doctor *args:
     done <<< "${pinned}"
 
     # ---- the language toolchains -----------------------------------------------------------------
-    # Swift is required exactly when the build would use it, and CY_SCRIPTING is the option that
-    # decides. Its default is read out of cmake/features.cmake — the file that owns the option —
-    # for the same reason the compiler minimum is read out of cmake/compilers.cmake: a requirement
-    # written twice is a requirement that drifts. The day that default flips to ON, this becomes a
-    # hard requirement with no edit here.
-    swift_default="$(sed -n 's/^[[:space:]]*"CY_SCRIPTING|\([A-Z]*\)|.*/\1/p' cmake/features.cmake)"
+    # SWIFT IS ADVISORY, AND CY_SCRIPTING NO LONGER DECIDES THAT.
+    #
+    # Through M4 this read CY_SCRIPTING's default out of cmake/features.cmake and made the toolchain
+    # a hard requirement whenever it was on. That coupling was correct while the option gated the
+    # Swift half of the build. It does not: src/abi/ is compiled unconditionally, and
+    # bindings/swift/ and samples/04-character/ are gated on the toolchain being PRESENT — each
+    # declines to register its targets and says so at configure time. CY_SCRIPTING records that the
+    # ABI table and the loader are in the build, which they always are, so reading it here would
+    # answer a question it is not about.
+    #
+    # WHY ADVISORY RATHER THAN REQUIRED, WRITTEN DOWN SO THE NEXT PERSON DOES NOT HAVE TO GUESS.
+    # This recipe is the FIRST criterion of every milestone ledger, including four that are closed,
+    # so a hard failure here turns `just roadmap-milestone m0` red on any machine with no Swift —
+    # including two of the six legs of the CI matrix, which are ARM runners no Swift setup action
+    # covers. The absence is already caught where it can be acted on: the configure says which
+    # targets it dropped, and `just test-smoke -R character_sample` and
+    # `just test-integration -R swift_reload` match nothing and exit non-zero, because
+    # just/test.just passes --no-tests=error.
+    #
+    # THE DAY A REAL REQUIREMENT LANDS it belongs in deps/host-tools.toml, beside the reflection
+    # generator's frontend, with the version pin `swift-scripting` asks for; `_doctor-host-tools`
+    # already reads that file and honours its `required` field. Until then this is one word — and
+    # `_doctor-swift`'s `required` branch stays, reachable by calling that recipe directly, because
+    # deleting the branch is what would make adding the entry a rewrite rather than a line.
     swift_requirement=optional
-    case "${CY_SCRIPTING:-${swift_default:-OFF}}" in
-        # DEVELOPMENT is a default that resolves per configuration (cmake/features.cmake); a
-        # developer's build is one of those configurations, so it counts as required here.
-        ON | DEVELOPMENT) swift_requirement=required ;;
-    esac
     echo
     if ! just _doctor-swift "${platform}" "${swift_requirement}"; then
         problems+=(swift)

@@ -273,10 +273,20 @@ def test_satisfied_feature_dependency_configures(workspace: Path) -> None:
 
 
 def test_optional_backend_requires_its_subsystem(workspace: Path) -> None:
+    """CY_AUDIO_STEAM_AUDIO requires CY_AUDIO, whatever CY_AUDIO happens to default to.
+
+    `-DCY_AUDIO=OFF` IS THE POINT OF THIS TEST AND NOT AN INCIDENTAL FLAG. Until M4 this case
+    passed nothing but `-DCY_AUDIO_STEAM_AUDIO=ON` and relied on CY_AUDIO defaulting off, so what
+    it actually asserted was the default rather than the rule. M4 turned CY_AUDIO on — correctly,
+    because it delivered the miniaudio backend — and this case went red inside `just generate-test`,
+    which is one of the three commands of the permanent `generated-code` gate. A test of a
+    validation rule must state every input the rule reads; a default is not an input it may borrow.
+    """
     output = configure_fails(
-        fixture({}, languages="NONE"), ["-DCY_AUDIO_STEAM_AUDIO=ON"], workspace
+        fixture({}, languages="NONE"), ["-DCY_AUDIO=OFF", "-DCY_AUDIO_STEAM_AUDIO=ON"], workspace
     )
     check_in("CY_AUDIO", output, "the diagnostic must name CY_AUDIO")
+    check_in("-DCY_AUDIO=ON", output, "the diagnostic must give the correction")
 
 
 # --- The module system -----------------------------------------------------------------------

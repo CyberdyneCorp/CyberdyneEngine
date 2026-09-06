@@ -318,6 +318,17 @@ in Swift: move, jump, collide with a level, hear footsteps, follow with a camera
 **Risk spike**: hot reload across the ABI with live Swift objects. If reload cannot preserve state,
 the live-editing story in M5 changes shape.
 
+> **The spike's answer was yes, with a condition, and one exit criterion above is half met.** State
+> survives a reload — including a type whose layout changed and an ARC-managed `String` — but only by
+> *serialize, migrate by name, recreate*: keeping instance pointers across a module swap reads
+> correct values until the layout changes and then corrupts silently, and `dlclose` of a Swift image
+> is unsafe whenever the Swift runtime outlives it, so a retired generation is never unloaded. What
+> is not met is the words *while the sample runs*: the loader reloads and is tested doing it;
+> `samples/04-character` declares `hot_reload = true` and never calls `reload()`. Both are recorded
+> where the outcome belongs — `tools/roadmap/milestones/m4.toml` and
+> [the capability matrix](roadmap/capability-matrix.md#where-m4s-tiers-are-thin) — rather than
+> silently in a plan nobody re-reads.
+
 ---
 
 ## M5 — Authorable

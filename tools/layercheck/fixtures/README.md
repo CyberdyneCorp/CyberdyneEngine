@@ -11,6 +11,7 @@ shows up here as a passing fixture, which is a test failure.
 | `upward-include/` | `layercheck.py --check includes` | fail: a file under `src/core/` includes a header from `src/scene/` |
 | `sdl-above-platform/` | `layercheck.py --check sdl` | fail: a file outside `platform/` includes `<SDL3/SDL.h>` |
 | `gpuapi-above-backends/` | `layercheck.py --check gpuapi` | fail: a file above `src/backends/` includes `<vulkan/vulkan.h>` |
+| `thirdparty-above-backends/` | `layercheck.py --check thirdparty` | fail: files above the backends that own them include `<Jolt/Physics/Body/Body.h>` and `"miniaudio.h"` |
 | `barrier-outside-graph/` | `layercheck.py --check barriers` | fail: a render pass emits its own barrier instead of declaring a resource use |
 | `bare-target/` | `layercheck.py --check targets` | fail: a bare `add_library()` in the engine tree |
 | `legal/` | all of the above | pass, and configure cleanly |
@@ -23,6 +24,13 @@ by hand proves the gate fired on the day somebody ran it; keeping the violation 
 every pull request instead, which is the property the invariant actually needs — barriers being
 computed rather than written is a property of the thirtieth pass, and the thirtieth pass obeys it
 because the first one did.
+
+`thirdparty-above-backends/` is M4's half of the same argument, and it exists because the rule it
+checks was true for a different reason. `cy::dep::jolt` and `cy::dep::miniaudio` are PRIVATE
+dependencies, so neither library's include directory is inherited and neither include resolves
+outside its backend — a real structural guarantee that a PUBLIC dependency, or an include
+directory added by hand, turns off silently. `legal/` carries the other side: the two backends
+that *may* name them, so a rule that fired everywhere would fail here.
 
 `layercheck.py` excludes this directory from its own scan of the repository, since every file here
 is a deliberate violation.

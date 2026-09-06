@@ -37,7 +37,27 @@ set(CY_FEATURE_OPTIONS
     "CY_BUILD_EDITOR|OFF|Build the editor application (the Rust workspace, from M5)"
     "CY_BUILD_TESTS|ON|Build the unit, integration and smoke test suites"
     "CY_BUILD_TOOLS|ON|Build the command-line tools and code generators"
-    "CY_SCRIPTING|OFF|Swift scripting: the C ABI export table and the game module loader (M4)"
+    # DELIVERED AT M4, AND THEREFORE ON BY DEFAULT — rule 3 again, and it took a different shape
+    # here from CY_PHYSICS and CY_AUDIO below, which is why it survived the milestone that delivered
+    # it. NOTHING IS BEHIND THIS OPTION. src/abi/ is compiled in every build and every profile and
+    # says why in its own CMakeLists.txt: the compatibility obligation starts with the first
+    # exported symbol, and a table that exists in some configurations is a table whose gate runs in
+    # some configurations. bindings/swift/ and samples/04-character/ are gated on the Swift
+    # TOOLCHAIN BEING PRESENT, not on an option, and decline to register rather than registering
+    # suites that skip.
+    #
+    # So OFF excluded nothing and cost no coverage. What it cost was truth: cy_features.h carried
+    # `/* CY_SCRIPTING is disabled */` and the runtime feature table carried `X("CY_SCRIPTING", 0)`
+    # in the same binary that had just dlopen'd libCyGame_g0.so and run Swift behaviours for nine
+    # hundred ticks. That is the inverse of the failure the header above warns about — an option ON
+    # for a subsystem with no sources makes `#if defined(CY_UI)` a lie — and it is the same lie.
+    #
+    # WHAT IT RECORDS: that the C ABI export table and the game-module loader are in this build.
+    # They always are, so it is ON and there is no configuration in which it is honest to be off.
+    # WHAT IT DOES NOT RECORD: whether a Swift toolchain exists. That is a host tool, `just
+    # env-doctor` reports it, and just/env.just says at the site why this option no longer decides
+    # its severity — the day deps/host-tools.toml grows a `swift` entry, that file owns it.
+    "CY_SCRIPTING|ON|Swift scripting: the C ABI export table and the game module loader (M4). Both are compiled unconditionally — this records that they are present. Whether a Swift toolchain exists is a separate question `just env-doctor` answers"
     # DELIVERED AT M4, AND THEREFORE ON BY DEFAULT — rule 3, applied where M3 learned it the hard
     # way with CY_RENDERER_VULKAN. src/backends/physics-jolt/ is a real backend over a pinned Jolt
     # and `integration.physics_jolt` drives it; left at OFF the whole backend would be out of the

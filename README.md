@@ -5,12 +5,11 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: M0 through M3 are closed. [M4 — Playable](docs/ROADMAP.md) is next.**
-> The engine renders. A lit, textured, shadowed frame on Vulkan, drawn by a render graph that
-> derives its own barriers, transient aliasing and cross-queue semaphores from declared reads and
-> writes — no pass writes a barrier. Reversed-Z is asserted by sampling the depth buffer back from
-> the device, and a scene a million units from the origin renders without jitter.
-> [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,668 scenarios**
+> **Status: M0 through M4 are closed. [M5 — Authorable](docs/ROADMAP.md) is next.**
+> Gameplay is written in Swift. A third-person character controller — move, jump, collide, hear it —
+> loaded over a versioned append-only C ABI whose gate refuses a reordered entry, deciding every tick
+> through one validated command stream, on a renderer whose graph derives its own barriers.
+> [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,678 scenarios**
 > that define what is being built and why, and are the contract the implementation must satisfy.
 > Start at [the specification index](openspec/specs/README.md), then
 > [the roadmap](docs/ROADMAP.md) for the order they are built in, and

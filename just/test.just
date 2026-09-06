@@ -304,7 +304,49 @@ test-sanitize *args:
     build_dir="$(just _sanitize-dir "${sanitizer}")"
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
     echo "==> sanitize    ${sanitizer}  profile=${profile}  tree=${build_dir}"
-    CY_BUILD_DIR="${build_dir}" just build-engine --profile "${profile}" -D "CY_SANITIZE=${sanitizer}"
+
+    # THE SHADER FRONT END IS OFF IN A SANITIZED TREE, AND THIS IS THE ROOT-CAUSE FIX FOR THREE
+    # SEPARATE FAILURES RATHER THAN A CONVENIENCE. M4 turned CY_SHADER_SLANG on by default in the
+    # dev profile — the profile this recipe builds — so from that commit a sanitized configuration
+    # instrumented a thousand targets of Slang, including generators the build itself runs. All
+    # three sanitizers then failed, in third-party code, before or instead of testing anything of
+    # ours:
+    #
+    #   address     LeakSanitizer failed the BUILD on slang-fiddle — 818 214 bytes in 3 617
+    #               allocations inside `fiddle::Parser::parseFiddleNode`.
+    #   thread      slang-embed could not start: "FATAL: ThreadSanitizer: unexpected memory
+    #               mapping", the ASLR case cmake/sanitizers.cmake prints at configure time.
+    #   undefined   smoke.shader_slang failed twice over: first on Slang's own COM smart pointer
+    #               (`slang-com-ptr.h:193 … object has invalid vptr`, a check -fno-rtti has been
+    #               silently disabling for engine code since M0), and then, with that quietened,
+    #               on Slang failing to dlopen its own downstream plugins in the sanitized tree —
+    #               "failed to load dynamic library 'slang-glslang-2026.9.2'" — which it reports as
+    #               an error while still emitting valid SPIR-V.
+    #
+    # WHAT THIS COSTS, STATED RATHER THAN DISCOVERED: `smoke.shader_slang` is not sanitized, here or
+    # in the nightly "every suite under every sanitizer". It cannot be: the suite drives a compiler
+    # that loads its own plugins at run time and those plugins are not in this tree. `shader-system`
+    # calls the front end a tool-time dependency and the SPIR-V passthrough the shipping path, so
+    # what a sanitized run is for — the engine's own code — is unaffected. Anyone who wants the
+    # front end instrumented anyway passes -D CY_SHADER_SLANG=ON here and should read the list above
+    # first.
+    #
+    # THE TWO WRAPPERS BELOW STAY EVEN THOUGH SLANG'S ABSENCE MAKES BOTH INERT TODAY. Each is one
+    # line, each is backed by a reproduction above, and both describe a property of ANY dependency
+    # that runs a binary during its own build — which is the next one, not this one.
+    #   * detect_leaks=0 for the BUILD only: a build-time tool's leaks are not this gate's subject.
+    #     The export further down turns detection back on before ctest, so every suite is still
+    #     leak-checked.
+    #   * setarch -R for the BUILD when the sanitizer is thread: the same one-line fix this recipe
+    #     already applies to the test run.
+    build_launcher=()
+    if [[ "${sanitizer}" == *thread* ]] && command -v setarch >/dev/null 2>&1; then
+        build_launcher=(setarch "$(uname -m)" -R)
+    fi
+
+    ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=0" \
+        "${build_launcher[@]}" env CY_BUILD_DIR="${build_dir}" just build-engine \
+        --profile "${profile}" -D "CY_SANITIZE=${sanitizer}" -D CY_SHADER_SLANG=OFF
 
     # A sanitized binary is five to twenty times slower, which is the tool working rather than the
     # test regressing. The harness scales its per-test budget under a sanitizer already; this makes

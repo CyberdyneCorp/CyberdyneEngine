@@ -52,6 +52,12 @@ CASES = (
     Case("gpuapi-above-backends", "check", False, checks=("gpuapi",),
          why="a file above src/backends/ includes <vulkan/vulkan.h>",
          expect=("src/rendering/graph/pass.cpp", "gpuapi:", "vulkan/vulkan.h", "src/backends/")),
+    Case("thirdparty-above-backends", "check", False, checks=("thirdparty",),
+         why="files above the backends that own them include a Jolt header and miniaudio.h",
+         expect=("src/servers/physics/body.cpp", "thirdparty:", "Jolt/Physics/Body/Body.h",
+                 "src/backends/physics-jolt/",
+                 "src/servers/audio/server.cpp", "miniaudio.h",
+                 "src/backends/audio-miniaudio/")),
     Case("barrier-outside-graph", "check", False, checks=("barriers",),
          why="a render pass emits its own barrier instead of declaring a resource use",
          expect=("src/rendering/passes/depth_prepass.cpp", "barriers:", "record_barriers",
@@ -61,8 +67,8 @@ CASES = (
          expect=("src/core/CMakeLists.txt", "targets:", "add_library", "cy_add_module")),
     Case("legal", "configure", True, why="downward links only"),
     Case("legal", "check", True,
-         why="downward includes, SDL under platform/, no graphics API above it, no barrier outside "
-             "the graph, no bare targets"),
+         why="downward includes, SDL under platform/, no graphics API above it, Jolt and miniaudio "
+             "inside the backends that own them, no barrier outside the graph, no bare targets"),
 )
 
 

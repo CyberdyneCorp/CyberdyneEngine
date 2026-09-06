@@ -318,6 +318,7 @@ describe = "THE SAMPLE CONTAINS NO C++ GAMEPLAY CODE, checked twice and the weak
 runs = [
     "just test-smoke -R character_sample",
     "just test-integration -R character_no_cpp_gameplay",
+    "just run-sample character --ticks 120",
 ]
 platforms = ["linux"]
 since = "m4"
@@ -444,7 +445,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m4"
 class = "milestone"
 milestone = "m4"
-state = "joins-on-close"
+state = "green"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

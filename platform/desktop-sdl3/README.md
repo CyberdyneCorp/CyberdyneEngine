@@ -23,8 +23,10 @@ task 3.2.4. A fourth desktop platform is a fourth file and one branch in `CMakeL
 |---|---|
 | `include/cy/platform/sdl3_platform.h` | `Sdl3Platform` — the `Platform` implementation |
 | `include/cy/platform/sdl3_display_server.h` | `Sdl3DisplayServer` — the `DisplayServer` implementation |
+| `include/cy/platform/sdl3_input_source.h` | `Sdl3InputSource` — SDL events as `cy::input::DeviceEvent`s (M4) |
 | `src/sdl3_platform.cpp` | every SDL call for the process services |
 | `src/sdl3_display_server.cpp` | every SDL call for windows, screens and events |
+| `src/sdl3_input_source.cpp` | every SDL call for keyboards, mice and gamepads |
 | `src/host/host.h` | the four host services SDL3 has no API for |
 | `src/host/host_linux.cpp` | `/proc/self/exe`, `/proc/meminfo`, the X11 and Wayland handles |
 | `src/host/host_macos.cpp` | `_NSGetExecutablePath`, mach memory statistics, the `NSWindow` — **unverified** |
@@ -55,6 +57,17 @@ the documented APIs and reviewed; the first CI job on each (task 2.4.1) is what 
 
 ## What is not here
 
-Input. `core-platform-abstraction` puts the input pipeline behind `InputServer`, and it arrives at
-**M2**; `Sdl3DisplayServer::pump_events()` discards every non-window SDL event until then, and the
-input backend takes over the pump when it lands.
+**Input landed at M4 and this section used to say it was coming at M2.** It is
+`Sdl3InputSource`, above: SDL keyboard, mouse and gamepad events become timestamped
+`cy::input::DeviceEvent`s and nothing is coalesced, which is `core-platform-abstraction`'s
+"Fixed-step input handling" requirement — the platform layer's whole obligation is to deliver every
+transition with its timestamp, and `src/servers/input/` resolves them per tick.
+`integration.sdl3_input` drives it headlessly with synthetic SDL events.
+
+What is genuinely still absent is the rest of `core-platform-abstraction`'s "Clipboard, dialogs, and
+system integration": clipboard text and images, native file and message dialogs, cursors, IME and
+on-screen keyboards, orientation and keep-awake, and tray items. SDL3 provides all of them; this
+`DisplayServer` exposes none, `has_feature()` answers `false` for each, and each becomes `true` in
+the change that adds its call. `Accessibility hooks` — an accessibility tree the OS screen reader
+can read — is likewise not started; `InputServer`'s accessibility settings are a different
+requirement in a different capability.

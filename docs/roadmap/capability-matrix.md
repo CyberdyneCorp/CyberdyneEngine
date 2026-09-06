@@ -160,34 +160,442 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M3 twenty-six capabilities have left `—`, and one has reached Complete.
+As of M4 thirty-three capabilities have left `—`, and one has reached Complete.
 
 - **Complete (1)**: `core-math`.
-- **Working (16)**: `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
-  `core-type-system`, `delivery-roadmap`, `ecs-core`, `engine-architecture`, `project-and-plugins`,
+- **Working (21)**: `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+  `core-platform-abstraction`, `core-type-system`, `delivery-roadmap`, `ecs-core`,
+  `engine-architecture`, `input-and-actions`, `native-abi`, `physics`, `project-and-plugins`,
   `rendering-architecture`, `rendering-forward-clustered`, `rendering-geometry-and-resources`,
   `rendering-materials-and-shading`, `rhi-and-render-graph`, `scene-graph-and-nodes`,
-  `serialization-and-prefabs`, `shader-system`.
-- **Seed (9)**: `build-system-and-platforms`, `core-platform-abstraction`,
-  `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `rendering-culling-and-lod`,
-  `rendering-lighting-and-shadows`, `simulation-and-determinism`, `testing-and-quality`,
-  `thirdparty-dependencies`.
+  `serialization-and-prefabs`, `shader-system`, `swift-scripting`.
+- **Seed (11)**: `audio`, `build-system-and-platforms`, `camera-system`,
+  `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `gameplay-framework`,
+  `rendering-culling-and-lod`, `rendering-lighting-and-shadows`, `simulation-and-determinism`,
+  `testing-and-quality`, `thirdparty-dependencies`.
 
-The remaining 49 have not started. M3 advanced nine of them — six to Working, two to Seed, and
-`core-math` from Working to Complete — each recorded against `implement-m3-first-light`.
+The remaining 43 have not started. M4 advanced eight — `native-abi`, `swift-scripting`,
+`input-and-actions` and `physics` to Working, `camera-system`, `audio` and `gameplay-framework` to
+Seed, and `core-platform-abstraction` from Seed to Working — each recorded against
+`implement-m4-playable`. Seven of the eight are capabilities that had never started, which is why
+M4 is the milestone with the largest single jump in the record so far and why the section below is
+the longest of the three.
 
-**One capability the matrix plans for M3 did not advance, and the record says so rather than the
-plan.** The M3 column above marks `testing-and-quality` **W**, and it is still Seed.
-`tools/roadmap/milestones/m3.toml` does not ask for it, and the reason it should not is that three
-of its twelve requirements have no prerequisite in the tree yet: **ABI and API stability gates**
-needs an ABI (M4), **Documentation as a gate** has no undocumented-symbol check anywhere in
-`.github/workflows/`, and **Golden-image rendering tests** asks for every enabled backend, a
-perceptual metric and a path-traced reference — M3 has one backend, an exact-match comparison with
-an edge-tolerance rule, and no path tracer. What M3 did add is real and is recorded in the M3
-section below: the `render` suite kind, the first committed references, the ECS benchmark runner and
-the nightly sanitizer schedule. That is movement inside Seed, not Working.
+**Two capabilities the matrix plans for M4 did not advance, and the record says so rather than the
+plan.** The M4 column above marks `simulation-and-determinism` **W** and `build-system-and-platforms`
+**W**. Neither appears in [the M4 row of the roadmap](../ROADMAP.md#m4--playable), neither is in
+`tools/roadmap/milestones/m4.toml`'s exit tiers, and neither is true:
 
-## Where M3's tiers are thin
+- `simulation-and-determinism` is still Seed. M4 delivered two of the things it asks for — physics
+  that reproduces bit-for-bit across processes on one platform, and gameplay random streams derived
+  from M2's seeded ones — but the state hash still does not see them. `samples/04-character` opens
+  every run with `[info] runtime: 22 component types have no reflected descriptor and are not in the
+  state hash` — nine more than `samples/02-headless-sim` reports through the same mechanism, and the
+  nine are the character's own, registered from the Swift module across the ABI. A determinism
+  guarantee that cannot see the character's position is not the guarantee the capability describes.
+- `build-system-and-platforms` is still Seed for the reason recorded at M2 and M3 and unchanged
+  here: Windows and macOS have still never compiled. Everything M4 added — the Swift toolchain, two
+  fetched libraries, a shared-library loader and `dlopen` — is new platform surface that exactly one
+  operating system has ever built.
+
+**`testing-and-quality` is still Seed, and M4 closed one of the three reasons it was not Working.**
+The M3 section below records three requirements with no prerequisite in the tree: **ABI and API
+stability gates**, **Documentation as a gate**, and **Golden-image rendering tests**. The first is
+now satisfied — `just quality-abi` diffs the interface table against a committed baseline, refuses a
+reorder even between two entries with identical C signatures, refuses a removal, and refuses to
+launder either through its own `--update` path; `integration.abi_gate` runs the whole demonstration
+against the live header on every pull request. The other two are unchanged: there is still no
+undocumented-symbol check in `.github/workflows/`, and golden images are still one backend, an
+exact-match comparison and no path-traced reference. M4 also changed what a budget *means* — see
+the `testing-and-quality` delta in `openspec/changes/implement-m4-playable/` — which is movement
+inside Seed, not Working.
+
+## Where M4's tiers are thin
+
+The eight tiers M4 advanced are the plan, and the record agrees with it. What the plan does not say
+is where the implementation is **thinner than the tier claims**. Every entry below was measured or
+reproduced at M4's gate on this tree: Linux 6.8, GCC 13.3.0 and Clang 18.1.3, clang-format and
+clang-tidy pinned at 22.1.8, Swift 6.3.3 through `swiftly`, and an NVIDIA RTX 5060.
+
+Eight entries are defects this gate found by attacking what the milestone exists to establish rather
+than by reading it, and each is fixed in this change rather than recorded and left; a ninth looks
+like one and is not, and is here so the next reader does not have to re-derive it. **Three of the
+eight are permanent merge gates that were red while every milestone ledger was green.** Two of the
+three broke the same way — this milestone flipped a default correctly, and a check that had been
+reading that default rather than stating its own inputs went red in continuous integration — and the
+third is a case M3's own record predicted would fail and named. That is the shape to carry into M5,
+which flips more defaults than M4 did.
+
+### What the gate found
+
+- **The layering check did not police Jolt or miniaudio, and the ledger said it did.** `m4.toml`'s
+  `layering` criterion reads "no SDL, Vulkan, Slang, Jolt or miniaudio type appears above the
+  backend that owns it — **each proven by introducing one and requiring the check to reject it**".
+  `tools/layercheck/layercheck.py` had rules for the first three and nothing for the last two: its
+  `gpuapi` set is Vulkan, SPIR-V, glslang and Slang, and neither `Jolt/` nor `miniaudio.h` appeared
+  anywhere in the file. The rule was still true in the tree, but for a different reason —
+  `cy::dep::jolt` and `cy::dep::miniaudio` are `PRIVATE` dependencies, so neither library's include
+  directory is inherited and neither include resolves outside its backend. That is a real
+  structural guarantee and it is not the one the criterion describes; a `PUBLIC` dependency, or an
+  include directory added by hand, turns it off with nothing to say so. Fixed here: a `thirdparty`
+  check with a per-library root, the fixture
+  `tools/layercheck/fixtures/thirdparty-above-backends/`, two control files in `legal/` so a rule
+  that fired everywhere would fail, and a selftest case. The check now reports `clean — 1002 files,
+  barriers, gpuapi, includes, sdl, targets, thirdparty`, the selftest is 10 cases rather than 9,
+  and introducing `#include <Jolt/Physics/Body/Body.h>` into `src/servers/physics/src/body.cpp` and
+  `#include "miniaudio.h"` into `src/servers/audio/src/server.cpp` produces two findings naming the
+  interface each library sits beneath.
+
+- **M4 broke the `sanitizers` gate in continuous integration three separate ways, and its own
+  ledger carried a workaround for one of them.** `just test-sanitize` builds the `dev` profile;
+  M4's task 1.4 turned `CY_SHADER_SLANG` on in that profile; so from that commit the sanitized
+  configuration compiled Slang — 1 000 targets of third-party C++ including code generators the
+  build itself runs — with whichever sanitizer was asked for. Each mode fails differently, and all
+  three were reproduced from a clean tree at this gate:
+
+      address       [985/2027] Generating fiddle/.fiddle.stamp
+                    ==177600==ERROR: LeakSanitizer: detected memory leaks
+                      #1 Slang::StringRepresentation::createWithCapacityAndLength  slang-string.h:317
+                      #1 fiddle::Parser::parseFiddleNode()                         slang-fiddle-scrape.cpp:806
+                    SUMMARY: AddressSanitizer: 818214 byte(s) leaked in 3617 allocation(s).
+                    ninja: build stopped: subcommand failed.
+
+      thread        [1/1068] Generating slang-cpp-prelude.h.cpp
+                    FATAL: ThreadSanitizer: unexpected memory mapping 0x5c8442139000-0x5c844213e000
+                    ninja: build stopped: subcommand failed.
+
+      undefined     smoke.shader_slang ***Failed
+                    _deps/slang-src/include/slang-com-ptr.h:193:27: runtime error: member call on
+                    address 0x… which does not point to an object of type 'ISlangUnknown';
+                    object has invalid vptr
+
+  `sanitizers` has been a permanent merge gate since M1, and `.github/workflows/ci.yml`'s `sanitize`
+  job runs `just test-sanitize --sanitizer thread --tests jobs` and
+  `--sanitizer address,undefined --tests jobs` with no override — so the first two steps of that job
+  have been failing at the **build** step on every pull request since the flip, before a single
+  suite is reached, on code nothing here tests. Three agents observed the LeakSanitizer half
+  independently and each recorded it as someone else's item; `m4.toml`'s `sanitizers` criterion then
+  pre-configured its own tree with `-D CY_SHADER_SLANG=OFF` and passed. **That is the part worth
+  carrying forward: a criterion that runs a different configuration from the gate it stands for
+  cannot speak for it, and this one was green while its gate was red — and it was green over the one
+  mode that had a workaround, which is why the other two survived to this gate.**
+
+  Fixed at the root, in `just/test.just`, which now configures the sanitized tree with
+  `-D CY_SHADER_SLANG=OFF`. **What that costs is stated rather than discovered**: `smoke.shader_slang`
+  is not sanitized, here or in the nightly "every suite under every sanitizer". It cannot be — with
+  the vptr check quietened the same suite fails again on Slang failing to `dlopen` its own downstream
+  plugins in that tree (`failed to load dynamic library 'slang-glslang-2026.9.2'`, reported as an
+  error while still emitting valid SPIR-V) — and `shader-system` calls the front end a tool-time
+  dependency whose shipping path is the SPIR-V passthrough, so what a sanitized run is for is
+  unaffected. Two smaller wrappers land with it and stay although Slang's absence makes both inert
+  today, because each is one line, each is backed by a reproduction above, and both are properties of
+  *any* dependency that runs a binary during its own build: the build runs with `detect_leaks=0`
+  (detection is turned back on before `ctest`, so every suite is still leak-checked), and the build
+  runs under `setarch -R` when the sanitizer is `thread` — the same fix the recipe already applied to
+  the test run.
+
+  Verified after the fix, in `build/gate-m4/`, over the ABI suites: `--sanitizer address`,
+  `--sanitizer undefined`, `--sanitizer address,undefined` and `--sanitizer thread` each build and
+  pass 4/4. The criterion now runs the same commands CI does, with nothing in front of them.
+
+- **M4 also broke the `generated-code` gate, and it had been red for the whole milestone.**
+  `just generate-test` runs `tools/gen/tests/run_tests.py`, twenty-one CMake fixtures that hold the
+  feature and module machinery to its rules. One of them,
+  `test_optional_backend_requires_its_subsystem`, configured with `-DCY_AUDIO_STEAM_AUDIO=ON` and
+  required the configure to **fail**, because that option requires `CY_AUDIO` — and it was relying on
+  `CY_AUDIO` defaulting off to make that true. M4 turned `CY_AUDIO` on, correctly, because it
+  delivered the miniaudio backend. Measured here: **20/21 passed**, with the diagnostic `configure
+  was expected to fail but succeeded` over a feature line that now reads `CY_AUDIO
+  CY_AUDIO_STEAM_AUDIO`. `generated-code` is a permanent gate and `.github/workflows/ci.yml`'s
+  `generated` job runs that command, so it has been failing on every pull request since the flip.
+  **No milestone ledger runs it**: M0's `generated-code` criterion runs `just generate-check`, one of
+  the three commands its own gate declares. Fixed twice over — the fixture now passes `-DCY_AUDIO=OFF`
+  so that it asserts the rule rather than the default, because a test of a validation rule must state
+  every input the rule reads; and `m4.toml` gains a `generated-code` criterion that runs all three of
+  the gate's commands verbatim, so the next default that moves is caught by the recipe that closes the
+  milestone rather than by the pull request after it.
+
+- **The `profiles` gate was red in the Debug profile, on the very case M3's record named as the
+  canary.**
+  `integration.scene_scale`'s "many instances of a batched behaviour cost one system, not one call
+  each" builds 500 nodes and, at `-O0`, spends more than its 1 000 ms integration budget doing it:
+
+      src/scene/tests/test_behaviour.cpp:113: ERROR: over budget: … spent 1363.940 ms of CPU
+      against a budget of 1000.000 ms … The clock is the case's own CPU time, so this is not a
+      busy machine: it is work the test did.
+
+  Measured three times alone at 1 021, 1 114 and 1 563 ms. M3's section below records it at **868 ms
+  of its 1 000 ms budget** and calls it "the closest thing to a canary", beside the rule it was
+  written to illustrate: *a case within 20% of its budget is still a case that will fail eventually.*
+  It did. Because `four-profiles` is an exit criterion of M1, M2, M3 **and** M4, and each of those
+  ledgers nests the ones below it, one over-budget case failed four ledgers at once — which is the
+  multiplication `testing-and-quality`'s M4 delta describes, arriving in the milestone that wrote it
+  down. Fixed the way the harness's own message and M3's own precedent say: the case is cheaper, at
+  128 instances rather than 500, and every assertion it makes is unchanged because none of them was
+  ever about the count — `0 < g_batch_calls < kInstances` is the property, and it fails just as hard
+  at 128 if the dispatch degenerates to one call per instance. 33 of 33 cases pass in Debug
+  afterwards, with the case at roughly a quarter of its budget.
+
+  **And then the sweep, because one canary is not a survey.** `CY_TEST_BUDGET_SCALE=0.8` over every
+  unit and integration binary — the setting that fails anything above 80% of its budget, which is
+  M3's own "within 20%" rule expressed as a command — reports **0 of 96 over** in the Development
+  profile and **0 of 96** in Debug when the suites are run alone. Two cases are worth naming rather
+  than leaving for the next gate to find: `unit.physics_server`'s "one thousand identical box
+  colliders create one shape" sits at **0.544 ms of its 1 ms** budget at `-O0` (54%, flagged by the
+  0.4 sweep and by nothing tighter), and `integration.jobs_diagnostics` passes alone and tips over
+  80% under `ctest -j4`, which makes it the one case left whose margin is contention rather than
+  work.
+
+  **A corollary, learned the expensive way at this gate: the milestone ledgers are a serial gate, and
+  `CY_JOBS` is not only a build knob.** Running `just roadmap-milestone` for several milestones at
+  once — each in its own `CY_BUILD_DIR`, which is what keeps their build trees from corrupting each
+  other — does not keep their *tests* from competing; four concurrent ledgers on twenty-four cores
+  produced `four-profiles` failures whose suites passed when re-run alone, plus one clang-tidy run
+  killed by the OOM reaper. And within a single ledger, `CY_JOBS` is passed to `ninja` **and** to
+  `ctest --parallel`, so raising it to shorten the build also raises the contention every per-case
+  budget is measured under: at `CY_JOBS=14` a `four-profiles` unit suite failed once and passed on
+  every re-run, at 5 and 6 none did. Nothing in either case is a defect in the tree, and both look
+  exactly like one in a log. One ledger at a time, and a modest `CY_JOBS`; the nesting means the
+  deepest ledger runs the whole ladder anyway.
+
+  **The residual is real and it is `m2`'s, recorded there since M2 and now with a second
+  measurement.** `m2.toml`'s own note says `four-profiles` is "flaky at roughly three per cent in the
+  Debug configuration", on a case that pays the process cold start. At M4's gate `just
+  roadmap-milestone m2` failed on `four-profiles` in two of three serial standalone runs and passed
+  on the third with 26 criteria — and in each failure every suite named passed on re-run, twice at
+  the same `ctest` parallelism on an idle machine. Three per cent per Debug run is optimistic once
+  four profiles and four nested ledgers multiply it; the same recipe run inside `m3`'s and `m4`'s
+  ledgers passed on the first attempt both times. It is not a defect in M4 and it is not fixed here,
+  but "roughly three per cent" is the number to stop quoting.
+
+- **`four-profiles` is green in continuous integration without ever building a Swift module.** The
+  criterion says "all four profiles build clean and `just test-all` is green in each — **including
+  the Swift suites and the artefact's smoke test, which build the game module at `swiftc -O` in
+  Profile and Shipping**". That is true on this machine and was false in CI: the `profiles` job
+  installed no Swift toolchain, and `bindings/swift/` and `samples/04-character/` do not register
+  their suites without one, so three of the four profiles were judged with the milestone's artefact
+  absent from the tree. `.github/workflows/ci.yml` says in as many words that the toolchain "is
+  installed in this job and nowhere else"; the job it names is `playable`, which runs the `dev`
+  profile only. Fixed here by installing Swift in the `profiles` job too. The `build` and `test`
+  matrix jobs still have none, on any of their six legs, and that is deliberate — two of the six
+  are ARM runners for which no Swift setup action exists — so `three-platforms` remains what it has
+  always been: not evaluated.
+
+  **The same absence had a second consequence, in the gate least likely to be checked for it.** `just
+  quality-lint` runs clang-tidy against `compile_commands.json`, so a target that is never declared
+  is a target that is never linted: in the `quality` job, `samples/04-character/host/`'s three
+  translation units and `bindings/swift/tests/test_swift_reload.cpp` — 1 990 lines, including the
+  sample host that M4's whole "no C++ gameplay" claim is about — were formatted by the format gate
+  (a tree walk, so it sees them) and linted by nobody. Swift is installed in that job now too.
+
+- **`CY_SCRIPTING` was `OFF`, gated nothing, and made the engine's own feature table say scripting
+  was off in a binary that was running Swift.** M3's lesson was a delivered backend left behind an
+  option nobody turned on. M4's is the mirror image and it took a different shape, which is why it
+  survived seven agents: nothing is behind `CY_SCRIPTING` — `src/abi/` is compiled unconditionally
+  and says why in its `CMakeLists.txt`, and the Swift halves are gated on the *toolchain being
+  present* — so the option excluded nothing and the omission cost no coverage. What it cost is
+  truth. `cy_features.h` carried `/* CY_SCRIPTING is disabled */` and the runtime table carried
+  `X("CY_SCRIPTING", 0)` in the same build that loads `libCyGame_g0.so`, so `#if
+  defined(CY_SCRIPTING)` was a lie in the direction `cmake/features.cmake`'s own header warns
+  about. Fixed here by flipping the default and by cutting the coupling that made the flip
+  dangerous: `just env-doctor` derived Swift's severity from this option's default, so `ON` would
+  have turned "no Swift toolchain" into a hard failure — and `env-doctor` is the *first* criterion
+  of every milestone ledger, including the four that are closed. The option no longer decides
+  whether the build uses Swift, so it no longer decides that either; `just/env.just` says so at the
+  site, and names `deps/host-tools.toml` as where a real Swift requirement (and the version pin
+  `swift-scripting` asks for) belongs.
+
+- **The ledger's warning about a machine with no Swift is wrong in three of its four cases, in the
+  direction that matters less — but it is the kind of wrong that trains a reader to skim.**
+  `m4.toml`'s header says such a machine's criteria "do not fail, they are absent: `just test-smoke
+  -R character_sample` matches no test and ctest exits zero". It does not: `just/test.just` passes
+  `--no-tests=error` for every kind but `unclassified` and `render`, and the measurement is `ctest
+  --label-regex "^smoke$" --no-tests=error -R zzz_nonexistent` → **exit 8**. So `sample-artefact`,
+  `no-cpp-gameplay` and `swift-reload` all fail loudly on a Swift-less machine. The one that really
+  does pass having judged less is `swift-api`, whose regex `swift_` still matches the three suites
+  that need no toolchain — the overlay's currency, the generator's selftest, and the engine linking
+  no Swift runtime — while `integration.swift_package` and `integration.swift_reload` are simply
+  not there. Corrected in place.
+
+- **`platform/desktop-sdl3/README.md` said input arrives at M2 and that the event pump discards
+  every non-window event "until then".** M4 landed `sdl3_input_source.{h,cpp}` in that directory
+  and `integration.sdl3_input` drives it, and the README was not touched. A stale caveat is worse
+  than no caveat, because it is the sentence a reader trusts instead of reading the directory.
+  Corrected, including the layout table, which listed neither new file.
+
+- **`ModuleImage::close()` calls `dlclose`, and the reload model says there is none. Both are
+  right, and it took reading the caller to know that.** Recorded here because the next reader will
+  grep for it too: the one call site is the path where `dlopen` succeeded and the entry symbol is
+  absent, so no initialiser of that image ever ran, it registered nothing and interned no type
+  metadata; the comment above it says exactly that. Nothing in the reload sequence unloads
+  anything, and `grep -rn dlclose src/` finding a hit is not the defect it looks like.
+
+### `native-abi` at Working
+
+- **The gate is stronger than its own description, and that is worth recording because it is the
+  one thing here with no way back.** Independently re-run at this gate against the live header: a
+  reorder of two entries with **identical C signatures** (`component_get_f32` and
+  `component_get_vec3`, both `CyResult(*)(CyWorld, CyEntity, CyComponentTypeId, uint32_t, float*)`)
+  is refused with four findings naming the slot and the member — a swap the compiler cannot see and
+  that nothing else in the tree would have caught; `--update` **refuses to launder it**, which is
+  what stops the escape hatch from being the way through; a removal produces 44 findings; an append
+  is refused until `CY_ABI_MINOR` is bumped, then reported as compatible-but-stale, then accepted
+  at `1.1.0`. An append also fails `just generate-swift --check` until the overlay is regenerated,
+  so the header and the overlay cannot drift apart — though that failure surfaces as an unhandled
+  Python traceback rather than as the tool's own diagnostic, which is a small blemish on an
+  otherwise exemplary gate.
+- **One of the eleven requirements is not started, by design**: `Rust SDK overlay` is M5's, and the
+  baseline it will be generated from is the same `abi_baseline.json` the gate diffs.
+- **Thirty-one entries is a small table, and the shape of what is missing is systematic.** There is
+  no chunk entry, so `CyberdyneKit`'s system model has no source of chunks; no node entry, so
+  `@Node(path)` resolves to nil; no `CyStage` or `CySeverity`, so two Swift enums are hand-copied
+  from engine enums with nothing to check them against — and the second **was already wrong**, six
+  enumerators against the engine's three, which sent every `Log.info` to the engine as an error on
+  a green run until M4's own reload suite installed a sink and read the severity the engine
+  received.
+
+### `swift-scripting` at Working
+
+- **The tree callbacks are declared and not driven.** `create`, `destroy`, `fixed_update`,
+  `serialize` and `deserialize` are real; `onEnterTree`, `onReady`, `onEnable`, `onDisable`,
+  `onUpdate` and `onExitTree` are in the model and wait on scene entries in the table.
+- **There is no shipping configuration.** `swift-scripting` asks for two — development (dynamic,
+  hot-reloadable) and shipping (optionally static, whole-module optimisation, no dynamic load).
+  Only the first exists. The `-O` half is exercised, because the Swift configuration follows the
+  engine profile, and M4's `profiles` CI job now exercises it there too.
+- **The Swift toolchain version is not pinned**, which `swift-scripting` requires "per engine
+  release and verified in CI". `deps/host-tools.toml` is where it belongs and holds no `swift`
+  entry.
+- **A Swift trap in game code is still fatal.** A thrown error is caught, logged with the behaviour
+  and callback that produced it, and disables the instance; a trap has no catch on any platform.
+- **`swift build` and `swift test` are exercised; Xcode and SourceKit-LSP are not**, and every
+  measurement is Linux with Swift 6.3.3. The macOS and Windows loader paths, the module-name rule
+  and `@_cdecl` export behaviour are **unverified**.
+
+### `input-and-actions` at Working
+
+- **Input assets are not cooked.** The capability requires actions, contexts, bindings, processors
+  and triggers to be authored as assets and cooked into these tables, participating in the derived
+  data cache and the identity manifest. M4 builds the tables in code.
+- **`ActionStableId` is not the identity manifest's number.** The shape is right — an opaque value
+  the declaration carries, never derived from the name — but nothing allocates it from
+  `identity/manifest.toml`.
+- **Interface routing is the focus-layer half only**; `ui-system` does not exist. **Accessibility**
+  is the input layer's settings and not the platform's tree. **Performance is unmeasured**: the
+  evaluation path allocates nothing and locks nothing, and no benchmark asserts the eight-user,
+  thousand-action figure. **`ActionValueType::Pose` is declared and unfed.**
+
+### `physics` at Working
+
+- **Constraints exist as a vocabulary and in no backend.** `constraints.h`/`.cpp` define and
+  validate the types; neither the reference implementation nor Jolt maps one. Both answer
+  `Capabilities::constraints == false` and fail creation with a diagnostic naming why, which is the
+  capability's own "Unsupported feature" scenario rather than a silent gap — and it is the shape the
+  rest of the unimplemented surface takes too: **soft bodies, vehicles, ragdolls, buoyancy and water
+  interaction, and heightfield and terrain collision** are declared in the capability model,
+  unimplemented, and reported as unsupported. `physics` scopes ragdolls to `animation-and-skinning`,
+  which is M6.
+- **There is no ECS bridge.** `src/physics/` at layer 4 — the module that would register the
+  components in a world, create bodies from them, drive `PhysicsStepper` in the `Physics` stage and
+  write `cy::scene::LocalTransform` back — does not exist. `samples/04-character` does that work in
+  its host, in C++, which is why the sample's 1 123-line `game.cpp` is larger than its 667 lines of
+  Swift.
+- **Determinism is one platform and is not claimed to be more.** Re-measured here: two processes of
+  `cy_sample_character --ticks 900` produce byte-identical reports over the reference backend, and
+  two more do over `--jolt`. Cross-platform determinism is explicitly not claimed, and
+  `validate_session()` rejects a configuration that assumes it.
+- **The backend swap changes more than the ledger's note implies.** `m4.toml` records that 400
+  ticks over each backend gave "the same 11 footsteps, 3 landings, 1 jump and 1 climbed step". At
+  900 ticks the same run gives 22 footsteps / 11 landings / 9 steps on the reference backend and 30
+  / 4 / 1 on Jolt. What is invariant is what the requirement actually asks for — the command log
+  and the input frame hash are identical (`log=0e4d14a10f4582a9`, `frames=269545449d8dd9f3`) and no
+  gameplay code changes — not the trajectory.
+
+### `camera-system` and `audio` at Seed
+
+- **Camera: absent, not stubbed** — framing and composition constraints, camera volumes, the
+  strategy camera, the director camera, aim assistance, and screen/world projection. All are M8's.
+  Collision and occlusion are *responses* applied from results the caller supplies.
+- **Audio: absent, deliberately** — decoding and streaming, the sixteen effects beyond the four in
+  `bus.h`, `AcousticsBackend`, HRTF, propagation, reflections, acoustic geometry, interactive
+  music, and the middleware backends. The engine plays float PCM the asset system does not own yet.
+- **Neither is stubbed, and both READMEs say why**: a stub that returns a plausible pose, or a
+  plausible mix, is worse than an absent function a caller cannot call.
+
+### `gameplay-framework` at Seed
+
+- **Section 4.4 of the task list named six of the capability's thirty-three requirements, and
+  those are what exists.** Teams are an integer with no relationship matrix; the session's phase is a `Name` standing in for a hierarchical tag, so `Unit.Robot` does
+  not match `Unit.Robot.Harvester`; capabilities are a derived index rather than components; and
+  events, spawning, time domains, indexes, features, rules assets and session-state fragments are
+  unstarted.
+- **The command stream is single-threaded in practice.** The structure is the one the requirement
+  asks for — per-producer buffers, no central lock, a deterministic merge — but nothing records
+  from several threads, so the claim is architectural rather than measured. The performance
+  contracts (100 000 entities, 100 000 commands per second) are unmeasured.
+- **The invariant itself holds, and it was re-attacked here rather than read.** Adding
+  `cy::servers-input` to `src/gameplay/CMakeLists.txt` stops the build on `test_bypass.cpp:53:
+  static assertion failed: src/gameplay/ can see an input header`; adding a `void* input` member to
+  `GameplayContext` stops it on line 77. Both messages explain the rule rather than naming it.
+  **What no check can cover is the translation step itself** — the host must see actions and
+  commands at once, and `samples/04-character/host/game.cpp` is where that lives; it applies only
+  what `CommandStream::commit()` returned, and a version of it that wrote the game's input
+  component straight from the action state would pass every check in the tree and diverge only on
+  replay. That is design.md §3's own argument, and it is why the bridge is one file rather than a
+  capability every system has.
+
+### `core-platform-abstraction` at Working
+
+- **Two of seven requirements are unimplemented.** `Clipboard, dialogs, and system integration`
+  asks for clipboard text and images, native file and message dialogs, cursors, IME, on-screen
+  keyboards, orientation, keep-awake and tray items; `DisplayServer` has the `Feature` enumerators
+  and no calls, and `has_feature()` answers `false` for each. `Accessibility hooks` asks for an
+  accessibility tree the OS screen reader can read; there is none. The M4 row of the roadmap names
+  "system integration" in this capability's scope, and that half did not land.
+- **`Supported platforms` is one of the three.** Windows and macOS host code is written against the
+  documented APIs, reviewed, and has never been compiled.
+
+### The artefact, and what it does not do
+
+- **It draws nothing, and that is M3's recorded gap rather than a choice made here.**
+  `cy::rhi::Device` still exposes no way to obtain the graphics-API instance a window surface must
+  be created against, so a host can create a window and a device and cannot join them. The sample
+  produces the `cy::render::ViewDescription` a renderer would draw, every tick, and counts it — the
+  camera half of "render view production feeding M3's renderer" is exercised and the renderer half
+  is not.
+- **Nothing reloads while it runs.** `m4.toml` records this and so does the sample's README, and it
+  is the half of the roadmap's "a Swift module hot-reloads **while the sample runs**, preserving
+  world state" that M4 does not satisfy. What is proved, and was re-run at this gate, is the
+  mechanism: `integration.swift_reload` is 5 cases and 78 assertions in which a Swift behaviour's
+  `health`, `ammo` and an ARC-managed `String` survive a rebuild with a changed layout, carried by
+  name through the module's own serializer, and a module whose schema predates the saved blob is
+  refused with the previous generation left live. The sample declares `hot_reload = true`, the
+  loader supports it, and nothing calls `reload()`. Read the tier as "the loader reloads", not "the
+  artefact hot-reloads" — which is word for word what M3's section below says about shader reload,
+  one milestone earlier.
+- **No mouse look, and the level is axis-aligned boxes.** `Look` is the arrow keys as a rate; the
+  ramp is a flight of shallow steps because `LevelBox` has no orientation.
+
+### Carried forward, and where each is written down
+
+Four of M3's entries are unchanged at M4 and each is annotated in place in the section below rather
+than restated here, because a debt copied forward twice is a debt nobody re-checks:
+
+- **The seven servers are still seven nulls, and M4 added four more real servers outside the
+  registry.** `InputServer`, `PhysicsServer`, `AudioServer` and `CameraServer` are constructed and
+  stepped by hosts; `ServerRegistry::register_backend` is called by nothing outside its own tests and
+  `Runtime::tick()` names no server kind. `CameraServer` is not one of the seven `ServerKind` values
+  at all.
+- **No component in the engine is covered by the identity gate.** Still `2 live types, 0 tombstones`,
+  both `cy::demo::`, while M4 added components in five modules and a Swift module that registers its
+  own across the ABI.
+- **Windows and macOS have never compiled**, and M4 is the largest single addition to the porting
+  surface so far: a Swift toolchain, two fetched libraries, `dlopen` and a shared-library loader.
+- **No job in continuous integration runs `just roadmap-milestone`** for any milestone. That is now a
+  recorded decision rather than an accident, and archiving this change without promoting
+  `milestone-m4` out of `joins-on-close` turns `just roadmap-test` red on the next pull request.
+
+## Where M3's tiers were thin, and what M4 closed
 
 The nine tiers M3 advanced are the plan, and the record agrees with it. What the plan does not say
 is where the implementation is **thinner than the tier claims**. Every entry below was measured or
@@ -195,8 +603,14 @@ reproduced at M3's gate on this tree; where a number appears, it is a number thi
 an NVIDIA RTX 5060 (driver 580.95.05, device API 1.4.312, loader 1.3.275) with the Khronos
 validation layers and synchronisation validation on.
 
-Six entries are defects the gate found by attacking what the milestone exists to establish rather
-than by reading it, and each is fixed in this change rather than recorded and left: a persistent
+**Re-checked at M4's gate, entry by entry, against the tree as it stands.** Four had gone stale
+and are corrected in place — the Slang default, the Vulkan default, "every device suite renders one
+frame", and the source-file count — because a caveat inherited from a closed milestone is a caveat
+nobody has looked at, and a stale one is worse than none: it is the sentence a reader trusts instead
+of checking. Four are unchanged and each now says so with M4's numbers.
+
+Six entries are defects the M3 gate found by attacking what the milestone exists to establish rather
+than by reading it, and each was fixed in that change rather than recorded and left: a persistent
 descriptor set the Vulkan backend recycled after two frames, a build-time barrier gate that only
 fired when the render graph itself relinked, an XR seam check whose expected value came from the
 code it was checking, a leak and a use-after-free that only AddressSanitizer could see, a data race
@@ -250,8 +664,12 @@ whole milestone ladder flaky.
   what `DescriptorKind::SampledTexture` allocates.
 
   **What to carry forward is the shape rather than the bug.** A one-frame test cannot see a
-  frames-in-flight defect, and every other device suite here is still a one-frame test. M4's live
-  Swift objects and M6's streaming both live on the far side of that ring.
+  frames-in-flight defect. **Closed at M4** (task 1.3): `tests/render/test_many_frames.cpp` is
+  registered as `render.frames`, runs the device past the ring and asserts that the steady-state
+  frame's pass and barrier counts fall below the first frame's and then stay constant — and it was
+  proved to fail before it was believed, by seeding its steady-state baseline with the first frame's
+  report and watching three assertions go red. M6's streaming still lives on the far side of that
+  ring.
 - **The XR late-latch check had no teeth, and the number it compared against came from the code
   under test.** `render.xr_prerequisites`' third case asserts that the view is not in the command
   stream, and the null backend records a push constant's offset and size but never its bytes — so
@@ -309,6 +727,12 @@ whole milestone ladder flaky.
   even though it did no work; nothing was observed hitting it here, and it remains the one
   load-sensitive check left in the taxonomy. The closest thing to a canary is
   `integration.scene_scale`'s behaviour case, which spends **868 ms of its 1 000 ms** budget at -O0.
+  **The canary died at M4**, which is recorded in the section above: the same case measured 1 021 to
+  1 563 ms there and failed `four-profiles` in the Debug profile — and therefore M1's, M2's, M3's and
+  M4's ledgers at once, which is this paragraph's own multiplication arriving. It is 128 instances
+  now rather than 500. The rule the entry states is unchanged and is now evidence rather than
+  prediction: **a case within 20% of its budget is a case that will fail eventually**, and the sweep
+  that finds them is `CY_TEST_BUDGET_SCALE=0.4` over every binary in every profile.
 
 - **`rhi-and-render-graph` is Working over one backend, and the frame does not reach a window.**
   Vulkan is the only backend with a device behind it; the null backend executes nothing by design.
@@ -353,7 +777,15 @@ whole milestone ladder flaky.
   records the gap and calls the closure "a four-line adapter at layer 5 that this sample does not
   own". So the M2 caveat below
   stands unchanged at M3, and the requirement's first scenario — a `MeshRenderer` component holding
-  a handle obtained from `RenderServer` — still has no path through the runtime.
+  a handle obtained from `RenderServer` — still has no path through the runtime. **Unchanged at M4,
+  and now four servers larger.** M4 built `InputServer`, `PhysicsServer`, `AudioServer` and
+  `CameraServer`; `ServerRegistry::register_backend` is still called by nothing outside its own
+  tests, `Runtime::tick()` names no server kind at all, and `samples/04-character/host/game.cpp`
+  constructs and steps all four by hand. `CameraServer` is not even one of the seven `ServerKind`
+  values. Two milestones after the handoff table said "M3 registers the first", the servers are
+  libraries a host assembles rather than backends the runtime resolves — which is a real
+  architectural claim in `engine-architecture`, at Working, with no path through the runtime for
+  any of them.
 - **The frame is deterministic within a process and across processes, and the guarantee rests on a
   hash that cannot see payload bytes.** Two runs agree: three separate processes of the sample
   printed `plan hash=f31bdc099ded9851` on Vulkan and `74b615b87a605044` on the null backend, and
@@ -379,7 +811,10 @@ whole milestone ladder flaky.
   `render.golden` are declared only when `CY_RENDERER_VULKAN` is on, the default build has it off,
   and no hosted runner has a device. So the gate that runs on every pull request covers
   `unit.math`'s 72 cases and 1 012 assertions of arithmetic; the half that meets a depth buffer is
-  evaluated on a machine with a GPU and reported as *not evaluated* everywhere else. That is what
+  evaluated on a machine with a GPU and reported as *not evaluated* everywhere else. **Half of this
+  is stale as written**: `CY_RENDERER_VULKAN` has defaulted **on** since M3's own closing commit, so
+  the suites are declared in every default build. What has not changed is the part that matters —
+  no hosted runner has a device, so they are still evaluated on one machine. That is what
   `requires = "gpu"` in `m3.toml` records, and it is the honest reading of the tier.
 - **Camera-relative rendering is proved twice, and only one of the two exercises the renderer's own
   subtraction.** `render.conventions`' million-unit case builds its camera-relative vertices in the
@@ -393,14 +828,20 @@ whole milestone ladder flaky.
   and asserts that exactly the pipeline states naming the rebuilt program are invalidated — which is
   task 7.4's claim and is a real one. What no test does is replace a shader while the sample is
   running and see the next frame change, because the sample has no reload path wired into its loop.
-  Read the tier as "the pipeline reloads", not "the artefact hot-reloads".
-- **Slang is integrated and the pull-request build does not compile a shader.** `CY_SHADER_SLANG` is
-  off by default; what runs everywhere is the SPIR-V passthrough, which is the shipping path rather
-  than a stub, over three fixtures compiled with `slangc` and validated with `spirv-val` before they
-  were embedded. `smoke.shader_slang` — the four cases that actually drive a Slang session — is
-  declared only when the option is on, and it costs about 1.1 s to create the global session before
-  anything is compiled. So a Slang regression is caught by whoever builds with the option, not by
-  CI.
+  Read the tier as "the pipeline reloads", not "the artefact hot-reloads". **Unchanged at M4, and
+  repeated by it**: `integration.swift_reload` proves the loader reloads a Swift module across a
+  layout change, and `samples/04-character` never calls `reload()`. Two milestones, two artefacts,
+  the same sentence — which is worth naming as a pattern rather than recording twice, because M5's
+  editor is the milestone whose whole value proposition is that iteration does not cost a restart.
+- **Closed at M4, and it cost something elsewhere.** M3 recorded that `CY_SHADER_SLANG` was off by
+  default, so "a Slang regression is caught by whoever builds with the option, not by CI". M4's task
+  1.4 flipped it to `DEVELOPMENT` — on in Debug and Development, off in Profile and Shipping, which
+  is what `shader-system`'s "a shipping build SHALL contain no Slang compiler" requires as a
+  structure rather than as a habit — so `smoke.shader_slang` now runs in the profile every CI job
+  builds. What runs in the two shipping profiles is still the SPIR-V passthrough, which is the
+  shipping path rather than a stub. **The flip had a consequence nobody followed up**, and it is the
+  `sanitizers` entry in M4's section above: `just test-sanitize` builds the `dev` profile, so it now
+  compiles Slang's own code generator under LeakSanitizer.
 - **M3's renderer components are registered by name, and the identity manifest still holds two demo
   types.** M2's carried-forward debt 1.2 asked for M3's renderer components to be *reflected* as
   they were written. They are not: `src/core/reflect/CMakeLists.txt`'s annotated-header list is
@@ -410,17 +851,22 @@ whole milestone ladder flaky.
   would be inventing an identity. The hash gap was closed the other way instead, with an explicit
   `StateSchema` (see the M2 section below), which is the right call and is not the same thing. The
   consequence stands: **no component in the engine is covered by the identity gate**, and every one
-  of them is a rename M5's save files will not survive.
+  of them is a rename M5's save files will not survive. **Unchanged at M4, and larger.**
+  `just quality-identity` still reports **2 live types, 0 tombstones** — both of them
+  `cy::demo::` — while M4 added physics, camera, audio, gameplay and input components and a Swift
+  module that registers its own across the ABI. `input-and-actions` asks for `ActionStableId` to
+  come from the manifest and it does not; the ABI's `world_register_component` allocates no manifest
+  identifier either.
 - **Still standing at M3 and larger** — restated with M3's numbers in the section above. The M2
   finding:
 
   **`build-system-and-platforms` is unchanged and still Linux-only in practice.** Windows and macOS
-  have still never compiled. The tree `just quality-layers` walks is now **816 files**, up from 600
-  at M2, and 216 of that growth is this milestone — so the first foreign build is a larger diff
-  again, and every `three-platforms` criterion in every ledger is still reported as *not evaluated*
-  rather than as passed. Two things M3 added make it harder rather than easier: `volk` and VMA are
-  new dependencies with their own platform surfaces, and `CY_RENDERER_VULKAN` is a second
-  configuration that only one machine has ever built.
+  have still never compiled. The tree `just quality-layers` walks is **1 002 files** at M4, up from
+  816 at M3 and 600 at M2, so the first foreign build is a larger diff every time it is deferred,
+  and every `three-platforms` criterion in every ledger is still reported as *not evaluated* rather
+  than as passed. M3 added `volk`, VMA and a second build configuration; M4 added a Swift toolchain,
+  Jolt, miniaudio, `dlopen` and a shared-library loader, and `samples/04-character/module.toml`
+  names a library for Windows and macOS that neither has ever loaded.
 - **The milestone gates are green and nothing in continuous integration runs them.**
   `tools/roadmap/gates.toml` declares `milestone-m0`, `-m1` and `-m2` as `green` and permanent, and
   `tools/ci/check_workflows.py`'s coverage check skips every gate whose class is not `permanent` —
@@ -429,7 +875,12 @@ whole milestone ladder flaky.
   run by whoever closes a milestone, not by a pull request. That is a defensible trade — `m2`'s
   recipe is a working session and `m3`'s contains three `four-profiles` loops — but it should be a
   recorded decision rather than an accident of how the coverage check is written, and it is recorded
-  here as the second.
+  here as the second. **Unchanged at M4.** `milestone-m3` is `green` and `milestone-m4` is
+  `joins-on-close`; `just ci-check` still reports only that every *permanent* gate is run, so no job
+  runs `just roadmap-milestone` for any milestone. What did change is that forgetting the promotion
+  is no longer possible: `just roadmap-test` now reads `openspec/changes/archive/` and fails when a
+  milestone whose change is archived still has a gate at `joins-on-close`, which is the check M2's
+  block asked for, M3's block landed, and M4's close is the first to be held to.
 
 ## Where M2's tiers were thin, and what M3 closed
 
