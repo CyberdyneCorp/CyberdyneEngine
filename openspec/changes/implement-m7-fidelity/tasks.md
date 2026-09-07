@@ -83,6 +83,13 @@ thing on the far end of its transport is a test fixture.
 - [ ] 5b.5 **An artefact that reports a GAP SHALL NOT exit zero.** The defect above is not the drag;
       it is that a narrowed artefact passed. Make this structural, in the artefact harness, so no
       later sample can do it again
+- [ ] 5b.5b **An artefact SHALL headline a stable statistic, never an extreme.** The same harness
+      rule, in the other direction. M6's open-world sample printed `worst tick 358 us` and that is
+      what reached the screenshot, the report and the roadmap page — while four re-runs on a verified
+      empty machine gave 365.9 to 392.2, every one of them worse. Its median over the same four runs
+      moved 0.6 us. A single sample of an extreme-value statistic is a draw, not a measurement, and
+      the counters beside it did not move at all. Print the max if a hitch has to show up somewhere,
+      but the figure an artefact leads with must be one that reproduces
 - [ ] 5b.6 `smoke.editor_window` derives the viewport socket from the build tree, and a Unix socket
       path is capped at 108 bytes — it breaks on a long build directory. Found by M6's release run
 - [ ] 5b.7 **The exit criterion**: a screenshot in which the editor's viewport shows the engine's
