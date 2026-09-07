@@ -539,8 +539,8 @@ arrived while the overlay beside it counts a thousand**, because nothing in the 
 | `virtual-texturing` | W | Virtual address spaces, page tables, tiles, the physical cache, the resident mip tail, GPU feedback, prefetch, runtime producers |
 | `save-and-persistence` | W | The overlay as the save, scopes and traits, persistent identity, dirty tracking, the journal, atomic generations, migration |
 | `rendering-culling-and-lod` | W | GPU-driven culling, visibility ranges, HLOD, shadow caster culling |
-| `asset-import-pipeline` | C | ufbx, xatlas, mesh processing, cook profiles, packaging |
-| `core-assets-and-io` | C | Streaming under the residency policy |
+| `asset-import-pipeline` | ~~C~~ **W** | ufbx, xatlas, mesh processing, cook profiles, packaging — see the correction below |
+| `core-assets-and-io` | ~~C~~ — | Streaming under the residency policy — **not done**; see the correction below |
 
 **Closing artefact**: `samples/06-open-world` — a multi-kilometre world traversed continuously at
 speed: cells stream in and out, textures page, the game is saved, quit, reloaded, and resumes in the
@@ -558,6 +558,38 @@ same state. Then a content change is cooked, packaged, and shipped as a patch.
 
 **Risk spike**: the derivation key model. If keys are not precise, the cache is either wrong or
 useless, and every later milestone builds on top of it.
+
+**What closed here, and what did not.** M6's gate checked each planned tier against the code rather
+than against this table, and **five capabilities the plan had reaching Complete did not**. Six rows
+advanced, all to Working: `build-and-packaging`, `residency`, `save-and-persistence`,
+`virtual-texturing` and `world-partition-and-streaming` from nothing, and
+`rendering-culling-and-lod` from Seed. The five that did not, with the requirement that stops each:
+
+- `asset-import-pipeline` — FBX through ufbx, xatlas, mesh processing and cook profiles are real and
+  are what makes this the milestone someone can bring a model through. "Model import" also requires
+  skeletons, animations and a prefab, "Texture import" requires BC7 and ASTC variants where the
+  importer reads Targa alone, and "Virtual geometry cooking" is a whole requirement whose subject is
+  M7's. **Complete moves to M8.**
+- `core-assets-and-io` — the scope line above is "streaming under the residency policy" and nothing
+  under `src/core/assets/` changed in this milestone at all. Its own header still reads "STREAMING IS
+  M6. There is no residency budget driven by renderer feedback, no per-mip request and no priority
+  derived from distance here." **Complete moves to M7.**
+- `core-memory-and-containers` — also untouched here. "Memory diagnostics" requires attribution by
+  domain, type, thread, world cell and asset; three of the five axes have no field to report into.
+  **Complete moves to M7.**
+- `serialization-and-prefabs` — the authoring schema landed and is what made `DocumentService::open`
+  produce a schema instead of an empty one, which was M5.5's handover and this milestone's first job.
+  "Apply and extract" has no implementation anywhere in the tree and no recorded exemption.
+  **Complete moves to M8.**
+- `rendering-geometry-and-resources` — "Skinning" reads bone matrices from the **GPU pose world**,
+  which is `animation-and-skinning` at M8, and the matrix's own rule forbids Complete before a
+  prerequisite reaches Working. The module refuses the value in code rather than working around it —
+  `SkinningDescriptor::validate()` returns `NotImplemented` naming M8 and the suite asserts it.
+  **Complete moves to M8**, which is the tier moving rather than the requirement being scoped away.
+
+The reasoning per row, with the evidence, is in
+[the capability matrix](roadmap/capability-matrix.md#where-m6s-tiers-are-thin) and in
+`tools/roadmap/milestones/m6.toml` beside `[criterion.expect_tiers]`.
 
 ---
 

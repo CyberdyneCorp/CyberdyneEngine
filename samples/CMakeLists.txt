@@ -41,3 +41,13 @@ add_subdirectory(05-editor-session)
 # its own shape.
 add_subdirectory(05b-editor-window)
 add_subdirectory(05b-agent-authoring)
+# M6's artefact is a FIFTH shape: one C++ target and one driver, and it is the first sample that
+# links a TOOL as well as the engine. samples/06-open-world/cy_sample_open-world reads its world out
+# of an installation `cy_build` produced — by logical name, through the manifest in force — so the
+# game cannot tell whether the bytes arrived in the original build or in a patch, which is the only
+# way to show that a patch ships content rather than that a file was overwritten. openworld.py puts
+# the five acts around it in order: cook, package and install; play, quit and save; resume; change
+# one line of content and rebuild, watching which nodes hit the cache; ship the difference as a
+# patch and play the patched world. Its CMakeLists.txt argues the shape, and declares nothing at all
+# where the build tools are switched off.
+add_subdirectory(06-open-world)

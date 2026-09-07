@@ -382,6 +382,130 @@ platforms = ["linux"]
 since = "m5"
 class = "permanent"
 
+# --- M6's gates: a world larger than memory, and a build that is a graph --------------------------
+#
+# Six new permanent gates, one per capability this milestone brought to Working, and a job for each
+# command in .github/workflows/ci.yml — because `just ci-check` fails a permanent gate no workflow
+# runs, and a gate declared without its job is the debt M5.5 recorded and this milestone pays two
+# lines further down.
+#
+# WHY SIX RATHER THAN ONE. `test-all` runs every suite once and reports that they passed, which is a
+# different claim from "these particular properties still hold" — the argument the `world` and
+# `render` jobs already make, and the reason `physics`, `asset-import` and `live-editing` exist as
+# gates beside them. Each of the six below names the property whose loss would be silent otherwise.
+
+[[gate]]
+id = "world-streaming"
+describe = "A WORLD LARGER THAN MEMORY, AND THE THREE PROPERTIES THAT MAKE IT ONE. Cell identity is a fixed-seed hash of the partition's own configuration, so changing the cell size changes cell identity BY CONSTRUCTION rather than by a rule somebody remembers, and `compare_partitions` reports the field that moved instead of producing silently incompatible data. Cells are cooked in ECS-NATIVE FORM — archetype blocks handed to `ecs::World::instantiate()` with no transformation — so streaming cost is proportional to what arrives rather than to what content is; the day a conversion step becomes necessary before instantiation, that invariant has gone and this gate is where it shows. And activation is STAGED AND ATOMIC: a cell is prepared over several ticks into private staging and published in one, a consumer that reacts to activation by requesting another cell has its request QUEUED rather than processed re-entrantly, and a fixed route across a world that does not fit in the budget holds the per-tick activation budget every tick while cells stream in, out and away behind it."
+runs = [
+    "just test-unit -R unit.world",
+    "just test-integration -R \"world_(activation|streaming)\"",
+    "just test-integration -R world_traversal",
+]
+platforms = ["linux"]
+since = "m6"
+class = "permanent"
+
+[[gate]]
+id = "residency"
+describe = "ONE POLICY, SEPARATE STORAGE — and the separation is structural rather than conventional, which is what this gate protects. `hold()` consults nothing about activation and there is no tick, no world and no running flag anywhere in the server's header, so \"a test holds bytes resident with simulation off\" is a property of the interface rather than of a test's arrangement. The budget is spent at ADMISSION rather than at arrival, which is the defect the suite found and would find again: without the pending record a three-page budget admitted five pages every frame, because nothing was resident yet at any decision point. Beside it, the teardown suite destroys the server with requests in flight from several threads — M6 creates and destroys worlds continuously, and M5.5's gate found this project's first real engine defect exactly there."
+runs = [
+    "just test-unit -R unit.residency",
+    "just test-integration -R residency_teardown",
+]
+platforms = ["linux"]
+since = "m6"
+class = "permanent"
+
+[[gate]]
+id = "virtual-texturing"
+describe = "A SURFACE IS NEVER MISSING, ONLY BLURRY — asserted over the WHOLE address space of a texture rather than at sampled points, because the failure it guards against is a hole at one address and a property checked at three addresses is not a property. The mip tail is pinned and the page table refuses to invalidate a pinned entry, so a runtime producer cannot revoke the guarantee while invalidating its own region. The other half is that feedback never blocks a frame: `record` is wait-free and DROPS rather than waits, and the teardown suite puts eight recording threads against a churning resolver while a hundred systems are destroyed with production in flight. A full cache REFUSES rather than choosing its own victim, so no second eviction policy can grow beside the residency layer's."
+runs = [
+    "just test-unit -R unit.virtual_texturing",
+    "just test-integration -R virtual_texturing_teardown",
+]
+platforms = ["linux"]
+since = "m6"
+class = "permanent"
+
+[[gate]]
+id = "save"
+describe = "THE SAVE IS THE OVERLAY, AND A GENERATION IS ATOMIC UNDER `kill -9`. The pointer is the only object whose rewrite changes what loads and it is a single atomic write, so killing the process at any of the five phases leaves the previous generation loadable — which the suite does at each phase rather than arguing. Every container is sorted by key rather than by insertion, so two overlays holding the same logical state encode to identical bytes and a content-addressed store recognises an unchanged region instead of rewriting it. A record of a type this build does not declare is PRESERVED rather than dropped, which is what lets a save written with a plugin load without it and save again with that state intact, and a damaged chunk is a diagnostic and a fallback to an older generation rather than lost progress."
+runs = [
+    "just test-unit -R unit.save",
+    "just test-integration -R \"save_(archive|kill_nine)\"",
+    "just test-integration -R \"save_(service|fuzz)\"",
+]
+platforms = ["linux"]
+since = "m6"
+class = "permanent"
+
+[[gate]]
+id = "build-graph"
+describe = "THE CORRECTNESS BUG M6's SPIKE WAS COMMISSIONED TO FIND, AS A GATE. Two builds of one importer at -O2 and -O0 computed the IDENTICAL derivation key and one was served the other's artefact with a reported cache hit, because the key contributed no compiler, no flags and no library versions. One function now computes every key and REFUSES an incomplete toolchain fingerprint, so a key that omits the compiler is unrepresentable rather than discouraged; the fingerprint is generated from the dependency manifests at configure time, so adding a dependency without adding it to every key is impossible. A downstream node contributes its upstream's OUTPUT DIGEST rather than its key — the decision that is expensive to reverse — and a producer is handed read, discover and write and NO FILESYSTEM, so an undeclared read is an access violation rather than a stale artefact served with a report of success. Beside them: a cold build and a cache-warm build produce byte-identical artefacts, an edit invalidates exactly its dependents, and a patch interrupted at any stage — including by killing the process — leaves the previous build installed and verifiable."
+runs = [
+    "just test-unit -R unit.build_graph",
+    "just test-integration -R build_service",
+    "just test-integration -R build_patch",
+]
+platforms = ["linux"]
+since = "m6"
+class = "permanent"
+
+[[gate]]
+id = "render-culling"
+describe = "GPU-DRIVEN CULLING'S EXPECTED VALUES, COMPUTED ON THE CPU, so that when the dispatch lands it is checked against a buffer rather than against a screenshot. `GpuCullView` is a shader contract — 272 bytes with static_asserted offsets and TWO plane sets, the view's own frustum and the camera's, because one frustum cannot answer both of the requirement's questions — and a visibility range stores its parent slot PLUS ONE so that a zeroed record means \"no parent\" rather than \"slot 0\", which was a live defect a test caught. The hierarchical depth buffer answers \"not occluded\" for every case it cannot decide, because false occlusion is a correctness bug and not a quality one. Beside it, the geometry side `rendering-geometry-and-resources` completes on: the resource ledger that RECORDS a release and reclaims it on retire rather than freeing it under a frame still reading it, and a teardown suite that destroys it with work outstanding."
+runs = [
+    "just test-unit -R unit.render_gpu_culling",
+    "just test-integration -R render_gpu_culling_teardown",
+    "just test-unit -R unit.render_geometry",
+    "just test-integration -R render_geometry_teardown",
+]
+platforms = ["linux"]
+since = "m6"
+class = "permanent"
+
+# --- The two gates M5.5 could not land, and the jobs that make them possible ----------------------
+#
+# m5b.toml's last note, in full: "THERE IS NO NEW `class = \"permanent\"` GATE IN THIS CHANGE. Every
+# criterion below runs under a gate that already exists, and the two that no workflow can run name
+# `milestone-m5b`. `just ci-check` fails a permanent gate no workflow runs, and
+# .github/workflows/ci.yml is not this change's file. The closing change should add an
+# `editor-window` gate for a self-hosted runner with a display, and an `agent` gate beside it,
+# together with their jobs — a gate and its job land in the same change or neither does."
+#
+# This is that change, and both jobs are in .github/workflows/ci.yml beside these two declarations.
+#
+# WHAT MAKES THE WINDOW GATE HONEST ON A RUNNER THAT CANNOT RUN IT. The `editor-window` job is
+# `runs-on: [self-hosted, linux, x11]` and is guarded by `if: vars.CY_EDITOR_WINDOW_RUNNER == 'true'`
+# — a repository variable, set where such a runner exists and unset everywhere else. Without the
+# guard a fork with no self-hosted runner would queue the job forever and every pull request would
+# look stuck; with it, the job is SKIPPED and says so. The criteria it covers still carry
+# `requires = "display"` in m5b.toml, so a machine that cannot judge them reports NOT EVALUATED
+# rather than green — the two mechanisms answer different questions and neither replaces the other.
+
+[[gate]]
+id = "editor-window"
+describe = "A PERSON OPERATES THE EDITOR'S WINDOW, AND NOTHING IN THE RUN IS A TEST HOOK. X11 key presses and pointer drags are synthesised through XTEST and delivered to the SERVER, so the editor cannot tell the driver from a hand on a keyboard; the viewport composites another process's rendered image through an imported dma-buf with no copy through the CPU. It needs an X server with XTEST, a device that can import a dma-buf with an explicit DRM format modifier, python-xlib and Pillow — which no hosted runner has, and which is why this gate's job is a self-hosted one behind a repository variable rather than a check that would report green because the window never opened. From M6 the drag it attempts reaches a real Transform, because opening a document now produces a schema and nodes."
+runs = [
+    "just test-smoke -R editor_window",
+    "just run-editor-window",
+]
+platforms = ["linux"]
+since = "m5b"
+class = "permanent"
+
+[[gate]]
+id = "agent"
+describe = "AN AGENT AUTHORS THROUGH THE SAME COMMANDS A PERSON USES, over the Model Context Protocol on the editor's standard input: it composes a scene, reads it back, writes a gameplay script whose file appears on disk and which undo removes and redo restores byte for byte, finds its own changes in the editor's history carrying actor, session and intent, is REFUSED a write outside its directories and an effect its scope does not grant, enters and leaves play, and is told what it has spent. Every tool it was offered is checked against the registry's own projection, so a hand-written tool entry fails this gate. No window and no graphics device, which is why this half of M5.5 is the half a hosted runner can judge — and why it is a gate of its own rather than a line in `build-and-test`, which runs the same smoke entry and reports only that a suite passed."
+runs = [
+    "just test-smoke -R agent_authoring",
+    "just run-agent-authoring",
+]
+platforms = ["linux"]
+since = "m5b"
+class = "permanent"
+
 # --- Milestone gates ------------------------------------------------------------------------------
 #
 # Task 4.4.3. A milestone's exit criteria join the gate set when it closes and stay green afterwards;
@@ -578,6 +702,42 @@ since = "m5b"
 class = "milestone"
 milestone = "m5b"
 state = "green"
+
+
+# M6 IS NOT CLOSED BY THE CHANGE THAT CARRIES THIS LINE, and the state says so. Section 9 lands the
+# artefact and section 10 the records; the milestone closes when `just roadmap-milestone m6` passes
+# in every profile and the change is archived, which is section 11 and not a thing this file can
+# assert about itself.
+#
+# THE FLIP IS NOT SOMETHING SOMEBODY HAS TO REMEMBER. `just roadmap-test` reads
+# openspec/changes/archive/ and fails when a milestone whose change is archived still has a gate at
+# `joins-on-close`, so archiving this change without flipping the line below turns `roadmap-test`
+# red, in the `roadmap` job, on the next pull request.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED is M6's own thirty criteria added to the permanent set and
+# nothing else — the flat ledger's arithmetic since M5. None of them carries `requires`, because
+# nothing M6 delivered needs a display or a device: the world streams, the surfaces page and the save
+# is written on the CPU. That is a milestone whose whole exit set a hosted runner can judge, which
+# has not been true since M2.
+
+# AND ONE MORE THING THE FLIP HAS TO DO, WHICH IS NEW AT M6. `.github/workflows/ci.yml` now has a
+# `milestone` job, and it runs the ledger of the NEWEST CLOSED milestone — `just roadmap-milestone
+# m5b` today. `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest
+# ledger any workflow evaluates, so flipping the line below to `green` WITHOUT changing that job's
+# `m5b` to `m6` turns `just ci-check` red. That is deliberate and it is task 10.9: until M6 there
+# were seven green milestone gates and NO job in that file ran any of them, so a closed milestone's
+# criteria could regress with nothing to notice. The two edits belong in the archiving commit
+# together, exactly as the flip and the archive already do.
+
+[[gate]]
+id = "milestone-m6"
+describe = "M6 — Scale: the exit criteria of the milestone that made the world larger than memory and the build a graph rather than a script."
+runs = ["just roadmap-milestone m6"]
+platforms = ["linux", "windows", "macos"]
+since = "m6"
+class = "milestone"
+milestone = "m6"
+state = "joins-on-close"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

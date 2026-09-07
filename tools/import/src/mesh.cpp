@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <ranges>
 #include <unordered_map>
 #include <vector>
 
@@ -1164,6 +1165,396 @@ Status convex_hull(const MeshData& mesh, MeshData& out) noexcept {
         return appended;
     }
     return optimise_vertex_fetch(out);
+}
+
+// --- Overdraw ------------------------------------------------------------------------------------
+
+namespace {
+
+/// One run of triangles the vertex-cache optimiser produced: a maximal span that stays inside one
+/// section and reuses the vertices its predecessor left in the cache.
+struct TriangleRun {
+    u32 section = 0;
+    u32 first_triangle = 0;
+    u32 triangle_count = 0;
+    Vec3 centroid{0.0F, 0.0F, 0.0F};
+    /// The distance from the mesh's centroid, which is what "nearest first" is measured by. A view
+    /// direction cannot be known at import, so the mesh's own centre stands in for every viewer —
+    /// which is exactly the approximation every overdraw optimiser makes.
+    f32 radius = 0.0F;
+};
+
+/// Average cache misses per triangle under a FIFO cache of `size` entries. The number
+/// `optimise_overdraw` compares its candidate order against, so that "within `threshold` of the
+/// input's efficiency" is measured rather than assumed.
+[[nodiscard]] f32 cache_miss_ratio(const Array<u32>& indices, u32 size) noexcept {
+    if (indices.empty()) {
+        return 0.0F;
+    }
+    std::vector<u32> cache;
+    cache.reserve(size);
+    usize misses = 0;
+    for (const u32 index : indices) {
+        bool hit = false;
+        for (const u32 resident : cache) {
+            hit = hit || resident == index;
+        }
+        if (hit) {
+            continue;
+        }
+        ++misses;
+        if (cache.size() == size) {
+            cache.erase(cache.begin());
+        }
+        cache.push_back(index);
+    }
+    const auto triangles = static_cast<f32>(indices.size()) / 3.0F;
+    return static_cast<f32>(misses) / triangles;
+}
+
+}  // namespace
+
+Status optimise_overdraw(MeshData& mesh, f32 threshold) noexcept {
+    if (Status valid = mesh.validate(); !valid) {
+        return valid;
+    }
+    if (!(threshold >= 1.0F)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "an overdraw threshold below 1 asks for an order worse than the input's");
+    }
+    const usize triangles = mesh.triangle_count();
+    if (triangles < 2) {
+        return ok();
+    }
+
+    // The mesh's centre, and each triangle's.
+    Vec3 centre{0.0F, 0.0F, 0.0F};
+    for (const Vec3& position : mesh.positions) {
+        centre = centre + position;
+    }
+    centre = centre * (1.0F / static_cast<f32>(mesh.vertex_count()));
+
+    // Which section each triangle belongs to, so a run never spans two materials: reordering across
+    // a section boundary would change which triangles a draw covers.
+    std::vector<u32> section_of(triangles, 0);
+    for (usize index = 0; index < mesh.sections.size(); ++index) {
+        const MeshSection& section = mesh.sections[index];
+        for (u32 at = section.first_index; at < section.first_index + section.index_count;
+             at += 3) {
+            section_of[at / 3] = static_cast<u32>(index);
+        }
+    }
+
+    // Cut the index list into runs. A run ends when the next triangle shares no vertex with the
+    // current one — the point at which the cache is about to be cold anyway — or at a section
+    // boundary.
+    std::vector<TriangleRun> runs;
+    for (usize triangle = 0; triangle < triangles; ++triangle) {
+        const u32* current = mesh.indices.data() + (triangle * 3);
+        bool extend = !runs.empty() && runs.back().section == section_of[triangle];
+        if (extend) {
+            const u32* previous = mesh.indices.data() + ((triangle - 1) * 3);
+            bool shared = false;
+            for (u32 lane = 0; lane < 3; ++lane) {
+                for (u32 other = 0; other < 3; ++other) {
+                    shared = shared || current[lane] == previous[other];
+                }
+            }
+            extend = shared;
+        }
+        if (!extend) {
+            TriangleRun run;
+            run.section = section_of[triangle];
+            run.first_triangle = static_cast<u32>(triangle);
+            runs.push_back(run);
+        }
+        TriangleRun& run = runs.back();
+        ++run.triangle_count;
+        for (u32 lane = 0; lane < 3; ++lane) {
+            run.centroid = run.centroid + mesh.positions[current[lane]];
+        }
+    }
+    if (runs.size() < 2) {
+        return ok();
+    }
+    for (TriangleRun& run : runs) {
+        run.centroid = run.centroid * (1.0F / static_cast<f32>(run.triangle_count * 3));
+        run.radius = length(run.centroid - centre);
+    }
+
+    // Sort each section's runs nearest-first, breaking ties by the run's first triangle so the
+    // order is a function of the mesh and not of the sort's implementation.
+    std::vector<u32> order(runs.size());
+    for (usize index = 0; index < order.size(); ++index) {
+        order[index] = static_cast<u32>(index);
+    }
+    std::ranges::stable_sort(order, [&runs](u32 left, u32 right) noexcept {
+        const TriangleRun& a = runs[left];
+        const TriangleRun& b = runs[right];
+        if (a.section != b.section) {
+            return a.section < b.section;
+        }
+        if (a.radius != b.radius) {
+            return a.radius < b.radius;
+        }
+        return a.first_triangle < b.first_triangle;
+    });
+
+    Array<u32> candidate;
+    if (Status reserved = candidate.reserve(mesh.indices.size()); !reserved) {
+        return reserved;
+    }
+    for (const u32 run_index : order) {
+        const TriangleRun& run = runs[run_index];
+        const usize first = static_cast<usize>(run.first_triangle) * 3;
+        const usize count = static_cast<usize>(run.triangle_count) * 3;
+        if (Status appended = candidate.append(Span<const u32>(mesh.indices.data() + first, count));
+            !appended) {
+            return appended;
+        }
+    }
+
+    // Accept only if the cache cost stayed inside the budget. `optimise_vertex_cache` is what earns
+    // the miss ratio this is spending, and an unconditional reorder would hand it back.
+    constexpr u32 kCacheSize = 32;
+    const f32 before = cache_miss_ratio(mesh.indices, kCacheSize);
+    const f32 after = cache_miss_ratio(candidate, kCacheSize);
+    if (after > before * threshold) {
+        return ok();
+    }
+
+    // The sections must be renumbered to the new positions. Runs never span a section, and the sort
+    // keeps sections contiguous and in order, so a section's new extent is the sum of the runs
+    // before it.
+    u32 written = 0;
+    std::vector<u32> section_first(mesh.sections.size(), 0);
+    std::vector<u32> section_count(mesh.sections.size(), 0);
+    for (const u32 run_index : order) {
+        const TriangleRun& run = runs[run_index];
+        if (section_count[run.section] == 0) {
+            section_first[run.section] = written;
+        }
+        section_count[run.section] += run.triangle_count * 3;
+        written += run.triangle_count * 3;
+    }
+    for (usize index = 0; index < mesh.sections.size(); ++index) {
+        mesh.sections[index].first_index = section_first[index];
+        mesh.sections[index].index_count = section_count[index];
+    }
+    mesh.indices = std::move(candidate);
+    return mesh.validate();
+}
+
+// --- Convex decomposition ------------------------------------------------------------------------
+
+namespace {
+
+/// One part of a decomposition in progress: the triangles of the source mesh it holds.
+struct DecompositionPart {
+    std::vector<u32> triangles;
+    Aabb bounds = Aabb::empty();
+    /// How far the part departs from its own convex hull, as the share of the hull's bounding
+    /// volume that the part does not fill. Cheap, monotone in the thing being measured, and enough
+    /// to decide which part to split next.
+    f32 concavity = 0.0F;
+};
+
+/// The bounds of a part's triangles.
+[[nodiscard]] Aabb part_bounds(const MeshData& mesh, const std::vector<u32>& triangles) noexcept {
+    Aabb bounds = Aabb::empty();
+    for (const u32 triangle : triangles) {
+        for (u32 lane = 0; lane < 3; ++lane) {
+            bounds.grow(mesh.positions[mesh.indices[(triangle * 3) + lane]]);
+        }
+    }
+    return bounds;
+}
+
+/// The volume a closed triangle set encloses, by the divergence theorem: one sixth of the sum of
+/// the scalar triple products of its corners. Signed, so a set whose winding is inconsistent
+/// answers something smaller than the truth — which is the conservative direction here, because it
+/// makes a part look MORE convex and therefore splits less rather than for ever.
+[[nodiscard]] f64 enclosed_volume(const MeshData& mesh, const u32* indices,
+                                  usize triangle_count) noexcept {
+    f64 total = 0.0;
+    for (usize triangle = 0; triangle < triangle_count; ++triangle) {
+        const Vec3 a = mesh.positions[indices[(triangle * 3) + 0]];
+        const Vec3 b = mesh.positions[indices[(triangle * 3) + 1]];
+        const Vec3 c = mesh.positions[indices[(triangle * 3) + 2]];
+        total += static_cast<f64>(dot(a, cross(b, c)));
+    }
+    return std::abs(total) / 6.0;
+}
+
+/// How far a part departs from its own convex hull, as the share of the hull's volume the part does
+/// not fill. Zero for a convex part, and 1/3 for two boxes with a box-sized gap between them.
+///
+/// THIS IS THE TEXTBOOK MEASURE AND THE CHEAPER ONES ARE WRONG. Comparing the part against its
+/// BOUNDING BOX instead — the obvious shortcut — reports a sphere as one-half concave and would
+/// split it for ever, and reports two separated boxes as convex, because their combined surface
+/// area is smaller than their combined bounds'. The hull costs a hull per candidate part, which the
+/// part budget bounds at roughly twice `max_parts` for a whole decomposition.
+[[nodiscard]] f32 part_concavity(const MeshData& mesh, const std::vector<u32>& triangles) noexcept {
+    std::vector<u32> flat;
+    flat.reserve(triangles.size() * 3);
+    for (const u32 triangle : triangles) {
+        for (u32 lane = 0; lane < 3; ++lane) {
+            flat.push_back(mesh.indices[(triangle * 3) + lane]);
+        }
+    }
+    const f64 part = enclosed_volume(mesh, flat.data(), triangles.size());
+
+    MeshData points;
+    for (const u32 index : flat) {
+        if (!points.positions.push_back(mesh.positions[index])) {
+            return 0.0F;
+        }
+        if (!points.indices.push_back(static_cast<u32>(points.indices.size()))) {
+            return 0.0F;
+        }
+    }
+    MeshData hull;
+    if (Status hulled = convex_hull(points, hull); !hulled) {
+        // Flat, collinear, or too few points: there is no volume to compare against and nothing a
+        // split would improve.
+        return 0.0F;
+    }
+    const f64 enclosing = enclosed_volume(hull, hull.indices.data(), hull.indices.size() / 3);
+    if (!(enclosing > 0.0)) {
+        return 0.0F;
+    }
+    const f64 concavity = 1.0 - (part / enclosing);
+    return concavity > 0.0 ? static_cast<f32>(concavity) : 0.0F;
+}
+
+/// Split a part in two along the middle of the longest axis of its bounds, assigning each triangle
+/// by its own centroid. Deterministic, and the near side is always first.
+void split_part(const MeshData& mesh, const DecompositionPart& part, std::vector<u32>& near,
+                std::vector<u32>& far) noexcept {
+    const Vec3 extent = part.bounds.size();
+    u32 axis = 0;
+    if (extent.y > extent.x && extent.y >= extent.z) {
+        axis = 1;
+    } else if (extent.z > extent.x && extent.z > extent.y) {
+        axis = 2;
+    }
+    const f32 centre = (part.bounds.min[axis] + part.bounds.max[axis]) * 0.5F;
+    for (const u32 triangle : part.triangles) {
+        f32 sum = 0.0F;
+        for (u32 lane = 0; lane < 3; ++lane) {
+            sum += mesh.positions[mesh.indices[(triangle * 3) + lane]][axis];
+        }
+        if ((sum / 3.0F) <= centre) {
+            near.push_back(triangle);
+        } else {
+            far.push_back(triangle);
+        }
+    }
+}
+
+/// Build one hull from a part's triangles, falling back to the triangles themselves when the point
+/// set is degenerate — flat, collinear, or fewer than four points.
+[[nodiscard]] Status hull_of_part(const MeshData& mesh, const std::vector<u32>& triangles,
+                                  MeshData& out) noexcept {
+    MeshData points;
+    for (const u32 triangle : triangles) {
+        const u32 base = static_cast<u32>(points.positions.size());
+        for (u32 lane = 0; lane < 3; ++lane) {
+            if (Status pushed =
+                    points.positions.push_back(mesh.positions[mesh.indices[(triangle * 3) + lane]]);
+                !pushed) {
+                return pushed;
+            }
+            if (Status pushed = points.indices.push_back(base + lane); !pushed) {
+                return pushed;
+            }
+        }
+    }
+    if (Status hulled = convex_hull(points, out); hulled) {
+        return ok();
+    }
+    out = std::move(points);
+    return ok();
+}
+
+}  // namespace
+
+Expected<usize, Error> convex_decomposition(const MeshData& mesh,
+                                            const ConvexDecompositionOptions& options,
+                                            std::vector<MeshData>& out) noexcept {
+    if (Status valid = mesh.validate(); !valid) {
+        return make_unexpected(valid.error());
+    }
+    if (options.max_parts == 0) {
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "a decomposition into zero parts is not one"});
+    }
+    if (mesh.triangle_count() == 0) {
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "a mesh with no triangles has no decomposition"});
+    }
+
+    DecompositionPart whole;
+    whole.triangles.reserve(mesh.triangle_count());
+    for (usize triangle = 0; triangle < mesh.triangle_count(); ++triangle) {
+        whole.triangles.push_back(static_cast<u32>(triangle));
+    }
+    whole.bounds = part_bounds(mesh, whole.triangles);
+    whole.concavity = part_concavity(mesh, whole.triangles);
+
+    std::vector<DecompositionPart> parts;
+    parts.push_back(std::move(whole));
+
+    // Split the worst part until the budget or the tolerance stops it. Repeatedly splitting the
+    // WORST part rather than every part is what keeps the part count near the budget instead of at
+    // 2^depth: a shape with one concavity gets two parts and not eight.
+    while (parts.size() < options.max_parts) {
+        usize worst = parts.size();
+        f32 worst_concavity = options.concavity_tolerance;
+        for (usize index = 0; index < parts.size(); ++index) {
+            if (parts[index].triangles.size() < options.min_triangles) {
+                continue;
+            }
+            if (parts[index].concavity > worst_concavity) {
+                worst_concavity = parts[index].concavity;
+                worst = index;
+            }
+        }
+        if (worst == parts.size()) {
+            break;
+        }
+
+        std::vector<u32> near;
+        std::vector<u32> far;
+        split_part(mesh, parts[worst], near, far);
+        if (near.empty() || far.empty()) {
+            // The split separated nothing — every centroid fell on one side. Marking it convex
+            // rather than looping is what keeps this terminating on a degenerate part.
+            parts[worst].concavity = 0.0F;
+            continue;
+        }
+
+        DecompositionPart left;
+        left.triangles = std::move(near);
+        left.bounds = part_bounds(mesh, left.triangles);
+        left.concavity = part_concavity(mesh, left.triangles);
+        DecompositionPart right;
+        right.triangles = std::move(far);
+        right.bounds = part_bounds(mesh, right.triangles);
+        right.concavity = part_concavity(mesh, right.triangles);
+        parts[worst] = std::move(left);
+        parts.insert(parts.begin() + static_cast<std::ptrdiff_t>(worst) + 1, std::move(right));
+    }
+
+    const usize produced = parts.size();
+    for (const DecompositionPart& part : parts) {
+        MeshData hull;
+        if (Status built = hull_of_part(mesh, part.triangles, hull); !built) {
+            return make_unexpected(built.error());
+        }
+        out.push_back(std::move(hull));
+    }
+    return produced;
 }
 
 }  // namespace cy::import

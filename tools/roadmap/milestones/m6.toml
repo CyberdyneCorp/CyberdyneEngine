@@ -1,0 +1,524 @@
+# M6 — Scale: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m6-scale/tasks.md and the M6 row of docs/ROADMAP.md;
+# every criterion below names which. `delivery-roadmap` requires each to be a recipe that exits
+# zero, a command that exits zero, a benchmark within a threshold, or a committed artefact that is
+# regenerated and compared — so an intention that cannot be run is a note at the bottom of this
+# file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate.
+#
+# --- THIS LEDGER DECLARES ONLY M6's OWN CRITERIA, AND THERE IS NO `m5b-green` ----------------------
+#
+# The ledger has been flat since M5 and `just roadmap-test` fails a ledger that invokes another one.
+# `just roadmap-milestone m6` evaluates the permanent set directly — the criteria of every milestone
+# whose `class = "milestone"` gate carries `state = "green"` and which sits BELOW M6 on the ladder,
+# merged and deduplicated, each distinct check run exactly once — and then the criteria in this file.
+# `criteria.build_plan` is the rule and tools/roadmap/README.md states it.
+#
+# That inheritance is only correct because `record.MILESTONES` now contains `m5b` between `m5` and
+# `m6`: `criteria.rung` answers `len(MILESTONES)` for a milestone that is not on the ladder, so
+# before that edit M5.5 sorted to the END and this ledger would have inherited M0–M5 and silently
+# dropped M5.5's fifteen criteria. m5b.toml's header recorded the defect and section 0 of this
+# milestone's tasks fixed it; this line is here so that the next inserted milestone is fixed FIRST
+# rather than discovered by a ledger that quietly covered less than it said.
+#
+# A criterion here whose `run` string is identical to one an earlier ledger declared COLLAPSES into
+# it and is reported under the earlier label — `m0:format` rather than `m6:format`. The static gates
+# are declared anyway, as M3's, M4's, M5's and M5.5's are, because a ledger that does not name the
+# checks its milestone had to satisfy is a ledger nobody can read.
+#
+# --- WHAT M6 ADDED TO THE PERMANENT SET, AND WHAT IT COSTS ----------------------------------------
+#
+# Twenty-two own criteria, of which fourteen run the C++ suites this milestone's seven new modules
+# brought with them — src/world/, src/save/, src/servers/residency/,
+# src/servers/render/virtual_texturing/, src/servers/render/culling/, src/servers/render/geometry/
+# and tools/build/. Every one of those modules is ON BY DEFAULT: no `CY_*` option gates any of them,
+# so every suite runs in every configuration `four-profiles` builds, which is the arithmetic behind
+# that criterion's eight-hour budget growing rather than a new criterion beside it.
+#
+# The other eight are the static gates and the two whole-matrix commands, and every one of those
+# COLLAPSES into an earlier ledger's identical declaration: one run of `just roadmap-milestone m6`
+# is 134 distinct checks over 191 declarations, 112 of them inherited.
+#
+# --- THE ARTEFACT, AND WHY IT IS THREE CRITERIA RATHER THAN ONE -----------------------------------
+#
+# `samples/06-open-world` is one program and one driver, and the three ways of reaching it answer
+# different questions. `open-world-artefact` is the CTest entry, so `just test-all` runs it and the
+# `build-and-test` gate covers it on every pull request — the same call m5.toml made for `text` and
+# m5b.toml for `agent-artefact`. `open-world-recipe` runs it through the workflow a contributor
+# actually types. `screenshot-open-world` is the committed picture, which is what makes the
+# milestone evaluable by LOOKING; `delivery-roadmap` allows a `path` criterion for exactly that —
+# a committed artefact that is regenerated and compared — and the driver regenerates it with
+# `--shot`.
+
+schema = 1
+id = "m6"
+name = "Scale"
+artefact = "samples/06-open-world — six kilometres of city cooked from a description, streamed continuously along a fixed route while two virtual textures page under the shared residency policy, saved, quit, reloaded into the state that was saved, torn down mid-flight three times, and then patched: one line of content changes, only the derivations that read it rebuild, and the same route out of the same installation directory reports a different world"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "`just roadmap-milestone m6` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 10.6 — docs/roadmap/status.yaml, docs/roadmap/capability-matrix.md and docs/ROADMAP.md are the closing change's. `roadmap-tiers` below checks the record and `roadmap-record` checks that the record and openspec/specs/ agree; no tool can tell an intention from its correction.",
+    "tasks 10.10 — opening the M7 change is `m7-open` below, which asks only that the change exists. Whether its named spike is the right one is a judgement.",
+    "tasks 11.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "THE TWO OVERLAY MODELS. src/world/ defines `cy::world::PersistenceOverlay` (keyed by CellId, raw component bytes addressed by a RUNTIME component index) and src/save/ defines `cy::save::Overlay` (keyed by RegionKey, per-field value records addressed by reflect::TypeId). Both cite the same requirement and there is no criterion here that would fail because there are two: the artefact converts between them and says so at the point it does it (samples/06-open-world/run.cpp), which is the honest cost rather than a check. src/save/README.md carries the recommended resolution — hoist one `PersistentId` to layer 0 and have the world HOLD a save overlay — and it is a change for M7, because doing it after a save format has shipped is what migration is for.",
+    "AN UNDECLARED READ IS BUILT AGAINST RATHER THAN CHECKED FOR. The spike's E9 showed a build serving a stale artefact and reporting success, and `build-and-packaging` calls that a DEFECT rather than a miss. The remedy is structural — a producer is handed `read`, `discover` and `write` and no filesystem, so an undeclared read is an `AccessViolation` — and `build-service` below exercises it. There is no criterion that opens a file behind the graph's back, because there is no way to write one that does not also have to be maintained forever.",
+    "THE WINDOW ARTEFACT IS NOT REDECLARED HERE. m5b.toml's `window-artefact` and `window-recipe` run `just test-smoke -R editor_window` and `just run-editor-window`, and an identical `run` string collapses into the earlier declaration. What M6 changes about them is not the criterion but the world: `DocumentService::open` now produces a schema and nodes, so the drag those two criteria attempt reaches a Transform. They are inherited, not restated.",
+]
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes with build-and-packaging, world-partition-and-streaming, residency, virtual-texturing, save-and-persistence and rendering-culling-and-lod at Working — the five rows the plan marked Complete are amended to Working beside [criterion.expect_tiers] below, with the unmet requirement named for each"
+source = "tasks 10.6"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained six C++ modules — and it is the criterion this milestone had to REPAIR before it could mean anything: `just _cpp-files` pruned any directory named `build*` at any depth, so every source under tools/build/ was invisible to it with no diagnostic, which is M1's failure mode exactly"
+source = "tasks 7.x, 11.2"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over the streaming, residency, texturing, save, culling and build-graph sources this milestone added"
+source = "tasks 11.2"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the engine's layer order holds with four new directories in the tree. src/world/ and src/save/ are NAMED in tools/layercheck's directory map rather than left out of it, which is the difference between a module the gate checks and one it silently skips — the state src/gameplay/ was in"
+source = "tasks 3.x, 6.x, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate is run by a job in .github/workflows/, and no job reimplements a recipe. M6 declares three new permanent gates and this is the criterion that fails if any of their jobs was not landed with them — which is the debt M5.5 recorded and this milestone pays"
+source = "tasks 10.4, delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which is the criterion M6 made real. 386 Rust crates were in the tree and no attribution gate could see them, because `maintenance-deps-check` compared THIRD_PARTY.md against the two C/C++ manifests only; it now reads the editor's lockfile, so the gate that reported green is the gate that would have caught it, and ufbx and xatlas landed under it rather than beside it"
+source = "tasks 0b.1, 0b.2, 0b.3, 8.1, 8.2"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 10.6, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M6's exit tiers, each naming the change that advanced it"
+source = "tasks 10.6, implement-m6-scale/proposal.md"
+kind = "tiers"
+ci_job = "milestone-m6"
+
+# The M6 row of docs/ROADMAP.md, as data. An exit tier is a FLOOR rather than an equality: a later
+# milestone advancing one of these past its M6 level must not make this recipe fail.
+#
+# --- READ THESE FIVE AS CLAIMS SOMEBODY STILL HAS TO EARN -----------------------------------------
+#
+# M5's ledger amended four rows at its own gate and wrote down why; M5.5's inherited the practice.
+# The five to watch here, and what would have to be true:
+#
+#   world-partition-and-streaming  working.  Partitioning, stable cell identity, spatial binding,
+#       cells cooked in ECS-native form, sources with shapes and prediction, channels, priorities
+#       and deadlines, staged atomic activation, layers, HLOD and the persistence overlay are all
+#       built and exercised over a fixed route. What is thinner: `SourceRegistry::require` rejects
+#       by shape after enumerating a CUBE of cells around each prediction sample, which for a sphere
+#       is about half wasted work; the I/O budget is charged pro rata by channel count against the
+#       cost model rather than by measured bytes, because there is no cell loader to measure yet;
+#       and the overlay's lookups are linear scans, which is fine once per cell per activation and
+#       will need an index before a long session's save.
+#
+#   build-and-packaging  working.  Derivation keys that cannot omit the toolchain — the fingerprint
+#       is GENERATED from deps/manifest.toml and deps/host-tools.toml at configure time and the
+#       configure FAILS if either parses to nothing — explicit inputs, immutable artefacts, the
+#       derived data cache, the build service, precise invalidation, packages and chunk-level
+#       patching. What is thinner: the producers that exist are the graph's own (copy, normalise,
+#       concat, manifest); the real cooks still run through `cy_cook` and `cy_import_cli` and are
+#       not yet nodes in this graph, which is the M7 work the artefact's own description makes
+#       obvious by cooking a world through four builtin nodes.
+#
+#   residency  working.  One policy, separate storage: importance, priority, deadlines, budgets,
+#       pressure, eviction and churn control, with residency and activation separate BY
+#       CONSTRUCTION rather than by convention. What is thinner: virtual texturing is the only
+#       subsystem registered against it in a shipped path, so the arbitration between four caches
+#       that the capability is ultimately for is exercised by tests rather than by a running frame.
+#
+#   virtual-texturing  working.  Address spaces, page tables, tiles, the physical cache, the
+#       resident mip tail, feedback, prefetch and runtime producers, with the two guarantees held
+#       structurally: feedback is wait-free and drops rather than waits, and `sample()` cannot
+#       answer "missing" for a texture whose tail is resident. What is thinner, and it is the whole
+#       of it: NOTHING IN THIS IS ON A GPU. There is no feedback buffer written by a shader and no
+#       page table sampled by one; the CPU side is complete and measured and the device side is
+#       M7's, which is where `rendering-materials-and-shading` meets it.
+#
+#   save-and-persistence  working.  The overlay as the save, scopes and traits, persistent identity,
+#       dirty tracking, the journal, atomic generations under `kill -9`, and migration. What is
+#       thinner: the world's own overlay is a second structure with a second identity type and the
+#       artefact converts between them — see the note above, which is the one piece of M6 that is
+#       recorded as a debt rather than as a delivery.
+# --- AMENDED AT M6's CLOSING GATE: THE FIVE `complete` ROWS ARE `working` -------------------------
+#
+# This table asked whoever closed M6 to earn five Completes. None of the five is earned, each was
+# checked against the code rather than against the plan, and the table below now says what the tree
+# holds. M5 amended four rows the same way and M5.5 declined to advance two; this is that practice.
+# docs/roadmap/status.yaml carries the same list and
+# docs/roadmap/capability-matrix.md#where-m6s-tiers-are-thin carries the evidence.
+#
+#   asset-import-pipeline  complete -> WORKING. `asset-import-pipeline`'s "Model import" requires,
+#       in a defined order, steps 7 (skeletons and bone LOD), 8 (animations, compression,
+#       retargeting) and 10 (produce a prefab), plus USD as a tool-time importer. tools/import's own
+#       README states that none of the four is implemented. "Texture import" requires BC7 and ASTC
+#       platform variants and the importer reads Targa alone — PNG needs a DEFLATE decoder that is
+#       not in the tree. "Virtual geometry cooking" is a whole requirement whose subject,
+#       `virtual-geometry`, is M7. FBX, xatlas, mesh processing and cook profiles ARE delivered and
+#       are the reason this milestone is the one someone can bring a model through; they are not the
+#       capability.
+#
+#   core-assets-and-io  complete -> WORKING. The M6 scope line for this row is "streaming under the
+#       residency policy". `src/core/assets/` has NO change in this milestone — `git diff --stat --
+#       src/core/` is empty — and asset_system.h still says in its own header: "STREAMING IS M6.
+#       There is no residency budget driven by renderer feedback, no per-mip request and no priority
+#       derived from distance here." The capability's "Streaming" requirement is that sentence's
+#       negation. Nothing under src/core/assets/ names `cy::residency`.
+#
+#   core-memory-and-containers  complete -> WORKING. Also no change in this milestone. "Memory
+#       diagnostics" requires reporting attributable "by domain, by type, by thread, by world cell,
+#       and by asset"; `cy/core/memory/diagnostics.h` has domain, tag and call site and no field for
+#       the other axes. src/core/memory/README.md has said so since M1 and still does.
+#
+#   serialization-and-prefabs  complete -> WORKING. `authoring_schema.h` is real work and it is what
+#       made `DocumentService::open` produce a schema instead of an empty one — the defect M5.5's
+#       gate handed forward and this milestone's first job. It is not the whole capability: the
+#       "Apply and extract" requirement and both of its scenarios have no implementation anywhere in
+#       the tree (`grep` for apply/extract over src, tools and editor returns nothing) and no
+#       recorded exemption in docs/roadmap/risks.md. src/scene/serialization/README.md names it.
+#
+#   rendering-geometry-and-resources  complete -> WORKING. This is TASK 10.8, and it is resolved by
+#       moving the tier rather than by scoping the requirement. "Skinning" requires bone matrices to
+#       be read from the GPU pose world, which is `animation-and-skinning` at M8; scoping the
+#       requirement away would delete the one sentence that stops a second pose upload being
+#       invented, which is what that requirement exists to prevent. The module agrees and says so in
+#       code rather than in a note: `PoseSource::GpuPoseWorld` is declared and
+#       `SkinningDescriptor::validate()` REFUSES it with `NotImplemented` naming M8, and
+#       `unit.render_geometry` asserts the refusal. The matrix's Complete cell for this row moves
+#       from M6 to M8, where its prerequisite reaches Working — which is what the matrix's own rule
+#       requires. The same rule is why `asset-import-pipeline` cannot complete at M6 either: its
+#       "Virtual geometry cooking" requirement depends on `virtual-geometry`, at M7.
+#
+# WHAT IS NOT AMENDED. The six `working` rows are all earned and all new here, and they are the
+# milestone: a world larger than memory, a residency policy, textures that page, a save that is the
+# overlay, a build that is a graph, and culling records with a CPU reference. Where each is thinner
+# than Working suggests is in the notes above and in the capability matrix.
+[criterion.expect_tiers]
+world-partition-and-streaming = "working"
+build-and-packaging = "working"
+residency = "working"
+virtual-texturing = "working"
+save-and-persistence = "working"
+rendering-culling-and-lod = "working"
+asset-import-pipeline = "working"
+core-assets-and-io = "working"
+core-memory-and-containers = "working"
+serialization-and-prefabs = "working"
+rendering-geometry-and-resources = "working"
+core-type-system = "complete"
+scene-graph-and-nodes = "complete"
+native-abi = "complete"
+editor-ui-ux = "working"
+editor-viewport-and-gizmos = "working"
+
+# --- A world larger than memory -------------------------------------------------------------------
+
+# TASKS 3.1, 3.2, 3.6 AND 3.7. The unit suite is where the invariants that cannot be observed from a
+# route live: a cell identifier that changes when the partition's cell size changes, an entity
+# assigned by its BOUNDS rather than by its pivot, a global rules entity that is in no cell at all,
+# rows grouped by (archetype, layer) so a scenario switch is one operation over whole blocks, and an
+# overlay that answers for a cell which has never been resident.
+[[criterion]]
+id = "world-cells"
+describe = "cell identity is a fixed-seed hash of the partition's own configuration, so changing cell size changes cell identity BY CONSTRUCTION and `compare_partitions` names the field that moved; entities are assigned from bounds, mobility and policy rather than from a pivot; a cell is cooked as archetype blocks passed to the ECS with no transformation; and the persistence overlay answers for a region that has never been loaded"
+source = "tasks 3.1, 3.2, 3.6, 3.7"
+kind = "recipe"
+run = "just test-unit -R unit.world"
+ci_job = "world-streaming"
+
+[[criterion]]
+id = "world-activation"
+describe = "activation is STAGED AND ATOMIC — a cell is prepared over several ticks into private staging and published in one, so a consumer never observes a half-loaded cell — and a consumer that reacts to activation by requesting another cell has its request QUEUED rather than processed re-entrantly, which is the ordering bug the specification forbids by name"
+source = "tasks 3.3, 3.4, 3.5"
+kind = "command"
+run = "just test-integration -R \"world_(activation|streaming)\""
+ci_job = "world-streaming"
+
+# TASK 3.8, AND IT IS AN EXIT CRITERION OF THE MILESTONE: "continuous traversal holds the frame
+# budget with no hitch above threshold, measured over a fixed route". Measured rather than asserted:
+# the modelled work per tick is deterministic and is checked exactly, and the CPU time per tick is a
+# distribution reported beside a threshold with an order of magnitude of headroom. Per-thread CPU
+# time rather than wall clock, for the reason tests/harness/src/budget.cpp gives.
+[[criterion]]
+id = "continuous-traversal"
+describe = "a fixed route across a world larger than the memory budget streams cells in and out continuously, holds the per-tick activation budget every tick, and runs twice with identical counters — which is what makes the timing a measurement of the code rather than of the machine"
+source = "tasks 3.8, ROADMAP M6 (Continuous traversal holds the frame budget)"
+kind = "recipe"
+run = "just test-integration -R world_traversal"
+ci_job = "world-streaming"
+
+# --- Residency, and the separation the milestone exists to prove ----------------------------------
+
+# TASK 4.3 AND AN EXIT CRITERION: "residency and activation are provably separate: a test holds
+# bytes resident with simulation off". It is `unit.residency`'s test_separation.cpp, and the shape
+# of the proof is structural rather than behavioural — `hold()` consults nothing about activation
+# and there is no tick, no world and no running flag anywhere in the server's header.
+[[criterion]]
+id = "residency-separation"
+describe = "one policy over separate storage: importance, priority, deadlines, budgets, pressure, eviction and churn control, with bytes held resident while nothing simulates — and a budget spent at ADMISSION rather than at arrival, which is the defect the suite found (a three-page budget admitted five pages every frame because nothing was resident yet at any decision point)"
+source = "tasks 4.1, 4.2, 4.3, ROADMAP M6 (Residency and activation are provably separate)"
+kind = "recipe"
+run = "just test-unit -R unit.residency"
+ci_job = "residency"
+
+[[criterion]]
+id = "residency-teardown"
+describe = "the residency server is destroyed with requests in flight from several threads, repeatedly. M6 creates and destroys worlds continuously and M5.5's gate found this project's first real engine defect exactly here — a free list destroyed underneath a worker still releasing a job, one run in forty — so every subsystem this milestone added is torn down mid-flight by a suite rather than only at the end of a settled test"
+source = "tasks 4.1, 11.4"
+kind = "recipe"
+run = "just test-integration -R residency_teardown"
+ci_job = "residency"
+
+# --- Textures page --------------------------------------------------------------------------------
+
+# TASK 5.4 AND AN EXIT CRITERION: "virtual texture feedback never blocks a frame; the mip tail
+# guarantees a frame is never missing". The two halves are kept in two places and both are checkable
+# — the second over the WHOLE address space of a texture rather than at sampled points, because the
+# failure it guards against is a hole at one address.
+[[criterion]]
+id = "virtual-texturing"
+describe = "every address of a texture whose mip tail is resident resolves to something — never missing, only coarser — and feedback leaves the CPU as one request per page whatever the sample count was; a cache that is full REFUSES rather than choosing its own victim, so no second eviction policy can grow beside the residency layer's"
+source = "tasks 5.1, 5.2, 5.3, 5.4, ROADMAP M6 (the mip tail guarantees a frame is never missing)"
+kind = "recipe"
+run = "just test-unit -R unit.virtual_texturing"
+ci_job = "virtual-texturing"
+
+[[criterion]]
+id = "virtual-texturing-teardown"
+describe = "a hundred texture systems destroyed with production in flight, a texture unregistered while its pages are being written, and eight threads recording feedback against a churning resolver — which is the other half of the exit criterion, feedback never blocking a frame, under contention rather than in shape"
+source = "tasks 5.3, 5.4, 11.4"
+kind = "recipe"
+run = "just test-integration -R virtual_texturing_teardown"
+ci_job = "virtual-texturing"
+
+# --- The save is the overlay ----------------------------------------------------------------------
+
+[[criterion]]
+id = "save-overlay"
+describe = "the overlay IS the save: scopes and traits, 128-bit persistent identity minted once and never derived, dirty tracking that costs what changed rather than the size of the world, and two overlays holding the same logical state encoding to identical bytes — which is what lets an unchanged region not be rewritten"
+source = "tasks 6.1"
+kind = "recipe"
+run = "just test-unit -R unit.save"
+ci_job = "save"
+
+# TASK 6.4 AND AN EXIT CRITERION: "save/load round-trips an unloaded region's state; save generations
+# are atomic under kill -9". The pointer is the only object whose rewrite changes what loads, and it
+# is a single atomic write — which is the whole of the guarantee, and `save_kill_nine` kills the
+# process at each of the five phases to show it.
+[[criterion]]
+id = "save-generations"
+describe = "a generation is written as chunks, verified, manifested and switched, and killing the process at any phase leaves the previous generation loadable; an unloaded region's state round-trips without loading it, and a corrupt newest generation falls back to an older one with the player told rather than quietly"
+source = "tasks 6.2, 6.4, ROADMAP M6 (Save generations are atomic under kill -9)"
+kind = "command"
+run = "just test-integration -R \"save_(archive|kill_nine)\""
+ci_job = "save"
+
+[[criterion]]
+id = "save-service"
+describe = "a save is CAPTURED on the calling thread and WRITTEN on another, the simulation is never paused for it, a second save while one is in flight is refused rather than raced, and a service torn down mid-write does not take the write with it — beside a fuzz corpus in which every truncation and every corrupted byte fails diagnostically rather than crashing"
+source = "tasks 6.2, 6.3"
+kind = "command"
+run = "just test-integration -R \"save_(service|fuzz)\""
+ci_job = "save"
+
+# --- The build is a graph -------------------------------------------------------------------------
+
+# TASK 7.1, THE MILESTONE'S NAMED SPIKE, AND THE CORRECTNESS BUG IT WAS COMMISSIONED TO FIND: the
+# importer's key contributed no compiler, no flags and no library versions, so two builds of one
+# importer at -O2 and -O0 computed the IDENTICAL key and one was served the other's artefact with a
+# reported cache hit. One function computes a key, and it refuses an incomplete toolchain
+# fingerprint — a key that omits the compiler is unrepresentable rather than discouraged.
+[[criterion]]
+id = "derivation-keys"
+describe = "one function computes every derivation key, framing each contribution so that two different inputs cannot collide; the toolchain fingerprint is generated from the dependency manifests at configure time and cannot be omitted; and a downstream node contributes its upstream's OUTPUT DIGEST rather than its key, which is the early cutoff design.md §1.5 measured as one node rebuilt where deep input keys rebuild three"
+source = "tasks 1.1–1.6, 7.1, 7.2, 11.4 (collide two derivation keys)"
+kind = "recipe"
+run = "just test-unit -R unit.build_graph"
+ci_job = "build-graph"
+
+# TASKS 7.3 AND 7.4, AND TWO EXIT CRITERIA AT ONCE: "a cold build and a cache-warm build produce
+# byte-identical artefacts" and "a one-asset change invalidates only the derivations that depend on
+# it". The second is measured rather than asserted — the suite counts the nodes that ran.
+[[criterion]]
+id = "build-service"
+describe = "a cold build and a cache-warm build produce byte-identical artefacts; an edit invalidates exactly its dependents and nothing beside them; an artefact in the store is immutable; a producer is handed read, discover and write and NO FILESYSTEM, so an undeclared read is an access violation rather than a stale artefact served with a report of success; and destroying the service mid-build is defined"
+source = "tasks 7.2, 7.3, 7.4, ROADMAP M6 (A cold build and a cache-warm build produce byte-identical artefacts)"
+kind = "recipe"
+run = "just test-integration -R build_service"
+ci_job = "build-graph"
+
+# TASK 7.6 AND AN EXIT CRITERION: "a patch applies atomically and is rolled back cleanly when
+# interrupted". The suite interrupts at every stage, hard and soft, and asserts the previous build
+# is still playable — which for a test means every byte the manifest promises is present and is the
+# byte it promised, not that a game started.
+[[criterion]]
+id = "build-patch"
+describe = "a patch names the builds it applies to and is refused otherwise; it is staged, verified and switched atomically; and interrupting it at any stage — including killing the process — leaves the previous build installed and verifiable"
+source = "tasks 7.5, 7.6, ROADMAP M6 (A patch applies atomically and is rolled back cleanly when interrupted)"
+kind = "recipe"
+run = "just test-integration -R build_patch"
+ci_job = "build-graph"
+
+# --- Import and culling ---------------------------------------------------------------------------
+
+# TASK 8.1. The headline of the third job: today `tools/import` handles glTF alone, and FBX is what
+# most content actually arrives as. ufbx is behind the importer's existing interface, per
+# `thirdparty-dependencies`, and both model importers declare their shared options under the SAME
+# names — asserted over a literal list, because an option added to one schema and not the other
+# silently loses a project's setting when a model is re-exported.
+[[criterion]]
+id = "import-fbx"
+describe = "FBX imports through the same interface glTF does: one mesh exported in two formats welds to one vertex count and cooks to one set of bytes, the axis and unit conversion is a single rigid transform on the root nodes rather than a rotation applied per vertex, and the two importers' shared options are the same options"
+source = "tasks 8.1, asset-import-pipeline"
+kind = "recipe"
+run = "just test-integration -R import_fbx"
+ci_job = "asset-import"
+
+[[criterion]]
+id = "import-complete"
+describe = "the rest of what takes `asset-import-pipeline` to Complete: xatlas and mesh processing, cook profiles that exclude by publication so an AssetId is identical across them, and the pipeline's own determinism — including the minting defect design.md §1.7 named, where a sub-asset without a committed sidecar drew 128 random bits and two cold builds of one project stopped agreeing"
+source = "tasks 8.2, 8.3"
+kind = "command"
+run = "just test-integration -R \"import_(mesh|gltf|unwrap|pipeline)\""
+ci_job = "asset-import"
+
+[[criterion]]
+id = "culling"
+describe = "GPU-driven culling's expected values, computed on the CPU so a dispatch can be checked against them rather than against a screenshot: visibility ranges with a parent slot stored plus one so a zeroed record means no parent, HLOD, and shadow caster culling against TWO frustums — the view's own and the camera's, because one frustum cannot answer both of the requirement's questions. `unit.render_gpu_culling`, which is M6's; `unit.render_culling` next door is M3's CPU-side suite and a different claim"
+source = "tasks 8.5"
+kind = "command"
+run = "just test-unit -R unit.render_gpu_culling && just test-integration -R render_gpu_culling_teardown"
+ci_job = "render-culling"
+
+# TASK 8.4. `rendering-geometry-and-resources` reaches Complete at M6, and its own suites are what
+# says so: per-instance skinning output buffers reusable across passes, bounds derived from bone
+# transforms, and a resource ledger whose `release()` NEVER FREES — it records the frame, and
+# `retire(completed_frame)` reclaims — so a caller that never retires leaks visibly in a report
+# rather than producing a use-after-free that appears once in a thousand frames.
+[[criterion]]
+id = "geometry"
+describe = "the geometry side of the milestone: skinning descriptors that refuse a pose source this build cannot serve rather than reading an empty buffer, and a resource ledger destroyed with work outstanding"
+source = "tasks 8.4"
+kind = "command"
+run = "just test-unit -R unit.render_geometry && just test-integration -R render_geometry_teardown"
+ci_job = "render-culling"
+
+# --- The artefact ---------------------------------------------------------------------------------
+
+# SECTION 9. Registered as a CTest smoke entry, so `just test-all` runs it and `build-and-test`
+# covers it on every pull request — the call m5.toml made for `text` and m5b.toml for
+# `agent-artefact`, and the reason this criterion's job is not one of its own.
+[[criterion]]
+id = "open-world-artefact"
+describe = "six kilometres of city cooked from a committed description through a four-node derivation graph, installed, and traversed continuously at speed: cells stream in and out while at most a fraction of the world is resident, two virtual textures page under the shared residency policy with no sample ever missing, cells are held resident with nothing simulating in them, the game is saved and quit, a second process reloads it and finds every removal honoured and every override matched, three more sessions are destroyed mid-flight with pages in production — and then one line of content changes, the node that does not read it is served from the cache, the difference ships as a patch, an interrupted application leaves the previous build playable, and the same route out of the same directory reports a different world"
+source = "tasks 9.1, 9.2, 9.3, 9.4, 9.5, ROADMAP M6 (Closing artefact)"
+kind = "recipe"
+run = "just test-smoke -R open_world"
+timeout_s = 3600
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "open-world-recipe"
+describe = "`just run-open-world` runs the artefact through the workflow a contributor uses, on the full route rather than the shortened one the smoke entry runs, rather than only through the test that registers it"
+source = "tasks 9.5, developer-workflow-and-just"
+kind = "recipe"
+run = "just run-open-world"
+timeout_s = 3600
+ci_job = "milestone-m6"
+
+# TASK 9.5, AND IT IS A `path` CRITERION FOR THE REASON `delivery-roadmap` ALLOWS ONE: a committed
+# artefact that is regenerated and compared. `just run-open-world --shot <path>` draws it — the
+# world's cells, the route across them, the landmarks it passes and the run's own figures, in the
+# editor's palette so that the images in docs/design/images/ read as one product. An image taken by
+# hand is an image nobody can refresh, and this project went six milestones with one.
+[[criterion]]
+id = "screenshot-open-world"
+describe = "the artefact's own picture is committed under docs/design/images/, so the milestone can be evaluated by looking"
+source = "tasks 9.5"
+kind = "path"
+path = "docs/design/images/open-world-m6.png"
+ci_job = "milestone-m6"
+
+# --- Every profile, and the platforms -------------------------------------------------------------
+
+# THE IDENTICAL COMMAND M1, M2, M3, M4, M5 AND M5.5 DECLARE, written out rather than varied so that
+# the plan COLLAPSES all seven into one run of it, reported as `m1:four-profiles`. That is the whole
+# point of the flat ledger and the reason this string must not be "improved" here.
+#
+# It now covers M6's artefact too, without saying so: `just test-all` includes `smoke.open_world`,
+# which cooks, installs, plays, resumes, tears down and patches a world in the profile under test.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including M6's artefact and the fifteen suites its six new modules brought, none of which is behind a CY_* option"
+source = "tasks 11.2"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M6's modules in the tree"
+source = "ROADMAP M6, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be
+# most satisfied.
+[[criterion]]
+id = "m7-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M7"
+source = "tasks 10.10, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m7*/proposal.md"
+ci_job = "milestone-m6"

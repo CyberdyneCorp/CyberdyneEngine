@@ -1,0 +1,28 @@
+cyopenworld 1
+# The world — six kilometres square, generated from these numbers and from nothing else.
+#
+# A multi-kilometre world is not committed as data: 2,304 cells of 40 props is 92,160 persistent
+# entities, and a repository that carried them would be measuring git rather than the engine. What
+# is committed is the DESCRIPTION, and `cy_sample_open-world` cooks the cells from it — deterministic
+# in the seed below, so two runs, two machines and two profiles cook the same world.
+#
+#   extent          cells per side at level 0
+#   cell-size       metres per level-0 cell; extent x cell-size is the world's span
+#   seed            the only source of variation in the cook
+#   props-per-cell  persistent entities per cell
+#
+# `landmark <x> <z> "<name>" kind <k>` puts one further entity in a named cell. The route passes
+# them in order and reports each one by name and kind, which is how a content change becomes
+# something the run says out loud.
+
+world "city"
+  extent 48
+  cell-size 128
+  seed 6061
+  props-per-cell 40
+
+landmark 4 3   "north-gate"  kind 11
+landmark 14 12 "reservoir"   kind 12
+landmark 24 22 "relay-mast"  kind 13
+landmark 34 32 "foundry"     kind 14
+landmark 43 41 "south-yard"  kind 15

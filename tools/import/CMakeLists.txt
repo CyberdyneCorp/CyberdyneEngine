@@ -35,20 +35,29 @@ cy_add_module(
     ALIAS cy::import
     TYPE STATIC
     SOURCES
+        src/fbx.cpp
         src/gltf.cpp
         src/importer.cpp
         src/json.cpp
         src/live_import.cpp
         src/mesh.cpp
+        src/model.cpp
         src/texture.cpp
         src/options.cpp
         src/pipeline.cpp
         src/report.cpp
         src/sidecar.cpp
+        src/unwrap.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
     PUBLIC_DEPENDENCIES cy::core-assets cy::core-base cy::core-memory cy::core-values cy::core-math
-                        cy::core-jobs)
+                        cy::core-jobs
+    # PRIVATE, and that is the isolation `thirdparty-dependencies` requires rather than a
+    # convention: a consumer of cy::import inherits neither ufbx.h nor xatlas.h, so a translation
+    # unit outside src/fbx.cpp and src/unwrap.cpp cannot name one of their types even by accident.
+    # deps/manifest.toml records those two files as the interface, and this line is what makes the
+    # record true.
+    PRIVATE_DEPENDENCIES cy::dep::ufbx cy::dep::xatlas)
 
 cy_add_module(
     NAME cy_import_cli

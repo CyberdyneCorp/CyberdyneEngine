@@ -6,10 +6,14 @@ manifest's own header; when one changes, both change. This module is the referen
 fails here is malformed, whatever CMake made of it.
 
 deps/host-tools.toml is parsed *only* here. It records software that must already be on the machine
-and that the build never fetches or links — today, the reflection generator's C++ frontend. Its
-header says why it is a second file rather than more tables in the first one; the short version is
-that cmake/dependencies.cmake turns every table it reads into a FetchContent_Declare, and a PyPI
-wheel has no commit to pin.
+and that the build never fetches or links — the reflection generator's C++ frontend, and from M6 the
+Rust toolchain the editor is compiled with. Its header says why it is a second file rather than more
+tables in the first one; the short version is that cmake/dependencies.cmake turns every table it
+reads into a FetchContent_Declare, and a PyPI wheel has no commit to pin.
+
+deps/rust-crates.toml is the third record and is read by tools/deps/rust_crates.py rather than here,
+because its entries are checked against editor/Cargo.lock rather than against a field schema. All
+three appear in THIRD_PARTY.md.
 """
 
 from __future__ import annotations
@@ -66,7 +70,11 @@ HOST_TOOL_FIELDS = (
     "justification",
 )
 
-HOST_TOOL_KINDS = ("python-package", "system-library")
+# `toolchain` joined the two at M6, for the Rust compiler. It is a third kind rather than a
+# stretched `system-library` because what has to be present is a compiler at an exact version,
+# selected by rust-toolchain.toml, and `just env-doctor`'s probe for one is a version command
+# rather than a library load.
+HOST_TOOL_KINDS = ("python-package", "system-library", "toolchain")
 
 
 class ManifestError(Exception):

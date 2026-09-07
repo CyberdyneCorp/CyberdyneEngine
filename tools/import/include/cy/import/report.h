@@ -21,6 +21,7 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
+#include <cy/import/importer.h>
 
 #include <string_view>
 
@@ -55,6 +56,16 @@ struct AssetImportOutcome {
     usize minted_ids = 0;
     /// How many bindings the record dropped because the source no longer produces them.
     usize orphaned_ids = 0;
+    /// How many sub-assets the cook profile excluded, and what they would have cost. M6 task 8.3.
+    ///
+    /// `asset-import-pipeline` — "Each cook SHALL report what was excluded and the resulting size
+    /// by category, so accidental inclusions are visible." A count alone would not do it: the
+    /// scenario is "a server cook unexpectedly includes a large texture", and it is the BYTES that
+    /// make that visible.
+    usize excluded_sub_assets = 0;
+    usize excluded_bytes = 0;
+    /// Which profile this row was cooked under, so a report over a mixed run is readable.
+    CookProfile profile = CookProfile::Client;
     u64 duration_micros = 0;
 
     [[nodiscard]] bool succeeded() const noexcept { return errors == 0; }
@@ -80,6 +91,10 @@ public:
     [[nodiscard]] usize total_warnings() const noexcept;
     [[nodiscard]] usize total_errors() const noexcept;
     [[nodiscard]] usize total_cooked_bytes() const noexcept;
+    /// What the cook profile removed, across the run. Zero for a `Client` or `Editor` cook, which
+    /// exclude nothing.
+    [[nodiscard]] usize total_excluded_sub_assets() const noexcept;
+    [[nodiscard]] usize total_excluded_bytes() const noexcept;
     [[nodiscard]] usize cache_hits() const noexcept;
     [[nodiscard]] usize cache_misses() const noexcept;
     [[nodiscard]] usize invalidations() const noexcept;

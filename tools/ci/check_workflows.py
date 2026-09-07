@@ -204,8 +204,52 @@ def list_gates(root: pathlib.Path, workflows: list[pathlib.Path], recipes: set[s
     return 0
 
 
+# The milestone ladder, for the rule below. Read from tools/roadmap/record.py rather than repeated
+# here, because a second copy of the ladder is how M5.5 came to sort off the end of the first one.
+def _ladder(root: pathlib.Path) -> tuple[str, ...]:
+    record = root / "tools" / "roadmap" / "record.py"
+    if not record.exists():
+        return ()
+    text = record.read_text(encoding="utf-8")
+    start = text.find("MILESTONES = (")
+    if start < 0:
+        return ()
+    end = text.find(")", start)
+    body = text[start + len("MILESTONES = (") : end]
+    return tuple(part.strip().strip('"\'') for part in body.split(",") if part.strip())
+
+
+def _rung(ladder: tuple[str, ...], identifier: str) -> int:
+    """Where a milestone sits. Off the ladder sorts last, as `criteria.rung` does."""
+    return ladder.index(identifier) if identifier in ladder else len(ladder)
+
+
 def gate_coverage(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
-    """Permanent gates whose commands no workflow runs."""
+    """Gates whose commands no workflow runs — permanent ones, and CLOSED MILESTONES.
+
+    --- WHY MILESTONE GATES ARE CHECKED HERE, WHICH IS M6 TASK 10.9 ---------------------------------
+
+    Until M6 this function skipped any gate whose class was not `permanent`, so six milestone gates
+    sat at `state = "green"` — M0 through M5.5 — and NO CONTINUOUS-INTEGRATION JOB RAN ANY OF THEM.
+    `ci.yml` named `roadmap-milestone` in a comment and nowhere else. `delivery-roadmap` puts a
+    closed milestone's criteria into the permanent set the moment it closes and requires them to
+    stay green; a set nothing runs cannot regress *visibly*, which is the same failure as M2's
+    unpromoted `milestone-m1` gate one level up. It is also the unmet precondition that
+    specification sets for reducing the audit at M9, so closing it at M6 is worth more than
+    discovering it at M9.
+
+    --- THE RULE, AND WHY IT IS NOT "EVERY GREEN GATE'S COMMAND APPEARS" ----------------------------
+
+    The ledger has been FLAT since M5: `criteria.build_plan` merges the criteria of every green
+    milestone gate BELOW the target with the target's own and runs each distinct check once. So one
+    job running `just roadmap-milestone m5b` evaluates M0, M1, M2, M3, M4, M5 and M5.5 — and
+    demanding seven separate commands would re-run `four-profiles` seven times, which is exactly the
+    multiplication the flattening removed.
+
+    A green milestone gate is therefore covered when a workflow runs the ledger of ANY milestone at
+    or above its rung. Uncovered gates are reported naming the one command that would cover them
+    all, so the fix is one job rather than one job per milestone.
+    """
     declaration = root / "tools" / "roadmap" / "gates.toml"
     if not declaration.exists():
         return []
@@ -226,6 +270,31 @@ def gate_coverage(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str
             uncovered.append(
                 f"gate '{gate['id']}' is declared permanent but no workflow runs: "
                 + ", ".join(f"`{command}`" for command in missing)
+            )
+
+    ladder = _ladder(root)
+    green = [gate for gate in gates
+             if gate.get("class") == "milestone" and gate.get("state") == "green"]
+    if green:
+        # The highest rung any workflow actually evaluates. `just roadmap-milestone <id>` is the
+        # only spelling a ledger has, so the command is matched rather than parsed loosely.
+        def evaluates(identifier: str) -> bool:
+            # `--ci`, `--list` and a profile flag may follow the id, so the command is matched on
+            # its first three words rather than compared whole.
+            prefix = f"just roadmap-milestone {identifier}"
+            return any(text == prefix or text.startswith(prefix + " ") for text in invoked)
+
+        evaluated = [identifier for identifier in ladder if evaluates(identifier)]
+        reached = max((_rung(ladder, identifier) for identifier in evaluated), default=-1)
+        gap = [gate for gate in green if _rung(ladder, gate.get("milestone", "")) > reached]
+        if gap:
+            newest = max(gap, key=lambda gate: _rung(ladder, gate.get("milestone", "")))
+            names = ", ".join(f"'{gate['id']}'" for gate in gap)
+            uncovered.append(
+                f"{len(gap)} closed milestone gate(s) — {names} — are green and no workflow "
+                f"evaluates them. One job running `just roadmap-milestone "
+                f"{newest.get('milestone')}` covers all of them, because a ledger is flat and "
+                "inherits every green milestone below it"
             )
     return uncovered
 
@@ -376,7 +445,57 @@ def selftest(root: pathlib.Path) -> int:
         else:
             print("ok   accepted: a job that installs the pinned tooling before the gate")
 
-    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 3
+        # --- M6 TASK 10.9's OWN NEGATIVE FIXTURE -------------------------------------------------
+        #
+        # THE DEFECT, RESTORED: a workflow that runs every permanent gate and no milestone ledger.
+        # That was this repository's actual state from M0 to M6 — seven green milestone gates and no
+        # job that evaluated one — and it passed this check, because the check skipped any gate whose
+        # class was not `permanent`. It must not pass now.
+        gate_set = tomllib.loads(
+            (root / "tools" / "roadmap" / "gates.toml").read_text(encoding="utf-8")
+        ).get("gate", [])
+        permanent_commands = [
+            command
+            for gate in gate_set
+            if gate.get("class") == "permanent"
+            for command in gate.get("runs", [])
+        ]
+        newest_green = [
+            gate.get("milestone", "")
+            for gate in gate_set
+            if gate.get("class") == "milestone" and gate.get("state") == "green"
+        ]
+        ladder = _ladder(root)
+        newest = max(newest_green, key=lambda name: _rung(ladder, name), default="")
+
+        def coverage_of(commands: list[str]) -> list[str]:
+            body = "".join(f"      - run: {command}\n" for command in commands)
+            scratch.write_text(f"jobs:\n  case:\n    steps:\n{body}", encoding="utf-8")
+            return gate_coverage(root, [scratch])
+
+        if newest:
+            gaps = coverage_of(permanent_commands)
+            if any("closed milestone gate" in gap for gap in gaps):
+                print("ok   rejected: every permanent gate run and no milestone ledger evaluated")
+            else:
+                failed += 1
+                print("fail a workflow that evaluates no closed milestone's criteria was accepted",
+                      file=sys.stderr)
+
+            gaps = coverage_of([*permanent_commands, f"just roadmap-milestone {newest} --ci"])
+            if gaps:
+                failed += 1
+                print(f"fail the newest closed milestone's ledger did not cover the ones below it: "
+                      f"{gaps}", file=sys.stderr)
+            else:
+                print(f"ok   accepted: one job running `just roadmap-milestone {newest}` covers "
+                      f"every green milestone gate, because a ledger is flat")
+        else:
+            failed += 1
+            print("fail no milestone gate is green, so the coverage rule cannot be tested",
+                  file=sys.stderr)
+
+    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5
     if failed:
         print(f"check-workflows selftest: {failed} of {total} cases failed", file=sys.stderr)
         return 1
@@ -440,7 +559,8 @@ def main() -> int:
 
     print(
         f"check-workflows: clean — {len(workflows)} workflow(s), {total} command(s), "
-        "every one a recipe or a tool install, every permanent gate run"
+        "every one a recipe or a tool install, every permanent gate run and every closed "
+        "milestone's criteria evaluated"
     )
     return 0
 

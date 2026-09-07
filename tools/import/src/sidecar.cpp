@@ -486,7 +486,7 @@ Expected<usize, Error> ImportRecord::write(const OptionsSchema& schema, char* ou
 // --- Stable identity -----------------------------------------------------------------------------
 
 Status bind_sub_assets(ImportRecord& record, const ImportResult& result, Span<cy::AssetId> out_ids,
-                       usize& out_minted) noexcept {
+                       usize& out_minted, MintPolicy policy) noexcept {
     const Span<const SubAsset> produced = result.assets();
     if (out_ids.size() < produced.size()) {
         return fail(ErrorCode::BufferTooSmall, "not enough room for the produced sub-asset ids");
@@ -496,6 +496,15 @@ Status bind_sub_assets(ImportRecord& record, const ImportResult& result, Span<cy
         const std::string_view name = produced[index].view();
         cy::AssetId id = record.sub_asset(name);
         if (id.is_nil()) {
+            if (policy == MintPolicy::Refuse) {
+                // The whole point of the refusal: a reproducible cook does not invent identity. The
+                // remedy is to import the asset once interactively and commit the `.import` record
+                // beside it, which is what `identity.h` says should have happened anyway.
+                return fail(ErrorCode::PermissionDenied,
+                            "this cook refuses to mint an asset id, and the import record does not "
+                            "bind one of the sub-assets this source produces; import it once and "
+                            "commit the .import file beside the source");
+            }
             id = assets::mint_asset_id();
             ++out_minted;
         }

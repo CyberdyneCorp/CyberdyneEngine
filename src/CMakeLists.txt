@@ -28,8 +28,20 @@ add_subdirectory(backends)
 # consumes it.
 add_subdirectory(servers)
 
+# save/ is layer 2 and arrives at M6 (section 6). It is read after servers/ because it sits at the
+# same layer, and before scene/ and everything above, all of which may consume it: the persistence
+# overlay is the model world partition maintains and a save encodes. It depends on layer 0 alone —
+# see src/save/CMakeLists.txt for why the layer is 2 rather than the layer of its first consumer.
+add_subdirectory(save)
+
 add_subdirectory(scene)
 add_subdirectory(rendering)
+
+# world/ is CyberWorld: the spatial and persistence layer above the ECS, and M6 section 3. It is
+# read after scene/ because it declares LAYER scene (4) — there is no `world` rung in
+# `engine-architecture`'s table and src/gameplay/CMakeLists.txt already declined to invent one — and
+# before runtime/, which drives its tick.
+add_subdirectory(world)
 
 # gameplay/ is layer 4 and arrives at M4 (section 4.4). It is read after scene/ and rendering/ and
 # before runtime/, which is where it sits in the stack: above the ECS and the servers, below the

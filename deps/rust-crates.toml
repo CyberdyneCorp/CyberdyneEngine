@@ -1,0 +1,3907 @@
+# CyberEditor — the Rust dependency record.
+#
+# GENERATED from editor/Cargo.lock and `cargo metadata`, except for the justifications of the
+# direct dependencies, which are written by a person and preserved across regeneration. Regenerate
+# it with `just maintenance-deps-rust`; `just maintenance-deps-check` fails when it and the lockfile
+# disagree, and CI runs that on every pull request.
+#
+# WHY THIS FILE EXISTS. `thirdparty-dependencies` requires every dependency in a single
+# machine-readable manifest with a licence identifier and a one-line justification, and requires the
+# editor's Rust dependencies to be "declared, pinned, licence-reviewed, vendored or reproducibly
+# acquired, and justified" — the same policy as the engine's C++ set. M5.5 brought the editor a
+# window and, with it, 386 crates that appeared in no manifest at all; the attribution gate
+# compared THIRD_PARTY.md against the C and C++ manifests only, so it stayed green while every one
+# of them was undeclared. tools/deps/rust_crates.py's header records the rest of the reasoning,
+# including why this is a third file rather than more tables in deps/manifest.toml.
+#
+# WHAT A HUMAN DECIDES, AND WHAT IS DERIVED. 11 of these crates were chosen: they are named in
+# editor/Cargo.toml's `[workspace.dependencies]`, they carry `direct = true`, they say which editor
+# crate may use them, and their justification is an argument. The other 375 are what those
+# choices pull in. Their justification names the chosen crates that reach them, because that — not a
+# sentence invented per crate — is the fact `thirdparty-dependencies` asks for when it says the
+# transitive set "SHALL be part of the evaluation, not only the crate itself". The number of them is
+# the cost of the eleven, and it is written down here so that adding a twelfth is a visible edit.
+#
+# THE PIN IS Cargo.lock'S. `version` and `checksum` are copied from it and checked against it; they
+# are here so this file alone answers a security advisory's "which version, and is it in the tree".
+# Nothing is pinned twice: a disagreement is a gate failure rather than a fork.
+#
+# Fields
+#   name           the crate, as crates.io names it.
+#   version        the exact version editor/Cargo.lock resolves.
+#   licence        SPDX expression, as the crate declares it. A `WITH` exception is kept. It must be
+#                  satisfiable from tools/deps/rust_crates.py's PERMISSIVE set — an expression with
+#                  a copyleft ALTERNATIVE passes, one that only offers copyleft does not.
+#   checksum       the registry checksum editor/Cargo.lock pins.
+#   direct         true when editor/Cargo.toml names it; false when it arrived through
+#                  another crate.
+#   used_by        the editor crates that name it. Direct dependencies only, and never empty
+#                  for one of them.
+#   roots          the direct dependencies whose graph reaches it. Transitive crates only.
+#   justification  one line. Written by a person for a direct dependency; derived for the rest.
+
+schema = 1
+
+# --- Chosen, and argued for ----------------------------------------------------------------------
+
+[[crate]]
+name = "ash"
+version = "0.38.0+1.3.281"
+licence = "MIT OR Apache-2.0"
+checksum = "0bb44936d800fea8f016d7f2311c6a4f97aebd5dc86f09906139ec848cf3a46f"
+direct = true
+used_by = ["cy-editor-viewport-transport"]
+roots = []
+justification = "The Vulkan API where wgpu does not expose it — timeline semaphore import and export, the bounded host wait, and the DRM format-modifier queries the cross-process viewport needs. Behind cy-editor-viewport-transport, which is the only crate that names it."
+
+[[crate]]
+name = "eframe"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "2afc0cbcdb6896b7bfb1dbbebaf7b9af9635ff38fd01e89bdd0174c1717b1857"
+direct = true
+used_by = ["cy-editor-shell"]
+roots = []
+justification = "The window, the event loop and the wgpu renderer beneath the interface toolkit, with AccessKit — which editor-ui-ux requires and which decided the toolkit. Behind cy-editor-shell, and a containment test keeps it there."
+
+[[crate]]
+name = "egui"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "c977ac91dfaa651633fd9722e4ce9ccb32cda4c748b89a5cb57e504036e37c13"
+direct = true
+used_by = ["cy-editor-shell"]
+roots = []
+justification = "The immediate-mode interface toolkit, selected on measurement per editor-rust-application and kept replaceable behind the editor's own view models: no toolkit type appears in the document, command, protocol or plugin-facing layers."
+
+[[crate]]
+name = "egui-wgpu"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "2fc362cc6bc8c1d7169c9cb0e7741ff1e03063681373d6e55cc3b25fd21213f3"
+direct = true
+used_by = ["cy-editor-shell"]
+roots = []
+justification = "egui's wgpu paint backend, which is what lets the interface and the imported engine texture share one device rather than two."
+
+[[crate]]
+name = "egui_dock"
+version = "0.21.1"
+licence = "MIT"
+checksum = "2d9f668eb59ff0ab130c8bce71a513135e1d3017fb3103fb8758e9eea99d759f"
+direct = true
+used_by = ["cy-editor-shell"]
+roots = []
+justification = "The dockable panel layout editor-ui-ux requires. Small, focused, and above the toolkit rather than beside it."
+
+[[crate]]
+name = "image"
+version = "0.25.9"
+licence = "MIT OR Apache-2.0"
+checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
+direct = true
+used_by = ["cy-editor-shell"]
+roots = []
+justification = "PNG decoding for the editor's identity assets, with every other format and every encoder switched off. Decoding a published format is not differentiating work."
+
+[[crate]]
+name = "libc"
+version = "0.2.189"
+licence = "MIT OR Apache-2.0"
+checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+direct = true
+used_by = ["cy-editor-viewport-transport"]
+roots = []
+justification = "memfd_create, mmap and SCM_RIGHTS descriptor passing — the POSIX calls the viewport transport is built on, which the Rust standard library does not expose."
+
+[[crate]]
+name = "pollster"
+version = "0.4.0"
+licence = "Apache-2.0/MIT"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+direct = true
+used_by = ["cy-editor-viewport-transport"]
+roots = []
+justification = "Three lines of executor for wgpu's async adapter enumeration. The editor has no async runtime and wants none; this is how it avoids acquiring one."
+
+[[crate]]
+name = "wgpu"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "527ccdf43dd5b2e8676eed9984ce00e2bbb0a1b85b70c1969dcb6cd2eb55ab9e"
+direct = true
+used_by = ["cy-editor-shell", "cy-editor-viewport-transport"]
+roots = []
+justification = "The editor's graphics device: one portable API for the panels, and the object the engine's texture is imported into. Writing a second RHI for the editor would be the renderer's work done twice."
+
+[[crate]]
+name = "wgpu-hal"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58"
+direct = true
+used_by = ["cy-editor-viewport-transport"]
+roots = []
+justification = "wgpu's supported escape hatch. Adding VK_KHR_external_semaphore_fd before vkCreateDevice is only reachable through Adapter::open_with_callback, and the cross-process viewport cannot be built without it."
+
+[[crate]]
+name = "wgpu-types"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "99dad6f1fbdbbdb4c278a6508b059d44688f5cebddf78d005a46a31340269286"
+direct = true
+used_by = ["cy-editor-viewport-transport"]
+roots = []
+justification = "The shared type definitions wgpu and wgpu-hal both speak, named directly so the transport does not reach them through a re-export that may move."
+
+# --- Reached through the crates above, and recorded so the cost of choosing them is legible ---
+
+[[crate]]
+name = "accesskit"
+version = "0.24.1"
+licence = "MIT OR Apache-2.0"
+checksum = "d3b7f7f85a7e5f68090000ed7622545829afd484d210358702ae4cb97dd0c320"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: accesskit is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "accesskit_atspi_common"
+version = "0.18.1"
+licence = "MIT OR Apache-2.0"
+checksum = "1e8c61bee90b42a772d39d06a740207dc71a4e780004ace1db8d99fb1baaa954"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_atspi_common is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_consumer"
+version = "0.35.0"
+licence = "MIT OR Apache-2.0"
+checksum = "53cf47daed85312e763fbf85ceca136e0d7abc68e0a7e12abe11f48172bc3b10"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_consumer is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_consumer"
+version = "0.36.0"
+licence = "MIT OR Apache-2.0"
+checksum = "25e0d7e25d06f4dc21d1774d67146e9e80d6789216cbd4d1e88185b0095dba60"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_consumer is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_consumer"
+version = "0.38.0"
+licence = "MIT OR Apache-2.0"
+checksum = "5d10a236f96f87d70732e44520046785431ef01d5bcd6b041317bfadd2f88245"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_consumer is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_macos"
+version = "0.26.3"
+licence = "MIT OR Apache-2.0"
+checksum = "ce02dc63b43f0c9296af9ac946312a2dc8814427d7a64d2d600971dac55b6076"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_macos is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_unix"
+version = "0.21.1"
+licence = "MIT OR Apache-2.0"
+checksum = "b016ca8db0ea0ea2ceff29a9d6240391492d960716aa471967c00e8cc8cb197c"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_unix is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_windows"
+version = "0.32.1"
+licence = "MIT OR Apache-2.0"
+checksum = "eff7009f1a532e917d66970a1e80c965140c6cfbbabbdde3d64e5431e6c78e21"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_windows is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "accesskit_winit"
+version = "0.32.2"
+licence = "Apache-2.0"
+checksum = "1fe9a94394896352cc4660ca2288bd4ef883d83238853c038b44070c8f134313"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: accesskit_winit is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "adler2"
+version = "2.0.1"
+licence = "0BSD OR MIT OR Apache-2.0"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: adler2 is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "ahash"
+version = "0.8.12"
+licence = "MIT OR Apache-2.0"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: ahash is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "allocator-api2"
+version = "0.2.21"
+licence = "MIT OR Apache-2.0"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: allocator-api2 is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "android-activity"
+version = "0.6.1"
+licence = "MIT OR Apache-2.0"
+checksum = "0f2a1bb052857d5dd49572219344a7332b31b76405648eabac5bc68978251bcd"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: android-activity is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "android-properties"
+version = "0.2.2"
+licence = "MIT"
+checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: android-properties is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "android_system_properties"
+version = "0.1.6"
+licence = "MIT OR Apache-2.0"
+checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: android_system_properties is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "arboard"
+version = "3.6.1"
+licence = "MIT OR Apache-2.0"
+checksum = "0348a1c054491f4bfe6ab86a7b6ab1e44e45d899005de92f58b3df180b36ddaf"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: arboard is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "arrayvec"
+version = "0.7.8"
+licence = "MIT OR Apache-2.0"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: arrayvec is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "as-raw-xcb-connection"
+version = "1.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: as-raw-xcb-connection is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "async-broadcast"
+version = "0.7.2"
+licence = "MIT OR Apache-2.0"
+checksum = "435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-broadcast is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-channel"
+version = "2.5.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-channel is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-executor"
+version = "1.14.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-executor is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-io"
+version = "2.6.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "456b8a8feb6f42d237746d4b3e9a178494627745c3c56c6ea55d92ba50d026fc"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-io is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-lock"
+version = "3.4.2"
+licence = "Apache-2.0 OR MIT"
+checksum = "290f7f2596bd5b78a9fec8088ccd89180d7f9f55b94b0576823bbbdc72ee8311"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-lock is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-process"
+version = "2.5.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "fc50921ec0055cdd8a16de48773bfeec5c972598674347252c0399676be7da75"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-process is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-recursion"
+version = "1.1.1"
+licence = "MIT OR Apache-2.0"
+checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-recursion is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-signal"
+version = "0.2.14"
+licence = "Apache-2.0 OR MIT"
+checksum = "52b5aaafa020cf5053a01f2a60e8ff5dccf550f0f77ec54a4e47285ac2bab485"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-signal is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-task"
+version = "4.7.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-task is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "async-trait"
+version = "0.1.92"
+licence = "MIT OR Apache-2.0"
+checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: async-trait is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "atomic-waker"
+version = "1.1.2"
+licence = "Apache-2.0 OR MIT"
+checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: atomic-waker is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "atspi"
+version = "0.29.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "c77886257be21c9cd89a4ae7e64860c6f0eefca799bb79127913052bd0eefb3d"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: atspi is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "atspi-common"
+version = "0.13.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "20c5617155740c98003016429ad13fe43ce7a77b007479350a9f8bf95a29f63d"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: atspi-common is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "atspi-proxies"
+version = "0.13.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "2230e48787ed3eb4088996eab66a32ca20c0b67bbd4fd6cdfe79f04f1f04c9fc"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: atspi-proxies is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "autocfg"
+version = "1.5.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: autocfg is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bit-set"
+version = "0.10.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "09ec2f926cc3060f09db9ebc5b52823d85268d24bb917e472c0c4bea35780a7d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: bit-set is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bit-vec"
+version = "0.9.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "b71798fca2c1fe1086445a7258a4bc81e6e49dcd24c8d0dd9a1e57395b603f51"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: bit-vec is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bitflags"
+version = "1.3.2"
+licence = "MIT/Apache-2.0"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: bitflags is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bitflags"
+version = "2.13.1"
+licence = "MIT OR Apache-2.0"
+checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: bitflags is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "block2"
+version = "0.5.1"
+licence = "MIT"
+checksum = "2c132eebf10f5cad5289222520a4a058514204aed6d791f1cf4fe8088b82d15f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: block2 is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "block2"
+version = "0.6.2"
+licence = "MIT"
+checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: block2 is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "blocking"
+version = "1.7.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "a70e4329df6cb94385eed412ec92375c3cdd8a6e502493d1229b6414e4036dfa"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: blocking is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "bumpalo"
+version = "3.20.3"
+licence = "MIT OR Apache-2.0"
+checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: bumpalo is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bytemuck"
+version = "1.25.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: bytemuck is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bytemuck_derive"
+version = "1.12.0"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "fc0e56a716f1e132ff6bf4bdac1c944a3fcdc1cae65f70a4a2a1ac3b401d2d1f"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: bytemuck_derive is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "byteorder-lite"
+version = "0.1.0"
+licence = "Unlicense OR MIT"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: byteorder-lite is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "bytes"
+version = "1.12.1"
+licence = "MIT"
+checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: bytes is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "calloop"
+version = "0.13.0"
+licence = "MIT"
+checksum = "b99da2f8558ca23c71f4fd15dc57c906239752dd27ff3c00a1d56b685b7cbfec"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: calloop is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "calloop"
+version = "0.14.4"
+licence = "MIT"
+checksum = "4dbf9978365bac10f54d1d4b04f7ce4427e51f71d61f2fe15e3fed5166474df7"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: calloop is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "calloop-wayland-source"
+version = "0.3.0"
+licence = "MIT"
+checksum = "95a66a987056935f7efce4ab5668920b5d0dac4a7c99991a67395f13702ddd20"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: calloop-wayland-source is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "calloop-wayland-source"
+version = "0.4.1"
+licence = "MIT"
+checksum = "138efcf0940a02ebf0cc8d1eff41a1682a46b431630f4c52450d6265876021fa"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: calloop-wayland-source is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "cc"
+version = "1.4.5"
+licence = "MIT OR Apache-2.0"
+checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: cc is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "cfg-if"
+version = "1.0.4"
+licence = "MIT OR Apache-2.0"
+checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+direct = false
+used_by = []
+roots = ["ash", "eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: cfg-if is in the editor's graph because ash, eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "cfg_aliases"
+version = "0.2.2"
+licence = "MIT"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: cfg_aliases is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "cgl"
+version = "0.3.2"
+licence = "MIT / Apache-2.0"
+checksum = "0ced0551234e87afee12411d535648dd89d2e7f34c78b753395567aff3d447ff"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: cgl is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "clipboard-win"
+version = "5.4.1"
+licence = "BSL-1.0"
+checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: clipboard-win is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "codespan-reporting"
+version = "0.13.1"
+licence = "Apache-2.0"
+checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: codespan-reporting is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "color"
+version = "0.3.3"
+licence = "Apache-2.0 OR MIT"
+checksum = "2ec7c5eb7a16992b1904d76c517d170ab353b0e0b3d5a0c81a8a0cd1037893cf"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: color is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "combine"
+version = "4.6.8"
+licence = "MIT"
+checksum = "cfc320937d09e6de266b31b9afb480f197d7a861be86be7cb2ea7e5d1bfffc5e"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: combine is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "concurrent-queue"
+version = "2.5.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: concurrent-queue is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "core-foundation"
+version = "0.9.4"
+licence = "MIT OR Apache-2.0"
+checksum = "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: core-foundation is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "core-foundation-sys"
+version = "0.8.7"
+licence = "MIT OR Apache-2.0"
+checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: core-foundation-sys is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "core-graphics"
+version = "0.23.2"
+licence = "MIT OR Apache-2.0"
+checksum = "c07782be35f9e1140080c6b96f0d44b739e2278479f64e02fdab4e32dfd8b081"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: core-graphics is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "core-graphics-types"
+version = "0.1.3"
+licence = "MIT OR Apache-2.0"
+checksum = "45390e6114f68f718cc7a830514a96f903cccd70d02a8f6d9f643ac4ba45afaf"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: core-graphics-types is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "crc32fast"
+version = "1.5.1"
+licence = "MIT OR Apache-2.0"
+checksum = "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: crc32fast is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "crossbeam-utils"
+version = "0.8.23"
+licence = "MIT OR Apache-2.0"
+checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: crossbeam-utils is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "crunchy"
+version = "0.2.4"
+licence = "MIT"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: crunchy is in the editor's graph because eframe, egui-wgpu, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "cursor-icon"
+version = "1.2.0"
+licence = "MIT OR Apache-2.0 OR Zlib"
+checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: cursor-icon is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "dispatch"
+version = "0.2.0"
+licence = "MIT"
+checksum = "bd0c93bb4b0c6d9b77f4435b0ae98c24d17f1c45b2ff844c6151a07256ca923b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: dispatch is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "dispatch2"
+version = "0.3.1"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: dispatch2 is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "dlib"
+version = "0.5.3"
+licence = "MIT"
+checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: dlib is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "document-features"
+version = "0.2.12"
+licence = "MIT OR Apache-2.0"
+checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: document-features is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "downcast-rs"
+version = "1.2.1"
+licence = "MIT/Apache-2.0"
+checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: downcast-rs is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "dpi"
+version = "0.1.2"
+licence = "Apache-2.0 AND MIT"
+checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: dpi is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "duplicate"
+version = "2.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "8e92f10a49176cbffacaedabfaa11d51db1ea0f80a83c26e1873b43cd1742c24"
+direct = false
+used_by = []
+roots = ["egui_dock"]
+justification = "Not chosen: duplicate is in the editor's graph because egui_dock reaches it. Its cost is part of the case for egui_dock."
+
+[[crate]]
+name = "ecolor"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "fc883f505d446814c0226bef4b64564b9adb9966fc00c88c57ce6d827dd152d6"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: ecolor is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "egui-winit"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "9327fc8edef2c57db9bcbcacc82c8a4b1e8cc64cd41a67db4419dcf643d88c83"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: egui-winit is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "egui_glow"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "69b65e45f8d8d7c6d848b3ec41f642b54ad828033f1511d4b4c9adc09040166a"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: egui_glow is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "either"
+version = "1.18.0"
+licence = "MIT OR Apache-2.0"
+checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: either is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "emath"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "dce03cf1604f74515830012c29991beb0b58f69e4e43f5afe22fa7afed65ccd5"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: emath is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "endi"
+version = "1.1.1"
+licence = "MIT"
+checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: endi is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "enumflags2"
+version = "0.7.12"
+licence = "MIT OR Apache-2.0"
+checksum = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: enumflags2 is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "enumflags2_derive"
+version = "0.7.12"
+licence = "MIT OR Apache-2.0"
+checksum = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: enumflags2_derive is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "epaint"
+version = "0.36.1"
+licence = "MIT OR Apache-2.0"
+checksum = "11863a6b2b7823010c1090ddf4706947bdda46766742def0673195cbf7ff4a73"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: epaint is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "epaint_default_fonts"
+version = "0.36.1"
+licence = "(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0"
+checksum = "18dee69613aac468922cf28a32025eb7d7ed6985b61f73245848e58f37876c98"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: epaint_default_fonts is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "equivalent"
+version = "1.0.2"
+licence = "Apache-2.0 OR MIT"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: equivalent is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "errno"
+version = "0.3.14"
+licence = "MIT OR Apache-2.0"
+checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: errno is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "error-code"
+version = "3.4.0"
+licence = "BSL-1.0"
+checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: error-code is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "euclid"
+version = "0.22.14"
+licence = "MIT OR Apache-2.0"
+checksum = "f1a05365e3b1c6d1650318537c7460c6923f1abdd272ad6842baa2b509957a06"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: euclid is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "event-listener"
+version = "5.4.2"
+licence = "Apache-2.0 OR MIT"
+checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: event-listener is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "event-listener-strategy"
+version = "0.5.4"
+licence = "Apache-2.0 OR MIT"
+checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: event-listener-strategy is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "fastrand"
+version = "2.5.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: fastrand is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "fax"
+version = "0.2.7"
+licence = "MIT"
+checksum = "caf1079563223d5d59d83c85886a56e586cfd5c1a26292e971a0fa266531ac5a"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: fax is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "fdeflate"
+version = "0.3.7"
+licence = "MIT OR Apache-2.0"
+checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: fdeflate is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "fearless_simd"
+version = "0.4.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: fearless_simd is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "find-msvc-tools"
+version = "0.1.12"
+licence = "MIT OR Apache-2.0"
+checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: find-msvc-tools is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "flate2"
+version = "1.1.10"
+licence = "MIT OR Apache-2.0"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: flate2 is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "foldhash"
+version = "0.2.0"
+licence = "Zlib"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: foldhash is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "font-types"
+version = "0.12.4"
+licence = "MIT OR Apache-2.0"
+checksum = "e64eb721ca85a34323425f4041adc5d82704d3782d5f8f03793bc012419dce23"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: font-types is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "foreign-types"
+version = "0.5.0"
+licence = "MIT/Apache-2.0"
+checksum = "d737d9aa519fb7b749cbc3b962edcf310a8dd1f4b67c91c4f83975dbdd17d965"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: foreign-types is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "foreign-types-macros"
+version = "0.2.4"
+licence = "MIT/Apache-2.0"
+checksum = "ea5190182e6915eb873ddbc16e23b711b6eb1f9c00a0d0a3a91b5f6228475225"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: foreign-types-macros is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "foreign-types-shared"
+version = "0.3.1"
+licence = "MIT/Apache-2.0"
+checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: foreign-types-shared is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "futures-core"
+version = "0.3.34"
+licence = "MIT OR Apache-2.0"
+checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: futures-core is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "futures-io"
+version = "0.3.34"
+licence = "MIT OR Apache-2.0"
+checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: futures-io is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "futures-lite"
+version = "2.6.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: futures-lite is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "futures-macro"
+version = "0.3.34"
+licence = "MIT OR Apache-2.0"
+checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: futures-macro is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "futures-task"
+version = "0.3.34"
+licence = "MIT OR Apache-2.0"
+checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: futures-task is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "futures-util"
+version = "0.3.34"
+licence = "MIT OR Apache-2.0"
+checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: futures-util is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "gethostname"
+version = "1.1.0"
+licence = "Apache-2.0"
+checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: gethostname is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "getrandom"
+version = "0.3.4"
+licence = "MIT OR Apache-2.0"
+checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: getrandom is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "getrandom"
+version = "0.4.3"
+licence = "MIT OR Apache-2.0"
+checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: getrandom is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "gl_generator"
+version = "0.14.0"
+licence = "Apache-2.0"
+checksum = "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: gl_generator is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "glifo"
+version = "0.2.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "ed4a1bb24121291d27230c1b1b44e07d6a9b28cefdb32fe1581dfb84e14f940a"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: glifo is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "glow"
+version = "0.17.0"
+licence = "MIT OR Apache-2.0 OR Zlib"
+checksum = "29038e1c483364cc6bb3cf78feee1816002e127c331a1eec55a4d202b9e1adb5"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: glow is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "glutin"
+version = "0.32.3"
+licence = "Apache-2.0"
+checksum = "12124de845cacfebedff80e877bb37b5b75c34c5a4c89e47e1cdd67fb6041325"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: glutin is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "glutin-winit"
+version = "0.5.0"
+licence = "MIT"
+checksum = "85edca7075f8fc728f28cb8fbb111a96c3b89e930574369e3e9c27eb75d3788f"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: glutin-winit is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "glutin_egl_sys"
+version = "0.7.1"
+licence = "Apache-2.0"
+checksum = "4c4680ba6195f424febdc3ba46e7a42a0e58743f2edb115297b86d7f8ecc02d2"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: glutin_egl_sys is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "glutin_glx_sys"
+version = "0.6.1"
+licence = "Apache-2.0"
+checksum = "8a7bb2938045a88b612499fbcba375a77198e01306f52272e692f8c1f3751185"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: glutin_glx_sys is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "glutin_wgl_sys"
+version = "0.6.1"
+licence = "Apache-2.0"
+checksum = "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: glutin_wgl_sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "gpu-allocator"
+version = "0.28.0"
+licence = "MIT OR Apache-2.0"
+checksum = "51255ea7cfaadb6c5f1528d43e92a82acb2b96c43365989a28b2d44ee38f8795"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: gpu-allocator is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "guillotiere"
+version = "0.7.0"
+licence = "MIT/Apache-2.0"
+checksum = "6b17e70c989c36bad147b27a58d148c0741c51448aa5653436547323e524d0ab"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: guillotiere is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "half"
+version = "2.7.1"
+licence = "MIT OR Apache-2.0"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: half is in the editor's graph because eframe, egui-wgpu, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "harfrust"
+version = "0.12.0"
+licence = "MIT"
+checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: harfrust is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "hashbrown"
+version = "0.16.1"
+licence = "MIT OR Apache-2.0"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: hashbrown is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "hashbrown"
+version = "0.17.1"
+licence = "MIT OR Apache-2.0"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: hashbrown is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "heck"
+version = "0.5.0"
+licence = "MIT OR Apache-2.0"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+direct = false
+used_by = []
+roots = ["egui_dock"]
+justification = "Not chosen: heck is in the editor's graph because egui_dock reaches it. Its cost is part of the case for egui_dock."
+
+[[crate]]
+name = "hermit-abi"
+version = "0.5.3"
+licence = "MIT OR Apache-2.0"
+checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: hermit-abi is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "hex"
+version = "0.4.3"
+licence = "MIT OR Apache-2.0"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: hex is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "indexmap"
+version = "2.14.2"
+licence = "Apache-2.0 OR MIT"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: indexmap is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "itertools"
+version = "0.15.0"
+licence = "MIT OR Apache-2.0"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: itertools is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "jni"
+version = "0.22.4"
+licence = "MIT OR Apache-2.0"
+checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: jni is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "jni-macros"
+version = "0.22.4"
+licence = "MIT OR Apache-2.0"
+checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: jni-macros is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "jni-sys"
+version = "0.3.1"
+licence = "MIT OR Apache-2.0"
+checksum = "41a652e1f9b6e0275df1f15b32661cf0d4b78d4d87ddec5e0c3c20f097433258"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: jni-sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "jni-sys"
+version = "0.4.1"
+licence = "MIT OR Apache-2.0"
+checksum = "c6377a88cb3910bee9b0fa88d4f42e1d2da8e79915598f65fb0c7ee14c878af2"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: jni-sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "jni-sys-macros"
+version = "0.4.1"
+licence = "MIT OR Apache-2.0"
+checksum = "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: jni-sys-macros is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "jobserver"
+version = "0.1.35"
+licence = "MIT OR Apache-2.0"
+checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: jobserver is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "js-sys"
+version = "0.3.105"
+licence = "MIT OR Apache-2.0"
+checksum = "ce57d20d1ea864ce2ac172ab472d409214f4fd359f0b2a2775abdf522e2af99e"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: js-sys is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "khronos-egl"
+version = "6.0.0"
+licence = "MIT/Apache-2.0"
+checksum = "6aae1df220ece3c0ada96b8153459b67eebe9ae9212258bb0134ae60416fdf76"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: khronos-egl is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "khronos_api"
+version = "3.1.0"
+licence = "Apache-2.0"
+checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: khronos_api is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "kurbo"
+version = "0.13.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "4b60dfc32f652b926df6192e55525b16d186c69d47876c3ead4da5cc9f8450e2"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: kurbo is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "libloading"
+version = "0.8.9"
+licence = "ISC"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+direct = false
+used_by = []
+roots = ["ash", "eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: libloading is in the editor's graph because ash, eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "libm"
+version = "0.2.16"
+licence = "MIT"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: libm is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "libredox"
+version = "0.1.23"
+licence = "MIT"
+checksum = "8d8f1ea3f21fd3405dcaf6c9b5c1630af9afc422d9073ea39c5f6d6c772e08ed"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: libredox is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "linebender_resource_handle"
+version = "0.1.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: linebender_resource_handle is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "linux-raw-sys"
+version = "0.12.1"
+licence = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: linux-raw-sys is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "linux-raw-sys"
+version = "0.4.15"
+licence = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: linux-raw-sys is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "litrs"
+version = "1.0.0"
+licence = "MIT OR Apache-2.0"
+checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: litrs is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "lock_api"
+version = "0.4.14"
+licence = "MIT OR Apache-2.0"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: lock_api is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "log"
+version = "0.4.34"
+licence = "MIT OR Apache-2.0"
+checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: log is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "memchr"
+version = "2.8.3"
+licence = "Unlicense OR MIT"
+checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: memchr is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "memmap2"
+version = "0.9.11"
+licence = "MIT OR Apache-2.0"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: memmap2 is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "memoffset"
+version = "0.9.1"
+licence = "MIT"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: memoffset is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "miniz_oxide"
+version = "0.8.9"
+licence = "MIT OR Zlib OR Apache-2.0"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: miniz_oxide is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "miniz_oxide"
+version = "0.9.1"
+licence = "MIT OR Zlib OR Apache-2.0"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: miniz_oxide is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "moxcms"
+version = "0.7.11"
+licence = "BSD-3-Clause OR Apache-2.0"
+checksum = "ac9557c559cd6fc9867e122e20d2cbefc9ca29d80d027a8e39310920ed2f0a97"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: moxcms is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "naga"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "a616d2fb8c89516ac2723a581f69d6c18576046bed761bd6b305e5618e6ae130"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: naga is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "naga-types"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "590afbf58a6f4f62873cd5cff4468061844bafa1cdf399cc954537c22d768d49"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: naga-types is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "ndk"
+version = "0.9.0"
+licence = "MIT OR Apache-2.0"
+checksum = "c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: ndk is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "ndk-context"
+version = "0.1.1"
+licence = "MIT OR Apache-2.0"
+checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: ndk-context is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "ndk-sys"
+version = "0.6.0+11769913"
+licence = "MIT OR Apache-2.0"
+checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: ndk-sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "nohash-hasher"
+version = "0.2.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: nohash-hasher is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "num-traits"
+version = "0.2.19"
+licence = "MIT OR Apache-2.0"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: num-traits is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "num_enum"
+version = "0.7.6"
+licence = "BSD-3-Clause OR MIT OR Apache-2.0"
+checksum = "5d0bca838442ec211fa11de3a8b0e0e8f3a4522575b5c4c06ed722e005036f26"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: num_enum is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "num_enum_derive"
+version = "0.7.6"
+licence = "BSD-3-Clause OR MIT OR Apache-2.0"
+checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: num_enum_derive is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc-sys"
+version = "0.3.5"
+licence = "MIT"
+checksum = "cdb91bdd390c7ce1a8607f35f3ca7151b65afc0ff5ff3b34fa350f7d7c7e4310"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc-sys is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2"
+version = "0.5.2"
+licence = "MIT"
+checksum = "46a785d4eeff09c14c487497c162e92766fbb3e4059a71840cecc03d9a50b804"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2 is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2"
+version = "0.6.4"
+licence = "MIT"
+checksum = "3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2 is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-app-kit"
+version = "0.2.2"
+licence = "MIT"
+checksum = "e4e89ad9e3d7d297152b17d39ed92cd50ca8063a89a9fa569046d41568891eff"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-app-kit is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-app-kit"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: objc2-app-kit is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "objc2-cloud-kit"
+version = "0.2.2"
+licence = "MIT"
+checksum = "74dd3b56391c7a0596a295029734d3c1c5e7e510a4cb30245f8221ccea96b009"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-cloud-kit is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-contacts"
+version = "0.2.2"
+licence = "MIT"
+checksum = "a5ff520e9c33812fd374d8deecef01d4a840e7b41862d849513de77e44aa4889"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-contacts is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-core-data"
+version = "0.2.2"
+licence = "MIT"
+checksum = "617fbf49e071c178c0b24c080767db52958f716d9eabdf0890523aeae54773ef"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-core-data is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-core-foundation"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-core-foundation is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-core-graphics"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-core-graphics is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-core-image"
+version = "0.2.2"
+licence = "MIT"
+checksum = "55260963a527c99f1819c4f8e3b47fe04f9650694ef348ffd2227e8196d34c80"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-core-image is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-core-location"
+version = "0.2.2"
+licence = "MIT"
+checksum = "000cfee34e683244f284252ee206a27953279d370e309649dc3ee317b37e5781"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-core-location is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-encode"
+version = "4.1.0"
+licence = "MIT"
+checksum = "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-encode is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-foundation"
+version = "0.2.2"
+licence = "MIT"
+checksum = "0ee638a5da3799329310ad4cfa62fbf045d5f56e3ef5ba4149e7452dcf89d5a8"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-foundation is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-foundation"
+version = "0.3.2"
+licence = "MIT"
+checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-foundation is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-io-surface"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "180788110936d59bab6bd83b6060ffdfffb3b922ba1396b312ae795e1de9d81d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-io-surface is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-link-presentation"
+version = "0.2.2"
+licence = "MIT"
+checksum = "a1a1ae721c5e35be65f01a03b6d2ac13a54cb4fa70d8a5da293d7b0020261398"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-link-presentation is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-metal"
+version = "0.2.2"
+licence = "MIT"
+checksum = "dd0cba1276f6023976a406a14ffa85e1fdd19df6b0f737b063b95f6c8c7aadd6"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-metal is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-metal"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "a0125f776a10d00af4152d74616409f0d4a2053a6f57fa5b7d6aa2854ac04794"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-metal is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-quartz-core"
+version = "0.2.2"
+licence = "MIT"
+checksum = "e42bee7bff906b14b167da2bac5efe6b6a07e6f7c0a21a7308d40c960242dc7a"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-quartz-core is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-quartz-core"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "96c1358452b371bf9f104e21ec536d37a650eb10f7ee379fff67d2e08d537f1f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: objc2-quartz-core is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-symbols"
+version = "0.2.2"
+licence = "MIT"
+checksum = "0a684efe3dec1b305badae1a28f6555f6ddd3bb2c2267896782858d5a78404dc"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-symbols is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-ui-kit"
+version = "0.2.2"
+licence = "MIT"
+checksum = "b8bb46798b20cd6b91cbd113524c490f1686f4c4e8f49502431415f3512e2b6f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-ui-kit is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-ui-kit"
+version = "0.3.2"
+licence = "Zlib OR Apache-2.0 OR MIT"
+checksum = "d87d638e33c06f577498cbcc50491496a3ed4246998a7fbba7ccb98b1e7eab22"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: objc2-ui-kit is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "objc2-uniform-type-identifiers"
+version = "0.2.2"
+licence = "MIT"
+checksum = "44fa5f9748dbfe1ca6c0b79ad20725a11eca7c2218bceb4b005cb1be26273bfe"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-uniform-type-identifiers is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "objc2-user-notifications"
+version = "0.2.2"
+licence = "MIT"
+checksum = "76cfcbf642358e8689af64cee815d139339f3ed8ad05103ed5eaf73db8d84cb3"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: objc2-user-notifications is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "once_cell"
+version = "1.21.4"
+licence = "MIT OR Apache-2.0"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: once_cell is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "orbclient"
+version = "0.3.55"
+licence = "MIT"
+checksum = "5df339f526ea9a60e371768d50efc2f2508c7203290731565d1f7a6f71d21747"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: orbclient is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "ordered-float"
+version = "5.5.0"
+licence = "MIT"
+checksum = "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: ordered-float is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "ordered-stream"
+version = "0.2.0"
+licence = "MIT OR Apache-2.0"
+checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: ordered-stream is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "parking"
+version = "2.2.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: parking is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "parking_lot"
+version = "0.12.5"
+licence = "MIT OR Apache-2.0"
+checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: parking_lot is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "parking_lot_core"
+version = "0.9.12"
+licence = "MIT OR Apache-2.0"
+checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: parking_lot_core is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "paste"
+version = "1.0.15"
+licence = "MIT OR Apache-2.0"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+direct = false
+used_by = []
+roots = ["egui_dock"]
+justification = "Not chosen: paste is in the editor's graph because egui_dock reaches it. Its cost is part of the case for egui_dock."
+
+[[crate]]
+name = "peniko"
+version = "0.6.1"
+licence = "Apache-2.0 OR MIT"
+checksum = "839c8299360d2e998bdb106dc0a6cd71dcc5f4df51df1b620361bf50e283cca6"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: peniko is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "percent-encoding"
+version = "2.3.2"
+licence = "MIT OR Apache-2.0"
+checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: percent-encoding is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "phf"
+version = "0.13.1"
+licence = "MIT"
+checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: phf is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "phf_generator"
+version = "0.13.1"
+licence = "MIT"
+checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: phf_generator is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "phf_macros"
+version = "0.13.1"
+licence = "MIT"
+checksum = "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: phf_macros is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "phf_shared"
+version = "0.13.1"
+licence = "MIT"
+checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: phf_shared is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "pin-project"
+version = "1.1.13"
+licence = "Apache-2.0 OR MIT"
+checksum = "2466b2336ed02bcdca6b294417127b90ec92038d1d5c4fbeac971a922e0e0924"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: pin-project is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "pin-project-internal"
+version = "1.1.13"
+licence = "Apache-2.0 OR MIT"
+checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: pin-project-internal is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "pin-project-lite"
+version = "0.2.17"
+licence = "Apache-2.0 OR MIT"
+checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: pin-project-lite is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "piper"
+version = "0.2.5"
+licence = "MIT OR Apache-2.0"
+checksum = "c835479a4443ded371d6c535cbfd8d31ad92c5d23ae9770a61bc155e4992a3c1"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: piper is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "pkg-config"
+version = "0.3.34"
+licence = "MIT OR Apache-2.0"
+checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: pkg-config is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "plain"
+version = "0.2.3"
+licence = "MIT/Apache-2.0"
+checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: plain is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "png"
+version = "0.18.1"
+licence = "MIT OR Apache-2.0"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: png is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "polling"
+version = "3.11.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "5d0e4f59085d47d8241c88ead0f274e8a0cb551f3625263c05eb8dd897c34218"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: polling is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "pollster"
+version = "1.0.1"
+licence = "Apache-2.0/MIT"
+checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: pollster is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "polycool"
+version = "0.4.0"
+licence = "MIT OR Apache-2.0"
+checksum = "50596ddc09eb5ad5f75cacd40209568e66df71baf86e1499a0e99c4cff12a5a6"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: polycool is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "portable-atomic"
+version = "1.15.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: portable-atomic is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "portable-atomic-util"
+version = "0.2.8"
+licence = "Apache-2.0 OR MIT"
+checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: portable-atomic-util is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "presser"
+version = "0.3.1"
+licence = "MIT OR Apache-2.0"
+checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: presser is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "proc-macro-crate"
+version = "3.5.0"
+licence = "MIT OR Apache-2.0"
+checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: proc-macro-crate is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "proc-macro2"
+version = "1.0.107"
+licence = "MIT OR Apache-2.0"
+checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: proc-macro2 is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "proc-macro2-diagnostics"
+version = "0.10.1"
+licence = "MIT/Apache-2.0"
+checksum = "af066a9c399a26e020ada66a034357a868728e72cd426f3adcd35f80d88d88c8"
+direct = false
+used_by = []
+roots = ["egui_dock"]
+justification = "Not chosen: proc-macro2-diagnostics is in the editor's graph because egui_dock reaches it. Its cost is part of the case for egui_dock."
+
+[[crate]]
+name = "profiling"
+version = "1.0.18"
+licence = "MIT OR Apache-2.0"
+checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: profiling is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "pxfm"
+version = "0.1.30"
+licence = "BSD-3-Clause OR Apache-2.0"
+checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: pxfm is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "quick-error"
+version = "2.0.1"
+licence = "MIT/Apache-2.0"
+checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: quick-error is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "quick-xml"
+version = "0.41.0"
+licence = "MIT"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: quick-xml is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "quote"
+version = "1.0.47"
+licence = "MIT OR Apache-2.0"
+checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: quote is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "r-efi"
+version = "5.3.0"
+licence = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: r-efi is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "r-efi"
+version = "6.0.0"
+licence = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: r-efi is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "range-alloc"
+version = "0.1.5"
+licence = "MIT OR Apache-2.0"
+checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: range-alloc is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "raw-window-handle"
+version = "0.6.2"
+licence = "MIT OR Apache-2.0 OR Zlib"
+checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: raw-window-handle is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "raw-window-metal"
+version = "1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "40d213455a5f1dc59214213c7330e074ddf8114c9a42411eb890c767357ce135"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: raw-window-metal is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "read-fonts"
+version = "0.41.0"
+licence = "MIT OR Apache-2.0"
+checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: read-fonts is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "redox_syscall"
+version = "0.4.1"
+licence = "MIT"
+checksum = "4722d768eff46b75989dd134e5c353f0d6296e5aaa3132e776cbdb56be7731aa"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: redox_syscall is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "redox_syscall"
+version = "0.5.18"
+licence = "MIT"
+checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: redox_syscall is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "redox_syscall"
+version = "0.9.4"
+licence = "MIT"
+checksum = "737970939a87c6fa31e7acad13307bccbb017a073b695b6089a2c484f929e20e"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: redox_syscall is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "renderdoc-sys"
+version = "1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: renderdoc-sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "rustc-hash"
+version = "1.1.0"
+licence = "Apache-2.0/MIT"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: rustc-hash is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "rustc-hash"
+version = "2.1.3"
+licence = "Apache-2.0 OR MIT"
+checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: rustc-hash is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "rustc_version"
+version = "0.4.1"
+licence = "MIT OR Apache-2.0"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: rustc_version is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "rustix"
+version = "0.38.44"
+licence = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: rustix is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "rustix"
+version = "1.1.4"
+licence = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: rustix is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "rustversion"
+version = "1.0.23"
+licence = "MIT OR Apache-2.0"
+checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: rustversion is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "same-file"
+version = "1.0.6"
+licence = "Unlicense/MIT"
+checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: same-file is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "scoped-tls"
+version = "1.0.1"
+licence = "MIT/Apache-2.0"
+checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: scoped-tls is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "scopeguard"
+version = "1.2.0"
+licence = "MIT OR Apache-2.0"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: scopeguard is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "self_cell"
+version = "1.3.0"
+licence = "Apache-2.0 OR GPL-2.0-only"
+checksum = "2ab42ca02749e120097e328d91d415325bdf43b1c72c4c8badf37375fe40a813"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: self_cell is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "semver"
+version = "1.0.28"
+licence = "MIT OR Apache-2.0"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: semver is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "serde"
+version = "1.0.229"
+licence = "MIT OR Apache-2.0"
+checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: serde is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "serde_core"
+version = "1.0.229"
+licence = "MIT OR Apache-2.0"
+checksum = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: serde_core is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "serde_derive"
+version = "1.0.229"
+licence = "MIT OR Apache-2.0"
+checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: serde_derive is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "serde_repr"
+version = "0.1.21"
+licence = "MIT OR Apache-2.0"
+checksum = "8d3b1629de253c70a0508c3899572da79ca359fdab27c7920ff00406df418906"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: serde_repr is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "shlex"
+version = "2.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: shlex is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "signal-hook-registry"
+version = "1.4.8"
+licence = "MIT OR Apache-2.0"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: signal-hook-registry is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "simd-adler32"
+version = "0.3.10"
+licence = "MIT"
+checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: simd-adler32 is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "simd_cesu8"
+version = "1.2.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "11031e251abf8611c80f460e19dbdeb54a66db918e49c65a7065b46ac7aec520"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: simd_cesu8 is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "simdutf8"
+version = "0.1.5"
+licence = "MIT OR Apache-2.0"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: simdutf8 is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "siphasher"
+version = "1.0.3"
+licence = "MIT/Apache-2.0"
+checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: siphasher is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "skrifa"
+version = "0.44.0"
+licence = "MIT OR Apache-2.0"
+checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: skrifa is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "slab"
+version = "0.4.12"
+licence = "MIT"
+checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: slab is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "slotmap"
+version = "1.1.1"
+licence = "Zlib"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: slotmap is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "smallvec"
+version = "1.16.0"
+licence = "MIT OR Apache-2.0"
+checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: smallvec is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "smithay-client-toolkit"
+version = "0.19.2"
+licence = "MIT"
+checksum = "3457dea1f0eb631b4034d61d4d8c32074caa6cd1ab2d59f2327bd8461e2c0016"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: smithay-client-toolkit is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "smithay-client-toolkit"
+version = "0.20.0"
+licence = "MIT"
+checksum = "0512da38f5e2b31201a93524adb8d3136276fa4fe4aafab4e1f727a82b534cc0"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: smithay-client-toolkit is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "smithay-clipboard"
+version = "0.7.3"
+licence = "MIT"
+checksum = "71704c03f739f7745053bde45fa203a46c58d25bc5c4efba1d9a60e9dba81226"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: smithay-clipboard is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "smol_str"
+version = "0.2.2"
+licence = "MIT OR Apache-2.0"
+checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: smol_str is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "spirv"
+version = "0.4.0+sdk-1.4.341.0"
+licence = "Apache-2.0"
+checksum = "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: spirv is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "static_assertions"
+version = "1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: static_assertions is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "syn"
+version = "2.0.119"
+licence = "MIT OR Apache-2.0"
+checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: syn is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "syn"
+version = "3.0.5"
+licence = "MIT OR Apache-2.0"
+checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: syn is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "tempfile"
+version = "3.27.0"
+licence = "MIT OR Apache-2.0"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: tempfile is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "termcolor"
+version = "1.4.1"
+licence = "Unlicense OR MIT"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: termcolor is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "thiserror"
+version = "1.0.69"
+licence = "MIT OR Apache-2.0"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: thiserror is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "thiserror"
+version = "2.0.20"
+licence = "MIT OR Apache-2.0"
+checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: thiserror is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "thiserror-impl"
+version = "1.0.69"
+licence = "MIT OR Apache-2.0"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: thiserror-impl is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "thiserror-impl"
+version = "2.0.20"
+licence = "MIT OR Apache-2.0"
+checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: thiserror-impl is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "tiff"
+version = "0.10.3"
+licence = "MIT"
+checksum = "af9605de7fee8d9551863fd692cce7637f548dbd9db9180fcc07ccc6d26c336f"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: tiff is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "toml_datetime"
+version = "1.1.1+spec-1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: toml_datetime is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "toml_edit"
+version = "0.25.13+spec-1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: toml_edit is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "toml_parser"
+version = "1.1.3+spec-1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: toml_parser is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "tracing"
+version = "0.1.44"
+licence = "MIT"
+checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: tracing is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "tracing-attributes"
+version = "0.1.31"
+licence = "MIT"
+checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: tracing-attributes is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "tracing-core"
+version = "0.1.36"
+licence = "MIT"
+checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: tracing-core is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "type-map"
+version = "0.5.1"
+licence = "MIT/Apache-2.0"
+checksum = "cb30dbbd9036155e74adad6812e9898d03ec374946234fbcebd5dfc7b9187b90"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: type-map is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "uds_windows"
+version = "1.2.1"
+licence = "MIT"
+checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: uds_windows is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "unicode-general-category"
+version = "1.1.0"
+licence = "Apache-2.0"
+checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: unicode-general-category is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "unicode-ident"
+version = "1.0.24"
+licence = "(MIT OR Apache-2.0) AND Unicode-3.0"
+checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: unicode-ident is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "unicode-segmentation"
+version = "1.13.3"
+licence = "MIT OR Apache-2.0"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: unicode-segmentation is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "unicode-width"
+version = "0.2.2"
+licence = "MIT OR Apache-2.0"
+checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: unicode-width is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "uuid"
+version = "1.26.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: uuid is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "vello_common"
+version = "0.1.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "b2e9aed918117e8152c9eddfd8362d73c465c23f26c44786aa331707b8a64fa2"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: vello_common is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "vello_cpu"
+version = "0.1.0"
+licence = "Apache-2.0 OR MIT"
+checksum = "ac7349e1f55f6b801c7c277958df4ea53e7f20f21e8014910ad888b2ecda93ea"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: vello_cpu is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "version_check"
+version = "0.9.5"
+licence = "MIT/Apache-2.0"
+checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: version_check is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "walkdir"
+version = "2.5.0"
+licence = "Unlicense/MIT"
+checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: walkdir is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wasip2"
+version = "1.0.4+wasi-0.2.12"
+licence = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: wasip2 is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wasm-bindgen"
+version = "0.2.128"
+licence = "MIT OR Apache-2.0"
+checksum = "aecb87a33d3b0c5e3b7aa46336eaf486cffafbd281b195e4c8b80d50df2351bf"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: wasm-bindgen is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wasm-bindgen-futures"
+version = "0.4.78"
+licence = "MIT OR Apache-2.0"
+checksum = "6ef4c5d3d2cdf5c54f4231181768f5510842e350db025faf1f7163b1030ed928"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: wasm-bindgen-futures is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wasm-bindgen-macro"
+version = "0.2.128"
+licence = "MIT OR Apache-2.0"
+checksum = "a690d511e3c1a8b3a55e33511e3c2c00c78415cd23650f32b808627f5696b9ed"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: wasm-bindgen-macro is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wasm-bindgen-macro-support"
+version = "0.2.128"
+licence = "MIT OR Apache-2.0"
+checksum = "411e4887f0071ef2d2164a9d5fdf2d20efbef78fccd3a78b0c10a1dc5295e48a"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: wasm-bindgen-macro-support is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wasm-bindgen-shared"
+version = "0.2.128"
+licence = "MIT OR Apache-2.0"
+checksum = "81941cd78d0c92026c33e5e01312845a4cb1e9af3407f9134b100dd03144103e"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: wasm-bindgen-shared is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-backend"
+version = "0.3.17"
+licence = "MIT"
+checksum = "38a91b4eaddff87b1cd1074985e3713da4af2c49742d1b356b2c01670a67a078"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-backend is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-client"
+version = "0.31.15"
+licence = "MIT"
+checksum = "e3c36a0f861ad76d0901f2800b46321410d9f73f2ea88aac0650d86c32688073"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-client is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-csd-frame"
+version = "0.3.0"
+licence = "MIT"
+checksum = "625c5029dbd43d25e6aa9615e88b829a5cad13b2819c4ae129fdbb7c31ab4c7e"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-csd-frame is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-cursor"
+version = "0.31.14"
+licence = "MIT"
+checksum = "4a52d18780be9b1314328a3de5f930b73d2200112e3849ca6cb11822793fb34d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-cursor is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-protocols"
+version = "0.32.13"
+licence = "MIT"
+checksum = "23d0c813de3daa2ed6520af85a3bd49b0e722a3078506899aa9686fea58dc4b6"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-protocols is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-protocols-experimental"
+version = "20250721.0.1"
+licence = "MIT"
+checksum = "40a1f863128dcaaec790d7b4b396cc9b9a7a079e878e18c47e6c2d2c5a8dcbb1"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: wayland-protocols-experimental is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "wayland-protocols-misc"
+version = "0.3.12"
+licence = "MIT"
+checksum = "6e9567599ef23e09b8dad6e429e5738d4509dfc46b3b21f32841a304d16b29c8"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: wayland-protocols-misc is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "wayland-protocols-plasma"
+version = "0.3.12"
+licence = "MIT"
+checksum = "2b6d8cf1eb2c1c31ed1f5643c88a6e53538129d4af80030c8cabd1f9fa884d91"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-protocols-plasma is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-protocols-wlr"
+version = "0.3.12"
+licence = "MIT"
+checksum = "eb04e52f7836d7c7976c78ca0250d61e33873c34156a2a1fc9474828ec268234"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-protocols-wlr is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-scanner"
+version = "0.31.11"
+licence = "MIT"
+checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: wayland-scanner is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wayland-sys"
+version = "0.31.11"
+licence = "MIT"
+checksum = "d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: wayland-sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "web-sys"
+version = "0.3.105"
+licence = "MIT OR Apache-2.0"
+checksum = "9fbddc4a036f00ec4f18c83445bd3115cb306a91da554919a099d9222fe4a7f8"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal", "wgpu-types"]
+justification = "Not chosen: web-sys is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal, wgpu-types reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "web-time"
+version = "1.1.0"
+licence = "MIT OR Apache-2.0"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: web-time is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "weezl"
+version = "0.1.12"
+licence = "MIT OR Apache-2.0"
+checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: weezl is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wgpu-core"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "14c018fce9b6270aa203c2fdd56f3cce996713534bd757e4ea58c8560b121f14"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: wgpu-core is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wgpu-core-deps-apple"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "061f3d319a40d39d00b1ecc2c33b89fe21d4e6fe01859df3500a3a8ecccd6b68"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: wgpu-core-deps-apple is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wgpu-core-deps-emscripten"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "d98b86cf4abf524a902dd35f18ca6a3f08fc2ae9847c8f10b48e30491b1f0b86"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: wgpu-core-deps-emscripten is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wgpu-core-deps-wasm"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "d260ca2ca8adc654f513a869bf3cac0b47f5b8d3f87803d6942015f8de597aae"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: wgpu-core-deps-wasm is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wgpu-core-deps-windows-linux-android"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu"]
+justification = "Not chosen: wgpu-core-deps-windows-linux-android is in the editor's graph because eframe, egui-wgpu, wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wgpu-naga-bridge"
+version = "30.0.1"
+licence = "MIT OR Apache-2.0"
+checksum = "d2f62e73117bb7a62bfd9c5a5841438a823f6566c6442a808ee269d2d055c081"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: wgpu-naga-bridge is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "winapi-util"
+version = "0.1.11"
+licence = "Unlicense OR MIT"
+checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: winapi-util is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows"
+version = "0.62.2"
+licence = "MIT OR Apache-2.0"
+checksum = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-collections"
+version = "0.3.2"
+licence = "MIT OR Apache-2.0"
+checksum = "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-collections is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-core"
+version = "0.62.2"
+licence = "MIT OR Apache-2.0"
+checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-core is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-future"
+version = "0.3.2"
+licence = "MIT OR Apache-2.0"
+checksum = "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-future is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-implement"
+version = "0.60.2"
+licence = "MIT OR Apache-2.0"
+checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-implement is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-interface"
+version = "0.59.3"
+licence = "MIT OR Apache-2.0"
+checksum = "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-interface is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-link"
+version = "0.2.1"
+licence = "MIT OR Apache-2.0"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+direct = false
+used_by = []
+roots = ["ash", "eframe", "egui", "egui-wgpu", "egui_dock", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-link is in the editor's graph because ash, eframe, egui, egui-wgpu, egui_dock, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-numerics"
+version = "0.3.1"
+licence = "MIT OR Apache-2.0"
+checksum = "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-numerics is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-result"
+version = "0.4.1"
+licence = "MIT OR Apache-2.0"
+checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-result is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-strings"
+version = "0.5.1"
+licence = "MIT OR Apache-2.0"
+checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-strings is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-sys"
+version = "0.52.0"
+licence = "MIT OR Apache-2.0"
+checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows-sys is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-sys"
+version = "0.59.0"
+licence = "MIT OR Apache-2.0"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows-sys is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-sys"
+version = "0.60.2"
+licence = "MIT OR Apache-2.0"
+checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows-sys is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows-sys"
+version = "0.61.2"
+licence = "MIT OR Apache-2.0"
+checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-sys is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-targets"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "9b724f72796e036ab90c1021d4780d4d3d648aca59e491e6b98e725b84e99973"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows-targets is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows-targets"
+version = "0.53.5"
+licence = "MIT OR Apache-2.0"
+checksum = "4945f9f551b88e0d65f3db0bc25c33b8acea4d9e41163edf90dcd0b19f9069f3"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows-targets is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows-threading"
+version = "0.2.1"
+licence = "MIT OR Apache-2.0"
+checksum = "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: windows-threading is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_aarch64_gnullvm"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "32a4622180e7a0ec044bb555404c800bc9fd9ec262ec147edd5989ccd0c02cd3"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_aarch64_gnullvm is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_aarch64_gnullvm"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "a9d8416fa8b42f5c947f8482c43e7d89e73a173cead56d044f6a56104a6d1b53"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_aarch64_gnullvm is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_aarch64_msvc"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "09ec2a7bb152e2252b53fa7803150007879548bc709c039df7627cabbd05d469"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_aarch64_msvc is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_aarch64_msvc"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "b9d782e804c2f632e395708e99a94275910eb9100b2114651e04744e9b125006"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_aarch64_msvc is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_i686_gnu"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "8e9b5ad5ab802e97eb8e295ac6720e509ee4c243f69d781394014ebfe8bbfa0b"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_i686_gnu is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_i686_gnu"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "960e6da069d81e09becb0ca57a65220ddff016ff2d6af6a223cf372a506593a3"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_i686_gnu is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_i686_gnullvm"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "0eee52d38c090b3caa76c563b86c3a4bd71ef1a819287c19d586d7334ae8ed66"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_i686_gnullvm is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_i686_gnullvm"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "fa7359d10048f68ab8b09fa71c3daccfb0e9b559aed648a8f95469c27057180c"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_i686_gnullvm is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_i686_msvc"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "240948bc05c5e7c6dabba28bf89d89ffce3e303022809e73deaefe4f6ec56c66"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_i686_msvc is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_i686_msvc"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "1e7ac75179f18232fe9c285163565a57ef8d3c89254a30685b57d83a38d326c2"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_i686_msvc is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_x86_64_gnu"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "147a5c80aabfbf0c7d901cb5895d1de30ef2907eb21fbbab29ca94c5b08b1a78"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_x86_64_gnu is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_x86_64_gnu"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "9c3842cdd74a865a8066ab39c8a7a473c0778a3f29370b5fd6b4b9aa7df4a499"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_x86_64_gnu is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_x86_64_gnullvm"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "24d5b23dc417412679681396f2b49f3de8c1473deb516bd34410872eff51ed0d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_x86_64_gnullvm is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_x86_64_gnullvm"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "0ffa179e2d07eee8ad8f57493436566c7cc30ac536a3379fdf008f47f6bb7ae1"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_x86_64_gnullvm is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "windows_x86_64_msvc"
+version = "0.52.6"
+licence = "MIT OR Apache-2.0"
+checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: windows_x86_64_msvc is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "windows_x86_64_msvc"
+version = "0.53.1"
+licence = "MIT OR Apache-2.0"
+checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: windows_x86_64_msvc is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "winit"
+version = "0.30.13"
+licence = "Apache-2.0"
+checksum = "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: winit is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "winnow"
+version = "1.0.4"
+licence = "MIT"
+checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: winnow is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "wit-bindgen"
+version = "0.57.1"
+licence = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock"]
+justification = "Not chosen: wit-bindgen is in the editor's graph because eframe, egui, egui-wgpu, egui_dock reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "x11-dl"
+version = "2.21.0"
+licence = "MIT"
+checksum = "38735924fedd5314a6e548792904ed8c6de6636285cb9fec04d5b1db85c1516f"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: x11-dl is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "x11rb"
+version = "0.13.2"
+licence = "MIT OR Apache-2.0"
+checksum = "9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: x11rb is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "x11rb-protocol"
+version = "0.13.2"
+licence = "MIT OR Apache-2.0"
+checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: x11rb-protocol is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "xcursor"
+version = "0.3.11"
+licence = "MIT"
+checksum = "163b33ed8786455e2fa5d72f554057ce3f3182425434f756cd39c99839d88e23"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: xcursor is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "xkbcommon-dl"
+version = "0.4.2"
+licence = "MIT"
+checksum = "d039de8032a9a8856a6be89cea3e5d12fdd82306ab7c94d74e6deab2460651c5"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: xkbcommon-dl is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "xkeysym"
+version = "0.2.1"
+licence = "MIT OR Apache-2.0 OR Zlib"
+checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu"]
+justification = "Not chosen: xkeysym is in the editor's graph because eframe, egui-wgpu reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "xml-rs"
+version = "0.8.29"
+licence = "MIT"
+checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
+direct = false
+used_by = []
+roots = ["eframe", "egui-wgpu", "wgpu", "wgpu-hal"]
+justification = "Not chosen: xml-rs is in the editor's graph because eframe, egui-wgpu, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "zbus"
+version = "5.19.0"
+licence = "MIT"
+checksum = "5db4be7c075cb421e4b7ee645541604239bd243ba7c357511f4ff3a74b555907"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zbus is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zbus-lockstep"
+version = "0.5.2"
+licence = "MIT"
+checksum = "6998de05217a084b7578728a9443d04ea4cd80f2a0839b8d78770b76ccd45863"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zbus-lockstep is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zbus-lockstep-macros"
+version = "0.5.2"
+licence = "MIT"
+checksum = "10da05367f3a7b7553c8cdf8fa91aee6b64afebe32b51c95177957efc47ca3a0"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zbus-lockstep-macros is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zbus_macros"
+version = "5.19.0"
+licence = "MIT"
+checksum = "2990635d09ade6df1868f72f8cac69a876a90981e8bd3c40b1be413f8dc88f40"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zbus_macros is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zbus_names"
+version = "4.3.4"
+licence = "MIT"
+checksum = "d8bf88b4a3ff53e883001e0e0115b297a9d53c31b9c1edd2bfdd853e3428624e"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zbus_names is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zbus_xml"
+version = "5.2.1"
+licence = "MIT"
+checksum = "d1586c021a01ca0a9216dcd874e546382e156a5cbab5fab6cb5f10087e22682a"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zbus_xml is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zcheapstr"
+version = "1.1.0"
+licence = "MIT"
+checksum = "d1afec51604565183aeb5c54c20aeab286120d4e4460f7f76e3e8bb8c0d99473"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zcheapstr is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zerocopy"
+version = "0.8.56"
+licence = "BSD-2-Clause OR Apache-2.0 OR MIT"
+checksum = "556764e583adb45a9f8d413c2a147fa7e8d821e48e12b14fd560b607998b75eb"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: zerocopy is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "zerocopy-derive"
+version = "0.8.56"
+licence = "BSD-2-Clause OR Apache-2.0 OR MIT"
+checksum = "f2ab42fc20575779bd240faa45f94a74256f755c0fa9e89f0ede20d91d0cdfc1"
+direct = false
+used_by = []
+roots = ["eframe", "egui", "egui-wgpu", "egui_dock", "image", "wgpu", "wgpu-hal"]
+justification = "Not chosen: zerocopy-derive is in the editor's graph because eframe, egui, egui-wgpu, egui_dock, image, wgpu, wgpu-hal reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "zlib-rs"
+version = "0.6.7"
+licence = "Zlib"
+checksum = "34b31d188d9d685a4f9c7b46d6e36631b07058d2cfe190267adce54dc230bf12"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: zlib-rs is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "zune-core"
+version = "0.4.12"
+licence = "MIT OR Apache-2.0 OR Zlib"
+checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: zune-core is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "zune-jpeg"
+version = "0.4.21"
+licence = "MIT OR Apache-2.0 OR Zlib"
+checksum = "29ce2c8a9384ad323cf564b67da86e21d3cfdff87908bc1223ed5c99bc792713"
+direct = false
+used_by = []
+roots = ["eframe", "image"]
+justification = "Not chosen: zune-jpeg is in the editor's graph because eframe, image reach it. Its cost is part of the case for those crates."
+
+[[crate]]
+name = "zvariant"
+version = "5.15.0"
+licence = "MIT"
+checksum = "c1d34c27cc6cdd1f458427519dd6b8612f7b7e3f7b9a0b2355d041dda9869147"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zvariant is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zvariant_derive"
+version = "5.15.0"
+licence = "MIT"
+checksum = "864155e69b4352db0c7f374917bf45d1e0c8d17659c8b3dbf9795f3673f8c497"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zvariant_derive is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."
+
+[[crate]]
+name = "zvariant_utils"
+version = "4.2.0"
+licence = "MIT"
+checksum = "bad0294361a320b694a328460dc73add56c306150f5cb6bfafc44446120008a3"
+direct = false
+used_by = []
+roots = ["eframe"]
+justification = "Not chosen: zvariant_utils is in the editor's graph because eframe reaches it. Its cost is part of the case for eframe."

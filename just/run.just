@@ -200,3 +200,35 @@ run-agent-authoring *args:
     # is the client. That is why this half of the milestone is the half continuous integration runs.
     echo "==> run         agent-authoring  profile=${profile}"
     python3 samples/05b-agent-authoring/authoring.py --profile "${profile}" ${rest}
+
+# M6's ARTEFACT, AND WHY IT IS NOT `just run-sample open-world`.
+#
+# `run-sample` finds a sample's binary and runs it, and samples/06-open-world DOES declare one —
+# `just run-sample open-world --install <dir>` plays a world that has already been shipped into an
+# installation. What that cannot do is SHIP it: the milestone's claim is a world cooked through a
+# derivation graph, packaged, installed, played, saved, resumed, and then patched, which is two
+# programs and five acts. `openworld.py` is the driver that puts them in order, in the language this
+# tree already orchestrates multi-process artefacts in, and this recipe is the entry point.
+#
+# It builds the engine first, for the same reason every other run recipe does: running whatever
+# binary happens to be lying in the build tree reports on a revision nobody has.
+#
+# `--shot <path>` draws the run — the world's cells, the route across them, the landmarks it passes
+# and the run's own figures — which is what refreshes docs/design/images/open-world-m6.png. `--only
+# <act>` runs one of ship, play, resume, teardown or patch; `--ticks <n>` shortens the route, which
+# is what the CTest entry does and what a person watching usually wants.
+
+# Run the M6 artefact: a world shipped, streamed, saved, resumed and patched. Usage: just run-open-world [--profile <p>] [--ticks <n>] [--only <act>] [--shot <path>]
+run-open-world *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}" -D CY_BUILD_TOOLS=ON
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    echo "==> run         open-world  profile=${profile}"
+    python3 samples/06-open-world/openworld.py --profile "${profile}" \
+        --build-dir "${build_dir}" --work "${build_dir}/open-world" ${rest}

@@ -55,7 +55,7 @@ pub use elsewhere::ViewportLink;
 mod linux {
     use std::sync::Arc;
 
-    use cy_editor_viewport_transport::session::Liveness;
+    use cy_editor_viewport_transport::session::{Liveness, monotonic_nanos};
     use cy_editor_viewport_transport::{Gpu, ViewportSession};
     use cy_editor_visual::colour::Semantic;
 
@@ -180,6 +180,7 @@ mod linux {
         pub fn begin_frame(
             &mut self,
             render_state: &egui_wgpu::RenderState,
+            viewport: &mut cy_editor_viewport::viewport::Viewport,
         ) -> Option<egui::TextureId> {
             let session = self.session.as_mut()?;
             match session.liveness() {
@@ -206,6 +207,23 @@ mod linux {
                 );
                 self.registered = Some((slot, id));
             }
+
+            // THE LINE M5.5's GATE RECORDED AS MISSING, AND WHAT IT COSTS TO LEAVE IT OUT.
+            //
+            // Importing the texture makes the frame VISIBLE. It does not make the frame KNOWN: the
+            // viewport model learns that a frame arrived only through `Viewport::pump`, and until it
+            // does, `Viewport::pick` answers `None` ("no frame has arrived yet") beside an overlay
+            // reporting "announced 1016", and `interaction_view` resolves every click against the
+            // camera the editor ASKED for rather than the one a frame was rendered with. That is a
+            // click landing somewhere other than where it was aimed, on a moving camera, with no
+            // diagnostic — and it was invisible for a whole milestone because both halves were
+            // individually correct.
+            //
+            // `ViewportSession` implements `Transport`, and its `poll` re-enters `acquire`, which is
+            // idempotent once a frame has been claimed: with nothing newer it answers the frame
+            // already being shown. So this is one call per interface frame and no extra claim.
+            viewport.pump(session, monotonic_nanos() / 1_000);
+
             session.release_finished();
             self.registered.map(|(_, id)| id)
         }
@@ -294,8 +312,15 @@ mod elsewhere {
             false
         }
 
-        /// Never an image.
-        pub fn frame(&mut self, _render_state: &egui_wgpu::RenderState) -> Option<egui::TextureId> {
+        /// Never an image, and so never a frame for the viewport model to learn about.
+        ///
+        /// The signature matches the Linux one, `Viewport` included, so the window's frame loop is
+        /// the same code on every platform.
+        pub fn begin_frame(
+            &mut self,
+            _render_state: &egui_wgpu::RenderState,
+            _viewport: &mut cy_editor_viewport::viewport::Viewport,
+        ) -> Option<egui::TextureId> {
             None
         }
 
@@ -316,5 +341,72 @@ mod elsewhere {
         fn default() -> Self {
             Self::idle()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cy_editor_viewport::picking::PickIntent;
+    use cy_editor_viewport::transport::{
+        FrameImage, Mailbox, MailboxTransport, PresentedFrame, TransportKind,
+    };
+    use cy_editor_viewport::viewport::{Viewport, ViewportId};
+
+    use super::ViewportLink;
+
+    /// The defect M5.5's gate recorded, and the fix, as one test.
+    ///
+    /// It does not need a GPU, a window or a runtime, because the failure never needed one: the
+    /// image reached the screen and the MODEL never learned of it. `ViewportLink::begin_frame` now
+    /// calls `Viewport::pump` on exactly this seam, over a transport of a different kind — the
+    /// property is the model's, not the dma-buf path's.
+    #[test]
+    fn a_viewport_that_is_never_pumped_cannot_answer_a_click() {
+        let mut viewport = Viewport::new(
+            ViewportId::from_raw(1),
+            "Perspective",
+            TransportKind::SharedTexture,
+        );
+        let mailbox = Mailbox::new();
+        mailbox.publish(PresentedFrame::new(
+            cy_editor_protocol::FrameId::from_raw(1016),
+            viewport.state.clone(),
+            FrameImage::Surface(0),
+            0,
+        ));
+        let mut transport = MailboxTransport::new(TransportKind::SharedTexture, mailbox);
+
+        // A frame has been announced and nothing has consumed it. This is exactly the state the
+        // window was in for the whole of M5.5: an overlay reading "announced 1016" beside a click
+        // that reports "No frame has arrived yet".
+        assert!(
+            viewport
+                .pick(PickIntent::Click { x: 8.0, y: 8.0 })
+                .is_none(),
+            "an unpumped viewport has no frame to resolve a click against"
+        );
+
+        viewport.pump(&mut transport, 1_000);
+
+        let request = viewport
+            .pick(PickIntent::Click { x: 8.0, y: 8.0 })
+            .expect("a pick names the frame that was on screen");
+        assert_eq!(
+            request.frame.as_u64(),
+            1016,
+            "and it names the frame that arrived, not a newer one"
+        );
+    }
+
+    /// A link with no runtime says so and claims nothing, on every platform.
+    #[test]
+    fn an_idle_link_has_no_image_and_says_why() {
+        let link = ViewportLink::idle();
+        assert!(!link.is_attached());
+        assert!(!link.is_live());
+        assert!(
+            !link.condition().message.is_empty(),
+            "there is always a sentence instead of an image"
+        );
     }
 }

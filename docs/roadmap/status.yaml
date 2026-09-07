@@ -11,6 +11,38 @@
 # The planned path of each capability through the milestone ladder is in
 # capability-matrix.md; this file records what is actually true today.
 
+# --- M6's amendment, and why five rows the plan marked Complete are still Working ------------------
+#
+# M6's plan (docs/ROADMAP.md, the matrix, and implement-m6-scale/proposal.md) had five capabilities
+# reaching Complete here. M6's closing gate checked each against the code and none of the five is
+# supported. The tiers below are what the tree holds; the argument for each, with the requirement
+# that is unmet, is in tools/roadmap/milestones/m6.toml beside `[criterion.expect_tiers]` and in
+# docs/roadmap/capability-matrix.md#where-m6s-tiers-are-thin. In short:
+#
+#   asset-import-pipeline             working  Model import's steps 7, 8 and 10 (skeletons,
+#                                              animations, the prefab), USD, PNG/JPEG decoding, the
+#                                              BC7/ASTC platform variants and the whole of "Virtual
+#                                              geometry cooking" have no implementation.
+#   core-assets-and-io                working  Its "Streaming" requirement — partial residency driven
+#                                              by a residency budget and renderer feedback — is
+#                                              unimplemented, and src/core/assets/ has NO change in
+#                                              this milestone at all.
+#   core-memory-and-containers        working  "Memory diagnostics" requires attribution by domain,
+#                                              type, thread, world cell and asset; three of the five
+#                                              axes do not exist. No change in this milestone.
+#   serialization-and-prefabs         working  "Apply and extract" has no implementation anywhere in
+#                                              the tree and no recorded exemption. The authoring
+#                                              schema that landed here is real and is what made the
+#                                              editor able to open a world; it is not the whole
+#                                              capability.
+#   rendering-geometry-and-resources  working  Its "Skinning" requirement reads bone matrices from
+#                                              the GPU pose world, which is `animation-and-skinning`
+#                                              at M8. `SkinningDescriptor::validate()` REFUSES that
+#                                              value with NotImplemented and the suite asserts the
+#                                              refusal. Task 10.8; the Complete cell moves to M8.
+#
+# Six rows did advance, all to Working, all recorded against implement-m6-scale.
+
 schema: 1
 capabilities:
   engine-architecture:
@@ -86,13 +118,13 @@ capabilities:
     milestone: null
     change: null
   save-and-persistence:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
   world-partition-and-streaming:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
   environment-fields:
     tier: none
     milestone: null
@@ -138,25 +170,25 @@ capabilities:
     milestone: M3
     change: implement-m3-first-light
   rendering-culling-and-lod:
-    tier: seed
-    milestone: M3
-    change: implement-m3-first-light
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
   virtual-geometry:
     tier: none
     milestone: null
     change: null
   virtual-texturing:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
   virtual-shadows:
     tier: none
     milestone: null
     change: null
   residency:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
   rendering-forward-clustered:
     tier: working
     milestone: M3
@@ -282,9 +314,9 @@ capabilities:
     milestone: M1
     change: implement-m1-substrate
   build-and-packaging:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
   networking-and-replication:
     tier: none
     milestone: null

@@ -1,0 +1,18 @@
+cyopenworld 1
+# The prop palette — one half of the world's content, and a source of the build graph.
+#
+# It is a separate file from city.cyopenworld ON PURPOSE: the cooked cell stream is a concatenation
+# of the two, so editing one of them must rebuild exactly the derivations that read it and leave the
+# other one's import in the cache. That is M6's "a one-asset change invalidates only the derivations
+# that depend on it", made visible in a graph a person can read.
+#
+#   prop <kind> "<name>" weight <n> material <m>
+#
+# `kind` is what a live row carries and what the traversal reports; `material` is the field a save
+# writes, because `Structure::material` is the sample's PersistentState field.
+
+prop 1 "hab-block"   weight 6 material 1
+prop 2 "mast"        weight 3 material 2
+prop 3 "tank"        weight 2 material 3
+prop 4 "gantry"      weight 1 material 4
+prop 5 "silo"        weight 2 material 3

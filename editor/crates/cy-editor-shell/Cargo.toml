@@ -71,6 +71,11 @@ wgpu = { workspace = true }
 
 # The viewport's image comes from another process, and the mechanism that carries it is Linux's.
 # Elsewhere the viewport says so and shows nothing, which is `design.md` §2 rather than a stub.
+# Test-only, and only for a frame identifier: the pump test in `viewport_link` names the frame the
+# window's overlay reported ("announced 1016") so that the test reads as the defect it stands for.
+[dev-dependencies]
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 cy-editor-viewport-transport = { path = "../cy-editor-viewport-transport" }
 

@@ -4,6 +4,7 @@
 #include <cy/core/assets/file.h>
 #include <cy/core/jobs/job_system.h>
 #include <cy/core/jobs/parallel.h>
+#include <cy/import/fbx.h>
 #include <cy/import/gltf.h>
 #include <cy/import/texture.h>
 
@@ -370,13 +371,24 @@ Status ImportPipeline::publish(Prepared& prepared, const ImportResult& result) n
     const Span<const SubAsset> produced = result.assets();
     std::vector<cy::AssetId> ids(produced.size());
     usize minted = 0;
-    if (Status bound = bind_sub_assets(prepared.record, result,
-                                       Span<cy::AssetId>(ids.data(), ids.size()), minted);
+    if (Status bound =
+            bind_sub_assets(prepared.record, result, Span<cy::AssetId>(ids.data(), ids.size()),
+                            minted, prepared.settings.minting);
         !bound) {
         return bound;
     }
     prepared.outcome.minted_ids = minted;
     prepared.outcome.sub_assets = produced.size();
+    prepared.outcome.profile = prepared.settings.profile;
+
+    // THE COOK PROFILE DECIDES WHAT IS WRITTEN, NOT WHAT IS IMPORTED. M6 task 8.3.
+    //
+    // Every sub-asset is still produced, still bound to its id and still registered in the
+    // database, because an id must not move when a project cooks for two profiles: a reference from
+    // a prefab to a mesh has to resolve to the same id in a client package and in the server's copy
+    // of the same prefab. What the profile changes is which cooked files reach the output — which
+    // is the "content selection is a declared policy" the requirement asks for, and the level at
+    // which it can be reported as bytes saved.
 
     // Write every cooked sub-asset. The envelope is `cy::assets::write_cooked_asset`, which is what
     // the loader checks before it hands bytes to a parser — see cooked.h for why that is separate
@@ -391,14 +403,24 @@ Status ImportPipeline::publish(Prepared& prepared, const ImportResult& result) n
             !written) {
             return written;
         }
-        prepared.outcome.cooked_bytes += cooked.size();
         if (produced[index].primary) {
             // `AssetMeta::cooked_hash` is the digest of what the cook produced, and it has been
             // zero in every sidecar this project has written because nothing cooked before M5. This
             // is the first thing that does, so this is where it stops being zero.
+            //
+            // Computed BEFORE the profile's exclusion, and from the payload rather than from the
+            // file: the sidecar is per SOURCE and not per profile, so a server cook that excluded
+            // the primary must not write a zero hash into the sidecar the client cook filled in.
             primary_cooked_hash = assets::content_hash(produced[index].payload.data(),
                                                        produced[index].payload.size());
         }
+        if (!profile_retains(prepared.settings.profile, produced[index].kind,
+                             produced[index].view())) {
+            ++prepared.outcome.excluded_sub_assets;
+            prepared.outcome.excluded_bytes += cooked.size();
+            continue;
+        }
+        prepared.outcome.cooked_bytes += cooked.size();
 
         if (output_directory_[0] == '\0') {
             continue;
@@ -785,6 +807,7 @@ Expected<usize, Error> ImportPipeline::import_all(Span<const assets::VirtualPath
 
 namespace {
 GltfImporter g_gltf;
+FbxImporter g_fbx;
 TextureImporter g_texture;
 }  // namespace
 
@@ -793,6 +816,9 @@ Status register_builtin_importers(ImporterRegistry& registry) noexcept {
     // of its request — so one serves every worker and every pipeline. An importer that DID hold
     // state would have to be constructed per pipeline, and its registration would say so.
     if (Status registered = registry.register_importer(&g_gltf); !registered) {
+        return registered;
+    }
+    if (Status registered = registry.register_importer(&g_fbx); !registered) {
         return registered;
     }
     return registry.register_importer(&g_texture);

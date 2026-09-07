@@ -35,6 +35,9 @@ constexpr const char* kUsage =
     "  --profile NAME    client | dedicated-server | editor (default: client)\n"
     "  --set NAME=VALUE  an import option, repeatable. Booleans are true/false.\n"
     "  --no-cache        ignore the cache and re-import, for diagnosing the cache itself\n"
+    "  --no-mint         refuse to invent an asset id: fail instead, naming the asset. What a\n"
+    "                    shipping cook and continuous integration pass, because a minted id makes\n"
+    "                    two cold builds of one project produce different bytes.\n"
     "  --jobs N          worker threads for the import phase (default: the machine's)\n"
     "  --list-importers  print what this build can import, with each importer's options\n"
     "  --help            this text\n";
@@ -126,6 +129,7 @@ int main(int argc, char** argv) {
     std::string shared_directory;
     std::string variant_text;
     std::string profile_text = "client";
+    bool refuse_minting = false;
     // Held by value for the whole of main, because an option's text value is a view into one of
     // these and the options outlive the parsing loop.
     std::vector<std::string> assignments;
@@ -194,6 +198,8 @@ int main(int argc, char** argv) {
                 return 2;
             }
             assignments.emplace_back(value);
+        } else if (argument == "--no-mint") {
+            refuse_minting = true;
         } else if (argument == "--no-cache") {
             ignore_cache = true;
         } else if (argument == "--jobs") {
@@ -264,6 +270,8 @@ int main(int argc, char** argv) {
         return 2;
     }
     settings.profile = profile.value();
+    settings.minting =
+        refuse_minting ? cy::import::MintPolicy::Refuse : cy::import::MintPolicy::Mint;
 
     cy::Array<cy::assets::VirtualPath> paths;
     for (const std::string& source : sources) {

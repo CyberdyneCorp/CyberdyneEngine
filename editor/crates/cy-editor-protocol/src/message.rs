@@ -156,6 +156,65 @@ pub enum Message {
         /// The generation now resident.
         generation: u32,
     },
+    /// Resolve a pick against a frame the runtime rendered. M6 task 2.6.
+    ///
+    /// **Picking is engine-side**, because `editor-viewport-and-gizmos` requires that "what is
+    /// picked matches what is rendered — including virtual geometry, instanced content, foliage,
+    /// terrain, and skinned meshes", none of which the editor has any description of. M5.5 built
+    /// both ends of that and no wire between them: `cy_editor_viewport::picking` produced a
+    /// `PickRequest` and nothing carried it, so engine-side picking was unreachable from the editor.
+    ///
+    /// `frame` is named on the message as well as inside `pick`, so that a runtime can refuse a
+    /// request for a frame it no longer holds without decoding a payload this crate deliberately
+    /// does not understand — see the note on `pick` below.
+    Pick {
+        /// The request's identity, so the answer can be paired with it.
+        request: RequestId,
+        /// **The frame that was on screen when the user clicked.** The runtime resolves against
+        /// that frame's view state, not against whatever its camera has since become.
+        frame: FrameId,
+        /// A `cy_editor_viewport::picking::PickRequest`, encoded by that module.
+        ///
+        /// OPAQUE ON PURPOSE. `cy-editor-viewport` depends on this crate, so this crate cannot name
+        /// its types without a cycle — and it should not want to: the protocol's job is to carry
+        /// bytes and match a reply to a request. The encoding has one owner and one test suite,
+        /// exactly as `Apply`'s transaction bytes have.
+        pick: Vec<u8>,
+    },
+    /// What the runtime found under the pointer.
+    Picked {
+        /// Which request.
+        request: RequestId,
+        /// A `cy_editor_viewport::picking::PickResponse`, encoded by that module.
+        candidates: Vec<u8>,
+    },
+    /// What gizmo the editor wants drawn, and about what. M6 task 2.7.
+    ///
+    /// `editor-viewport-and-gizmos` assigns "gizmo geometry generation, depth handling, and
+    /// screen-constant sizing" to the ENGINE and leaves the editor "intent and manipulation state".
+    /// This message is that intent. The editor does not send geometry and cannot: a second
+    /// computation of where the arrows are is a second answer, and the moment it disagrees the user
+    /// grabs one handle and drags another.
+    GizmoIntent {
+        /// The request's identity, so a published layout can be paired with it.
+        request: RequestId,
+        /// Which viewport the gizmo is for. A session has several and they differ in camera.
+        viewport: u64,
+        /// A `cy_editor_services::gizmo::Request`, encoded by that module: which frame, which
+        /// manipulator, which space and pivot, and what is selected.
+        intent: Vec<u8>,
+    },
+    /// Where the runtime drew the gizmo, in the frame it drew it into.
+    ///
+    /// The layout names its own frame, for the same reason a pick does: a click lands two frames
+    /// after the pixels it was aimed at, and hit-testing it against a newer layout is the same
+    /// defect in a smaller place.
+    GizmoGeometry {
+        /// Which request this answers.
+        request: RequestId,
+        /// A `cy_editor_viewport::layout::GizmoLayout`, encoded by that module.
+        layout: Vec<u8>,
+    },
 }
 
 impl Message {
@@ -163,6 +222,19 @@ impl Message {
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+        // TWO FUNCTIONS RATHER THAN ONE MATCH, because the message set has grown past the point
+        // where one function of it can be read in a sitting. The split is the protocol's own: the
+        // first group opens and keeps a connection, the second does work on a world. A message that
+        // belongs to neither would fail to encode loudly, which is why the fall-through is a
+        // debug assertion rather than a silent empty frame.
+        if !self.write_connection(&mut writer) {
+            self.write_work(&mut writer);
+        }
+        writer.finish()
+    }
+
+    /// The handshake and the liveness probe. `true` when this message was one of them.
+    fn write_connection(&self, writer: &mut Writer) -> bool {
         match self {
             Message::Hello {
                 abi_major,
@@ -189,6 +261,22 @@ impl Message {
                 writer.text(reason);
                 writer.text(remedy);
             }
+            Message::Ping { frame } => {
+                writer.u8(6);
+                writer.u64(frame.as_u64());
+            }
+            Message::Pong { frame } => {
+                writer.u8(7);
+                writer.u64(frame.as_u64());
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Everything that acts on a world: a change, its echo, a refusal, a reload, a pick.
+    fn write_work(&self, writer: &mut Writer) {
+        match self {
             Message::Apply {
                 request,
                 frame,
@@ -221,14 +309,6 @@ impl Message {
                 writer.text(reason);
                 writer.text(remedy);
             }
-            Message::Ping { frame } => {
-                writer.u8(6);
-                writer.u64(frame.as_u64());
-            }
-            Message::Pong { frame } => {
-                writer.u8(7);
-                writer.u64(frame.as_u64());
-            }
             Message::Reload {
                 request,
                 module,
@@ -251,8 +331,44 @@ impl Message {
                 writer.text(module);
                 writer.u32(*generation);
             }
+            Message::Pick {
+                request,
+                frame,
+                pick,
+            } => {
+                writer.u8(10);
+                writer.u64(request.as_u64());
+                writer.u64(frame.as_u64());
+                writer.bytes(pick);
+            }
+            Message::Picked {
+                request,
+                candidates,
+            } => {
+                writer.u8(11);
+                writer.u64(request.as_u64());
+                writer.bytes(candidates);
+            }
+            Message::GizmoIntent {
+                request,
+                viewport,
+                intent,
+            } => {
+                writer.u8(12);
+                writer.u64(request.as_u64());
+                writer.u64(*viewport);
+                writer.bytes(intent);
+            }
+            Message::GizmoGeometry { request, layout } => {
+                writer.u8(13);
+                writer.u64(request.as_u64());
+                writer.bytes(layout);
+            }
+            other => debug_assert!(
+                false,
+                "{other:?} belongs to neither message group and would encode as an empty frame"
+            ),
         }
-        writer.finish()
     }
 
     /// Decode a message, refusing a tag this build does not know.
@@ -312,6 +428,24 @@ impl Message {
                 module: reader.text()?,
                 generation: reader.u32()?,
             },
+            10 => Message::Pick {
+                request: RequestId::from_raw(reader.u64()?),
+                frame: FrameId::from_raw(reader.u64()?),
+                pick: reader.bytes()?,
+            },
+            11 => Message::Picked {
+                request: RequestId::from_raw(reader.u64()?),
+                candidates: reader.bytes()?,
+            },
+            12 => Message::GizmoIntent {
+                request: RequestId::from_raw(reader.u64()?),
+                viewport: reader.u64()?,
+                intent: reader.bytes()?,
+            },
+            13 => Message::GizmoGeometry {
+                request: RequestId::from_raw(reader.u64()?),
+                layout: reader.bytes()?,
+            },
             other => {
                 return Err(Problem::new(
                     "decode a message",
@@ -329,7 +463,9 @@ impl Message {
         match self {
             Message::Applied { request, .. }
             | Message::Rejected { request, .. }
-            | Message::Reloaded { request, .. } => Some(*request),
+            | Message::Reloaded { request, .. }
+            | Message::Picked { request, .. }
+            | Message::GizmoGeometry { request, .. } => Some(*request),
             _ => None,
         }
     }
@@ -388,6 +524,24 @@ mod tests {
             },
             Message::Pong {
                 frame: FrameId::from_raw(1),
+            },
+            Message::Pick {
+                request: RequestId::from_raw(12),
+                frame: FrameId::from_raw(1016),
+                pick: vec![9, 8, 7],
+            },
+            Message::Picked {
+                request: RequestId::from_raw(12),
+                candidates: vec![6, 5],
+            },
+            Message::GizmoIntent {
+                request: RequestId::from_raw(13),
+                viewport: 1,
+                intent: vec![4, 3, 2],
+            },
+            Message::GizmoGeometry {
+                request: RequestId::from_raw(13),
+                layout: vec![1],
             },
         ];
         for message in &messages {

@@ -68,6 +68,57 @@ enum class CookProfile : u8 {
 [[nodiscard]] const char* cook_profile_name(CookProfile profile) noexcept;
 [[nodiscard]] Expected<CookProfile, Error> cook_profile_from_name(std::string_view name) noexcept;
 
+/// The prefix a collision sub-asset's name carries. M6 task 8.3.
+///
+/// It is a naming convention rather than an `AssetKind` because a collider IS a mesh — the physics
+/// server loads one through the same path — and adding a kind for it would make every consumer that
+/// switches on kind grow a case it does not want. What the prefix buys is the one thing a kind
+/// would have bought: `profile_retains` can keep a collider in a cook that drops render meshes,
+/// which is the "collision survives mesh exclusion" scenario.
+inline constexpr std::string_view kCollisionSubAssetPrefix = "collision/";
+
+/// Whether a cook profile keeps a sub-asset. M6 task 8.3.
+///
+/// `asset-import-pipeline` — "Cook profiles": a profile declares what a build needs, "so that
+/// content selection is a declared policy rather than an accumulation of per-asset flags", and
+/// "WHERE a server needs a **subset** of an otherwise client-only asset — collision geometry
+/// derived from a render mesh — the profile SHALL retain that subset rather than either the whole
+/// asset or nothing."
+///
+/// The table, in one function so that a second opinion about what a dedicated server needs cannot
+/// exist:
+///
+/// | Profile           | Keeps                                                    |
+/// |-------------------|----------------------------------------------------------|
+/// | `Client`          | Everything an importer produces                           |
+/// | `DedicatedServer` | Prefabs, collision meshes, and nothing else this pipeline produces |
+/// | `Editor`          | Everything                                                |
+///
+/// A `DedicatedServer` cook drops textures, materials and render meshes — "Textures, shaders,
+/// high-resolution meshes, audio, VFX assets, UI assets" — and keeps the prefab, because the
+/// hierarchy IS the gameplay data, and the colliders, because that is the subset the requirement
+/// names. Levels of detail go with the render mesh they reduce.
+[[nodiscard]] bool profile_retains(CookProfile profile, assets::AssetKind kind,
+                                   std::string_view sub_asset_name) noexcept;
+
+/// Whether an identity may be minted during this cook. M6 task 8.3.
+///
+/// design.md §1.7: `assets::mint_asset_id()` draws 128 random bits, and the sidecar that records
+/// what it drew is authoritative metadata that belongs in source control. Nothing enforced that,
+/// and M6 is the milestone at which it stops being harmless — a prefab references its meshes by
+/// `AssetId`, so from the commit that puts an id inside a payload, two cold builds of one project
+/// stop producing the same bytes.
+///
+/// So a cook that has to be reproducible refuses to mint: it fails naming the asset, and the remedy
+/// is to commit the sidecar, which should have happened anyway. An interactive import mints freely,
+/// because minting is exactly what a first import is for.
+enum class MintPolicy : u8 {
+    /// Draw an id for a sub-asset the record does not know. What an editor and a first import do.
+    Mint = 0,
+    /// Refuse, naming the sub-asset. What a shipping cook and continuous integration do.
+    Refuse = 1,
+};
+
 /// How serious a diagnostic is.
 enum class ImportSeverity : u8 { Info = 0, Warning = 1, Error = 2 };
 

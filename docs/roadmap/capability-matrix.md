@@ -25,15 +25,15 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | **1 — Foundations** | | | | | | | |  | | | | | | | |
 | [`engine-architecture`](../../openspec/specs/engine-architecture/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  | **C** | M11 |
 | [`core-type-system`](../../openspec/specs/core-type-system/spec.md) | 13 |  | W |  |  |  | **C** |  |  |  |  |  |  |  | M5 |
-| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  | **C** |  |  |  |  |  | M6 |
+| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |       | **C** |  |  |  |  | M7 |
 | [`core-math`](../../openspec/specs/core-math/spec.md) | 10 |  | W |  | **C** |  |  |  |  |  |  |  |  |  | M3 |
 | [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  | **C** |  |  | M9 |
-| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  | **C** |  |  |  |  |  | M6 |
+| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |       | **C** |  |  |  |  | M7 |
 | [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |  |  | **C** | M11 |
 | **2 — World model** | | | | | | | |  | | | | | | | |
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  | **C** |  |  | M9 |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |  |  |  | M5 |
-| [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  | **C** |  |  |  |  |  | M6 |
+| [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |       |  | **C** |  |  |  | M8 |
 | [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 33 |  |  |  |  | S |  |  |  |  | W | **C** |  |  | M9 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  | W | **C** |  |  | M9 |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 20 |  |  |  |  |  |  |  |  |  | W |  |  | **C** | M11 |
@@ -72,7 +72,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`ray-tracing-infrastructure`](../../openspec/specs/ray-tracing-infrastructure/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |  |  | **C** | M11 |
 | [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 15 |  |  |  |  |  |  |  |  | W |  |  |  | **C** | M11 |
 | [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |  |  | **C** | M11 |
-| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  | **C** |  |  |  |  |  | M6 |
+| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |       |  | **C** |  |  |  | M8 |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  | W |  |  | **C** | M11 |
 | [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 24 |  |  |  |  |  |  |  |  |  | W |  |  | **C** | M11 |
 | **5 — Simulation** | | | | | | | |  | | | | | | | |
@@ -85,7 +85,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | **6 — Content and tooling** | | | | | | | |  | | | | | | | |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  | **C** |  |  |  | M8 |
 | [`ui-system`](../../openspec/specs/ui-system/spec.md) | 25 |  |  |  |  |  |  |  |  |  | W |  |  | **C** | M11 |
-| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 13 |  |  |  |  |  | W |  | **C** |  |  |  |  |  | M6 |
+| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 13 |  |  |  |  |  | W |  |       |  | **C** |  |  |  | M8 |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | 18 |  |  |  |  |  | S | W |  |  |  |  |  | **C** | M11 |
 | [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | 13 |  |  |  |  |  | W |  |  |  |  |  |  | **C** | M11 |
 | [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | 12 |  |  |  |  |  | W |  |  |  | **C** |  |  |  | M8 |
@@ -136,19 +136,39 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M2** · World | 6 | 0 | — |
 | **M3** · First light | 11 | 1 | `core-math` |
 | **M4** · Playable | 10 | 0 | — |
-| **M5** · Authorable | 14 | 4 | `core-type-system`, `native-abi`, `project-and-plugins`, `scene-graph-and-nodes` |
+| **M5** · Authorable | 16 | 4 | `core-type-system`, `native-abi`, `project-and-plugins`, `scene-graph-and-nodes` |
 | **M5.5** · Operable | 3 | 0 | — |
-| **M6** · Scale | 11 | 5 | `asset-import-pipeline`, `core-assets-and-io`, `core-memory-and-containers`, `rendering-geometry-and-resources`, `serialization-and-prefabs` |
-| **M7** · Fidelity | 17 | 7 | `editor-viewport-and-gizmos`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-materials-and-shading`, `residency`, `shader-system`, `virtual-texturing` |
-| **M8** · Game systems | 19 | 7 | `audio`, `editor-documents-and-transactions`, `input-and-actions`, `live-editing`, `material-compiler`, `swift-scripting`, `text-and-fonts` |
+| **M6** · Scale | 6 | 0 | — |
+| **M7** · Fidelity | 19 | 9 | `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-materials-and-shading`, `residency`, `shader-system`, `virtual-texturing` |
+| **M8** · Game systems | 23 | 10 | `asset-import-pipeline`, `audio`, `editor-documents-and-transactions`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `swift-scripting`, `text-and-fonts` |
 | **M9** · Integrity | 12 | 10 | `camera-system`, `core-jobs-and-concurrency`, `diagnostics-profiling-and-crash`, `ecs-core`, `gameplay-abilities-and-effects`, `gameplay-framework`, `physics`, `save-and-persistence`, `sequencing-and-cinematics`, `simulation-and-determinism` |
 | **M10** · Worlds | 10 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
-| **M11** · Reach | 36 | 36 | everything remaining |
+| **M11** · Reach | 38 | 38 | everything remaining |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not
 touch a window, and the three capabilities it advances are the ones a window and an agent make true.
 It builds a large amount of code and moves few rows, which is what a repair looks like.
+
+**M6's load is six, and the plan said eleven with five of them completing.** None of the five
+Completes is in the record, and the M6 column above and the [status record](status.yaml) both say
+six Workings instead. The reasoning per row is in
+[where M6's tiers are thin](#where-m6s-tiers-are-thin) and in
+`tools/roadmap/milestones/m6.toml` beside `[criterion.expect_tiers]`, and the five **C** cells moved
+to the milestone at which their unmet prerequisite arrives: `core-assets-and-io` and
+`core-memory-and-containers` to M7, `asset-import-pipeline`, `serialization-and-prefabs` and
+`rendering-geometry-and-resources` to M8. That last one is M6 task 10.8, which asked the gate to
+choose between scoping the requirement and moving the tier; the tier moved, because the requirement
+it violates — skinning reads the GPU pose world rather than a second per-consumer upload — is the
+sentence that stops a second pose upload being invented, and deleting it to fit a schedule is the
+failure it exists to prevent.
+
+**The Milestone load table above is now derived from the matrix rather than maintained beside it.**
+M5's gate recorded that the two disagreed — the table said M5 advanced fourteen where the matrix
+showed sixteen, and said M11 completes thirty-six where the matrix shows thirty-eight — and named it
+"a gap worth a check rather than a paragraph". Every count and every name above was recomputed from
+the columns of the matrix at M6's gate. It is still two documents that can drift; what has changed
+is that they do not disagree today.
 
 M11's load is large by construction: it is where every capability that has been Working for several
 milestones is finished off, plus two graphics backends and the porting surface. It is the one
@@ -166,26 +186,38 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M5.5 forty-three capabilities have left `—`, and four have reached Complete. **Every entry
-below was read out of `just roadmap-status` at M5.5's gate rather than carried forward from the
+As of M6 forty-eight capabilities have left `—`, and four have reached Complete. **Every entry
+below was read out of `just roadmap-status` at M6's gate rather than carried forward from the
 previous edition of this list.**
 
 - **Complete (4)**: `core-math`, `core-type-system`, `native-abi`, `scene-graph-and-nodes`.
-- **Working (25)**: `asset-import-pipeline`, `core-assets-and-io`, `core-jobs-and-concurrency`,
-  `core-memory-and-containers`, `core-platform-abstraction`, `delivery-roadmap`, `ecs-core`,
-  `editor-agent-interface`, `editor-documents-and-transactions`, `editor-rust-application`,
-  `editor-ui-ux`, `editor-viewport-and-gizmos`, `editor-visual-language`, `engine-architecture`,
-  `input-and-actions`, `physics`, `project-and-plugins`, `rendering-architecture`,
-  `rendering-forward-clustered`, `rendering-geometry-and-resources`,
-  `rendering-materials-and-shading`, `rhi-and-render-graph`, `serialization-and-prefabs`,
-  `shader-system`, `swift-scripting`.
-- **Seed (14)**: `audio`, `build-system-and-platforms`, `camera-system`,
+- **Working (31)**: `asset-import-pipeline`, `build-and-packaging`, `core-assets-and-io`,
+  `core-jobs-and-concurrency`, `core-memory-and-containers`, `core-platform-abstraction`,
+  `delivery-roadmap`, `ecs-core`, `editor-agent-interface`, `editor-documents-and-transactions`,
+  `editor-rust-application`, `editor-ui-ux`, `editor-viewport-and-gizmos`, `editor-visual-language`,
+  `engine-architecture`, `input-and-actions`, `physics`, `project-and-plugins`,
+  `rendering-architecture`, `rendering-culling-and-lod`, `rendering-forward-clustered`,
+  `rendering-geometry-and-resources`, `rendering-materials-and-shading`, `residency`,
+  `rhi-and-render-graph`, `save-and-persistence`, `serialization-and-prefabs`, `shader-system`,
+  `swift-scripting`, `virtual-texturing`, `world-partition-and-streaming`.
+- **Seed (13)**: `audio`, `build-system-and-platforms`, `camera-system`,
   `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `editor-architecture`,
-  `gameplay-framework`, `live-editing`, `rendering-culling-and-lod`,
-  `rendering-lighting-and-shadows`, `simulation-and-determinism`, `testing-and-quality`,
-  `text-and-fonts`, `thirdparty-dependencies`.
+  `gameplay-framework`, `live-editing`, `rendering-lighting-and-shadows`,
+  `simulation-and-determinism`, `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
 
-The remaining 33 have not started. **M5.5 advanced three, and started none**: `editor-ui-ux`,
+The remaining 28 have not started. **M6 advanced six, and started five of them**:
+`build-and-packaging`, `residency`, `save-and-persistence`, `virtual-texturing` and
+`world-partition-and-streaming` went from `—` to Working, and `rendering-culling-and-lod` from Seed
+to Working, each recorded against `implement-m6-scale` at milestone `M6`. **Five rows the plan had
+completing here did not move at all**, and two of those five — `core-assets-and-io` and
+`core-memory-and-containers` — have no change under `src/core/` in this milestone whatsoever;
+`serialization-and-prefabs`, `asset-import-pipeline` and `rendering-geometry-and-resources` all
+received substantial implementation without reaching Complete, so their rows still name the
+milestone that last advanced their tier rather than this one. Where M6's tiers are thinner than
+Working suggests is [below](#where-m6s-tiers-are-thin).
+
+The paragraph below is M5.5's, kept because it is the record of what that milestone moved.
+**M5.5 advanced three, and started none**: `editor-ui-ux`,
 `editor-visual-language` and `editor-agent-interface` moved from Seed to Working, each recorded
 against `implement-m5b-operable` at milestone `M5B`. Nothing else moved — `editor-viewport-and-gizmos`
 and `editor-rust-application` both received substantial implementation at M5.5 (the gizmo geometry
@@ -256,6 +288,185 @@ Three cells were filled: `editor-ui-ux`'s **W** moved out of M5 into M5.5 and it
 **W** at M5.5; and `editor-agent-interface` reaches **W** at M5.5 rather than at M8, which is the
 one place the plan changed rather than being corrected — the proposal argues that the agent loop is
 most valuable *while* the engine is being built.
+
+## Where M6's tiers are thin
+
+The six tiers M6 advanced are in [the status record](#the-status-record); the five the plan expected
+to complete and that did not are argued under [milestone load](#milestone-load) and in
+`tools/roadmap/milestones/m6.toml` beside `[criterion.expect_tiers]`. What follows is where the
+implementation is **thinner than the tier it reached**, and what M6's own gate found. Everything
+below was measured or reproduced at that gate on this tree: Linux 6.8, GCC 13.3.0 and Clang 18.1.3,
+clang-format and clang-tidy at 22.1.8, Swift 6.3.3, Rust 1.95.0, an NVIDIA RTX 5060 with Vulkan
+1.4.312. All four profiles were built **from empty** and `just test-all` was run in each.
+
+### What the gate found
+
+**0 · The one red test is the machine, and the mechanism is now named rather than guessed at.**
+`smoke.editor_window` failed in all four profiles on `:0`, at `Ctrl+Shift+N never produced entity 1`,
+and three earlier M6 agents recorded it as "an X server / XTEST fault on this machine". It is more
+specific than that, and the difference matters because it decides whether anything in the repository
+is at fault. On `:0`:
+
+```
+grab_keyboard(root) -> 1 (AlreadyGrabbed)      eight samples over sixteen seconds, all identical
+xinput test-xi2 --root                          EVENT type 13 (RawKeyPress)  device: 3 (5)
+                                                EVENT type  2 (KeyPress)     device: 5 (5)
+a window that holds the input focus             events after the synthetic key: []
+```
+
+The X server **does** generate the XTEST events — they are visible on the XTEST slave keyboard at the
+XInput2 level — and an **active keyboard grab held by another client** routes them to the grabber
+instead of to the focused window. That grab is the fact, and it is measured. **Which client holds it
+is an inference**, because the X protocol does not report a grab's owner: `ps` shows
+`cinnamon-screensaver` and `cs-backup-locker --xid …` running for five and a half hours, which is
+what a locked session looks like, and a lock screen holding the keyboard is the ordinary explanation.
+Nothing here depends on that inference being right.
+
+The proof that this is environmental and not the engine's is a second X server on the same machine.
+A bare `Xephyr :77` has no grab (`grab_keyboard -> 0`), the same probe reports
+`KeyPress KeyRelease ButtonPress ButtonRelease`, and on it:
+
+| Suite, on `:77` | dev | debug | profile | release |
+|---|---|---|---|---|
+| `smoke` | 13/13 | 13/13 | 12/12 | 12/12 |
+
+`smoke.editor_window` passes in **12.3 s** where it failed in 54 s on `:0`. Nothing in the repository
+was changed between the two runs. The lesson for whoever runs this gate next is in the artefact's own
+configure guard: `samples/05b-editor-window/CMakeLists.txt` declines to register the test when
+`DISPLAY` is unset or python-xlib is absent, but a display whose keyboard is grabbed passes that guard
+and cannot pass the test. **A test was left registered that no amount of correct code could pass.**
+
+**1 · The milestone's own task 2.8 is still not done, and the artefact that would prove it exits
+zero anyway.** Task 2.8 is *"a person opens a world, selects an object, drags a gizmo, undoes, and
+saves — end to end, in the window"*. Run on `:77`, where every other act passes:
+
+```
+--- act 3: a gizmo drag, and the undo that takes it back ---
+    GAP   the gizmo drag — the drag committed nothing. … A drag that still commits nothing means the
+          pointer did not land on a gizmo handle, not that there is nothing to bind to
+    1 step(s) NOT SATISFIED
+```
+
+Everything the milestone built for it **is** there: `types.cytypes` is the engine's own registry,
+written by `cy::scene::serialization::write_authoring_schema` and compared byte for byte by
+`cy_test_unit_scene_serialization`; the opened document's schema declares `Transform`;
+`Viewport::pump` is called once per frame (M5.5's recorded one-line defect, closed);
+`worlds/city.cyworld` is written on save, 31 lines, carrying the schema it was written against. What
+is missing is the aim: `act_drag` presses `w` and drags from a **hard-coded (47 %, 38 %) of the
+viewport**, hoping a gizmo handle is under it. `window.py` records a GAP and **returns 0**, so
+`smoke.editor_window` is green and `just run-editor-window` is green while the milestone's headline
+interaction is unproven. That is a criterion that does not cover its claim, and it is the single
+thing M7 should close first on the editor side — by asking the viewport where it drew the handle
+rather than by guessing at a coordinate.
+
+**2 · The spike's headline correctness bug is fixed in the new graph and still live in the tool that
+cooks.** `design.md` §1.3 found that `cy::import::import_derivation_key` contributes no compiler, no
+flags and no library versions, so two builds of one importer computed the same key and one was served
+the other's artefact. `tools/build/` fixed it *for itself* — `derivation_key` refuses a key without a
+complete `ToolchainFingerprint`, which is generated from `deps/manifest.toml` and
+`deps/host-tools.toml` at configure time. `tools/import/src/importer.cpp` is **unchanged**, and it is
+the function `cy_import_cli` uses. Re-measured at this gate with the two binaries this gate had
+already built:
+
+```
+dev     cy_import_cli  sha1 30264ce3…   -O2 -g -DCY_DEVELOPMENT
+profile cy_import_cli  sha1 d72a293d…   -O2 -g -DNDEBUG
+$ dev/cy_import_cli     … --cache shared    →  1 cache entry, key 271e229d…
+$ profile/cy_import_cli … --cache shared    →  cache: 1 hit, 0 miss, 0 invalidated
+```
+
+Two different binaries, one key, a reported hit. The new fingerprint distinguishes them —
+`704a618c…` against `f6ab6294…` — and nothing carries it into the importer's key.
+`asset-import-pipeline` requires "one cache covering all derived data" and there are still two caches
+and two key functions (`cy::assets::DerivedCache` and `cy::shader::CacheTier`; `design.md` §1.8).
+**This is the one entry on this list that is a correctness bug rather than an absence**, and M7 owns
+it before its material and geometry cooks make a wrong hit a wrong shipped artefact.
+
+**3 · Two of the seven new modules are linked by nothing but their own tests.**
+`cy::servers-render-culling` and `cy::servers-render-geometry` appear in exactly four
+`DEPENDENCIES` lines, all of them in their own `tests/CMakeLists.txt`; no renderer consumes them and
+`samples/06-open-world` does not link them. `cpu_reference_cull` is a reference with nothing yet to
+check against it, and `SkinningDescriptor` describes a compute pass nobody dispatches. That is the
+substance behind `rendering-culling-and-lod` at Working — the tier is carried by the layer-4 module
+`cy::rendering-culling` that `cy::rendering-forward` has consumed since M3 — and behind
+`rendering-geometry-and-resources` not completing.
+
+**4 · Nothing in virtual texturing is on a GPU, and the ledger says so in its own comment.** The CPU
+side is complete and measured: address spaces, page tables, tiles, the physical cache, the resident
+mip tail, wait-free feedback, prefetch and runtime producers, exercised end to end by the artefact
+— `smoke.open_world` asserts that no sample was ever missing while pages were produced under
+traversal, and it passed in all four profiles at this gate. There is no feedback buffer written
+by a shader and no page table sampled by one. `virtual-texturing` is recorded at **Working** because
+its requirements are satisfied on the side that exists and the artefact exercises them; a reader who
+wants a virtual texture on screen wants M7.
+
+**5 · The world streams from a cost model, not from a file.** `src/world/` contains no file I/O —
+`grep` for `fopen`, `ifstream` or `FileSystem` over `src/world/src/` returns nothing — and
+`WorldStreaming::tick` charges `resident_io_bytes` from `CellPayload`'s declared size. The module's
+own README says so ("No cooker and no asset loading yet"). The exit criterion *residency and
+activation are separate* is nonetheless real and independent of that: 20 688 bytes resident, cell
+state `Resident`, `ecs.entity_count() == 0`, `published_entities == 0`, and then `Activated` with
+entities the moment a source that activates arrives.
+
+**6 · Two overlay models, one requirement.** `cy::world::PersistenceOverlay` (keyed by `CellId`, raw
+component bytes at a runtime component index) and `cy::save::Overlay` (keyed by `RegionKey`,
+per-field records at a `reflect::TypeId`). The artefact converts between them and says so where it
+does it. `src/save/README.md` carries the resolution — one `PersistentId` at layer 0, the world
+holding a save overlay — and it is cheaper before a save format ships than after.
+
+**7 · The editor reads a world format the engine can neither write nor read.** `types.cytypes` is the
+engine's, gated and compared byte for byte. `worlds/*.cyworld` is not: it is
+`cy_editor_services::worldfile`, a third authoring representation beside
+`cy::scene::serialization`'s `cydoc` text form and `cy::world::CookedCell`. Nothing in `src/` or
+`tools/` writes or reads a `.cyworld`. `src/scene/serialization/README.md` records it rather than
+leaving it to be discovered. **The editor opens a world; it does not yet open the engine's world.**
+
+**8 · A permanent-set criterion is a coin flip in one profile, and it is not M6's.**
+`unit.physics_server`'s case *one thousand identical box colliders create one shape* is over its 1 ms
+unit budget in the **Debug** profile: **22 of 40** runs of the case alone (1.06 – 2.10 ms of its own
+CPU time), and about **1 run in 10** through `ctest`, on an idle machine. `src/servers/physics/` has
+no change in this milestone — its last commit is M4's — so `four-profiles`, a criterion in the
+permanent set since M1, is red about one Debug run in ten for a reason no milestone since M4 has
+touched. This is the same shape as the flake `m2.toml` records and it is a different test.
+
+**9 · The Shipping profile emits warnings that `-Werror` does not catch.** The link-time-optimised
+build reports `-Walloc-size-larger-than=` twice, in `src/core/reflect/src/registry.cpp:131` and
+`:135`, from `grow()` inlined into `add()`. `CY_WARNINGS_AS_ERRORS` is ON by default and these are
+diagnosed during LTO, where it does not reach them. M1's code, found by building Shipping from empty.
+
+**10 · Six milestone gates were green and no CI job ran one of them — closed here, and honestly
+short of what the requirement asks.** `tools/ci/check_workflows.py` skipped any gate whose class was
+not `permanent`, so `milestone-m0` through `milestone-m5b` sat at `state = "green"` with
+`roadmap-milestone` appearing in `ci.yml` only inside a comment. That is M6 task 10.9 and it is
+fixed: the coverage rule now reads milestone gates too, honouring the flat ledger — a green gate is
+covered when a workflow evaluates the ledger of any milestone at or above its rung, so one job
+covers all seven rather than seven jobs re-running `four-profiles` seven times — and its own negative
+fixture restores the defect and fails. The new `milestone` job runs `just roadmap-milestone m5b`.
+**It is not a merge gate.** It runs nightly, on `workflow_dispatch`, and on a push to `main`, because
+one pass of that ledger took hours at this gate and a four-hour merge gate is a reason to write an
+override rather than a reason to wait. Most of the ledger's work is blocking already through the
+other jobs; what this adds that nothing else does is the artefact recipes, the tier records and the
+ledger's own arithmetic — post-merge rather than pre-merge. Recorded so M7 can widen it deliberately.
+
+### The adversarial pass, and what each of the eleven actually showed
+
+`delivery-roadmap` requires the audit in full through M8, and these are M6's own invariants rather
+than anything an accumulated gate inherits. Every probe was written for this gate and deleted after
+it; the commands and figures are in the milestone report.
+
+| # | Invariant | Verdict | What was actually done |
+|---|---|---|---|
+| a | Two different inputs cannot share a derivation key | **PASS** | 30 node declarations attacking the framing at every boundary a name meets a value — `("ab","c")` against `("a","bc")` as an option, as platform/profile, as an output list, as a producer version — produced 26 keys, and every shared key was one declaration written more than one way. **And the shipping importer's key is separately shown blind to the toolchain — entry 2 above.** |
+| b | An immutable artefact cannot be mutated unnoticed | **PASS** | Artefacts are mode `0444`; a plain overwrite is `Permission denied`. After `chmod u+w` and an overwrite, `cy_build verify` reports `9 checked, 1 corrupt`, and a build that must read it reports `failed 1` rather than serving it |
+| c | A patch applies atomically and rolls back when interrupted | **PASS** | `--crash-at` at all five stages, then **120 real `SIGKILL`s at uniformly random instants** across a 30 ms apply: 106 left the previous build whole, 14 completed, **0 torn** |
+| d | A save generation is fully applied or absent under `kill -9` | **PASS** | **200 `SIGKILL`s at uniformly random instants** during real filesystem commits of 24 regions × 32 entities: 136 loaded a whole generation, 64 had nothing committed yet, **0 torn, 0 unreadable**. Each verification checks all 768 values agree on one generation number, which is what makes "half a generation" detectable |
+| e | Residency and activation are separate | **PASS** | 20 688 bytes resident, `CellState::Resident`, `ecs.entity_count() == 0`, `published_entities == 0`; then `Activated` with entities, same cells, one added source |
+| f | Every subsystem survives teardown mid-flight, under load | **PASS** | **18 of M6's 21 suites** — every one of the thirteen integration sets, including all five `*_teardown` sets, `save_kill_nine` and `world_activation`, plus the five stateful unit sets — run **20 consecutive times each** under eight spinning threads on a 24-core machine: **360 passes, 0 failures**, 92.9 s. M5.5's engine defect was one run in forty on an *idle* tree, so a single green run of a teardown suite is not evidence and this is the shape that would have caught it |
+| g | A cold build and a cache-warm build are byte-identical | **PASS** | Cold, warm (`ran 0 cached 6`) and a second cold into a third store: every artefact byte-identical and one build id, `601c4937…`, across all three |
+| h | A one-asset change invalidates exactly its dependents | **PASS** | One edit ran exactly `{import:rock, cook:north, package:base}` and cached the other three; a rewrite with identical content ran **0 of 6**; an edit the producer normalises away ran **1 of 6** — early cutoff, where deep input keys would have run three |
+| i | Virtual-texture feedback cannot block a frame | **PASS** | Measured on the recording thread's OWN cpu clock, because the first attempt measured `steady_clock` with more threads than cores and reported 35 ms of *descheduling* as if it were a wait. Three attacks: 5 000 000 samples into a never-drained 64-slot bank (`recorded 64, dropped 4 999 936`, p50 **124 ns**, max 64 µs); 12 recorders against a flipper (30 181 683 calls, p50 761 ns, p99 3.7 µs, p99.9999 127 µs, max 171 µs); and 12 recorders with **no consumer at all** (`recorded 256, dropped 29 429 933`, max 147 µs). Full always drops and never waits, and the tail is bounded — a call that waited on the flipper would have an unbounded one |
+| j | Every `CY_*` option M6 delivered is ON by default | **PASS** | M6 delivered no new option, which is the strongest form of it. M6's **20** test suites — seven `unit`, thirteen `integration` — and the closing artefact's `smoke.open_world` entry are all registered in all four default-configured trees, and `grep option\(CY_ ` over the seven new modules' `CMakeLists.txt` returns nothing |
+| k | ufbx and xatlas are declared, and the gate would fail without them | **PASS** | Three mutations, each restored: the attribution deleted from `THIRD_PARTY.md`, the dependency deleted from `deps/manifest.toml`, and a crate deleted from `deps/rust-crates.toml` — all three fail the gate, the third naming `egui 0.36.1` and the recipe that fixes it. That third is M5.5's own 386-crate gap, now covered |
 
 ## Where M5.5's tiers are thin
 
@@ -1089,7 +1300,9 @@ which flips more defaults than M4 did.
   rest of the unimplemented surface takes too: **soft bodies, vehicles, ragdolls, buoyancy and water
   interaction, and heightfield and terrain collision** are declared in the capability model,
   unimplemented, and reported as unsupported. `physics` scopes ragdolls to `animation-and-skinning`,
-  which is M6.
+  which is **M8**, not M6 — corrected at M6's gate (task 10.7); the row was written before M5.5 was
+  inserted and before the M5 audit of `cmake/features.cmake` moved `CY_ANIMATION` from M6 to M8 for
+  the same reason. The matrix above has `animation-and-skinning` at W in the M8 column.
 - **There is no ECS bridge.** `src/physics/` at layer 4 — the module that would register the
   components in a world, create bodies from them, drive `PhysicsStepper` in the `Physics` stage and
   write `cy::scene::LocalTransform` back — does not exist. `samples/04-character` does that work in

@@ -14,3 +14,9 @@ add_subdirectory(cook)
 # cook/ nothing links it into a runtime — a source-format parser is tool-time only, which is what
 # layer 7 means here.
 add_subdirectory(import)
+
+# build/ is M6 section 7: `build-and-packaging` to Working. The derivation graph, derivation keys,
+# explicit inputs, immutable artefacts, the derived data cache, the build service, precise
+# invalidation, packages and chunk-level patching. Like cook/ and import/ it is a library plus a thin
+# front end, and like them nothing links it into a runtime.
+add_subdirectory(build)

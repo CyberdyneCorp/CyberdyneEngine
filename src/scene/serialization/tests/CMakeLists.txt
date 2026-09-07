@@ -40,14 +40,22 @@ function(cy_scene_serialization_declare_tests)
         set(CY_TEST_TIMEOUT_${kind} "${timeout}")
     endforeach()
 
+    # CY_AUTHORING_SCHEMA_GOLDEN names the manifest the sample project carries, which
+    # test_authoring_schema.cpp regenerates and compares byte for byte. An absolute path in a test
+    # definition, as src/abi/tests/ already does for its reload modules: the alternative is a test
+    # that guesses where the source tree is from its own working directory, which is how a suite
+    # starts passing because it could not find the thing it was checking.
     cy_add_test(
         NAME scene_serialization
         KIND unit
         SOURCES
+            "${tests_dir}/test_authoring_schema.cpp"
             "${tests_dir}/test_documents.cpp"
             "${tests_dir}/test_identity.cpp"
             "${tests_dir}/test_prefabs.cpp"
-        DEPENDENCIES cy::scene-serialization)
+        DEPENDENCIES cy::scene-serialization cy::scene
+        DEFINITIONS
+            "CY_AUTHORING_SCHEMA_GOLDEN=\"${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project/types.cytypes\"")
 
     cy_add_test(
         NAME scene_cooking

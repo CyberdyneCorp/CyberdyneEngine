@@ -8,11 +8,14 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use cy_editor_core::Actor;
 use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::{Revision, Versioned};
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
 use cy_editor_documents::journal::Recovery;
+
+use crate::worldfile::{self, LoadReport};
 
 /// Every open document.
 #[derive(Default)]
@@ -22,6 +25,11 @@ pub struct DocumentService {
     /// document's own revision is for. A tab strip watches this; an inspector watches the document.
     revision: Versioned<()>,
     journal_directory: Option<PathBuf>,
+    /// The project the documents belong to, when the editor was opened on one.
+    ///
+    /// This is what turns [`DocumentService::open`] from "a name and an empty schema" into a
+    /// document that has something in it — see [`crate::worldfile`], and M6 task 2.4.
+    project_root: Option<PathBuf>,
 }
 
 impl DocumentService {
@@ -29,6 +37,28 @@ impl DocumentService {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Read worlds and the engine's type manifest from `root`.
+    ///
+    /// Absent in a test that does not care, which is what keeps every document test working with no
+    /// filesystem at all — a document with no project is still a document.
+    pub fn rooted_at(&mut self, root: impl Into<PathBuf>) {
+        self.project_root = Some(root.into());
+    }
+
+    /// The project the documents are read from and written to.
+    #[must_use]
+    pub fn project_root(&self) -> Option<&std::path::Path> {
+        self.project_root.as_deref()
+    }
+
+    /// Where a document's primary asset lives on disk, when there is a project.
+    #[must_use]
+    pub fn path_of(&self, document: &Document) -> Option<PathBuf> {
+        let root = self.project_root.as_ref()?;
+        let asset = document.assets().first()?;
+        Some(root.join(asset))
     }
 
     /// Journal every document opened from now on into `directory`.
@@ -46,11 +76,30 @@ impl DocumentService {
     /// and an editor that recovered without asking would overwrite a file the user had decided to
     /// abandon.
     pub fn open(&mut self, primary_asset: &str) -> Result<(DocumentId, Option<Recovery>)> {
+        self.open_reporting(primary_asset)
+            .map(|(id, recovery, _)| (id, recovery))
+    }
+
+    /// [`DocumentService::open`], and what the world loader found.
+    ///
+    /// A second entry point rather than a changed signature, because a caller that only wants a
+    /// document should not have to name a report it will discard — and the report is what lets the
+    /// editor say "12 nodes, 3 component types" instead of opening in silence.
+    pub fn open_reporting(
+        &mut self,
+        primary_asset: &str,
+    ) -> Result<(DocumentId, Option<Recovery>, LoadReport)> {
         let mut document = Document::new(primary_asset);
         let id = document.id();
         if self.documents.contains_key(&id) {
-            return Ok((id, None));
+            return Ok((id, None, LoadReport::default()));
         }
+        // THE WORLD BEFORE THE JOURNAL, AND THE FILE BEFORE THE MANIFEST. Loading first means the
+        // "Open world" transaction is never journalled — a load is not work anybody would want
+        // recovered — and reading the world's own schema INSTEAD of the manifest when there is a
+        // world means a type is never declared twice, which `DocumentSchema::declare_type` would
+        // happily do and which would leave two components both called Transform.
+        let report = self.populate(&mut document)?;
         let mut recovery = None;
         if let Some(directory) = &self.journal_directory {
             document.attach_journal(directory)?;
@@ -60,7 +109,37 @@ impl DocumentService {
         }
         self.documents.insert(id, document);
         self.revision.update(|()| {});
-        Ok((id, recovery))
+        Ok((id, recovery, report))
+    }
+
+    /// Give a new document its schema, and its content when a world exists to load.
+    fn populate(&self, document: &mut Document) -> Result<LoadReport> {
+        let Some(path) = self.path_of(document) else {
+            return Ok(LoadReport::default());
+        };
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            return worldfile::load(&text, document, Actor::system("world loader"));
+        }
+        // No world yet: the file is created by the first save. The schema still arrives, so an
+        // empty world is authorable — the gizmo binds, the inspector describes, and a created
+        // entity has a Transform to move.
+        let root = self
+            .project_root
+            .as_deref()
+            .unwrap_or(std::path::Path::new("."));
+        let types = worldfile::declare_project_types(root, document.schema_mut())?;
+        Ok(LoadReport {
+            types,
+            ..LoadReport::default()
+        })
+    }
+
+    /// Write a document's world back to the project, which is what `file.save` does.
+    pub fn write(&self, document: &Document) -> Result<()> {
+        let Some(path) = self.path_of(document) else {
+            return Ok(());
+        };
+        worldfile::write_to(document, &path)
     }
 
     /// Adopt an already-constructed document. Used by tests and by preview worlds.

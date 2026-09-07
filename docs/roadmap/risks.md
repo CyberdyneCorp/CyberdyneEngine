@@ -112,6 +112,28 @@ M6 onward builds through it.
 *Mitigation*: the M6 spike builds the key model against the M5 import pipeline's real derivations,
 and proves a cold build and a cache-warm build are byte-identical before anything else in M6 starts.
 
+**M6's outcome, and the half that is still open.** The spike ran and found the failure it was
+commissioned to find: `cy::import::import_derivation_key` contributed no compiler, no flags and no
+library versions, so two builds of one importer computed the identical key and one was served the
+other's artefact with a reported cache hit. `tools/build/` was then written so that the failure is
+unrepresentable — `derivation_key` refuses a key without a complete `ToolchainFingerprint`, and that
+fingerprint is *generated* from `deps/manifest.toml` and `deps/host-tools.toml` at configure time, so
+adding a dependency without adding it to the key is impossible rather than discouraged. M6's gate
+verified both exit criteria adversarially: 30 node declarations attacking the key's framing produced
+26 keys with no collision between different declarations; cold, cache-warm and a second cold build
+are byte-identical; a one-asset change ran exactly its three dependents; a rewrite with identical
+content ran nothing; and an edit the producer normalises away ran one node where deep input keys
+would have run three.
+
+**The risk is not closed, because the fix did not reach the tool that cooks.**
+`tools/import/src/importer.cpp` is unchanged, and M6's gate re-demonstrated the defect on the two
+binaries it had just built: a `-O2 -g -DCY_DEVELOPMENT` importer and a `-O2 -g -DNDEBUG` importer,
+different files, pointed at one cache — `1 hit, 0 miss`. `asset-import-pipeline` requires "one cache
+covering all derived data" and there are still two caches and two key functions. Until they are one,
+**a shared import cache can serve an artefact built by a different compiler and report success**, and
+M7's material and virtual-geometry cooks are the point at which that stops being theoretical. It is
+task 1.1 of `implement-m7-fidelity`.
+
 ### 7 — Reflection generation is fast and reproducible
 
 **Milestone**: M1. **Owner**: `core-type-system`.

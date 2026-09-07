@@ -39,6 +39,7 @@ cy_add_module(
     ALIAS cy::scene-serialization
     TYPE STATIC
     SOURCES
+        src/authoring_schema.cpp
         src/cook.cpp
         src/document.cpp
         src/document_binary.cpp
@@ -48,7 +49,7 @@ cy_add_module(
         src/resolve.cpp
         src/spawn.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-serialize cy::core-math cy::ecs)
+    PUBLIC_DEPENDENCIES cy::core-serialize cy::core-math cy::core-reflect cy::ecs)
 
 # A suite lands with the first real source. The EXISTS guard is what lets this line be written now:
 # it is the one line an agent adding tests/ does not then have to remember to add here.

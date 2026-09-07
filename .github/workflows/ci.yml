@@ -612,6 +612,147 @@ jobs:
       - name: The artefact runs through the workflow recipe
         run: just run-editor-session --only survive
 
+  # --- Scale: the world, the residency policy, the pages, the save and the build graph ------------
+  #
+  # M6's six new permanent gates in one job, for the reason `world` and `render` are each one job:
+  # `test` runs every suite once and reports that they passed, which is a different claim from
+  # "these particular properties still hold". Every command below is declared literally in
+  # tools/roadmap/gates.toml and `just ci-check` compares the two, so the gate set and this file
+  # cannot drift apart in the direction that matters.
+  #
+  # NO DEVICE AND NO DISPLAY, which is true of the whole milestone rather than a limitation of this
+  # job: the world streams, the surfaces page and the save is written on the CPU. M6's virtual
+  # texturing is the address spaces, the page tables, the caches, the feedback path and the
+  # producers — the device side arrives with M7, and none of what is here needs one.
+  scale:
+    name: scale — streaming, residency, pages, saves, the build graph
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-scale-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-scale-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-scale-
+      # Cell identity, spatial binding, the ECS-native cook, layers, HLOD and the overlay that
+      # answers for a region which has never been loaded.
+      - name: A cell's identity, its binding and its cooked form
+        run: just test-unit -R unit.world
+      # Staged atomic activation, and a request made during activation being queued rather than
+      # processed re-entrantly.
+      - name: Activation is atomic, and a re-entrant request is deferred
+        run: just test-integration -R "world_(activation|streaming)"
+      # The milestone's exit criterion for this capability, measured over a fixed route.
+      - name: Continuous traversal holds the tick budget with no hitch
+        run: just test-integration -R world_traversal
+      # Residency and activation separate BY CONSTRUCTION, and a budget spent at admission.
+      - name: One policy over separate storage, with bytes held while nothing simulates
+        run: just test-unit -R unit.residency
+      - name: The residency server destroyed with requests in flight
+        run: just test-integration -R residency_teardown
+      # A surface is never missing, only blurry — over the whole address space of a texture.
+      - name: The mip tail's guarantee, and feedback that drops rather than waits
+        run: just test-unit -R unit.virtual_texturing
+      - name: A hundred texture systems destroyed with production in flight
+        run: just test-integration -R virtual_texturing_teardown
+      # The overlay as the save, and a generation that survives the process being killed.
+      - name: The overlay, its identity, its scopes and its dirty tracking
+        run: just test-unit -R unit.save
+      - name: Generations are atomic under kill -9, and an unloaded region round-trips
+        run: just test-integration -R "save_(archive|kill_nine)"
+      - name: Migration, preservation, and a damaged chunk as a diagnostic
+        run: just test-integration -R "save_(service|fuzz)"
+      # The spike's finding as a gate: a key that omits the compiler is unrepresentable.
+      - name: Derivation keys, the toolchain fingerprint, and output digests
+        run: just test-unit -R unit.build_graph
+      - name: Byte-identical rebuilds, precise invalidation, and undeclared reads refused
+        run: just test-integration -R build_service
+      - name: A patch interrupted at any stage leaves the previous build playable
+        run: just test-integration -R build_patch
+      # GPU-driven culling's expected values, computed on the CPU so a dispatch can be checked
+      # against them when it lands.
+      - name: Visibility ranges, HLOD and shadow caster culling
+        run: just test-unit -R unit.render_gpu_culling
+      - name: The GPU culling side torn down with work outstanding
+        run: just test-integration -R render_gpu_culling_teardown
+      # `rendering-geometry-and-resources` completes here, and the ledger is the part of it whose
+      # loss would be silent: release records a frame, retire reclaims, and nothing frees under a
+      # frame that is still reading.
+      - name: Geometry resources, and a ledger destroyed with work outstanding
+        run: just test-unit -R unit.render_geometry
+      - name: The geometry side torn down mid-flight
+        run: just test-integration -R render_geometry_teardown
+
+  # --- The two jobs M5.5 declared it could not land ----------------------------------------------
+  #
+  # m5b.toml's closing note asked for exactly these two, and said why they were not in that change:
+  # "a gate and its job land in the same change or neither does", and .github/workflows/ci.yml was
+  # not M5.5's file. They are M6's, and their gates are beside them in tools/roadmap/gates.toml.
+
+  # The half of M5.5 a hosted runner can judge: no window, no graphics device, an agent on the other
+  # end of `cyberdyne-editor --mcp`. It is a `smoke` CTest entry, so `test` runs it too — this job
+  # exists because "the agent interface still refuses what a scope does not grant" is a different
+  # claim from "the suite passed", and because the RECIPE a contributor types is run here as well.
+  agent:
+    name: agent — authoring over MCP, and what it is refused
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - name: The toolchain the editor declares
+        run: just build-editor-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: build/editor
+          key: cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-${{ github.sha }}
+          restore-keys: |
+            cy-agent-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
+            cy-agent-
+      - name: An agent composes, authors, is refused, and is told what it spent
+        run: just test-smoke -R agent_authoring
+      - name: The artefact runs through the workflow recipe
+        run: just run-agent-authoring
+
+  # THE WINDOW, AND THE ONE JOB IN THIS FILE THAT A HOSTED RUNNER CANNOT RUN. It needs an X server
+  # with XTEST, a device that can import a dma-buf with an explicit DRM format modifier, python-xlib
+  # and Pillow. GitHub's hosted images have none of them, so this is `runs-on: [self-hosted, linux,
+  # x11]`.
+  #
+  # THE GUARD IS NOT AN EXCUSE, IT IS WHAT MAKES THE JOB HONEST WHERE THE RUNNER DOES NOT EXIST. A
+  # job targeting a self-hosted label nobody has queues forever, and every pull request in a fork
+  # would look stuck rather than failing. `vars.CY_EDITOR_WINDOW_RUNNER` is set on a repository that
+  # HAS such a runner and unset everywhere else, where this job is skipped and says so. The
+  # criteria it covers carry `requires = "display"` in tools/roadmap/milestones/m5b.toml, so a
+  # machine that cannot judge them reports NOT EVALUATED rather than green — the two mechanisms
+  # answer different questions and neither replaces the other.
+  editor-window:
+    name: editor window — a person driving it, through XTEST
+    needs: build
+    if: vars.CY_EDITOR_WINDOW_RUNNER == 'true'
+    runs-on: [self-hosted, linux, x11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: The toolchain the editor declares
+        run: just build-editor-toolchain
+      - name: The window opens, is driven, and is photographed
+        run: just test-smoke -R editor_window
+      - name: The artefact runs through the workflow recipe
+        run: just run-editor-window
+
   # --- Format, static analysis, layering, and the workflow's own checks --------------------------
   quality:
     name: quality
@@ -826,6 +967,70 @@ jobs:
         run: just build-engine --profile release
       - name: Test release
         run: just test-all --profile release
+
+  # --- THE CLOSED MILESTONES' OWN CRITERIA, WHICH NOTHING RAN UNTIL M6 --------------------------
+  #
+  # M6 TASK 10.9. Seven milestone gates in tools/roadmap/gates.toml carried `state = "green"` and no
+  # job in this file ran one of them: `roadmap-milestone` appeared here in a COMMENT and nowhere
+  # else. `delivery-roadmap` puts a closed milestone's criteria into the permanent set the moment it
+  # closes and requires them to stay green, and a set nothing runs cannot go visibly red — the same
+  # failure as M2's `milestone-m1` gate never being promoted, one level up. It is also the unmet
+  # precondition that specification names for reducing the audit at M9, which is why it is closed
+  # here rather than found there. `tools/ci/check_workflows.py` now fails when a green milestone
+  # gate is unevaluated, so this job cannot quietly disappear again.
+  #
+  # ONE LEDGER, NOT SEVEN. The ledger has been flat since M5: `just roadmap-milestone m5b` evaluates
+  # M0 through M5.5 merged and deduplicated, each distinct check exactly once. Seven separate
+  # invocations would run `four-profiles` seven times, which is the multiplication the flattening
+  # removed and which `check_workflows.gate_coverage` therefore does not ask for.
+  #
+  # IT NAMES THE NEWEST *CLOSED* MILESTONE, AND THAT LINE MOVES WHEN A MILESTONE CLOSES. When
+  # `milestone-m6` flips from `joins-on-close` to `green`, `m5b` below becomes `m6` in the same
+  # commit; `just ci-check` fails until it does, which is the same forcing function `just
+  # roadmap-test` already applies to the flip itself. gates.toml says so beside that gate.
+  #
+  # WHAT IT COSTS, PLAINLY, AND WHAT THAT COSTS IN TURN. This is the most expensive job in the file:
+  # M5.5's ledger is 112 criteria and contains `four-profiles`, a build and a full test of all four
+  # configurations. On the machine M6's gate ran it, one pass took hours. So it runs on the nightly
+  # schedule, on `workflow_dispatch`, and on a **push to `main`** — not on every pull request.
+  #
+  # BE CLEAR ABOUT WHAT THAT WEAKENS. `delivery-roadmap` puts a closed milestone's criteria in the
+  # permanent set and requires them to stay green, and the permanent set is a MERGE gate. This job
+  # catches a regression within a day of merging rather than before merging, which is less than the
+  # requirement asks for and much more than the nothing that ran until M6. The reason it is not
+  # blocking is not principle but arithmetic: a merge gate that takes four hours is a merge gate
+  # people route around, and the alternative to a slow gate is not a fast one, it is an override.
+  #
+  # What makes the reduction defensible rather than convenient is that most of the ledger's WORK is
+  # already blocking through other jobs — `build`, `test`, `profiles`, `quality`, `specs`,
+  # `generated`, `identity` and `roadmap` run the same recipes on every pull request. What this job
+  # adds that nothing else does is the artefact recipes, the tier records, and the ledger's own
+  # arithmetic. Narrowing it to a post-merge and nightly run is recorded here so the next milestone
+  # can widen it rather than rediscover it.
+  milestone:
+    name: milestone — the closed milestones' exit criteria
+    needs: build
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 480
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - name: Install the generator and the window-system headers SDL3 builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
+      - name: Install the pinned LLVM tooling and the specification CLI
+        run: |
+          pip install clang-format==22.1.8 clang-tidy==22.1.8
+          npm install -g @fission-ai/openspec@latest
+      - name: The exit criteria of every closed milestone, evaluated once each
+        run: just roadmap-milestone m5b --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

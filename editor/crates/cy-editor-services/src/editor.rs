@@ -73,23 +73,45 @@ impl Editor {
     /// A new editor with no documents, no selection and no runtime.
     #[must_use]
     pub fn new(actor: Actor) -> Self {
+        let project = ProjectService::default();
+        let mut documents = DocumentService::new();
+        // Rooted from the start, not only when a project is named — otherwise an editor started the
+        // way the artefacts start it would open every world empty. But rooted only when the working
+        // directory SAYS it is a project: `ProjectService::default()` roots at wherever the process
+        // was launched, and treating that as a project means an editor started in a source tree
+        // saves worlds into it. That is not hypothetical; see `ProjectService::is_declared`.
+        if project.is_declared() {
+            documents.rooted_at(project.root());
+        }
         Self {
-            documents: DocumentService::new(),
+            documents,
             selection: SelectionService::new(),
             workspace: Workspace::new(),
             notifications: NotificationService::new(),
             operations: OperationService::new(),
             runtime: RuntimeSession::none(),
             viewports: ViewportService::new(),
-            project: ProjectService::default(),
+            project,
             actor,
             permitted: unrestricted(),
         }
     }
 
     /// Point the editor at a project on disk.
+    ///
+    /// The documents learn the root at the same moment, because a document service that did not
+    /// know where the project was is precisely the state M5.5 shipped: `open` produced a name and
+    /// an empty schema, and there was nowhere for a world to come from.
+    ///
+    /// Under the same rule [`Editor::new`] applies, and deliberately not a looser one: a project is
+    /// a directory that says it is one. Two rules — a strict one for the implicit root and a lax one
+    /// for a named root — would mean the editor wrote worlds in one configuration and not the other,
+    /// which is exactly the kind of difference nobody finds until it matters.
     #[must_use]
     pub fn with_project(mut self, project: ProjectService) -> Self {
+        if project.is_declared() {
+            self.documents.rooted_at(project.root());
+        }
         self.project = project;
         self
     }
@@ -115,8 +137,14 @@ impl Editor {
     /// and the user decides, because an editor that recovered without asking would overwrite work
     /// somebody had decided to abandon.
     pub fn open_document(&mut self, primary_asset: &str) -> Result<DocumentId> {
-        let (id, recovery) = self.documents.open(primary_asset)?;
+        let (id, recovery, report) = self.documents.open_reporting(primary_asset)?;
         self.workspace.opened(id);
+        if report.nodes > 0 {
+            self.notifications.post(Notification::info(format!(
+                "Opened {primary_asset}: {} node(s), {} component type(s)",
+                report.nodes, report.types
+            )));
+        }
         if let Some(recovery) = recovery {
             // "Has", not "recovered": nothing has been replayed. `Document::recover` is what
             // replays, and it is called only when somebody accepts the offer.

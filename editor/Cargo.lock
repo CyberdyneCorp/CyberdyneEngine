@@ -809,6 +809,7 @@ dependencies = [
  "cy-editor-core",
  "cy-editor-documents",
  "cy-editor-interface",
+ "cy-editor-protocol",
  "cy-editor-reflection",
  "cy-editor-services",
  "cy-editor-viewmodels",

@@ -1,5 +1,12 @@
 # Build output
-build/
+#
+# ANCHORED to the repository root, and that matters. An unanchored `build/` matches a directory of
+# that name at ANY depth, and M6 added `tools/build/` — the derivation graph and build service — which
+# git then ignored in its entirety: six thousand lines of source that `git status` did not mention and
+# no commit could contain. `/build/` is `build/<profile>/`, which is what CMakePresets.json creates
+# and all this line ever meant; a build tree somewhere else is still caught by CMakeCache.txt,
+# CMakeFiles/ and _deps/ below.
+/build/
 out/
 cmake-build-*/
 .cache/
@@ -28,7 +35,7 @@ CMakeUserPresets.json
 *.local
 
 # --- Build trees and caches -----------------------------------------------------------------------
-# `build/<profile>/` is where CMakePresets.json puts every configuration, so `build/` above covers
+# `build/<profile>/` is where CMakePresets.json puts every configuration, so `/build/` above covers
 # the normal case. What follows covers the tools' own caches and the trees a different entry point
 # creates.
 

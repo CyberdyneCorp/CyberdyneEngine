@@ -194,3 +194,35 @@ What it draws and what it refuses to draw:
 * **The default workspace is the arrangement of `docs/design/images/editor-rts-desertfrontier.png`.**
   Three references exist and they differ; `crates/cy-editor-shell/src/lib.rs` says which is shipped
   and why.
+
+## Worlds, and what M6 changed about opening one
+
+At M5.5 the editor was real and had nothing to edit. Its own gate wrote it down: *"`DocumentService::open`
+calls `Document::new` — a name and an EMPTY SCHEMA — because there is no world loader."* Nothing was
+selectable, no `Transform` bound, the inspector correctly reported that nothing was described, and a
+gizmo drag committed nothing.
+
+M6 task 2.4 closed it from the **engine's** end. Two files, one grammar, and
+`crates/cy-editor-services/src/worldfile.rs` reads both:
+
+| File | First line | Written by |
+|---|---|---|
+| `types.cytypes` | `cyschema 1` | The engine, from its own `cy::reflect::TypeRegistry` (`cy::scene::serialization::write_authoring_schema`). Committed per project and regenerated-and-compared by `cy_test_unit_scene_serialization`. |
+| `<world>.cyworld` | `cyworld 1` | The editor, by `file.save`. Carries the schema it was written against, then its nodes. |
+
+Three consequences, each of which is a test rather than an intention:
+
+* **`TransformBinding::of_schema` finds a `Transform`**, because the manifest names one — and it is
+  the engine's `LocalTransform`, grouped into `translation`, `rotation` and `scale` and aliased once.
+* **`scene.create-entity` gives a new entity that transform**, so a created object is somewhere
+  rather than nowhere and a gizmo has something to move.
+* **`file.save` writes the world**, which M5's own source said was "the serialisation layer's, at a
+  later task". A second editor opens what the first wrote and finds the same values and no recovery
+  to offer.
+
+`crates/cy-editor-services/tests/a_person_opens_a_world_and_saves_it.rs` is that sequence end to end
+with no window, and `samples/05b-editor-window` is the same sequence through synthesised X11 input.
+
+**A load is not an edit.** Opening a world applies its content through a transaction — that is the
+only write path there is — and then forks the document, which is what leaves it clean with an empty
+history. Undo may not take a world away.

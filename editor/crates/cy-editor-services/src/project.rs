@@ -176,6 +176,9 @@ impl Default for ProjectService {
 }
 
 impl ProjectService {
+    /// The file a directory carries to say it is a project. `tools/project/project.py` validates it.
+    pub const MANIFEST: &'static str = "project.json";
+
     /// A project at `root`, with `game/` as its script sources and the Swift module builder.
     ///
     /// The builder is the real one by default rather than a stub, because a capability that is off
@@ -213,6 +216,35 @@ impl ProjectService {
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The manifest that makes a directory a project.
+    #[must_use]
+    pub fn manifest(&self) -> PathBuf {
+        self.root.join(Self::MANIFEST)
+    }
+
+    /// Whether the root **declares itself** a project, rather than merely being where the editor
+    /// happened to be started.
+    ///
+    /// **One rule, in one place: the editor reads and writes worlds in a declared project and
+    /// nowhere else.** `ProjectService::default()` roots at the working directory, so without this
+    /// an editor launched from a source tree, a home directory or `/tmp` treats that directory as a
+    /// project and saves into it — which is not hypothetical: it put a `worlds/` directory in this
+    /// repository the first time `file.save` learned to write one.
+    ///
+    /// The manifest is `tools/project/project.py`'s, and a project that has one is a project the
+    /// engine's own validator recognises. A directory that has not said it is a project is one the
+    /// editor may open documents in and may not write to.
+    #[must_use]
+    pub fn is_declared(&self) -> bool {
+        Self::declares(&self.root)
+    }
+
+    /// The same question about a path, for a caller that has one and no service.
+    #[must_use]
+    pub fn declares(root: &Path) -> bool {
+        root.join(Self::MANIFEST).is_file()
     }
 
     /// The module a reload names.

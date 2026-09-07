@@ -3,6 +3,7 @@
 #include <cy/core/assets/hash.h>
 #include <cy/core/math/scalar.h>
 #include <cy/import/json.h>
+#include <cy/import/model.h>
 
 #include <cmath>
 #include <cstring>
@@ -46,7 +47,7 @@ void put_f32(Array<u8>& out, f32 value) noexcept {
 // --- Options -------------------------------------------------------------------------------------
 
 constexpr std::string_view kUpAxisChoices[] = {"y-up", "z-up"};
-constexpr std::string_view kCollisionChoices[] = {"none", "convex", "triangle"};
+constexpr std::string_view kCollisionChoices[] = {"none", "convex", "decompose", "triangle"};
 
 constexpr OptionSpec kGltfOptions[] = {
     {"scale",
@@ -106,11 +107,43 @@ constexpr OptionSpec kGltfOptions[] = {
     {"optimise",
      OptionType::Bool,
      OptionValue::of_bool(true),
-     "Whether to reorder triangles for the post-transform vertex cache and vertices for fetch "
-     "locality. Off only to compare against an unoptimised import.",
+     "Whether to reorder triangles for the post-transform vertex cache and for overdraw, and "
+     "vertices for fetch locality. Off only to compare against an unoptimised import.",
      {},
      0.0,
      0.0},
+    {"overdraw-threshold",
+     OptionType::Float,
+     OptionValue::of_float(1.05),
+     "How much of the vertex cache's efficiency the overdraw reorder may spend, as a ratio. 1 "
+     "forbids any regression and disables the step in practice.",
+     {},
+     1.0,
+     4.0},
+    {"generate-lightmap-uvs",
+     OptionType::Bool,
+     OptionValue::of_bool(false),
+     "Whether to unwrap a second texture coordinate set for lightmapping. It costs an unwrap per "
+     "mesh and splits vertices at every chart boundary, so a project that bakes no lightmaps "
+     "should leave it off. A source that already supplies TEXCOORD_1 keeps it.",
+     {},
+     0.0,
+     0.0},
+    {"lightmap-texel-density",
+     OptionType::Float,
+     OptionValue::of_float(16.0),
+     "Texels per world unit for the generated lightmap atlas. The atlas is sized from this and "
+     "from the mesh's own surface area, so one number describes a whole project.",
+     {},
+     0.25,
+     1024.0},
+    {"lightmap-padding",
+     OptionType::Int,
+     OptionValue::of_int(2),
+     "Texels left between charts so a bilinear tap at a chart's edge cannot reach its neighbour.",
+     {},
+     0.0,
+     32.0},
     {"lod-count",
      OptionType::Int,
      OptionValue::of_int(0),
@@ -427,36 +460,6 @@ struct Document {
     return indices;
 }
 
-/// A name that has not been used yet, so two nodes called "Cube" produce two stable sub-asset names
-/// rather than one name that binds to whichever was produced last.
-[[nodiscard]] std::string unique_name(std::vector<std::string>& taken, std::string_view prefix,
-                                      std::string_view name, usize fallback_index) {
-    std::string candidate(prefix);
-    if (name.empty()) {
-        candidate += "unnamed-";
-        candidate += std::to_string(fallback_index);
-    } else {
-        candidate += name;
-    }
-    std::string attempt = candidate;
-    usize suffix = 1;
-    while (true) {
-        bool clash = false;
-        for (const std::string& existing : taken) {
-            clash = clash || existing == attempt;
-        }
-        if (!clash) {
-            taken.push_back(attempt);
-            return attempt;
-        }
-        attempt = candidate + "." + std::to_string(suffix++);
-    }
-}
-
-[[nodiscard]] bool ends_with(std::string_view text, std::string_view suffix) noexcept {
-    return suffix.size() <= text.size() && text.substr(text.size() - suffix.size()) == suffix;
-}
-
 }  // namespace
 
 // --- The cooked mesh payload ---------------------------------------------------------------------
@@ -738,8 +741,11 @@ OptionsSchema gltf_options() noexcept {
 
 ImporterInfo GltfImporter::info() const noexcept {
     ImporterInfo info;
+    // Moved at M6: the overdraw reorder is on by default, the material record is
+    // `model.h`'s shared writer, and the schema gained four options. Every glTF
+    // re-cooks, which is exactly what a version is for.
     info.name = "gltf";
-    info.version = 1;
+    info.version = 2;
     info.extensions = Span<const std::string_view>(kExtensions);
     info.produces = Span<const assets::AssetKind>(kProduces);
     info.description =
@@ -763,15 +769,10 @@ struct ImportState {
     bool z_up = false;
     bool import_meshes = true;
     bool import_materials = true;
-    f32 weld_tolerance = 1.0e-5f;
-    f32 smoothing_angle = 60.0f;
-    bool generate_tangent_basis = true;
-    bool optimise = true;
-    i64 lod_count = 0;
-    f32 lod_ratio = 0.5f;
-    f32 lod_error_bound = 0.0f;
-    std::string_view collision_suffix;
-    std::string_view collision_mode;
+    /// Everything the shared steps read. See model.h: the two model importers declare these under
+    /// the same option names on purpose, so a project that re-exports a model in the other format
+    /// keeps its settings.
+    ModelBuildOptions build;
 };
 
 /// Convert a position or a translation from the source's conventions into the engine's.
@@ -806,29 +807,37 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
     Expected<OptionValue, Error> smoothing = option("smoothing-angle");
     Expected<OptionValue, Error> tangents = option("generate-tangents");
     Expected<OptionValue, Error> optimise_option = option("optimise");
+    Expected<OptionValue, Error> overdraw = option("overdraw-threshold");
+    Expected<OptionValue, Error> lightmap = option("generate-lightmap-uvs");
+    Expected<OptionValue, Error> density = option("lightmap-texel-density");
+    Expected<OptionValue, Error> padding = option("lightmap-padding");
     Expected<OptionValue, Error> lod_count = option("lod-count");
     Expected<OptionValue, Error> lod_ratio = option("lod-ratio");
     Expected<OptionValue, Error> lod_error = option("lod-error-bound");
     Expected<OptionValue, Error> collision_suffix = option("collision-suffix");
     Expected<OptionValue, Error> collision_mode = option("collision-mode");
     if (!scale || !up || !meshes || !materials || !weld_tolerance || !smoothing || !tangents ||
-        !optimise_option || !lod_count || !lod_ratio || !lod_error || !collision_suffix ||
-        !collision_mode) {
+        !optimise_option || !overdraw || !lightmap || !density || !padding || !lod_count ||
+        !lod_ratio || !lod_error || !collision_suffix || !collision_mode) {
         return fail(ErrorCode::Internal, "the glTF importer's own option schema is inconsistent");
     }
     state.scale = static_cast<f32>(scale.value().as_float());
     state.z_up = up.value().as_text() == "z-up";
     state.import_meshes = meshes.value().as_bool();
     state.import_materials = materials.value().as_bool();
-    state.weld_tolerance = static_cast<f32>(weld_tolerance.value().as_float());
-    state.smoothing_angle = static_cast<f32>(smoothing.value().as_float());
-    state.generate_tangent_basis = tangents.value().as_bool();
-    state.optimise = optimise_option.value().as_bool();
-    state.lod_count = lod_count.value().as_int();
-    state.lod_ratio = static_cast<f32>(lod_ratio.value().as_float());
-    state.lod_error_bound = static_cast<f32>(lod_error.value().as_float());
-    state.collision_suffix = collision_suffix.value().as_text();
-    state.collision_mode = collision_mode.value().as_text();
+    state.build.weld_tolerance = static_cast<f32>(weld_tolerance.value().as_float());
+    state.build.smoothing_angle = static_cast<f32>(smoothing.value().as_float());
+    state.build.generate_tangent_basis = tangents.value().as_bool();
+    state.build.optimise = optimise_option.value().as_bool();
+    state.build.overdraw_threshold = static_cast<f32>(overdraw.value().as_float());
+    state.build.generate_lightmap_uvs = lightmap.value().as_bool();
+    state.build.uv2.texel_density = static_cast<f32>(density.value().as_float());
+    state.build.uv2.padding = static_cast<u32>(padding.value().as_int());
+    state.build.lod_count = lod_count.value().as_int();
+    state.build.lod_ratio = static_cast<f32>(lod_ratio.value().as_float());
+    state.build.lod_error_bound = static_cast<f32>(lod_error.value().as_float());
+    state.build.collision_suffix = collision_suffix.value().as_text();
+    state.build.collision_mode = collision_mode.value().as_text();
 
     // --- 1. Parse.
     std::string_view json_text;
@@ -938,48 +947,52 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
     }
 
     // --- 9. Materials.
-    std::vector<std::string> taken_names;
+    //
+    // The record is `model.h`'s `StandardMaterial`, written by the one function both model
+    // importers write it with: glTF's metallic-roughness and FBX's PBR maps are two spellings of
+    // one model, and two records would mean the same asset re-exported cooks to different bytes.
+    // Texture references are NOT in it — the pipeline resolves them by `AssetId` through the asset
+    // database, which is what makes "a referenced texture moves and no re-import is needed" true.
+    SubAssetNames names;
     std::vector<std::string> material_names;
     const JsonRef material_array = json.member(root, "materials");
     for (usize index = 0; index < json.size(material_array); ++index) {
         const JsonRef material = json.at(material_array, index);
         const std::string_view name = json.string_or(json.member(material, "name"), "");
-        std::string stable = unique_name(taken_names, "material/", name, index);
+        std::string stable = names.unique("material/", name, index);
         material_names.push_back(stable);
         if (!state.import_materials) {
             continue;
         }
-        // The cooked material is the standard material's parameters as a small record. Texture
-        // references are by URI: the pipeline resolves a URI to an `AssetId` through the asset
-        // database, which is what makes "a referenced texture moves and no re-import is needed"
-        // true.
-        Array<u8> payload;
+        StandardMaterial record;
         const JsonRef pbr = json.member(material, "pbrMetallicRoughness");
         const JsonRef base_colour = json.member(pbr, "baseColorFactor");
-        put_u32(payload, 1);  // the material record's own version
         for (usize lane = 0; lane < 4; ++lane) {
-            put_f32(payload, static_cast<f32>(json.number_or(json.at(base_colour, lane), 1.0)));
+            record.base_colour[lane] =
+                static_cast<f32>(json.number_or(json.at(base_colour, lane), 1.0));
         }
-        put_f32(payload, static_cast<f32>(json.number_or(json.member(pbr, "metallicFactor"), 1.0)));
-        put_f32(payload,
-                static_cast<f32>(json.number_or(json.member(pbr, "roughnessFactor"), 1.0)));
+        record.metallic = static_cast<f32>(json.number_or(json.member(pbr, "metallicFactor"), 1.0));
+        record.roughness =
+            static_cast<f32>(json.number_or(json.member(pbr, "roughnessFactor"), 1.0));
         const JsonRef emissive = json.member(material, "emissiveFactor");
         for (usize lane = 0; lane < 3; ++lane) {
-            put_f32(payload, static_cast<f32>(json.number_or(json.at(emissive, lane), 0.0)));
+            record.emissive[lane] = static_cast<f32>(json.number_or(json.at(emissive, lane), 0.0));
         }
         const std::string_view alpha_mode =
             json.string_or(json.member(material, "alphaMode"), "OPAQUE");
-        u32 alpha_code = 0;
         if (alpha_mode == "BLEND") {
-            alpha_code = 2;
+            record.alpha_mode = 2;
         } else if (alpha_mode == "MASK") {
-            alpha_code = 1;
+            record.alpha_mode = 1;
         }
-        put_u32(payload, alpha_code);
-        put_f32(payload,
-                static_cast<f32>(json.number_or(json.member(material, "alphaCutoff"), 0.5)));
-        put_u32(payload, json.bool_or(json.member(material, "doubleSided"), false) ? 1U : 0U);
+        record.alpha_cutoff =
+            static_cast<f32>(json.number_or(json.member(material, "alphaCutoff"), 0.5));
+        record.double_sided = json.bool_or(json.member(material, "doubleSided"), false);
 
+        Array<u8> payload;
+        if (Status written = write_cooked_material(record, payload); !written) {
+            return written;
+        }
         if (Status added = out.add(assets::AssetKind::Material, stable, std::move(payload), false);
             !added) {
             return added;
@@ -998,7 +1011,7 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
     for (usize index = 0; index < json.size(mesh_array); ++index) {
         const JsonRef source_mesh = json.at(mesh_array, index);
         const std::string_view name = json.string_or(json.member(source_mesh, "name"), "");
-        mesh_names.push_back(unique_name(taken_names, "mesh/", name, index));
+        mesh_names.push_back(names.unique("mesh/", name, index));
         built_meshes.emplace_back();
         if (!state.import_meshes) {
             continue;
@@ -1166,90 +1179,15 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
             built.uv2.clear();
         }
 
-        // --- 3. Generate what is missing, then 2's welding, then 4's optimisation.
-        if (built.normals.empty()) {
-            if (Status generated = generate_normals(built, state.smoothing_angle); !generated) {
-                return generated;
-            }
+        // --- 3, 2 and 4: generate what is missing, weld, then optimise. 5: the level-of-detail
+        // chain. Both are `model.h`'s, shared with the FBX importer so that one mesh exported in
+        // two formats welds to one vertex count and cooks to one set of bytes.
+        if (Status finished = finish_mesh(built, state.build, out, mesh_names.back()); !finished) {
+            return finished;
         }
-        WeldOptions weld_options;
-        weld_options.position_tolerance = state.weld_tolerance;
-        if (Expected<usize, Error> merged = weld(built, weld_options); !merged) {
-            return make_unexpected(merged.error());
-        }
-        if (state.generate_tangent_basis && !built.uvs.empty()) {
-            if (Status generated = generate_tangents(built); !generated) {
-                return generated;
-            }
-        }
-        if (state.optimise) {
-            if (Status ordered = optimise_vertex_cache(built); !ordered) {
-                return ordered;
-            }
-            if (Status ordered = optimise_vertex_fetch(built); !ordered) {
-                return ordered;
-            }
-        }
-
-        Array<u8> payload;
-        if (Status written = write_cooked_mesh(built, payload); !written) {
-            return written;
-        }
-        if (Status added =
-                out.add(assets::AssetKind::Mesh, mesh_names.back(), std::move(payload), false);
-            !added) {
-            return added;
-        }
-
-        // --- 5. The level-of-detail chain, each level simplified from the one above it.
-        //
-        // Each level starts from the level above rather than from the full-detail mesh, which is
-        // what makes a chain of 0.5 ratios halve, quarter and eighth rather than three times
-        // producing the same half.
-        MeshData level;
-        for (i64 lod = 1; lod <= state.lod_count; ++lod) {
-            if (lod == 1) {
-                // Round-tripped through the cooked form rather than copied, because `MeshData` is
-                // move-only by construction — its arrays are the engine's, whose copy is named and
-                // fallible — and the payload is a byte-exact copy that already exists.
-                Array<u8> copy;
-                if (Status written = write_cooked_mesh(built, copy); !written) {
-                    return written;
-                }
-                if (Status read = read_cooked_mesh(Span<const u8>(copy.data(), copy.size()), level);
-                    !read) {
-                    return read;
-                }
-            }
-            SimplifyOptions simplify_options;
-            simplify_options.target_ratio = state.lod_ratio;
-            simplify_options.error_bound = state.lod_error_bound;
-            Expected<SimplifyReport, Error> reduced = simplify(level, simplify_options);
-            if (!reduced) {
-                return make_unexpected(reduced.error());
-            }
-            if (reduced.value().bounded) {
-                if (Status reported = out.report(
-                        ImportSeverity::Info, "lod-error-bound",
-                        "a level of detail stopped short of its target because the next collapse "
-                        "exceeded the error bound; the level is larger rather than damaged",
-                        mesh_names.back());
-                    !reported) {
-                    return reported;
-                }
-            }
-            Array<u8> lod_payload;
-            if (Status written = write_cooked_mesh(level, lod_payload); !written) {
-                return written;
-            }
-            std::string lod_name = mesh_names.back();
-            lod_name += "/lod";
-            lod_name += std::to_string(lod);
-            if (Status added =
-                    out.add(assets::AssetKind::Mesh, lod_name, std::move(lod_payload), false);
-                !added) {
-                return added;
-            }
+        if (Status emitted = emit_mesh_with_lods(built, mesh_names.back(), state.build, out);
+            !emitted) {
+            return emitted;
         }
 
         built_meshes.back() = std::move(built);
@@ -1288,7 +1226,6 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
         }
     }
 
-    std::vector<std::string> collision_names;
     /// The glTF mesh each node came from, kept beside `nodes` so a collision node can be built from
     /// the SOURCE mesh after the walk rather than from whatever it was simplified to.
     std::vector<i32> node_source_mesh;
@@ -1352,8 +1289,9 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
 
         // "WHEN a node is named with the configured collision suffix THEN a collider SHALL be
         // generated from it and the node excluded from rendering."
-        if (!state.collision_suffix.empty() && ends_with(node.name, state.collision_suffix) &&
-            state.collision_mode != "none" && node.mesh >= 0) {
+        if (!state.build.collision_suffix.empty() &&
+            ends_with(node.name, state.build.collision_suffix) &&
+            state.build.collision_mode != "none" && node.mesh >= 0) {
             node.collision_only = true;
             node.mesh = -1;
         }
@@ -1370,7 +1308,9 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
         }
     }
 
-    // --- 6. Collision, from the source mesh and never from a level of detail.
+    // --- 6. Collision, from the source mesh and never from a level of detail. `model.h`'s, shared
+    // with the FBX importer.
+    usize colliders = 0;
     for (usize index = 0; index < nodes.size(); ++index) {
         ImportedNode& node = nodes[index];
         const i32 source_mesh = node_source_mesh[index];
@@ -1382,64 +1322,19 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
         if (source.indices.empty()) {
             continue;
         }
-
-        MeshData collider;
-        if (state.collision_mode == "convex") {
-            if (Status hulled = convex_hull(source, collider); !hulled) {
-                if (Status reported = out.report(
-                        ImportSeverity::Warning, "collision-hull-failed",
-                        "a convex hull could not be built from this node — it is flat or has fewer "
-                        "than four points — so its triangles were kept as they are",
-                        node.name);
-                    !reported) {
-                    return reported;
-                }
-                collider.clear();
-            }
+        std::string collider_name = "collision/";
+        collider_name += node.name;
+        Expected<usize, Error> emitted = emit_collision(source, collider_name, state.build, out);
+        if (!emitted) {
+            return make_unexpected(emitted.error());
         }
-        if (collider.indices.empty()) {
-            // Triangle mode, and the fallback when a hull cannot be built. Round-tripped through
-            // the cooked form for the reason the level-of-detail chain does it: `MeshData` is
-            // move-only and this needs a copy.
-            Array<u8> copy;
-            if (Status written = write_cooked_mesh(source, copy); !written) {
-                return written;
-            }
-            if (Status read = read_cooked_mesh(Span<const u8>(copy.data(), copy.size()), collider);
-                !read) {
-                return read;
-            }
-            // A collider carries positions and topology and nothing else: normals, texture
-            // coordinates and tangents are render data, and shipping them would double a collision
-            // asset for information no solver reads.
-            collider.normals.clear();
-            collider.uvs.clear();
-            collider.uv2.clear();
-            collider.tangents.clear();
-            collider.sections.clear();
+        if (emitted.value() != 0) {
+            node.collision = static_cast<i32>(colliders);
+            ++colliders;
         }
-
-        std::string name = "collision/";
-        name += node.name;
-        collision_names.push_back(name);
-        Array<u8> payload;
-        if (Status written = write_cooked_mesh(collider, payload); !written) {
-            return written;
-        }
-        if (Status added = out.add(assets::AssetKind::Mesh, name, std::move(payload), false);
-            !added) {
-            return added;
-        }
-        node.collision = static_cast<i32>(collision_names.size()) - 1;
     }
 
-    Array<u8> graph;
-    if (Status written =
-            write_cooked_scene_graph(Span<const ImportedNode>(nodes.data(), nodes.size()), graph);
-        !written) {
-        return written;
-    }
-    return out.add(assets::AssetKind::Prefab, "prefab", std::move(graph), true);
+    return emit_prefab(Span<const ImportedNode>(nodes.data(), nodes.size()), out);
 }
 
 }  // namespace cy::import

@@ -1,9 +1,24 @@
 # `deps/`
 
-`manifest.toml` is the single source of truth for third-party dependencies. Each entry records name,
-version, exact commit, licence and licence file, upstream URL, the engine-owned interface it sits
-behind, the feature option that gates it, whether a system copy is acceptable, what links it, and one
-line of justification. The file's own header documents every field and the format's restrictions.
+Three records, one per kind of dependency, and between them every piece of third-party software the
+project depends on:
+
+| File | What it records | Read by |
+|---|---|---|
+| `manifest.toml` | code the build fetches and links | `cmake/dependencies.cmake`, `tools/deps/manifest.py` |
+| `host-tools.toml` | software the machine must already provide and the build never links | `tools/deps/manifest.py`, `just env-doctor` |
+| `rust-crates.toml` | the crates Cargo acquires for the editor | `tools/deps/rust_crates.py` |
+
+`tools/deps/attribution.py` generates `THIRD_PARTY.md` from all three, and
+`just maintenance-deps-check` fails when the document is stale or a record has drifted from what the
+build actually acquires. It runs in CI on every pull request, and `tools/deps/selftest.py` — which
+the same recipe runs — proves it can still fail, against fixtures.
+
+`manifest.toml` is the single source of truth for third-party dependencies the build fetches.
+Each entry records name, version, exact commit, licence and licence file, upstream URL, the
+engine-owned interface it sits behind, the feature option that gates it, whether a system copy is
+acceptable, what links it, and one line of justification. The file's own header documents every
+field and the format's restrictions.
 
 - `cmake/dependencies.cmake` reads it to drive `FetchContent` with pinned commits — never a branch
   and never a tag, because a tag can be moved.
@@ -11,6 +26,19 @@ line of justification. The file's own header documents every field and the forma
   fails when that file is stale, and CI runs it.
 - Disabling a feature means its dependency is not fetched, not built and not linked.
   `just maintenance-deps-test` proves it rather than asserting it.
+
+## The editor's crates
+
+`rust-crates.toml` is generated from `editor/Cargo.lock` by `just maintenance-deps-rust`, and adds
+the two things Cargo does not record: a licence identifier and a justification. The eleven crates
+the editor chose carry an argument written by a person; the rest name the chosen crates that reach
+them, which is the transitive cost `thirdparty-dependencies` requires to be part of the decision.
+Cargo.lock stays the pin — the record's versions and checksums are checked against it rather than
+maintained beside it, so the two cannot disagree without the gate saying so.
+
+It exists because it did not: M5.5 brought 386 crates into the tree and
+`just maintenance-deps-check` compared `THIRD_PARTY.md` against the two files above alone, so it
+reported green while every one of them was undeclared.
 
 ## Reaching a dependency from engine code
 

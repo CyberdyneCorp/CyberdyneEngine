@@ -54,3 +54,15 @@ add_subdirectory(physics)
 # and FreeType are not integrated at M5 and will live in src/backends/ when they are — no
 # third-party text type may appear above the backend, which is the rule this layer exists to keep.
 add_subdirectory(text)
+
+# The residency layer: the shared policy beneath every paged subsystem — importance, priority,
+# deadlines, budgets, pressure, eviction and churn. M6 section 4.
+#
+# Appended last, like the M4 and M5 servers before it and for the same reason: several agents land
+# modules in this file at once and the order of these lines does not matter, because every one of
+# them is a layer-2 module. Two things about this one are worth knowing here rather than in its own
+# file. It owns POLICY and not STORAGE — `residency` says a change that moves page storage into it
+# violates the requirement — so it links nothing but cy::core-base and cy::core-memory, and virtual
+# texturing depends on IT rather than the other way round. And it is not gated by an option, so its
+# suites run in every configuration.
+add_subdirectory(residency)

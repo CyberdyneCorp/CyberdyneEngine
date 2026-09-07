@@ -25,9 +25,11 @@ report    what happened, with the reason, per asset and for the run
 | `options.h` | An importer's declared option schema, the values set for one import, and the canonical form the cache key is built from |
 | `importer.h` | `Importer`, `ImportRequest`, `ImportResult`, `ImporterRegistry`, and `ImportResolver` — the seam that makes an import a pure function |
 | `sidecar.h` | The `.import` record: which importer, which options, and which id every sub-asset holds |
-| `mesh.h` | `MeshData` and the processing steps: welding, normals, tangents, vertex cache and fetch ordering, quadric-error simplification, convex hulls |
+| `mesh.h` | `MeshData` and the processing steps: welding, normals, tangents, vertex cache, overdraw and fetch ordering, quadric-error simplification, convex hulls, convex decomposition, and the xatlas-backed lightmap unwrap |
+| `model.h` | The half of a model import that does not depend on the source format: `finish_mesh`, `emit_mesh_with_lods`, `emit_collision`, `emit_prefab`, and the `StandardMaterial` record both model importers write |
 | `texture.h` | Image decoding, format selection from declared usage, mip generation in the correct colour space, alpha coverage, and the mistake detector |
 | `gltf.h` | glTF 2.0 and GLB, and the two cooked payload formats a model import produces |
+| `fbx.h` | FBX via ufbx: the same interface, the same option names, and every post-parse step shared with `gltf.h` through `model.h` |
 | `json.h` | A strict JSON reader, written to be deleted when a glTF dependency is integrated |
 | `pipeline.h` | The driver: the cache, the sidecars, the parallel phase, cancellation and the report |
 | `report.h` | Per-asset rows and the project-level summary `asset-import-pipeline` asks for |
@@ -45,18 +47,47 @@ over it. The assertions worth making — which sub-assets a glTF produced, what 
 which diagnostic a mis-tagged normal map raised — are on `ImportResult` and `ImportReport`, not on an
 exit code. This is the same split `tools/cook/` made for the same reason.
 
+## What M6 added
+
+**FBX imports** (task 8.1). `tools/import` handled glTF alone through M5; FBX had been specified and
+unimplemented since then. `src/fbx.cpp` is the only translation unit in the tree that names a `ufbx_`
+symbol, and everything after the parse — welding, tangent generation, the optimisers, the level-of-
+detail chain, collision from the naming convention, the node table — is `model.h`'s and is shared
+with the glTF importer. That sharing is the point rather than tidiness: without it, one mesh exported
+in two formats would weld to two vertex counts and cook to two sets of bytes.
+
+**The lightmap unwrap, the overdraw reorder and convex decomposition** (task 8.2). Three of the six
+steps `asset-import-pipeline` names under "Mesh processing" were missing at M5. `src/unwrap.cpp` is
+the only translation unit that names an `xatlas` symbol.
+
+**Cook profiles select content, and report what they removed** (task 8.3). `profile_retains()` is the
+whole policy, in one function: a `DedicatedServer` cook keeps prefabs and collision meshes and drops
+textures, materials and render meshes, and the report says how many bytes that saved. Exclusion
+happens at PUBLICATION and not at import, so an id does not move between a client cook and a server
+cook — a prefab in the server package references a mesh by the id the client package uses.
+
+**A cook can refuse to invent an identity** (`--no-mint`, design.md §1.7). `assets::mint_asset_id()`
+draws 128 random bits, and M6 is the milestone at which an `AssetId` reaches the inside of a payload —
+from which point two cold builds of one project stop producing the same bytes. A shipping or CI cook
+passes `--no-mint` and fails naming the asset; the remedy is to commit the `.import` sidecar, which
+should have happened anyway.
+
 ## What it deliberately does not do
 
-* **It links no third-party parser or encoder.** meshoptimizer, cgltf and the block encoders are all
-  named by `thirdparty-dependencies` and none is integrated at M5. `deps/manifest.toml`'s header says
-  why, states what each omission costs, and names the file each library lands behind. Every gap is
-  reported by the code that has it — a diagnostic naming the missing decoder, a
-  `CookedTexture::encoded = false` written into the payload — rather than approximated.
+* **It links no simplification library or block encoder.** meshoptimizer and the BC7/ASTC encoders
+  are named by `thirdparty-dependencies` and neither is integrated. ufbx and xatlas ARE, from M6, and
+  `deps/manifest.toml` carries both. That file's header says what each remaining omission costs and
+  names the file the library lands behind. Every gap is reported by the code that has it — a
+  diagnostic naming the missing decoder, a `CookedTexture::encoded = false` written into the payload
+  — rather than approximated.
 * **It reads Targa and not PNG.** PNG needs a DEFLATE decoder and JPEG a DCT one. `decode_image`
   fails with a message naming which dependency would read the file.
 * **It does not import skeletons or animations.** `animation-and-skinning` reaches Working at M8 and
-  there is nothing to import a rig *into* before it; a glTF carrying skins is imported for its meshes
-  and materials with a diagnostic naming what was skipped.
+  there is nothing to import a rig *into* before it; a glTF or FBX carrying skins is imported for its
+  meshes and materials with a diagnostic naming what was skipped.
+* **It does not import USD.** `asset-import-pipeline` makes USD "an optional, tool-time-only
+  importer" and `thirdparty-dependencies` calls OpenUSD "a large dependency, so editor and cooker
+  only". It is not in `deps/manifest.toml` and M6 does not add it.
 * **It does not produce a `cy::scene` prefab.** A prefab is a layer-4 concept over an ECS world, and
   a layer-7 tool that constructed one would have to instantiate a world to write a file. The importer
   produces a documented flat node table; turning it into a prefab is the cook step's.

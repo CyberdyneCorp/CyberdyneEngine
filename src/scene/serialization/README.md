@@ -73,6 +73,35 @@ known columns rather than a reflection lookup per row; the spike measured the al
   `TransformBinding` names a component and one opaque field holding a `cy::Transform`. When the
   generator learns about vectors this becomes three field descriptors and nothing else changes.
 
+## The authoring schema, and how an editor in another process sees the engine's components
+
+`authoring_schema.h` is M6 task 2.4. It reads `cy::reflect::TypeRegistry` and writes a deterministic
+text manifest — `cyschema 1` — that the editor reads with no engine in the process at all. Before it,
+`DocumentService::open` produced a name and an empty schema, so nothing in a document was described:
+nothing was selectable, no `Transform` bound, and a gizmo drag committed nothing.
+
+Two rules do the work, and both are in the header's own note:
+
+* **Consecutive scalar lanes with a common dotted prefix are grouped.** Reflection describes
+  `LocalTransform` as ten `f32` fields named `value.rotation.x` … `value.scale.z`; an inspector
+  generated from that is ten spin boxes and a gizmo has nothing to bind to. The group takes the
+  identifier of its **first** lane, so an override or a history entry addressing it still names the
+  same bytes.
+* **One alias, declared rather than derived.** The ECS component is `cy::scene::LocalTransform` and
+  the authoring concept a designer moves is `Transform`. Deriving that — stripping a `Local` prefix,
+  say — would be a rule that silently renames the next component somebody adds.
+
+`samples/05b-editor-window/project/types.cytypes` is the committed manifest, and
+`cy_test_unit_scene_serialization` regenerates it and compares byte for byte. That is what stops a
+project's schema drifting away from the engine that has to load its worlds; it is the same shape
+`just generate-check` uses for the reflection headers.
+
+**What is still the editor's rather than the engine's.** The *world* file the editor reads and writes
+(`cyworld 1`, `cy_editor_services::worldfile`) is not this module's `cydoc` form. They are two
+authoring representations of overlapping things, and reconciling them — teaching the engine's
+`Document` reader to load what the editor saved, or the editor to read `cydoc` — is not done. Recorded
+here rather than left to be discovered, because the two will otherwise drift.
+
 ## The dependency list, and why it is not `cy::scene`
 
 The scaffold declared this module against `cy::scene`, and it does not use it: cooking reads

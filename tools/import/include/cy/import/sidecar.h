@@ -159,8 +159,17 @@ private:
 /// wrong. `out_ids` is filled in `result.assets()` order and must have room for all of them;
 /// `out_minted` reports how many were new, which is what a report shows and what a test asserts is
 /// zero on a second import of an unchanged source.
+///
+/// `policy` is `MintPolicy::Refuse` for a cook that must be reproducible. It is a REQUIRED argument
+/// rather than one with a default because the default is the dangerous answer: minting is what
+/// makes two cold builds of one project differ, and a caller that has not thought about it should
+/// be made to. See `MintPolicy` in importer.h for why M6 is the milestone that cares.
+///
+/// Refusing fails with `PermissionDenied` and names the first sub-asset that would have been
+/// minted, so the diagnostic says which sidecar is missing rather than that something is.
 [[nodiscard]] Status bind_sub_assets(ImportRecord& record, const ImportResult& result,
-                                     Span<cy::AssetId> out_ids, usize& out_minted) noexcept;
+                                     Span<cy::AssetId> out_ids, usize& out_minted,
+                                     MintPolicy policy) noexcept;
 
 }  // namespace cy::import
 

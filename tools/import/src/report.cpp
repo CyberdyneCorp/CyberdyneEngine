@@ -60,6 +60,22 @@ usize ImportReport::total_cooked_bytes() const noexcept {
     return total;
 }
 
+usize ImportReport::total_excluded_sub_assets() const noexcept {
+    usize total = 0;
+    for (const AssetImportOutcome& row : rows_) {
+        total += row.excluded_sub_assets;
+    }
+    return total;
+}
+
+usize ImportReport::total_excluded_bytes() const noexcept {
+    usize total = 0;
+    for (const AssetImportOutcome& row : rows_) {
+        total += row.excluded_bytes;
+    }
+    return total;
+}
+
 usize ImportReport::cache_hits() const noexcept {
     usize total = 0;
     for (const AssetImportOutcome& row : rows_) {
@@ -163,6 +179,16 @@ usize ImportReport::format(char* out, usize capacity) const noexcept {
     (void)std::snprintf(line, sizeof(line), "cache:  %zu hit, %zu miss, %zu invalidated\n",
                         cache_hits(), cache_misses(), invalidations());
     line_of(line);
+    // "Each cook SHALL report what was excluded and the resulting size by category, so accidental
+    // inclusions are visible." The line is printed only when a profile actually excluded something,
+    // because a `Client` cook that reported "0 excluded" every time would train a reader to skip
+    // the line that matters on a server cook.
+    if (total_excluded_sub_assets() != 0) {
+        (void)std::snprintf(line, sizeof(line),
+                            "profile: %zu sub-asset(s) excluded, %zu byte(s) saved\n",
+                            total_excluded_sub_assets(), total_excluded_bytes());
+        line_of(line);
+    }
 
     const AssetImportOutcome* ranked_rows[5] = {};
     const usize largest_count = largest(5, Span<const AssetImportOutcome*>(ranked_rows));

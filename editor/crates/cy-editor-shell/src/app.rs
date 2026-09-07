@@ -446,7 +446,11 @@ impl eframe::App for EditorWindow {
         self.editor.pump();
         self.attach_viewport();
         if let Some(render_state) = frame.wgpu_render_state() {
-            self.link.begin_frame(render_state);
+            // The focused viewport is handed in because claiming a frame and LEARNING that one
+            // arrived are the same event — see `ViewportLink::begin_frame`, which is where M5.5's
+            // recorded defect was.
+            self.link
+                .begin_frame(render_state, self.editor.viewports.focused_mut());
         }
 
         // 3: what moved, rebuilt — and measured, which is what the Profiler panel reports.

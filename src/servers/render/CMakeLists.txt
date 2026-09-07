@@ -45,3 +45,25 @@ cy_add_module(
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
+
+# --- M6's two additions, as submodules rather than as more sources above -------------------------
+#
+# `rendering-culling-and-lod` reaches Working and `rendering-geometry-and-resources` reaches Complete
+# at M6, and both grew enough surface to be their own libraries: the GPU culling records and the
+# depth pyramid in culling/, and skinning, blend shapes, dynamic geometry and the GPU memory ledger
+# in geometry/. They are separate targets rather than more entries in the SOURCES list above for one
+# concrete reason — a consumer that wants the instance model should not link the depth pyramid, and
+# `cy_add_module`'s dependency graph is what makes that visible in a review.
+#
+# Both are layer 2 like their parent, both name no device, and both depend on cy::servers-render
+# because they read the records it publishes.
+add_subdirectory(culling)
+add_subdirectory(geometry)
+
+# CyberTexture, in its own module beside this one rather than inside it. M6 section 5.
+#
+# It depends on cy::servers-residency and this module deliberately does not: the render server is
+# what every module above reaches for the scene model, and a transitive dependency on the residency
+# policy from here would put that policy in every translation unit that draws anything. The
+# subdirectory's own CMakeLists.txt argues the rest.
+add_subdirectory(virtual_texturing)

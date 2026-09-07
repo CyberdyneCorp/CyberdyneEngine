@@ -259,7 +259,12 @@ _cpp-roots *paths:
     @[ -n "{{paths}}" ] && echo "{{paths}}" || echo "src platform modules tests benchmarks samples editor bindings tools"
 
 # Every C and C++ file under those roots, one per line. Build trees are excluded by name rather than
-# by location, because a developer's build/ is not always where the presets put it.
+# by location, because a developer's build/ is not always where the presets put it — but a directory
+# named `build*` is pruned only when it actually IS a build tree, which is what the CMakeCache.txt
+# beside it says. M6 added `tools/build/`, the derivation graph and build service, and a bare name
+# match made all fourteen of its translation units invisible to `just quality-format` and
+# `just quality-format-check` with no diagnostic whatsoever. A formatting gate that silently skips a
+# directory is the same defect class M1 paid for: green because it looked at nothing.
 #
 # `.build` is the Swift package manager's scratch directory, and it is named here for the same
 # reason: `swift build` in bindings/swift/ checks out swift-syntax into it, whose C shim headers are
@@ -279,7 +284,8 @@ _cpp-files *paths:
     for target in $(just _cpp-roots {{paths}}); do
         [ -e "${target}" ] || continue
         find "${target}" \
-            \( -type d \( -name 'build*' -o -name '.build' -o -name '.git' -o -name '_deps' \) -prune \) -o \
+            \( -type d \( -name '.build' -o -name '.git' -o -name '_deps' \) -prune \) -o \
+            \( -type d -name 'build*' -exec test -e '{}/CMakeCache.txt' \; -prune \) -o \
             \( -type d -path '*/layercheck/fixtures' -prune \) -o \
             -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' -o -name '*.c' \
                      -o -name '*.h' -o -name '*.hpp' -o -name '*.inl' \) -print

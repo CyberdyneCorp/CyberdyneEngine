@@ -29,14 +29,17 @@ pub mod authoring;
 pub mod builtin;
 pub mod documents;
 pub mod editor;
+pub mod gizmo;
 pub mod manipulate;
 pub mod notifications;
 pub mod operations;
+pub mod picking;
 pub mod project;
 pub mod runtime;
 pub mod selection;
 pub mod viewports;
 pub mod workspace;
+pub mod worldfile;
 
 // Re-exported so that a view model can say which mode the engine is in without naming the SDK. A
 // view model that depended on `cy-editor-sdk` would be a presentation crate holding the one crate
@@ -52,3 +55,4 @@ pub use runtime::RuntimeSession;
 pub use selection::SelectionService;
 pub use viewports::ViewportService;
 pub use workspace::{ViewState, Workspace};
+pub use worldfile::{LoadReport, write_world};

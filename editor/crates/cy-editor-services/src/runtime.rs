@@ -109,6 +109,42 @@ impl RuntimeSession {
         session.apply(transaction, when)
     }
 
+    /// Ask the attached runtime what is under the pointer. M6 task 2.6.
+    ///
+    /// **Picking is the engine's**, because what is picked has to match what was rendered — virtual
+    /// geometry, instancing, foliage, terrain and skinning are all things the editor has no
+    /// description of. M5.5 built both ends and no wire between them; this is the wire.
+    ///
+    /// Refused with a remedy when there is no runtime, exactly as [`RuntimeSession::apply`] is: a
+    /// click in an editor with no engine attached is an ordinary thing to do and the answer is
+    /// "start one", not an error the caller must treat as a failure of the click.
+    pub fn pick(&self, frame: cy_editor_protocol::FrameId, request: Vec<u8>) -> Result<RequestId> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new("resolve a pick", "no runtime is attached")
+                .with_remedy("start a runtime; picking is resolved against the frame it rendered")
+        })?;
+        session.pick(frame, request)
+    }
+
+    /// Ask the attached runtime to draw a gizmo and to say where it drew it. M6 task 2.7.
+    ///
+    /// `editor-viewport-and-gizmos` gives the engine "gizmo geometry generation, depth handling, and
+    /// screen-constant sizing" and leaves the editor "intent and manipulation state". This carries
+    /// the intent; `crate::gizmo::accept` takes the answer.
+    pub fn gizmo(&self, viewport: u64, intent: Vec<u8>) -> Result<RequestId> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new("ask for a gizmo", "no runtime is attached")
+                .with_remedy("start a runtime; the gizmo is drawn by the engine, not by the editor")
+        })?;
+        let request = session.next_request();
+        session.send(&Message::GizmoIntent {
+            request,
+            viewport,
+            intent,
+        })?;
+        Ok(request)
+    }
+
     /// Ask the attached runtime to load a newly built generation of a script module.
     ///
     /// Task 3.7. Refused with a remedy when there is no runtime, for the same reason
@@ -125,6 +161,22 @@ impl RuntimeSession {
             )
         })?;
         session.reload(module, library, generation)
+    }
+
+    /// Wait, up to `timeout`, for an event the caller recognises.
+    ///
+    /// The one place the editor may wait, and it is not on the interface thread: a test and a
+    /// scripted session both need "the runtime answered request 7" as a single statement, and the
+    /// alternative — polling in a loop at every call site — is where a flake comes from. The
+    /// interactive path never calls this; it calls [`RuntimeSession::pump`] once per frame.
+    pub fn block_until<T>(
+        &self,
+        timeout: std::time::Duration,
+        accept: impl FnMut(&SessionEvent) -> Option<T>,
+    ) -> Option<T> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.block_until(timeout, accept))
     }
 
     /// Advance the editor's frame counter, which every request is keyed by.

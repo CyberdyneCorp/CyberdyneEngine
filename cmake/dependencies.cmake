@@ -393,6 +393,44 @@ function(cy__configure_blake3)
     set(BLAKE3_USE_TBB OFF CACHE BOOL "" FORCE)       # the engine's own job system parallelises this
 endfunction()
 
+# --- Dependencies that ship no CMake project ------------------------------------------------------
+#
+# `asset-import-pipeline`'s two source-format libraries — ufbx and xatlas — are each one translation
+# unit and a header in a tree with no CMakeLists.txt. FetchContent populates them happily; what it
+# cannot do is produce a target, and the acquisition loop below fails naming the missing one, which
+# is the right failure for a dependency whose upstream target was renamed and the wrong one here.
+#
+# `cy__provide_<name>(source_dir)` is the hook that closes it. It runs after population and BEFORE
+# the target check, so a single-file dependency is declared exactly where every other one is
+# configured, with the same manifest entry, the same pin, the same attribution row, and the same
+# `cy::dep::<name>` seam above it. What it must NOT become is a place to build a dependency that
+# does ship a CMake project: four lines here in place of somebody's tested build is how a fetch
+# turns into a fork.
+#
+# Both targets are declared with `SYSTEM` include directories and are not linked to
+# cy::compile-options, which is this file's first rule: third-party sources are not compiled under
+# the engine's warning policy.
+
+function(cy__provide_ufbx source_dir)
+    add_library(ufbx STATIC "${source_dir}/ufbx.c")
+    target_include_directories(ufbx SYSTEM PUBLIC "${source_dir}")
+    # ufbx reads a file it is handed and never opens one itself here — the importer is given bytes
+    # (tools/import/include/cy/import/importer.h) — so its stdio-backed convenience layer is dead
+    # weight in this build. It stays compiled rather than being switched off: UFBX_NO_STDIO is a
+    # configuration upstream tests less than the default, and the cost is a few kilobytes.
+    #
+    # The threaded loader is left off. Import parallelism is the job system's, one asset per job
+    # (`asset-import-pipeline`: "Import SHALL run in parallel on the job system"), and a library
+    # spawning its own threads underneath that would contend with it for the same cores.
+    set_target_properties(ufbx PROPERTIES C_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
+endfunction()
+
+function(cy__provide_xatlas source_dir)
+    add_library(xatlas STATIC "${source_dir}/source/xatlas/xatlas.cpp")
+    target_include_directories(xatlas SYSTEM PUBLIC "${source_dir}/source/xatlas")
+    set_target_properties(xatlas PROPERTIES CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+endfunction()
+
 # Everything that has to happen after the dependency's targets exist.
 function(cy__finalise_doctest target)
     # doctest's REQUIRE family reports a failure by throwing. With -fno-exceptions in force it must
@@ -466,6 +504,10 @@ foreach(_cy_id IN LISTS _cy_to_fetch)
             "dependency ${_cy_id} is not present in ${FETCHCONTENT_BASE_DIR} and downloading is "
             "disabled (FETCHCONTENT_FULLY_DISCONNECTED). Populate the cache with one connected "
             "configure, or point CY_DEPS_CACHE at a cache that already has it.")
+    endif()
+    # The single-file dependencies. See cy__provide_<name> above.
+    if(COMMAND cy__provide_${_cy_id})
+        cmake_language(CALL cy__provide_${_cy_id} "${${_cy_id}_SOURCE_DIR}")
     endif()
 endforeach()
 

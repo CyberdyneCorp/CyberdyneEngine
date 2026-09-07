@@ -19,6 +19,9 @@ use cy_editor_core::ids::NodeId;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_documents::selection::Selection;
+use cy_editor_viewport::gizmo::{Transform3, TransformBinding};
+
+use crate::project::ProjectService;
 
 /// Register the editor's built-in commands.
 ///
@@ -76,7 +79,9 @@ fn create_entity() -> Command {
                 .document_mut(id)
                 .ok_or_else(|| Problem::not_found("the active document"))?;
             let node = document.with_transaction("Create entity", actor, |document| {
-                document.create_node(parent)
+                let node = document.create_node(parent)?;
+                place(document, node)?;
+                Ok(node)
             })?;
 
             let mut selection = Selection::new();
@@ -85,6 +90,38 @@ fn create_entity() -> Command {
 
             Ok(Outcome::new("Created an entity").with("entity", Value::Text(node.to_string())))
         },
+    )
+}
+
+/// Give a new entity the transform the document's schema describes, if it describes one.
+///
+/// An entity with no transform cannot be placed, cannot be framed, and cannot be dragged: the gizmo
+/// binds to a component and there is none. Before M6 the schema was empty and this could not have
+/// been written; now that a world carries its schema, "Create Entity" means an entity that is
+/// somewhere rather than an entity that is nowhere.
+///
+/// A document whose schema declares no transform still creates the entity. That is not a fallback
+/// with a hidden cost — it is the honest answer for a document kind that has no spatial meaning,
+/// and `TransformBinding` exists precisely so the answer is a lookup rather than a hard-coded rule.
+fn place(
+    document: &mut cy_editor_documents::Document,
+    node: cy_editor_core::ids::NodeId,
+) -> Result<()> {
+    let Some(binding) = TransformBinding::of_schema(document.schema()) else {
+        return Ok(());
+    };
+    let identity = Transform3::default();
+    document.add_component(
+        node,
+        binding.component,
+        vec![
+            (
+                binding.translation,
+                Value::Vec3(identity.translation.to_array()),
+            ),
+            (binding.rotation, Value::Quat(identity.rotation.to_array())),
+            (binding.scale, Value::Vec3(identity.scale.to_array())),
+        ],
     )
 }
 
@@ -247,14 +284,29 @@ fn save() -> Command {
         .bound_to("Ctrl+S"),
         |context, _| {
             let id = active(context)?;
+            // The root is read BEFORE the document is borrowed mutably, and it is what turns a save
+            // into a file. M5.5 wrote "writing the assets themselves is the serialisation layer's,
+            // at a later task"; this is that task, and `crate::worldfile` is that layer.
+            let root = context.project().map(|project| project.project_root());
             let document = context
                 .document_mut(id)
                 .ok_or_else(|| Problem::not_found("the active document"))?;
-            // Writing the assets themselves is the serialisation layer's, at a later task. What is
-            // implemented here is the *sequence*, which is the part with a correctness argument:
-            // the journal is reset only after the write reports success.
-            document.save(|_| Ok(()))?;
-            Ok(Outcome::new("Saved"))
+            let asset = document.assets().first().cloned().unwrap_or_default();
+            // The sequence is the part with a correctness argument: the journal is reset only after
+            // the write reports success, so a failed write leaves the work recoverable.
+            // ONE RULE, THE SAME ONE THE DOCUMENTS ARE ROOTED BY: a project is a directory that
+            // says it is one. Without it a save writes a world wherever the editor happened to be
+            // started, which put a `worlds/` directory in this repository the first time this
+            // command learned to write one — see `ProjectService::is_declared`.
+            let target = root
+                .map(std::path::PathBuf::from)
+                .filter(|root| !asset.is_empty() && ProjectService::declares(root))
+                .map(|root| root.join(&asset));
+            document.save(|document| match &target {
+                Some(path) => crate::worldfile::write_to(document, path),
+                None => Ok(()),
+            })?;
+            Ok(Outcome::new("Saved").with("asset", Value::Text(asset)))
         },
     )
     .available_when(|context| match context.active_document() {

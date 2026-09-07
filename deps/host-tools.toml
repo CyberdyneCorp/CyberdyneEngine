@@ -6,8 +6,14 @@
 # deps/manifest.toml records code the build **acquires and links**: cmake/dependencies.cmake fetches
 # each entry with FetchContent and wraps it in a `cy::dep::<name>` target. This file records
 # software the build **requires to be already on the machine** and never links: the reflection
-# generator's C++ frontend. Both are third-party software with a version, a licence and a
-# justification, and `thirdparty-dependencies` wants both written down.
+# generator's C++ frontend, and — since M6 — the Rust toolchain the editor is compiled with. Both
+# are third-party software with a version, a licence and a justification, and
+# `thirdparty-dependencies` wants both written down.
+#
+# THE THIRD RECORD. deps/rust-crates.toml holds the editor's Rust CRATES: code Cargo acquires and
+# links into the editor binary, which is neither of the two things above. tools/deps/rust_crates.py
+# reads it and checks it against editor/Cargo.lock; this file holds the COMPILER, which is a host
+# prerequisite in exactly the sense this file means.
 #
 # WHY THESE ARE NOT [[dependency]] ENTRIES. cmake/dependencies.cmake parses deps/manifest.toml
 # directly — it cannot use a TOML library — and every table it reads becomes a FetchContent_Declare
@@ -54,9 +60,11 @@
 #   upstream       where the software comes from.
 #   licence        SPDX identifier.
 #   licence_file   path to the full licence text in the upstream tree.
-#   required       true when the engine cannot be built without it. Both entries here are false:
-#                  the generated metadata is committed, so a clone builds and tests without them and
-#                  only regeneration needs them.
+#   required       true when the engine cannot be built without it. Every entry here is false, and
+#                  each for its own reason: the generated metadata is committed, so a clone builds
+#                  and tests without the generator's frontend; and the engine is C++, so it builds
+#                  and its whole suite passes with no Rust toolchain present. What each one is
+#                  needed FOR is `checked_by`.
 #   consumer       the engine file that loads it. One place, so a version bump has one edit site.
 #   checked_by     the gate that fails when it is absent and something needed it.
 #   install_linux, install_macos, install_windows
@@ -94,3 +102,42 @@ install_linux = "sudo apt install libclang1-18"
 install_macos = "brew install llvm@18"
 install_windows = "winget install LLVM.LLVM"
 justification = "The C++ frontend the bindings above load. Taken from the host rather than fetched because building LLVM is hours of build time for a library only the generator uses, and every supported platform packages it."
+
+# --- THE MINIMUM SUPPORTED RUST VERSION, WHICH WAS A HARD REQUIREMENT AND NOT A DECLARATION -------
+#
+# M5.5 raised the editor's MSRV from 1.92 to 1.95 because the interface toolkit it chose refuses to
+# build below it, and pinned 1.95.0 in rust-toolchain.toml, in editor/Cargo.toml's `rust-version`
+# and on every continuous-integration leg that runs Cargo — and in no table anybody audited. That is
+# word for word the omission this file's own header was written about: the reflection generator's
+# frontend pins "lived in tools/gen/reflect/parse.py and in .github/workflows/ci.yml and in no table
+# anybody audited, which is how they stayed undeclared through a whole milestone". The same thing
+# then happened to a compiler. `check_host_tool_pins` is what stops it happening a third time: the
+# version below must appear in rust-toolchain.toml, so bumping one without the other is a gate
+# failure rather than a discovery.
+#
+# `required = false` is the honest value and not a convenience. The field means the ENGINE cannot be
+# built without it, and the engine is C++: `just build-engine` and `just test-all` need no Rust at
+# all. What needs it is the editor — `just build-editor`, `just build-all` and `just run-editor` —
+# and a clone that only builds the engine is a supported thing to do.
+#
+# One thing this entry does NOT yet do, and it is a defect rather than a decision: `just env-doctor`
+# reports it as "not installed" on a machine that has the toolchain, because `_doctor-host-tools`
+# in just/env.just switches on `kind` and has no `toolchain` branch to probe with `cargo --version`.
+# The declaration is still worth having without the probe — the pin check above is the half that
+# catches drift — but the branch is a one-recipe follow-up, and env-doctor's own summary still says
+# "rust, cargo — not checked yet" from M0.
+[[host_tool]]
+name = "rust"
+version = "1.95.0"
+kind = "toolchain"
+package = "rust 1.95.0, with rustfmt and clippy"
+upstream = "https://github.com/rust-lang/rust"
+licence = "Apache-2.0 OR MIT"
+licence_file = "LICENSE-APACHE"
+required = false
+consumer = "rust-toolchain.toml"
+checked_by = "just build-editor"
+install_linux = "rustup toolchain install 1.95.0"
+install_macos = "rustup toolchain install 1.95.0"
+install_windows = "rustup toolchain install 1.95.0"
+justification = "The editor is a Rust application, and 1.95.0 is a hard minimum rather than a preference: the interface toolkit M5.5 selected does not compile below it. The toolchain is taken from the host because a compiler is not something a build fetches, and it is pinned rather than floating so that a compiler release is a reviewed change like every other dependency."

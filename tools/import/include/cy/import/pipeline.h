@@ -99,6 +99,12 @@ struct ImportSettings {
     /// Force a re-import even on a cache hit. For diagnosing the cache itself, and for a gate that
     /// wants to prove a cold cook works.
     bool ignore_cache = false;
+    /// Whether this cook may invent an asset identity. M6 task 8.3, design.md §1.7.
+    ///
+    /// `Mint` is the editor's and a first import's. `Refuse` is a shipping cook's and continuous
+    /// integration's: it fails naming the asset rather than drawing 128 random bits that make two
+    /// cold builds of one project produce different bytes. See `MintPolicy` in importer.h.
+    MintPolicy minting = MintPolicy::Mint;
 };
 
 /// Runs importers, and is the only thing that writes to the project.
@@ -168,7 +174,7 @@ private:
     std::atomic<usize> total_{0};
 };
 
-/// Register the importers this build ships: glTF and texture.
+/// Register the importers this build ships: glTF, FBX and texture.
 ///
 /// A separate function rather than a constructor's body, because `asset-import-pipeline` requires a
 /// project to be able to register its own importers with the same weight as a built-in — so the

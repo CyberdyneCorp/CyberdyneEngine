@@ -39,17 +39,23 @@ Three observables, and none of them is "it did not crash":
      approximation could satisfy: those pixels came out of another process's GPU allocation. That
      is task 2.1 photographed rather than asserted.
 
---- WHAT THIS ARTEFACT CANNOT DO, IN ITS OWN OUTPUT ---------------------------------------------
+--- WHAT M6 CLOSED HERE, AND WHAT IT COST -------------------------------------------------------
 
-**A gizmo drag moves nothing, and it is not the viewport's fault.** Opening a document constructs an
-empty `Document` — `DocumentService::open` calls `Document::new`, a name and an empty schema —
-because there is no world loader. `TransformBinding::of_schema` therefore finds no `Transform`, so
-the gizmo has nothing to bind to and a drag over the viewport commits nothing. The drag act below
-performs the drag anyway, asserts that nothing was committed, and reports the gap by name. It will
-report the drag as satisfied the day opening a world produces content.
+At M5.5 this file recorded a gap in its own output: *a gizmo drag moves nothing, and it is not the
+viewport's fault.* `DocumentService::open` called `Document::new` — a name and an empty schema —
+because there was no world loader, so `TransformBinding::of_schema` found no `Transform` and a drag
+committed nothing.
 
-That is the same rule samples/05-editor-session set at M5: an artefact that quietly narrows its
-claim to what happens to work reports a milestone as closed that is not.
+M6 task 2.4 closed it from the engine's end rather than the editor's. `types.cytypes` in the project
+is the engine's own type registry, written by `cy::scene::serialization::write_authoring_schema` and
+regenerated and compared byte for byte by `cy_test_unit_scene_serialization`; the editor reads it in
+`cy_editor_services::worldfile`. So the schema an opened document has is the ENGINE'S component
+types, `scene.create-entity` gives every new entity the `Transform` that schema describes, and
+`file.save` writes the world back as `worlds/city.cyworld`. Acts 3 and 5 below are what say so.
+
+The rule this file has kept since M5 is unchanged: an artefact that quietly narrows its claim to what
+happens to work reports a milestone as closed that is not. Act 3 still reports a gap rather than a
+pass if the drag commits nothing.
 """
 
 from __future__ import annotations
@@ -502,8 +508,13 @@ def act_select(session: Session, report: Report) -> None:
     report.did("selection by pointer", f"clicked the first outliner row at ({x}, {y})")
 
 
-def act_drag(session: Session, journal: Path, shots: Path, report: Report) -> None:
-    """The gizmo drag. An OPEN STEP — see the module note."""
+def act_drag(session: Session, journal: Path, shots: Path, rows: int, report: Report) -> int:
+    """The gizmo drag, and the undo that takes it back. M6 task 2.8.
+
+    Returns how many transactions the journal holds afterwards, which the later acts count from
+    rather than assuming: a drag that commits makes the total four, and a drag that does not leaves
+    it at three. Hard-coding either would make this act's outcome decide whether act 5 passes.
+    """
     before = journal_records(journal)
     session.ensure_focus()
     session.key("w")  # Move
@@ -513,21 +524,52 @@ def act_drag(session: Session, journal: Path, shots: Path, report: Report) -> No
     after = journal_records(journal)
     session.capture(shots / "03-drag.png")
     report.shot(shots / "03-drag.png")
-    if after > before:
-        report.did("a gizmo drag is one transaction", f"{after - before} transaction recorded")
-        return
-    report.gap(
-        "the gizmo drag",
-        "the drag committed nothing, because the document's schema declares no Transform: opening "
-        "a document builds an empty one (DocumentService::open calls Document::new) and there is "
-        "no world loader, so TransformBinding::of_schema finds nothing to bind to. The gizmo, its "
-        "three states, its snapping and its one-transaction rule are held by cy-editor-viewport's "
-        "own tests against a document that declares a Transform",
+    if after == before:
+        report.gap(
+            "the gizmo drag",
+            "the drag committed nothing. The document's schema now declares the engine's component "
+            "types — types.cytypes, written by cy::scene::serialization::write_authoring_schema — "
+            "so TransformBinding::of_schema finds a Transform and scene.create-entity gives every "
+            "new entity one. A drag that still commits nothing means the pointer did not land on a "
+            "gizmo handle, not that there is nothing to bind to",
+        )
+        return after
+
+    expect(
+        after == before + 1,
+        f"the drag committed {after - before} transactions; a manipulation is exactly one",
     )
+    # AND IT UNDOES. Task 2.8 is "drags a gizmo, undoes", and the undo of a transform is observed
+    # differently from the undo of a creation: a transform change is not structural, so the
+    # outliner must NOT move. That is the assertion — the same keystroke, a different observable.
+    expect(
+        press_for(session, "z", ("Control_L",), lambda: True) > 0,
+        "Ctrl+Z after a gizmo drag did nothing at all",
+    )
+    settled = rows_in_hierarchy(session)
+    expect(
+        settled == rows,
+        f"undoing a gizmo drag changed the outliner from {rows} to {settled} rows; a transform is "
+        "not a structural change",
+    )
+    expect(
+        journal_records(journal) == after,
+        "undo rewrote the journal; it is an append-only record of what was committed",
+    )
+    # Put it back, so the rest of the session runs against the world the drag made.
+    session.key("z", ("Control_L", "Shift_L"))
+    report.did(
+        "a gizmo drag is one transaction, and it undoes",
+        f"{after - before} transaction recorded, Ctrl+Z left the outliner at {settled} rows and "
+        "the journal at its append-only length",
+    )
+    return after
 
 
-def act_undo(session: Session, journal: Path, shots: Path, rows: int, report: Report) -> None:
-    """Undo and redo, observed where a person observes them."""
+def act_undo(
+    session: Session, journal: Path, shots: Path, rows: int, committed: int, report: Report
+) -> None:
+    """Undo and redo of a STRUCTURAL change, observed where a person observes them."""
     session.ensure_focus()
     # Polled from the outliner's rectangle alone rather than from the whole window: a full capture
     # per poll is most of what this loop costs, and a deadline generous in seconds becomes a deadline
@@ -544,7 +586,7 @@ def act_undo(session: Session, journal: Path, shots: Path, rows: int, report: Re
         f"Ctrl+Z left the outliner at {after_undo} row(s), unchanged from {rows}",
     )
     expect(
-        journal_records(journal) == 3,
+        journal_records(journal) == committed,
         "undo rewrote the journal; it is an append-only record of what was committed",
     )
     expect(
@@ -564,7 +606,7 @@ def act_undo(session: Session, journal: Path, shots: Path, rows: int, report: Re
     report.did(
         "undo and redo through the keyboard",
         f"{rows} rows, {after_undo} after Ctrl+Z, {after_redo} after Ctrl+Shift+Z; the journal "
-        "stayed at 3 records, which is what an append-only record of commits should do",
+        f"stayed at {committed} records, which is what an append-only record of commits should do",
     )
 
 
@@ -594,10 +636,15 @@ def act_palette(session: Session, shots: Path, report: Report) -> None:
     )
 
 
-def act_save(session: Session, journal: Path, shots: Path, report: Report) -> None:
-    """Save, and the journal discarded only after it succeeded."""
+def act_save(
+    session: Session, journal: Path, shots: Path, committed: int, world: Path, report: Report
+) -> None:
+    """Save, and the journal discarded only after it succeeded — and the world written to disk."""
     session.ensure_focus()
-    expect(journal_records(journal) == 3, "the document should have three committed transactions")
+    expect(
+        journal_records(journal) == committed,
+        f"the document should have {committed} committed transactions",
+    )
     # Saving twice is harmless — the second is refused, because `file.save` is unavailable while the
     # document is clean — so this press is the one that may safely be re-sent on a busy machine.
     expect(
@@ -611,9 +658,26 @@ def act_save(session: Session, journal: Path, shots: Path, report: Report) -> No
         records == 0,
         f"Ctrl+S left {records} record(s) in the journal; file.save discards it after the write",
     )
+    # THE FILE. Before M6 `file.save` wrote nothing at all — "writing the assets themselves is the
+    # serialisation layer's, at a later task" — so the journal emptying was the whole observable.
+    # Now the world is on disk, and the second editor in act_recover reads it back.
+    expect(
+        until(world.is_file, seconds=10.0, poll=0.25),
+        f"file.save discarded the journal and wrote no world at {world}",
+    )
+    text = world.read_text()
+    expect(
+        text.startswith("cyworld 1\n"),
+        f"the world it wrote is not a world: {text[:40]!r}",
+    )
+    expect(
+        'runtime "Transform"' in text,
+        "the world carries the schema it was written against, so a second editor can read it",
+    )
     report.did(
         "saved through the keyboard",
-        "the journal went from 3 records to 0, which is the sequence file.save is responsible for",
+        f"the journal went from {committed} records to 0, and {world.name} was written: "
+        f"{len(text.splitlines())} lines, carrying the schema it was written against",
     )
 
 
@@ -802,13 +866,13 @@ def main() -> int:
         print("--- act 2: a person authors, keyboard first ---")
         rows = act_author(session, journal, shots, report)
         act_select(session, report)
-        print("--- act 3: a gizmo drag ---")
-        act_drag(session, journal, shots, report)
+        print("--- act 3: a gizmo drag, and the undo that takes it back ---")
+        committed = act_drag(session, journal, shots, rows, report)
         print("--- act 4: undo, redo, and the palette ---")
-        act_undo(session, journal, shots, rows, report)
+        act_undo(session, journal, shots, rows, committed, report)
         act_palette(session, shots, report)
         print("--- act 5: save, and a second editor that confirms it ---")
-        act_save(session, journal, shots, report)
+        act_save(session, journal, shots, committed, root / WORLD, report)
         if options.shot:
             act_reference(session, Path(options.shot), report)
         if options.hold:

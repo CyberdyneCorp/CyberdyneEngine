@@ -224,6 +224,34 @@ impl Session {
         Ok(request)
     }
 
+    /// The next request identifier, for a caller composing a message of its own.
+    ///
+    /// Public because the identifier and the message have to be issued together, and a caller that
+    /// invented its own number would collide with this session's — which shows up as a reply matched
+    /// to the wrong request, days later, in a session with a runtime attached.
+    pub fn next_request(&self) -> RequestId {
+        RequestId::from_raw(self.next_request.fetch_add(1, Ordering::AcqRel))
+    }
+
+    /// Ask the runtime what is under the pointer, against the frame that was on screen.
+    ///
+    /// `pick` is a `cy_editor_viewport::picking::PickRequest`, already encoded — this crate does not
+    /// know what one is and must not, because `cy-editor-viewport` depends on it. The frame is named
+    /// separately so a runtime can refuse a stale request without decoding anything.
+    ///
+    /// Does not block. The answer arrives as [`Message::Picked`] carrying the same request, exactly
+    /// as an `Apply` is answered by an `Applied` — a click that blocked the interface thread on the
+    /// runtime would be the frozen editor this whole transport exists to avoid.
+    pub fn pick(&self, frame: FrameId, pick: Vec<u8>) -> Result<RequestId> {
+        let request = RequestId::from_raw(self.next_request.fetch_add(1, Ordering::AcqRel));
+        self.send(&Message::Pick {
+            request,
+            frame,
+            pick,
+        })?;
+        Ok(request)
+    }
+
     /// Ask the runtime to load a newly built generation of a script module.
     ///
     /// Queued like every other message and answered by a [`Message::Reloaded`] carrying the same

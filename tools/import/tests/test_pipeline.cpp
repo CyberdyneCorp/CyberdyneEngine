@@ -510,6 +510,119 @@ CY_TEST_CASE("pipeline: deleting the cache costs a re-cook and nothing else") {
     CY_CHECK(again.value().id == cold.value().id);
 }
 
+// --- Cook profiles ------------------------------------------------------------------------------
+//
+// M6 task 8.3. `asset-import-pipeline` — "Cook profiles".
+
+CY_TEST_CASE("profile: a dedicated-server cook excludes rendering content and reports the saving") {
+    // "WHEN a `DedicatedServer` cook runs THEN textures, shaders, and VFX assets SHALL be excluded,
+    // and the report SHALL show what was removed and the size saved."
+    Harness harness("profile_server");
+    write_file(harness.project + "/textures/stone.tga", targa(200));
+
+    ImportPipeline client(harness.registry, harness.cache);
+    harness.configure(client);
+    ImportSettings settings;
+    const auto cooked = client.import_file(Harness::path("textures/stone.tga"), settings);
+    CY_REQUIRE(cooked.has_value());
+    CY_CHECK(cooked.value().cooked_bytes > 0);
+    CY_CHECK(cooked.value().excluded_sub_assets == 0);
+
+    ImportPipeline server(harness.registry, harness.cache);
+    harness.configure(server);
+    ImportSettings server_settings;
+    server_settings.profile = CookProfile::DedicatedServer;
+    const auto trimmed = server.import_file(Harness::path("textures/stone.tga"), server_settings);
+    CY_REQUIRE(trimmed.has_value());
+    CY_CHECK(trimmed.value().excluded_sub_assets >= 1);
+    CY_CHECK(trimmed.value().excluded_bytes > 0);
+    CY_CHECK(trimmed.value().cooked_bytes == 0);
+    CY_CHECK(server.report().total_excluded_bytes() > 0);
+
+    // The report says so in words, because "accidental inclusions are visible" is about a person
+    // reading it rather than about a field being set.
+    char text[4096] = {};
+    (void)server.report().format(text, sizeof(text));
+    CY_CHECK(std::string_view(text).find("excluded") != std::string_view::npos);
+}
+
+CY_TEST_CASE("profile: collision survives a mesh exclusion, and the prefab does too") {
+    // "WHEN a mesh contributes collision geometry and is excluded from a server cook THEN its
+    // collision representation SHALL be retained."
+    CY_CHECK(profile_retains(CookProfile::DedicatedServer, cy::assets::AssetKind::Mesh,
+                             "collision/Crate_collision"));
+    CY_CHECK(
+        !profile_retains(CookProfile::DedicatedServer, cy::assets::AssetKind::Mesh, "mesh/Crate"));
+    CY_CHECK(
+        !profile_retains(CookProfile::DedicatedServer, cy::assets::AssetKind::Texture, "image"));
+    CY_CHECK(!profile_retains(CookProfile::DedicatedServer, cy::assets::AssetKind::Material,
+                              "material/Oak"));
+    CY_CHECK(
+        profile_retains(CookProfile::DedicatedServer, cy::assets::AssetKind::Prefab, "prefab"));
+    // Every other profile keeps everything, which is what makes the switch a policy rather than an
+    // accumulation of flags.
+    for (const CookProfile profile : {CookProfile::Client, CookProfile::Editor}) {
+        CY_CHECK(profile_retains(profile, cy::assets::AssetKind::Texture, "image"));
+        CY_CHECK(profile_retains(profile, cy::assets::AssetKind::Mesh, "mesh/Crate"));
+    }
+}
+
+CY_TEST_CASE("profile: an id does not move between a client cook and a server cook") {
+    // The reason exclusion happens at publication and not at import: a prefab in the server package
+    // references a mesh by the id the client package uses, so the ids must be assigned identically
+    // whatever the profile drops.
+    Harness harness("profile_ids");
+    write_file(harness.project + "/textures/stone.tga", targa(90));
+
+    ImportPipeline first(harness.registry, harness.cache);
+    harness.configure(first);
+    ImportSettings settings;
+    const auto client = first.import_file(Harness::path("textures/stone.tga"), settings);
+    CY_REQUIRE(client.has_value());
+
+    ImportPipeline second(harness.registry, harness.cache);
+    harness.configure(second);
+    ImportSettings server_settings;
+    server_settings.profile = CookProfile::DedicatedServer;
+    const auto server = second.import_file(Harness::path("textures/stone.tga"), server_settings);
+    CY_REQUIRE(server.has_value());
+    CY_CHECK(client.value().id == server.value().id);
+    // And nothing was minted the second time: the record the first cook committed is what the
+    // second read.
+    CY_CHECK(server.value().minted_ids == 0);
+}
+
+CY_TEST_CASE(
+    "profile: a cook that refuses to mint fails naming the asset, and succeeds once bound") {
+    // design.md §1.7: minting is what makes two cold builds of one project produce different bytes,
+    // and M6 is the milestone at which an id reaches the inside of a payload. A shipping cook
+    // refuses; the remedy is to commit the sidecar.
+    Harness harness("profile_mint");
+    write_file(harness.project + "/textures/stone.tga", targa(30));
+
+    ImportPipeline strict(harness.registry, harness.cache);
+    harness.configure(strict);
+    ImportSettings settings;
+    settings.minting = MintPolicy::Refuse;
+    const auto refused = strict.import_file(Harness::path("textures/stone.tga"), settings);
+    CY_CHECK(!refused.has_value());
+
+    // Import it once the ordinary way, which writes the record, then the strict cook works.
+    ImportPipeline permissive(harness.registry, harness.cache);
+    harness.configure(permissive);
+    ImportSettings mint;
+    CY_REQUIRE(permissive.import_file(Harness::path("textures/stone.tga"), mint).has_value());
+
+    ImportPipeline again(harness.registry, harness.cache);
+    harness.configure(again);
+    ImportSettings strict_again;
+    strict_again.minting = MintPolicy::Refuse;
+    strict_again.ignore_cache = true;
+    const auto accepted = again.import_file(Harness::path("textures/stone.tga"), strict_again);
+    CY_REQUIRE(accepted.has_value());
+    CY_CHECK(accepted.value().minted_ids == 0);
+}
+
 CY_TEST_CASE("live: an edited source is re-cooked and the resident asset is replaced") {
     // `live-editing` — "Live asset reload": "recompiled or reimported content SHALL replace the
     // resource behind an existing stable handle, so holders need not re-resolve". The stable handle

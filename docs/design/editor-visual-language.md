@@ -1,4 +1,4 @@
-# Cyberdyne Editor — Visual Design Language
+# CyberEngine — Editor Visual Design Language
 
 The illustrated reference for how the editor looks, what its colours mean, and what it calls things.
 
@@ -32,55 +32,60 @@ adding permanently visible interface.**
 7. **Search everywhere** — find capability instead of memorising where it was put.
 8. **Semantic colour** — colour means something or it is not used.
 9. **Non-modal** — editing stays fluid; modals are for decisions and destruction.
-10. **Cyberdyne identity** — recognisably its own product, not a reskin of another engine.
+10. **Its own identity** — recognisably CyberEngine, not a reskin of another engine.
 
 ---
 
 ## Reference: the strategy scene
 
-![Cyberdyne Editor — DesertFrontier, an RTS project](images/editor-rts-desertfrontier.png)
+![CyberEngine — DesertFrontier, an RTS project](images/editor-rts-desertfrontier.png)
 
-*`DesertFrontier — RTSGame`. A post-apocalyptic desert with a player base, harvester units,
-insectoid enemies, polluted lakes and a minimap overlay.*
+*`DesertFrontier · worlds/basin.cyworld · Live runtime`. A post-apocalyptic desert with a player
+base, harvester units, insectoid enemies, polluted lakes and a minimap overlay.*
+
+**Replaced at M6, and here is what changed.** M5.5 drove the built editor through synthesised input
+and compared it against the previous version of this image row by row
+([`samples/05b-editor-window/README.md`](../../samples/05b-editor-window/README.md), task 4.4). Three
+rows came back saying the REFERENCE was wrong, and this is the corrected one — see
+[What the references got wrong](#what-the-references-got-wrong) below for all three, and
+[How these images are made](#how-these-images-are-made) for the script that draws them.
 
 What this reference establishes, region by region:
 
 | Region | What to read from it |
 |---|---|
-| **Header** | The Cyberdyne mark at far left, application menus, project and scene name centred, then platform, configuration, `● Live`, account and settings. One row. The mark identifies; it does not dominate. |
-| **Toolbar** | Selection mode, play controls, build, transform tools, snapping, viewport options — icons with tooltips, text only where an icon would be ambiguous. Generous hit areas despite the compact row. |
-| **Left, upper** | The outliner: about thirty rows visible without crowding, permanent search at the top, per-row visibility toggles at the right edge. Dense enough for thousands of entities, scannable at a glance. |
-| **Centre** | The viewport takes roughly two thirds of the window. `Perspective`, `Lit`, `Show` float **in** it. The performance overlay sits top-left, small and unobtrusive. The minimap overlays bottom-right. |
-| **Selection** | The harvester carries a thin gold outline. It reads instantly against sunlit sand, and the material underneath is still judgeable. |
-| **Gizmo** | Translation: three large arrows, X red, Y green, Z blue, handles sized to grab without precision. |
+| **Header** | The CyberEngine mark at far left — **the product, not the publisher** — then the application menus; then, right-aligned, the project, the open document and **whether a runtime is attached**, with a live pill. One row. The mark identifies; it does not dominate. |
+| **Toolbar** | Transform tools, undo/redo/save, play and the snap increment. The built editor's row, and thinner than the previous reference's: play, snapping and the viewport options are registered commands reachable from the menus and the palette, and only what is used constantly earns permanent width. |
+| **Left, upper** | The hierarchy: about thirty rows visible without crowding, permanent search at the top, per-row visibility toggles at the right edge. Dense enough for thousands of nodes, scannable at a glance. |
+| **Centre** | The viewport takes roughly two thirds of the window. The view state — `Perspective · Lit · translate · World · Pivot · Snap` — floats **in** it. The performance overlay sits **top-left**, small and unobtrusive. The minimap overlays bottom-right. |
+| **Selection** | The harvester carries a thin gold outline. It reads instantly against sunlit sand, it does not glow, and the material underneath is still judgeable. |
+| **Gizmo** | Translation: three arrows, X red, Y green, Z blue, handles sized to grab without precision. |
 | **Orientation widget** | Top-right, three axes, nothing else — visually much quieter than the transform gizmo a few hundred pixels away. The two are never confusable. |
-| **Left, lower** | Content browser with rendered thumbnails. Every harvester, insectoid and structure is distinguishable *by its thumbnail* — this is what makes a large unit library navigable. |
-| **Centre, lower** | Asset preview beside the browser: a large render, stats, and the component list, without opening a separate editor. |
-| **Right, lower** | Console with tabs — output, messages, graph log — and a command input at its foot. |
-| **Right** | Inspector: Transform, Unit, AI, Abilities, Rendering all visible at once, sections collapsible, headers subtle. |
-| **Footer** | Content drawer, output log, command input, and `All Saved` / source-control state. Ambient, interrupting nothing. |
+| **Left, lower** | Content browser with **rendered thumbnails**. Every harvester, insectoid and structure is distinguishable *by its thumbnail* — this is what makes a large content library navigable, and it is why a grid of file icons is not a content browser. |
+| **Right** | Inspector: Transform, Unit, Behaviour, Mesh instance and Rendering visible at once, sections collapsible, headers subtle, vector fields carrying the same X red / Y green / Z blue as the handles in the viewport. |
+| **Right, lower** | **Console · Profiler · Problems**, and a command input at its foot. Three tabs, all three the engine's own words. |
+| **Footer** | Saved state, problem count and runtime state. Ambient, interrupting nothing. |
 
 ---
 
 ## Reference: the adventure scene
 
-![Cyberdyne Editor — AncientFrontier, a third-person adventure](images/editor-adventure-ancientfrontier.png)
+![CyberEngine — AncientFrontier, a third-person adventure](images/editor-adventure-ancientfrontier.png)
 
-*`AncientFrontier — AdventureGame`. A third-person character above a lake valley, with ruins,
-procedural forest, volumetric clouds and a distant castle.*
+*`AncientFrontier · worlds/valley.cyworld · Live runtime`. A third-person character above a lake
+valley, with ruins, procedural forest, volumetric clouds and a distant castle.*
 
 What this reference adds beyond the first:
 
 | Region | What to read from it |
 |---|---|
-| **Multi-selection** | The inspector states `3 Selected` / `3 Actors`, then lists the three meshes by name and type. The count and composition are explicit — never an arbitrary member's values presented as the selection's. |
-| **Universal gizmo** | Translation arrows, rotation rings and scale boxes at once, on a slender column. This is close to the density at which a universal gizmo stops being individually acquirable — the specification permits the mode and requires it to stay readable or degrade. |
-| **Vector fields** | `Location`, `Rotation`, `Scale` with X red, Y green, Z blue — the same three hues as the handles in the viewport. One axis language across the whole editor. |
-| **Materials section** | Rendered material thumbnails inline in the inspector, not swatches or file icons. |
-| **Tags** | Chips with removal affordances, plus an add control. |
-| **Centre, lower** | The visual scripting graph docked in the workspace rather than in its own window — dark surface, restrained semantic node colouring, connections traceable at working zoom. |
-| **Content browser** | Textures show their own content, materials show a representative sphere, meshes show renders. |
+| **Multi-selection** | The inspector states `3 selected` and the kind, then lists the three meshes by name. The count and composition are explicit — never an arbitrary member's values presented as the selection's. |
+| **Universal gizmo** | Translation arrows, rotation rings and scale boxes at once. This is close to the density at which a universal gizmo stops being individually acquirable — the specification permits the mode and requires it to stay readable or degrade. |
+| **Vector fields** | `Position`, `Rotation`, `Scale` with X red, Y green, Z blue — the same three hues as the handles in the viewport. One axis language across the whole editor. |
+| **Materials section** | Material slots named in the inspector rather than presented as file paths. |
+| **Centre, lower** | The **script graph** docked in the workspace rather than in a window of its own — dark surface, restrained semantic node colouring, connections traceable at working zoom. It is a *graph*, and the panel says so; the previous reference called this region a `Blueprint Log`. |
 | **Left rail** | A vertical tool rail — a second, quieter way to reach mode-level tools without spending toolbar width. |
+| **Console** | The same three tabs as the strategy scene, and the lines in it are the streaming and paging the engine actually reports: cells resident, cells prefetching, the virtual texture's mip tail. |
 
 ---
 
@@ -164,25 +169,24 @@ convention shared with every other tool in the industry.
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ◆ CYBERDYNE  Project Edit View Tools Build Debug Window Help                 │
-│                       DesertFrontier — RTSGame    Platforms  Config  ● Live  │
+│ ◆ CyberEngine  Project File Edit Scene Play Source Transform Viewport View   │
+│                DesertFrontier · worlds/basin.cyworld · Live runtime   ● live │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ ▣ Select  │ ▶ ‖ ▮ │ Build │ ✥ ↻ ⤢ │ snap │ viewport                          │
+│ Move  Rotate  Scale  Universal │ Undo  Redo  Save │ Play │ Snap 0.25 m       │
 ├───────────┬───────────────────────────────────────────────┬──────────────────┤
-│ Scene ·   │ ⌜Perspective  Lit  Show⌝            ⌜ Y       │  Inspector       │
-│ Outliner  │                                       │ Z     │                  │
-│           │                                       ●──X⌟   │  Transform       │
-│ 🔍 search │              3D VIEWPORT                      │  Static Mesh     │
-│           │                                               │  Materials       │
-│           │         (the largest single region)           │  Rendering       │
-│           │                                               │  Gameplay        │
-│           │  ⌞FPS 62.1  16.1 ms  6.2 GB⌟        ⌞minimap⌟ │  Tags            │
-├───────────┼──────────────────────────────┬────────────────┤                  │
-│ Content   │  Visual Scripting /          │ Console        │                  │
-│ Browser   │  active specialised editor   │ Profiler       │                  │
-│           │                              │ Tasks          │                  │
-├───────────┴──────────────────────────────┴────────────────┴──────────────────┤
-│ Output Log   Find in Files   Command ▸            ✓ All Saved   Source Control│
+│ Hierarchy │ ⌜Perspective · Lit · translate · World · Pivot⌝│  Inspector      │
+│           │ ⌞Frame  Draw  GPU  Cells  Mem⌟        ⌜ Y     │                  │
+│ 🔍 search │                                       │ Z     │  Transform       │
+│           │              3D VIEWPORT              ●──X⌟   │  Unit            │
+│           │                                               │  Behaviour       │
+│           │         (the largest single region)           │  Mesh instance   │
+│           │                                     ⌞minimap⌟ │  Rendering       │
+├───────────┤                                               ├──────────────────┤
+│ Content   ├───────────────────────────────────────────────┤ Console          │
+│ browser   │  Script graph / active specialised editor     │ Profiler         │
+│           │                                               │ Problems         │
+├───────────┴───────────────────────────────────────────────┴──────────────────┤
+│ All saved · No problems · Live                                Scene · Compact│
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -257,16 +261,19 @@ what the widget is for, not an exception to it.
 ![The editor scene view](images/editor-scene-view.png)
 
 This is the case the requirement exists to protect: both gizmos visible at once, and unmistakable —
-the transform gizmo large and centred with rings, planes and a centre cube; the orientation widget
-small, cornered, arrows and a cube and nothing else.
+the transform gizmo large, on the selection, with arrowheads on three coloured axes; the orientation
+widget small, cornered, thin axes with dots and nothing else. No rings, no boxes, no arrowheads on
+the widget: they are separated by SHAPE and not only by size, which is what
+`the_two_gizmos_are_unmistakable.rs` holds the built editor to.
 
-It also shows a **third layout variant**. The RTS and adventure references put the content browser
-bottom-left with the outliner above it; this one puts the hierarchy bottom-left, the project browser
-centre, and the inspector right, with the view presets and a rotation read-out floating in the
-viewport. The composition requirement fixes *regions*, not pixel positions, and all three satisfy it.
+It also shows a **third layout variant**. The strategy and adventure references put the content
+browser bottom-left with the hierarchy above it; this one gives the viewport the full width and
+docks the hierarchy bottom-left and the content browser bottom-centre, with the inspector down the
+right and a rotation read-out floating in the viewport. The composition requirement fixes *regions*,
+not pixel positions, and all three satisfy it.
 
-**The default is decided, at M5.5, and it is the RTS one.** `editor-rts-desertfrontier.png`: the
-outliner upper-left with the content browser beneath it, the viewport centre with its chrome
+**The default is decided, at M5.5, and it is the strategy one.** `editor-rts-desertfrontier.png`:
+the hierarchy upper-left with the content browser beneath it, the viewport centre with its chrome
 overlaid, the specialised editor below the viewport, the inspector down the right, and the
 diagnostics tabs beneath the inspector. `cy_editor_interface::docking::Layout::scene_editing` builds
 it, and it derives its proportions from `cy_editor_visual::chrome::Composition` rather than restating
@@ -281,7 +288,7 @@ Why that one, in the order the reasons decided it:
    below the viewport. The rail spends permanent width on a second route to mode-level tools before
    there are enough modes to need it, and the graph is M8 — so shipping it means shipping two
    regions that are empty.
-3. The editor scene view puts the project browser in the **centre-lower** region. That region is
+3. The editor scene view puts the content browser in the **centre-lower** region. That region is
    where a specialised editor goes — script graph, animation, sequencer — so a browser living there
    is displaced every time one opens. A panel that moves because of context is the one thing
    *"content adapts; position does not"* exists to prevent.
@@ -353,28 +360,79 @@ it is a copy of before they have evaluated a single feature.
 
 ---
 
-## What the mockups get wrong
+## What the references got wrong
 
-The references are concept art. They are normative about **visual language** and not about detail,
-and four things in them should not be copied:
+The references are concept art, and they are normative about **visual language** rather than about
+detail. Three faults in the previous set were not detail: they were the language itself, and M5.5
+found all three by building the editor and looking at the two side by side. **All three are
+corrected in the images above**, and they are recorded here rather than deleted, because a
+correction nobody can see is one the next reference will repeat.
 
-1. **Unreal's vocabulary throughout** — `2,341 actors`, `3 Actors`, `Static Mesh`, `BP_Harvester_A`,
-   `Blueprint Log`, `Content Drawer`. Use the table above. This is the single most important
-   correction, because terminology spreads into every panel, document and tutorial and then into
-   users' habits.
-2. **The panel labelled "World Partition"** in the adventure reference contains CPU, GPU, memory and
-   VRAM graphs. That is a profiler. World partition is a streaming capability with entirely
-   different concerns. The ambient overlay answers *is this frame affordable*; the profiler panel
-   answers *why*.
-3. **Inconsistent branding** between the two references — one uses the Cyberdyne mark, the other a
-   different symbol beside the words "CYBERDYNE EDITOR". The mark is normative.
-4. **The universal gizmo on a slender column** in the adventure reference is at the edge of
-   readability. Permitted, constrained: readable or it degrades.
+| The fault | What it said | What the images say now |
+|---|---|---|
+| **1. The publisher branded as the product** | `CYBERDYNE · ARTIFICIAL INTELLIGENCE`, `CYBERDYNE EDITOR`, `CYBERDYNE ENGINE` in the three headers | **CyberEngine**, small, far left. The product is CyberEngine and Cyberdyne is the publisher — the identity section above says so, and the built editor's header already did it correctly while the references did not. |
+| **2. Another engine's vocabulary in the console** | A `Blueprint Log` tab, `BP_` prefixes, `2,341 actors`, `Static Mesh` | **Console · Profiler · Problems**, nodes rather than actors, mesh instances rather than static meshes, a *script graph* rather than a blueprint. The vocabulary table above is the list, and `cy-editor-interface`'s own gate rejects a competing engine's product words in a registered command's prose — a reference image was the last place in this project still using them. |
+| **3. A header that said nothing about the runtime** | `DesertFrontier - RTSGame` and nothing more | The project, the open document, **and whether a runtime is attached**. From M5.5 the editor is a separate process that survives its runtime being killed, so whether one is attached is load-bearing and belongs where the eye already goes. |
+
+Two things in the references are still deliberately **not** the built editor, and both are the
+reference winning rather than the implementation:
+
+* **The performance overlay sits top-left.** The region table above says so and the images do it;
+  `cy-editor-shell` puts it bottom-left. That is an open correction against the editor, not against
+  this document.
+* **Per-row visibility toggles in the hierarchy.** `NodeState` has no visibility field, so the built
+  editor draws none. The reference keeps them, because dropping them would quietly turn a gap into a
+  decision.
+
+Two more corrections from the older set, kept here because the reasoning outlives the images:
+
+1. **A panel labelled "World Partition" holding CPU, GPU, memory and VRAM graphs.** That was a
+   profiler wearing a streaming capability's name, and world partition has entirely different
+   concerns — the ambient overlay answers *is this frame affordable*, a profiler panel answers
+   *why*. The new images carry no such panel, and the console lines in them are what the engine
+   actually reports at M6: cells resident, cells prefetching, the virtual texture's mip tail.
+2. **The universal gizmo on a slender column** is at the edge of readability. It is still there, in
+   the adventure reference, and deliberately: the specification permits the mode and requires it to
+   stay readable or degrade, and a reference that quietly dropped the hard case would stop stating
+   the constraint.
+
+## How these images are made
+
+The three references are **drawn**, by
+[`references/render_references.py`](references/render_references.py), over three plates that hold the
+viewport contents and nothing else — no interface, no text, no mark.
+
+```
+python3 docs/design/references/render_references.py            # all three
+python3 docs/design/references/render_references.py --only rts
+```
+
+That split is the point rather than a convenience. **Every string in the chrome comes from a table in
+that script**, so a reference cannot drift back into another engine's words without somebody editing
+the table; and an image nobody can regenerate is an image that decays, which is the argument
+`editor-visual-language` makes when it requires a stale reference to be *replaced rather than left to
+decay*. The plates stand for what a renderer produces, which is exactly what a reference image is
+**not** normative about — see the next section.
+
+## What was actually built
+
+Two committed screenshots, both produced by the artefacts that drove the editor rather than taken by
+hand, so both are refreshed by re-running them:
+
+| Image | What it is |
+|---|---|
+| [`editor-window-m5b.png`](images/editor-window-m5b.png) | The editor's window at M5.5, opened on a project and operated through synthesised X11 input, compositing another process's rendered image in its viewport. `just run-editor-window --shot <path>` refreshes it. |
+| [`agent-authoring-m5b.png`](images/agent-authoring-m5b.png) | The same editor at M5.5 with no window at all: an agent authoring over the Model Context Protocol. What there is to photograph is the conversation, so the transcript is rendered in this palette. `just run-agent-authoring --shot <path>` refreshes it. |
+
+Read them against the references above rather than instead of them: the references state the
+language, and these two state how much of it is built.
 
 ## What a reference image is — and is not
 
-Both scenes show volumetric clouds, procedural forests, physical skies with aerial perspective,
-water with shoreline foam, and thousands of instanced units. **None of that exists before M7–M10.**
+The three scenes show volumetric clouds, procedural forests, physical skies with aerial perspective,
+water with shoreline foam, and thousands of instanced units. **None of that exists before M7–M10**,
+and none of it is drawn by this project: the plates behind the chrome stand for what a renderer
+produces, and everything over them is drawn from a table.
 
 A reference states **visual language** — hierarchy, density, colour, chrome, composition — not
 feature completeness. Every constraint in this document is implementable at **M5**, when the editor

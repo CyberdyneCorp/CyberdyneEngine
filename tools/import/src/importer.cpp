@@ -59,6 +59,26 @@ Expected<CookProfile, Error> cook_profile_from_name(std::string_view name) noexc
     return fail(ErrorCode::InvalidArgument, "not a cook profile this build defines");
 }
 
+bool profile_retains(CookProfile profile, assets::AssetKind kind,
+                     std::string_view sub_asset_name) noexcept {
+    if (profile != CookProfile::DedicatedServer) {
+        return true;
+    }
+    // The one subset a server keeps out of an otherwise client-only asset.
+    if (sub_asset_name.starts_with(kCollisionSubAssetPrefix)) {
+        return true;
+    }
+    switch (kind) {
+        case assets::AssetKind::Prefab:
+        case assets::AssetKind::Scene:
+            // The hierarchy is gameplay data: it is what spawns, what collides and what the
+            // navigation mesh is built over.
+            return true;
+        default:
+            return false;
+    }
+}
+
 const char* import_severity_name(ImportSeverity severity) noexcept {
     switch (severity) {
         case ImportSeverity::Info:

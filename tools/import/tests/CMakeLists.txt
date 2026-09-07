@@ -65,6 +65,25 @@ function(cy_import_declare_tests)
         SOURCES "${tests_dir}/test_gltf.cpp"
         DEPENDENCIES cy::import)
 
+    # `import_fbx` is integration for the same reason `import_gltf` is: ufbx parses a real document
+    # and the mesh is then welded, tangent-generated and optimised, and the determinism case imports
+    # the same file twice to compare every byte. That is over the unit taxonomy's millisecond in the
+    # Debug profile.
+    cy_add_test(
+        NAME import_fbx
+        KIND integration
+        SOURCES "${tests_dir}/test_fbx.cpp"
+        DEPENDENCIES cy::import)
+
+    # `import_unwrap` covers the xatlas-backed lightmap unwrap, the overdraw reorder and the convex
+    # decomposition — the three mesh-processing steps M6 added. Integration because an unwrap of a
+    # mesh large enough to produce more than one chart is milliseconds of work by construction.
+    cy_add_test(
+        NAME import_unwrap
+        KIND integration
+        SOURCES "${tests_dir}/test_unwrap.cpp"
+        DEPENDENCIES cy::import)
+
     cy_add_test(
         NAME import_pipeline
         KIND integration

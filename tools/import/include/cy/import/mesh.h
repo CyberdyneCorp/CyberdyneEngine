@@ -44,6 +44,8 @@
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/array.h>
 
+#include <vector>
+
 namespace cy::import {
 
 /// One contiguous run of indices drawn with one material. The importer splits by material here
@@ -200,6 +202,121 @@ struct SimplifyReport {
 /// count, and a caller that wants at most N planes simplifies the result. Derived from the SOURCE
 /// positions rather than from any LOD, per "Collision is independent".
 [[nodiscard]] Status convex_hull(const MeshData& mesh, MeshData& out) noexcept;
+
+// --- Overdraw ------------------------------------------------------------------------------------
+
+/// Reorder triangles so that, from any direction, the ones nearest the viewer tend to be drawn
+/// first — which is what lets early-Z reject the ones behind them. M6 task 8.2.
+///
+/// `asset-import-pipeline` — "Mesh processing" names "vertex cache optimisation, overdraw
+/// optimisation, and vertex fetch optimisation" as three separate steps, and only two of them
+/// existed at M5.
+///
+/// WHAT IT DOES, AND WHAT IT COSTS. `optimise_vertex_cache` has already grouped the index list into
+/// runs of triangles that reuse each other's vertices; breaking those runs to sort by depth would
+/// win overdraw and lose more to cache misses. So this step keeps the runs and reorders THEM,
+/// sorting each run by the distance from the mesh's centroid to the run's own centroid — nearer
+/// first — and it accepts a run only while the cache efficiency it would give up stays within
+/// `threshold` of the input's. A threshold of 1.0 forbids any regression and does almost nothing; 3
+/// is the value that is worth having; below 1.0 the argument is rejected.
+///
+/// Run AFTER `optimise_vertex_cache` and BEFORE `optimise_vertex_fetch`, which is the order every
+/// step's own precondition already implies: the first produces the runs this permutes, and the last
+/// renumbers vertices into the final index order.
+///
+/// Deterministic. Ties are broken by the run's first index, never by a sort that is not stable,
+/// because two cooks of one mesh must produce one file.
+[[nodiscard]] Status optimise_overdraw(MeshData& mesh, f32 threshold) noexcept;
+
+// --- Lightmap coordinates ------------------------------------------------------------------------
+
+/// What `generate_uv2` is aiming for. M6 task 8.2.
+///
+/// `asset-import-pipeline` — "Mesh processing": "UV2 generation with configurable texel density,
+/// chart padding, and distortion limits."
+struct Uv2Options {
+    /// Texels per world unit. The atlas is sized from it and from the mesh's own surface area, so a
+    /// large object gets a large atlas at the same density rather than the same atlas at a lower
+    /// one — which is the property that makes one number describe a whole project.
+    f32 texel_density = 16.0f;
+    /// Texels left between charts, so a bilinear tap at a chart's edge cannot reach its neighbour.
+    /// Two is enough for bilinear; a lightmap that is also mip-mapped wants more.
+    u32 padding = 2;
+    /// The stretch a chart may carry before it is cut, as the ratio of the parameterised area to
+    /// the world area. 1.0 admits no stretch at all and produces a chart per triangle; the default
+    /// is the value xatlas itself defaults to.
+    f32 max_distortion = 2.0f;
+    /// Force the atlas's width and height instead of deriving them from `texel_density`. Zero
+    /// derives them, which is the normal case.
+    u32 resolution = 0;
+    /// The angle in degrees beyond which two adjacent faces are a chart boundary.
+    f32 max_chart_angle = 88.0f;
+};
+
+/// What `generate_uv2` produced.
+struct Uv2Report {
+    u32 charts = 0;
+    u32 width = 0;
+    u32 height = 0;
+    /// Vertices the unwrap had to split, because a vertex on a chart boundary needs one UV per
+    /// chart. The mesh's other attribute arrays are duplicated with it, so this is the amount by
+    /// which the vertex buffer grew.
+    usize vertices_added = 0;
+    /// The share of the atlas the charts occupy, in (0, 1]. A low number on a large atlas is the
+    /// signal that the density is too high for the shape.
+    f32 utilisation = 0.0f;
+};
+
+/// Generate the lightmap coordinate set, replacing whatever `MeshData::uv2` held.
+///
+/// This is the one step whose implementation is a third-party library rather than engine-owned:
+/// chart segmentation, parameterisation and packing are `thirdparty-dependencies`' xatlas entry,
+/// and `tools/import/src/unwrap.cpp` is the only translation unit in the tree that names an xatlas
+/// symbol.
+///
+/// UNWRAPPING CHANGES THE VERTEX BUFFER. A chart boundary is a UV discontinuity, so vertices on it
+/// are split and every other attribute array is duplicated along with them; the index list is
+/// rewritten and the sections are preserved. That is why this runs on a copy of the mesh in
+/// `finish_mesh`'s order — after welding and before the LOD chain, so every level inherits a
+/// consistent UV2 rather than each level being unwrapped separately into a different atlas.
+///
+/// Fails with `InvalidArgument` on a mesh with no triangles or with options outside their ranges.
+[[nodiscard]] Expected<Uv2Report, Error> generate_uv2(MeshData& mesh,
+                                                      const Uv2Options& options) noexcept;
+
+// --- Convex decomposition ------------------------------------------------------------------------
+
+/// What `convex_decomposition` is allowed to spend. M6 task 8.2.
+struct ConvexDecompositionOptions {
+    /// The most parts to produce. The budget `physics` requires a collision representation to hold.
+    u32 max_parts = 8;
+    /// Stop splitting a part once the volume its hull adds over the part's own bounds falls below
+    /// this share. 0.05 is "the hull is within five per cent of the shape".
+    f32 concavity_tolerance = 0.05f;
+    /// A part with fewer triangles than this is never split again.
+    u32 min_triangles = 12;
+};
+
+/// Decompose a mesh into a small set of convex hulls that together approximate it.
+///
+/// `asset-import-pipeline` — "Mesh processing": "convex hull generation and convex decomposition
+/// for collision". A single hull is wrong for anything with a hole or a concavity a character can
+/// stand in, and a triangle mesh is the collision representation a dynamic body may not have.
+///
+/// WHAT THIS IS, STATED PLAINLY. Recursive bisection: measure how far the part's own hull departs
+/// from the part, split along the axis of its bounding box that carries the most of that departure,
+/// and recurse until the budget or the tolerance stops it. It is not V-HACD — it does not voxelise
+/// and it does not search plane orientations — and on a shape whose concavity is not axis-aligned
+/// it produces more parts than V-HACD would for the same fidelity. It is deterministic, it has no
+/// dependency, and its output is a set of hulls a solver can use, which is what the requirement
+/// asks for. A project that needs V-HACD's quality integrates V-HACD behind this signature.
+///
+/// The parts are derived from the SOURCE mesh, never from a level of detail — "Collision is
+/// independent" — and are appended to `out` in a deterministic order: the split's near side before
+/// its far side, depth first.
+[[nodiscard]] Expected<usize, Error> convex_decomposition(const MeshData& mesh,
+                                                          const ConvexDecompositionOptions& options,
+                                                          std::vector<MeshData>& out) noexcept;
 
 }  // namespace cy::import
 

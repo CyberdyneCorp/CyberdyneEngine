@@ -44,10 +44,18 @@ LAYER_OF_NAME = {
     "core": 0,
     "ecs": 1,
     "servers": 2,
+    # src/save/ is layer 2: it depends on layer 0 alone and is consumed by world partition,
+    # gameplay and the editor's play mode. See src/save/CMakeLists.txt.
+    "save": 2,
     "backends": 3,
     "platform": 3,
     "scene": 4,
     "rendering": 4,
+    # CyberWorld: the spatial and persistence layer above the ECS (M6 section 3). It declares
+    # LAYER scene in cy_add_module() for the reason src/gameplay/ does — there is no `world` rung
+    # in `engine-architecture`'s table — and it is named here so that the include check covers it
+    # rather than skipping it as a directory outside the stack.
+    "world": 4,
     "runtime": 5,
     "abi": 6,
     "editor": 7,
@@ -61,10 +69,12 @@ DIRECTORY_LAYERS = {
     "src/core": 0,
     "src/ecs": 1,
     "src/servers": 2,
+    "src/save": 2,
     "src/backends": 3,
     "platform": 3,
     "src/scene": 4,
     "src/rendering": 4,
+    "src/world": 4,
     "src/runtime": 5,
     "src/abi": 6,
     "editor": 7,

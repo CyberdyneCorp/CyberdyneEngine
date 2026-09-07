@@ -26,6 +26,11 @@ each silent when lost: every distinct criterion runs ONCE however many milestone
 an earlier milestone's criteria are still IN the newest ledger so a regression against M0 still
 fails it. Chaining gave the second for free and paid for it four times over in the first.
 
+`test_ladder_rungs` covers what that inheritance is computed FROM: the rung a milestone occupies.
+M5.5 was inserted between M5 and M6 rather than appended, and while its identifier was missing from
+`record.MILESTONES` it ranked at the end of the ladder — which would have made M6's ledger drop
+every criterion M5.5 closed with, quietly, the moment M6 existed.
+
 Run directly, or through `just roadmap-test`.
 """
 
@@ -186,7 +191,8 @@ def test_record_rules(root: Path) -> None:
 # section 6. A floor rather than an equality: a ledger that grows a criterion is a ledger that got
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
-MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20}
+MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
+                    "m6": 26}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -466,6 +472,128 @@ def _check_collapse_rules() -> None:
     check("two criteria sharing an id but not a command stay two checks", len(prints) == 2)
 
 
+# --- The rung an inserted milestone takes ---------------------------------------------------------
+
+# One ledger, one criterion, nothing a fixture does not need. `run` differs per milestone because
+# `criteria.fingerprint` collapses declarations that do the same work, and a fixture whose three
+# ledgers all ran `true` would collapse into one entry and prove nothing about inheritance.
+FIXTURE_LEDGER = """\
+schema = 1
+id = "{identifier}"
+name = "{identifier}"
+
+[[criterion]]
+id = "{identifier}-own"
+describe = "the check only {identifier} declares"
+source = "selftest"
+kind = "command"
+run = "true {identifier}"
+ci_job = "lint"
+"""
+
+
+def _ladder_fixture(root: Path, identifiers: tuple[str, ...]) -> Path:
+    """A milestones/ directory holding one single-criterion ledger per identifier."""
+    directory = root / "rungs"
+    directory.mkdir(parents=True, exist_ok=True)
+    for identifier in identifiers:
+        (directory / f"{identifier}.toml").write_text(
+            FIXTURE_LEDGER.format(identifier=identifier), encoding="utf-8")
+    return directory
+
+
+def _declares(plan: criteria_module.Plan, identifier: str) -> bool:
+    """Whether a plan evaluates the criterion that only `identifier` declares."""
+    return any(entry.criterion.id == f"{identifier}-own" for entry in plan.entries)
+
+
+def test_ladder_rungs(root: Path) -> None:
+    """An INSERTED milestone takes the rung between its neighbours, and inheritance follows it.
+
+    REGRESSION, and the reason it is a test rather than a comment beside `record.MILESTONES`.
+    `implement-m5b-operable` inserted M5.5 between M5 and M6 rather than renumbering the ladder, and
+    `criteria.rung` answers `len(MILESTONES)` for an identifier the tuple does not contain — so
+    while `m5b` was missing from it, M5.5's ledger sorted to the END of the ladder, ABOVE M6.
+
+    That was invisible while nothing sat above M5.5, and it stops being invisible the moment M6
+    exists: `build_plan` inherits exactly the closed milestones whose rung is BELOW the target's, so
+    a mis-ranked M5.5 would mean M6's ledger silently dropped every criterion M5.5 closed with, and
+    M5.5's ledger would try to inherit M6's. Both failures are quiet — a smaller run that still says
+    "all green" — which is precisely the kind the flattened evaluator cannot afford, because
+    deduplication means nothing else re-runs an inherited check.
+
+    The fixtures are three synthetic ledgers rather than the repository's own, so the property is
+    asserted the day the ordering is written and not the day M6's ledger is; the assertions against
+    the real ledgers below run as soon as both exist.
+    """
+    milestones = record_module.MILESTONES
+    check("m5b is on the ladder rather than off the end of it", "m5b" in milestones,
+          f"record.MILESTONES: {', '.join(milestones)}")
+    check("an inserted milestone sorts between the two it was inserted between",
+          criteria_module.rung("m5") < criteria_module.rung("m5b") < criteria_module.rung("m6"),
+          f"m5={criteria_module.rung('m5')}, m5b={criteria_module.rung('m5b')}, "
+          f"m6={criteria_module.rung('m6')}")
+    check("a milestone absent from the ladder sorts off the end of it, which is what a missing "
+          "rung produced", criteria_module.rung("m404") == len(milestones))
+
+    # THE CHECK THAT WOULD HAVE CAUGHT IT THE DAY IT LANDED. `m5b.toml` and `milestone-m5b` both
+    # existed while `m5b` was not in `record.MILESTONES`, and nothing anywhere said so: `rung`
+    # answers `len(MILESTONES)` for an identifier it does not know, which is a position rather than
+    # an error. That default is what the two checks below refuse to let a real ledger rely on, and
+    # it is what `delivery-roadmap` means by "SHALL be a configuration error reported by
+    # roadmap-test, never a value that silently sorts to one end".
+    unranked = [identifier for identifier in criteria_module.available()
+                if identifier not in milestones]
+    check("every milestone with a ledger is on the ladder", not unranked,
+          f"record.MILESTONES omits {', '.join(unranked)}, which has a ledger under milestones/. "
+          f"Its criteria sort to the end of the ladder rather than to its rung.")
+    gated = {gate.milestone for gate in gates_module.load().gates if gate.klass == "milestone"}
+    unranked_gates = sorted(identifier for identifier in gated if identifier not in milestones)
+    check("every milestone with a gate is on the ladder", not unranked_gates,
+          f"gates.toml declares milestone-{', milestone-'.join(unranked_gates)} and "
+          f"record.MILESTONES omits it")
+
+    directory = _ladder_fixture(root, ("m5", "m5b", "m6"))
+    # Every fixture milestone is offered as already-closed to BOTH plans, so the only thing deciding
+    # what each inherits is the rung.
+    permanent = ("m5", "m5b", "m6")
+    above = criteria_module.build_plan("m6", permanent, directory)
+    below = criteria_module.build_plan("m5b", permanent, directory)
+
+    check("M6's ledger inherits M5.5's criteria",
+          _declares(above, "m5b") and above.ledgers == ("m5", "m5b", "m6"),
+          f"M6 evaluates the ledgers {', '.join(above.ledgers)}")
+    check("M6 inherits M5.5's criteria rather than declaring them",
+          any(entry.permanent and entry.criterion.id == "m5b-own" for entry in above.entries))
+    check("M5.5's ledger does not inherit M6's criteria",
+          not _declares(below, "m6") and below.ledgers == ("m5", "m5b"),
+          f"M5.5 evaluates the ledgers {', '.join(below.ledgers)}")
+    check("M5.5's ledger still evaluates its own criteria and M5's",
+          _declares(below, "m5b") and _declares(below, "m5"))
+
+    _check_real_ladder_inheritance()
+
+
+def _check_real_ladder_inheritance() -> None:
+    """The same property over the repository's own ledgers, once the one above M5.5 exists.
+
+    Silent until then, because M6's ledger is a later task in the same change and a check that
+    failed until it landed would be a check somebody turned off.
+    """
+    available = set(criteria_module.available())
+    if not {"m5b", "m6"} <= available:
+        return
+    permanent = gates_module.permanent_milestones(gates_module.load())
+    if "m5b" not in permanent:
+        return
+    plan = criteria_module.build_plan("m6", permanent)
+    merged = {criteria_module.fingerprint(entry.criterion) for entry in plan.entries}
+    missing = [criterion.id for criterion in criteria_module.load("m5b").criteria
+               if criteria_module.fingerprint(criterion) not in merged]
+    check("every criterion M5.5 closed with is in M6's own ledger", not missing,
+          f"m5b.toml: {', '.join(missing)} would not be evaluated by M6")
+
+
 def test_requirements(root: Path) -> None:
     """A criterion this host cannot evaluate is reported as unevaluated, never as passed.
 
@@ -561,6 +689,7 @@ def main() -> int:
         test_exit_tiers(_area(root, "tiers"))
         test_milestone_ladder(_area(root, "ladder"))
         test_flat_ledger(_area(root, "flat"))
+        test_ladder_rungs(_area(root, "rungs"))
         test_requirements(_area(root, "requirements"))
         test_gates(_area(root, "gates"))
     passed = len(_cases) - len(_failures)

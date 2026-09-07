@@ -287,3 +287,46 @@ source_subdir = ""
 interface = "cy::audio::AudioBackend in src/servers/audio/, implemented by src/backends/audio-miniaudio/, which is the only directory that names an ma_ symbol"
 scope = "runtime"
 justification = "Device I/O, sample-rate and channel conversion, decoding and streaming across every platform this engine targets, in one permissively licensed file. `audio` names it as the default backend and bounds what it is used for: the engine's own bus graph, voice management and spatialisation policy sit above it, and miniaudio's node graph, high-level engine API and 3D spatialisation are deliberately not used. Offered as public domain or MIT-0 and taken under MIT-0."
+
+# --- M6: the two source-format libraries `asset-import-pipeline` names -----------------------------
+#
+# Both are single-translation-unit libraries that ship no CMake project of their own — ufbx is
+# `ufbx.c` and `ufbx.h` in the root of its tree, xatlas is `source/xatlas/xatlas.cpp` and its header.
+# `cmake_target` below therefore names a target this build DECLARES rather than one upstream
+# provides, through the `cy__provide_<name>()` hook cmake/dependencies.cmake grew for exactly this
+# shape. Both are still pinned to a commit, still fetched by the same code path, and still reached
+# only through `cy::dep::<name>`; the only difference is who wrote the four lines that compile them.
+
+[[dependency]]
+name = "ufbx"
+version = "0.20.0"
+tag = "v0.20.0"
+commit = "a63ff0a47485328880b3300e7bcdf01413343a45"
+repository = "https://github.com/ufbx/ufbx"
+licence = "MIT"
+licence_file = "LICENSE"
+optional = false
+feature = ""
+system_package = false
+cmake_target = "ufbx"
+source_subdir = ""
+interface = "cy::import::FbxImporter in tools/import/, the only translation unit that names a ufbx_ symbol"
+scope = "tool-time"
+justification = "FBX is a closed format whose several binary and ASCII generations are only tractable through a maintained parser, and `thirdparty-dependencies` names this one. It is a single C file with no dependencies, so the cost of carrying it is the cost of compiling it once. Offered as MIT or Unlicense and taken under MIT."
+
+[[dependency]]
+name = "xatlas"
+version = "2022.07.26"
+tag = "master@f700c77"
+commit = "f700c7790aaa030e794b52ba7791a05c085faf0c"
+repository = "https://github.com/jpcy/xatlas"
+licence = "MIT"
+licence_file = "LICENSE"
+optional = false
+feature = ""
+system_package = false
+cmake_target = "xatlas"
+source_subdir = ""
+interface = "cy::import::generate_uv2 in tools/import/, the only translation unit that names an xatlas symbol"
+scope = "tool-time"
+justification = "Chart segmentation, parameterisation and packing for lightmap UVs, which `asset-import-pipeline` requires with a texel density, chart padding and a distortion limit. It is the library `thirdparty-dependencies` names, and the alternative is a research project. Upstream cuts no releases, so `tag` records the branch and the abbreviated commit the 40-character pin below belongs to."

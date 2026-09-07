@@ -1,0 +1,33 @@
+cybuild 1
+# The world's derivation graph — `cybuild 1`, read by `cy_build` (tools/build/).
+#
+# Four nodes, and the shape is the point rather than the size: two independent imports, a cook over
+# both, and a package over the cook. Editing one source therefore reaches exactly one import, the
+# cook and the package, and leaves the other import in the cache — which is the exit criterion "a
+# one-asset change invalidates only the derivations that depend on it", checkable by reading the
+# outcome column of `cy_build build`.
+#
+# THE CONCATENATION ORDER IS THE DECLARATION ORDER, and the cooked stream is therefore palette then
+# city. `cy_sample_open-world` parses a stream that carries two `cyopenworld 1` headers for that
+# reason and says so where it does it.
+
+node "import:palette" import "normalise"
+  source "world/palette.cyopenworld"
+  bundle "world"
+  output "world/palette.cyopart"
+
+node "import:city" import "normalise"
+  source "world/city.cyopenworld"
+  bundle "world"
+  output "world/city.cyopart"
+
+node "cook:city" cook "concat"
+  upstream "import:palette"
+  upstream "import:city"
+  bundle "world"
+  output "world/city.cells"
+
+node "package:world" package "manifest"
+  upstream "cook:city"
+  bundle "world"
+  output "world/city.manifest"
