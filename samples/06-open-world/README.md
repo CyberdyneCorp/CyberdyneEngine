@@ -84,3 +84,34 @@ cache — which is what act 5 measures, in the outcome column of a build report 
 | `openworld.py` | the five acts, the checks, and the committed picture |
 | `project/` | the world's description and its `cybuild 1` derivation graph |
 | `CMakeLists.txt` | the target, and the CTest entry that runs the whole artefact on a shorter route |
+
+## Which of these numbers is a measurement, and which is one sample
+
+Re-measured four times on a machine verified empty — no compiler, no test runner, nothing else of
+this project's alive — immediately after M6 closed:
+
+| Run | median | p99 | worst | hitches |
+|---|---:|---:|---:|---:|
+| 1 | 166.5 us | 195.4 us | 392.2 us | 0 |
+| 2 | 166.9 us | 211.2 us | 376.1 us | 0 |
+| 3 | 166.7 us | 188.8 us | 371.3 us | 0 |
+| 4 | 166.3 us | 191.6 us | 365.9 us | 0 |
+
+**The median is stable to ±0.3 us across runs. The worst tick moves over 26 us, and every quiet run
+is WORSE than the 358 us this artefact printed when the milestone closed.** So the figure most
+likely to be quoted is the least reproducible one, and the run that produced the headline was the
+most favourable sample rather than the cleanest.
+
+Quote the median and the p99. The worst tick is worth printing — a hitch has to show up somewhere —
+but it is a single extreme, not a figure to compare across builds.
+
+The counters do not move at all: 383 activated, 354 withdrawn, 338 evicted, 166 pages, 0 missing
+samples, 13 cells resident with nothing simulating in them, in every run. That is why
+`m6.toml`'s `continuous-traversal` criterion asserts *identical counters across two runs* and not a
+time — "which is what makes the timing a measurement of the code rather than of the machine", in its
+own words. That criterion was written correctly; this note exists so the printed output is read the
+same way.
+
+Prompted by the ClaySpaceDesktop session on this machine, which found two of its own figures taken
+under load — 106 ms and 108 ms — re-measuring clean at 32.53 ms and 171.79 ms. One fell, one rose 60
+per cent. Contention does not inflate a number predictably; it makes it not a number.

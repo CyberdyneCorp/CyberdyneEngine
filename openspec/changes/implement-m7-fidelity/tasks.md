@@ -56,6 +56,39 @@ each is an edit today and a migration once this milestone's cooks and systems de
 - [ ] 5.2 The renderer consumes it: `cy::servers-render-culling` is linked by something other than its
       own tests
 
+## 5b. `editor-viewport-and-gizmos` → Complete: the engine's own image, and a drag that lands
+
+**THIS TIER IS NAMED IN THE PROPOSAL AND HAD NO WORK BEHIND IT.** That is the exact shape of the M5
+slip — `editor-ui-ux` was claimed at Working in a table while the editor had no window — and
+repairing that one cost the whole M5.5 insertion. A capability cannot reach Complete while the only
+thing on the far end of its transport is a test fixture.
+
+- [ ] 5b.1 **The engine's renderer publishes its rendered frames over the viewport transport.**
+      M6 delivered the CONTROL half only: `src/servers/render/viewport_transport.{h,cpp}` carries
+      frame identity, view state and cost, and its own header says there is no device and no
+      swapchain here, and that the bytes "are the business of the module that owns a device". Nothing
+      under `src/` or `samples/` hosts the pixel half, so the editor's viewport shows
+      `cy-viewport-publisher` — a Vulkan fixture in the editor's Cargo workspace that clears an image
+      to a colour and moves a white bar
+- [ ] 5b.2 The editor opens **the engine's** world. It currently opens `.cyworld`, a THIRD authoring
+      format that nothing in `src/` or `tools/` reads or writes, beside `cydoc` and `CookedCell`
+- [ ] 5b.3 **Engine-side gizmo geometry**, finishing M6's task 2.7. The protocol carries a
+      `GizmoLayout`, the editor asks for it and hit-tests it, and a runtime *double* answers over a
+      real socket — but nothing in `src/servers/render/` generates one. `transform-gizmo.png` has
+      been normative since M3 and is realised in no pixel
+- [ ] 5b.4 **The gizmo drag lands on a handle rather than a coordinate.** M6's artefact drags from a
+      hard-coded (47 %, 38 %) hoping a handle is there, reports `GAP`, and **returns 0** — so
+      `smoke.editor_window` is green while the milestone's headline interaction is unproven. Aim from
+      the published layout
+- [ ] 5b.5 **An artefact that reports a GAP SHALL NOT exit zero.** The defect above is not the drag;
+      it is that a narrowed artefact passed. Make this structural, in the artefact harness, so no
+      later sample can do it again
+- [ ] 5b.6 `smoke.editor_window` derives the viewport socket from the build tree, and a Unix socket
+      path is capped at 108 bytes — it breaks on a long build directory. Found by M6's release run
+- [ ] 5b.7 **The exit criterion**: a screenshot in which the editor's viewport shows the engine's
+      rendered world with a transform gizmo on a selected object, and a drag that moves it, undone
+      exactly. Not a fixture, not an approximation
+
 ## 6. The material compiler → Working
 
 - [ ] 6.1 Graph → IR → closures → program, per the spike
