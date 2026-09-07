@@ -649,7 +649,7 @@ jobs:
       # Staged atomic activation, and a request made during activation being queued rather than
       # processed re-entrantly.
       - name: Activation is atomic, and a re-entrant request is deferred
-        run: just test-integration -R "world_(activation|streaming)"
+        run: just test-integration -R world_activation && just test-integration -R world_streaming
       # The milestone's exit criterion for this capability, measured over a fixed route.
       - name: Continuous traversal holds the tick budget with no hitch
         run: just test-integration -R world_traversal
@@ -667,9 +667,9 @@ jobs:
       - name: The overlay, its identity, its scopes and its dirty tracking
         run: just test-unit -R unit.save
       - name: Generations are atomic under kill -9, and an unloaded region round-trips
-        run: just test-integration -R "save_(archive|kill_nine)"
+        run: just test-integration -R save_archive && just test-integration -R save_kill_nine
       - name: Migration, preservation, and a damaged chunk as a diagnostic
-        run: just test-integration -R "save_(service|fuzz)"
+        run: just test-integration -R save_service && just test-integration -R save_fuzz
       # The spike's finding as a gate: a key that omits the compiler is unrepresentable.
       - name: Derivation keys, the toolchain fingerprint, and output digests
         run: just test-unit -R unit.build_graph
@@ -979,8 +979,8 @@ jobs:
   # here rather than found there. `tools/ci/check_workflows.py` now fails when a green milestone
   # gate is unevaluated, so this job cannot quietly disappear again.
   #
-  # ONE LEDGER, NOT SEVEN. The ledger has been flat since M5: `just roadmap-milestone m5b` evaluates
-  # M0 through M5.5 merged and deduplicated, each distinct check exactly once. Seven separate
+  # ONE LEDGER, NOT EIGHT. The ledger has been flat since M5: `just roadmap-milestone m6` evaluates
+  # M0 through M6 merged and deduplicated, each distinct check exactly once. Seven separate
   # invocations would run `four-profiles` seven times, which is the multiplication the flattening
   # removed and which `check_workflows.gate_coverage` therefore does not ask for.
   #
@@ -1030,7 +1030,7 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m5b --ci
+        run: just roadmap-milestone m6 --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

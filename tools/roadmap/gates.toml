@@ -394,12 +394,23 @@ class = "permanent"
 # `render` jobs already make, and the reason `physics`, `asset-import` and `live-editing` exist as
 # gates beside them. Each of the six below names the property whose loss would be silent otherwise.
 
+# A GATE'S `runs` IS A COMMAND SOMEBODY TYPES, AND THREE OF THEM COULD NOT BE TYPED. M6's closing
+# gate found `just test-integration -R "world_(activation|streaming)"` failing with
+# `bash: -c: line 1: syntax error near unexpected token '('` — `just`'s `*args` is a string, a recipe
+# interpolates `{{args}}` textually, and the caller's quotes are gone by the time bash sees the
+# parentheses. The `world-streaming` and `save` gates below each declared such a command, the same
+# strings were in `.github/workflows/ci.yml`'s `scale` job, and four of `m6.toml`'s criteria ran them
+# — so three of this milestone's suites were covered by a command that has never executed anything.
+# Each is now one invocation per suite. `just/test.just` is where the real repair belongs and
+# `m6.toml` says why it was not made here.
+
 [[gate]]
 id = "world-streaming"
 describe = "A WORLD LARGER THAN MEMORY, AND THE THREE PROPERTIES THAT MAKE IT ONE. Cell identity is a fixed-seed hash of the partition's own configuration, so changing the cell size changes cell identity BY CONSTRUCTION rather than by a rule somebody remembers, and `compare_partitions` reports the field that moved instead of producing silently incompatible data. Cells are cooked in ECS-NATIVE FORM — archetype blocks handed to `ecs::World::instantiate()` with no transformation — so streaming cost is proportional to what arrives rather than to what content is; the day a conversion step becomes necessary before instantiation, that invariant has gone and this gate is where it shows. And activation is STAGED AND ATOMIC: a cell is prepared over several ticks into private staging and published in one, a consumer that reacts to activation by requesting another cell has its request QUEUED rather than processed re-entrantly, and a fixed route across a world that does not fit in the budget holds the per-tick activation budget every tick while cells stream in, out and away behind it."
 runs = [
     "just test-unit -R unit.world",
-    "just test-integration -R \"world_(activation|streaming)\"",
+    "just test-integration -R world_activation",
+    "just test-integration -R world_streaming",
     "just test-integration -R world_traversal",
 ]
 platforms = ["linux"]
@@ -433,8 +444,10 @@ id = "save"
 describe = "THE SAVE IS THE OVERLAY, AND A GENERATION IS ATOMIC UNDER `kill -9`. The pointer is the only object whose rewrite changes what loads and it is a single atomic write, so killing the process at any of the five phases leaves the previous generation loadable — which the suite does at each phase rather than arguing. Every container is sorted by key rather than by insertion, so two overlays holding the same logical state encode to identical bytes and a content-addressed store recognises an unchanged region instead of rewriting it. A record of a type this build does not declare is PRESERVED rather than dropped, which is what lets a save written with a plugin load without it and save again with that state intact, and a damaged chunk is a diagnostic and a fallback to an older generation rather than lost progress."
 runs = [
     "just test-unit -R unit.save",
-    "just test-integration -R \"save_(archive|kill_nine)\"",
-    "just test-integration -R \"save_(service|fuzz)\"",
+    "just test-integration -R save_archive",
+    "just test-integration -R save_kill_nine",
+    "just test-integration -R save_service",
+    "just test-integration -R save_fuzz",
 ]
 platforms = ["linux"]
 since = "m6"
@@ -737,7 +750,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m6"
 class = "milestone"
 milestone = "m6"
-state = "joins-on-close"
+state = "green"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

@@ -20,31 +20,11 @@ CY_TEST_CASE("a stale handle stops resolving after the body is destroyed") {
     CY_CHECK_FALSE(fixture.server->body_state(body).has_value());
 }
 
-CY_TEST_CASE("one thousand identical box colliders create one shape") {
-    // `physics` — "Shape sharing": "WHEN 1 000 entities use an identical box collider THEN one Jolt
-    // shape SHALL be created and referenced by all of them". Asserted through the statistics rather
-    // than inferred from a handle comparison, because two calls returning the same handle would
-    // also be true of a backend that leaked a shape per call and happened to reuse a slot.
-    const Fixture fixture;
-    ShapeDescription description;
-    description.type = ShapeType::Box;
-    description.half_extents = Vec3{0.5f, 0.5f, 0.5f};
-
-    ShapeHandle first;
-    for (u32 index = 0; index < 1000; ++index) {
-        const Expected<ShapeHandle, Error> shape = fixture.server->create_shape(description);
-        CY_REQUIRE(shape.has_value());
-        if (index == 0) {
-            first = *shape;
-        }
-        CY_CHECK_EQ(shape->bits(), first.bits());
-    }
-    const Expected<ShapeStatistics, Error> statistics = fixture.server->shape_statistics();
-    CY_REQUIRE(statistics.has_value());
-    CY_CHECK_EQ(statistics->unique_shapes, 1U);
-    CY_CHECK_EQ(statistics->requests, 1000U);
-    CY_CHECK_EQ(statistics->cache_hits, 999U);
-}
+// `one thousand identical box colliders create one shape` LIVES IN test_shape_sharing.cpp,
+// in the `physics_behaviour` INTEGRATION suite. It cost 1.0-2.1 ms of CPU against this
+// suite's 1 ms budget in the Debug configuration and had been failing about one run in ten
+// since M4; M6's closing gate found it through `m1:four-profiles` and moved it rather than
+// cutting the thousand the requirement names down to something that fits. See that file.
 
 CY_TEST_CASE("a triangle mesh on a dynamic body is rejected with a diagnostic") {
     // `physics` — "Triangle mesh on a dynamic body": rejected "with a diagnostic recommending

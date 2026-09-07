@@ -5,7 +5,7 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: M0 through M5.5 are closed. [M6 — Scale](docs/ROADMAP.md) is next.**
+> **Status: M0 through M6 are closed. [M7 — Fidelity](docs/ROADMAP.md) is next.**
 > The editor **opens**: a window, docked panels, a hierarchy, an inspector generated from
 > reflection, a command palette over the same registry a script drives, and a viewport that
 > composites the runtime's own GPU image with no copy through the CPU. Everything it changes is a

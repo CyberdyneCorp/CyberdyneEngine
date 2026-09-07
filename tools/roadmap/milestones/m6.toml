@@ -254,6 +254,36 @@ native-abi = "complete"
 editor-ui-ux = "working"
 editor-viewport-and-gizmos = "working"
 
+# --- WHY THE FOUR MULTI-SUITE CRITERIA BELOW NAME EACH SUITE SEPARATELY -----------------------------
+#
+# THEY WERE WRITTEN AS ONE `ctest -R` REGEX AND THEY NEVER RAN. M6's closing gate is where that was
+# found, and it is worth writing down because the failure looked exactly like a pass until the ledger
+# was run end to end:
+#
+#     run = "just test-integration -R \"world_(activation|streaming)\""
+#     $ bash -c 'just test-integration -R "world_(activation|streaming)"'
+#     bash: -c: line 1: syntax error near unexpected token `('
+#     error: Recipe `test-integration` failed on line 19 with exit code 2      <- 0.0 s, every time
+#
+# `just`'s `*args` is a STRING, and a recipe body interpolates `{{args}}` textually before handing
+# the line to `bash -c`. The quotes the caller wrote are consumed by the caller's own shell, so the
+# parentheses and the alternation arrive at bash unquoted and it refuses the line. Four of this
+# milestone's criteria — `world-activation`, `save-generations`, `save-service` and
+# `import-complete` — therefore reported `FAILED exit 2` in 0.0 s on the first end-to-end run of this
+# ledger, having never executed a test. The same three commands were in `.github/workflows/ci.yml`'s
+# `scale` job and would have failed there on the first pull request.
+#
+# THE FIX HERE IS THE ONE THAT DOES NOT TOUCH ANOTHER MILESTONE'S FILES: name each suite in its own
+# invocation and join them with `&&`, which is what `culling` and `geometry` below already do and
+# which is why those two ran. Every one of the ten suites was then run singly and passes.
+#
+# THE FIX THAT SHOULD FOLLOW IS IN `just/test.just`, AND IT IS M7's. `test-unit`, `test-integration`,
+# `test-smoke`, `test-render` and `_ctest` all pass `{{args}}` and then `${rest}` through unquoted
+# word splitting, so NO argument containing a shell metacharacter can reach `ctest` through them.
+# `set positional-arguments` and `"$@"` is the idiomatic repair; it is a change to M0's workflow
+# files and to `just _split`, which is more than a milestone gate should do to a shared file while
+# other work is in flight. Recorded rather than done.
+
 # --- A world larger than memory -------------------------------------------------------------------
 
 # TASKS 3.1, 3.2, 3.6 AND 3.7. The unit suite is where the invariants that cannot be observed from a
@@ -274,7 +304,7 @@ id = "world-activation"
 describe = "activation is STAGED AND ATOMIC — a cell is prepared over several ticks into private staging and published in one, so a consumer never observes a half-loaded cell — and a consumer that reacts to activation by requesting another cell has its request QUEUED rather than processed re-entrantly, which is the ordering bug the specification forbids by name"
 source = "tasks 3.3, 3.4, 3.5"
 kind = "command"
-run = "just test-integration -R \"world_(activation|streaming)\""
+run = "just test-integration -R world_activation && just test-integration -R world_streaming"
 ci_job = "world-streaming"
 
 # TASK 3.8, AND IT IS AN EXIT CRITERION OF THE MILESTONE: "continuous traversal holds the frame
@@ -353,7 +383,7 @@ id = "save-generations"
 describe = "a generation is written as chunks, verified, manifested and switched, and killing the process at any phase leaves the previous generation loadable; an unloaded region's state round-trips without loading it, and a corrupt newest generation falls back to an older one with the player told rather than quietly"
 source = "tasks 6.2, 6.4, ROADMAP M6 (Save generations are atomic under kill -9)"
 kind = "command"
-run = "just test-integration -R \"save_(archive|kill_nine)\""
+run = "just test-integration -R save_archive && just test-integration -R save_kill_nine"
 ci_job = "save"
 
 [[criterion]]
@@ -361,7 +391,7 @@ id = "save-service"
 describe = "a save is CAPTURED on the calling thread and WRITTEN on another, the simulation is never paused for it, a second save while one is in flight is refused rather than raced, and a service torn down mid-write does not take the write with it — beside a fuzz corpus in which every truncation and every corrupted byte fails diagnostically rather than crashing"
 source = "tasks 6.2, 6.3"
 kind = "command"
-run = "just test-integration -R \"save_(service|fuzz)\""
+run = "just test-integration -R save_service && just test-integration -R save_fuzz"
 ci_job = "save"
 
 # --- The build is a graph -------------------------------------------------------------------------
@@ -422,7 +452,7 @@ id = "import-complete"
 describe = "the rest of what takes `asset-import-pipeline` to Complete: xatlas and mesh processing, cook profiles that exclude by publication so an AssetId is identical across them, and the pipeline's own determinism — including the minting defect design.md §1.7 named, where a sub-asset without a committed sidecar drew 128 random bits and two cold builds of one project stopped agreeing"
 source = "tasks 8.2, 8.3"
 kind = "command"
-run = "just test-integration -R \"import_(mesh|gltf|unwrap|pipeline)\""
+run = "just test-integration -R import_mesh && just test-integration -R import_gltf && just test-integration -R import_unwrap && just test-integration -R import_pipeline"
 ci_job = "asset-import"
 
 [[criterion]]

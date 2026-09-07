@@ -58,6 +58,7 @@ function(cy_physics_declare_tests)
         SOURCES
             "${tests_dir}/test_character.cpp"
             "${tests_dir}/test_determinism.cpp"
+            "${tests_dir}/test_shape_sharing.cpp"
             "${tests_dir}/test_stepper.cpp"
         DEPENDENCIES cy::servers-physics cy::physics-reference)
 endfunction()

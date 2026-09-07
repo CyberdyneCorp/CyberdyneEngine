@@ -299,7 +299,35 @@ below was measured or reproduced at that gate on this tree: Linux 6.8, GCC 13.3.
 clang-format and clang-tidy at 22.1.8, Swift 6.3.3, Rust 1.95.0, an NVIDIA RTX 5060 with Vulkan
 1.4.312. All four profiles were built **from empty** and `just test-all` was run in each.
 
+**How the ledger was run, and why it was run three times.** `just roadmap-milestone m6` evaluates 132
+criteria — 110 inherited from M0 through M5.5 and 22 new here — and the first end-to-end run reported
+**five failures**. Four of them were criteria that had never executed at all (entry 11 below) and the
+fifth was a test that had been over its budget in one profile since M4 (entry 8). Both were fixed;
+the second run then went red on `just ci-check`, because repairing the ledger and the workflow made
+the *third* copy of the same broken command — in two permanent gate declarations — visibly
+inconsistent, which is that check doing its job. **The third run is green: `M6: 132 criteria pass`,
+`rc=0`, with the two three-platform legs reported as NOT EVALUATED on a host with one operating
+system.** A ledger that is only ever run once per milestone is a ledger whose own defects ship: two
+of the findings below were found by running it rather than by reading it, and neither would have been
+found by a run that stopped at the first failure.
+
+All four profiles were also rebuilt and re-tested after those repairs, on a display with no keyboard
+grab: **`just test-all` exits 0 in every one of the four**, unit 41/41, integration 85/85, smoke
+13/13 in dev and debug and 12/12 in profile and release (the difference is `smoke.shader_slang`,
+which `CY_SHADER_SLANG=DEVELOPMENT` correctly excludes from the two optimised configurations), render
+5/5.
+
+**One caveat about the timings.** An unrelated project on this machine was running
+`cargo test --workspace --release` on up to four cores for part of the third run. It is recorded
+because three "regressions" in this project's history were concurrent builds contending, and because
+one entry below is a measurement.
+
 ### What the gate found
+
+Numbered in the order they were found rather than by weight. **The two that matter most are
+11 — four of M6's own criteria had never executed, and three of them were in a CI job too —
+and 2, the milestone's named risk, which is fixed in the new build graph and still live in the
+tool that actually cooks content.**
 
 **0 · The one red test is the machine, and the mechanism is now named rather than guessed at.**
 `smoke.editor_window` failed in all four profiles on `:0`, at `Ctrl+Shift+N never produced entity 1`,
@@ -421,13 +449,21 @@ engine's, gated and compared byte for byte. `worlds/*.cyworld` is not: it is
 `tools/` writes or reads a `.cyworld`. `src/scene/serialization/README.md` records it rather than
 leaving it to be discovered. **The editor opens a world; it does not yet open the engine's world.**
 
-**8 · A permanent-set criterion is a coin flip in one profile, and it is not M6's.**
-`unit.physics_server`'s case *one thousand identical box colliders create one shape* is over its 1 ms
-unit budget in the **Debug** profile: **22 of 40** runs of the case alone (1.06 – 2.10 ms of its own
-CPU time), and about **1 run in 10** through `ctest`, on an idle machine. `src/servers/physics/` has
-no change in this milestone — its last commit is M4's — so `four-profiles`, a criterion in the
-permanent set since M1, is red about one Debug run in ten for a reason no milestone since M4 has
-touched. This is the same shape as the flake `m2.toml` records and it is a different test.
+**8 · A permanent-set criterion had been a coin flip in one profile since M4, and the first
+end-to-end run of this ledger is what caught it.** `m1:four-profiles` went red in the **Debug**
+configuration on one case: `unit.physics_server`'s *one thousand identical box colliders create one
+shape*, at 1.573 ms of its own CPU against a 1.000 ms unit budget. Measured on an idle machine
+afterwards: **22 of 40** runs of the case alone exceeded the budget, between 1.06 ms and 2.10 ms, and
+about **1 run in 10** through `ctest`. `src/servers/physics/` has no change in this milestone — its
+last commit is M4's — so a criterion that has been in the permanent set since M1, and that every
+later ledger runs, has been failing about one Debug run in ten for two milestones with nobody
+watching. That is the same shape as the flake `m2.toml` records and it is a different test.
+
+**Fixed at this gate, the way the budget's own diagnostic says to.** The case moved to
+`integration.physics_behaviour` as `src/servers/physics/tests/test_shape_sharing.cpp`, line for line,
+because the requirement is about *one thousand* entities and cutting the count to fit a unit budget
+would narrow the claim to fit the measurement. Fifteen consecutive Debug runs of each suite
+afterwards: 0 failures.
 
 **9 · The Shipping profile emits warnings that `-Werror` does not catch.** The link-time-optimised
 build reports `-Walloc-size-larger-than=` twice, in `src/core/reflect/src/registry.cpp:131` and
@@ -447,6 +483,40 @@ one pass of that ledger took hours at this gate and a four-hour merge gate is a 
 override rather than a reason to wait. Most of the ledger's work is blocking already through the
 other jobs; what this adds that nothing else does is the artefact recipes, the tier records and the
 ledger's own arithmetic — post-merge rather than pre-merge. Recorded so M7 can widen it deliberately.
+
+**11 · FOUR OF M6's OWN TWENTY-TWO CRITERIA HAD NEVER RUN, AND THE LEDGER REPORTED THEM AS FAILURES
+IN 0.0 SECONDS.** This is the finding the gate exists for, and it is the eighth milestone in a row to
+produce one. `world-activation`, `save-generations`, `save-service` and `import-complete` were each
+written as a single `ctest` regex:
+
+```
+run = "just test-integration -R \"world_(activation|streaming)\""
+$ bash -c 'just test-integration -R "world_(activation|streaming)"'
+bash: -c: line 1: syntax error near unexpected token `('
+error: Recipe `test-integration` failed on line 19 with exit code 2
+```
+
+`just`'s `*args` is a **string**. A recipe body interpolates `{{args}}` textually and hands the line
+to `bash -c`, so the quotes the caller wrote are consumed by the caller's own shell and the
+parentheses arrive unquoted. No test was selected, no test was run, and the criterion failed
+instantly — which is at least loud. **The same three commands were in `.github/workflows/ci.yml`'s
+`scale` job**, where they would have failed on the first pull request that ran it, and where the
+milestone's own streaming, save and import suites would have been covered by nothing until somebody
+read the log. **And they were in `tools/roadmap/gates.toml` too**, as the `runs` of the *permanent*
+gates `world-streaming` and `save` — a permanent merge gate whose declared command cannot be typed.
+That third copy was found by the SECOND ledger run: repairing the ledger and the workflow made
+`just ci-check` red, because its coverage rule compares a gate's `runs` against what the workflows
+invoke and the two no longer matched. One defect, three files, and the check that caught the third
+is the one M6 task 10.9 had just taught to look at milestone gates.
+
+Each is now one invocation per suite joined by `&&`, which is the form `culling` and `geometry`
+already used and the reason those two ran. All ten suites were then run singly, and all ten pass. The
+deeper repair is in `just/test.just` — `test-unit`, `test-integration`, `test-smoke`, `test-render`
+and `_ctest` all push `{{args}}` and then `${rest}` through unquoted word splitting, so **no argument
+containing a shell metacharacter can reach `ctest` through any of them**. `set positional-arguments`
+and `"$@"` is the idiomatic fix; it is a change to M0's shared workflow files and to `just _split`,
+which is more than a milestone gate should do to a file other work is in flight over. It is written
+into `m6.toml` beside the repaired criteria and is M7's.
 
 ### The adversarial pass, and what each of the eleven actually showed
 
