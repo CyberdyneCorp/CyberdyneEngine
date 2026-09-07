@@ -6,13 +6,14 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/arbiter/configuration.h>
 
+#include <algorithm>
+
 namespace {
 
 using cy::Array;
 using cy::f32;
 using cy::u32;
 using cy::rendering::capabilities_of_shipped_desktop;
-using cy::rendering::capability_bit;
 using cy::rendering::ConfigurationDifference;
 using cy::rendering::ConfigurationField;
 using cy::rendering::ConfigurationFinding;
@@ -21,7 +22,6 @@ using cy::rendering::ConfigurationPlatform;
 using cy::rendering::diff_configurations;
 using cy::rendering::kConfigurationVersion;
 using cy::rendering::ProfileName;
-using cy::rendering::RenderCapability;
 using cy::rendering::RenderConfiguration;
 using cy::rendering::RenderFeature;
 using cy::rendering::RenderPipelineKind;
@@ -30,22 +30,16 @@ using cy::rendering::validate_configuration;
 
 [[nodiscard]] bool has(const Array<ConfigurationIssue>& issues,
                        ConfigurationFinding finding) noexcept {
-    for (cy::usize index = 0; index < issues.size(); ++index) {
-        if (issues[index].finding == finding) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(issues.span(), [finding](const ConfigurationIssue& issue) {
+        return issue.finding == finding;
+    });
 }
 
 [[nodiscard]] bool has_field(const Array<ConfigurationDifference>& diff,
                              ConfigurationField field) noexcept {
-    for (cy::usize index = 0; index < diff.size(); ++index) {
-        if (diff[index].field == field) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(diff.span(), [field](const ConfigurationDifference& entry) {
+        return entry.field == field;
+    });
 }
 
 }  // namespace
@@ -90,17 +84,18 @@ CY_TEST_CASE("configuration: an over-subscribed budget is caught at configuratio
                                       capabilities_of_shipped_desktop(), issues));
     CY_CHECK(has(issues, ConfigurationFinding::OverSubscribedBudget));
 
-    for (cy::usize index = 0; index < issues.size(); ++index) {
-        if (issues[index].finding != ConfigurationFinding::OverSubscribedBudget) {
+    for (const ConfigurationIssue& issue : issues.span()) {
+        if (issue.finding != ConfigurationFinding::OverSubscribedBudget) {
             continue;
         }
         // The finding carries both numbers, so a diagnostic can say by how much.
-        CY_CHECK_GT(issues[index].declared_ms, issues[index].budget_ms);
-        CY_CHECK_EQ(issues[index].budget_ms, 2.0F);
+        CY_CHECK_GT(issue.declared_ms, issue.budget_ms);
+        CY_CHECK_EQ(issue.budget_ms, 2.0F);
     }
 }
 
-CY_TEST_CASE("configuration: unsupported, mutually exclusive and unknown-version are all reported") {
+CY_TEST_CASE(
+    "configuration: unsupported, mutually exclusive and unknown-version are all reported") {
     CY_TEST_SUBCASE("a capability the device lacks") {
         RenderConfiguration configuration;
         configuration.profile = ProfileName::HighEnd;
@@ -114,7 +109,8 @@ CY_TEST_CASE("configuration: unsupported, mutually exclusive and unknown-version
         RenderConfiguration configuration;
         configuration.profile = ProfileName::Standard;
         configuration.overrides_feature[static_cast<u32>(RenderFeature::TemporalUpscaling)] = true;
-        auto& upscaling = configuration.features[static_cast<u32>(RenderFeature::TemporalUpscaling)];
+        auto& upscaling =
+            configuration.features[static_cast<u32>(RenderFeature::TemporalUpscaling)];
         upscaling.enabled = true;
         upscaling.declared_cost_ms = 0.5F;
         // `standard` already enables motion blur, which is the exclusion.
@@ -127,8 +123,10 @@ CY_TEST_CASE("configuration: unsupported, mutually exclusive and unknown-version
     CY_TEST_SUBCASE("a prerequisite that was switched off") {
         RenderConfiguration configuration;
         configuration.profile = ProfileName::Standard;
-        configuration.overrides_feature[static_cast<u32>(RenderFeature::TemporalAntialiasing)] = true;
-        configuration.features[static_cast<u32>(RenderFeature::TemporalAntialiasing)].enabled = false;
+        configuration.overrides_feature[static_cast<u32>(RenderFeature::TemporalAntialiasing)] =
+            true;
+        configuration.features[static_cast<u32>(RenderFeature::TemporalAntialiasing)].enabled =
+            false;
         configuration.overrides_feature[static_cast<u32>(RenderFeature::TemporalUpscaling)] = true;
         configuration.features[static_cast<u32>(RenderFeature::TemporalUpscaling)].enabled = true;
         Array<ConfigurationIssue> issues;
@@ -170,7 +168,8 @@ CY_TEST_CASE("configuration: a rendering change appears as a diff of the asset")
     gi.enabled = true;
     gi.quality_level = 0;
     gi.declared_cost_ms = 1.90F;
-    after.budget_share[static_cast<u32>(cy::rendering::BudgetSubsystem::GlobalIllumination)] = 0.18F;
+    after.budget_share[static_cast<u32>(cy::rendering::BudgetSubsystem::GlobalIllumination)] =
+        0.18F;
 
     Array<ConfigurationDifference> diff;
     CY_REQUIRE(diff_configurations(before, after, diff));
@@ -180,14 +179,48 @@ CY_TEST_CASE("configuration: a rendering change appears as a diff of the asset")
     // The diff names the feature, so a reviewer reads "global-illumination quality 0" rather than
     // "a file changed".
     bool named = false;
-    for (cy::usize index = 0; index < diff.size(); ++index) {
-        named = named || diff[index].feature == RenderFeature::GlobalIllumination;
+    for (const ConfigurationDifference& entry : diff.span()) {
+        named = named || entry.feature == RenderFeature::GlobalIllumination;
     }
     CY_CHECK(named);
 
     Array<ConfigurationDifference> none;
     CY_REQUIRE(diff_configurations(before, before, none));
     CY_CHECK_EQ(none.size(), 0U);
+}
+
+CY_TEST_CASE("configuration: the two prerequisite tables agree") {
+    // `validate_profile` refuses at the first broken prerequisite and `validate_configuration`
+    // reports them as a list, so the rule lives in two places. Two places is one too many and the
+    // reason it is tolerated is that the two answer different questions; this case is what keeps
+    // them from drifting. Every prerequisite the profile validator refuses, the configuration
+    // validator must also find.
+    struct Pair {
+        RenderFeature feature;
+        RenderFeature needs;
+    };
+    const Pair rules[] = {
+        {RenderFeature::TemporalUpscaling, RenderFeature::TemporalAntialiasing},
+        {RenderFeature::RayTracedReflections, RenderFeature::ScreenSpaceReflections},
+    };
+
+    for (const Pair& rule : rules) {
+        auto profile = cy::rendering::named_profile(ProfileName::HighEnd);
+        profile.features[static_cast<u32>(rule.feature)].enabled = true;
+        profile.features[static_cast<u32>(rule.needs)].enabled = false;
+        CY_CHECK_FALSE(cy::rendering::validate_profile(profile));
+
+        RenderConfiguration configuration;
+        configuration.profile = ProfileName::HighEnd;
+        configuration.overrides_feature[static_cast<u32>(rule.feature)] = true;
+        configuration.features[static_cast<u32>(rule.feature)].enabled = true;
+        configuration.overrides_feature[static_cast<u32>(rule.needs)] = true;
+        configuration.features[static_cast<u32>(rule.needs)].enabled = false;
+        Array<ConfigurationIssue> issues;
+        CY_REQUIRE(validate_configuration(configuration, ConfigurationPlatform::Desktop,
+                                          capabilities_of_shipped_desktop(), issues));
+        CY_CHECK(has(issues, ConfigurationFinding::PrerequisiteDisabled));
+    }
 }
 
 CY_TEST_CASE("configuration: a budget share moves what a subsystem starts from, not its ladder") {

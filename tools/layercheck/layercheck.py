@@ -108,8 +108,12 @@ BARE_TARGET_RE = re.compile(r'^[ \t]*(add_library|add_executable)[ \t]*\(', re.M
 # Matched by the include's leading directory or by its file name, so `SDL3/SDL_vulkan.h` — SDL's own
 # forward declarations, which platform/desktop-sdl3 legitimately uses to build a surface — is not a
 # finding. It is an SDL header and the `sdl` check already governs where it may appear.
+# Metal and QuartzCore were added at M7 with src/backends/rhi-metal/. The rule is the same one and
+# the reason is the same one: a `#import <Metal/Metal.h>` above src/backends/ is exactly as wrong as
+# a `#include <vulkan/vulkan.h>` there, and a rule that named only Vulkan would have accepted it.
 GPU_API_DIRECTORIES = frozenset({"vulkan", "volk", "vk_video", "spirv", "spirv-tools",
-                                 "spirv_cross", "SPIRV", "SPIRV-Reflect", "glslang", "slang"})
+                                 "spirv_cross", "SPIRV", "SPIRV-Reflect", "glslang", "slang",
+                                 "Metal", "QuartzCore"})
 GPU_API_FILES = frozenset({"volk.h", "volk.c", "vk_mem_alloc.h", "vulkan.h", "vulkan.hpp",
                            "vulkan_core.h", "spirv_reflect.h", "spirv.h", "spirv.hpp", "slang.h",
                            "slang-com-ptr.h", "slang-com-helper.h"})

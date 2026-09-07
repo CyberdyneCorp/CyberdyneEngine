@@ -121,8 +121,8 @@ void diff_platforms(const RenderConfiguration& before, const RenderConfiguration
             entry.to = to;
             push_difference(out, entry, status);
         };
-        emit(ConfigurationField::PlatformOverrideActive, RenderFeature::Count, lhs.active ? 1.0 : 0.0,
-             rhs.active ? 1.0 : 0.0);
+        emit(ConfigurationField::PlatformOverrideActive, RenderFeature::Count,
+             lhs.active ? 1.0 : 0.0, rhs.active ? 1.0 : 0.0);
         emit(ConfigurationField::PlatformOverrideProfile, RenderFeature::Count,
              lhs.overrides_profile ? static_cast<f64>(lhs.profile) : -1.0,
              rhs.overrides_profile ? static_cast<f64>(rhs.profile) : -1.0);

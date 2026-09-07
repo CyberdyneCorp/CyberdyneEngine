@@ -95,6 +95,13 @@ add_subdirectory(gi)
 # Before post/ because the post chain's antialiasing and upscaling stages are two of its consumers.
 add_subdirectory(temporal)
 
+# CyberSky's Seed: a participating atmosphere in physical units, the celestial model and its
+# declared time domain, and the sky as a LIGHT — spherical-harmonic irradiance, the three-colour
+# gradient `rendering-global-illumination` consumes, and the sky view table a frame samples instead
+# of ray marching. M7 task 10.4. It names nothing in gi/, which is what lets "sufficient for GI's
+# sky term" be a measurement in its own suite rather than a claim.
+add_subdirectory(sky)
+
 # The renderer's one budget arbiter, the subsystem controllers it allocates to, the four named
 # renderer profiles and the rendering configuration asset. M7 tasks 10.1 and 10.2, and the module
 # that takes `rendering-architecture` to Complete: six paged or stochastic systems arrived in this

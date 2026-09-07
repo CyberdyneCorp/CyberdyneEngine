@@ -10,15 +10,15 @@ namespace {
 /// GGX's normal distribution, with `alpha` the squared perceptual roughness.
 [[nodiscard]] f32 ggx_d(f32 n_dot_h, f32 alpha) noexcept {
     const f32 a2 = alpha * alpha;
-    const f32 denominator = n_dot_h * n_dot_h * (a2 - 1.0F) + 1.0F;
+    const f32 denominator = (n_dot_h * n_dot_h * (a2 - 1.0F)) + 1.0F;
     return a2 / (math::kPi * denominator * denominator);
 }
 
 /// Smith's height-correlated visibility term for GGX, already divided by `4 n.l n.v`.
 [[nodiscard]] f32 smith_v(f32 n_dot_l, f32 n_dot_v, f32 alpha) noexcept {
     const f32 a2 = alpha * alpha;
-    const f32 lambda_v = n_dot_l * std::sqrt(n_dot_v * n_dot_v * (1.0F - a2) + a2);
-    const f32 lambda_l = n_dot_v * std::sqrt(n_dot_l * n_dot_l * (1.0F - a2) + a2);
+    const f32 lambda_v = n_dot_l * std::sqrt((n_dot_v * n_dot_v * (1.0F - a2)) + a2);
+    const f32 lambda_l = n_dot_v * std::sqrt((n_dot_l * n_dot_l * (1.0F - a2)) + a2);
     const f32 sum = lambda_v + lambda_l;
     return sum > 0.0F ? 0.5F / sum : 0.0F;
 }
@@ -51,29 +51,29 @@ struct LtcFit {
 
 /// The linearly transformed cosine's density at `direction`, for `Minv`.
 [[nodiscard]] f32 ltc_density(const LtcFit& fit, Vec3 direction) noexcept {
-    const Vec3 transformed{fit.a * direction.x + fit.b * direction.z, fit.c * direction.y,
-                           fit.d * direction.x + direction.z};
+    const Vec3 transformed{(fit.a * direction.x) + (fit.b * direction.z), fit.c * direction.y,
+                           (fit.d * direction.x) + direction.z};
     const f32 l = length(transformed);
     if (l <= 1.0e-8F || transformed.z <= 0.0F) {
         return 0.0F;
     }
     // det(Minv) for this sparse form, and the Jacobian of the projection back onto the sphere.
-    const f32 determinant = std::fabs(fit.c * (fit.a - fit.b * fit.d));
+    const f32 determinant = std::fabs(fit.c * (fit.a - (fit.b * fit.d)));
     const f32 cosine = transformed.z / l;
     return (cosine / math::kPi) * determinant / (l * l * l);
 }
 
-/// The directions the fit is scored over. 24 x 12 on the hemisphere, with the azimuth folded by the
-/// lobe's own mirror symmetry — 288 directions, which is what makes a per-entry optimisation
+/// The directions the fit is scored over. 20 x 10 on the hemisphere, with the azimuth folded by
+/// the lobe's own mirror symmetry — 200 directions, which is what makes a per-entry optimisation
 /// affordable at all.
-constexpr u32 kFitTheta = 24;
-constexpr u32 kFitPhi = 12;
+constexpr u32 kFitTheta = 20;
+constexpr u32 kFitPhi = 10;
 
 struct FitTarget {
     Vec3 direction[kFitTheta * kFitPhi];
     /// The GGX BRDF times the cosine, normalised so it integrates to 1 — a density, so the fit is
     /// of the lobe's SHAPE and the energy is carried separately by `LtcEntry::magnitude`.
-    f32 density[kFitTheta * kFitPhi];
+    f32 density[kFitTheta * kFitPhi]{};
     f32 energy = 1.0F;
     f32 fresnel = 0.0F;
 };
@@ -82,7 +82,7 @@ struct FitTarget {
 /// the NDF over a stratified grid. `out_fresnel` receives the second term.
 [[nodiscard]] f32 ggx_directional_albedo(f32 alpha, f32 cos_theta, f32& out_fresnel) noexcept {
     constexpr u32 kSteps = 48;
-    const f32 sin_theta = std::sqrt(math::max(0.0F, 1.0F - cos_theta * cos_theta));
+    const f32 sin_theta = std::sqrt(math::max(0.0F, 1.0F - (cos_theta * cos_theta)));
     const Vec3 view{sin_theta, 0.0F, cos_theta};
 
     f32 scale = 0.0F;
@@ -90,11 +90,11 @@ struct FitTarget {
     for (u32 i = 0; i < kSteps; ++i) {
         const f32 u1 = (static_cast<f32>(i) + 0.5F) / static_cast<f32>(kSteps);
         // The GGX NDF's inverse cumulative distribution in cos(theta_h).
-        const f32 cos_h = std::sqrt((1.0F - u1) / (1.0F + (alpha * alpha - 1.0F) * u1));
-        const f32 sin_h = std::sqrt(math::max(0.0F, 1.0F - cos_h * cos_h));
+        const f32 cos_h = std::sqrt((1.0F - u1) / (1.0F + (((alpha * alpha) - 1.0F) * u1)));
+        const f32 sin_h = std::sqrt(math::max(0.0F, 1.0F - (cos_h * cos_h)));
         for (u32 j = 0; j < kSteps; ++j) {
-            const f32 phi = 2.0F * math::kPi * (static_cast<f32>(j) + 0.5F) /
-                            static_cast<f32>(kSteps);
+            const f32 phi =
+                2.0F * math::kPi * (static_cast<f32>(j) + 0.5F) / static_cast<f32>(kSteps);
             const Vec3 half{sin_h * std::cos(phi), sin_h * std::sin(phi), cos_h};
             const f32 v_dot_h = dot(view, half);
             const Vec3 light = half * (2.0F * v_dot_h) - view;
@@ -117,7 +117,7 @@ struct FitTarget {
 }
 
 [[nodiscard]] FitTarget build_target(f32 alpha, f32 cos_theta) noexcept {
-    const f32 sin_theta = std::sqrt(math::max(0.0F, 1.0F - cos_theta * cos_theta));
+    const f32 sin_theta = std::sqrt(math::max(0.0F, 1.0F - (cos_theta * cos_theta)));
     const Vec3 view{sin_theta, 0.0F, cos_theta};
 
     FitTarget target;
@@ -130,7 +130,7 @@ struct FitTarget {
     target.energy = ggx_directional_albedo(alpha, cos_theta, target.fresnel);
     for (u32 i = 0; i < kFitTheta; ++i) {
         const f32 cl = (static_cast<f32>(i) + 0.5F) / static_cast<f32>(kFitTheta);
-        const f32 sl = std::sqrt(math::max(0.0F, 1.0F - cl * cl));
+        const f32 sl = std::sqrt(math::max(0.0F, 1.0F - (cl * cl)));
         for (u32 j = 0; j < kFitPhi; ++j) {
             // Half the azimuth: the lobe is symmetric about the plane of incidence, so the other
             // half carries no information the fit can use.
@@ -138,9 +138,9 @@ struct FitTarget {
             const Vec3 light{sl * std::cos(phi), sl * std::sin(phi), cl};
             const Vec3 half = normalize(light + view);
             const f32 v_dot_h = math::max(0.0F, dot(view, half));
-            const f32 value = ggx_d(math::max(0.0F, half.z), alpha) * smith_v(cl, cos_theta, alpha) *
-                              cl;
-            const u32 slot = i * kFitPhi + j;
+            const f32 value =
+                ggx_d(math::max(0.0F, half.z), alpha) * smith_v(cl, cos_theta, alpha) * cl;
+            const u32 slot = (i * kFitPhi) + j;
             target.direction[slot] = light;
             target.density[slot] = value;
             (void)v_dot_h;
@@ -198,13 +198,13 @@ struct FitTarget {
                 LtcFit candidate = fit;
                 switch (parameter) {
                     case 0:
-                        candidate.a *= 1.0F + direction * step;
+                        candidate.a *= 1.0F + (direction * step);
                         break;
                     case 1:
                         candidate.b += direction * step * fit.a;
                         break;
                     case 2:
-                        candidate.c *= 1.0F + direction * step;
+                        candidate.c *= 1.0F + (direction * step);
                         break;
                     default:
                         candidate.d += direction * step * fit.a;
@@ -251,10 +251,21 @@ struct FitTarget {
 /// The horizon clip is not an optimisation: without it the edge integral of a corner below the
 /// surface contributes with the wrong sign, and a rect light sinking below a floor gets BRIGHTER
 /// as it goes.
+/// The most vertices a convex polygon of `kMaxPolygonCorners` can have after one half-space clip:
+/// each edge can add at most one crossing, and at most one of the original vertices is replaced.
+inline constexpr u32 kMaxClippedCorners = 5;
+inline constexpr u32 kMaxPolygonCorners = 4;
+
 [[nodiscard]] u32 clip_to_horizon(Vec3* corners, u32 count) noexcept {
-    Vec3 clipped[5];
+    if (count < 3 || count > kMaxPolygonCorners) {
+        // Bounded here rather than by the callers, so `clipped`'s size is a property this function
+        // can be read to be correct about. Every caller already passes 3 or 4; the analyser cannot
+        // see that, and neither can the next reader.
+        return 0;
+    }
+    Vec3 clipped[kMaxClippedCorners];
     u32 written = 0;
-    for (u32 index = 0; index < count; ++index) {
+    for (u32 index = 0; index < count && written + 2U <= kMaxClippedCorners; ++index) {
         const Vec3 current = corners[index];
         const Vec3 next = corners[(index + 1U) % count];
         const bool current_above = current.z > 0.0F;
@@ -382,7 +393,7 @@ void LtcTable::build() noexcept {
         // The published parameterisation: sqrt of both axes, so the table spends its resolution
         // where the lobe changes shape fastest.
         const f32 v = (static_cast<f32>(y) + 0.5F) / static_cast<f32>(kLtcTableSize);
-        const f32 cos_theta = math::max(1.0F - v * v, 1.0e-3F);
+        const f32 cos_theta = math::max(1.0F - (v * v), 1.0e-3F);
         LtcFit fit = column_start;
         for (u32 step = 0; step < kLtcTableSize; ++step) {
             const u32 x = kLtcTableSize - 1U - step;  // roughest first
@@ -394,7 +405,7 @@ void LtcTable::build() noexcept {
             if (step == 0) {
                 column_start = fit;
             }
-            LtcEntry& entry = entries_[y * kLtcTableSize + x];
+            LtcEntry& entry = entries_[(y * kLtcTableSize) + x];
             entry.inverse_transform = matrix_of(fit);
             entry.magnitude = target.energy;
             entry.fresnel = target.fresnel;
@@ -407,11 +418,11 @@ LtcEntry LtcTable::sample(f32 roughness, f32 cos_theta) const noexcept {
     if (!built_) {
         return LtcEntry{};
     }
-    const f32 u = std::sqrt(math::clamp(roughness, 0.0F, 1.0F)) * static_cast<f32>(kLtcTableSize) -
-                  0.5F;
-    const f32 v = std::sqrt(math::clamp(1.0F - cos_theta, 0.0F, 1.0F)) *
-                      static_cast<f32>(kLtcTableSize) -
-                  0.5F;
+    const f32 u =
+        (std::sqrt(math::clamp(roughness, 0.0F, 1.0F)) * static_cast<f32>(kLtcTableSize)) - 0.5F;
+    const f32 v =
+        (std::sqrt(math::clamp(1.0F - cos_theta, 0.0F, 1.0F)) * static_cast<f32>(kLtcTableSize)) -
+        0.5F;
     const f32 uf = math::clamp(u, 0.0F, static_cast<f32>(kLtcTableSize - 1U));
     const f32 vf = math::clamp(v, 0.0F, static_cast<f32>(kLtcTableSize - 1U));
     const auto x0 = static_cast<u32>(uf);
@@ -421,14 +432,15 @@ LtcEntry LtcTable::sample(f32 roughness, f32 cos_theta) const noexcept {
     const f32 fx = uf - static_cast<f32>(x0);
     const f32 fy = vf - static_cast<f32>(y0);
 
-    const LtcEntry& a = entries_[y0 * kLtcTableSize + x0];
-    const LtcEntry& b = entries_[y0 * kLtcTableSize + x1];
-    const LtcEntry& c = entries_[y1 * kLtcTableSize + x0];
-    const LtcEntry& d = entries_[y1 * kLtcTableSize + x1];
+    const LtcEntry& a = entries_[(y0 * kLtcTableSize) + x0];
+    const LtcEntry& b = entries_[(y0 * kLtcTableSize) + x1];
+    const LtcEntry& c = entries_[(y1 * kLtcTableSize) + x0];
+    const LtcEntry& d = entries_[(y1 * kLtcTableSize) + x1];
 
     LtcEntry result;
     for (usize column = 0; column < 3; ++column) {
-        const Vec3 top = lerp(a.inverse_transform.columns[column], b.inverse_transform.columns[column], fx);
+        const Vec3 top =
+            lerp(a.inverse_transform.columns[column], b.inverse_transform.columns[column], fx);
         const Vec3 bottom =
             lerp(c.inverse_transform.columns[column], d.inverse_transform.columns[column], fx);
         result.inverse_transform.columns[column] = lerp(top, bottom, fy);
@@ -487,8 +499,7 @@ f32 ltc_evaluate(const LtcTable& table, const AreaLight& light, Vec3 normal, Vec
     // The shading frame: +Z the normal, +X the view's tangential part. The LTC's anisotropy is
     // expressed in the plane of incidence, so the frame has to be built from the view and not from
     // an arbitrary tangent.
-    const Vec3 tangent =
-        normalized_or(unit_view - unit_normal * cos_theta, Vec3{1.0F, 0.0F, 0.0F});
+    const Vec3 tangent = normalized_or(unit_view - unit_normal * cos_theta, Vec3{1.0F, 0.0F, 0.0F});
     const Vec3 bitangent = cross(unit_normal, tangent);
 
     const AreaQuad quad = area_light_quad(light);
@@ -539,8 +550,7 @@ RepresentativePoint representative_point(const AreaLight& light, Vec3 normal, Ve
     const Vec3 unit_normal = normalized_or(normal, Vec3{0.0F, 0.0F, 1.0F});
     const Vec3 unit_view = normalized_or(view, Vec3{0.0F, 0.0F, 1.0F});
     const Vec3 reflection =
-        normalized_or(unit_normal * (2.0F * dot(unit_normal, unit_view)) - unit_view,
-                      unit_normal);
+        normalized_or(unit_normal * (2.0F * dot(unit_normal, unit_view)) - unit_view, unit_normal);
 
     // The point on the emitter's plane closest to the reflection ray, clamped to the emitter's
     // extent. For a sphere and a tube the closest point on the surface is the same construction
@@ -572,7 +582,7 @@ RepresentativePoint representative_point(const AreaLight& light, Vec3 normal, Ve
     const f32 solid_angle = area_light_solid_angle(light);
     const f32 angular_radius = std::sqrt(solid_angle / math::kPi);
     const f32 alpha = math::max(roughness * roughness, 1.0e-4F);
-    const f32 widened = math::clamp(alpha + angular_radius * 0.5F, alpha, 1.0F);
+    const f32 widened = math::clamp(alpha + (angular_radius * 0.5F), alpha, 1.0F);
     result.effective_roughness = std::sqrt(widened);
     result.energy_scale = (alpha * alpha) / (widened * widened);
     return result;
@@ -588,7 +598,7 @@ f32 emitter_filter_level(f32 roughness, f32 solid_angle_steradians, u32 mip_coun
     // surface, or a light filling the sky, reads the average.
     const f32 lobe = math::clamp(roughness, 0.0F, 1.0F);
     const f32 coverage = math::clamp(solid_angle_steradians / (2.0F * math::kPi), 0.0F, 1.0F);
-    const f32 spread = math::clamp(lobe + coverage * (1.0F - lobe), 0.0F, 1.0F);
+    const f32 spread = math::clamp(lobe + (coverage * (1.0F - lobe)), 0.0F, 1.0F);
     return spread * top;
 }
 

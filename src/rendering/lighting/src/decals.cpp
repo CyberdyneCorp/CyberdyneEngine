@@ -37,7 +37,7 @@ f32 decal_retention_score(const DecalInstance& decal, f64 now_seconds,
     // Importance dominates, coverage next, freshness last. That order is the requirement's own
     // list read as a priority — "by age, screen coverage, and importance" names the three, and a
     // decal an author marked important should outlive a fresh one nobody can see.
-    return decal.importance * 4.0F + decal.screen_coverage * 2.0F + freshness;
+    return (decal.importance * 4.0F) + (decal.screen_coverage * 2.0F) + freshness;
 }
 
 f32 decal_angle_fade(const DecalInstance& decal, Vec3 receiver_normal) noexcept {
@@ -54,7 +54,7 @@ f32 decal_angle_fade(const DecalInstance& decal, Vec3 receiver_normal) noexcept 
     // Smooth from the limit to face-on, so a decal on a curved surface does not show a hard edge
     // where the fade begins.
     const f32 t = (cosine - limit) / math::max(1.0F - limit, 1.0e-4F);
-    return t * t * (3.0F - 2.0F * t);
+    return t * t * (3.0F - (2.0F * t));
 }
 
 f32 decal_distance_fade(const DecalInstance& decal, f32 distance_metres) noexcept {
@@ -66,8 +66,8 @@ f32 decal_distance_fade(const DecalInstance& decal, f32 distance_metres) noexcep
     if (distance_metres >= end) {
         return 0.0F;
     }
-    const f32 t = 1.0F - (distance_metres - start) / (end - start);
-    return t * t * (3.0F - 2.0F * t);
+    const f32 t = 1.0F - ((distance_metres - start) / (end - start));
+    return t * t * (3.0F - (2.0F * t));
 }
 
 DecalProjection project_decal(const DecalInstance& decal, Vec3 world_position) noexcept {
@@ -83,10 +83,10 @@ DecalProjection project_decal(const DecalInstance& decal, Vec3 world_position) n
     const Vec3 extent{math::max(decal.half_extent.x, 1.0e-5F),
                       math::max(decal.half_extent.y, 1.0e-5F),
                       math::max(decal.half_extent.z, 1.0e-5F)};
-    projection.uv = Vec2{x / (2.0F * extent.x) + 0.5F, y / (2.0F * extent.y) + 0.5F};
+    projection.uv = Vec2{(x / (2.0F * extent.x)) + 0.5F, (y / (2.0F * extent.y)) + 0.5F};
     projection.depth = math::clamp((z + extent.z) / (2.0F * extent.z), 0.0F, 1.0F);
-    projection.inside = std::fabs(x) <= extent.x && std::fabs(y) <= extent.y &&
-                        std::fabs(z) <= extent.z;
+    projection.inside =
+        std::fabs(x) <= extent.x && std::fabs(y) <= extent.y && std::fabs(z) <= extent.z;
     return projection;
 }
 
@@ -196,9 +196,9 @@ bool DecalBudget::remove(u64 id) noexcept {
 }
 
 void DecalBudget::report_screen_coverage(u64 id, f32 coverage) noexcept {
-    for (usize index = 0; index < decals_.size(); ++index) {
-        if (decals_[index].id == id) {
-            decals_[index].screen_coverage = math::clamp(coverage, 0.0F, 1.0F);
+    for (auto& decal : decals_) {
+        if (decal.id == id) {
+            decal.screen_coverage = math::clamp(coverage, 0.0F, 1.0F);
             return;
         }
     }
@@ -221,9 +221,9 @@ u32 DecalBudget::application_order(Span<u32> out) const noexcept {
         while (slot > 0) {
             const DecalInstance& previous = decals_[out[slot - 1U]];
             const DecalInstance& current = decals_[candidate];
-            const bool after = previous.sort_order > current.sort_order ||
-                               (previous.sort_order == current.sort_order &&
-                                previous.id > current.id);
+            const bool after =
+                previous.sort_order > current.sort_order ||
+                (previous.sort_order == current.sort_order && previous.id > current.id);
             if (!after) {
                 break;
             }

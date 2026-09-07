@@ -134,7 +134,7 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M0** · Ground | 8 | 0 | — |
 | **M1** · Substrate | 7 | 0 | — |
 | **M2** · World | 6 | 0 | — |
-| **M3** · First light | 11 | 1 | `core-math` |
+| **M3** · First light | 10 | 1 | `core-math` |
 | **M4** · Playable | 10 | 0 | — |
 | **M5** · Authorable | 16 | 4 | `core-type-system`, `native-abi`, `project-and-plugins`, `scene-graph-and-nodes` |
 | **M5.5** · Operable | 3 | 0 | — |

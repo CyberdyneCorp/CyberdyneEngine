@@ -263,16 +263,16 @@ private:
         u32 frames_since_grant = 0;
     };
 
-    [[nodiscard]] f32 predicted_at(const Entry& entry, u8 position) const noexcept;
+    [[nodiscard]] static f32 predicted_at(const Entry& entry, u8 position) noexcept;
     /// The coarsest single-step cost quantum reachable from where every subsystem stands now.
     [[nodiscard]] f32 coarsest_quantum_ms() const noexcept;
     /// What one step of resolution scale would add, priced through `resolution_sensitivity`.
     [[nodiscard]] f32 resolution_step_increase_ms(u8 target) const noexcept;
-    void cap_and_floor(Entry& entry) noexcept;
+    void cap_and_floor(Entry& entry) const noexcept;
     void tighten(f32 error_ms, ArbiterReport& report) noexcept;
     void relax(f32 headroom_ms, ArbiterReport& report) noexcept;
     [[nodiscard]] bool everything_at_minimum() const noexcept;
-    void push(ArbiterReport& report, const BudgetAdjustment& adjustment) noexcept;
+    static void push(ArbiterReport& report, const BudgetAdjustment& adjustment) noexcept;
     /// Subsystem indices in ascending `reduction_order`, ties broken by enumerator. Recomputed on
     /// `declare()` so a tick never sorts.
     void rebuild_order() noexcept;

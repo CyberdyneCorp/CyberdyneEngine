@@ -238,3 +238,24 @@ run-open-world *args:
     echo "==> run         open-world  profile=${profile}"
     python3 samples/06-open-world/openworld.py --profile "${profile}" \
         --build-dir "${build_dir}" --work "${build_dir}/open-world" ${rest}
+
+# Run the M7 artefact: a film-detail set cooked, put on the device, lit, and held to a frame budget
+# while the arbiter reallocates under a scripted load spike.
+# Usage: just run-fidelity [--profile <p>] [--detail <f>] [--frames <n>] [--repeat <n>] [--shot <path>]
+#
+# It builds the engine first, like every recipe here. `--repeat` defaults to four inside the driver
+# and the figure the run leads with is the median over those runs — M7 task 5b.5b, and the reason
+# `samples/harness/artefact.py` exists: a single sample of a frame time is a draw.
+run-fidelity *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    echo "==> run         fidelity  profile=${profile}"
+    python3 samples/07-fidelity/fidelity.py --profile "${profile}" \
+        --build-dir "${build_dir}" --work "${build_dir}/fidelity" ${rest}

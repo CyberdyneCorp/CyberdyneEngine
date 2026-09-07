@@ -35,12 +35,11 @@ using cy::rendering::CookieProjectionKind;
 using cy::rendering::kAllChannels;
 using cy::rendering::LightCandidate;
 using cy::rendering::LightFunction;
-using cy::rendering::LightingPath;
 using cy::rendering::lighting_path_stats;
+using cy::rendering::LightingPath;
 using cy::rendering::ManyLightSettings;
 using cy::rendering::NamedChannel;
 using cy::rendering::Reservoir;
-using cy::rendering::reservoir_update;
 using cy::rendering::sample_lights;
 using cy::rendering::SampleStream;
 using cy::rendering::validate_many_light;
@@ -101,8 +100,8 @@ CY_TEST_CASE("channels: equal importance breaks on the lowest index, not on iter
     CY_CHECK_EQ(assigned[0], 0U);
     CY_CHECK_EQ(assigned[1], 1U);
     CY_CHECK(channels_intersect(kAllChannels, channel_bit(NamedChannel::Vfx)));
-    CY_CHECK_FALSE(channels_intersect(channel_bit(NamedChannel::Vfx),
-                                      channel_bit(NamedChannel::World)));
+    CY_CHECK_FALSE(
+        channels_intersect(channel_bit(NamedChannel::Vfx), channel_bit(NamedChannel::World)));
 }
 
 CY_TEST_CASE("cookies: a spot's cookie lands on the cone, and nothing behind the apex is lit") {
@@ -132,7 +131,8 @@ CY_TEST_CASE("cookies: a spot's cookie lands on the cone, and nothing behind the
     CY_CHECK_FALSE(cookie_uv(projection, Vec3{50.0F, 0.0F, -5.0F}).inside);
 }
 
-CY_TEST_CASE("cookies: a directional cloud cookie is the same at any altitude and costs no shadow") {
+CY_TEST_CASE(
+    "cookies: a directional cloud cookie is the same at any altitude and costs no shadow") {
     CookieProjection clouds;
     clouds.kind = CookieProjectionKind::OrthographicPlane;
     clouds.forward = Vec3{0.0F, 0.0F, -1.0F};
@@ -241,7 +241,6 @@ CY_TEST_CASE("many-light: the limit that is reported is the one that applies") {
     CY_CHECK_EQ(b.candidates_per_pixel, stochastic.candidates_per_pixel);
     CY_CHECK_EQ(b.visibility_rays_per_pixel, stochastic.visibility_rays_per_pixel);
 }
-
 
 CY_TEST_CASE("many-light: a reservoir's sample count is capped so history stops being stubborn") {
     // Without the cap a temporal reservoir accumulates confidence forever and stops responding to

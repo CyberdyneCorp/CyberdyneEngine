@@ -12,6 +12,15 @@
 # (cy/backends/rhi/types.h) is engine-owned rather than a typedef of Vulkan's.
 add_subdirectory(rhi)
 
+# The Metal seed. M7 task 10.5, delivered at M11.
+#
+# It is added HERE, right after rhi/, because what it is FOR is the RHI's interface rather than
+# Metal: `delivery-roadmap` seeds a second backend early "to expose Vulkan-specific assumptions in
+# rhi-and-render-graph while they are still cheap", and eight of them are named, priced and tested
+# in this module — on a machine with no Metal, which is why the target builds unconditionally and
+# only its `src/device.mm` is gated by CY_RENDERER_METAL and APPLE.
+add_subdirectory(rhi-metal)
+
 # The shader system: Slang in, SPIR-V out, and the caching, permutation and reflection-driven
 # binding built around somebody else's compiler. Read after rhi/ because cy::shader consumes the
 # RHI's descriptor and pipeline vocabulary — reflection produces rhi::DescriptorBinding directly,

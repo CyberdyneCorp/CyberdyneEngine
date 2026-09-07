@@ -93,7 +93,6 @@ CY_TEST_CASE("area: a disc and a rect of the same emitting area read as the same
     CY_CHECK_NEAR(ltc_evaluate_diffuse(disc, normal), ltc_evaluate_diffuse(rect, normal), 1.0e-4F);
 }
 
-
 CY_TEST_CASE("area: the representative-point fallback is documented and widens with the light") {
     // "WHEN the shading model does not support LTC (hair, cloth) THEN the area light SHALL be
     // approximated by a representative point with a documented approximation."
@@ -158,7 +157,7 @@ CY_TEST_CASE("area: a sphere light faces the shading point however it is turned"
     CY_CHECK_GT(upright, 0.0F);
 
     const AreaQuad quad = area_light_quad(sphere);
-    for (u32 index = 0; index < 4; ++index) {
-        CY_CHECK_GT(quad.corner[index].z, 0.0F);
+    for (auto index : quad.corner) {
+        CY_CHECK_GT(index.z, 0.0F);
     }
 }

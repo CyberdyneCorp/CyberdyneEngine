@@ -38,8 +38,8 @@ public:
 
     /// A symmetric multiplier in [1 - amplitude, 1 + amplitude].
     [[nodiscard]] f32 jitter(f32 amplitude) noexcept {
-        const f32 unit = static_cast<f32>(next() % 2001U) / 1000.0F - 1.0F;
-        return 1.0F + unit * amplitude;
+        const f32 unit = (static_cast<f32>(next() % 2001U) / 1000.0F) - 1.0F;
+        return 1.0F + (unit * amplitude);
     }
 
 private:
@@ -87,8 +87,8 @@ public:
                 return declared;
             }
             nominal_ms_[index] = profile.subsystems[index].base_cost_ms;
-            controllers_[index].set_allocation_ms(arbiter_.allocation_ms(
-                static_cast<BudgetSubsystem>(index)));
+            controllers_[index].set_allocation_ms(
+                arbiter_.allocation_ms(static_cast<BudgetSubsystem>(index)));
         }
         return {};
     }
@@ -98,8 +98,8 @@ public:
     void set_pinned(bool pinned) noexcept {
         // "Pinned mode is total": one call, and the caller has no way to pin half of it.
         arbiter_.set_pinned(pinned);
-        for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
-            controllers_[index].set_pinned(pinned);
+        for (SubsystemController& controller : controllers_) {
+            controller.set_pinned(pinned);
         }
     }
 
@@ -184,7 +184,7 @@ private:
         const f32 ladder = declaration.ladder.cost_at(controllers_[index].position());
         const f32 scale = arbiter_.resolution_scale();
         const f32 sensitivity = declaration.resolution_sensitivity;
-        const f32 pixels = 1.0F - sensitivity + sensitivity * scale * scale;
+        const f32 pixels = 1.0F - sensitivity + (sensitivity * scale * scale);
         return nominal_ms_[index] * load_ * ladder * pixels;
     }
 

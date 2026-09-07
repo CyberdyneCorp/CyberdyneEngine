@@ -59,3 +59,13 @@ add_subdirectory(05b-agent-authoring)
 # patch and play the patched world. Its CMakeLists.txt argues the shape, and declares nothing at all
 # where the build tools are switched off.
 add_subdirectory(06-open-world)
+# M7's artefact is a SIXTH shape: one C++ target and one driver, like M6's, but what the two
+# processes divide is not content and game — it is the frame and the report. cy_sample_fidelity
+# generates a film-detail interior and exterior, cooks every shell through virtual geometry's real
+# builder with the crack-free check the cook is required to run, puts the result on the device
+# through the cluster traversal and the visibility buffer, lights it with the illumination system,
+# and drives the budget arbiter under a scripted load spike with the frame time it just measured.
+# fidelity.py checks every claim the program printed and reports through harness/artefact.py, which
+# is what makes a recorded gap a non-zero exit. Its CMakeLists.txt argues the shape and declares
+# nothing where python3 is absent.
+add_subdirectory(07-fidelity)

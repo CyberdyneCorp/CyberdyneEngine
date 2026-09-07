@@ -752,6 +752,46 @@ class = "milestone"
 milestone = "m6"
 state = "green"
 
+
+# M7 IS NOT CLOSED BY THE CHANGE THAT CARRIES THIS LINE, and the state says so. Section 11 lands the
+# artefact and section 12 the records; the milestone closes when `just roadmap-milestone m7` passes
+# in every profile and the change is archived, which is section 13 and not a thing this file can
+# assert about itself.
+#
+# THE FLIP IS NOT SOMETHING SOMEBODY HAS TO REMEMBER. `just roadmap-test` reads
+# openspec/changes/archive/ and fails when a milestone whose change is archived still has a gate at
+# `joins-on-close`, so archiving this change without flipping the line below turns `roadmap-test`
+# red, in the `roadmap` job, on the next pull request.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED is M7's own criteria added to the permanent set and nothing else —
+# the flat ledger's arithmetic since M5. THREE OF THEM CARRY `requires = "gpu"` and one
+# `requires = "display"`, so on a hosted runner they are reported as NOT EVALUATED and counted
+# separately rather than passing. That is the honest half of a milestone whose subject is a frame:
+# M6's whole exit set could be judged by a machine with no device, and M7's cannot.
+#
+# AND IT IS ALSO THE FLIP THAT MOVES ci.yml's `milestone` JOB, which is task 12.4 and the same rule
+# M6 landed: `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest
+# ledger any workflow evaluates, so setting `state = "green"` below WITHOUT changing that job's
+# milestone id turns `just ci-check` red. The two edits belong in the archiving commit together,
+# exactly as the flip and the archive already do.
+#
+# ONE MORE THING THIS GATE CARRIES THAT NO EARLIER ONE DID. M7's ledger declares `plan-consistency`,
+# which runs `just roadmap-test` — and `roadmap-test` now checks the two forbidden roadmap patterns
+# `delivery-roadmap` said "SHALL be checkable" and which nothing checked: a capability scheduled to
+# reach Working before a prerequisite reaches Seed, and the four plan documents disagreeing. Both
+# were found at M6's gate by a person reading. Because `roadmap-status` above already runs
+# `just roadmap-test`, that check is in the PERMANENT set from today rather than from the flip.
+
+[[gate]]
+id = "milestone-m7"
+describe = "M7 — Fidelity: the exit criteria of the milestone that made the renderer a set of systems that negotiate — a material compiler, virtual geometry on the device, virtual shadows, one temporal framework, global illumination and its fallback, and the budget arbiter that makes six unbounded systems into one frame."
+runs = ["just roadmap-milestone m7"]
+platforms = ["linux"]
+since = "m7"
+class = "milestone"
+milestone = "m7"
+state = "joins-on-close"
+
 # --- Recorded overrides ---------------------------------------------------------------------------
 #
 # None. The shape one takes, when one is unavoidable:

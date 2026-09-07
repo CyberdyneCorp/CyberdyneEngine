@@ -120,10 +120,10 @@ bool reservoir_update(Reservoir& reservoir, const LightCandidate& candidate, f32
 
 /// Combine `other` into `reservoir`, as if `other`'s candidates had been offered to it.
 ///
-/// `other_target_at_here` is `other`'s selected light's target function evaluated AT THIS pixel, not
-/// at the neighbour's. That distinction is the whole of spatial reuse being correct: reusing the
-/// neighbour's own target value biases the estimate towards whatever the neighbour was looking at,
-/// and the symptom is a soft halo of the wrong colour around every geometric edge.
+/// `other_target_at_here` is `other`'s selected light's target function evaluated AT THIS pixel,
+/// not at the neighbour's. That distinction is the whole of spatial reuse being correct: reusing
+/// the neighbour's own target value biases the estimate towards whatever the neighbour was looking
+/// at, and the symptom is a soft halo of the wrong colour around every geometric edge.
 void reservoir_combine(Reservoir& reservoir, const Reservoir& other, f32 other_target_at_here,
                        u32 max_sample_count, SampleStream& stream) noexcept;
 

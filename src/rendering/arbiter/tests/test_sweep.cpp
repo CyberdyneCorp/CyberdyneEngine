@@ -34,8 +34,8 @@ constexpr u32 kPlateauFrames = 700;
 constexpr u32 kTailFrames = 450;
 
 [[nodiscard]] f32 load_at(u32 index) noexcept {
-    return kLoadFirst + (kLoadLast - kLoadFirst) * static_cast<f32>(index) /
-                            static_cast<f32>(kLoadCount - 1U);
+    return kLoadFirst +
+           ((kLoadLast - kLoadFirst) * static_cast<f32>(index) / static_cast<f32>(kLoadCount - 1U));
 }
 
 struct PlateauResult {
@@ -94,7 +94,7 @@ CY_TEST_CASE("arbiter sweep: 71 step loads settle, none oscillates, none settles
         if (plateau.tail_changes > 0) {
             ++oscillating;
             worst_tail_changes = plateau.tail_changes > worst_tail_changes ? plateau.tail_changes
-                                                                          : worst_tail_changes;
+                                                                           : worst_tail_changes;
         }
         settle_sum += plateau.settle_frame;
         worst_settle = plateau.settle_frame > worst_settle ? plateau.settle_frame : worst_settle;
@@ -110,8 +110,8 @@ CY_TEST_CASE("arbiter sweep: 71 step loads settle, none oscillates, none settles
 
     CY_TEST_MESSAGE("sweep: ", kLoadCount, " loads, ", oscillating, " oscillating (worst tail ",
                     worst_tail_changes, " changes), ", over_budget,
-                    " settled over budget, mean settle frame ", settle_sum / kLoadCount,
-                    ", worst ", worst_settle);
+                    " settled over budget, mean settle frame ", settle_sum / kLoadCount, ", worst ",
+                    worst_settle);
 
     CY_CHECK_EQ(oscillating, 0U);
     CY_CHECK_EQ(over_budget, 0U);

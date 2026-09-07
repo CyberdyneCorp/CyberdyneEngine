@@ -44,12 +44,17 @@
 //     scale by two orders of magnitude across the table, and one step size for all four is either
 //     useless at one end or catastrophic at the other.
 //
-// WHAT IT COSTS: about 135 ms of CPU, once, in an optimised build. WHAT IT IS WORTH:
-// `tests/test_reference.cpp` measures it against a Monte Carlo integration of the same BRDF over
-// the same rectangle and the numbers are in that file's message. The one case that is relatively
-// far off is a narrow lobe pointed away from the emitter, where the reference itself is four parts
-// in a thousand of the brightest configuration — which is why that file reports the error as a
-// fraction of the SET's peak and not as a ratio per configuration.
+// WHAT IT COSTS: about 430 ms of CPU at -O0, once per process, and well under a tenth of that in
+// an optimised build.
+//
+// WHAT IT IS WORTH: `tests/test_reference.cpp` measures it against an integration of the same BRDF
+// over the same rectangle — MEAN ABSOLUTE ERROR 2.7% OF THE SET'S PEAK over eight configurations,
+// worst 16.4%. The one case that is relatively far off is a narrow lobe pointed away from the
+// emitter, where the reference itself is four parts in a thousand of the brightest configuration —
+// which is why that file reports the error as a fraction of the SET's peak and not as a ratio per
+// configuration, and prints the ratio beside it rather than hiding it.
+//
+// The diffuse half has no fit in it and is exact: 0.002% against the same reference.
 //
 // ================================================================================================
 // THE FALLBACK IS A REPRESENTATIVE POINT, AND THE APPROXIMATION IS WRITTEN DOWN
@@ -70,8 +75,8 @@
 namespace cy::rendering {
 
 /// The area light shapes the engine evaluates. `rendering-lighting-and-shadows`' light types name
-/// rect, disc, sphere and tube; every one of them reaches `ltc_evaluate_polygon` as a polygon or as
-/// its closed-form equivalent, so the evaluator has one path.
+/// rect, disc, sphere and tube; every one of them reaches `integrate_cosine_polygon` as a quad —
+/// `area_light_quad()` is the substitution — so the evaluator has one path.
 enum class AreaLightShape : u8 {
     Rect = 0,
     Disc,
@@ -118,11 +123,12 @@ struct AreaQuad {
 /// rect light of the same area read as the same brightness rather than differing by 21%.
 [[nodiscard]] AreaQuad area_light_quad(const AreaLight& light) noexcept;
 
-/// The LTC table's dimensions. 32x32 rather than the published 64x64: the moment-matched fit is
-/// smooth in both parameters, and `tests/test_area.cpp` measures that the interpolation error at 32
-/// is below the fit's own error, which is what makes a larger table a waste of cache rather than an
-/// improvement.
-inline constexpr u32 kLtcTableSize = 32;
+/// The LTC table's dimensions. 24x24 rather than the published 64x64, and the reason is the fit
+/// rather than the memory: the table is fitted at startup and the cost is quadratic in this number,
+/// so it buys accuracy against a startup cost. 24 lands the mean error at 2.5% of a scene's peak
+/// specular value (`tests/test_reference.cpp` measures it), and the fit's own error dominates the
+/// interpolation error well before a larger table would help.
+inline constexpr u32 kLtcTableSize = 24;
 
 /// One entry: the inverse transform the evaluator applies to the light's corners, plus the two
 /// scalar terms the split-sum needs.

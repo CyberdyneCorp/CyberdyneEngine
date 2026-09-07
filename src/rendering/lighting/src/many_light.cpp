@@ -34,7 +34,7 @@ SampleStream::SampleStream(u32 pixel_x, u32 pixel_y, u32 frame) noexcept {
     // A hash of (x, y, frame) rather than a counter: neighbouring pixels must not walk correlated
     // sequences, or the spatial reuse combines samples that were already the same and the variance
     // does not go down. Wang's integer hash, mixed twice.
-    u32 seed = pixel_x * 0x9E3779B9U ^ pixel_y * 0x85EBCA6BU ^ frame * 0xC2B2AE35U;
+    u32 seed = (pixel_x * 0x9E3779B9U) ^ (pixel_y * 0x85EBCA6BU) ^ (frame * 0xC2B2AE35U);
     seed = (seed ^ 61U) ^ (seed >> 16U);
     seed *= 9U;
     seed = seed ^ (seed >> 4U);
@@ -76,8 +76,8 @@ void reservoir_combine(Reservoir& reservoir, const Reservoir& other, f32 other_t
     // The neighbour's contribution, re-weighted by ITS selected light's target function evaluated
     // HERE. Using `other.target` instead would bias the estimate towards whatever the neighbour was
     // looking at, and the symptom is a soft halo of the wrong colour around every geometric edge.
-    const f32 weight = other.contribution_weight() * other_target_at_here *
-                       static_cast<f32>(other.sample_count);
+    const f32 weight =
+        other.contribution_weight() * other_target_at_here * static_cast<f32>(other.sample_count);
     if (!(weight > 0.0F)) {
         // The neighbour's light contributes nothing here — a different surface, or the light is on
         // the wrong side. Its SAMPLE COUNT still counts: it really did consider those candidates,
@@ -133,8 +133,7 @@ LightingPath active_lighting_path(const ManyLightSettings& settings) noexcept {
     return LightingPath::StochasticManyLight;
 }
 
-LightingPathStats lighting_path_stats(const ManyLightSettings& settings,
-                                      u32 max_lights_per_cluster,
+LightingPathStats lighting_path_stats(const ManyLightSettings& settings, u32 max_lights_per_cluster,
                                       u32 lights_dropped_by_bound) noexcept {
     LightingPathStats stats;
     stats.path = active_lighting_path(settings);

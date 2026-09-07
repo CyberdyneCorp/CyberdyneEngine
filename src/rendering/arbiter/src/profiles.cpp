@@ -53,8 +53,8 @@ void enable(RendererProfile& profile, RenderFeature feature, u8 quality, f32 cos
     setting.requires_capabilities = capabilities;
 }
 
-constexpr CapabilityMask kBaseline =
-    capability_bit(RenderCapability::ComputeShaders) | capability_bit(RenderCapability::IndirectDraw);
+constexpr CapabilityMask kBaseline = capability_bit(RenderCapability::ComputeShaders) |
+                                     capability_bit(RenderCapability::IndirectDraw);
 
 /// The seven subsystems, their declared reduction order, and the ladder each is priced on. The
 /// order is `rendering-architecture`'s own argument — "the VFX and post-processing controllers
@@ -318,9 +318,9 @@ CapabilityMask capabilities_of_shipped_desktop() noexcept {
 
 f32 declared_feature_cost_ms(const RendererProfile& profile) noexcept {
     f32 total = 0.0F;
-    for (u32 index = 0; index < kRenderFeatureCount; ++index) {
-        if (profile.features[index].enabled) {
-            total += profile.features[index].declared_cost_ms;
+    for (const FeatureSetting& setting : profile.features) {
+        if (setting.enabled) {
+            total += setting.declared_cost_ms;
         }
     }
     return total;

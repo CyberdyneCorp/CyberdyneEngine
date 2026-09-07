@@ -16,7 +16,6 @@ using cy::u8;
 using cy::rendering::AdjustmentCause;
 using cy::rendering::ArbiterConfig;
 using cy::rendering::ArbiterReport;
-using cy::rendering::BudgetAdjustment;
 using cy::rendering::BudgetArbiter;
 using cy::rendering::BudgetSubsystem;
 using cy::rendering::kBudgetSubsystemCount;
@@ -261,8 +260,8 @@ CY_TEST_CASE("controller: it tightens on its own authority and never relaxes on 
     // Over its allocation: it fixes that now, with nobody's permission.
     controller.set_allocation_ms(2.0F);
     for (u32 frame = 0; frame < 8; ++frame) {
-        controller.report_measured_ms(4.0F * controller.declaration().ladder.cost_at(
-                                                 controller.position()));
+        controller.report_measured_ms(
+            4.0F * controller.declaration().ladder.cost_at(controller.position()));
         (void)controller.update();
     }
     CY_CHECK_GT(controller.position(), 0);
@@ -272,8 +271,8 @@ CY_TEST_CASE("controller: it tightens on its own authority and never relaxes on 
     // because the time a step up costs comes out of a frame it is forbidden to see.
     controller.set_allocation_ms(40.0F);
     for (u32 frame = 0; frame < 400; ++frame) {
-        controller.report_measured_ms(4.0F * controller.declaration().ladder.cost_at(
-                                                 controller.position()));
+        controller.report_measured_ms(
+            4.0F * controller.declaration().ladder.cost_at(controller.position()));
         const SubsystemUpdate update = controller.update();
         CY_CHECK_FALSE(update.relaxed);
     }
@@ -283,8 +282,8 @@ CY_TEST_CASE("controller: it tightens on its own authority and never relaxes on 
     controller.grant_relax_step();
     u32 relaxations = 0;
     for (u32 frame = 0; frame < 200; ++frame) {
-        controller.report_measured_ms(4.0F * controller.declaration().ladder.cost_at(
-                                                 controller.position()));
+        controller.report_measured_ms(
+            4.0F * controller.declaration().ladder.cost_at(controller.position()));
         relaxations += controller.update().relaxed ? 1U : 0U;
     }
     CY_CHECK_EQ(relaxations, 1U);
@@ -307,10 +306,9 @@ CY_TEST_CASE("controller: the tighten margin is what stops the ratchet, and it i
             seed ^= seed << 13U;
             seed ^= seed >> 17U;
             seed ^= seed << 5U;
-            const f32 unit = static_cast<f32>(seed % 2001U) / 1000.0F - 1.0F;
-            const f32 cost = 4.0F *
-                             controller.declaration().ladder.cost_at(controller.position()) *
-                             (1.0F + unit * 0.03F);
+            const f32 unit = (static_cast<f32>(seed % 2001U) / 1000.0F) - 1.0F;
+            const f32 cost = 4.0F * controller.declaration().ladder.cost_at(controller.position()) *
+                             (1.0F + (unit * 0.03F));
             controller.report_measured_ms(cost);
             (void)controller.update();
         }

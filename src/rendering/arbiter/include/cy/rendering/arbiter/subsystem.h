@@ -90,12 +90,23 @@ struct QualityLadder {
     /// The price of position `p`, clamped into the declared range. Never zero and never negative:
     /// a position that cost nothing would let one step cover any deficit.
     [[nodiscard]] f32 cost_at(u8 position) const noexcept {
-        const u8 clamped = position < positions ? position : static_cast<u8>(positions - 1U);
-        const f32 cost = relative_cost[clamped];
+        // Clamped against BOTH the declared count and the array's own size. The second is not
+        // redundant: `positions` is a field a caller sets, and a zero would make `positions - 1`
+        // wrap to 255 and index a six-element array. `declare()` refuses a zero, but this is a
+        // `constexpr`-friendly accessor a caller can reach before any declaration has happened.
+        const u8 usable = last_position();
+        const f32 cost = relative_cost[position < usable ? position : usable];
         return cost > 0.0F ? cost : 1.0F;
     }
 
-    [[nodiscard]] u8 last_position() const noexcept { return static_cast<u8>(positions - 1U); }
+    /// The last usable index. Never above `kMaxLadderPositions - 1`, and never wraps on a zero
+    /// `positions`.
+    [[nodiscard]] u8 last_position() const noexcept {
+        const u8 count = positions > 0 ? positions : 1U;
+        const u8 capped =
+            count < kMaxLadderPositions ? count : static_cast<u8>(kMaxLadderPositions);
+        return static_cast<u8>(capped - 1U);
+    }
 };
 
 /// Everything one subsystem tells the arbiter, once, at registration.

@@ -39,8 +39,8 @@ CookieSample cookie_uv(const CookieProjection& projection, Vec3 world_position) 
             // light. That is what makes a cloud cookie the same at any altitude, which is what a
             // cloud shadow is.
             const f32 scale = projection.world_scale > 0.0F ? projection.world_scale : 1.0F;
-            sample.uv = Vec2{dot(point, projection.right) / scale,
-                             dot(point, projection.up) / scale};
+            sample.uv =
+                Vec2{dot(point, projection.right) / scale, dot(point, projection.up) / scale};
             sample.direction = normalized_or(projection.forward, Vec3{0.0F, 0.0F, -1.0F});
             sample.inside = true;
             break;
@@ -54,12 +54,12 @@ CookieSample cookie_uv(const CookieProjection& projection, Vec3 world_position) 
                 sample.inside = false;
                 break;
             }
-            const f32 half_extent = std::tan(math::clamp(projection.cone_half_angle, 1.0e-3F,
-                                                         1.5F));
+            const f32 half_extent =
+                std::tan(math::clamp(projection.cone_half_angle, 1.0e-3F, 1.5F));
             const f32 x = dot(offset, projection.right) / (depth * half_extent);
             const f32 y = dot(offset, projection.up) / (depth * half_extent);
             // The cone's edge lands on the cookie's edge: [-1, 1] becomes [0, 1].
-            sample.uv = Vec2{x * 0.5F + 0.5F, y * 0.5F + 0.5F};
+            sample.uv = Vec2{(x * 0.5F) + 0.5F, (y * 0.5F) + 0.5F};
             sample.direction = normalized_or(offset, projection.forward);
             sample.inside = true;
             break;
@@ -80,7 +80,7 @@ CookieSample cookie_uv(const CookieProjection& projection, Vec3 world_position) 
                 u = folded_u;
                 v = folded_v;
             }
-            sample.uv = Vec2{u * 0.5F + 0.5F, v * 0.5F + 0.5F};
+            sample.uv = Vec2{(u * 0.5F) + 0.5F, (v * 0.5F) + 0.5F};
             sample.inside = true;
             break;
         }
@@ -108,7 +108,8 @@ void advance_cookie_scroll(CookieProjection& projection, Vec2 uv_per_second, Vec
     // its own quantisation: at 0.1 UV per second, an hour of play reaches 360, where the spacing
     // between representable values is already coarser than a texel of a 4k cookie and the pattern
     // visibly steps.
-    projection.scroll_uv = Vec2{wrap_unit(projection.scroll_uv.x), wrap_unit(projection.scroll_uv.y)};
+    projection.scroll_uv =
+        Vec2{wrap_unit(projection.scroll_uv.x), wrap_unit(projection.scroll_uv.y)};
     projection.world_offset = projection.world_offset + world_per_second * seconds;
 }
 

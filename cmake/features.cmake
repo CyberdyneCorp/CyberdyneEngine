@@ -193,7 +193,12 @@ set(CY_FEATURE_OPTIONS
     # machine with no Vulkan SDK nothing but the fetch, and the device suites skip loudly when there
     # is no GPU to draw on.
     "CY_RENDERER_VULKAN|ON|The Vulkan RHI backend (M3)"
-    "CY_RENDERER_METAL|OFF|The Metal RHI backend (seeded M7, delivered M11)"
+    # APPLE, not OFF, and not ON. Rule 3 of every milestone brief since M3 — a delivered capability
+    # is on by default — meets a backend that cannot compile on three quarters of the machines this
+    # engine is built on. `APPLE` is the resolution: the seed's Apple half is on wherever it can be
+    # built and off where it cannot, and the half that carries the seed's FINDINGS is not behind
+    # this option at all (see src/backends/rhi-metal/CMakeLists.txt).
+    "CY_RENDERER_METAL|APPLE|The Metal RHI backend (seeded M7, delivered M11). Default: on when building on Apple, off elsewhere — the platform half cannot compile without an Apple toolchain, and the seed's mapping tables and findings are built either way"
     "CY_RENDERER_D3D12|OFF|The Direct3D 12 RHI backend (M11)"
     CACHE INTERNAL "The CY_* feature options: NAME|DEFAULT|description")
 
@@ -247,10 +252,22 @@ function(_cy_resolve_default name value out)
         set(${out} "${value}" PARENT_SCOPE)
         return()
     endif()
+    # APPLE: on where the platform can build it, off where it cannot. Added at M7 for
+    # CY_RENDERER_METAL, and it is a THIRD keyword rather than a hard-coded exception because the
+    # alternative — leaving the seeded backend OFF everywhere — makes rule 3 unsatisfiable for
+    # every platform backend this engine will ever add.
+    if(value STREQUAL "APPLE")
+        if(APPLE)
+            set(${out} ON PARENT_SCOPE)
+        else()
+            set(${out} OFF PARENT_SCOPE)
+        endif()
+        return()
+    endif()
     if(NOT value STREQUAL "DEVELOPMENT")
         message(FATAL_ERROR
             "cmake/features.cmake: ${name}'s default is `${value}`.\n"
-            "  A DEFAULT column is ON, OFF or DEVELOPMENT and nothing else.")
+            "  A DEFAULT column is ON, OFF, DEVELOPMENT or APPLE and nothing else.")
     endif()
     set(resolved OFF)
     if(CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE IN_LIST CY_DEVELOPMENT_CONFIGURATIONS)

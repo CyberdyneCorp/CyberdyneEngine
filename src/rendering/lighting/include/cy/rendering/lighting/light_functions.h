@@ -96,8 +96,8 @@ struct CookieSample {
 /// `cookie_uv` because scrolling is a per-frame operation on the light and sampling is a per-pixel
 /// one on the point — and because the wrap has to happen once rather than per pixel, or an
 /// f32 UV drifts into its own quantisation after an hour of play.
-void advance_cookie_scroll(CookieProjection& projection, Vec2 uv_per_second,
-                           Vec3 world_per_second, f32 seconds) noexcept;
+void advance_cookie_scroll(CookieProjection& projection, Vec2 uv_per_second, Vec3 world_per_second,
+                           f32 seconds) noexcept;
 
 /// A light function is a cookie plus what it does to the light. `rendering-lighting-and-shadows`
 /// names the texture; this is the small amount of policy around it.

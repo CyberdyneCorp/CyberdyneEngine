@@ -21,7 +21,6 @@ using cy::rendering::check_profile;
 using cy::rendering::declared_feature_cost_ms;
 using cy::rendering::kBudgetSubsystemCount;
 using cy::rendering::kProfileCount;
-using cy::rendering::kRenderFeatureCount;
 using cy::rendering::named_profile;
 using cy::rendering::pipeline_strengths;
 using cy::rendering::ProfileName;
@@ -47,8 +46,8 @@ CY_TEST_CASE("profiles: all four are internally consistent and the arbiter accep
         // a profile under which content does not appear, which the specification calls a defect in
         // the profile.
         for (BudgetSubsystem subsystem :
-             {BudgetSubsystem::Geometry, BudgetSubsystem::Shadows, BudgetSubsystem::MaterialEvaluation,
-              BudgetSubsystem::PostProcessing}) {
+             {BudgetSubsystem::Geometry, BudgetSubsystem::Shadows,
+              BudgetSubsystem::MaterialEvaluation, BudgetSubsystem::PostProcessing}) {
             CY_CHECK(arbiter.registered(subsystem));
         }
     }
@@ -68,7 +67,8 @@ CY_TEST_CASE("profiles: each profile's nominal state fits its own budget with he
                 nominal += profile.subsystems[slot].base_cost_ms;
             }
         }
-        const f32 allocatable = profile.arbiter.frame_budget_ms - profile.arbiter.non_allocatable_ms;
+        const f32 allocatable =
+            profile.arbiter.frame_budget_ms - profile.arbiter.non_allocatable_ms;
         CY_CHECK_LT(nominal, allocatable);
         // And the declared feature costs, which are what `validate_configuration` sums, fit too.
         CY_CHECK_LT(declared_feature_cost_ms(profile), profile.arbiter.frame_budget_ms);
@@ -104,9 +104,9 @@ CY_TEST_CASE("profiles: a device that cannot run mobile is told so, not given so
     // renderer at all, and saying so is more useful than returning a profile that fails at the
     // first dispatch.
     CY_CHECK_FALSE(select_profile(ProfileName::Standard, 0U));
-    CY_CHECK(select_profile(ProfileName::Standard,
-                            capability_bit(RenderCapability::ComputeShaders) |
-                                capability_bit(RenderCapability::IndirectDraw)));
+    CY_CHECK(
+        select_profile(ProfileName::Standard, capability_bit(RenderCapability::ComputeShaders) |
+                                                  capability_bit(RenderCapability::IndirectDraw)));
 }
 
 CY_TEST_CASE("profiles: a profile whose feature prerequisites are broken is refused") {

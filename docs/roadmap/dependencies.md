@@ -101,7 +101,7 @@ flowchart TB
     RARCH --> CAM
     GF --> SWIFT
     ABI --> EDAPP
-    VIEW --> RARCH
+    RARCH --> VIEW
     SWIFT --> LIVE
     EDDOC --> LIVE
 

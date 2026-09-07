@@ -48,15 +48,17 @@ BudgetArbiter::BudgetArbiter() noexcept {
 Status BudgetArbiter::configure(const ArbiterConfig& config) noexcept {
     if (!(config.frame_budget_ms > 0.0F) || config.non_allocatable_ms < 0.0F ||
         config.non_allocatable_ms >= config.frame_budget_ms) {
-        return fail(ErrorCode::InvalidArgument,
-                    "BudgetArbiter: the non-allocatable part must be smaller than the frame budget");
+        return fail(
+            ErrorCode::InvalidArgument,
+            "BudgetArbiter: the non-allocatable part must be smaller than the frame budget");
     }
     if (config.period_frames == 0) {
-        return fail(ErrorCode::InvalidArgument, "BudgetArbiter: the arbiter period must be at "
-                                                "least one frame");
+        return fail(ErrorCode::InvalidArgument,
+                    "BudgetArbiter: the arbiter period must be at "
+                    "least one frame");
     }
-    if (!(config.gain > 0.0F) || config.deadband_multiple < 0.0F ||
-        !(config.filter_alpha > 0.0F) || config.filter_alpha > 1.0F) {
+    if (!(config.gain > 0.0F) || config.deadband_multiple < 0.0F || !(config.filter_alpha > 0.0F) ||
+        config.filter_alpha > 1.0F) {
         return fail(ErrorCode::InvalidArgument,
                     "BudgetArbiter: gain must be positive, the deadband non-negative and the "
                     "filter alpha in (0, 1]");
@@ -172,7 +174,7 @@ void BudgetArbiter::report_subsystem(BudgetSubsystem subsystem, f32 measured_ms,
     entry.scale_ms = scale > 0.0F ? scale : entry.scale_ms;
 }
 
-f32 BudgetArbiter::predicted_at(const Entry& entry, u8 position) const noexcept {
+f32 BudgetArbiter::predicted_at(const Entry& entry, u8 position) noexcept {
     return entry.scale_ms * entry.declaration.ladder.cost_at(position);
 }
 
@@ -211,12 +213,12 @@ f32 BudgetArbiter::coarsest_quantum_ms() const noexcept {
     // sizes the deadband against a step of 15% of the whole frame from the first frame onwards,
     // which wastes about a millisecond of budget on a lever that cannot be pulled.
     if (everything_at_minimum() && resolution_position_ + 1U < config_.resolution_positions) {
-        coarsest = max_of(coarsest, -resolution_step_increase_ms(
-                                        static_cast<u8>(resolution_position_ + 1U)));
+        coarsest = max_of(coarsest,
+                          -resolution_step_increase_ms(static_cast<u8>(resolution_position_ + 1U)));
     }
     if (resolution_position_ > 0) {
-        coarsest = max_of(coarsest, resolution_step_increase_ms(
-                                        static_cast<u8>(resolution_position_ - 1U)));
+        coarsest = max_of(coarsest,
+                          resolution_step_increase_ms(static_cast<u8>(resolution_position_ - 1U)));
     }
     return coarsest;
 }
@@ -227,10 +229,10 @@ f32 BudgetArbiter::resolution_step_increase_ms(u8 target) const noexcept {
     // an acceleration-structure build on a fixed grid does not get cheaper because the target got
     // smaller, and an arbiter that assumed it did would credit a step it cannot pay for.
     const f32 now = config_.resolution_scale[resolution_position_];
-    const f32 then = config_.resolution_scale[target < config_.resolution_positions
-                                                  ? target
-                                                  : static_cast<u8>(config_.resolution_positions -
-                                                                    1U)];
+    const f32 then =
+        config_.resolution_scale[target < config_.resolution_positions
+                                     ? target
+                                     : static_cast<u8>(config_.resolution_positions - 1U)];
     const f32 ratio = (then * then) / (now * now);
     f32 delta = 0.0F;
     for (u32 slot = 0; slot < order_count_; ++slot) {
@@ -241,7 +243,7 @@ f32 BudgetArbiter::resolution_step_increase_ms(u8 target) const noexcept {
     return delta;
 }
 
-void BudgetArbiter::cap_and_floor(Entry& entry) noexcept {
+void BudgetArbiter::cap_and_floor(Entry& entry) const noexcept {
     // `design.md` §2.5 defect 1: cap an allocation at what the subsystem can spend at its best
     // declared position. Without the cap every under-budget frame scales the allocations up,
     // nothing changes because everything is already at position 0, and the next spike is absorbed
@@ -289,8 +291,8 @@ void BudgetArbiter::tighten(f32 error_ms, ArbiterReport& report) noexcept {
         if (!(saving > 0.0F)) {
             continue;  // a rung that changes quality without changing cost covers no deficit
         }
-        const f32 forced = min_of(there * config_.forced_allocation_margin,
-                                  here * kForceUnderCurrent);
+        const f32 forced =
+            min_of(there * config_.forced_allocation_margin, here * kForceUnderCurrent);
         if (forced < entry.declaration.reserved_minimum_ms) {
             // The declared reserved minimum already holds this subsystem above what the step would
             // allocate it, so forcing the step would mean allocating below a floor the subsystem
@@ -312,9 +314,9 @@ void BudgetArbiter::tighten(f32 error_ms, ArbiterReport& report) noexcept {
         // once, so it is not a peer allocation and is reached only when no peer has anything left.
         const u8 target = static_cast<u8>(resolution_position_ + 1U);
         const f32 from = config_.resolution_scale[resolution_position_];
-        push(report, BudgetAdjustment{BudgetSubsystem::Count,
-                                      AdjustmentCause::EverySubsystemAtMinimum, resolution_position_,
-                                      target, from, config_.resolution_scale[target]});
+        push(report, BudgetAdjustment{
+                         BudgetSubsystem::Count, AdjustmentCause::EverySubsystemAtMinimum,
+                         resolution_position_, target, from, config_.resolution_scale[target]});
         resolution_position_ = target;
         frames_since_resolution_grant_ = 0;
     }
@@ -368,9 +370,9 @@ void BudgetArbiter::relax(f32 headroom_ms, ArbiterReport& report) noexcept {
         cap_and_floor(entry);
         entry.frames_since_grant = 0;
         report.relax_granted[order_[slot]] = true;
-        push(report, BudgetAdjustment{entry.declaration.subsystem,
-                                      AdjustmentCause::HeadroomAvailable, entry.position, target,
-                                      previous, entry.allocation_ms});
+        push(report,
+             BudgetAdjustment{entry.declaration.subsystem, AdjustmentCause::HeadroomAvailable,
+                              entry.position, target, previous, entry.allocation_ms});
         return;
     }
 }
@@ -426,8 +428,7 @@ ArbiterReport BudgetArbiter::update() noexcept {
 }
 
 void BudgetArbiter::restore_authored_quality() noexcept {
-    for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
-        Entry& entry = entries_[index];
+    for (Entry& entry : entries_) {
         if (!entry.registered) {
             continue;
         }

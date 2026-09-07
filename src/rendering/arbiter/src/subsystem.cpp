@@ -89,7 +89,7 @@ void SubsystemController::report_measured_ms(f32 measured_ms) noexcept {
         measured_ = true;
     } else {
         const f32 alpha = config_.filter_alpha;
-        filtered_ms_ = filtered_ms_ + alpha * (sample - filtered_ms_);
+        filtered_ms_ = filtered_ms_ + (alpha * (sample - filtered_ms_));
     }
     // The ladder declares ratios and the controller measures the scale. Dividing the filtered cost
     // by the price of the position it was measured at recovers what position 0 would cost now,

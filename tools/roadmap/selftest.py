@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import criteria as criteria_module  # noqa: E402
 import gates as gates_module  # noqa: E402
+import plan as plan_module  # noqa: E402
 import record as record_module  # noqa: E402
 import roadmap as roadmap_module  # noqa: E402
 
@@ -192,7 +193,7 @@ def test_record_rules(root: Path) -> None:
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
-                    "m6": 26}
+                    "m6": 26, "m7": 26}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -673,6 +674,126 @@ def test_gates(root: Path) -> None:
                                         'change = "c"\nexpires = "2099-01-01"\n')))
 
 
+# --- The plan's own two rules (tasks 12.6 and 12.7) ------------------------------------------------
+#
+# `delivery-roadmap` says every forbidden roadmap pattern "SHALL be checkable", and two of them were
+# not. Both were found at M6's closing gate BY READING, which is not a mechanism:
+#
+#   * two rows reaching Complete before a prerequisite reached Working;
+#   * three of the four plan documents disagreeing about M5's scope, and two about M6's.
+#
+# `plan.py` reads each fact out of the document that owns it. These cases run it against the
+# repository — which is the check — and then against synthetic plans that are deliberately wrong,
+# which is what stops the check from passing because it stopped looking. A parse that quietly
+# returned nothing would make every finding list empty and every assertion below vacuous, so the
+# sizes are asserted first.
+
+#: What the documents hold today, as floors. A parser that silently stopped reading would fail here
+#: rather than reporting a clean plan.
+PLAN_FLOORS = {"capabilities": 70, "milestones": 13, "edges": 80, "sections": 13, "loads": 13}
+
+
+def _synthetic_matrix(cells: dict) -> plan_module.Matrix:
+    """A plan of two or three capabilities, with a `Complete` column that matches its own rows.
+
+    The column is DERIVED rather than written, so a fixture built to exercise one rule cannot fail
+    on another — the first draft of these cases hard-coded it and every fixture reported a Complete
+    column finding it was not about.
+    """
+    milestones = ("m0", "m1", "m2")
+    matrix = plan_module.Matrix(milestones, cells, {})
+    completes = {name: (matrix.reaches(name, "complete") or "") for name in cells}
+    return plan_module.Matrix(milestones, cells, completes)
+
+
+def test_plan_documents(root: Path) -> None:
+    del root
+    matrix = plan_module.read_matrix()
+    sections = plan_module.read_sections()
+    claimed = plan_module.read_load_summary()
+    expected = plan_module.read_expected_tiers()
+    edges = plan_module.read_dependencies(set(matrix.cells))
+
+    sizes = {
+        "capabilities": len(matrix.cells),
+        "milestones": len(matrix.milestones),
+        "edges": len(edges),
+        "sections": len(sections),
+        "loads": len(claimed),
+    }
+    short = {key: value for key, value in sizes.items() if value < PLAN_FLOORS[key]}
+    check("every plan document parsed into something worth checking", not short,
+          f"below the floor: {short}; the rest is {sizes}")
+
+    dependency_findings = plan_module.check_dependency_rules(matrix, edges)
+    check("the tier plan obeys the dependency rules", not dependency_findings,
+          "\n".join(dependency_findings))
+
+    agreement_findings = plan_module.check_documents_agree(matrix, sections, claimed, expected)
+    check("the four plan documents agree", not agreement_findings, "\n".join(agreement_findings))
+
+
+def test_plan_checks_can_fail(root: Path) -> None:
+    """The negative fixtures. A check that cannot fail is a check that has stopped working."""
+    del root
+    # A capability that reaches Working before its prerequisite is seeded, and one that reaches
+    # Complete before its prerequisite is Working. Both are patterns `delivery-roadmap` forbids by
+    # name and both were in M6's plan.
+    early_working = _synthetic_matrix({"dependent": {"m0": "working"}, "required": {"m2": "seed"}})
+    findings = plan_module.check_dependency_rules(early_working, {("required", "dependent")})
+    check("a capability reaching Working before its prerequisite is seeded is caught",
+          any("does not reach seed" in finding for finding in findings), str(findings))
+
+    early_complete = _synthetic_matrix({"dependent": {"m0": "seed", "m1": "complete"},
+                                        "required": {"m0": "seed", "m2": "working"}})
+    findings = plan_module.check_dependency_rules(early_complete, {("required", "dependent")})
+    check("a capability reaching Complete before its prerequisite is Working is caught",
+          any("does not reach working" in finding for finding in findings), str(findings))
+
+    together = _synthetic_matrix({"dependent": {"m1": "working"}, "required": {"m1": "seed"}})
+    check("two capabilities landing at the same milestone are not a violation",
+          not plan_module.check_dependency_rules(together, {("required", "dependent")}))
+
+    # The four documents, one disagreement at a time.
+    matrix = _synthetic_matrix({"alpha": {"m1": "working"}})
+    load = plan_module.load_from_matrix(matrix)
+    sections = {"m1": plan_module.Section({"alpha": "working"}, frozenset(), False)}
+    check("a plan that agrees with itself reports nothing",
+          not plan_module.check_documents_agree(matrix, sections, load, {}))
+
+    stale = {"m1": plan_module.Section({"alpha": "complete"}, frozenset(), False)}
+    findings = plan_module.check_documents_agree(matrix, stale, load, {})
+    check("a work table whose tier the matrix does not carry is caught, unless the section says so",
+          any("says nothing about the difference" in finding for finding in findings),
+          str(findings))
+    corrected = {"m1": plan_module.Section({"alpha": "complete"}, frozenset({"alpha"}), False)}
+    check("the same disagreement passes once the milestone's section records it",
+          not plan_module.check_documents_agree(matrix, corrected, load, {}))
+
+    miscounted = dict(load)
+    miscounted["m1"] = plan_module.Load(7, 0, ())
+    findings = plan_module.check_documents_agree(matrix, sections, miscounted, {})
+    check("a Milestone load row the matrix column does not support is caught",
+          any("advanced" in finding for finding in findings), str(findings))
+
+    findings = plan_module.check_documents_agree(matrix, sections, load,
+                                                 {"m1": {"alpha": "complete"}})
+    check("a ledger expecting a tier the plan does not schedule is caught",
+          any("expects `alpha` at complete" in finding for finding in findings), str(findings))
+
+    findings = plan_module.check_documents_agree(matrix, sections, load,
+                                                 {"m1": {"beta": "seed"}})
+    check("a ledger expecting a capability the matrix does not carry is caught",
+          any("plans nothing for it" in finding for finding in findings), str(findings))
+
+    wrong_column = plan_module.Matrix(("m0", "m1"), {"alpha": {"m1": "complete"}}, {"alpha": "m0"})
+    findings = plan_module.check_documents_agree(
+        wrong_column, {"m1": plan_module.Section({"alpha": "complete"}, frozenset(), False)},
+        plan_module.load_from_matrix(wrong_column), {})
+    check("a matrix whose Complete column disagrees with its own row is caught",
+          any("Complete column" in finding for finding in findings), str(findings))
+
+
 def _area(root: Path, name: str) -> Path:
     """A scratch directory per group of tests, so a failure names which one wrote what."""
     area = root / name
@@ -692,6 +813,8 @@ def main() -> int:
         test_ladder_rungs(_area(root, "rungs"))
         test_requirements(_area(root, "requirements"))
         test_gates(_area(root, "gates"))
+        test_plan_documents(_area(root, "plan"))
+        test_plan_checks_can_fail(_area(root, "plan-negative"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")
     return 1 if _failures else 0
