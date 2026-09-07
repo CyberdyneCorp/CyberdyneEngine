@@ -139,8 +139,9 @@ verified-quiet process tree.
 
 The IR, its content hash, the builder, the serialiser and the round-trip test — before any front-end.
 The criterion is a property of that layer and of nothing above it, and it is cheap to hold from the
-start and expensive to retrofit. The spike's `ir.h` is 200 lines and its `ir.cpp` is 700; the whole
-prototype including two front-ends, lowering and the checks is about 2,000.
+start and expensive to retrofit. The spike's `ir.h` is 224 lines and its `ir.cpp` 712; the whole
+prototype including two front-ends, lowering, the program family and the checks is 2,396 lines. The
+arbiter spike is 1,094.
 
 ## 2. Spike — the budget arbiter's control loop
 
@@ -236,6 +237,7 @@ The deadband's size, against the coarsest single-lever cost quantum reachable fr
 | 0.10 | 5/71 | 2 | 152 | 0.24 ms |
 | 0.15 | 3/71 | 1 | 136 | 0.35 ms |
 | **0.20** | **0/71** | 0 | 112 | 0.44 ms |
+| 0.25 | 0/71 | 0 | 112 | 0.61 ms |
 | 0.50 (recommended) | 0/71 | 0 | 112 | 1.21 ms |
 | 1.00 | 0/71 | 0 | 96 | 2.24 ms |
 | 3.00 | 0/71 | 0 | 56 | 5.13 ms |
@@ -248,9 +250,17 @@ than off one row.
 
 **The deadband has a price and it must be paid deliberately.** A deadband centred *on* the budget is
 by construction a refusal to correct an error smaller than one lever quantum, so the loop settles
-happily up to a quantum **over** the budget — the spike measured +0.43 ms on 2 of 71 loads before
-this was fixed. Setting the setpoint one deadband below the budget puts the band's upper edge on the
-budget; the price is headroom, and it is the difference between the 1.21 ms above and 0.61 ms.
+happily **over** the budget. Setting the setpoint one deadband below puts the band's upper edge on
+the budget instead. Measured at the recommended 0.5 multiple, over the same 71 loads:
+
+| setpoint | oscillating | loads settling over budget | worst | median wasted |
+|---|---|---|---|---|
+| on the budget | 1/71 | 2 | +0.22 ms | 0.61 ms |
+| **one deadband below** | **0/71** | **0** | +0.00 ms | 1.21 ms |
+
+The price of never being over budget is 0.60 ms of a 12.70 ms allocatable budget. Pay it: M7's exit
+criterion is that the scene *holds* its frame budget, and a loop that settles over it by less than a
+lever quantum is still a loop that settles over it.
 
 ### 2.5 Restoring quality is not the inverse of taking it away
 
