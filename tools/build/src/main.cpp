@@ -16,12 +16,16 @@
 //   apply      --patch            apply a patch, optionally interrupted at a named stage
 //   verify     --install          every chunk the build in force names, re-digested
 
+#include <cy/build/content_producers.h>
 #include <cy/build/description.h>
 #include <cy/build/package.h>
 #include <cy/build/patch.h>
 #include <cy/build/service.h>
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/reflect/reflect.h>
+#include <cy/core/reflect/registry.h>
+#include <cy/ecs/world.h>
 
 #include <unistd.h>
 
@@ -104,10 +108,41 @@ struct Project {
     ProducerRegistry producers;
     BuildGraph graph;
     std::unique_ptr<DirectorySourceProvider> sources;
+    /// The component registry the `cook` producer emits blocks against. Held here so that it
+    /// outlives every node that runs — `tools/cook/`'s front end makes the same argument for the
+    /// same reason, and a cook that guessed a layout produces a package the runtime rejects at the
+    /// build-schema check.
+    std::unique_ptr<ecs::World> world;
 };
+
+/// Every reflected component this binary knows. The same registration `cy_cook` does, and it is
+/// here rather than shared because M4's ABI work is what will let a project's own module register
+/// its types; until then both front ends register what reflection generated.
+[[nodiscard]] u32 register_reflected_components(ecs::World& world) noexcept {
+    if (const Status registered = reflect::register_generated_types(); !registered) {
+        return 0;
+    }
+    u32 count = 0;
+    for (const reflect::TypeInfo* type : reflect::default_registry()) {
+        if (world.components().register_reflected(*type)) {
+            ++count;
+        }
+    }
+    return count;
+}
 
 [[nodiscard]] Status load_project(const Arguments& arguments, Project& out) {
     if (Status added = out.producers.add_builtins(); !added) {
+        return added;
+    }
+    // THE REAL COOKS, ON BY DEFAULT. M7 task 1.4. M6's graph knew only its own four builtins, so
+    // every guarantee a node carries — a key over declared inputs, an immutable artefact, precise
+    // invalidation, an undeclared read reported — applied to nothing a project runs. A producer
+    // that had to be opted into would be the same thing with an extra step.
+    out.world =
+        std::make_unique<ecs::World>(default_allocator(), ecs::WorldConfig{"cy_build", 16384});
+    (void)register_reflected_components(*out.world);
+    if (Status added = add_content_producers(out.producers, out.world.get()); !added) {
         return added;
     }
     const Expected<std::string, Error> document = read_text(arguments.value("description"));
@@ -173,7 +208,7 @@ void print_report(const BuildReport& report) {
     const ToolchainFingerprint& fingerprint = current_toolchain();
     char digest[assets::ContentHash::kTextLength + 1] = {};
     fingerprint.digest().format(digest);
-    std::printf("%s", fingerprint.describe().c_str());
+    std::printf("%s", describe_toolchain(fingerprint).c_str());
     std::printf("digest    %s\n", digest);
     return 0;
 }

@@ -45,6 +45,15 @@ function(cy_build_declare_tests)
         SOURCES "${tests_dir}/test_build_service.cpp"
         DEPENDENCIES cy::build-graph)
 
+    # `build_content` is the real cooks as nodes (M7 task 1.4): it links cy::build-content, which is
+    # where the importer and the cook join the graph. Integration for the same reason
+    # `build_service` is — it writes a project, imports a glTF and rebuilds it.
+    cy_add_test(
+        NAME build_content
+        KIND integration
+        SOURCES "${tests_dir}/test_build_content.cpp"
+        DEPENDENCIES cy::build-graph cy::build-content)
+
     cy_add_test(
         NAME build_patch
         KIND integration

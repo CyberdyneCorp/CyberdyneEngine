@@ -20,3 +20,10 @@ add_subdirectory(import)
 # invalidation, packages and chunk-level patching. Like cook/ and import/ it is a library plus a thin
 # front end, and like them nothing links it into a runtime.
 add_subdirectory(build)
+
+# material/ is M7 task 6.3: material cooking as a node in the derivation graph. The compiler itself
+# is engine code in src/rendering/material/, because `material-compiler` requires it and because a
+# runtime previews nodes and creates instances with no tool present; what is here is the cook and
+# its front end. Like cook/, import/ and build/ it is a library plus a thin front end, and like them
+# nothing links it into a runtime.
+add_subdirectory(material)

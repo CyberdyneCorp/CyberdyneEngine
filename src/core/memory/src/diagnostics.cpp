@@ -54,6 +54,16 @@ CY_TRACE_FIELD(allocation_tag, string, cy::Privacy::Public)
 // A source path from the machine that built the binary. See the file comment.
 CY_TRACE_FIELD(allocation_site, string, cy::Privacy::Sensitive)
 
+// The four attribution axes of M7 task 3.1. Public: every one of them is an engine-side identifier
+// — a reflected type, a thread ordinal, a world cell, an asset id — and none names a person, a
+// machine or a path.
+CY_TRACE_FIELD(attribution_axis, string, cy::Privacy::Public)
+CY_TRACE_FIELD(attribution_key, u64, cy::Privacy::Public)
+CY_TRACE_FIELD(attribution_key_high, u64, cy::Privacy::Public)
+CY_TRACE_FIELD(unattributed_bytes, bytes, cy::Privacy::Public)
+CY_TRACE_FIELD(unreported_bytes, bytes, cy::Privacy::Public)
+CY_TRACE_FIELD(distinct_keys, u64, cy::Privacy::Public)
+
 CY_LOG_CATEGORY(log_category, "memory")
 
 [[nodiscard]] diag::FieldValue text_field(diag::FieldId field, const char* text) noexcept {
@@ -242,6 +252,34 @@ void log_one_leak(const TrackedAllocation& allocation, void* user) noexcept {
 }
 
 }  // namespace
+
+void memory_log_attribution_report(const TrackingAllocator* tracker,
+                                   AttributionAxis axis) noexcept {
+    if (tracker == nullptr) {
+        return;
+    }
+    // A fixed table, on the stack. A memory report that allocated would change the thing it is
+    // reporting on, and `report_attribution` says how many keys did not fit rather than hiding it.
+    MemoryAttributionRow rows[kAttributionReportRows] = {};
+    const MemoryAttributionSummary summary =
+        tracker->report_attribution(axis, Span<MemoryAttributionRow>(rows, kAttributionReportRows));
+
+    CY_LOG(log_category(), diag::LogLevel::Info, "memory.attribution",
+           text_field(attribution_axis(), attribution_axis_name(axis)),
+           diag::field_u64(distinct_keys(), summary.distinct_keys),
+           diag::field_u64(live_bytes(), summary.reported_bytes),
+           diag::field_u64(unreported_bytes(), summary.unreported_bytes),
+           diag::field_u64(unattributed_bytes(), summary.unattributed_bytes));
+
+    for (u32 index = 0; index < summary.rows; ++index) {
+        CY_LOG(log_category(), diag::LogLevel::Info, "memory.attribution.row",
+               text_field(attribution_axis(), attribution_axis_name(axis)),
+               diag::field_u64(attribution_key(), rows[index].key),
+               diag::field_u64(attribution_key_high(), rows[index].key_high),
+               diag::field_u64(live_bytes(), rows[index].live_bytes),
+               diag::field_u64(live_allocations(), rows[index].live_allocations));
+    }
+}
 
 void memory_log_leak_report(const TrackingAllocator* tracker) noexcept {
     LeakReport report;

@@ -27,6 +27,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/debug_draw.cpp
+        src/gizmo.cpp
         src/gpu_scene.cpp
         src/mesh.cpp
         src/model.cpp

@@ -24,6 +24,8 @@
 
 #include <cy/core/assets/asset_system.h>
 
+#include <cy/core/assets/streaming.h>
+
 #include <cy/core/assets/diagnostics.h>
 #include <cy/core/base/assert.h>
 #include <cy/core/memory/scope.h>
@@ -132,6 +134,13 @@ struct AssetSystemImpl {
     u64 use_clock = 1;
 
     AssetSystemStats stats;
+
+    /// Partial residency for the assets that declare a ladder. M7 tasks 2.1 and 2.2.
+    ///
+    /// A member rather than something a caller supplies: the requirement is that the engine
+    /// SUPPORTS partial residency, and a streaming system somebody has to remember to construct is
+    /// one that three of the four consumers will not have.
+    StreamingSystem streaming;
 
     /// Payloads a reload replaced, freed at the next `update()` rather than at the swap. A reader
     /// that took `AssetData::bytes()` before the swap holds a span into one of these; see
@@ -738,6 +747,17 @@ Status AssetSystem::start(jobs::JobSystem& jobs, jobs::AsyncService& async,
     impl_->files = &files;
     impl_->config = config;
     impl_->running = true;
+
+    // STREAMING IS ON IN EVERY BUILD, and this line is why the comment at the top of the header
+    // stopped saying "streaming is M6". `core-assets-and-io`'s partial-residency requirement is not
+    // a mode a caller opts into: an asset that declares a ladder gets one, and an asset that does
+    // not is loaded whole exactly as before. The budget is the configuration's own; the residency
+    // arbiter re-sets it through `streaming().set_budget_bytes()` whenever it reallocates.
+    if (Status streaming = impl_->streaming.start(async, files, config.residency_budget_bytes);
+        !streaming) {
+        impl_.reset();
+        return streaming;
+    }
     return ok();
 }
 
@@ -746,6 +766,11 @@ void AssetSystem::shutdown() noexcept {
         return;
     }
     detail::AssetSystemImpl& self = *impl_;
+
+    // Before the slots: `StreamingSystem::shutdown` waits for its own in-flight reads on the async
+    // service, and a read that outlived the object it reads into is the defect this ordering
+    // exists to prevent.
+    self.streaming.shutdown();
 
     // Cancel everything, then let the graph drain: a slot's state is written by jobs, so tearing
     // the table down while one is still running would be a use-after-free rather than a shutdown.
@@ -1211,6 +1236,12 @@ void AssetSystem::update() noexcept {
     }
     detail::AssetSystemImpl& self = *impl_;
 
+    // Outside the mutex, and deliberately: `StreamingSystem` is single-threaded by contract — the
+    // frame that produced the feedback calls `request` and the frame loop calls this — so taking
+    // the asset system's lock around it would say something about its thread safety that is not
+    // true.
+    self.streaming.update(monotonic_now_ns());
+
     std::vector<Ref<AssetData>> victims;
     {
         std::lock_guard<std::mutex> guard(self.mutex);
@@ -1256,6 +1287,16 @@ void AssetSystem::update() noexcept {
         std::lock_guard<std::mutex> guard(self.mutex);
         self.retired_payloads.clear();
     }
+}
+
+StreamingSystem& AssetSystem::streaming() noexcept {
+    CY_ASSERT_MSG(impl_, "AssetSystem::streaming() before start()");
+    return impl_->streaming;
+}
+
+const StreamingSystem& AssetSystem::streaming() const noexcept {
+    CY_ASSERT_MSG(impl_, "AssetSystem::streaming() before start()");
+    return impl_->streaming;
 }
 
 AssetSystemStats AssetSystem::stats() const noexcept {

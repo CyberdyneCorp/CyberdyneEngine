@@ -39,6 +39,7 @@ function(cy_render_server_declare_tests)
         KIND unit
         SOURCES
             "${cy_server_tests_dir}/test_debug_draw.cpp"
+            "${cy_server_tests_dir}/test_gizmo.cpp"
             "${cy_server_tests_dir}/test_gpu_scene.cpp"
             "${cy_server_tests_dir}/test_mesh.cpp"
             "${cy_server_tests_dir}/test_picking.cpp"
@@ -48,7 +49,12 @@ function(cy_render_server_declare_tests)
             "${cy_server_tests_dir}/test_texture.cpp"
             "${cy_server_tests_dir}/test_view.cpp"
             "${cy_server_tests_dir}/test_viewport_transport.cpp"
-        DEPENDENCIES cy::servers-render)
+        DEPENDENCIES cy::servers-render
+        # The cross-language fixture's path, as an absolute one, so the case can be run from any
+        # working directory and from any build tree. `test_gizmo.cpp` compares the bytes
+        # `encode_gizmo_layout` produces against this file, and the editor's own suite decodes the
+        # same file — which is the only way two languages can be held to one wire format.
+        DEFINITIONS "CY_GIZMO_WIRE_FIXTURE=\"${cy_server_tests_dir}/data/gizmo_layout_v1.wire\"")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_render_server_declare_tests)

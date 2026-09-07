@@ -58,6 +58,45 @@ pub struct Request {
     /// legitimate request and not an absent one: a selection that became empty must take the gizmo
     /// off the screen.
     pub identities: Vec<u64>,
+    /// The viewport's size in its own pixels, which is **the space the layout must come back in**.
+    ///
+    /// --- WHY THIS IS INTENT AND NOT GEOMETRY ------------------------------------------------
+    ///
+    /// It is the size the editor is ASKING to see, which `editor-viewport-and-gizmos` already has
+    /// the transport carrying alongside the image; it is not where anything is. The engine still
+    /// decides where every handle goes.
+    ///
+    /// --- WHY IT HAS TO BE HERE ----------------------------------------------------------------
+    ///
+    /// Because a runtime renders at whatever size it renders at, and the editor stretches that
+    /// frame to fill its panel. A layout published in the frame's pixels would be hit-tested
+    /// against a pointer in the panel's, and at 1280x720 into a 934x570 panel that is a handle
+    /// missed by a third of the viewport — a drag that lands on nothing while both sides are
+    /// individually correct, which is the exact shape of defect this whole path exists to avoid.
+    ///
+    /// Zero means "answer in your own frame's pixels", which is what a runtime older than this
+    /// field will do anyway.
+    pub width: u32,
+    /// The same, vertically.
+    pub height: u32,
+    /// The camera the editor wants the frame rendered from: position, rotation, vertical field of
+    /// view in radians, and near plane.
+    ///
+    /// **INTENT, and the most important intent there is.** Navigation is the editor's — a person
+    /// orbits, pans and dollies — and until this field existed the runtime rendered whatever camera
+    /// it felt like while the editor did its manipulation arithmetic against its own. Both halves
+    /// were correct and the drag moved nothing, because the pivot was at the editor's camera
+    /// position and a screen-space axis of zero length has no direction.
+    ///
+    /// The engine still decides where the handles go, what the frame contains and how it is lit.
+    /// This says where to stand.
+    pub camera_position: [f32; 3],
+    /// The camera's rotation. It looks down its local −Z.
+    pub camera_rotation: [f32; 4],
+    /// The vertical field of view, in radians.
+    pub fov_y_radians: f32,
+    /// The near clip distance, in world units.
+    pub near: f32,
 }
 
 impl Request {
@@ -74,6 +113,19 @@ impl Request {
             space: viewport.gizmo_space,
             pivot: viewport.gizmo_pivot,
             identities,
+            width: viewport.state.viewport.width,
+            height: viewport.state.viewport.height,
+            camera_position: viewport.state.camera.position.to_array(),
+            camera_rotation: viewport.state.camera.rotation.to_array(),
+            fov_y_radians: match viewport.state.projection {
+                cy_editor_viewport::state::Projection::Perspective { fov_y } => fov_y,
+                // An orthographic viewport has no field of view. Zero says so, and a runtime that
+                // reads zero renders its own projection rather than an arbitrary one — which is
+                // honest: this artefact's engine renders perspective, and an orthographic editor
+                // viewport is a case M8's live editing will have to answer properly.
+                cy_editor_viewport::state::Projection::Orthographic { .. } => 0.0,
+            },
+            near: viewport.state.near,
         })
     }
 
@@ -89,6 +141,19 @@ impl Request {
         for identity in &self.identities {
             writer.u64(*identity);
         }
+        // AFTER the identities, so that a runtime built before this field existed reads a complete
+        // message and stops — which is what its decoder does with the bytes it does not expect, and
+        // is why this was appended rather than inserted.
+        writer.u32(self.width);
+        writer.u32(self.height);
+        for lane in self.camera_position {
+            writer.f32(lane);
+        }
+        for lane in self.camera_rotation {
+            writer.f32(lane);
+        }
+        writer.f32(self.fov_y_radians);
+        writer.f32(self.near);
         writer.finish()
     }
 
@@ -104,12 +169,38 @@ impl Request {
         for _ in 0..count {
             identities.push(reader.u64()?);
         }
+        // Optional, for the reason `Request::width` gives: a message from an editor that predates
+        // the field ends here, and zero means "answer in your own frame's pixels".
+        let width = reader.u32().unwrap_or(0);
+        let height = reader.u32().unwrap_or(0);
+        let mut camera_position = [0.0_f32; 3];
+        let mut camera_rotation = [0.0, 0.0, 0.0, 1.0_f32];
+        let mut fov_y_radians = 0.0_f32;
+        let mut near = 0.0_f32;
+        // Optional as a group, like the size above: a message that stops before the camera is one
+        // from an editor that predates it, and a runtime reading it renders its own view.
+        if let (Ok(x), Ok(y), Ok(z)) = (reader.f32(), reader.f32(), reader.f32()) {
+            camera_position = [x, y, z];
+            if let (Ok(i), Ok(j), Ok(k), Ok(w)) =
+                (reader.f32(), reader.f32(), reader.f32(), reader.f32())
+            {
+                camera_rotation = [i, j, k, w];
+            }
+            fov_y_radians = reader.f32().unwrap_or(0.0);
+            near = reader.f32().unwrap_or(0.0);
+        }
         Ok(Self {
             frame,
             mode,
             space,
             pivot,
             identities,
+            width,
+            height,
+            camera_position,
+            camera_rotation,
+            fov_y_radians,
+            near,
         })
     }
 }
@@ -194,35 +285,72 @@ fn unknown(what: &str, code: u8) -> Problem {
     .with_remedy("the peer is a newer editor or runtime; rebuild them together")
 }
 
+/// What an asked-for gizmo is waiting on: the request, and the frame it was asked about.
+///
+/// The frame is returned as well as the request because the answer has to be checked against it.
+/// See [`accept_for`] for why that is the frame it was ASKED about rather than the newest one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Asked {
+    /// The request, to pair the answer with.
+    pub request: RequestId,
+    /// The frame the intent named, which is the frame the layout must come back describing.
+    pub frame: FrameId,
+}
+
 /// Ask the runtime to draw a gizmo, and to say where it drew it.
 pub fn request(
     runtime: &RuntimeSession,
     viewport: &Viewport,
     identities: Vec<u64>,
-) -> Result<RequestId> {
-    let request = Request::of_viewport(viewport, identities).ok_or_else(|| {
+) -> Result<Asked> {
+    let intent = Request::of_viewport(viewport, identities).ok_or_else(|| {
         Problem::new(
             "ask the runtime for a gizmo",
             "no frame has arrived from the runtime yet",
         )
         .with_remedy("wait for the first frame, or start a runtime that publishes one")
     })?;
-    runtime.gizmo(viewport.id.as_u64(), request.encode())
+    let frame = intent.frame;
+    let request = runtime.gizmo(viewport.id.as_u64(), intent.encode())?;
+    Ok(Asked { request, frame })
 }
 
 /// Take a published layout, refusing one that belongs to a frame the viewport is not showing.
 ///
 /// See the module note for why the frame check is the whole of this function's judgement.
 pub fn accept(published: &[u8], viewport: &Viewport) -> Result<GizmoLayout> {
-    let layout = GizmoLayout::decode(published)?;
     let showing = viewport.stream.latest().map(|frame| frame.frame);
-    if showing != Some(layout.frame) {
+    accept_for(published, showing)
+}
+
+/// The same check, against the frame the intent NAMED rather than against the newest one.
+///
+/// --- WHY THERE ARE TWO, AND WHICH ONE A RUNTIME SESSION USES -------------------------------------
+///
+/// [`accept`] is the strict form and it is the right one when the two ends are in step. Over a real
+/// socket they never are, and not because anything is wrong: the editor asks about frame N, the
+/// runtime answers within a millisecond, and by the time the answer is read the viewport is showing
+/// N+1 or N+2 — because both ends are free-running, which is the whole design of the transport.
+/// Under [`accept`] that layout would be refused every single time, and the gizmo would never
+/// appear.
+///
+/// So a session checks the answer against the frame it ASKED about. That is not a weaker claim, it
+/// is the accurate one: the layout describes the frame the intent named, the intent named the frame
+/// on screen when it was sent, and what makes the layout fresh is that the session asks again every
+/// frame rather than that the two identifiers happen to be equal.
+///
+/// What is still refused is the thing the check exists for — a layout for a frame nobody asked
+/// about, which is a late answer to a request two frames old, and which would put the handles where
+/// the camera used to be.
+pub fn accept_for(published: &[u8], expected: Option<FrameId>) -> Result<GizmoLayout> {
+    let layout = GizmoLayout::decode(published)?;
+    if expected != Some(layout.frame) {
         return Err(Problem::new(
             "use the gizmo the runtime published",
             format!(
-                "it describes frame {} and the viewport is showing {}",
+                "it describes frame {} and the request named {}",
                 layout.frame.as_u64(),
-                showing.map_or_else(|| "nothing".to_string(), |frame| frame.as_u64().to_string())
+                expected.map_or_else(|| "nothing".to_string(), |frame| frame.as_u64().to_string())
             ),
         )
         .with_remedy("ask again against the frame on screen"));

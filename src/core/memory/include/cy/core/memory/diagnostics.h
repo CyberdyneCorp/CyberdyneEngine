@@ -18,6 +18,7 @@
 // attribution is guesswork, and the numbers in that measurement come from these counters.
 
 #include <cy/core/base/types.h>
+#include <cy/core/memory/attribution.h>
 #include <cy/core/memory/budget.h>
 #include <cy/core/memory/domain.h>
 #include <cy/core/memory/epoch.h>
@@ -80,5 +81,22 @@ void memory_trace_eviction(MemoryDomain which, u64 bytes) noexcept;
 /// reported: an engine built without a tracking allocator still says how much it is holding.
 class TrackingAllocator;
 void memory_log_leak_report(const TrackingAllocator* tracker) noexcept;
+
+/// How many rows `memory_log_attribution_report` prints. A fixed table on the stack: a memory
+/// report that allocated would change the thing it is reporting on.
+inline constexpr u32 kAttributionReportRows = 16;
+
+/// Write one axis of the attribution report to the log: a summary line and a row per key, largest
+/// first. M7 task 3.1.
+///
+/// `core-memory-and-containers` — "Memory diagnostics": "Reporting SHALL be attributable along the
+/// axes that answer real questions: by domain, by type, by thread, by world cell, and by asset."
+/// The domain axis is `memory_log_report` above; these are the other four, and they are the ones
+/// this header had no field for until M7.
+///
+/// The summary carries `unattributed_bytes` and `unreported_bytes` as well as the rows, so a reader
+/// can tell "nothing declared this axis" from "the table was too small" from "that really is all of
+/// it".
+void memory_log_attribution_report(const TrackingAllocator* tracker, AttributionAxis axis) noexcept;
 
 }  // namespace cy

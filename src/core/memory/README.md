@@ -23,6 +23,7 @@ account for it, the containers written against it, and the storage machinery M2'
 | 2.11 | Memory diagnostics on the shared trace      | `diagnostics.h`                                                 |
 | 2.11 | AddressSanitizer integration for the custom allocators | `sanitizer.h`                                        |
 | 2.12 | Process-lifetime declarations               | `lifetime.h`, and `src/core/diagnostics/src/lifetime.h`         |
+| M7 3.1 | Attribution by type, thread, world cell and asset | `attribution.h`, `TrackingAllocator::report_attribution`, `memory_log_attribution_report` |
 
 `memory.h` includes all of it and is for a subsystem's own translation unit; a header that needs one
 container should include that container.
@@ -175,11 +176,21 @@ adopting a third-party allocator is a change to those two and an entry in `deps/
 Recorded rather than glossed, because M1's closing task asks what is thinner than the specification
 and this is the module's own answer.
 
-* **Attribution has three axes of the five the specification names.** Reporting is by domain, by
-  tag and by call site. "By type" needs the allocation record to carry a `TypeId`, "by world cell"
-  needs a world, and "by asset" needs the asset system — none of the three exists at M1, and a
-  placeholder axis that always reported "unknown" would be worse than its absence. The report struct
-  is where they go.
+* ~~**Attribution has three axes of the five the specification names.**~~ **Closed at M7** (task
+  3.1). `attribution.h` adds the other four — by type, by thread, by world cell, by asset — and
+  `TrackingAllocator::report_attribution` groups live bytes by any of them.
+
+  The axes are OPAQUE INTEGERS, and that is the layering rather than a shortcut: this module is
+  below `cy::core-values`, `cy::core-reflect` and `cy::world`, so it cannot name `AssetId`, a
+  reflected `TypeId` or a `CellId`, and the module that owns an identity is the one that pushes it
+  through `MemoryAttributionScope`. A scope MERGES over the enclosing one, so a cell activation, a
+  mesh loader inside it and a container inside that each add one axis without knowing the other two.
+  The thread axis is the reverse — captured rather than declared, because asking a caller for it is
+  asking it to get it wrong.
+
+  A report says what it could not fit: `distinct_keys` against `rows`, plus `unreported_bytes` and
+  `unattributed_bytes`, so `reported + unreported + unattributed == live_bytes()` and a reader can
+  tell "nobody declared this axis" from "the table was too small".
 * **Capture is a call SITE, not a call STACK.** `CaptureMode::Off / Sampled / Full` is the declared
   mode the specification asks for, and it selects how often a record is kept, but the record holds
   the file, function and line pushed by `CY_ALLOCATION_SITE` rather than an unwound stack. A real

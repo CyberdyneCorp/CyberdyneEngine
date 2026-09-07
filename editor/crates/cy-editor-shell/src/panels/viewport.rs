@@ -139,7 +139,7 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
     panels
         .inputs
         .interaction
-        .set_layout(published_gizmo(panels.link));
+        .set_layout(published_gizmo(panels.editor));
     let actor = cy_editor_commands::CommandContext::actor(panels.editor);
     let document_id = panels.editor.workspace.active();
 
@@ -205,26 +205,16 @@ fn drive(panels: &mut Panels<'_>, ui: &mut egui::Ui, rect: egui::Rect, response:
 
 /// The gizmo geometry the runtime published with the frame now on screen.
 ///
-/// **`None` today, and the shape of the answer matters more than the value.** The viewport transport
-/// carries the image, its identity and the view state it was rendered with; it does not yet carry a
-/// gizmo layout, because nothing publishes one — the engine's render server has picking and a
-/// transport endpoint but no frame producer, so the reference publisher is what draws into the ring
-/// and it draws no gizmo.
+/// **Read, never computed.** `editor-viewport-and-gizmos` assigns gizmo geometry to the engine so
+/// that what is grabbed is what was drawn; a layout computed here would be a second geometry, and
+/// the first time it disagreed with the picture the user would grab one handle and drag another.
 ///
-/// The editor's half is complete and tested: `cy_editor_viewport::layout` hit-tests a published
-/// layout, `cy_editor_viewport::interaction` drives a manipulation from it, and
-/// `layout::screen_constant` refuses a runtime that sized the gizmo in world units. What is missing is
-/// one field on the transport and a producer to fill it, and this function is where it arrives.
-///
-/// It is **not** filled in from the editor's own camera, however easy that would be. The
-/// specification assigns gizmo geometry to the engine so that what is grabbed is what was drawn; a
-/// layout computed here would be a second geometry, and the first time it disagreed with the picture
-/// the user would grab one handle and drag another.
-fn published_gizmo(
-    link: &crate::viewport_link::ViewportLink,
-) -> Option<cy_editor_viewport::GizmoLayout> {
-    let _ = link;
-    None
+/// It arrives through `cy_editor_services::RuntimeMirror`, which asks the runtime once a frame for
+/// the gizmo on the current selection and refuses an answer that names a frame the viewport is not
+/// showing. `None` means one of three ordinary things — no runtime is attached, no frame has
+/// arrived yet, or nothing is selected — and all three correctly draw no gizmo.
+fn published_gizmo(editor: &cy_editor_services::Editor) -> Option<cy_editor_viewport::GizmoLayout> {
+    editor.mirror.layout().cloned()
 }
 
 /// What the window does with what an interaction produced.
@@ -752,6 +742,34 @@ fn arrow(glyph: &str) -> egui::Button<'_> {
 }
 
 /// The monotonic clock the transport reports its frames against.
+/// The clock a frame's age is measured against.
+///
+/// **`CLOCK_MONOTONIC`, because that is the clock the announcement carries.** A runtime publishes
+/// `submitted_nanos` from `clock_gettime(CLOCK_MONOTONIC)` — `cy_editor_viewport_transport::
+/// session::monotonic_nanos` on the reference publisher's side and the same call in
+/// `src/backends/viewport/` on the engine's — and `ViewportSession` turns it straight into
+/// `PresentedFrame::produced_micros`. Subtracting it from a wall-clock reading is a subtraction of
+/// two different epochs.
+///
+/// It read `SystemTime::now()` until M7, and the symptom is in every screenshot M5.5 and M6 took:
+/// **"The runtime has not produced a frame for 1788285426327 ms; this image is stale"** over a
+/// viewport that was in fact receiving sixty frames a second. That number is the Unix epoch in
+/// milliseconds, which is what the difference between the two clocks is. The advisory that
+/// `editor-viewport-and-gizmos` requires — "the editor SHALL surface when it is viewing a stale or
+/// degraded stream" — was therefore on permanently, which is the same as being off: a warning that
+/// is always showing is one nobody reads, and it would not have said anything when a runtime
+/// really did stop.
+///
+/// `viewport_link::a_stale_advisory_uses_the_clock_the_announcement_carries` is the regression.
+#[cfg(target_os = "linux")]
+fn monotonic_micros() -> u64 {
+    cy_editor_viewport_transport::session::monotonic_nanos() / 1_000
+}
+
+/// Elsewhere there is no transport and therefore no frame, so nothing is ever measured against
+/// this. It is the wall clock so that the function exists and compiles; a platform that grows a
+/// transport must give it that transport's clock.
+#[cfg(not(target_os = "linux"))]
 fn monotonic_micros() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -775,6 +793,30 @@ pub(crate) const fn says_why_over_the_image(has_image: bool, is_live: bool) -> b
 #[cfg(test)]
 mod tests {
     use super::says_why_over_the_image;
+
+    /// REGRESSION, M7 task 5b.1: the clock a frame's age is measured against.
+    ///
+    /// `monotonic_micros` read `SystemTime::now()` while a frame's `produced_micros` comes from the
+    /// runtime's `CLOCK_MONOTONIC`, so every viewport in M5.5's and M6's screenshots carried "the
+    /// runtime has not produced a frame for 1788285426327 ms" — the Unix epoch, in milliseconds —
+    /// over an image that was arriving sixty times a second.
+    ///
+    /// The check is that the two clocks are the SAME clock, which is the whole of the defect. It is
+    /// written as a bound rather than an equality because the two readings are taken a few hundred
+    /// nanoseconds apart, and as a bound far below the stale budget (50 ms) so that a failure means
+    /// the epochs differ rather than that the machine hiccuped.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_frames_age_is_measured_on_the_clock_the_announcement_carries() {
+        let announced = cy_editor_viewport_transport::session::monotonic_nanos() / 1_000;
+        let measured = super::monotonic_micros();
+        let difference = measured.abs_diff(announced);
+        assert!(
+            difference < 10_000,
+            "the age clock and the announcement clock are {difference} us apart; a wall clock and \
+             a monotonic one differ by an epoch"
+        );
+    }
 
     /// REGRESSION, M5.5's gate: the row that was wrong is `(true, false)`.
     #[test]

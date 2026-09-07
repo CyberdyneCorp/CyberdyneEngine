@@ -10,6 +10,12 @@
 #                 fallbacks and validation — all at unit cost, because none of them allocates more
 #                 than a few kilobytes and none of them integrates anything.
 #
+#   material_compiler
+#                 M7's compiler: the IR and its content hash, the two front-ends, the optimisation
+#                 pipeline, closure lowering and the program family, and the node preview. Unit
+#                 cost: the spike measured a 24-node material at a median of 57 us from graph to
+#                 generated Slang, and the heaviest case here compiles the family twelve times.
+#
 #   material_ibl  the parts of image-based lighting that cannot fit a millisecond. The DFG bake is
 #                 `size² · samples` importance samples with a square root and two transcendentals
 #                 each, and the 32² table at 128 samples that the determinism claim rests on is
@@ -49,6 +55,22 @@ function(cy_material_declare_tests)
             "${cy_material_tests_dir}/test_material.cpp"
             "${cy_material_tests_dir}/test_standard.cpp"
             "${cy_material_tests_dir}/test_validation.cpp"
+        DEPENDENCIES cy::rendering-material)
+
+    # M7's material compiler (tasks 6.1-6.4). A suite of its own rather than more cases in
+    # `material`, because the two subjects are different: `material` is the model and its table, and
+    # this is the compiler that fills them in. Unit, because nothing here touches a device, a file or
+    # a shader toolchain — the exit criterion "a graph and a hand-written material produce identical
+    # programs" is a property of generated TEXT, which is the whole reason it is checkable at all.
+    cy_add_test(
+        NAME material_compiler
+        KIND unit
+        SOURCES
+            "${cy_material_tests_dir}/test_ir.cpp"
+            "${cy_material_tests_dir}/test_frontends.cpp"
+            "${cy_material_tests_dir}/test_passes.cpp"
+            "${cy_material_tests_dir}/test_lowering.cpp"
+            "${cy_material_tests_dir}/test_preview.cpp"
         DEPENDENCIES cy::rendering-material)
 
     cy_add_test(

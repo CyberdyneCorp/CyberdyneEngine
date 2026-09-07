@@ -132,6 +132,29 @@ public:
     [[nodiscard]] usize resident_entries() const noexcept;
     void clear() noexcept;
 
+    // --- What a GPU page-table image is addressed by, and how big it is
+    // ---------------------------
+    //
+    // A shader cannot call `lookup()`. What it can do is index a buffer, and the two must agree
+    // about the arithmetic — so the arithmetic is published rather than reimplemented. M7 task 4.2.
+    //
+    // `linear_index` is the flat representation's own index, mip-major, and it is well defined for
+    // every in-range address whether or not the table chose the flat form: it is a property of the
+    // DESCRIPTION, not of the storage. `entry_count` is one past the largest of them.
+    //
+    // WHY THIS IS PUBLISHED RATHER THAN COPIED INTO THE UPLOADER.
+    // `src/rendering/virtual_texturing/` builds the buffer a shader samples, and it has to write
+    // each entry where the shader will look for it. A second implementation of `mip_offsets_ +
+    // layer * tile_count + y * tiles_x + x` is a second place to get a rounding rule wrong, and the
+    // symptom would be a sample resolving to the wrong page rather than to no page — which is a
+    // picture that is subtly incorrect rather than a failure.
+
+    /// Where `address` lives in a flat, mip-major table. `entry_count()` for an address outside the
+    /// description, which is a value no in-range address takes and is therefore a usable sentinel.
+    [[nodiscard]] usize linear_index(const VirtualAddress& address) const noexcept;
+    /// How many entries the whole pyramid has, over every layer.
+    [[nodiscard]] usize entry_count() const noexcept;
+
 private:
     /// Stage one page as invalid, unless it is out of range or pinned. The pin check lives here so
     /// that every invalidation path gets it.

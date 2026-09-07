@@ -52,6 +52,14 @@ analytic derivative reconstruction under a visibility buffer are `src/rendering/
 with M7.** `apply_staged()`'s list is exactly the buffer that uploader copies from, which is why the
 batching lives here rather than there.
 
+**That module now exists: `src/rendering/virtual_texturing/` (M7 tasks 4.1 and 4.2).** It writes the
+feedback buffer from a shader, resolves it on the device without a per-pixel stream reaching the CPU
+— 65,536 pixels became 53 compacted requests and 860 mapped bytes — and samples the page table from a
+shader over the whole address space, holding the mip tail's guarantee there rather than only here.
+`PageTable::linear_index` and `PageTable::entry_count` were made public for it: the uploader has to
+write each entry where the shader will look for it, and a second implementation of that arithmetic
+would be a sample resolving to the *wrong* page rather than to no page.
+
 ## Teardown mid-production
 
 Production runs on worker threads that write into staging bytes the physical caches own. `pool_` is

@@ -13,6 +13,21 @@ assets, shaders, material programs, geometry and texture pages — rather than o
 is here at layer 0 beneath all of them rather than inside the importer. `derivation.h` is what
 addresses an entry and `derived_cache.h` is what stores it; `tools/import/` is its first client.
 
+**Two things joined it at M7** (tasks 1.1, 1.2, 2.1, 2.2).
+
+*Partial residency* (`streaming.h`) is the "Streaming" requirement M6 planned and did not touch: an
+asset that declares a ladder of texture mips, mesh LODs or audio chunks is resident a level at a
+time, driven by a budget and by renderer feedback, and **a not-yet-resident level falls back to the
+highest resident one rather than blocking a frame**. It is on in every build — `AssetSystem::start`
+starts it with the configuration's residency budget and `update()` drives it — because the
+requirement is that the engine supports partial residency, not that a caller can assemble it.
+
+*The toolchain fingerprint* (`toolchain.h`) moved here from `tools/build/`. M6 built it at layer 7,
+where `cy::import` and `cy::shader` could not reach it, so the function that actually cooks content
+still computed a key blind to its own compiler and M6's closing gate re-measured the original defect
+as **1 hit, 0 miss** across two importer binaries sharing one cache. One cache needs one key, and one
+key needs its inputs reachable from every producer that computes one — which is layer 0.
+
 **Hot reload joined it at M3** (task 1.4, carried forward from M2's gate). `FileWatcher` watches the
 virtual filesystem and reports added, modified and removed paths; `AssetSystem::reload()` replaces a
 resident asset's bytes **inside the object every `Ref` already points at** and tells registered
@@ -34,6 +49,8 @@ dependents so they can rebuild what they derived. Both halves are exercised by
 | `package.h` | The `.cypak` format: `PackageReader`, `PackageWriter`, `PackageSet`, `PackageMount` |
 | `serialization.h` | The binary envelope and the text form over reflected data |
 | `asset_system.h` | `AssetSystem`, `AssetData`, `LoadRequestId`, the retention policies, and `reload()` |
+| `streaming.h` | `StreamingSystem` — partial residency for mip levels, mesh LODs and audio chunks under a budget (**M7**) |
+| `toolchain.h` | `ToolchainFingerprint` — what compiled a producer, contributed to every derivation key (**M7**) |
 | `watch.h` | `FileWatcher` — polls the namespace, reports what changed, debounces a file still being written |
 | `diagnostics.h` | The layer's counters, on the M0 trace |
 | `assets.h` | The umbrella |
@@ -73,7 +90,7 @@ the tests assert on both.
 | Not here | Where it attaches | Milestone |
 |---|---|---|
 | Cooking, importers, source-format parsers | `PackageWriter::add` takes bytes that are already cooked | M2 |
-| Streaming, per-mip residency, renderer feedback | `AssetSystem` retention is about *when memory goes back*, not about partial residency | M6 |
+| ~~Streaming, per-mip residency, renderer feedback~~ | **Closed at M7** by `streaming.h`. `AssetSystem` retention is still about *when memory goes back*; `AssetSystem::streaming()` is about what fraction of an asset is resident | M7 |
 | GPU upload | `AssetSystemStats::uploads_skipped` counts the stage that is skipped | M3 |
 | A native change-notification backend (inotify, ReadDirectoryChangesW, FSEvents) | `FileWatcher` polls the `VirtualFileSystem`, which is layer 0; a native backend is platform code and belongs behind the platform seam. Its callers' contract — call `poll()`, be told what changed — does not move | when someone needs the latency |
 | Reloading a **package-backed** asset | `AssetSystem::reload` refuses one by name: an entry inside a cooked package reaches its bytes through chunk framing, decompression and a dependency pass that only the load pipeline implements. Closing it means restarting that pipeline into the existing slot and swapping at `publish()` | when a cooked package is iterated on |

@@ -8,55 +8,67 @@
 namespace cy::shader {
 namespace {
 
-/// Feed a length-prefixed string into the digest.
+/// A `const char*` that may be null, as the view the key builder wants.
 ///
-/// LENGTH-PREFIXED, NOT NUL-TERMINATED, and the difference is a real collision: hashing
-/// "vulkan" then "spirv" and hashing "vulkans" then "pirv" would otherwise produce the same
-/// digest, and the two are different targets.
-void hash_text(assets::ContentHasher& hasher, const char* text) noexcept {
-    const usize length = text != nullptr ? std::strlen(text) : 0;
-    const u64 prefix = length;
-    hasher.update(&prefix, sizeof(prefix));
-    if (length != 0) {
-        hasher.update(text, length);
-    }
+/// The builder frames every contribution — a tag, the name's length, the name, the value's length,
+/// the value — so the "vulkan"/"spirv" against "vulkans"/"pirv" collision this file used to guard
+/// against by hand is now a property of the encoding rather than of this function remembering to
+/// write a length prefix. See cy/core/assets/derivation.h.
+[[nodiscard]] std::string_view view_of(const char* text) noexcept {
+    return text != nullptr ? std::string_view(text) : std::string_view();
 }
-
-void hash_u32(assets::ContentHasher& hasher, u32 value) noexcept {
-    hasher.update(&value, sizeof(value));
-}
-
-void hash_u64(assets::ContentHasher& hasher, u64 value) noexcept {
-    hasher.update(&value, sizeof(value));
-}
-
-constexpr char kHexDigits[] = "0123456789abcdef";
 
 }  // namespace
 
-CacheKey derive_cache_key(const CacheKeyInputs& inputs) noexcept {
-    assets::ContentHasher hasher;
-    // The order is the specification's list. It is fixed because a key is only useful if two
-    // machines derive the same one, and a reordering would silently invalidate every cache on the
-    // day it landed.
-    hasher.update(inputs.source_hash.bytes, sizeof(inputs.source_hash.bytes));
-    hash_text(hasher, inputs.compiler_name);
-    hash_text(hasher, inputs.compiler_version);
-    hash_u32(hasher, inputs.artefact_version);
-    hash_text(hasher, inputs.target_platform);
-    hash_text(hasher, inputs.renderer_profile);
-    hash_u64(hasher, inputs.feature_set.size());
-    for (const char* feature : inputs.feature_set) {
-        hash_text(hasher, feature);
+Expected<assets::DerivationKey, Error> derive_shader_derivation_key(
+    const CacheKeyInputs& inputs) noexcept {
+    // THE TOOLCHAIN IS CONTRIBUTED BY CONSTRUCTION AND REFUSED WHEN INCOMPLETE. M7 tasks 1.1, 1.2.
+    //
+    // `compiler_name` and `compiler_version` name the tool this key's producer INVOKES — Slang —
+    // and they are not the same thing as the toolchain that compiled the producer. The engine
+    // binary writes the shader library encoding and the reflection records, so two engine builds
+    // that disagree about float contraction can write different bytes for one Slang invocation.
+    // M6's spike measured that exact shape on the importer: identical keys at -O2 and -O0, and a
+    // shared cache serving either binary's artefact to the other.
+    const assets::ToolchainFingerprint& toolchain = assets::current_toolchain();
+    if (!assets::toolchain_is_complete(toolchain)) {
+        return make_unexpected(Error{ErrorCode::Internal,
+                                     "the toolchain fingerprint is incomplete, so a shader cache "
+                                     "key would be blind to what compiled the engine",
+                                     0});
     }
-    hash_text(hasher, inputs.entry_point.c_str());
-    hash_u64(hasher, inputs.permutation);
-    hash_u32(hasher, static_cast<u32>(inputs.optimization));
-    hash_u32(hasher, static_cast<u32>(inputs.debug_info));
-    hash_u32(hasher, inputs.spirv_version);
 
+    assets::DerivationKeyBuilder builder;
+    // The order is the specification's list, extended with the toolchain in the position
+    // `cy::build::derivation_key` puts it. It is fixed because a key is only useful if two machines
+    // derive the same one, and a reordering would silently invalidate every cache on the day it
+    // landed.
+    builder.producer(assets::DerivedKind::Shader, view_of(inputs.compiler_name),
+                     inputs.artefact_version);
+    toolchain.contribute(builder);
+    builder.source("source", inputs.source_hash);
+    builder.text("compiler.version", view_of(inputs.compiler_version));
+    builder.text("target.platform", view_of(inputs.target_platform));
+    builder.text("renderer.profile", view_of(inputs.renderer_profile));
+    builder.number("features", inputs.feature_set.size());
+    for (const char* feature : inputs.feature_set) {
+        builder.text("feature", view_of(feature));
+    }
+    builder.text("entry", view_of(inputs.entry_point.c_str()));
+    builder.number("permutation", inputs.permutation);
+    builder.number("optimization", static_cast<u64>(inputs.optimization));
+    builder.number("debug_info", static_cast<u64>(inputs.debug_info));
+    builder.number("spirv.version", inputs.spirv_version);
+    return builder.finish();
+}
+
+Expected<CacheKey, Error> derive_cache_key(const CacheKeyInputs& inputs) noexcept {
+    Expected<assets::DerivationKey, Error> derived = derive_shader_derivation_key(inputs);
+    if (!derived) {
+        return make_unexpected(derived.error());
+    }
     CacheKey key;
-    key.hash = hasher.finish();
+    key.hash = derived.value().digest;
     return key;
 }
 
@@ -149,9 +161,10 @@ void MemoryCacheTier::clear() noexcept {
 
 // --- VfsCacheTier ----------------------------------------------------------------------------
 
-VfsCacheTier::VfsCacheTier(Allocator& allocator, const char* name, assets::VirtualFileSystem& files,
-                           const assets::VirtualPath& root, bool writable) noexcept
-    : allocator_(&allocator), name_(name), files_(&files), root_(root), writable_(writable) {}
+VfsCacheTier::VfsCacheTier(Allocator& /*allocator*/, const char* name,
+                           assets::VirtualFileSystem& files, const assets::VirtualPath& root,
+                           bool writable) noexcept
+    : name_(name), files_(&files), root_(root), writable_(writable) {}
 
 VfsCacheTier::~VfsCacheTier() = default;
 

@@ -205,7 +205,9 @@ private:
 
     VirtualFileSystem* files_ = nullptr;
     FileWatcherConfig config_{};
-    Allocator* allocator_;
+    // No `Allocator*` field: every array below already holds the one the constructor was given, and
+    // a fourth copy of it was read by nothing. clang reported it as `-Wunused-private-field`, which
+    // is the whole of the reason it is gone — M7 task 1.5.
     Array<VirtualPath> roots_;
     /// Sorted by path. A sorted array rather than a hash map because the sweep walks it in order
     /// and because a watcher over an editing session holds hundreds of entries, not millions.

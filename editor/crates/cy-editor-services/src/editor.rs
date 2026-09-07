@@ -22,6 +22,7 @@ use cy_editor_viewport::play::PlayState;
 
 use crate::documents::DocumentService;
 use crate::manipulate;
+use crate::mirror::{RuntimeMirror, engine_identity};
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
 use crate::project::ProjectService;
@@ -44,6 +45,10 @@ pub struct Editor {
     pub operations: OperationService,
     /// The engine, or the considered absence of one.
     pub runtime: RuntimeSession,
+    /// What keeps the hosted runtime in step with the document, and what carries the engine's gizmo
+    /// geometry back. M7 tasks 5b.3 and 5b.4 — see `crate::mirror` for why it watches the history
+    /// rather than being called at the commit.
+    pub mirror: RuntimeMirror,
     /// What the editor is showing: the viewports, their cameras and their tools.
     ///
     /// A service like the others, and for the same reason: a viewport's transform mode is state a
@@ -90,6 +95,7 @@ impl Editor {
             notifications: NotificationService::new(),
             operations: OperationService::new(),
             runtime: RuntimeSession::none(),
+            mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
             project,
             actor,
@@ -194,10 +200,36 @@ impl Editor {
     /// because a frame happened.
     pub fn pump(&mut self) {
         let messages = self.runtime.pump(&mut self.notifications);
-        // Reconciliation of predicted state against these echoes belongs to the viewport, at task
-        // 4.1. Draining them here rather than leaving them queued is what keeps the channel from
-        // growing without bound in a build that has no viewport yet.
-        let _ = messages;
+        // THE GIZMO ARRIVES HERE. `RuntimeMirror` takes a published layout, refuses one that
+        // belongs to a frame the viewport is not showing, and hands what survives to the viewport
+        // panel — which draws nothing and hit-tests everything, because the geometry is the
+        // engine's (`editor-viewport-and-gizmos`). Every other message is drained rather than
+        // queued, which is what keeps the channel bounded in a build with no viewport.
+        for message in &messages {
+            self.mirror.accept(message, self.viewports.focused());
+        }
+        // WHERE THE CONTENT IS, once. A viewport opens at the origin looking down −Z, and the
+        // runtime is the only side that knows where its world is; without this the first view is
+        // inside whatever sits at the origin and every manipulation reports "0.000 m", because a
+        // pivot at the camera's own position has no screen-space direction. See
+        // `cy_editor_protocol::Message::ViewSuggested` for why the runtime may say this exactly
+        // once.
+        let _ = self.mirror.frame_the_world(self.viewports.focused_mut());
+
+        // And the other direction: what the document committed or undid since the last frame, so
+        // that the object the engine draws the gizmo on is where the editor believes it is. See
+        // `crate::mirror::RuntimeMirror::sync`.
+        let identities: Vec<u64> = self.selection.get().nodes().map(engine_identity).collect();
+        let document = self
+            .workspace
+            .active()
+            .and_then(|id| self.documents.get(id));
+        self.mirror.sync(
+            &self.runtime,
+            document,
+            self.viewports.focused(),
+            identities,
+        );
         self.operations.retain_running();
     }
 

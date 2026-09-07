@@ -73,6 +73,15 @@ SPIR-V version — and there is no way to build a key from anything less. A hit 
 written back into the writable tiers in front of it, which is "CI populates, developers consume" in
 one line of behaviour.
 
+**M7 folded it into the one derivation key** (task 1.2). It used to hash its fields straight into a
+`ContentHasher`; it is now built through `cy::assets::DerivationKeyBuilder`, so it gets that type's
+framed, prefix-free encoding, and it contributes `cy::assets::ToolchainFingerprint`, so an artefact
+written by an engine binary compiled at `-O0` is not served to one compiled at `-O2`. The merged key
+is the union of what the tree's three key functions each got right: the version of the tool this one
+INVOKES (Slang) and the artefact-format version from here, the producing binary's toolchain from
+`tools/build/`, and the framing from layer 0. `derive_cache_key` returns `Expected` for the reason
+`cy::build::derivation_key` does — an incomplete fingerprint is refused, never defaulted.
+
 **A miss never compiles inline** (`include/cy/backends/shader/pipeline.h`).
 `PipelineStateCache::request()` returns the fallback and queues the state; `build_pending()` does the
 work, wherever the caller likes. "Blocking the frame to compile a pipeline state SHALL NOT occur in

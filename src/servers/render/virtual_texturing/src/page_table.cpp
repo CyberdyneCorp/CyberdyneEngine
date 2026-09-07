@@ -39,6 +39,18 @@ bool PageTable::in_range(const VirtualAddress& address) const noexcept {
            address.tile_y < desc_.tiles_y(address.mip);
 }
 
+usize PageTable::linear_index(const VirtualAddress& address) const noexcept {
+    return in_range(address) ? flat_index(address) : entry_count();
+}
+
+usize PageTable::entry_count() const noexcept {
+    if (!configured_ || mip_offsets_.empty()) {
+        return 0;
+    }
+    const auto coarsest = static_cast<u8>(mip_offsets_.size() - 1);
+    return mip_offsets_[coarsest] + (static_cast<usize>(desc_.tile_count(coarsest)) * desc_.layers);
+}
+
 usize PageTable::flat_index(const VirtualAddress& address) const noexcept {
     const auto per_layer = static_cast<usize>(desc_.tile_count(address.mip));
     const usize within =

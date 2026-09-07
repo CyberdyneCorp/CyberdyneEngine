@@ -33,13 +33,19 @@
 //   * a cancelled request stops at the next STAGE boundary and releases partial results — each
 //     stage begins by asking its token, which is the only place a stage can stop consistently.
 //
-// STREAMING IS M6. There is no residency budget driven by renderer feedback, no per-mip request and
-// no priority derived from distance here. What is here is the retention policy the loading
-// requirement itself names, which is about when a released asset's memory goes back — not about
-// what fraction of an asset is resident.
+// PARTIAL RESIDENCY IS `streaming.h`, AND IT IS ON. M7 tasks 2.1 and 2.2. This file loads assets
+// WHOLE, which is the right thing for a prefab, a material or a script; an asset that declares a
+// ladder of mip levels, mesh LODs or audio chunks is streamed a level at a time by the
+// `StreamingSystem` this one owns and drives from `update()`. The two are separate because they
+// answer different questions — this one is "when does a released asset's memory go back", that one
+// is "what fraction of this asset is resident right now" — and because a not-yet-resident level
+// must never block a frame, which is a property of the ladder rather than of the load pipeline.
+//
+// `streaming()` is how the residency arbiter reaches it and how a renderer's feedback is delivered.
 
 #include <cy/core/assets/identity.h>
 #include <cy/core/assets/package.h>
+#include <cy/core/assets/streaming.h>
 #include <cy/core/assets/vfs.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -327,6 +333,18 @@ public:
     /// release the payloads that reloads replaced. Called once a frame; a headless tool that never
     /// calls it keeps everything resident.
     void update() noexcept;
+
+    // --- Partial residency --------------------------------------------------------------------
+
+    /// The streaming system this asset system drives. Started by `start()` with the configuration's
+    /// residency budget and updated by `update()`, so partial residency is on in every build rather
+    /// than something a caller has to assemble.
+    ///
+    /// Consumers reach it for the two things layer 0 cannot do for them: DECLARING a ladder, which
+    /// needs somebody who understands the asset's format, and REQUESTING a level, which needs the
+    /// renderer's feedback or a distance. The residency arbiter reaches it for `set_budget_bytes`.
+    [[nodiscard]] StreamingSystem& streaming() noexcept;
+    [[nodiscard]] const StreamingSystem& streaming() const noexcept;
 
     [[nodiscard]] AssetSystemStats stats() const noexcept;
     void reset_stats() noexcept;

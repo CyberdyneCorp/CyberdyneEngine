@@ -178,6 +178,12 @@ run-editor-window *args:
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
 
     just build-editor --profile "${profile}"
+    # AND THE ENGINE ON THE FAR END OF THE TRANSPORT. From M7 the thing the editor's viewport shows
+    # is `cy_editor_window_runtime` — M3's scene and renderer on a real device, publishing over the
+    # viewport transport — rather than the fixture in the editor's own Cargo workspace. Building the
+    # editor alone would leave the driver reporting that the viewport is neutral, which reads as a
+    # defect in the transport rather than as a missing binary.
+    just build-engine --profile "${profile}"
 
     # THIS ONE NEEDS A DISPLAY AND SAYS SO RATHER THAN PASSING. The driver exits 3 where it cannot
     # run — no display, no XTEST, no python-xlib — and this recipe passes that exit code through

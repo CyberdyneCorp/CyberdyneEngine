@@ -70,6 +70,27 @@ struct LeverSchedule {
     f32 elevated = 0.0F;
     f32 critical = 0.0F;
 
+    /// WHAT EACH LADDER POSITION COSTS, RELATIVE TO POSITION 0. M7 design.md §2.10, and the ONE
+    /// thing the budget arbiter's spike found this structure was missing.
+    ///
+    /// Indexed by `PressureLevel`, so `relative_cost[0]` is 1.0 by definition and
+    /// `relative_cost[1]` of 0.6 means "at the elevated position this subsystem costs sixty per
+    /// cent of what it costs at authored quality". A fraction of the subsystem's own cost rather
+    /// than a number of milliseconds, because the milliseconds are a property of the scene and the
+    /// ratio is a property of the lever.
+    ///
+    /// WHY THE ARBITER CANNOT WORK WITHOUT IT. Every mechanism the spike settled on is expressed in
+    /// terms of this number: the deadband is half the coarsest reachable lever QUANTUM, the
+    /// actuator forces one step down per subsystem until `gain * error` of the deficit is COVERED,
+    /// and a restore is granted all-or-nothing only when the measured headroom covers the step's
+    /// PREDICTED increase. An arbiter allocating milliseconds over a ladder it cannot price is
+    /// choosing blind.
+    ///
+    /// A subsystem that leaves it alone declares a flat ladder — every position costs what position
+    /// 0 costs — which is the honest reading of "this lever changes quality and not cost", and is
+    /// what the three 1.0s a zero-initialised schedule would NOT give. Hence the initialiser.
+    f32 relative_cost[3] = {1.0F, 1.0F, 1.0F};
+
     [[nodiscard]] f32 at(PressureLevel level) const noexcept {
         switch (level) {
             case PressureLevel::Normal:
@@ -80,6 +101,15 @@ struct LeverSchedule {
                 return critical;
         }
         return normal;
+    }
+
+    /// What this lever's position at `level` costs relative to position 0. Never zero and never
+    /// negative: a ladder position that cost nothing would let the arbiter cover any deficit with
+    /// one step, and a negative one is not a cost.
+    [[nodiscard]] f32 cost_at(PressureLevel level) const noexcept {
+        const auto index = static_cast<u32>(level);
+        const f32 cost = index < 3U ? relative_cost[index] : 1.0F;
+        return cost > 0.0F ? cost : 1.0F;
     }
 };
 

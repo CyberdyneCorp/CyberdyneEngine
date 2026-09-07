@@ -28,6 +28,15 @@ CacheKeyInputs base_inputs() {
     return inputs;
 }
 
+/// The key, or the test fails. `derive_cache_key` returns `Expected` since M7 task 1.2 — it refuses
+/// an incomplete toolchain fingerprint rather than defaulting to a key that is blind to what
+/// compiled the engine — and every case below wants the key itself.
+CacheKey key_of(const CacheKeyInputs& inputs) {
+    auto derived = derive_cache_key(inputs);
+    CY_REQUIRE(derived.has_value());
+    return derived.value();
+}
+
 cy::Span<const u8> bytes_of(const char* text, usize length) {
     return {reinterpret_cast<const u8*>(text), length};
 }
@@ -35,47 +44,47 @@ cy::Span<const u8> bytes_of(const char* text, usize length) {
 }  // namespace
 
 CY_TEST_CASE("the same inputs always derive the same key") {
-    CY_CHECK(derive_cache_key(base_inputs()) == derive_cache_key(base_inputs()));
+    CY_CHECK(key_of(base_inputs()) == key_of(base_inputs()));
 }
 
 CY_TEST_CASE("every field the specification names changes the key") {
-    const CacheKey reference = derive_cache_key(base_inputs());
+    const CacheKey reference = key_of(base_inputs());
 
     auto changed = base_inputs();
     changed.compiler_version = "2026.10.0";
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.target_platform = "metal-msl";
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.renderer_profile = "visibility-buffer";
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.artefact_version = kShaderArtefactVersion + 1;
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.permutation = 1;
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.debug_info = DebugInfoLevel::Full;
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.optimization = OptimizationLevel::None;
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.entry_point = cy::Name::intern("other");
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 
     changed = base_inputs();
     changed.source_hash = cy::assets::content_hash("different", 9);
-    CY_CHECK(derive_cache_key(changed) != reference);
+    CY_CHECK(key_of(changed) != reference);
 }
 
 CY_TEST_CASE("the feature set is length-prefixed, so a split cannot collide") {
@@ -88,11 +97,11 @@ CY_TEST_CASE("the feature set is length-prefixed, so a split cannot collide") {
     a.feature_set = {first, 2};
     auto b = base_inputs();
     b.feature_set = {second, 2};
-    CY_CHECK(derive_cache_key(a) != derive_cache_key(b));
+    CY_CHECK(key_of(a) != key_of(b));
 }
 
 CY_TEST_CASE("a key names a sharded path so a big cache is not one directory") {
-    const CacheKey key = derive_cache_key(base_inputs());
+    const CacheKey key = key_of(base_inputs());
     auto root = cy::assets::VirtualPath::normalise("cache/shaders");
     CY_REQUIRE(root.has_value());
     auto path = key.to_path(*root);
@@ -114,7 +123,7 @@ CY_TEST_CASE("a lookup searches the tiers in order and a miss is not an error") 
     ShaderCache cache(cy::current_allocator());
     CY_REQUIRE(cache.add_tier(local).has_value());
 
-    const CacheKey key = derive_cache_key(base_inputs());
+    const CacheKey key = key_of(base_inputs());
     cy::Array<u8> out(cy::current_allocator());
     auto found = cache.load(key, out);
     CY_REQUIRE(found.has_value());
@@ -139,7 +148,7 @@ CY_TEST_CASE("a hit in a remote tier is promoted into the local one") {
     CY_REQUIRE(cache.add_tier(local).has_value());
     CY_REQUIRE(cache.add_tier(remote).has_value());
 
-    const CacheKey key = derive_cache_key(base_inputs());
+    const CacheKey key = key_of(base_inputs());
     CY_REQUIRE(remote.publish(key, bytes_of("from-ci", 7)).has_value());
     CY_CHECK_EQ(local.size(), usize{0});
 
@@ -164,7 +173,7 @@ CY_TEST_CASE("a read-only tier refuses a store and the writable ones still get i
     CY_REQUIRE(cache.add_tier(local).has_value());
     CY_REQUIRE(cache.add_tier(remote).has_value());
 
-    const CacheKey key = derive_cache_key(base_inputs());
+    const CacheKey key = key_of(base_inputs());
     CY_REQUIRE(cache.store(key, bytes_of("spirv", 5)).has_value());
     CY_CHECK_EQ(local.size(), usize{1});
     CY_CHECK_EQ(remote.size(), usize{0});

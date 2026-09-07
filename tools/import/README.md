@@ -8,8 +8,8 @@ sidecars out, with a content-addressed cache in the middle so that the second ru
 a file open per asset rather than a re-cook.
 
 ```
-digest    the source, and build the derivation key from it, the options, the importer's version,
-          the variant and the cook profile
+digest    the source, and build the derivation key from it, the TOOLCHAIN THAT COMPILED THIS
+          BINARY (M7 task 1.1), the options, the importer's version, the variant and the profile
 ask       the one derived-data cache, whose answer is a hit, a miss, or an invalidation naming the
           dependency that changed
 import    on a miss, through a resolver that RECORDS every input the importer reads
@@ -71,6 +71,37 @@ draws 128 random bits, and M6 is the milestone at which an `AssetId` reaches the
 from which point two cold builds of one project stop producing the same bytes. A shipping or CI cook
 passes `--no-mint` and fails naming the asset; the remedy is to commit the `.import` sidecar, which
 should have happened anyway.
+
+## What M7 fixed: the key was blind to its own compiler
+
+`import_derivation_key` contributed the producer, the source hash, the variant, the profile and the
+options — and no compiler, no flags and no library versions. It is the function `cy_import_cli`
+uses. M6's spike built one importer at `-O2` and at `-O0`, ran both over the same glTF and got the
+identical key `04a6fff1…`; M6's closing gate re-measured it on two importer binaries pointed at one
+cache and recorded **1 hit, 0 miss**. `asset-import-pipeline` requires "one cache covering all
+derived data", and one cache with two keys — one of which cannot see its own compiler — serves the
+wrong artefact and reports success.
+
+The remedy shipped at M6 but inside `tools/build/`, which this module cannot link. M7 moved
+`ToolchainFingerprint` to `cy/core/assets/toolchain.h` at layer 0 and this function now contributes
+it through the same `contribute()` the build graph and the shader cache call, and FAILS on an
+incomplete fingerprint rather than defaulting. `tests/test_importer_key.cpp` is the regression: it
+reconstructs the M6 spelling of the key and requires the current one to differ from it.
+
+## The importer is a node in the build graph (M7 task 1.4)
+
+`cy_import_cli` is still the front end a person runs. What M7 added is that the same importers run
+as a `cy::build` node: `tools/build/src/content_producers.cpp` registers an `import` producer that
+reads its source through `NodeContext::read`, hands the importer an `ImportResolver` whose `read`
+goes to `NodeContext::discover`, and writes the result as a bundle — `encode_import_bundle`, which
+was file-local to `pipeline.cpp` and is public for exactly this reason, so there is one framing
+rather than two.
+
+Composing the two resolvers is what earns it. `ImportResolver` exists so an importer cannot read a
+file without recording it; `NodeContext::discover` exists so a producer cannot read a name without
+the BUILD recording it. Put together, a glTF's external `.bin` is a declared dependency of the node,
+so editing it invalidates the node — which is the whole point of a derivation graph and is what
+running the importer beside the graph could not give.
 
 ## What it deliberately does not do
 

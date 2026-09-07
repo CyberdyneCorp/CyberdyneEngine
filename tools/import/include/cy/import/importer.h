@@ -40,6 +40,7 @@
 #include <cy/core/assets/hash.h>
 #include <cy/core/assets/identity.h>
 #include <cy/core/assets/path.h>
+#include <cy/core/assets/toolchain.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
@@ -351,6 +352,14 @@ private:
 /// adding a field in two orders. This is that function for imports, and an importer that wants
 /// something else in the key adds it through its options schema rather than by building a key of
 /// its own.
+///
+/// It contributes `assets::current_toolchain()` and FAILS on an incomplete one — M7 task 1.1. Until
+/// that landed this function named no compiler, no flags and no library versions, so two builds of
+/// one importer at `-O2` and at `-O0` computed the same key and a shared cache served either
+/// binary's artefact to the other; M6's closing gate measured that as 1 hit, 0 miss. The five
+/// toolchain fields are added by `ToolchainFingerprint::contribute`, which is the same function
+/// `cy::build::derivation_key` and `cy::shader::derive_cache_key` call, so no two producers in this
+/// tree can disagree about what "the toolchain" means.
 [[nodiscard]] Expected<assets::DerivationKey, Error> import_derivation_key(
     const ImporterInfo& info, const OptionsSchema& schema, const ImportRequest& request,
     const assets::ContentHash& source_hash) noexcept;

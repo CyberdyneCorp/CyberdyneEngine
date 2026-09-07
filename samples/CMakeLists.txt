@@ -4,6 +4,14 @@
 # `just run-sample <name>` finds a sample's binary as samples/*/cy_sample_<name>, so a new sample is
 # a directory, a cy_add_module(NAME cy_sample_<name> ...) and one line here — there is no manifest
 # to keep in step.
+#
+# harness/ is not an artefact. It is what every artefact below reports THROUGH, and it is first
+# because both of the rules it carries were broken at M6 by artefacts that were otherwise careful:
+# a run that recorded a gap returned 0, and a run led with an extreme-value statistic that four
+# re-runs contradicted. `artefact.Report.exit_code` is derived from the gaps and
+# `artefact.Report.headline` refuses a maximum, so neither can happen again without deleting the
+# module. M7 tasks 5b.5 and 5b.5b.
+add_subdirectory(harness)
 add_subdirectory(00-empty)
 add_subdirectory(01-headless-host)
 add_subdirectory(02-headless-sim)

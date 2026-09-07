@@ -65,9 +65,32 @@ production workers — and `~ResidencyServer` takes the lock so a call already i
 before the tables go. `tests/test_teardown.cpp` does that under four concurrent workers, two hundred
 times, and destroys two hundred servers still holding pages, holds, requests and deadlines.
 
+## What M7 added, and what it is for
+
+**`LeverSchedule::relative_cost` — what each ladder position costs relative to position 0.** M7's
+budget-arbiter spike (`openspec/changes/implement-m7-fidelity/design.md` §2.10) found this was the
+one thing the policy was missing, and named it as a fourth field beside the three declared values
+rather than a new mechanism. Every mechanism the arbiter uses is expressed in terms of it: the
+deadband is half the coarsest reachable lever quantum, the actuator forces one step per subsystem
+until `gain * error` of the deficit is covered, and a restore is granted all-or-nothing only when the
+measured headroom covers the step's predicted increase. An arbiter allocating milliseconds over a
+ladder it cannot price is choosing blind. A schedule nobody filled in declares a flat ladder, which
+is the honest reading of "this lever changes quality and not cost".
+
+**A second registered subsystem, in engine code rather than in a test.**
+`cy::rendering::vt::FrameResidency` (`src/rendering/virtual_texturing/frame_residency.h`) registers
+`Subsystem::Texture` and `Subsystem::Geometry` against one server and feeds both from one frame's own
+GPU dispatches — the virtual-texturing resolve pass's compacted page requests, and the level each
+instance was actually drawn at according to the culling dispatch's payloads. Until M7 exactly one
+thing in this tree registered a subsystem, and a capability whose entire subject is arbitration,
+exercised by a single claimant, is a capability nothing has tested. With two registered, the
+coordinated reduction is one plan over both, walked in the declared `reduction_order`, and that is
+now asserted rather than assumed.
+
 ## Tests
 
     just test-unit residency                # the policy, and the separation criterion
+    just test-render -R render.virtual_texturing_gpu   # M7: two subsystems arbitrating over one frame
     just test-integration residency_teardown  # teardown under load
 
 Not gated by any option: the module compiles in every build, so both suites run in every

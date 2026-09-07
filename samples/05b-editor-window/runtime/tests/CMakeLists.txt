@@ -1,0 +1,36 @@
+# samples/05b-editor-window/runtime/tests/ — the runtime's decisions, without a device.
+#
+# The association, the transaction decoding and the overlay's rasteriser are the parts of this
+# runtime that can be wrong quietly: an identity that moves between objects, a transaction half
+# applied, a handle drawn in the wrong colour or in the wrong place. None of them needs Vulkan, so
+# none of them waits for `smoke.editor_window` — which needs a display and is not in the permanent
+# gate set.
+set_property(GLOBAL PROPERTY CY_EDITOR_WINDOW_RUNTIME_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
+function(cy_editor_window_runtime_declare_tests)
+    get_property(tests_dir GLOBAL PROPERTY CY_EDITOR_WINDOW_RUNTIME_TESTS_DIR)
+    get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_BUDGET_unit)
+    get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                           DEFINITION CY_TEST_TIMEOUT_unit)
+    if(NOT budget OR NOT timeout)
+        message(FATAL_ERROR
+            "samples/05b-editor-window/runtime/tests: the 'unit' entry of the test taxonomy could "
+            "not be read from tests/CMakeLists.txt.")
+    endif()
+    set(CY_TEST_BUDGET_unit "${budget}")
+    set(CY_TEST_TIMEOUT_unit "${timeout}")
+
+    cy_add_test(
+        NAME editor_window_runtime
+        KIND unit
+        SOURCES
+            "${tests_dir}/test_runtime.cpp"
+            "${tests_dir}/../overlay.cpp"
+            "${tests_dir}/../session.cpp"
+        DEPENDENCIES cy::servers-render)
+
+    target_include_directories(cy_test_unit_editor_window_runtime PRIVATE "${tests_dir}/..")
+endfunction()
+
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_editor_window_runtime_declare_tests)

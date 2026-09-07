@@ -72,3 +72,10 @@ endif()
 if(CY_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+# The editor bridge: the hosted runtime's side of `cyberdyne-editor --host <socket>`. M7 task 5b.3.
+#
+# A separate target rather than more sources above, because a headless runtime and a dedicated
+# server have no use for a socket speaking the editor's protocol and `cy::runtime` is what both of
+# them link. Its own CMakeLists.txt argues the rest, including why it names no server.
+add_subdirectory(editor_bridge)

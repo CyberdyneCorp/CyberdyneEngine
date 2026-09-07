@@ -16,6 +16,26 @@
 // across a compiler upgrade, and that class of bug reproduces as "it works on my machine" for a
 // week before anybody suspects the cache.
 //
+// --- ONE KEY, AND THIS ONE IS BUILT OUT OF IT. M7 task 1.2 -------------------------------------
+//
+// M6 left the tree with three key functions over one derived-data cache. This one hashed its
+// fields directly into a `ContentHasher`, which got two things right that the others did not — the
+// version of the tool it INVOKES (Slang), and the artefact-format version — and one thing wrong:
+// the contributions were concatenated without framing, so `("vulkan", "spirv")` and
+// `("vulkans", "pirv")` were distinguished only by the length prefix `hash_text` happened to add,
+// and every non-text field had no frame at all.
+//
+// It is now built through `assets::DerivationKeyBuilder`, like the importer's key and the build
+// graph's, so the framing argument in `cy/core/assets/derivation.h` covers it; and it contributes
+// `assets::ToolchainFingerprint`, so an entry produced by an engine binary compiled at `-O0` is not
+// served to one compiled at `-O2`. The merged key is the union of what each of the three got right:
+// the invoked tool's version and the artefact version from here, the producing binary's toolchain
+// from `tools/build/`, and the framed encoding from layer 0.
+//
+// It returns `Expected` for the same reason `cy::build::derivation_key` does: a key computed
+// without a complete toolchain fingerprint is refused rather than defaulted, because defaulting is
+// how the defect gets back in.
+//
 // TIER ORDER IS SEARCH ORDER, AND A HIT PROMOTES. Tiers are consulted in the order they were added
 // — local first, remote last — and a hit in a slower tier is written back into every writable tier
 // in front of it. That is what turns `shader-system`'s "CI populates, developers consume" scenario
@@ -27,8 +47,10 @@
 // no network configure the same code with one tier instead of three.
 
 #include <cy/backends/shader/compiler.h>
+#include <cy/core/assets/derivation.h>
 #include <cy/core/assets/hash.h>
 #include <cy/core/assets/path.h>
+#include <cy/core/assets/toolchain.h>
 #include <cy/core/assets/vfs.h>
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
@@ -69,6 +91,10 @@ struct CacheKeyInputs {
 };
 
 /// A derived key. Content-addressed: equal keys mean equal inputs, so equal outputs.
+///
+/// It IS a `assets::DerivationKey` — the same type the importer and the build graph address the one
+/// derived-data cache with — and carries its digest so that a shader entry and an imported asset
+/// cannot be told apart by which producer wrote them, only by their inputs.
 struct CacheKey {
     assets::ContentHash hash;
 
@@ -84,8 +110,15 @@ struct CacheKey {
     friend bool operator!=(const CacheKey& a, const CacheKey& b) noexcept { return !(a == b); }
 };
 
+/// The one key, as a `DerivationKey`, so a shader entry addresses the same cache as everything
+/// else.
+///
+/// Fails with `Internal` when `assets::toolchain_is_complete` is false — see the header.
+[[nodiscard]] Expected<assets::DerivationKey, Error> derive_shader_derivation_key(
+    const CacheKeyInputs& inputs) noexcept;
+
 /// The only way to make a key. See the header for why there is no other.
-[[nodiscard]] CacheKey derive_cache_key(const CacheKeyInputs& inputs) noexcept;
+[[nodiscard]] Expected<CacheKey, Error> derive_cache_key(const CacheKeyInputs& inputs) noexcept;
 
 /// One level of the cache.
 class CacheTier {
@@ -152,7 +185,8 @@ public:
     [[nodiscard]] Status store(const CacheKey& key, Span<const u8> bytes) noexcept override;
 
 private:
-    Allocator* allocator_;
+    // No `Allocator*`: `out` arrives from the caller with its own allocator and nothing here
+    // allocates. clang reported the field as `-Wunused-private-field` — M7 task 1.5.
     const char* name_;
     assets::VirtualFileSystem* files_;
     assets::VirtualPath root_;

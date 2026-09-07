@@ -12,6 +12,13 @@
 # on the report rather than on the exit code.
 #
 # LAYER tools, which may link any layer: a tool consumes the engine rather than sitting in it.
+#
+# M7 ADDS THE VIRTUAL GEOMETRY COOK, and with it a dependency on cy::rendering-virtual-geometry. It
+# is here rather than in tools/import/ because a cluster hierarchy is COOKED rather than imported:
+# the source mesh is already the engine's, the output is addressed by the derivation key, and the
+# thing being decided is a policy — cluster size, page size, quantisation precision — which is what
+# `asset-import-pipeline` calls a cook profile. `cy::cook::cook_virtual_geometry` carries the
+# argument at the top of geometry.h.
 
 cy_add_module(
     NAME cy_cook_pipeline
@@ -19,9 +26,11 @@ cy_add_module(
     ALIAS cy::cook-pipeline
     TYPE STATIC
     SOURCES
+        src/geometry.cpp
         src/pipeline.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-assets cy::scene-serialization cy::ecs)
+    PUBLIC_DEPENDENCIES cy::core-assets cy::scene-serialization cy::ecs
+                        cy::rendering-virtual-geometry)
 
 cy_add_module(
     NAME cy_cook

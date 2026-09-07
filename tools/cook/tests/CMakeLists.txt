@@ -34,7 +34,9 @@ function(cy_cook_declare_tests)
     cy_add_test(
         NAME cook_path
         KIND integration
-        SOURCES "${tests_dir}/test_cook_path.cpp"
+        SOURCES
+            "${tests_dir}/test_cook_geometry.cpp"
+            "${tests_dir}/test_cook_path.cpp"
         DEPENDENCIES cy::cook-pipeline cy::core-assets)
 endfunction()
 

@@ -248,14 +248,14 @@ fn the_engine_draws_the_gizmo_and_the_editor_hit_tests_what_it_drew() {
     let runtime = RuntimeSession::connect_hosted(&path).expect("a connected runtime");
 
     let viewport = showing_a_frame();
-    let request = gizmo::request(&runtime, &viewport, vec![DRAWN]).expect("the intent is sent");
+    let asked = gizmo::request(&runtime, &viewport, vec![DRAWN]).expect("the intent is sent");
 
     let published = runtime
         .block_until(Duration::from_secs(5), |event| match event {
             SessionEvent::Message(Message::GizmoGeometry {
                 request: answered,
                 layout,
-            }) if *answered == request => Some(layout.clone()),
+            }) if *answered == asked.request => Some(layout.clone()),
             _ => None,
         })
         .expect("the runtime publishes the geometry it drew");

@@ -2,6 +2,8 @@
 
 #include <cy/core/memory/tracking_allocator.h>
 
+#include <cy/core/memory/attribution.h>
+
 #include <cy/core/memory/lifetime.h>
 
 #include <algorithm>
@@ -111,6 +113,12 @@ void* TrackingAllocator::do_allocate(usize size, usize alignment) noexcept {
     header->alignment = block_alignment;
     header->tag = tag_;
     header->site = should_capture() ? *t_site : kUnknownSite;
+    // The four axes M7 task 3.1 adds. Recorded unconditionally rather than under `should_capture`:
+    // capture mode is about the COST of a call site, which is a stack walk in the modes above
+    // `Off`, and four integers copied from a thread-local is not that cost. A sampled report that
+    // attributed one allocation in sixty-four to a world cell would be a report nobody could use.
+    header->attribution = current_attribution();
+    header->thread = current_thread_ordinal();
     header->sequence = sequence_++;
 
     if (live_ != nullptr) {
@@ -238,12 +246,101 @@ LeakReport TrackingAllocator::report_leaks(LeakSink sink, void* user) const noex
             entry.bytes = header->payload_bytes;
             entry.tag = header->tag;
             entry.site = header->site;
+            entry.attribution = header->attribution;
+            entry.thread = header->thread;
             entry.sequence = header->sequence;
             entry.process_lifetime = false;
             sink(entry, user);
         }
     }
     return report;
+}
+
+namespace {
+
+/// The key one header contributes on one axis. `high` is non-zero only for the asset axis.
+struct AxisKey {
+    u64 low = 0;
+    u64 high = 0;
+
+    [[nodiscard]] bool is_unattributed() const noexcept { return low == 0 && high == 0; }
+};
+
+[[nodiscard]] AxisKey key_of(const MemoryAttribution& attribution, u32 thread,
+                             AttributionAxis axis) noexcept {
+    switch (axis) {
+        case AttributionAxis::Type:
+            return AxisKey{attribution.type, 0};
+        case AttributionAxis::Thread:
+            return AxisKey{thread, 0};
+        case AttributionAxis::WorldCell:
+            return AxisKey{attribution.world_cell, 0};
+        case AttributionAxis::Asset:
+            return AxisKey{attribution.asset_low, attribution.asset_high};
+    }
+    return AxisKey{};
+}
+
+}  // namespace
+
+MemoryAttributionSummary TrackingAllocator::report_attribution(
+    AttributionAxis axis, Span<MemoryAttributionRow> out) const noexcept {
+    MemoryAttributionSummary summary;
+    for (MemoryAttributionRow& row : out) {
+        row = MemoryAttributionRow{};
+    }
+
+    usize used = 0;
+    for (const Header* header = live_; header != nullptr; header = header->next) {
+        const AxisKey key = key_of(header->attribution, header->thread, axis);
+        if (key.is_unattributed()) {
+            // Nobody declared this axis for this allocation. Reported as its own figure rather
+            // than folded into a row, because "most of this is unattributed" is a true and useful
+            // answer and a zero key pretending to be a type is not.
+            summary.unattributed_bytes += header->payload_bytes;
+            continue;
+        }
+
+        usize slot = used;
+        for (usize index = 0; index < used; ++index) {
+            if (out[index].key == key.low && out[index].key_high == key.high) {
+                slot = index;
+                break;
+            }
+        }
+        if (slot == used) {
+            if (used == out.size()) {
+                // The span is full and this is a key it has not seen. Counted, and its bytes are
+                // reported as unreported — see the note on `distinct_keys`.
+                ++summary.distinct_keys;
+                summary.unreported_bytes += header->payload_bytes;
+                continue;
+            }
+            out[used].key = key.low;
+            out[used].key_high = key.high;
+            ++used;
+            ++summary.distinct_keys;
+        }
+        out[slot].live_bytes += header->payload_bytes;
+        ++out[slot].live_allocations;
+        summary.reported_bytes += header->payload_bytes;
+    }
+
+    // Descending by live bytes. Insertion sort over a span whose size is the caller's own row
+    // budget — tens, not thousands — and it allocates nothing, which is the property a memory
+    // report cannot do without.
+    for (usize index = 1; index < used; ++index) {
+        MemoryAttributionRow row = out[index];
+        usize position = index;
+        while (position > 0 && out[position - 1].live_bytes < row.live_bytes) {
+            out[position] = out[position - 1];
+            --position;
+        }
+        out[position] = row;
+    }
+
+    summary.rows = static_cast<u32>(used);
+    return summary;
 }
 
 }  // namespace cy

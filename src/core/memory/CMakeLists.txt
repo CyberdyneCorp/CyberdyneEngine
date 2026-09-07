@@ -42,6 +42,7 @@ cy_add_module(
     SOURCES
         src/allocator.cpp
         src/arena.cpp
+        src/attribution.cpp
         src/budget.cpp
         src/chunk_allocator.cpp
         src/chunk_storage.cpp

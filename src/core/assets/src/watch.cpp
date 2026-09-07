@@ -17,7 +17,7 @@ const char* file_change_name(FileChange change) noexcept {
 }
 
 FileWatcher::FileWatcher(Allocator& allocator) noexcept
-    : allocator_(&allocator), roots_(allocator), tracked_(allocator), scratch_(allocator) {}
+    : roots_(allocator), tracked_(allocator), scratch_(allocator) {}
 
 Status FileWatcher::start(VirtualFileSystem& files, const FileWatcherConfig& config) noexcept {
     if (config.settle_ns < 0) {

@@ -79,19 +79,22 @@ struct Quadric {
 
     /// `v^T Q v` — the sum of squared distances to the planes this quadric accumulated.
     [[nodiscard]] f64 evaluate(Vec3 v) const noexcept {
-        const f64 x = v.x;
-        const f64 y = v.y;
-        const f64 z = v.z;
+        // The casts are explicit because the quadric accumulates in f64 deliberately — a mesh a
+        // kilometre across loses the error term in f32 — and clang's -Wdouble-promotion is right
+        // that a silent widening is where that intent goes to be forgotten. M7 task 1.5.
+        const f64 x = static_cast<f64>(v.x);
+        const f64 y = static_cast<f64>(v.y);
+        const f64 z = static_cast<f64>(v.z);
         return (a2 * x * x) + (2.0 * ab * x * y) + (2.0 * ac * x * z) + (2.0 * ad * x) +
                (b2 * y * y) + (2.0 * bc * y * z) + (2.0 * bd * y) + (c2 * z * z) + (2.0 * cd * z) +
                d2;
     }
 
     [[nodiscard]] static Quadric from_plane(Vec3 normal, f32 offset, f64 weight) noexcept {
-        const f64 a = normal.x;
-        const f64 b = normal.y;
-        const f64 c = normal.z;
-        const f64 d = offset;
+        const f64 a = static_cast<f64>(normal.x);
+        const f64 b = static_cast<f64>(normal.y);
+        const f64 c = static_cast<f64>(normal.z);
+        const f64 d = static_cast<f64>(offset);
         Quadric q;
         q.a2 = weight * a * a;
         q.ab = weight * a * b;
@@ -1316,9 +1319,12 @@ Status optimise_overdraw(MeshData& mesh, f32 threshold) noexcept {
 
     // Accept only if the cache cost stayed inside the budget. `optimise_vertex_cache` is what earns
     // the miss ratio this is spending, and an unconditional reorder would hand it back.
-    constexpr u32 kCacheSize = 32;
-    const f32 before = cache_miss_ratio(mesh.indices, kCacheSize);
-    const f32 after = cache_miss_ratio(candidate, kCacheSize);
+    // Named for the measurement rather than for the simulated FIFO: `kCacheSize` at namespace
+    // scope is Forsyth's own constant and this one is the probe width, and clang reported the
+    // shadowing correctly. M7 task 1.5.
+    constexpr u32 kCacheProbeSize = 32;
+    const f32 before = cache_miss_ratio(mesh.indices, kCacheProbeSize);
+    const f32 after = cache_miss_ratio(candidate, kCacheProbeSize);
     if (after > before * threshold) {
         return ok();
     }

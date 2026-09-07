@@ -12,6 +12,7 @@ detail, visibility ranges and HLOD, and shadow caster culling.
 | `spatial.h` | the two `DynamicBvh`s, the flat always-visible array, and the dense bounds/flags/mask arrays the broad phase actually reads |
 | `cull.h` | `cull_view()` — layer, then frustum, then distance — its typed result lists, its diagnostics, and the shadow caster cull |
 | `lod.h` | screen coverage, level selection with hysteresis, the cross-fade band, visibility ranges and HLOD resolution |
+| `gpu_bridge.h` | M7: the seam to the GPU cull — publish the dispatch's input from the index, fill its view, and turn its payloads back into `CullResults` |
 
 ## Four things worth knowing before changing anything here
 
@@ -28,6 +29,15 @@ frustum test is six dot products.
 count and the grain alone, so a parallel cull produces a byte-identical list whatever the workers do.
 That is design.md §6 one level below the sort key: an order that depended on thread timing would make
 the sort's tie-break the only thing between the frame and non-determinism.
+
+**The GPU cull fills the same `CullResults` this module does, and that is the point** (M7 task 5.2).
+`gpu_bridge.h` publishes the spatial index into the `GpuInstance` records a dispatch reads — indexed
+by GPU scene slot, because `gpu_cull.h` requires the cull to read the GPU scene — and turns the
+compacted payloads back into the typed lists `cy::rendering-forward` consumes. Nothing above this
+module can tell which cull ran, which is what makes the GPU path adoptable rather than a second
+renderer. The dispatch itself is `src/rendering/gpu_culling/`, because it needs a device and this
+module still does not: adding the bridge cost this module a dependency on `cy::servers-render-culling`
+and not one on `cy::rhi`, and every case in `tests/` still runs headless.
 
 **Occlusion culling and GPU-driven culling are M6's.** The specification names both; what is here is
 the seam — `CullStatistics::rejected_by_occlusion` exists and reads zero, and `kSpatialIgnoreOcclusion`

@@ -204,6 +204,32 @@ pub enum Message {
         /// manipulator, which space and pivot, and what is selected.
         intent: Vec<u8>,
     },
+    /// A view that frames what the runtime is holding. M7 task 5b.1.
+    ///
+    /// --- WHY THE RUNTIME GETS TO SUGGEST A CAMERA, AND ONLY ONCE ---------------------------------
+    ///
+    /// The editor owns the camera: `editor-viewport-and-gizmos` gives it "intent and manipulation
+    /// state", and navigation is intent. But a viewport opens at the origin looking down −Z, and
+    /// **where the content is** is a question only the runtime can answer — it is the one holding a
+    /// world. Without an answer the editor's first view is inside whatever happens to be at the
+    /// origin, and the drag arithmetic degenerates: a pivot at the camera's own position gives a
+    /// screen-space axis of zero length, and every manipulation reports "0.000 m" while every part
+    /// of it is individually correct. That is exactly what M7's first end-to-end run measured.
+    ///
+    /// So the runtime says, once, "here is a view that frames what I have". The editor applies it
+    /// if it has not yet been given one, and after that the camera is the editor's and the runtime
+    /// renders what it is asked for. A suggestion that arrived every frame would be a runtime that
+    /// owned the camera, which is the division this message is careful not to cross.
+    ViewSuggested {
+        /// Where the camera is, in world space.
+        position: [f32; 3],
+        /// Which way it faces, as a quaternion. The camera looks down its local −Z.
+        rotation: [f32; 4],
+        /// The vertical field of view, in radians.
+        fov_y_radians: f32,
+        /// The near clip distance, in world units.
+        near: f32,
+    },
     /// Where the runtime drew the gizmo, in the frame it drew it into.
     ///
     /// The layout names its own frame, for the same reason a pick does: a click lands two frames
@@ -268,6 +294,25 @@ impl Message {
             Message::Pong { frame } => {
                 writer.u8(7);
                 writer.u64(frame.as_u64());
+            }
+            // WITH THE HANDSHAKE RATHER THAN WITH THE WORK, because it is sent once, when a
+            // connection opens, and it acts on no world: it says where the runtime's content is so
+            // that the editor's first view has something in it. See the variant for why once.
+            Message::ViewSuggested {
+                position,
+                rotation,
+                fov_y_radians,
+                near,
+            } => {
+                writer.u8(14);
+                for lane in position {
+                    writer.f32(*lane);
+                }
+                for lane in rotation {
+                    writer.f32(*lane);
+                }
+                writer.f32(*fov_y_radians);
+                writer.f32(*near);
             }
             _ => return false,
         }
@@ -445,6 +490,12 @@ impl Message {
             13 => Message::GizmoGeometry {
                 request: RequestId::from_raw(reader.u64()?),
                 layout: reader.bytes()?,
+            },
+            14 => Message::ViewSuggested {
+                position: [reader.f32()?, reader.f32()?, reader.f32()?],
+                rotation: [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?],
+                fov_y_radians: reader.f32()?,
+                near: reader.f32()?,
             },
             other => {
                 return Err(Problem::new(

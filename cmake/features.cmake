@@ -53,7 +53,7 @@ include_guard(GLOBAL)
 #   CY_AUDIO_STEAM_AUDIO   M7  -> M8    delivery-roadmap's dependency table puts Steam Audio at M8
 #   CY_UI                  M9  -> M8    ui-system is Working at M8
 #   CY_VFX                 M7  -> M8    vfx-system is Working at M8
-#   CY_VIRTUAL_GEOMETRY    M10 -> M7    virtual-geometry is Working at M7
+#   CY_VIRTUAL_GEOMETRY    M10 -> M7    virtual-geometry is Working at M7 (and it is ON from M7)
 #   CY_XR                  M11 -> deferred, with the prerequisites at M11
 #   CY_RENDERER_D3D12      M7  -> M11   delivery-roadmap: "Last, because it adds no capability the
 #                                       first two do not exercise"
@@ -138,7 +138,27 @@ set(CY_FEATURE_OPTIONS
     "CY_AUDIO_STEAM_AUDIO|OFF|Steam Audio spatial acoustics inside CY_AUDIO (M8)"
     "CY_UI|OFF|The retained-mode UI runtime (M8)"
     "CY_VFX|OFF|The VFX runtime, its compiler and its renderers (M8)"
-    "CY_VIRTUAL_GEOMETRY|OFF|The virtualised geometry path inside the renderer (M7)"
+    # DELIVERED AT M7, AND THEREFORE ON BY DEFAULT — rule 3 again, and the same reading
+    # CY_RENDERER_VULKAN, CY_PHYSICS and CY_AUDIO were given. `delivery-roadmap` fails a capability
+    # at Working whose CY_* option defaults off, and the reason is the history: M3 shipped a Vulkan
+    # backend nothing built, and the cost was that a regression was caught by whoever turned the
+    # option on rather than by continuous integration.
+    #
+    # WHAT IT GATES, PRECISELY, and it is narrower than the name suggests. `virtual-geometry`
+    # requires the system to "be removable at build time via CY_VIRTUAL_GEOMETRY", and every asset
+    # to "remain renderable through the traditional path when it is absent" — so what must disappear
+    # is the RENDERER'S USE of virtual geometry: the traversal dispatches, the visibility pass and
+    # the geometry cache the frame drives. The cooker and the asset reader are NOT behind it,
+    # because the fallback path, the collision proxy and the editor need them either way, and
+    # because an interface that exists in some configurations has a test suite that runs in some
+    # configurations. That is the same line CY_PHYSICS draws: the Jolt backend is behind the option,
+    # `PhysicsServer` is not.
+    #
+    # WHAT IT COSTS: nothing to fetch and nothing to build that is not already built.
+    # src/rendering/virtual_geometry/ compiles in every configuration and its shaders are checked-in
+    # SPIR-V, so the option adds no dependency and no compile time — it decides whether a frame
+    # takes the virtual geometry path.
+    "CY_VIRTUAL_GEOMETRY|ON|Virtual geometry: the renderer's virtualised geometry path (M7). The cooker, the asset reader and the fallback are always built — this gates the frame's use of the cluster hierarchy"
     "CY_NETWORKING|OFF|Replication, transport and the network runtime (M9)"
     "CY_XR|OFF|Extended-reality sessions, tracking and stereo rendering (deferred by decision — M11 carries the prerequisites)"
     "CY_PROFILING|OFF|Tracy as a backend of the engine's own trace (M0 seam, M2 wiring, delivered)"

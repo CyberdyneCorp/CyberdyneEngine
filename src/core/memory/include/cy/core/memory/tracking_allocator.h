@@ -18,6 +18,8 @@
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/allocator.h>
+#include <cy/core/memory/array.h>
+#include <cy/core/memory/attribution.h>
 
 namespace cy {
 
@@ -77,6 +79,9 @@ struct TrackedAllocation {
     u64 bytes = 0;
     AllocationTag tag = "";
     AllocationSite site;
+    /// What the caller declared about this allocation, and which thread made it. M7 task 3.1.
+    MemoryAttribution attribution;
+    u32 thread = 0;
     u64 sequence = 0;  // allocation order, so a report can say which came first
     bool process_lifetime = false;
 };
@@ -134,6 +139,19 @@ public:
     /// passed to the sink: the specification requires the report exclude them.
     LeakReport report_leaks(LeakSink sink, void* user) const noexcept;
 
+    /// Live bytes grouped by one of the four axes `attribution.h` defines. M7 task 3.1.
+    ///
+    /// Writes the largest `out.size()` rows, descending by live bytes, and reports how many
+    /// distinct keys there were and what the ones that did not fit held — a report that showed the
+    /// top eight of forty without saying so would answer "why is this region consuming this much"
+    /// with a number that does not add up.
+    ///
+    /// ALLOCATION-FREE. It aggregates into the caller's own span and sorts it in place, because a
+    /// memory report that allocates is a memory report that changes what it is reporting on.
+    /// `out` may be empty, in which case only the summary is computed.
+    [[nodiscard]] MemoryAttributionSummary report_attribution(
+        AttributionAxis axis, Span<MemoryAttributionRow> out) const noexcept;
+
 protected:
     [[nodiscard]] void* do_allocate(usize size, usize alignment) noexcept override;
     [[nodiscard]] void* do_reallocate(void* pointer, usize old_size, usize new_size,
@@ -158,6 +176,11 @@ private:
         usize alignment;
         AllocationTag tag;
         AllocationSite site;
+        /// The four axes of M7 task 3.1. `attribution` is what the caller declared and `thread` is
+        /// the ordinal of the thread that allocated, which the caller cannot get wrong because it
+        /// does not supply it.
+        MemoryAttribution attribution;
+        u32 thread;
         u64 sequence;
     };
 

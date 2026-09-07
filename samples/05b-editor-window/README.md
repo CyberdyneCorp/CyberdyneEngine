@@ -1,16 +1,25 @@
-# `samples/05b-editor-window` — the M5.5 artefact a person drives
+# `samples/05b-editor-window` — the artefact a person drives
 
-> **The editor opens, and somebody uses it.** Task 4.1.
+> **The editor opens, and somebody uses it.** M5.5 task 4.1; **M7 tasks 5b.1 to 5b.7**.
 >
 > ```
 > just run-editor-window                 # run it
 > just run-editor-window --hold          # ... and leave the window open at the end
-> just run-editor-window --shot docs/design/images/editor-window-m5b.png
+> just run-editor-window --shot docs/design/images/editor-viewport-engine-frame.png
 > ```
 >
 > CTest entry: `smoke.editor_window`. Needs a display; **skips loudly** where there is none.
 
-![The editor, M5.5](../../docs/design/images/editor-window-m5b.png)
+![The editor's viewport showing the engine's rendered world, with a transform gizmo on the selected
+object](../../docs/design/images/editor-viewport-engine-frame.png)
+
+**That picture is M7's exit criterion.** The 3D world in the viewport is the ENGINE's — rendered by
+`cy::sample::first_light::Renderer` through the render graph on a Vulkan device, in another process,
+and imported by the editor as a dma-buf without a copy. The transform gizmo on the selected box is
+the engine's too: its handles come from `cy::render::build_gizmo_layout`, the engine draws exactly
+those handles into the frame and publishes exactly those handles to the editor, and the editor
+hit-tests what it was sent. Until M7 the viewport showed a magenta test pattern from a fixture in
+the editor's own Cargo workspace.
 
 ## Why this artefact exists
 
@@ -22,8 +31,8 @@ Two processes and a real X11 session:
 
 | | |
 |---|---|
-| `cy-viewport-publisher` | the runtime's half of the viewport transport. A second process that allocates `VkImage`s with an explicit DRM format modifier, exports them as dma-bufs, and hands them and two timeline semaphores across a Unix socket. A **fixture**, not the engine — but the wire it speaks is the one the engine's runtime will speak. |
-| `cyberdyne-editor` | the editor, with a window, opened on `project/`. |
+| `cy_editor_window_runtime` | **the engine.** M3's scene and renderer on a real Vulkan device, publishing over the viewport transport (`src/backends/viewport/`) and answering the editor's gizmo intents and transactions over the editor bridge (`src/runtime/editor_bridge/`). Until M7 this was `cy-viewport-publisher`, a fixture in the editor's Cargo workspace that cleared an image to a colour and moved a white bar. |
+| `cyberdyne-editor` | the editor, with a window, opened on `project/` and attached to that runtime with `--host`. |
 | `window.py` | this driver, which operates that window through **XTEST**: synthesised key presses and pointer drags delivered to the X server rather than to the application. |
 
 Nothing here is a test hook. The editor cannot tell this driver from a hand on a keyboard, which is
@@ -33,9 +42,9 @@ exactly the property M5's artefact could not have.
 
 | Act | What is driven | What is asserted |
 |---|---|---|
-| 1 · open | the window maps and the transport connects | the viewport's pixels are **saturated**, which the editor's own charcoal chrome never is — so those pixels came out of another process's GPU allocation. The journal is empty. |
-| 2 · author | `Ctrl+Shift+N` three times, then a click on an outliner row | three journal records, three outliner rows, and a selection |
-| 3 · manipulate | `W`, then a pointer drag across the viewport | **an open step** — see below |
+| 1 · open | the window maps and the transport connects | the viewport's pixels are **saturated**, which the editor's own charcoal chrome never is — so those pixels came out of another process's GPU allocation. The outliner draws the three entities `project/worlds/city.cyworld` declares. The journal is empty. |
+| 2 · author | `Ctrl+Shift+N` three times, then a click on an outliner row | three journal records, three more outliner rows, and a selection |
+| 3 · manipulate | the toolbar's **Move**, then a pointer drag **from the handle the engine published** | the engine answered with a layout; the X arrow it *drew* is within a handful of pixels of where the layout *says* it is; the drag commits exactly one transaction; the object **moves in the engine's world**, read out of the engine's own next answer; and the undo puts it back to within a pixel |
 | 4 · undo | `Ctrl+Z`, `Ctrl+Shift+Z`, then `Ctrl+P`, typing, `Escape` | the outliner loses a row and gets it back; the journal stays at three records, which is what an append-only record of *commits* should do; the palette **covers the viewport** — a charcoal surface over another process's saturated frame, which is a colour question with an unambiguous answer — and `Escape` uncovers it |
 | 5 · save | `Ctrl+S` | the journal goes from three records to zero — `file.save` discards it only after the write. Then a **second, headless editor** opens the same document over the same journal and is offered no recovery. |
 
@@ -81,21 +90,53 @@ Verified: four consecutive green runs with six CPU-saturating processes alongsid
 so on a desktop session it will pull focus for the twenty seconds it lasts. `smoke.editor_window` is
 declared `RUN_SERIAL` for the same reason — two of these at once would type into each other.
 
-## The one act that does not close
+## The act that did not close, and how it closed
 
-**A gizmo drag moves nothing, and it is not the viewport's fault.**
+At M5.5 and again at M6 this artefact reported, on every run:
 
-`DocumentService::open` calls `Document::new`, which is a name and an **empty schema**, because
-there is no world loader — nothing outside a test ever calls `DocumentSchema::declare_type`.
-`TransformBinding::of_schema` therefore finds no `Transform`, the gizmo has nothing to bind to, and
-a drag over the viewport commits nothing. The inspector says the same thing in its own words:
-*"The selection carries no described components."*
+> `GAP   the gizmo drag — the drag committed nothing`
 
-The drag act performs the drag anyway, asserts that nothing was committed, and reports it by name on
-every run. It will report as satisfied the day opening a world produces content. What is *not*
-missing is the gizmo: `cy-editor-viewport`'s own suites hold its three states, its snapping, its
-pivot and space modes, its per-axis numeric entry and its one-transaction rule — against a document
-that declares a `Transform`, which a test can build and an editor cannot yet open.
+and **returned 0**. Two separate defects, and the second is the worse one.
+
+The drag itself failed because every piece of the path existed and no two of them were joined.
+`cy_editor_viewport::layout` hit-tested a published layout, `cy_editor_protocol` carried
+`GizmoIntent` and `GizmoGeometry`, `cy_editor_services::gizmo` encoded the intent and decoded the
+answer — and nothing in `src/` produced a layout, so there was no handle at any coordinate. M6's
+artefact then dragged from a hard-coded (47 %, 38 %) of the window, hoping one was there.
+
+M7 closed it end to end:
+
+* `src/servers/render/gizmo.{h,cpp}` produces the geometry — screen-constant, in the frame's own
+  pixels, in the editor's encoding;
+* `samples/05b-editor-window/runtime/` draws exactly those handles into the frame it publishes and
+  answers the intent with exactly those handles, rescaled into the viewport's pixels;
+* `cy_editor_services::RuntimeMirror` asks once a frame, refuses an answer for a frame nobody asked
+  about, and forwards what the document commits and undoes so the engine's world keeps up;
+* this driver reads the published layout out of `--layout <file>` and aims the drag at the **X
+  arrow**, then checks that where it aimed and where the arrow is drawn are the same place.
+
+And the second defect — a run that reported a gap and passed — is fixed where it belongs: in
+`samples/harness/artefact.py`, whose `Report.exit_code` is **derived** from the recorded gaps. No
+later artefact can repeat it without deleting that module. M7 tasks 5b.4 and 5b.5.
+
+## The keyboard, and what M6 concluded about it
+
+M6 recorded that *"XTEST does not deliver synthesised key events in this X session"*, reproduced it
+with a small python-xlib program, and planned around it. **That conclusion was wrong.**
+
+It is the screensaver. A locked or blanked session holds an active keyboard *and* pointer grab, so
+every synthesised event goes to the locker instead of the application — while the windows underneath
+keep rendering, so a screenshot still comes back and everything looks fine. Measured here:
+`grab_keyboard` on the root window answers `AlreadyGrabbed` while `cinnamon-screensaver` is active
+and `Success` a second after `--deactivate`, and key events start arriving at the editor in the same
+second. The symptom is intermittent by nature — it depends on how long the machine has been idle —
+which is exactly why it was diagnosed as a property of XTEST.
+
+So `window.py` now does two things it did not: it calls `wake_the_display()` before it drives
+anything, and it *checks* with `keyboard_arrives()` rather than assuming. Where keys genuinely do
+not arrive, the acts that need them report **not evaluated** — not passed and not failed
+(`delivery-roadmap`, and `harness.artefact.Report.not_evaluated`) — and the pointer drives the rest,
+including the drag, the selection and the toolbar's Undo, Redo and Save.
 
 ## Task 4.4 — the built editor against the reference imagery, and which one is right
 
@@ -142,7 +183,15 @@ Two consequences follow, and only one of them is in this change:
   Smaller than the original claim, and left here in its corrected form rather than deleted, because a
   defect report that overstates sends the next reader hunting for something that was never there.
   Visible in `build/<dir>/editor-window/shots/06-palette.png`.
-* **The window draws the runtime's frames and the viewport model never learns that any arrived.**
+* **Fixed at M7: the frame's age was measured on the wrong clock.** Every viewport in M5.5's and
+  M6's screenshots carried *"The runtime has not produced a frame for 1788285426327 ms; this image
+  is stale"* over an image that was arriving sixty times a second. That number is the Unix epoch in
+  milliseconds: `panels::viewport::monotonic_micros` read `SystemTime::now()` while a frame's
+  `produced_micros` comes from the runtime's `CLOCK_MONOTONIC`. The advisory
+  `editor-viewport-and-gizmos` requires — "the editor SHALL surface when it is viewing a stale or
+  degraded stream" — was therefore on permanently, which is the same as being off.
+  `a_frames_age_is_measured_on_the_clock_the_announcement_carries` is the regression.
+* **Fixed at M5.5's successor: the window draws the runtime's frames and the viewport model never learns that any arrived.**
   Clicking in the viewport says *"No frame has arrived yet, so there is nothing on screen to have
   clicked"* while the overlay a few centimetres away reads `announced 1016 · skipped 0`. It is not a
   wrong message, it is a missing edge: `cy-editor-shell::viewport_link` composites the imported
@@ -161,5 +210,26 @@ Neither is in this artefact's files.
 | | |
 |---|---|
 | `window.py` | the artefact |
-| `project/` | an empty project. Copied into the work directory on every run, so a run never edits it |
-| `CMakeLists.txt` | the CTest entry, and every reason this directory declares nothing at all |
+| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, and the CPU compositor that draws it into the frame |
+| `project/` | a project with a world in it — three entities in `worlds/city.cyworld`, written by the engine's own authoring schema. Copied into the work directory on every run, so a run never edits it |
+| `CMakeLists.txt` | the CTest entry, and why the runtime is declared before the `CY_BUILD_TESTS` guard |
+
+## What the runtime is a stand-in for
+
+Stated here rather than left to be discovered:
+
+* **The runtime holds its own scene, not the editor's world.** It associates each identity the
+  editor names with one of its own objects, in first-seen order, and keeps that association for the
+  session (`runtime/session.h`). A shared world — the editor and the runtime opening the same
+  authoring document — is M7 task 5b.2 and `live-editing`'s at M8.
+* **A `Vec3` field that changed is a translation while the editor's stated gizmo mode is a move.**
+  The identifiers in a transaction are the *document's*, assigned in schema-declaration order, so
+  the runtime cannot know which field is `translation`. The mode is the signal it legitimately has,
+  and it refuses to guess at a scale.
+* **A pick is refused by name.** Engine-side picking needs the draw list the frame produced, and
+  this renderer is M3's: it draws from a scene rather than publishing `GpuInstance` records, so
+  there is nothing for `cy::render::pick_ray` to resolve against. An invented hit is the forbidden
+  pattern `editor-viewport-and-gizmos` names; a refusal the editor can show is the honest answer.
+* **The frame reaches the shared image through host memory.** The engine renders on the RHI's device
+  and the publisher owns its own, so the frame is read back and uploaded — 106 µs a frame at
+  1280x720, measured. `src/backends/viewport/README.md` says what would remove it.

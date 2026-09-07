@@ -188,6 +188,20 @@ private:
     VkCommandBuffer commands_ = VK_NULL_HANDLE;
     CommandBufferHandle handle_;
     QueueKind queue_ = QueueKind::Graphics;
+    /// Which bind point `bind_descriptor_sets` and `push_constants` act on: the one the last
+    /// `bind_*_pipeline` selected.
+    ///
+    /// IT IS NOT DERIVABLE FROM THE QUEUE, and deriving it from the queue is the defect this member
+    /// replaces. A compute dispatch recorded on the graphics queue — which is every compute pass on
+    /// a device with no dedicated async-compute queue, and every compute pass the render graph
+    /// folds onto graphics — was binding its descriptor sets to VK_PIPELINE_BIND_POINT_GRAPHICS, so
+    /// the pipeline saw no set at all. It reproduced as VUID-vkCmdDispatch-None-08600 the first
+    /// time anything in this tree created a compute pipeline (M7 task 5.1), which is why it
+    /// survived M3 to M6: nothing had.
+    ///
+    /// Graphics by default, because a command buffer that binds a set before binding any pipeline
+    /// is doing what samples/03-first-light does and must keep working.
+    VkPipelineBindPoint bind_point_ = VK_PIPELINE_BIND_POINT_GRAPHICS;
     bool secondary_ = false;
     bool recording_ = false;
     u32 frame_slot_ = 0;

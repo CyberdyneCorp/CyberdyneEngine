@@ -142,6 +142,11 @@ public:
 
     MaterialProgram(const MaterialProgram&) = delete;
     MaterialProgram& operator=(const MaterialProgram&) = delete;
+    /// Movable, though not copyable. M7's compiler produces one as part of a compiled material and
+    /// returns it by value; copying a program would duplicate a parameter layout that is supposed
+    /// to be shared, and that is why the copy stays deleted.
+    MaterialProgram(MaterialProgram&&) noexcept = default;
+    MaterialProgram& operator=(MaterialProgram&&) noexcept = default;
 
     [[nodiscard]] Status initialize(Name name, ShadingModel model, BlendMode blend) noexcept;
 

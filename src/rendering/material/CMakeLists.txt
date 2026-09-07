@@ -18,15 +18,41 @@
 # is bytes, and whoever owns a device uploads them. That is what lets every case in tests/ run with
 # no GPU — including the DFG table bake, which is the one piece of the image-based lighting chain
 # that would otherwise need one.
+
+# --- M7: the material compiler (tasks 6.1-6.4) ----------------------------------------------------
+#
+# `material-compiler` at Working: graph and text front-ends, a content-hashed typed IR, the
+# optimisation pipeline, closure lowering, the program family, quality tiers, Slang emission, cost
+# analysis with per-node attribution, and material classification and binning.
+#
+# IN THIS TARGET RATHER THAN A NEW ONE. The compiler produces exactly what this module already
+# defines — a `MaterialProgram` parameter layout for the GPU material table — and material.h has
+# said since M3 that "a material compiled from a closure graph at M7 fills the same shape, and
+# nothing downstream changes". A separate target would have to depend on this one for that type and
+# be depended on by it for nothing, which is a split with a direction and no boundary.
+#
+# STILL NO DEVICE AND STILL NO SHADER COMPILER. The compiler emits Slang TEXT; `shader-system` owns
+# compiling it, and `src/backends/shader/` is layer 3. That is what keeps every property in this
+# module's suite checkable with no GPU, including the exit criterion "a graph and a hand-written
+# material produce identical programs" — which is a property of the text.
 cy_add_module(
     NAME cy_rendering_material
     LAYER rendering
     ALIAS cy::rendering-material
     TYPE STATIC
     SOURCES
+        src/binning.cpp
         src/brdf.cpp
+        src/compiler.cpp
+        src/cost.cpp
+        src/emit.cpp
+        src/graph.cpp
+        src/ir.cpp
+        src/lowering.cpp
         src/material.cpp
+        src/passes.cpp
         src/standard.cpp
+        src/text.cpp
         src/validation.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::servers-render is layer 2 and supplies the value vocabulary both halves share —

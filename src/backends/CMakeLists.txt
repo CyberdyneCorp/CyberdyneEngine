@@ -37,3 +37,17 @@ endif()
 if(CY_PHYSICS)
     add_subdirectory(physics-jolt)
 endif()
+
+# The viewport transport's pixel half: the engine's rendered frames, in memory the editor imports
+# rather than copies. M7 task 5b.1.
+#
+# HERE, LIKE THE OTHERS, BECAUSE IT NAMES A GRAPHICS API. Exporting an image's memory as a dma-buf
+# needs `VK_EXT_image_drm_format_modifier` and `VK_KHR_external_memory_fd` at image creation, which
+# is not something `cy::rhi::Device` can be asked for — deliberately, since a renderer that could
+# reach the underlying `VkImage` could branch on a backend. Its own CMakeLists.txt argues the rest,
+# including why it is not folded into rhi/vulkan/ and what two Vulkan devices in one process cost.
+#
+# Not gated by an option of its own: it is gated by CY_RENDERER_VULKAN, which is what decides
+# whether there is a device on this build at all, and it is Linux-only for the same reason the
+# editor's half is.
+add_subdirectory(viewport)

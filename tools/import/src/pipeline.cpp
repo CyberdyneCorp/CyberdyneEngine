@@ -63,7 +63,8 @@ void put_u32(Array<u8>& out, u32 value) noexcept {
     return ok();
 }
 
-/// One sub-asset in a cached bundle.
+/// One sub-asset in a cached bundle. The public spellings are `encode_import_bundle` and
+/// `decode_import_bundle`, at the bottom of this file; these are what they call.
 [[nodiscard]] Status encode_bundle(const ImportResult& result, Array<u8>& out) noexcept {
     put_u32(out, kBundleVersion);
     put_u32(out, static_cast<u32>(result.assets().size()));
@@ -822,6 +823,14 @@ Status register_builtin_importers(ImporterRegistry& registry) noexcept {
         return registered;
     }
     return registry.register_importer(&g_texture);
+}
+
+Status encode_import_bundle(const ImportResult& result, Array<u8>& out) noexcept {
+    return encode_bundle(result, out);
+}
+
+Status decode_import_bundle(Span<const u8> payload, ImportResult& out) noexcept {
+    return decode_bundle(payload, out);
 }
 
 }  // namespace cy::import

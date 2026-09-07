@@ -278,12 +278,34 @@ Importer* ImporterRegistry::at(usize index) const noexcept {
 Expected<assets::DerivationKey, Error> import_derivation_key(
     const ImporterInfo& info, const OptionsSchema& schema, const ImportRequest& request,
     const assets::ContentHash& source_hash) noexcept {
+    // THE TOOLCHAIN COMES FIRST, AND IT IS REFUSED RATHER THAN DEFAULTED. M7 task 1.1.
+    //
+    // Until this line existed, this function contributed no compiler, no flags and no library
+    // versions — and it is the function `cy_import_cli` uses. M6's spike built one importer at -O2
+    // and at -O0, ran both over the same glTF, and got the identical key; M6's closing gate
+    // re-measured it on a shared cache and recorded 1 hit, 0 miss. A key that cannot tell two
+    // compilers apart serves the wrong artefact and reports success, which at M7 — where the
+    // material and virtual-geometry cooks land on top of this cache — is a wrong SHIPPED artefact.
+    //
+    // `cy::build::derivation_key` has refused an incomplete fingerprint since M6. This refuses the
+    // same way, for the same reason, through the same function: `contribute` is the only place in
+    // the tree that names these five fields, so the importer's key and the build graph's key cannot
+    // disagree about what the toolchain is.
+    const assets::ToolchainFingerprint& toolchain = assets::current_toolchain();
+    if (!assets::toolchain_is_complete(toolchain)) {
+        return make_unexpected(Error{ErrorCode::Internal,
+                                     "the toolchain fingerprint is incomplete, so an import key "
+                                     "would be blind to what compiled the importer",
+                                     0});
+    }
+
     assets::DerivationKeyBuilder builder;
     // The order below is the specification's own list, and it is fixed here rather than at each
     // call site: "The derivation key SHALL include the source content, the importer and processor
     // versions, the import settings, the target platform, and the cook profile."
-    builder.producer(assets::DerivedKind::Import, info.name, info.version)
-        .source("source", source_hash)
+    builder.producer(assets::DerivedKind::Import, info.name, info.version);
+    toolchain.contribute(builder);
+    builder.source("source", source_hash)
         .text("variant", request.variant.view())
         .text("profile", cook_profile_name(request.profile));
     if (request.options != nullptr) {

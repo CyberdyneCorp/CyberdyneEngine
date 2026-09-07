@@ -96,12 +96,14 @@ void VulkanCommandBuffer::set_scissor(const Rect2D& scissor) noexcept {
 void VulkanCommandBuffer::bind_graphics_pipeline(GraphicsPipelineHandle pipeline) noexcept {
     if (VulkanPipeline* stored = device_->graphics_pipeline(pipeline); stored != nullptr) {
         vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_GRAPHICS, stored->pipeline);
+        bind_point_ = VK_PIPELINE_BIND_POINT_GRAPHICS;
     }
 }
 
 void VulkanCommandBuffer::bind_compute_pipeline(ComputePipelineHandle pipeline) noexcept {
     if (VulkanPipeline* stored = device_->compute_pipeline(pipeline); stored != nullptr) {
         vkCmdBindPipeline(commands_, VK_PIPELINE_BIND_POINT_COMPUTE, stored->pipeline);
+        bind_point_ = VK_PIPELINE_BIND_POINT_COMPUTE;
     }
 }
 
@@ -118,10 +120,11 @@ void VulkanCommandBuffer::bind_descriptor_sets(PipelineLayoutHandle layout, u32 
         VulkanDescriptorSet* set = device_->descriptor_set(sets[index]);
         raw[index] = set != nullptr ? set->set : VK_NULL_HANDLE;
     }
-    const VkPipelineBindPoint bind_point = queue_ == QueueKind::AsyncCompute
-                                               ? VK_PIPELINE_BIND_POINT_COMPUTE
-                                               : VK_PIPELINE_BIND_POINT_GRAPHICS;
-    vkCmdBindDescriptorSets(commands_, bind_point, stored->layout, first_set, count, raw, 0,
+    // THE BIND POINT IS THE LAST BOUND PIPELINE'S, NEVER THE QUEUE'S. See `bind_point_` in
+    // vulkan_device.h: a compute pass on the graphics queue is the ordinary case, not an exotic
+    // one, and asking the queue produced a dispatch whose descriptor set was bound to the graphics
+    // bind point and therefore not bound at all.
+    vkCmdBindDescriptorSets(commands_, bind_point_, stored->layout, first_set, count, raw, 0,
                             nullptr);
 }
 

@@ -55,6 +55,7 @@ function(cy_assets_declare_tests)
             "${cy_assets_tests_dir}/test_identity.cpp"
             "${cy_assets_tests_dir}/test_path.cpp"
             "${cy_assets_tests_dir}/test_serialization.cpp"
+            "${cy_assets_tests_dir}/test_toolchain.cpp"
         DEPENDENCIES cy::core-assets cy::core-reflect)
 
     cy_add_test(
@@ -72,6 +73,15 @@ function(cy_assets_declare_tests)
             "${cy_assets_tests_dir}/test_package.cpp"
             "${cy_assets_tests_dir}/test_vfs.cpp"
         DEPENDENCIES cy::core-assets)
+
+    # `assets_streaming` is integration for the reason `assets_loading` is: partial residency reads
+    # on the async service, and one of its cases tears the system down forty times while sixty-four
+    # reads are in flight.
+    cy_add_test(
+        NAME assets_streaming
+        KIND integration
+        SOURCES "${cy_assets_tests_dir}/test_streaming.cpp"
+        DEPENDENCIES cy::core-assets cy::core-jobs)
 
     cy_add_test(
         NAME assets_loading

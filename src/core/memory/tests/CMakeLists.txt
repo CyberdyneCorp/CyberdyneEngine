@@ -51,6 +51,7 @@ function(cy_memory_declare_tests)
         KIND unit
         SOURCES
             "${cy_memory_tests_dir}/test_allocators.cpp"
+            "${cy_memory_tests_dir}/test_attribution.cpp"
             "${cy_memory_tests_dir}/test_budgets.cpp"
             "${cy_memory_tests_dir}/test_containers.cpp"
             "${cy_memory_tests_dir}/test_lifetimes.cpp"

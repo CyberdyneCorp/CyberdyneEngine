@@ -109,6 +109,19 @@ public:
     [[nodiscard]] Span<const Vertex> vertices() const noexcept { return vertices_.span(); }
     [[nodiscard]] Span<const u16> indices() const noexcept { return indices_.span(); }
     [[nodiscard]] Span<const Object> objects() const noexcept { return objects_.span(); }
+
+    /// The objects, to move. **M7 task 5b.1's addition, and the only mutator on this class.**
+    ///
+    /// The scene is otherwise built once and never mutated — `camera_at()` is a pure function of
+    /// phase, which is what makes a run reproducible from the frame index alone, and that property
+    /// is unchanged: nothing in this sample or in `tests/render/` calls this.
+    ///
+    /// It exists because `samples/05b-editor-window/runtime/` renders THIS scene and publishes it
+    /// to the editor's viewport, and the milestone's exit criterion is a drag that moves a selected
+    /// object. The object the editor moves is one of these, and the alternative — a second scene
+    /// written for that artefact — would drift from the one the golden images photograph, which is
+    /// exactly why this library was split out of the M3 host in the first place.
+    [[nodiscard]] Span<Object> objects_mutable() noexcept { return objects_.span(); }
     [[nodiscard]] const Sun& sun() const noexcept { return sun_; }
     [[nodiscard]] const SceneDescription& description() const noexcept { return description_; }
 

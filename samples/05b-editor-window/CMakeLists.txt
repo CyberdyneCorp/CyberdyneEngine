@@ -19,6 +19,17 @@
 # `requires = "display"` and a reason, and the CI job that stands for it is the agent artefact next
 # door, which needs neither. `design.md` §5: two artefacts, because there are two audiences.
 
+# --- M7's addition: the engine, on the far end of the transport ----------------------------------
+#
+# The paragraph above was written at M5.5 and is still true of the DRIVER. What it did not say is
+# that the other process — the one the driver points the editor at — was a fixture in the editor's
+# own Cargo workspace. `runtime/` is the engine taking that place: M3's scene and renderer, on a
+# real device, published over the transport the editor already speaks. M7 task 5b.1.
+#
+# Declared BEFORE the `CY_BUILD_TESTS` guard below, because the runtime is not a test: it is the
+# other half of the artefact, and `just run-editor-window` needs it on a tree built without tests.
+add_subdirectory(runtime)
+
 if(NOT CY_BUILD_TESTS)
     return()
 endif()
@@ -93,9 +104,16 @@ if(NOT CY_WINDOW_TIMEOUT)
         "tests/CMakeLists.txt. If those variables were renamed, the lookup should move with them.")
 endif()
 
+# `--runtime` IS THE PATH CMAKE ALREADY KNOWS. The driver can guess one from CY_BUILD_DIR, and that
+# guess is right for `just run-editor-window` and wrong here: CTest's environment does not carry
+# CY_BUILD_DIR, so a build tree named anything but `build/<profile>` sends the driver looking in the
+# wrong place — and the symptom is this artefact reporting that the viewport is neutral, which reads
+# as a defect in the transport rather than as a path. Found on the release profile, which is where
+# M6's release run found the other path defect (task 5b.6).
 add_test(NAME smoke.editor_window
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/window.py"
                  --build --profile "${CY_WINDOW_PROFILE}"
+                 --runtime "$<TARGET_FILE:cy_editor_window_runtime>"
                  --work "${CMAKE_CURRENT_BINARY_DIR}/session"
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_tests_properties(smoke.editor_window PROPERTIES
