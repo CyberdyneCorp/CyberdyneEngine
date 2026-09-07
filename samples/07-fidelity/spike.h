@@ -5,9 +5,9 @@
 // THE MODEL IS THE SCENE'S, THE LOOP IS THE SHIPPED ONE
 // ================================================================================================
 //
-// `cy::rendering::BudgetArbiter` and `cy::rendering::SubsystemController` are the engine's, not this
-// sample's: the sample declares seven subsystems, feeds the arbiter a frame time, and hands each
-// controller its allocation. What the sample supplies is the COST MODEL — what each subsystem
+// `cy::rendering::BudgetArbiter` and `cy::rendering::SubsystemController` are the engine's, not
+// this sample's: the sample declares seven subsystems, feeds the arbiter a frame time, and hands
+// each controller its allocation. What the sample supplies is the COST MODEL — what each subsystem
 // spends at its authored position, and what the spike does to that.
 //
 // The geometry subsystem's authored cost is the frame the device just measured, so one of the seven

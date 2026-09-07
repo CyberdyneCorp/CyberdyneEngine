@@ -56,9 +56,7 @@ struct Mesh {
     Array<u32> indices;
 
     [[nodiscard]] rendering::vg::SourceMesh source() const noexcept;
-    [[nodiscard]] u32 triangles() const noexcept {
-        return static_cast<u32>(indices.size() / 3U);
-    }
+    [[nodiscard]] u32 triangles() const noexcept { return static_cast<u32>(indices.size() / 3U); }
 };
 
 /// Which shell a piece of the set is. The radius function is selected by this and nothing else.
@@ -110,7 +108,11 @@ struct SceneOptions {
 /// The whole set: the cooked assets, the instances placed over them, and the totals.
 struct Scene {
     explicit Scene(Allocator& arena) noexcept
-        : allocator(arena), assets(arena), decoded(arena), instances(arena), surfels(arena),
+        : allocator(arena),
+          assets(arena),
+          decoded(arena),
+          instances(arena),
+          surfels(arena),
           lights(arena) {}
 
     Allocator& allocator;

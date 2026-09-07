@@ -12,7 +12,7 @@
 #include <cy/rendering/virtual_geometry/visbuffer.h>
 
 #if defined(CY_SAMPLE_FIDELITY_VULKAN)
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #endif
 
 #include <algorithm>
@@ -98,23 +98,31 @@ struct Payload {
 };
 
 [[nodiscard]] Status gather_payload(const Scene& scene, Payload& out) noexcept {
-    if (Status reserved = out.offsets.reserve(scene.decoded.size()); !reserved) return reserved;
+    if (Status reserved = out.offsets.reserve(scene.decoded.size()); !reserved) {
+        return reserved;
+    }
     usize total = 0;
     for (const rendering::vg::DecodedAsset& asset : scene.decoded) {
         total += asset.payload.size();
     }
-    if (Status sized = out.bytes.reserve(total); !sized) return sized;
+    if (Status sized = out.bytes.reserve(total); !sized) {
+        return sized;
+    }
     for (const rendering::vg::DecodedAsset& asset : scene.decoded) {
         if (Status added = out.offsets.push_back(static_cast<u32>(out.bytes.size())); !added) {
             return added;
         }
-        if (Status appended = out.bytes.append(asset.payload); !appended) return appended;
+        if (Status appended = out.bytes.append(asset.payload); !appended) {
+            return appended;
+        }
     }
     return ok();
 }
 
 [[nodiscard]] f32 percentile(Array<f32>& sorted, f32 fraction) noexcept {
-    if (sorted.size() == 0) return 0.0F;
+    if (sorted.empty()) {
+        return 0.0F;
+    }
     const auto last = static_cast<f32>(sorted.size() - 1U);
     const auto index = static_cast<usize>(std::lround(fraction * last));
     return sorted[index < sorted.size() ? index : sorted.size() - 1U];
@@ -135,9 +143,13 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     rendering::vg::GpuScene gpu_scene(allocator);
     for (const rendering::vg::DecodedAsset& asset : scene.decoded) {
         Expected<u32, Error> added = gpu_scene.add_asset(asset);
-        if (!added) return Status{make_unexpected(added.error())};
+        if (!added) {
+            return Status{make_unexpected(added.error())};
+        }
     }
-    if (Status set = gpu_scene.set_instances(scene.instances.span()); !set) return set;
+    if (Status set = gpu_scene.set_instances(scene.instances.span()); !set) {
+        return set;
+    }
 
     // Sized for a film-detail set rather than for a test: the defaults are a sixteenth of what a
     // hundred instances of a thousand-cluster asset put through a 1280x720 view, and an overflow
@@ -156,20 +168,30 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     // geometry cache; what this artefact is measuring is the traversal and the rasteriser, and a
     // page table that reported half the scene missing would measure the streamer instead.
     Array<rendering::vg::PageTableEntry> table(allocator);
-    if (Status sized = table.resize(scene.pages); !sized) return sized;
+    if (Status sized = table.resize(scene.pages); !sized) {
+        return sized;
+    }
     for (rendering::vg::PageTableEntry& entry : table) {
         entry.generation = 1;
         entry.flags = rendering::vg::PageFlags::kResident;
     }
-    if (Status uploaded = traversal.upload_page_table(table.span()); !uploaded) return uploaded;
+    if (Status uploaded = traversal.upload_page_table(table.span()); !uploaded) {
+        return uploaded;
+    }
 
     Payload payload(allocator);
-    if (Status gathered = gather_payload(scene, payload); !gathered) return gathered;
+    if (Status gathered = gather_payload(scene, payload); !gathered) {
+        return gathered;
+    }
 
     Array<const rendering::vg::DecodedAsset*> asset_pointers(allocator);
-    if (Status sized = asset_pointers.reserve(scene.decoded.size()); !sized) return sized;
+    if (Status sized = asset_pointers.reserve(scene.decoded.size()); !sized) {
+        return sized;
+    }
     for (const rendering::vg::DecodedAsset& asset : scene.decoded) {
-        if (Status added = asset_pointers.push_back(&asset); !added) return added;
+        if (Status added = asset_pointers.push_back(&asset); !added) {
+            return added;
+        }
     }
 
     rendering::vg::VisbufferOptions visbuffer_options;
@@ -177,8 +199,9 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     visbuffer_options.height = options.height;
     visbuffer_options.material_count = 8;
     rendering::vg::VisbufferPass visbuffer(allocator, holder.device());
-    if (Status started = visbuffer.initialise(gpu_scene, asset_pointers.span(), payload.bytes.span(),
-                                              payload.offsets.span(), visbuffer_options);
+    if (Status started =
+            visbuffer.initialise(gpu_scene, asset_pointers.span(), payload.bytes.span(),
+                                 payload.offsets.span(), visbuffer_options);
         !started) {
         return started;
     }
@@ -186,10 +209,12 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     GraphExecutor executor(allocator, holder.device());
     rendering::vg::TraversalReadback traversal_readback(allocator);
     rendering::vg::VisbufferReadback visbuffer_readback(allocator);
-    if (Status sized = out.frame_ms.reserve(options.frames); !sized) return sized;
+    if (Status sized = out.frame_ms.reserve(options.frames); !sized) {
+        return sized;
+    }
 
-    const f32 aspect =
-        static_cast<f32>(options.width) / static_cast<f32>(options.height > 0 ? options.height : 1U);
+    const f32 aspect = static_cast<f32>(options.width) /
+                       static_cast<f32>(options.height > 0 ? options.height : 1U);
     const auto span = static_cast<f32>(options.frames > 1U ? options.frames - 1U : 1U);
     u32 material_bits = 0;
 
@@ -211,29 +236,41 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         traversal_view.cone_culling = true;
 
         RenderGraph graph(allocator);
-        if (Status recorded = traversal.record(graph, traversal_view,
-                                               static_cast<u32>(scene.instances.size()));
+        if (Status recorded =
+                traversal.record(graph, traversal_view, static_cast<u32>(scene.instances.size()));
             !recorded) {
             return recorded;
         }
         if (Status recorded = visbuffer.record(graph, traversal, world_to_clip); !recorded) {
             return recorded;
         }
-        if (Status built = graph.status(); !built) return built;
+        if (Status built = graph.status(); !built) {
+            return built;
+        }
 
         const auto started = std::chrono::steady_clock::now();
         Expected<ExecutionResult, Error> executed =
             executor.execute(graph, CompileOptions{}, ExecuteOptions{});
-        if (!executed) return Status{make_unexpected(executed.error())};
-        if (Status idle = holder.device().wait_idle(); !idle) return idle;
+        if (!executed) {
+            return Status{make_unexpected(executed.error())};
+        }
+        if (Status idle = holder.device().wait_idle(); !idle) {
+            return idle;
+        }
         const f32 elapsed_ms =
             std::chrono::duration<f32, std::milli>(std::chrono::steady_clock::now() - started)
                 .count();
 
-        if (Status read = traversal.read_back(traversal_readback); !read) return read;
-        if (Status read = visbuffer.read_back(visbuffer_readback); !read) return read;
+        if (Status read = traversal.read_back(traversal_readback); !read) {
+            return read;
+        }
+        if (Status read = visbuffer.read_back(visbuffer_readback); !read) {
+            return read;
+        }
 
-        if (Status added = out.frame_ms.push_back(elapsed_ms); !added) return added;
+        if (Status added = out.frame_ms.push_back(elapsed_ms); !added) {
+            return added;
+        }
         const u32 covered = visbuffer_readback.covered_pixels();
         out.covered_pixels += covered;
         out.visible_clusters += traversal_readback.visible.size();
@@ -253,7 +290,9 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     out.device = true;
 
     Expected<Array<f32>, Error> sorted = out.frame_ms.clone();
-    if (!sorted) return Status{make_unexpected(sorted.error())};
+    if (!sorted) {
+        return Status{make_unexpected(sorted.error())};
+    }
     std::sort(sorted->begin(), sorted->end());
     out.median_ms = percentile(*sorted, 0.5F);
     out.p90_ms = percentile(*sorted, 0.9F);
@@ -265,7 +304,6 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
 
 namespace {
 
-using rendering::gi::GiLight;
 using rendering::gi::IlluminationSettings;
 using rendering::gi::IlluminationSystem;
 
@@ -353,12 +391,16 @@ constexpr u32 kConvergenceFrameCap = 320;
 Status light_shot(const Scene& scene, const FrameOptions& options, LightReport& out) noexcept {
     Allocator& allocator = scene.allocator;
     IlluminationSystem system;
-    if (Status configured = system.configure(shot_settings()); !configured) return configured;
+    if (Status configured = system.configure(shot_settings()); !configured) {
+        return configured;
+    }
 
     // One field per SHAPE, placed once per instance: the fields are the shells' own, which is what
     // a cook produces, and placing them is what makes a wall in the district occlude a ray in it.
     Array<ShapeField> fields(allocator);
-    if (Status sized = fields.reserve(scene.decoded.size()); !sized) return sized;
+    if (Status sized = fields.reserve(scene.decoded.size()); !sized) {
+        return sized;
+    }
     for (usize index = 0; index < scene.decoded.size(); ++index) {
         ShapeField field(allocator);
         if (Status built = field.build(scene.decoded[index].bounds.half_extents(),
@@ -366,7 +408,9 @@ Status light_shot(const Scene& scene, const FrameOptions& options, LightReport& 
             !built) {
             return built;
         }
-        if (Status stored = fields.push_back(std::move(field)); !stored) return stored;
+        if (Status stored = fields.push_back(std::move(field)); !stored) {
+            return stored;
+        }
     }
     u64 placement = 1;
     for (const rendering::vg::GeometryInstance& instance : scene.instances) {
@@ -382,13 +426,19 @@ Status light_shot(const Scene& scene, const FrameOptions& options, LightReport& 
         Array<rendering::gi::Surfel> cell(allocator);
         Aabb bounds = Aabb::empty();
         for (const rendering::gi::Surfel& surfel : scene.surfels) {
-            if (surfel.material_id != shape) continue;
-            if (Status added = cell.push_back(surfel); !added) return added;
+            if (surfel.material_id != shape) {
+                continue;
+            }
+            if (Status added = cell.push_back(surfel); !added) {
+                return added;
+            }
             bounds = merge(bounds, Aabb::from_point(surfel.position));
         }
-        if (cell.size() == 0) continue;
-        if (Status ingested = system.scene().ingest_cell(shape + 1U, bounds.expanded(2.0F),
-                                                         cell.span(), 0);
+        if (cell.empty()) {
+            continue;
+        }
+        if (Status ingested =
+                system.scene().ingest_cell(shape + 1U, bounds.expanded(2.0F), cell.span(), 0);
             !ingested) {
             return ingested;
         }
@@ -438,9 +488,9 @@ Status light_shot(const Scene& scene, const FrameOptions& options, LightReport& 
         out.with_indirect += diffuse_luminance > 0.0F ? 1U : 0U;
         out.with_reflection += specular_luminance > 0.0F ? 1U : 0U;
         if (diffuse_luminance > 0.0F) {
-            lowest = Vec3{std::min(lowest.x, diffuse.radiance.x),
-                          std::min(lowest.y, diffuse.radiance.y),
-                          std::min(lowest.z, diffuse.radiance.z)};
+            lowest =
+                Vec3{std::min(lowest.x, diffuse.radiance.x), std::min(lowest.y, diffuse.radiance.y),
+                     std::min(lowest.z, diffuse.radiance.z)};
             highest = Vec3{std::max(highest.x, diffuse.radiance.x),
                            std::max(highest.y, diffuse.radiance.y),
                            std::max(highest.z, diffuse.radiance.z)};
@@ -455,7 +505,7 @@ Status light_shot(const Scene& scene, const FrameOptions& options, LightReport& 
     }
     if (out.with_indirect > 0U) {
         const Vec3 spread = highest - lowest;
-        out.indirect_colour_spread = std::max(spread.x, std::max(spread.y, spread.z));
+        out.indirect_colour_spread = std::max({spread.x, spread.y, spread.z});
     }
     return ok();
 }

@@ -13,7 +13,6 @@ using rendering::ArbiterReport;
 using rendering::BudgetArbiter;
 using rendering::BudgetSubsystem;
 using rendering::kBudgetSubsystemCount;
-using rendering::QualityLadder;
 using rendering::SubsystemController;
 using rendering::SubsystemDeclaration;
 
@@ -47,8 +46,14 @@ struct Row {
 constexpr Row kRows[kBudgetSubsystemCount] = {
     {BudgetSubsystem::Geometry, 3.10F, 1.00F, 5, 0.90F, 4, {1.00F, 0.82F, 0.66F, 0.52F}, false},
     {BudgetSubsystem::Shadows, 1.80F, 0.60F, 2, 0.50F, 4, {1.00F, 0.78F, 0.60F, 0.46F}, true},
-    {BudgetSubsystem::GlobalIllumination, 1.50F, 0.35F, 1, 0.35F, 4,
-     {1.00F, 0.70F, 0.50F, 0.34F}, true},
+    {BudgetSubsystem::GlobalIllumination,
+     1.50F,
+     0.35F,
+     1,
+     0.35F,
+     4,
+     {1.00F, 0.70F, 0.50F, 0.34F},
+     true},
     {BudgetSubsystem::Reflections, 1.10F, 0.80F, 0, 0.24F, 4, {1.00F, 0.64F, 0.42F, 0.28F}, true},
     {BudgetSubsystem::MaterialEvaluation, 1.00F, 1.00F, 6, 0.42F, 3, {1.00F, 0.84F, 0.70F}, false},
     {BudgetSubsystem::Vfx, 0.60F, 0.90F, 3, 0.14F, 3, {1.00F, 0.66F, 0.40F}, false},
@@ -80,7 +85,9 @@ constexpr f32 kNominalHeadroom = 0.92F;
 [[nodiscard]] f32 spike_at(const SpikeOptions& options, u32 frame, f32 magnitude) noexcept {
     const u32 begins = options.settle_frames;
     const u32 ends = options.settle_frames + options.spike_frames;
-    if (frame < begins || frame >= ends) return 1.0F;
+    if (frame < begins || frame >= ends) {
+        return 1.0F;
+    }
     const f32 into = static_cast<f32>(frame - begins);
     const f32 ramp = std::min(1.0F, into / 20.0F);
     const f32 out_of = static_cast<f32>(ends - frame);
@@ -112,10 +119,13 @@ constexpr u32 kQuietFrames = 32;
     declaration.base_cost_ms = base_ms;
     declaration.resolution_sensitivity = row.resolution_sensitivity;
     declaration.ladder.positions = row.positions;
+    // A row declares as many rungs as it has and the table leaves the tail at zero; the ladder the
+    // arbiter reads is `kMaxLadderPositions` wide, so the tail repeats the cheapest declared rung
+    // rather than pricing a position nobody can reach at nothing.
+    const u32 declared = row.positions > 0U ? row.positions : 1U;
     for (u32 position = 0; position < rendering::kMaxLadderPositions; ++position) {
-        declaration.ladder.relative_cost[position] =
-            position < row.positions ? row.relative_cost[position]
-                                     : row.relative_cost[row.positions - 1U];
+        const u32 rung = position < declared ? position : declared - 1U;
+        declaration.ladder.relative_cost[position] = row.relative_cost[rung];
     }
     return declaration;
 }
@@ -128,13 +138,17 @@ public:
     [[nodiscard]] Status configure(const SpikeOptions& options, f32 geometry_ms) noexcept {
         ArbiterConfig config;
         config.frame_budget_ms = options.frame_budget_ms;
-        if (Status configured = arbiter_.configure(config); !configured) return configured;
+        if (Status configured = arbiter_.configure(config); !configured) {
+            return configured;
+        }
         for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
             const Row& row = kRows[index];
             base_ms_[index] =
                 row.subsystem == BudgetSubsystem::Geometry ? geometry_ms : row.base_ms;
             const SubsystemDeclaration declaration = declaration_for(row, base_ms_[index]);
-            if (Status declared = arbiter_.declare(declaration); !declared) return declared;
+            if (Status declared = arbiter_.declare(declaration); !declared) {
+                return declared;
+            }
             if (Status declared = controllers_[index].declare(declaration); !declared) {
                 return declared;
             }
@@ -159,8 +173,8 @@ public:
     [[nodiscard]] u32 quiet_frames() const noexcept { return quiet_frames_; }
 
     /// One frame. Returns the modelled frame time and fills in what changed.
-    f32 step(const SpikeOptions& options, u32 frame, f32 magnitude, u32& changes,
-             u32& adjustments, u32& resolution_steps) noexcept {
+    f32 step(const SpikeOptions& options, u32 frame, f32 magnitude, u32& changes, u32& adjustments,
+             u32& resolution_steps) noexcept {
         const f32 event = spike_at(options, frame, magnitude);
         const f32 pixels = scale_ * scale_;
 
@@ -187,7 +201,9 @@ public:
         const ArbiterReport report = arbiter_.update();
         for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
             controllers_[index].set_allocation_ms(report.allocation_ms[index]);
-            if (report.relax_granted[index]) controllers_[index].grant_relax_step();
+            if (report.relax_granted[index]) {
+                controllers_[index].grant_relax_step();
+            }
             controllers_[index].report_measured_ms(measured[index]);
             const rendering::SubsystemUpdate update = controllers_[index].update();
             changes += (update.tightened || update.relaxed) ? 1U : 0U;
@@ -206,7 +222,9 @@ public:
 
     [[nodiscard]] bool restored() const noexcept {
         for (const SubsystemController& controller : controllers_) {
-            if (controller.position() != 0U) return false;
+            if (controller.position() != 0U) {
+                return false;
+            }
         }
         return scale_ >= 1.0F;
     }
@@ -229,11 +247,9 @@ public:
 
     [[nodiscard]] u32 below_reserved_minimum() const noexcept {
         u32 total = 0;
-        for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
-            total += arbiter_.allocation_ms(kRows[index].subsystem) <
-                             kRows[index].reserved_minimum_ms - 1.0e-4F
-                         ? 1U
-                         : 0U;
+        for (const Row& row : kRows) {
+            total +=
+                arbiter_.allocation_ms(row.subsystem) < row.reserved_minimum_ms - 1.0e-4F ? 1U : 0U;
         }
         return total;
     }
@@ -254,8 +270,10 @@ private:
 };
 
 [[nodiscard]] f32 median_of(Array<f32>& values) noexcept {
-    if (values.size() == 0) return 0.0F;
-    std::sort(values.begin(), values.end());
+    if (values.empty()) {
+        return 0.0F;
+    }
+    std::ranges::sort(values);
     return values[values.size() / 2U];
 }
 
@@ -290,7 +308,9 @@ Status run_spike(const SpikeOptions& options, SpikeReport& out) noexcept {
     out.device_ms = options.measured_geometry_ms;
 
     Loop loop;
-    if (Status configured = loop.configure(options, out.geometry_ms); !configured) return configured;
+    if (Status configured = loop.configure(options, out.geometry_ms); !configured) {
+        return configured;
+    }
     out.nominal_ms = loop.nominal_ms() + options.frame_budget_ms - out.allocatable_ms;
     out.subsystems = kBudgetSubsystemCount;
 
@@ -300,7 +320,9 @@ Status run_spike(const SpikeOptions& options, SpikeReport& out) noexcept {
     if (Status sized = every_frame.reserve(static_cast<usize>(total_frames) * steps); !sized) {
         return sized;
     }
-    if (Status sized = out.runs.reserve(steps); !sized) return sized;
+    if (Status sized = out.runs.reserve(steps); !sized) {
+        return sized;
+    }
 
     for (u32 step = 0; step < steps; ++step) {
         const f32 fraction =
@@ -310,7 +332,9 @@ Status run_spike(const SpikeOptions& options, SpikeReport& out) noexcept {
 
         loop.reset();
         Array<f32> frames(out.runs.allocator());
-        if (Status sized = frames.reserve(total_frames); !sized) return sized;
+        if (Status sized = frames.reserve(total_frames); !sized) {
+            return sized;
+        }
         u32 changes = 0;
         for (u32 frame = 0; frame < total_frames; ++frame) {
             u32 frame_changes = 0;
@@ -319,11 +343,15 @@ Status run_spike(const SpikeOptions& options, SpikeReport& out) noexcept {
             changes += frame_changes;
             // The last two hundred frames of the release phase: the loop has been settled at
             // authored load for at least a hundred and sixty frames by then.
-            if (frame + 200U >= total_frames) run.settled_changes += frame_changes;
+            if (frame + 200U >= total_frames) {
+                run.settled_changes += frame_changes;
+            }
             run.deepest_positions = std::max(run.deepest_positions, loop.positions());
             if (frame_ms > options.frame_budget_ms) {
                 ++run.frames_over_budget;
-                if (loop.quiet_frames() >= kQuietFrames) ++run.late_frames_over_budget;
+                if (loop.quiet_frames() >= kQuietFrames) {
+                    ++run.late_frames_over_budget;
+                }
             }
             run.worst_ms = std::max(run.worst_ms, frame_ms);
             // The last frame at full magnitude, before the load starts to lift: where the loop
@@ -332,8 +360,12 @@ Status run_spike(const SpikeOptions& options, SpikeReport& out) noexcept {
                 run.settled_filtered_ms = loop.filtered_ms();
                 run.settled_setpoint_ms = loop.setpoint_ms();
             }
-            if (Status added = frames.push_back(frame_ms); !added) return added;
-            if (Status added = every_frame.push_back(frame_ms); !added) return added;
+            if (Status added = frames.push_back(frame_ms); !added) {
+                return added;
+            }
+            if (Status added = every_frame.push_back(frame_ms); !added) {
+                return added;
+            }
         }
         (void)changes;
         run.median_ms = median_of(frames);
@@ -344,7 +376,9 @@ Status run_spike(const SpikeOptions& options, SpikeReport& out) noexcept {
         out.settled_frames_over_budget += run.late_frames_over_budget;
         out.magnitudes_restored += run.restored ? 1U : 0U;
         out.frames += total_frames;
-        if (Status added = out.runs.push_back(run); !added) return added;
+        if (Status added = out.runs.push_back(run); !added) {
+            return added;
+        }
     }
     out.magnitudes = steps;
     out.median_frame_ms = median_of(every_frame);
@@ -359,7 +393,9 @@ Status run_starvation(const SpikeOptions& options, StarvationReport& out) noexce
         return configured;
     }
     const f32 geometry_ms = geometry_cost(options, probe.allocatable_ms(), measured);
-    if (Status configured = loop.configure(options, geometry_ms); !configured) return configured;
+    if (Status configured = loop.configure(options, geometry_ms); !configured) {
+        return configured;
+    }
 
     // A load nothing can absorb: eight times the authored cost of the three subsystems the spike
     // strikes, held long enough for every ladder to bottom out and for resolution scale — the last

@@ -53,11 +53,13 @@
 #
 # --- WHAT M7 ADDS TO THE PERMANENT SET, AND WHAT IT COSTS -------------------------------------------
 #
-# Twenty-nine own criteria, of which twenty-one run C++ suites the milestone's eleven new modules
+# FORTY-ONE own criteria, of which twenty-seven run suites the milestone's fourteen new directories
 # brought with them — src/rendering/{material,virtual_geometry,shadows,temporal,post,gi,denoise,
-# raytracing,arbiter,sky,lighting,gpu_culling,virtual_texturing} and samples/07-fidelity. Three
-# carry `requires = "gpu"` and are reported NOT EVALUATED on a machine without a device rather than
-# passed, which is the honest half of a milestone whose subject is a frame.
+# raytracing,arbiter,sky,lighting,gpu_culling,virtual_texturing}, src/backends/rhi-metal and
+# samples/07-fidelity. THREE carry `requires = "gpu"` and one `requires = "display"`, and each is
+# reported NOT EVALUATED on a machine without one rather than passed, which is the honest half of a
+# milestone whose subject is a frame. The two counts in this paragraph are prose and are checked by
+# nothing, so `just roadmap-milestone m7 --list` is the arithmetic if you add a criterion.
 #
 # --- THE ARTEFACT, AND WHY IT IS THREE CRITERIA RATHER THAN ONE -------------------------------------
 #
@@ -65,8 +67,9 @@
 # different questions — the same split m6.toml made. `fidelity-artefact` is the CTest entry, so
 # `just test-all` runs it and the `build-and-test` gate covers it on every pull request.
 # `fidelity-recipe` runs it through the workflow a contributor actually types, at full detail and
-# over four whole runs rather than the shortened one the smoke entry runs. `screenshot-fidelity` is
-# the committed picture, which is what makes the milestone evaluable by LOOKING.
+# 48 device frames rather than the half-detail 24-frame set the smoke entry cooks — both do four
+# whole runs, because the headline is a median over runs either way. `screenshot-fidelity` is the
+# committed picture, which is what makes the milestone evaluable by LOOKING.
 
 schema = 1
 id = "m7"
@@ -264,7 +267,7 @@ native-abi = "complete"
 [[criterion]]
 id = "material-compiler"
 describe = "a graph and a hand-written material compile to the SAME program, proven by the round trip and by the two front-ends being different before the compiler runs; every one of the nine pass switches is load-bearing, asserted as a table on every build; and a node preview is the final program with a different root"
-source = "tasks 6.1–6.9, ROADMAP M7 (The material compiler's IR round-trips; Node previews use the real compiler)"
+source = "tasks 6.1, 6.2, 6.4, ROADMAP M7 (The material compiler's IR round-trips; Node previews use the real compiler)"
 kind = "recipe"
 run = "just test-unit -R unit.material_compiler"
 ci_job = "render-frame"
@@ -272,7 +275,7 @@ ci_job = "render-frame"
 [[criterion]]
 id = "material-cook"
 describe = "the cook: one digest over the compiler version, the IR version, the module digest, the profile and every emitted program, and a bundle carrying no timestamp, no path and no allocator address — which is what makes two cold cooks byte-identical"
-source = "tasks 6.8, 6.9"
+source = "tasks 6.3"
 kind = "recipe"
 run = "just test-integration -R material_cook"
 ci_job = "milestone-m7"
@@ -280,7 +283,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "materials-shading"
 describe = "`rendering-materials-and-shading` to Complete: the GPU material table the compiler fills is the one M3 defined, and the image-based lighting path it feeds is unchanged"
-source = "tasks 6.4, ROADMAP M7"
+source = "tasks 6.2, 6.3, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.material && just test-integration -R material_ibl"
 ci_job = "milestone-m7"
@@ -323,7 +326,7 @@ ci_job = "render-device"
 [[criterion]]
 id = "virtual-shadows"
 describe = "receiver-driven pages whose identity is one packed word, clipmaps snapped per frame, the page cache, precise invalidation that keeps a page's FIRST reason, update classes, and a budget that may tighten on its own authority and may never relax on it — certified over a 41-load sweep, beside the case that removes the tighten margin and MEASURES the ratchet that follows"
-source = "tasks 8.1–8.5, ROADMAP M7"
+source = "tasks 8.1, 8.2, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.render_shadows && just test-integration -R render_shadow_control"
 ci_job = "milestone-m7"
@@ -331,7 +334,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "temporal"
 describe = "one temporal framework rather than five: jitter, motion vectors under the convention that a vector takes a pixel to where its surface WAS with jitter removed, history, invalidation as a CLASSIFICATION rather than a second flag beside it, and reprojection — with the consumer registry that makes 'TAA shall not implement its own framework' true rather than promised"
-source = "tasks 8.6, 8.7, ROADMAP M7"
+source = "tasks 8.3, ROADMAP M7"
 kind = "recipe"
 run = "just test-unit -R unit.render_temporal"
 ci_job = "render-frame"
@@ -349,7 +352,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "gi"
 describe = "the GI scene, the surface and radiance caches, distance fields, the tiers and their confidence, reflections on the same infrastructure, probes and baking — with the three seams that make the parts separable, so that replacing the radiance cache with a baked irradiance volume is one line"
-source = "tasks 9.1–9.4, ROADMAP M7 (Golden images for GI and reflections pass within tolerance)"
+source = "tasks 9.1, 9.2, ROADMAP M7 (Golden images for GI and reflections pass within tolerance)"
 kind = "command"
 run = "just test-unit -R unit.render_gi && just test-integration -R render_gi_pipeline"
 ci_job = "milestone-m7"
@@ -365,7 +368,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "denoise"
 describe = "one accumulation and edge-aware filter for every stochastic signal, taking its history through the temporal framework's `ConsumerId` rather than through a second reprojection of its own"
-source = "tasks 9.6, ROADMAP M7"
+source = "tasks 9.3, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.render_denoise && just test-integration -R render_denoise_filter"
 ci_job = "milestone-m7"
@@ -373,7 +376,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "raytracing"
 describe = "structure lifecycle, geometry adapters, ray queries and capability gating — including the property that a service switched off by PROFILE reports exactly what an UNSUPPORTED device reports while keeping its structures, because anything else is an observable difference between the two causes"
-source = "tasks 9.7, ROADMAP M7"
+source = "tasks 9.4, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.render_raytracing && just test-integration -R render_raytracing_scale"
 ci_job = "milestone-m7"
@@ -387,7 +390,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "arbiter"
 describe = "one place in the renderer where a frame time may be accepted; a subsystem that declares a PRICED ladder rather than a number of milliseconds; tightening local and relaxing arbitrated; and the four mechanisms — the filter, the dwell, the period and the deadband — no one of which is sufficient alone"
-source = "tasks 10.1–10.3, ROADMAP M7"
+source = "tasks 10.1, 10.2, ROADMAP M7"
 kind = "recipe"
 run = "just test-unit -R unit.render_arbiter"
 ci_job = "render-frame"
@@ -403,7 +406,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "lighting"
 describe = "area lights against a Monte Carlo reference that had to be verified before it could be a reference, decals with the published reoriented-normal form rather than the transcription that looks right and inverts every surface, light functions, channels, and the stochastic many-light path"
-source = "tasks 10.4, ROADMAP M7"
+source = "tasks 10.3, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.render_lighting && just test-integration -R render_lighting_reference"
 ci_job = "milestone-m7"
@@ -411,9 +414,24 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "sky"
 describe = "an analytic sky sufficient for GI's sky term, joined to it in two lines at the composition point so that 'sufficient' can be measured with no GI system present — including the case where a ray leaving the planet's surface pointing down is declared to MISS the planet, which delivered 5e-36 lux from a sun 30 degrees below the horizon"
-source = "tasks 10.6, ROADMAP M7"
+source = "tasks 10.4, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.render_sky && just test-integration -R render_sky_light"
+ci_job = "milestone-m7"
+
+# TASK 10.5, AND THE HALF OF IT THAT CAN BE RUN ON THIS HOST. The M7 row of docs/ROADMAP.md asks for
+# "a Metal seed, to expose Vulkan-specific assumptions while they are still cheap", and its exit
+# criteria ask for one more thing than that — "the Metal seed renders the M3 golden scene" — which
+# needs an Apple GPU and is recorded as an unrun intention at the bottom of this file rather than as
+# a criterion that passes by never executing. What IS here is the seed's actual deliverable:
+# `metal_gaps()` returns the eight findings AS DATA, so a diagnostic, a test and the README read one
+# table, and two of the eight have no workaround at all.
+[[criterion]]
+id = "metal-seed"
+describe = "the eight Vulkan-specific assumptions the Metal seed exposed, as data a test reads rather than as prose in a README — SPIR-V as the only shader form in the interface, `memory_type_bits` with no Metal analogue whatever, `ImageLayout` in an otherwise engine-owned interface, queue families, secondaries recorded before their pass exists, the pipeline cache's shape, D24S8 on no Apple GPU, and the push-constant case that is genuinely fine"
+source = "tasks 10.5, ROADMAP M7"
+kind = "recipe"
+run = "just test-unit -R unit.rhi_metal_seed"
 ci_job = "milestone-m7"
 
 # --- The two paged systems that reach the device ----------------------------------------------------
@@ -458,7 +476,7 @@ ci_job = "residency"
 [[criterion]]
 id = "assets-streaming"
 describe = "`core-assets-and-io` to Complete: partial residency for textures, meshes and audio driven by a residency budget and renderer feedback — the requirement M6 planned to complete and did not touch, whose own header said in M6's tree 'STREAMING IS M6. There is no residency budget driven by renderer feedback, no per-mip request and no priority derived from distance here'"
-source = "tasks 1.x, ROADMAP M7, implement-m6-scale (what M6 handed forward)"
+source = "tasks 2.1, 2.2, ROADMAP M7, implement-m6-scale (what M6 handed forward)"
 kind = "recipe"
 run = "just test-integration -R assets_streaming"
 ci_job = "milestone-m7"
@@ -466,7 +484,7 @@ ci_job = "milestone-m7"
 [[criterion]]
 id = "memory-attribution"
 describe = "`core-memory-and-containers` to Complete: memory attributable by domain, by type, by thread, by world cell and by asset — five axes where M6 had three, with the two new ones opaque u64s because core-memory sits below core-values, core-reflect and world"
-source = "tasks 1.x, ROADMAP M7, implement-m6-scale (what M6 handed forward)"
+source = "tasks 3.1, ROADMAP M7, implement-m6-scale (what M6 handed forward)"
 kind = "recipe"
 run = "just test-integration -R memory_diagnostics"
 ci_job = "milestone-m7"
@@ -496,6 +514,20 @@ ci_job = "editor-window"
 
 # --- The artefact ------------------------------------------------------------------------------------
 
+# TASKS 5b.5 AND 5b.5b, AND THE ONE CHECK IN samples/ WHOSE FAILURE WOULD BE INVISIBLE. If
+# `artefact.Report.exit_code` stopped counting gaps, every artefact in this tree would go green at
+# once and nothing else would change — which is exactly the state M6 shipped in, one artefact at a
+# time. `samples/harness/selftest.py` holds both rules against negative fixtures: a run that records
+# a gap returns 1, and `Report.headline` REFUSES a maximum by name. It needs no display, no device
+# and no engine.
+[[criterion]]
+id = "artefact-harness"
+describe = "a recorded gap cannot exit zero and an extreme value cannot be a headline — the two rules M6's gate found broken, held by the module every artefact in samples/ reports through rather than by each artefact's own bookkeeping"
+source = "tasks 5b.5, 5b.5b"
+kind = "recipe"
+run = "just test-unit -R unit.artefact_harness"
+ci_job = "build-and-test"
+
 [[criterion]]
 id = "fidelity-artefact"
 describe = "the closing artefact as a CTest entry, so `just test-all` runs it and `build-and-test` covers it on every pull request: the set cooked and checked crack-free, the frame on the device with zero validation errors, the illumination system converged and its bounce carrying colour, and the arbiter holding the budget over nine spike magnitudes with none oscillating and all nine returning to authored quality"
@@ -507,7 +539,7 @@ ci_job = "build-and-test"
 
 [[criterion]]
 id = "fidelity-recipe"
-describe = "`just run-fidelity` runs the artefact through the workflow a contributor uses, at FULL detail and over four whole runs rather than the one shortened run the smoke entry does — which is what makes the figure it leads with a median over runs rather than a draw"
+describe = "`just run-fidelity` runs the artefact through the workflow a contributor uses, at FULL detail and 48 device frames rather than the half-detail 24-frame set the smoke entry cooks — over four whole runs either way, which is what makes the figure it leads with a median over runs rather than a draw"
 source = "tasks 11.4, developer-workflow-and-just"
 kind = "recipe"
 run = "just run-fidelity"
@@ -564,3 +596,25 @@ source = "tasks 12.8, delivery-roadmap"
 kind = "path"
 path = "openspec/changes/**/*m8*/proposal.md"
 ci_job = "milestone-m7"
+
+# --- WHAT THIS LEDGER DOES NOT RUN, AND WHY ---------------------------------------------------------
+#
+# `delivery-roadmap` allows a criterion to be a recipe, a command, a benchmark against a threshold or
+# a committed artefact regenerated and compared — and nothing else. An intention that cannot be run
+# is recorded here rather than written as a criterion, because a criterion that executes nothing is
+# the exact defect M6's gate found four of.
+#
+# 1. **"The Metal seed renders the M3 golden scene"** — the M7 row's last exit criterion. It needs an
+#    Apple GPU, and this project's continuous integration has no macOS runner with one; the seed
+#    itself is `src/backends/rhi-metal/`, its findings are the `metal-seed` criterion above, and
+#    that module's README says of the one file which would draw the scene — `src/device.mm` —
+#    "Nothing in that file has been compiled or run. Treat every line of it as a proposal." Two of
+#    the eight gaps have no workaround and should be closed before M11.
+#
+# 2. **Windows and macOS.** `three-platforms` above carries `where = "ci"` for the same reason it has
+#    since M1: this host runs one operating system. Everything M7 added is Linux-verified only.
+#
+# 3. **A presented swapchain in the artefact.** `samples/07-fidelity` times *submit to idle* on a
+#    serialised frame, because `ExecutionResult` carries no timestamps and the sample has no window.
+#    Timing a frame with the device's own query pool is a change to `cy::rendering::GraphExecutor`
+#    rather than to the sample, and the sample's README says so where the figure is printed.

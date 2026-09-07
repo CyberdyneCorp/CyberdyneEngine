@@ -7,7 +7,7 @@ load spike.*
 ```
 just run-fidelity                       # the artefact, four runs, the median of them
 just run-fidelity --shot docs/design/images/fidelity-m7.png
-just test-smoke -R smoke.fidelity       # the same thing at half detail, one run
+just test-smoke -R smoke.fidelity       # the same four runs, at half detail and 24 frames
 ```
 
 Two files do the work. `cy_sample_fidelity` is the program — it generates and cooks the set, puts it

@@ -110,6 +110,6 @@ struct LightReport {
 ///
 /// Needs no device, which is what makes 11.2 evaluable on a machine that has none.
 [[nodiscard]] Status light_shot(const Scene& scene, const FrameOptions& options,
-                               LightReport& out) noexcept;
+                                LightReport& out) noexcept;
 
 }  // namespace cy::sample::fidelity

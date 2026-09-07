@@ -2,14 +2,16 @@
 
 #include <cy/core/base/expected.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace cy::sample::fidelity {
 namespace {
 
-constexpr f32 kPi = 3.14159265358979F;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 /// Componentwise product. `cy::Vec3` has no `operator*` for two vectors on purpose — the engine's
 /// vectors are points and directions, and the only thing this file wants it for is scaling a unit
@@ -25,7 +27,7 @@ constexpr f32 kPi = 3.14159265358979F;
     const f32 ax = std::fabs(d.x);
     const f32 ay = std::fabs(d.y);
     const f32 az = std::fabs(d.z);
-    const f32 largest = ax > ay ? (ax > az ? ax : az) : (ay > az ? ay : az);
+    const f32 largest = std::max({ax, ay, az});
     return d * (1.0F / (largest > 1.0e-6F ? largest : 1.0e-6F));
 }
 
@@ -82,8 +84,8 @@ constexpr f32 kPi = 3.14159265358979F;
     // sits flat on whatever it is tiled against.
     const f32 upward = base.y > 0.0F ? base.y / 1.4F : 0.0F;
     const f32 height = (0.75F * std::sin(0.21F * base.x) * std::sin(0.19F * base.z)) +
-                       (0.28F * std::sin(0.63F * base.x + 1.7F)) +
-                       (0.14F * std::sin(0.91F * base.z - 0.4F));
+                       (0.28F * std::sin((0.63F * base.x) + 1.7F)) +
+                       (0.14F * std::sin((0.91F * base.z) - 0.4F));
     return base + Vec3{0.0F, upward * height, 0.0F};
 }
 
@@ -103,24 +105,36 @@ constexpr f32 kPi = 3.14159265358979F;
 /// written up in this directory's README rather than worked around silently.
 [[nodiscard]] f32 cook_scale(Shape shape) noexcept {
     switch (shape) {
-        case Shape::Hall: return 9.0F;
-        case Shape::Column: return 2.6F;
-        case Shape::Statue: return 1.15F;
-        case Shape::Facade: return 9.0F;
-        case Shape::Terrain: return 22.0F;
-        case Shape::Count: break;
+        case Shape::Hall:
+            return 9.0F;
+        case Shape::Column:
+            return 2.6F;
+        case Shape::Statue:
+            return 1.15F;
+        case Shape::Facade:
+            return 9.0F;
+        case Shape::Terrain:
+            return 22.0F;
+        case Shape::Count:
+            break;
     }
     return 1.0F;
 }
 
 [[nodiscard]] Vec3 shape_point(Shape shape, Vec3 d) noexcept {
     switch (shape) {
-        case Shape::Hall: return hall_point(d);
-        case Shape::Column: return column_point(d);
-        case Shape::Statue: return statue_point(d);
-        case Shape::Facade: return facade_point(d);
-        case Shape::Terrain: return terrain_point(d);
-        case Shape::Count: break;
+        case Shape::Hall:
+            return hall_point(d);
+        case Shape::Column:
+            return column_point(d);
+        case Shape::Statue:
+            return statue_point(d);
+        case Shape::Facade:
+            return facade_point(d);
+        case Shape::Terrain:
+            return terrain_point(d);
+        case Shape::Count:
+            break;
     }
     return d;
 }
@@ -150,8 +164,8 @@ void accumulate_normals(Mesh& mesh) noexcept {
         const u32 b = mesh.indices[triangle + 1];
         const u32 c = mesh.indices[triangle + 2];
         // Un-normalised, so the accumulation is area weighted.
-        const Vec3 face = cross(mesh.positions[b] - mesh.positions[a],
-                                mesh.positions[c] - mesh.positions[a]);
+        const Vec3 face =
+            cross(mesh.positions[b] - mesh.positions[a], mesh.positions[c] - mesh.positions[a]);
         mesh.normals[a] = mesh.normals[a] + face;
         mesh.normals[b] = mesh.normals[b] + face;
         mesh.normals[c] = mesh.normals[c] + face;
@@ -165,12 +179,18 @@ void accumulate_normals(Mesh& mesh) noexcept {
 
 const char* shape_name(Shape shape) noexcept {
     switch (shape) {
-        case Shape::Hall: return "hall";
-        case Shape::Column: return "column";
-        case Shape::Statue: return "statue";
-        case Shape::Facade: return "facade";
-        case Shape::Terrain: return "terrain";
-        case Shape::Count: break;
+        case Shape::Hall:
+            return "hall";
+        case Shape::Column:
+            return "column";
+        case Shape::Statue:
+            return "statue";
+        case Shape::Facade:
+            return "facade";
+        case Shape::Terrain:
+            return "terrain";
+        case Shape::Count:
+            break;
     }
     return "?";
 }
@@ -192,10 +212,18 @@ Status generate(Shape shape, u32 resolution, Mesh& out) noexcept {
 
     // Sized once and filled by index. Growth in this loop would be six hundred thousand
     // `[[nodiscard]] Status`es to check for a capacity that is known before the first one.
-    if (Status sized = out.positions.resize(vertices); !sized) return sized;
-    if (Status sized = out.normals.resize(vertices); !sized) return sized;
-    if (Status sized = out.uvs.resize(vertices); !sized) return sized;
-    if (Status sized = out.indices.resize(triangles * 3U); !sized) return sized;
+    if (Status sized = out.positions.resize(vertices); !sized) {
+        return sized;
+    }
+    if (Status sized = out.normals.resize(vertices); !sized) {
+        return sized;
+    }
+    if (Status sized = out.uvs.resize(vertices); !sized) {
+        return sized;
+    }
+    if (Status sized = out.indices.resize(triangles * 3U); !sized) {
+        return sized;
+    }
 
     // The hall is the one shell the camera stands INSIDE, so its winding and its normals are
     // reversed: a solid seen from within is backfacing at every pixel, and cluster cone culling
@@ -265,9 +293,9 @@ void place(Shape shape, u32 count, Array<rendering::vg::GeometryInstance>& out) 
                 const bool interior = index < 12U;
                 const f32 angle = i * 0.5236F;
                 instance.translation =
-                    interior ? Vec3{3.0F * std::cos(angle), -2.0F, 3.0F * std::sin(angle)}
-                             : kDistrict + Vec3{26.0F * std::cos(angle), 1.0F,
-                                                26.0F * std::sin(angle)};
+                    interior
+                        ? Vec3{3.0F * std::cos(angle), -2.0F, 3.0F * std::sin(angle)}
+                        : kDistrict + Vec3{26.0F * std::cos(angle), 1.0F, 26.0F * std::sin(angle)};
                 instance.scale *= interior ? 0.8F : 1.6F;
                 break;
             }
@@ -285,7 +313,8 @@ void place(Shape shape, u32 count, Array<rendering::vg::GeometryInstance>& out) 
                     kDistrict + Vec3{-132.0F + (44.0F * column), -2.0F, -132.0F + (44.0F * row)};
                 break;
             }
-            case Shape::Count: break;
+            case Shape::Count:
+                break;
         }
         // The array was reserved for exactly this many instances before the first call.
         (void)out.push_back(instance);
@@ -300,20 +329,20 @@ Status add_surfels(const Scene& scene, Array<rendering::gi::Surfel>& out) noexce
         {0.62F, 0.60F, 0.56F}, {0.78F, 0.74F, 0.66F}, {0.55F, 0.20F, 0.14F},
         {0.48F, 0.50F, 0.54F}, {0.34F, 0.38F, 0.28F},
     };
-    static constexpr Vec3 kDirections[6] = {{1.0F, 0.0F, 0.0F},  {-1.0F, 0.0F, 0.0F},
-                                            {0.0F, 1.0F, 0.0F},  {0.0F, -1.0F, 0.0F},
-                                            {0.0F, 0.0F, 1.0F},  {0.0F, 0.0F, -1.0F}};
+    static constexpr Vec3 kDirections[6] = {{1.0F, 0.0F, 0.0F}, {-1.0F, 0.0F, 0.0F},
+                                            {0.0F, 1.0F, 0.0F}, {0.0F, -1.0F, 0.0F},
+                                            {0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, -1.0F}};
     for (const rendering::vg::GeometryInstance& instance : scene.instances) {
         const auto shape = static_cast<Shape>(instance.asset);
         const Aabb local = scene.decoded[instance.asset].bounds;
         const Vec3 extents = local.half_extents() * instance.scale;
         const bool inward = shape == Shape::Hall;
-        for (u32 face = 0; face < 6U; ++face) {
+        for (const Vec3& face_normal : kDirections) {
             // Four cards a face, so a wall is more than one sample and a bounce has somewhere to
             // land. The hall's face cards look inward, which is where its light is.
             for (u32 corner = 0; corner < 4U; ++corner) {
                 rendering::gi::Surfel surfel;
-                const Vec3 normal = kDirections[face];
+                const Vec3 normal = face_normal;
                 const Vec3 tangent{normal.y, normal.z, normal.x};
                 const Vec3 bitangent = cross(normal, tangent);
                 const f32 su = (corner & 1U) != 0U ? 0.45F : -0.45F;
@@ -326,7 +355,9 @@ Status add_surfels(const Scene& scene, Array<rendering::gi::Surfel>& out) noexce
                 surfel.area = 0.25F * extents.x * extents.z * 4.0F;
                 surfel.instance_id = instance.material_offset;
                 surfel.material_id = instance.material_offset;
-                if (Status added = out.push_back(surfel); !added) return added;
+                if (Status added = out.push_back(surfel); !added) {
+                    return added;
+                }
             }
         }
     }
@@ -340,7 +371,9 @@ Status add_lights(Array<rendering::gi::GiLight>& out) noexcept {
     key.intensity = 42.0F;
     key.range = 26.0F;
     key.id = 1;
-    if (Status added = out.push_back(key); !added) return added;
+    if (Status added = out.push_back(key); !added) {
+        return added;
+    }
 
     rendering::gi::GiLight fill;
     fill.position = Vec3{4.5F, 1.6F, 3.0F};
@@ -348,7 +381,9 @@ Status add_lights(Array<rendering::gi::GiLight>& out) noexcept {
     fill.intensity = 18.0F;
     fill.range = 22.0F;
     fill.id = 2;
-    if (Status added = out.push_back(fill); !added) return added;
+    if (Status added = out.push_back(fill); !added) {
+        return added;
+    }
 
     rendering::gi::GiLight sun;
     sun.direction = normalize(Vec3{-0.42F, -0.78F, -0.46F});
@@ -359,7 +394,10 @@ Status add_lights(Array<rendering::gi::GiLight>& out) noexcept {
     return out.push_back(sun);
 }
 
-rendering::vg::BuildOptions build_options_for(Shape shape) noexcept {
+// Every shell is cooked with the same policy: the five differ in their radius function and
+// in nothing the builder is told, which is what makes the per-shape watertightness table in
+// this sample's README a comparison rather than five separate experiments.
+rendering::vg::BuildOptions build_options() noexcept {
     rendering::vg::BuildOptions options;
     options.policy.min_triangles = 64;
     options.policy.target_triangles = 124;
@@ -369,31 +407,39 @@ rendering::vg::BuildOptions build_options_for(Shape shape) noexcept {
     options.weld_epsilon = 2.0e-5F;
     options.page_bytes = 128U * 1024U;
     options.resident_budget_bytes = 64U * 1024U;
-    options.surface = shape == Shape::Terrain ? rendering::vg::SurfaceClass::Solid
-                                              : rendering::vg::SurfaceClass::Solid;
+    // Every shape here is a CLOSED shell — `generate` walks a cube-topology grid whatever the
+    // radius function does — so all five cook as solids, the terrain slab included. A shape
+    // that was a card or a plane would declare `SurfaceClass::Open` and `check_watertight`
+    // would report not-applicable for it, which is the vacuous first act this set avoids.
+    options.surface = rendering::vg::SurfaceClass::Solid;
     return options;
 }
 
 Status cook_one(Shape shape, u32 resolution, Scene& scene) noexcept {
     Mesh mesh(scene.allocator);
-    if (Status generated = generate(shape, resolution, mesh); !generated) return generated;
+    if (Status generated = generate(shape, resolution, mesh); !generated) {
+        return generated;
+    }
 
     const auto started = std::chrono::steady_clock::now();
     Expected<rendering::vg::GeometryBuild, Error> built =
-        rendering::vg::build_geometry(mesh.source(), build_options_for(shape), scene.allocator);
-    if (!built) return Status{make_unexpected(built.error())};
-    const f32 cook_ms = std::chrono::duration<f32, std::milli>(
-                            std::chrono::steady_clock::now() - started)
-                            .count();
+        rendering::vg::build_geometry(mesh.source(), build_options(), scene.allocator);
+    if (!built) {
+        return Status{make_unexpected(built.error())};
+    }
+    const f32 cook_ms =
+        std::chrono::duration<f32, std::milli>(std::chrono::steady_clock::now() - started).count();
 
     Expected<rendering::vg::WatertightReport, Error> watertight =
         rendering::vg::check_watertight(*built, scene.allocator);
-    if (!watertight) return Status{make_unexpected(watertight.error())};
+    if (!watertight) {
+        return Status{make_unexpected(watertight.error())};
+    }
 
     CookedAsset asset(scene.allocator);
     asset.shape = shape;
-    if (Status encoded = rendering::vg::encode_asset(*built, rendering::vg::VertexEncoding{},
-                                                     asset.bytes);
+    if (Status encoded =
+            rendering::vg::encode_asset(*built, rendering::vg::VertexEncoding{}, asset.bytes);
         !encoded) {
         return encoded;
     }
@@ -406,11 +452,14 @@ Status cook_one(Shape shape, u32 resolution, Scene& scene) noexcept {
     asset.cook_ms = cook_ms;
     asset.watertight = *watertight;
 
-    if (Status stored = scene.assets.push_back(std::move(asset)); !stored) return stored;
-    Expected<rendering::vg::DecodedAsset, Error> decoded =
-        rendering::vg::decode_asset(scene.assets[scene.assets.size() - 1U].bytes.span(),
-                                    scene.allocator);
-    if (!decoded) return Status{make_unexpected(decoded.error())};
+    if (Status stored = scene.assets.push_back(std::move(asset)); !stored) {
+        return stored;
+    }
+    Expected<rendering::vg::DecodedAsset, Error> decoded = rendering::vg::decode_asset(
+        scene.assets[scene.assets.size() - 1U].bytes.span(), scene.allocator);
+    if (!decoded) {
+        return Status{make_unexpected(decoded.error())};
+    }
     return scene.decoded.push_back(std::move(*decoded));
 }
 
@@ -418,8 +467,12 @@ Status cook_one(Shape shape, u32 resolution, Scene& scene) noexcept {
 
 Status build_scene(const SceneOptions& options, Scene& out) noexcept {
     const auto shapes = static_cast<u32>(Shape::Count);
-    if (Status reserved = out.assets.reserve(shapes); !reserved) return reserved;
-    if (Status reserved = out.decoded.reserve(shapes); !reserved) return reserved;
+    if (Status reserved = out.assets.reserve(shapes); !reserved) {
+        return reserved;
+    }
+    if (Status reserved = out.decoded.reserve(shapes); !reserved) {
+        return reserved;
+    }
 
     for (u32 index = 0; index < shapes; ++index) {
         if (Status cooked = cook_one(static_cast<Shape>(index), options.resolution[index], out);
@@ -429,10 +482,12 @@ Status build_scene(const SceneOptions& options, Scene& out) noexcept {
     }
 
     u32 total_instances = 0;
-    for (u32 index = 0; index < shapes; ++index) {
-        total_instances += options.instances[index];
+    for (const u32 count : options.instances) {
+        total_instances += count;
     }
-    if (Status reserved = out.instances.reserve(total_instances); !reserved) return reserved;
+    if (Status reserved = out.instances.reserve(total_instances); !reserved) {
+        return reserved;
+    }
     for (u32 index = 0; index < shapes; ++index) {
         place(static_cast<Shape>(index), options.instances[index], out.instances);
     }
@@ -456,7 +511,9 @@ Status build_scene(const SceneOptions& options, Scene& out) noexcept {
         out.watertight_assets += asset.watertight.watertight() ? 1U : 0U;
     }
 
-    if (Status added = add_surfels(out, out.surfels); !added) return added;
+    if (Status added = add_surfels(out, out.surfels); !added) {
+        return added;
+    }
     return add_lights(out.lights);
 }
 

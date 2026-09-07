@@ -65,6 +65,34 @@ void print_usage() {
         stderr);
 }
 
+// `--frames zz` IS A MISTAKE WORTH NAMING. This parsed with `atoi` and `atof`, which report no
+// error: `--detail x` read as 0.0, every shell cooked at the six-quad floor, and the run reported
+// a clean set of the wrong content. Both helpers below refuse trailing rubbish and say which flag
+// carried it, which is the whole difference between the two families of function.
+[[nodiscard]] bool parse_f32(std::string_view flag, const char* text, f32& out) {
+    char* end = nullptr;
+    const double value = std::strtod(text, &end);
+    if (end == text || *end != '\0' || !(value > 0.0)) {
+        std::fprintf(stderr, "07-fidelity: %.*s wants a positive number, not '%s'\n",
+                     static_cast<int>(flag.size()), flag.data(), text);
+        return false;
+    }
+    out = static_cast<f32>(value);
+    return true;
+}
+
+[[nodiscard]] bool parse_u32(std::string_view flag, const char* text, u32& out) {
+    char* end = nullptr;
+    const long value = std::strtol(text, &end, 10);
+    if (end == text || *end != '\0' || value <= 0) {
+        std::fprintf(stderr, "07-fidelity: %.*s wants a positive whole number, not '%s'\n",
+                     static_cast<int>(flag.size()), flag.data(), text);
+        return false;
+    }
+    out = static_cast<u32>(value);
+    return true;
+}
+
 [[nodiscard]] bool parse_options(int count, char** arguments, Options& options) {
     for (int index = 1; index < count; ++index) {
         const std::string_view argument{arguments[index]};
@@ -74,22 +102,26 @@ void print_usage() {
             options.help = true;
             return true;
         }
+        bool parsed = true;
         if (argument == "--act" && has_value) {
             options.act = arguments[++index];
         } else if (argument == "--detail" && has_value) {
-            options.detail = static_cast<f32>(std::atof(arguments[++index]));
+            parsed = parse_f32(argument, arguments[++index], options.detail);
         } else if (argument == "--frames" && has_value) {
-            options.frames = static_cast<u32>(std::atoi(arguments[++index]));
+            parsed = parse_u32(argument, arguments[++index], options.frames);
         } else if (argument == "--width" && has_value) {
-            options.width = static_cast<u32>(std::atoi(arguments[++index]));
+            parsed = parse_u32(argument, arguments[++index], options.width);
         } else if (argument == "--height" && has_value) {
-            options.height = static_cast<u32>(std::atoi(arguments[++index]));
+            parsed = parse_u32(argument, arguments[++index], options.height);
         } else if (argument == "--sweep" && has_value) {
-            options.sweep_steps = static_cast<u32>(std::atoi(arguments[++index]));
+            parsed = parse_u32(argument, arguments[++index], options.sweep_steps);
         } else {
             std::fprintf(stderr, "07-fidelity: unknown argument '%.*s'\n",
                          static_cast<int>(argument.size()), argument.data());
             print_usage();
+            return false;
+        }
+        if (!parsed) {
             return false;
         }
     }
@@ -114,15 +146,15 @@ void report_scene(const Scene& scene) {
     std::printf("watertight_assets=%u\n", scene.watertight_assets);
     std::printf("cook_ms=%.1f\n", static_cast<double>(scene.cook_ms));
     for (const CookedAsset& asset : scene.assets) {
-        std::printf("asset=%s triangles=%u clusters=%u levels=%u pages=%u resident_bytes=%u "
-                    "closed=%u watertight=%u boundary_mismatches=%u monotonicity=%u open_cuts=%u "
-                    "thresholds=%u\n",
-                    shape_name(asset.shape), asset.source_triangles, asset.clusters, asset.levels,
-                    asset.pages, asset.resident_bytes,
-                    asset.watertight.closed_source ? 1U : 0U,
-                    asset.watertight.watertight() ? 1U : 0U,
-                    asset.watertight.boundary_mismatches, asset.watertight.monotonicity_violations,
-                    asset.watertight.open_cuts, asset.watertight.thresholds_tested);
+        std::printf(
+            "asset=%s triangles=%u clusters=%u levels=%u pages=%u resident_bytes=%u "
+            "closed=%u watertight=%u boundary_mismatches=%u monotonicity=%u open_cuts=%u "
+            "thresholds=%u\n",
+            shape_name(asset.shape), asset.source_triangles, asset.clusters, asset.levels,
+            asset.pages, asset.resident_bytes, asset.watertight.closed_source ? 1U : 0U,
+            asset.watertight.watertight() ? 1U : 0U, asset.watertight.boundary_mismatches,
+            asset.watertight.monotonicity_violations, asset.watertight.open_cuts,
+            asset.watertight.thresholds_tested);
     }
 }
 
@@ -157,8 +189,7 @@ void report_light(const LightReport& light) {
     std::printf("with_reflection=%u\n", light.with_reflection);
     std::printf("mean_indirect=%.6f\n", static_cast<double>(light.mean_indirect));
     std::printf("mean_reflection=%.6f\n", static_cast<double>(light.mean_reflection));
-    std::printf("indirect_colour_spread=%.6f\n",
-                static_cast<double>(light.indirect_colour_spread));
+    std::printf("indirect_colour_spread=%.6f\n", static_cast<double>(light.indirect_colour_spread));
     std::printf("world_tier=%s\n", light.tier);
     std::printf("software_rays=%u\n", light.software_rays);
     std::printf("hardware_rays=%u\n", light.hardware_rays);
@@ -185,32 +216,29 @@ void report_spike(const SpikeReport& spike, const StarvationReport& starved) {
     std::printf("settled_frames_over_budget=%u\n", spike.settled_frames_over_budget);
     std::printf("magnitudes_restored=%u\n", spike.magnitudes_restored);
     for (const SpikeRun& run : spike.runs) {
-        std::printf("magnitude=%.2f frames_over_budget=%u late_over_budget=%u median_ms=%.3f "
-                    "worst_ms=%.3f settled_filtered_ms=%.3f settled_setpoint_ms=%.3f "
-                    "settled_changes=%u adjustments=%u resolution_steps=%u "
-                    "deepest_positions=%u restored=%u\n",
-                    static_cast<double>(run.magnitude), run.frames_over_budget,
-                    run.late_frames_over_budget, static_cast<double>(run.median_ms),
-                    static_cast<double>(run.worst_ms),
-                    static_cast<double>(run.settled_filtered_ms),
-                    static_cast<double>(run.settled_setpoint_ms), run.settled_changes,
-                    run.adjustments,
-                    run.resolution_steps, run.deepest_positions, run.restored ? 1U : 0U);
+        std::printf(
+            "magnitude=%.2f frames_over_budget=%u late_over_budget=%u median_ms=%.3f "
+            "worst_ms=%.3f settled_filtered_ms=%.3f settled_setpoint_ms=%.3f "
+            "settled_changes=%u adjustments=%u resolution_steps=%u "
+            "deepest_positions=%u restored=%u\n",
+            static_cast<double>(run.magnitude), run.frames_over_budget, run.late_frames_over_budget,
+            static_cast<double>(run.median_ms), static_cast<double>(run.worst_ms),
+            static_cast<double>(run.settled_filtered_ms),
+            static_cast<double>(run.settled_setpoint_ms), run.settled_changes, run.adjustments,
+            run.resolution_steps, run.deepest_positions, run.restored ? 1U : 0U);
     }
     std::printf("starved_subsystems=%u\n", starved.subsystems);
     std::printf("starved_at_minimum=%u\n", starved.at_minimum);
     std::printf("starved_below_reserved=%u\n", starved.below_reserved_minimum);
     std::printf("starved_changes_at_the_bottom=%u\n", starved.changes_at_the_bottom);
-    std::printf("starved_resolution_scale=%.3f\n",
-                static_cast<double>(starved.resolution_scale));
+    std::printf("starved_resolution_scale=%.3f\n", static_cast<double>(starved.resolution_scale));
 }
 
 [[nodiscard]] SceneOptions scene_options(const Options& options) noexcept {
     SceneOptions scene;
-    for (u32 index = 0; index < static_cast<u32>(Shape::Count); ++index) {
-        const auto scaled =
-            static_cast<u32>(static_cast<f32>(scene.resolution[index]) * options.detail);
-        scene.resolution[index] = scaled > 6U ? scaled : 6U;
+    for (u32& resolution : scene.resolution) {
+        const auto scaled = static_cast<u32>(static_cast<f32>(resolution) * options.detail);
+        resolution = scaled > 6U ? scaled : 6U;
     }
     return scene;
 }
@@ -224,8 +252,12 @@ void report_spike(const SpikeReport& spike, const StarvationReport& starved) {
 
 int main(int argument_count, char** arguments) {
     Options options;
-    if (!parse_options(argument_count, arguments, options)) return 2;
-    if (options.help) return 0;
+    if (!parse_options(argument_count, arguments, options)) {
+        return 2;
+    }
+    if (options.help) {
+        return 0;
+    }
 
     Allocator& allocator = system_allocator(MemoryDomain::Renderer);
     std::printf("artefact=07-fidelity\n");
@@ -235,7 +267,9 @@ int main(int argument_count, char** arguments) {
     if (Status built = build_scene(scene_options(options), scene); !built) {
         return fail(built.error());
     }
-    if (wants(options, "detail")) report_scene(scene);
+    if (wants(options, "detail")) {
+        report_scene(scene);
+    }
 
     FrameOptions frame_options;
     frame_options.width = options.width;
@@ -252,7 +286,9 @@ int main(int argument_count, char** arguments) {
 
     if (wants(options, "light")) {
         LightReport light;
-        if (Status lit = light_shot(scene, frame_options, light); !lit) return fail(lit.error());
+        if (Status lit = light_shot(scene, frame_options, light); !lit) {
+            return fail(lit.error());
+        }
         report_light(light);
     }
 
@@ -261,9 +297,13 @@ int main(int argument_count, char** arguments) {
         spike_options.measured_geometry_ms = frame.device ? frame.median_ms : 0.0F;
         spike_options.sweep_steps = options.sweep_steps;
         SpikeReport spike(allocator);
-        if (Status ran = run_spike(spike_options, spike); !ran) return fail(ran.error());
+        if (Status ran = run_spike(spike_options, spike); !ran) {
+            return fail(ran.error());
+        }
         StarvationReport starved;
-        if (Status ran = run_starvation(spike_options, starved); !ran) return fail(ran.error());
+        if (Status ran = run_starvation(spike_options, starved); !ran) {
+            return fail(ran.error());
+        }
         report_spike(spike, starved);
     }
 

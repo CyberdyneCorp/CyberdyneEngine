@@ -193,7 +193,7 @@ def test_record_rules(root: Path) -> None:
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
-                    "m6": 26, "m7": 26}
+                    "m6": 26, "m7": 32}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
