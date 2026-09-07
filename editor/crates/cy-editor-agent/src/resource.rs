@@ -56,6 +56,19 @@ pub enum ResourceKind {
     PlayState,
     /// Long-running work and its progress.
     Operations,
+    /// The project's source files, and one file's contents.
+    Sources,
+    /// What the script module's build has done and is doing.
+    Build,
+    /// A document's history: what was changed, by whom, and toward what intent.
+    History,
+    /// The engine's rendered image. Answered by the session rather than by the editor, because it
+    /// costs a render and the budget that pays for it belongs to the connection.
+    Viewport,
+    /// What the reading connection may spend. Answered by the session rather than by the editor —
+    /// see `crate::session::AgentSession::read_resource` — because it is a property of the
+    /// connection and not of the project.
+    Budget,
 }
 
 impl ResourceKind {
@@ -71,12 +84,17 @@ impl ResourceKind {
             ResourceKind::Diagnostics => "diagnostics",
             ResourceKind::PlayState => "play",
             ResourceKind::Operations => "operations",
+            ResourceKind::Sources => "sources",
+            ResourceKind::Build => "build",
+            ResourceKind::History => "history",
+            ResourceKind::Viewport => "viewport",
+            ResourceKind::Budget => "budget",
         }
     }
 
     /// Every kind, for a listing. Exhaustive by construction: adding a kind without adding it here
     /// makes `listing` incomplete, and the test that counts them fails.
-    pub const ALL: [ResourceKind; 8] = [
+    pub const ALL: [ResourceKind; 13] = [
         ResourceKind::Hierarchy,
         ResourceKind::Node,
         ResourceKind::Selection,
@@ -85,6 +103,11 @@ impl ResourceKind {
         ResourceKind::Diagnostics,
         ResourceKind::PlayState,
         ResourceKind::Operations,
+        ResourceKind::Sources,
+        ResourceKind::Build,
+        ResourceKind::History,
+        ResourceKind::Viewport,
+        ResourceKind::Budget,
     ];
 }
 
@@ -144,6 +167,19 @@ impl Resources {
                 ResourceKind::Operations,
                 "Long-running work, with what each is doing and how far it has got.".to_string(),
             ),
+            (
+                "sources:".to_string(),
+                ResourceKind::Sources,
+                "The project's script sources. Read sources:<path> for one file's contents."
+                    .to_string(),
+            ),
+            (
+                "build:".to_string(),
+                ResourceKind::Build,
+                "What the script module's build has done, which generation is resident, and how \
+                 the last one failed if it did."
+                    .to_string(),
+            ),
         ];
         for document in editor.documents.ids() {
             listing.push((
@@ -155,6 +191,13 @@ impl Resources {
                 format!("assets:{document}"),
                 ResourceKind::Assets,
                 "The files this document is stored across; the first is what names it.".to_string(),
+            ));
+            listing.push((
+                format!("history:{document}"),
+                ResourceKind::History,
+                "What has been changed in this document, oldest first, each naming its actor and \
+                 the intent it was made toward."
+                    .to_string(),
             ));
         }
         listing
@@ -180,6 +223,9 @@ impl Resources {
             "diagnostics" => Ok(Self::diagnostics(editor)),
             "play" => Ok(Self::play_state(editor)),
             "operations" => Ok(Self::operations(editor)),
+            "build" => Ok(Self::build(editor)),
+            "sources" => Ok(Self::sources(editor, rest)),
+            "history" => Self::history(editor, Self::document_of(editor, rest)?),
             "hierarchy" => Self::hierarchy(editor, Self::document_of(editor, rest)?),
             "assets" => Self::assets(editor, Self::document_of(editor, rest)?),
             "node" => {
@@ -362,6 +408,95 @@ impl Resources {
             description: "Long-running work and how far it has got.".to_string(),
             content,
         }
+    }
+
+    /// The project's sources, or one of them.
+    ///
+    /// `sources:` lists; `sources:<path>` reads. One scheme rather than two because they are one
+    /// thing at two granularities, which is how `hierarchy:` and `node:` differ and how a caller
+    /// expects to be able to guess.
+    fn sources(editor: &Editor, path: &str) -> Resource {
+        if path.is_empty() {
+            let mut content = String::new();
+            for source in editor.project.source_paths() {
+                let _ = writeln!(content, "{source}");
+            }
+            if content.is_empty() {
+                let _ = writeln!(
+                    content,
+                    "the project at {} holds no script sources yet",
+                    editor.project.root().display()
+                );
+            }
+            return Resource {
+                uri: "sources:".to_string(),
+                kind: ResourceKind::Sources,
+                description: "The project's script sources, in path order.".to_string(),
+                content,
+            };
+        }
+        // A file the editor cannot read is reported as such rather than as an empty file: an agent
+        // that got "" back would write over it believing it was empty, which is exactly the case
+        // `design.md` §4 makes irreversible.
+        let content = editor
+            .project
+            .read_source(path)
+            .unwrap_or_else(|problem| format!("this file cannot be read: {}\n", problem.because));
+        Resource {
+            uri: format!("sources:{path}"),
+            kind: ResourceKind::Sources,
+            description: "One source file's contents.".to_string(),
+            content,
+        }
+    }
+
+    /// What the build has done.
+    fn build(editor: &Editor) -> Resource {
+        Resource {
+            uri: "build:".to_string(),
+            kind: ResourceKind::Build,
+            description: "The script module's build state and the generation it produced."
+                .to_string(),
+            content: editor.project.describe_build(),
+        }
+    }
+
+    /// A document's history, with its attribution.
+    ///
+    /// `editor-agent-interface`: "Attribution SHALL be visible where history is visible — the undo
+    /// stack, the journal, and semantic diff — so that a reviewer reading a change can tell what a
+    /// person did from what an agent did, and why." This is that surface for a caller that cannot
+    /// see the interface, and it reads the document's own history rather than anything the agent
+    /// interface keeps: a second record would be one to disagree with the first.
+    fn history(editor: &Editor, id: DocumentId) -> Result<Resource> {
+        let document = Self::open(editor, id)?;
+        let mut content = String::new();
+        let status = document.history_status();
+        let _ = writeln!(
+            content,
+            "undoable: {}, redoable: {}",
+            status.undoable, status.redoable
+        );
+        for entry in document.history().entries() {
+            let _ = writeln!(
+                content,
+                "{}: {} — {} by {}",
+                entry.id.as_u64(),
+                entry.name,
+                if entry.actor.is_agent() {
+                    "[agent]"
+                } else {
+                    "[human]"
+                },
+                entry.actor
+            );
+        }
+        Ok(Resource {
+            uri: format!("history:{id}"),
+            kind: ResourceKind::History,
+            description: "What has been changed, by whom, and toward what intent.".to_string(),
+            content,
+        })
     }
 
     fn hierarchy(editor: &Editor, id: DocumentId) -> Result<Resource> {

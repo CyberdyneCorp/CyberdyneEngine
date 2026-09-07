@@ -5,10 +5,14 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: M0 through M5 are closed. [M5.5 — Operable](docs/ROADMAP.md) is next.**
-> The editor exists as a client: documents, transactions as the only write path, a command registry
-> with declared effect classes, and a session that survives its hosted runtime being killed. It has
-> no window yet — that is what M5.5 is for.
+> **Status: M0 through M5.5 are closed. [M6 — Scale](docs/ROADMAP.md) is next.**
+> The editor **opens**: a window, docked panels, a hierarchy, an inspector generated from
+> reflection, a command palette over the same registry a script drives, and a viewport that
+> composites the runtime's own GPU image with no copy through the CPU. Everything it changes is a
+> transaction, and an agent can drive all of it over the Model Context Protocol — the same commands,
+> the same transactions, a narrower scope. What it still cannot show is a *world*: the process on
+> the other end of the viewport transport is a fixture, and the engine's renderer has not been
+> attached to it yet.
 > [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,680 scenarios**
 > that define what is being built and why, and are the contract the implementation must satisfy.
 > Start at [the specification index](openspec/specs/README.md), then
@@ -316,13 +320,13 @@ code written after them: computed barriers, stable field identity, one command s
 simulation, transactions as the only write path. Established at the right moment they cost almost
 nothing; established late, everything downstream has to be revisited.
 
-So the order is specified too, in twelve milestones with no dates — because a date is an estimate
+So the order is specified too, in thirteen milestones with no dates — because a date is an estimate
 that decays, while *after what* is a design consequence that does not.
 
 | Era | | Ends with |
 |---|---|---|
 | **Foundation** | M0 Ground · M1 Substrate · M2 World | A headless simulation that ticks, hashes, and reproduces its hash exactly |
-| **First playable** | M3 First light · M4 Playable · M5 Authorable | A character controller written in Swift, edited in an editor that survives a runtime crash |
+| **First playable** | M3 First light · M4 Playable · M5 Authorable · M5.5 Operable | A character controller written in Swift, edited in an editor with a window that survives a runtime crash — and that an agent can drive |
 | **Production scale** | M6 Scale · M7 Fidelity · M8 Game systems | A streamed multi-kilometre world at film detail, playable as a real game |
 | **Shipping** | M9 Integrity · M10 Worlds · M11 Reach | Four-player rollback, open worlds, every platform — 1.0 |
 

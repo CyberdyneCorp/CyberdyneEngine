@@ -488,7 +488,11 @@ impl Navigator {
 /// same — so the reference direction becomes −Z there. Without that, a top view is a division by a
 /// zero-length cross product and the camera's rotation becomes NaN, which is a viewport that has
 /// gone black for reasons nobody can see.
-fn look_along(forward: Vec3) -> Quat {
+///
+/// Public because [`crate::overlay::ViewPreset`] needs exactly this and a second implementation of
+/// "look that way" is how two parts of a viewport come to disagree about which way is up.
+#[must_use]
+pub fn look_along(forward: Vec3) -> Quat {
     let forward = forward.normalized_or(-Vec3::Z);
     let reference = if forward.dot(Vec3::Y).abs() > 0.999 {
         -Vec3::Z

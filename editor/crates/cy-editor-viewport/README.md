@@ -27,6 +27,63 @@ no dependency that could supply one. The crate depends on `cy-editor-core`, `cy-
 | `play` | 4.4 | Editing while playing: what is unmistakable and what persists |
 | `budget` | 4.5 | Cadence, degradation and what the user is told about it |
 | `viewport` | 4.1, 4.5 | A viewport, and several of them with one focused |
+| `interaction` | M5.5 2.2–2.4 | What a pointer and a keyboard do to a viewport, with no toolkit |
+| `layout` | M5.5 2.4 | Where the runtime drew the gizmo's handles, and the hit test over them |
+| `entry` | M5.5 2.4.6 | Per-axis numeric entry, as the same one transaction a drag produces |
+
+## What M5.5 added, and the one thing it deliberately did not
+
+M5 built this crate as models a test can drive. M5.5 gave the editor a window, so the models are now
+driven by a person — and three modules were added to make that possible without moving a decision
+into the toolkit.
+
+**`interaction` is the whole of what a pointer means.** The window's viewport panel translates egui's
+events into `interaction::Event` and draws what `interaction::Outcome` reports; every decision — which
+of a press's three meanings applies, which view state a drag resolves against, what a modifier does
+mid-gesture — is here, and tested with no window. The precedence is stated in the module note and is
+the only real design decision in it: a **gizmo handle** wins over a **navigation binding**, which wins
+over a **selection**, and a selection resolves on *release* so that a press-and-drag is a rectangle
+rather than a click that happened to move.
+
+**`layout` is where the gizmo's geometry arrives from the runtime.** `editor-viewport-and-gizmos`
+assigns "gizmo geometry generation, depth handling, and screen-constant sizing" to the engine and
+names editor-side picking that disagrees with the render as a forbidden pattern. Both together mean
+the editor may not work out where the arrows are: it hit-tests the layout the runtime published with
+the frame. `layout::screen_constant` is the editor's check that the runtime kept the gizmo at a
+constant size as the camera pulled away — the failure `design.md` §5c calls "gradual enough that
+nobody files it", made into a test.
+
+**`entry` is the numeric panel from the reference**, and it writes through the same binding and the
+same transaction a drag does. A typed value is a manipulation; if it were not, precision work would be
+the one path that behaved differently.
+
+**What is deliberately not here: a gizmo the editor draws.** With no runtime publishing a layout there
+is no gizmo on screen, exactly as there is no image, and for the same reason — see the note below.
+
+## What M5.5 verified by running, and what it could not
+
+Verified in the window, on this machine, with the reference publisher attached:
+
+* the engine's frame in the viewport panel, at the transport's own rate, with the counters overlay
+  reporting what the transport announced, skipped and timed out;
+* camera navigation by middle-drag and wheel, and the orientation widget following the camera it
+  moved;
+* `W`/`E`/`R`/`T` reaching the transform-mode commands through the keymap, the registry and the
+  viewport service, and the viewport's own overlay reporting the change;
+* the `Viewport` menu deriving all thirty-seven viewport commands from the registry, with their
+  bindings.
+
+**Not verified, because nothing can answer it yet:**
+
+* **A gizmo on screen.** No producer publishes a `layout::GizmoLayout`. The editor's half is complete
+  and tested against a published layout — hit testing, hover before the press, the drag, the axis
+  lock, duplicate-and-transform, one transaction, exact restore — and
+  `cy-editor-shell`'s `panels::viewport::published_gizmo` is the one function that will return one.
+* **A click that selects.** `PickRequest` carries its own committed encoding and no message in
+  `cy-editor-protocol` yet carries it, so a click produces a request nobody answers and the viewport
+  says so. Resolving it needs one protocol variant, one SDK call and the engine's `pick_ray`, which is
+  already written (`src/servers/render/picking.h`).
+* Windows and macOS, in every respect.
 
 The engine's half is `src/servers/render/picking.h` and `src/servers/render/viewport_transport.h`,
 which are layer 2 there for the same reason this is layer 2 here: no device, no graph, no pass.
@@ -98,6 +155,14 @@ which is what makes it a decision rather than an artefact of how the measurement
   moves no bytes either, but the platform handle exchange, the fence and the layout transition are
   not modelled — they need a device, and this crate cannot have one. What is measured is the
   scheduling, which is what the queue finding is about.
+
+  **M5.5 measured the rest, in a crate that may have a device**: `cy-editor-viewport-transport`
+  imports the runtime's dma-buf ring and its timeline semaphores, and its README carries the
+  numbers — 1.07 ms mean latency with the runtime at 1000 Hz, no torn frame at any rate, and an
+  editor that keeps its frame rate through a `SIGKILL`ed runtime. That work is also what widened
+  `FrameImage::SharedTexture` from `{ handle }`: a description that cannot say the DRM modifier,
+  the driver's stride and the **allocation** size is a description another process cannot read the
+  image with.
 * **A real encoder.** The 64 KB case is a payload of that size, not a codec. An encoder's own latency
   is additive on top of these numbers and belongs with the transport implementation.
 * **A remote link.** The control-path spike measured propagation, jitter and loss for 40-byte

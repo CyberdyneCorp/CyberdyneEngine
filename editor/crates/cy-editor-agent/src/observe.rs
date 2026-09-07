@@ -31,10 +31,12 @@
 
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_protocol::FrameId;
+use cy_editor_services::editor::Editor;
 use cy_editor_viewport::math::{Bounds, Ray, Vec3};
+use cy_editor_viewport::overlay::Overlays;
 use cy_editor_viewport::picking::{PickIntent, PickRequest};
 use cy_editor_viewport::state::{CameraPose, Projection, ViewportRect};
-use cy_editor_viewport::transport::FrameImage;
+use cy_editor_viewport::transport::{Degradation, FrameImage, TransportKind};
 use cy_editor_viewport::viewmode::ViewMode;
 use cy_editor_viewport::viewport::{Viewport, ViewportId};
 
@@ -118,6 +120,124 @@ pub enum ObservationKind {
     DebugView(ViewMode),
 }
 
+/// The name an agent's own viewport is opened under.
+///
+/// One per connection rather than one per request, so that an agent that looks twice from the same
+/// camera does not open two.
+pub const AGENT_VIEWPORT: &str = "Agent";
+
+/// Look through a viewport, as the human's own panel does.
+///
+/// --- WHY THIS TOUCHES A VIEWPORT AT ALL, AND WHOSE ---------------------------------------------
+///
+/// The requirement is that the image be "produced by the engine's own renderer through the same path
+/// that produces the human's viewport", and that a request be able to state its camera. Those pull in
+/// opposite directions: moving the human's camera to answer an agent's question would take the
+/// editor away from the person using it, which "the editor stays usable while an agent works"
+/// forbids.
+///
+/// So an agent that states a camera, or that asks for a frame with no editor drawing in it, gets
+/// **its own viewport** — a viewport is a thing a person can open too, and opening one is not a
+/// capability a human lacks. An agent that states neither is looking at what the person is looking
+/// at, which is what "show me what the user sees" means, and it reads the human's viewport without
+/// changing it.
+///
+/// --- WHY A MISSING FRAME IS A REFUSAL RATHER THAN AN EMPTY IMAGE -------------------------------
+///
+/// `design.md` §2: the viewport "shows a message saying so — not an approximation". The same rule
+/// applies to an agent, more strongly: a person can see that a viewport is blank, and an agent
+/// evaluating a lighting change against a substituted image cannot.
+pub fn observe(
+    editor: &mut Editor,
+    request: &ViewportRequest,
+    agent_viewport: &mut Option<ViewportId>,
+) -> Result<Observation> {
+    let restated = request.camera.is_some() || request.projection.is_some();
+    let target = if restated || !request.include_overlays {
+        Some(agent_viewport_of(editor, agent_viewport, request))
+    } else {
+        None
+    };
+    let id = target.unwrap_or(request.viewport);
+    let viewport = editor.viewports.all().get(id).ok_or_else(|| {
+        Problem::new(
+            format!("observe {id}"),
+            "the editor has no viewport with that identity",
+        )
+        .with_remedy("read the play resource, or omit the viewport to use the focused one")
+    })?;
+
+    let overlays = viewport.overlays.active();
+    let frame = viewport.stream.latest().ok_or_else(|| {
+        Problem::new(
+            format!("observe {id}"),
+            "no frame has arrived from the runtime for this viewport",
+        )
+        .with_remedy(
+            "start a runtime and let it render at least one frame; the editor shows nothing rather \
+             than an approximation, and so does this",
+        )
+    })?;
+
+    let kind = if request.view_mode == ViewMode::Off {
+        if overlays.is_empty() {
+            ObservationKind::ShippingFrame
+        } else {
+            ObservationKind::EditorFrame
+        }
+    } else {
+        ObservationKind::DebugView(request.view_mode)
+    };
+    Ok(Observation {
+        frame: frame.frame,
+        image: frame.image.clone(),
+        kind,
+        includes_overlays: !overlays.is_empty(),
+        resolution: frame.state.viewport,
+        degraded: frame.degradation,
+        viewport: id,
+    })
+}
+
+/// The connection's own viewport, opened on first use and configured from the request.
+fn agent_viewport_of(
+    editor: &mut Editor,
+    held: &mut Option<ViewportId>,
+    request: &ViewportRequest,
+) -> ViewportId {
+    let id = match held {
+        Some(id) if editor.viewports.all().get(*id).is_some() => *id,
+        _ => {
+            // The same transport kind the human's viewport asks for, because the agent's image has
+            // to arrive by the same path. A transport that cannot provide it says so.
+            let opened = editor
+                .viewports
+                .all_mut()
+                .open(AGENT_VIEWPORT, TransportKind::SharedTexture);
+            *held = Some(opened);
+            opened
+        }
+    };
+    if let Some(viewport) = editor.viewports.all_mut().get_mut(id) {
+        if let Some(camera) = request.camera {
+            viewport.state.camera = camera;
+        }
+        if let Some(projection) = request.projection {
+            viewport.state.projection = projection;
+        }
+        viewport.state.viewport = request.resolution;
+        viewport.state.view_mode = request.view_mode;
+        viewport.overlays = if request.include_overlays {
+            Overlays::default()
+        } else {
+            // Nothing drawn over the image, which is what "an image intended to represent the
+            // shipping frame SHALL exclude them" comes to when the editor controls the viewport.
+            Overlays::none()
+        };
+    }
+    id
+}
+
 /// What an agent got back.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Observation {
@@ -134,6 +254,15 @@ pub struct Observation {
     /// The size that came back, which may be smaller than the size asked for when the runtime
     /// degraded rather than stalled.
     pub resolution: ViewportRect,
+    /// Why the image is not what the project actually looks like, when it is not.
+    ///
+    /// Carried rather than folded into [`Observation::kind`] because it answers a different
+    /// question: `kind` says what was drawn, and this says how well. An agent judging a lighting
+    /// change needs both, and a full-quality debug view and a degraded colour image are different
+    /// kinds of unusable.
+    pub degraded: Degradation,
+    /// Which viewport answered — the one asked for, or the connection's own when it stated a camera.
+    pub viewport: ViewportId,
 }
 
 impl Observation {
@@ -143,7 +272,65 @@ impl Observation {
     /// honesty flag exists at all.
     #[must_use]
     pub const fn represents_the_shipping_frame(&self) -> bool {
-        matches!(self.kind, ObservationKind::ShippingFrame) && !self.includes_overlays
+        matches!(self.kind, ObservationKind::ShippingFrame)
+            && !self.includes_overlays
+            && matches!(self.degraded, Degradation::None)
+    }
+
+    /// The image's bytes, when the delivery actually carried any.
+    ///
+    /// `None` for a surface and for a shared texture, which is not a failure: those are the
+    /// deliveries that cost no copy, and the pixels are on the device where the human's viewport
+    /// composites them. A transport that hands an agent bytes is one the runtime encoded for,
+    /// and asking for one is what [`ViewportRequest`] is for.
+    #[must_use]
+    pub fn bytes(&self) -> Option<&[u8]> {
+        match &self.image {
+            FrameImage::Encoded(bytes) => Some(bytes),
+            FrameImage::Surface(_) | FrameImage::SharedTexture { .. } => None,
+        }
+    }
+
+    /// What the bytes are, sniffed from the bytes rather than declared.
+    ///
+    /// Sniffed because the transport carries an image and not a format, and a format field nobody
+    /// filled in would be a lie with a type. Two signatures cover everything a runtime encodes
+    /// today, and anything else is reported as what it is: bytes of an unstated kind.
+    #[must_use]
+    pub fn media_type(&self) -> &'static str {
+        let Some(bytes) = self.bytes() else {
+            return "image/x-cyberdyne-device-image";
+        };
+        match bytes {
+            [0x89, b'P', b'N', b'G', ..] => "image/png",
+            [0xff, 0xd8, 0xff, ..] => "image/jpeg",
+            _ => "application/octet-stream",
+        }
+    }
+
+    /// One line a caller reads, saying what the image is and whether it can be judged.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        format!(
+            "{} from {} at {}x{}, frame {}, overlays {}, {}",
+            match self.kind {
+                ObservationKind::ShippingFrame => "the shipping frame".to_string(),
+                ObservationKind::EditorFrame => "the editor's frame".to_string(),
+                ObservationKind::DebugView(mode) =>
+                    format!("the {} debug view", mode.engine_name()),
+            },
+            self.viewport,
+            self.resolution.width,
+            self.resolution.height,
+            self.frame.as_u64(),
+            if self.includes_overlays { "in" } else { "out" },
+            match self.degraded {
+                Degradation::None => "full quality",
+                Degradation::ReducedRate => "rendered below the requested rate",
+                Degradation::ReducedResolution => "rendered below the viewport's pixel size",
+                Degradation::Paused => "not rendering; the last image stands",
+            }
+        )
     }
 }
 
@@ -220,6 +407,8 @@ mod tests {
             kind: ObservationKind::ShippingFrame,
             includes_overlays: false,
             resolution: ViewportRect::default(),
+            degraded: Degradation::None,
+            viewport: ViewportId::from_raw(1),
         };
         assert!(honest.represents_the_shipping_frame());
 
@@ -260,6 +449,8 @@ mod tests {
             kind: ObservationKind::EditorFrame,
             includes_overlays: true,
             resolution: ViewportRect::default(),
+            degraded: Degradation::None,
+            viewport: ViewportId::from_raw(1),
         };
         let request = pick_from(
             &observation,

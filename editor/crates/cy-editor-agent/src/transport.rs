@@ -7,10 +7,16 @@
 //! > replaceable without touching the projection above it. **No MCP type SHALL appear in the
 //! > editor's command, document, or view-model layers.**
 //!
-//! This module is that interface, and there is deliberately nothing behind it at M5. The shape is the
-//! one this project uses everywhere a third party will eventually appear: `cy::physics::PhysicsServer`
-//! before Jolt, `cy::shader::ShaderCompiler` before Slang, `cy::text::TextServer` before HarfBuzz.
-//! The seam is the deliverable; the library is the next one.
+//! This module is that interface. It was empty at M5 — the shape this project uses everywhere a third
+//! party will eventually appear: `cy::physics::PhysicsServer` before Jolt,
+//! `cy::shader::ShaderCompiler` before Slang, `cy::text::TextServer` before HarfBuzz. The seam is the
+//! deliverable; the library is the next one.
+//!
+//! At M5.5 `cy-editor-mcp` went behind it, and nothing in this file changed to let it — which is the
+//! evidence the shape was right. That crate is at layer 5, above this one, so **nothing in the
+//! editor's command, document or view-model layers can name an MCP type even by accident**: the
+//! dependency direction forbids it, and `cy-editor-app/tests/gating.rs` checks that no crate but the
+//! binary names the transport at all.
 //!
 //! # What the interface has to be shaped like, and why
 //!

@@ -24,3 +24,20 @@ add_subdirectory(04-character)
 # recipe; this directory contributes the two CTest entries that run it, which is also where task
 # 6.3's headless editor tests are declared. Its CMakeLists.txt says why it is shaped that way.
 add_subdirectory(05-editor-session)
+# M5.5's artefacts are TWO, and the split is the point rather than a convenience: a person operating
+# a window and an agent authoring through the same editor cannot be demonstrated by one program, and
+# pretending otherwise would repeat the mistake M5.5 exists to correct (design.md §5).
+#
+# samples/05b-editor-window opens the editor's window on a project and operates it with SYNTHESISED
+# X11 INPUT — real key presses and pointer drags through XTEST, delivered to the server rather than
+# to the application, so the editor has no idea it is not a hand on a keyboard. It therefore needs a
+# display, XTEST, a graphics device and two Python modules, and its directory declares nothing at all
+# where any of those is missing. It is the FIRST artefact in this tree that cannot run on a hosted
+# runner, which is why there is a second one.
+#
+# samples/05b-agent-authoring is that second one: an agent on the other end of `cyberdyne-editor
+# --mcp`, over the Model Context Protocol on standard input. No window, no device, and therefore the
+# half of the milestone that runs in continuous integration. Each directory's CMakeLists.txt argues
+# its own shape.
+add_subdirectory(05b-editor-window)
+add_subdirectory(05b-agent-authoring)

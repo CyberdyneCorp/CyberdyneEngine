@@ -187,11 +187,34 @@ def _print_failure(entry: criteria_module.PlanEntry, result: criteria_module.Res
         print(f"    declared by {', '.join(name.upper() for name in entry.declared_by)} — "
               f"one failure, not one per milestone")
     lines = [line for line in result.output.splitlines() if line.strip()]
-    for line in lines[-FAILURE_OUTPUT_LINES:]:
-        print(f"      | {line}")
-    if len(lines) > FAILURE_OUTPUT_LINES:
-        print(f"      | ... {len(lines) - FAILURE_OUTPUT_LINES} earlier line(s); "
-              f"reproduce with: {result.criterion.command}")
+    # THE LAST LINES ARE NOT WHERE THE FAILURE IS NAMED, and printing only those cost M5.5's gate a
+    # day: `just test-all` deliberately runs every suite after a failing one and prints its verdict
+    # at the end, so a `four-profiles` failure arrived with thirty lines of passing summary and no
+    # test name. The gate re-ran the suite 433 times without reproducing it, because it never knew
+    # what to re-run. Lines that NAME a failure are kept wherever they occur, in order, alongside the
+    # tail.
+    named = [index for index, line in enumerate(lines) if _names_a_failure(line)]
+    tail = range(max(0, len(lines) - FAILURE_OUTPUT_LINES), len(lines))
+    keep = sorted(set(named) | set(tail))
+    previous: int | None = None
+    for index in keep:
+        if previous is not None and index > previous + 1:
+            print(f"      | ... {index - previous - 1} line(s)")
+        print(f"      | {lines[index]}")
+        previous = index
+    if keep and keep[0] > 0:
+        print(f"      | reproduce with: {result.criterion.command}")
+
+
+#: Substrings that mean "this line names what failed". Deliberately small: a wider net would bury the
+#: tail it is meant to supplement, and every entry here is a marker some runner in this repository
+#: actually prints.
+FAILURE_MARKERS = ("FAILED", "FAIL:", "error:", "Errors while running", "SIGSEGV", "SIGTRAP",
+                   "Assertion", "panicked at")
+
+
+def _names_a_failure(line: str) -> bool:
+    return any(marker in line for marker in FAILURE_MARKERS)
 
 
 def _list_criteria(plan: criteria_module.Plan, as_json: bool) -> int:

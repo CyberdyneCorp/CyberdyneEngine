@@ -37,8 +37,12 @@ use cy_editor_core::value::Value;
 use cy_editor_services::editor::Editor;
 
 use crate::budget::{Budget, BudgetReport, Spending};
+use crate::conflict::{Claim, Conflict};
+use crate::observe::{Observation, ViewportRequest, observe};
 use crate::recording::{RecordedInvocation, Recording};
-use crate::tool::{Exclusions, ToolDescriptor, project};
+use crate::resource::{Resource, ResourceKind, Resources};
+use crate::tool::{ToolDescriptor, project};
+use cy_editor_viewport::viewmode::{ALL_VIEW_MODES, ViewMode};
 
 /// Who is connected.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -113,17 +117,31 @@ pub struct Grant {
     pub remaining: u32,
 }
 
+/// What a read produced.
+///
+/// Two shapes because a resource is text and an observation is an image, and a transport has to
+/// carry them differently. They are one enum rather than two calls because they answer one question.
+#[derive(Clone, PartialEq, Debug)]
+pub enum Reading {
+    /// Something the editor can say in words.
+    Text(Resource),
+    /// Something it can only show.
+    Image(Box<Observation>),
+}
+
 /// One agent's connection to the editor.
 pub struct AgentSession {
     identity: AgentIdentity,
     intent: String,
     scope: Scope,
-    exclusions: Exclusions,
     spending: Spending,
     grants: Vec<Grant>,
     recording: Recording,
     paused: bool,
     revoked: bool,
+    claim: Option<Claim>,
+    viewport: Option<cy_editor_viewport::viewport::ViewportId>,
+    running: Vec<std::sync::Arc<cy_editor_core::progress::Operation>>,
 }
 
 impl AgentSession {
@@ -148,11 +166,13 @@ impl AgentSession {
             recording: Recording::new(starting_revision, intent.clone()),
             intent,
             scope,
-            exclusions: Exclusions::new(),
             spending: Spending::new(budget, now_millis),
             grants: Vec::new(),
             paused: false,
             revoked: false,
+            claim: None,
+            viewport: None,
+            running: Vec::new(),
         }
     }
 
@@ -177,17 +197,6 @@ impl AgentSession {
         self.intent = intent.into();
     }
 
-    /// The commands this connection is not offered, and why.
-    #[must_use]
-    pub const fn exclusions(&self) -> &Exclusions {
-        &self.exclusions
-    }
-
-    /// The commands this connection is not offered, mutably.
-    pub const fn exclusions_mut(&mut self) -> &mut Exclusions {
-        &mut self.exclusions
-    }
-
     /// What the connection may do.
     #[must_use]
     pub const fn scope(&self) -> &Scope {
@@ -198,6 +207,31 @@ impl AgentSession {
     #[must_use]
     pub fn budget(&self, now_millis: u64) -> BudgetReport {
         self.spending.report(now_millis)
+    }
+
+    /// The background work this connection started that has not settled.
+    ///
+    /// `editor-agent-interface` bounds "the number of concurrent operations", and a bound needs
+    /// something to count. An operation is counted from the invocation that started it until it
+    /// settles, which is measured from the operation itself rather than remembered — a session that
+    /// kept its own idea of what was running would eventually disagree with the operation service
+    /// about it, and disagree in the direction that leaks slots.
+    #[must_use]
+    pub fn operations_running(&self) -> usize {
+        self.running
+            .iter()
+            .filter(|operation| !operation.state().is_settled())
+            .count()
+    }
+
+    /// Give back the slots held by work that has finished.
+    fn settle(&mut self) {
+        let before = self.running.len();
+        self.running
+            .retain(|operation| !operation.state().is_settled());
+        for _ in self.running.len()..before {
+            self.spending.end_operation();
+        }
     }
 
     /// The session so far.
@@ -254,9 +288,166 @@ impl AgentSession {
     }
 
     /// The tools this connection sees.
+    ///
+    /// Every registered command, including the ones it may not invoke, each carrying why. The scope
+    /// is not applied here on purpose: a tool an agent cannot invoke *under its current grant* is
+    /// still a tool a human could widen the grant for, and hiding it would make the refusal
+    /// unactionable.
     #[must_use]
     pub fn tools(&self, registry: &Registry) -> Vec<ToolDescriptor> {
-        project(registry, &self.exclusions)
+        project(registry)
+    }
+
+    /// Everything this connection can read, including its own budget.
+    ///
+    /// The budget is listed beside the editor's own resources rather than answered by a separate
+    /// call, so that "the interface SHALL report those limits to the agent" is satisfied by the
+    /// mechanism the agent is already using rather than by one more thing to know about.
+    #[must_use]
+    pub fn resources(&self, editor: &Editor) -> Vec<(String, ResourceKind, String)> {
+        let mut listing = Resources::list(editor);
+        listing.push((
+            "budget:".to_string(),
+            ResourceKind::Budget,
+            "What this connection may spend, what it has spent, and when the window resets."
+                .to_string(),
+        ));
+        listing.push((
+            "viewport:".to_string(),
+            ResourceKind::Viewport,
+            "The engine's rendered image with nothing drawn over it — what the project will \
+             actually look like. Costs one of this connection's renders."
+                .to_string(),
+        ));
+        listing.push((
+            "viewport:overlays".to_string(),
+            ResourceKind::Viewport,
+            "The same image with the editor's own drawing on it: gizmos, selection outlines and \
+             the overlays. Not what the project looks like."
+                .to_string(),
+        ));
+        listing.push((
+            "viewport:Normals".to_string(),
+            ResourceKind::Viewport,
+            "A debug visualisation. Any of the engine's view modes may be named after the colon; \
+             read the tools for the full list."
+                .to_string(),
+        ));
+        listing
+    }
+
+    /// Read one resource, by its address.
+    ///
+    /// `budget:` is this connection's; everything else is the editor's, read through the same
+    /// services its own panels read.
+    pub fn read_resource(&self, editor: &Editor, uri: &str, now_millis: u64) -> Result<Resource> {
+        if uri == "budget:" {
+            return Ok(Resource {
+                uri: uri.to_string(),
+                kind: ResourceKind::Budget,
+                description: "This connection's limits and what is left of them.".to_string(),
+                content: format!(
+                    "{}\nagent: {}\nsession: {}\nintent: {}\nscope: {}\n",
+                    self.budget(now_millis).describe(),
+                    self.identity.agent,
+                    self.identity.session,
+                    self.intent,
+                    self.scope.name
+                ),
+            });
+        }
+        Resources::read(editor, uri)
+    }
+
+    /// Read anything this connection can see, including what it can look at.
+    ///
+    /// The one entry point a transport needs. `viewport:` addresses cost a render and are answered
+    /// with an image; everything else is text and costs nothing. They are one call rather than two
+    /// because they are one question — "show me X" — and a transport that had to know which kind an
+    /// address was would be a second place the read surface is enumerated.
+    ///
+    /// The addresses are `viewport:` for the shipping frame, `viewport:overlays` for the editor's
+    /// own image, and `viewport:<debug view>` for a buffer — the same names
+    /// `cy_editor_viewport::viewmode::ViewMode::engine_name` gives, so a caller that read the
+    /// `viewport.view-mode.*` commands already knows them.
+    pub fn read(&mut self, editor: &mut Editor, uri: &str, now_millis: u64) -> Result<Reading> {
+        let Some(rest) = uri.strip_prefix("viewport:") else {
+            return self
+                .read_resource(editor, uri, now_millis)
+                .map(Reading::Text);
+        };
+        let mut request = ViewportRequest::shipping_frame(editor.viewports.focused());
+        match rest {
+            "" => {}
+            "overlays" => request.include_overlays = true,
+            name => {
+                request.view_mode = ALL_VIEW_MODES
+                    .into_iter()
+                    .find(|mode| mode.engine_name().eq_ignore_ascii_case(name))
+                    .ok_or_else(|| {
+                        Problem::new(
+                            format!("read {uri:?}"),
+                            format!("there is no debug view called {name:?}"),
+                        )
+                        .with_remedy(format!(
+                            "the views are: {}",
+                            ALL_VIEW_MODES
+                                .into_iter()
+                                .map(ViewMode::engine_name)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ))
+                    })?;
+            }
+        }
+        self.observe(editor, &request, now_millis)
+            .map(|observation| Reading::Image(Box::new(observation)))
+    }
+
+    /// Stake a claim on the objects this connection is about to work on.
+    ///
+    /// `editor-agent-interface`: "Where a human action and an agent action conflict, **the human
+    /// action SHALL win**, and the agent SHALL be told its operation was superseded and why." A
+    /// claim is what makes "conflict" answerable: without one, an agent's edit and a human's edit
+    /// are two edits in one history and neither is superseded by anything. See [`crate::conflict`].
+    pub fn claim(&mut self, editor: &Editor, nodes: &[cy_editor_core::ids::NodeId]) -> Result<()> {
+        self.claim = Some(Claim::stake(editor, nodes)?);
+        Ok(())
+    }
+
+    /// Give the claim up, for an agent that has finished with those objects.
+    pub fn release_claim(&mut self) {
+        self.claim = None;
+    }
+
+    /// What the connection is working on, when it has said.
+    #[must_use]
+    pub const fn claimed(&self) -> Option<&Claim> {
+        self.claim.as_ref()
+    }
+
+    /// Look through a viewport.
+    ///
+    /// Charged against the render half of the budget, which is separate from the invocation half
+    /// because a render costs a frame of the editor's own budget and an invocation usually costs
+    /// nothing. `editor-agent-interface` requires an agent's render to be "scheduled against the same
+    /// frame budget the editor's own viewport holds"; this is the ceiling on how often one may be
+    /// asked for, and `cy_editor_viewport::budget` is the scheduling.
+    pub fn observe(
+        &mut self,
+        editor: &mut Editor,
+        request: &ViewportRequest,
+        now_millis: u64,
+    ) -> Result<Observation> {
+        if self.revoked {
+            return Err(Problem::new(
+                "observe a viewport",
+                "this connection's access has been revoked",
+            )
+            .with_remedy("open a new connection; the human at the interface decides"));
+        }
+        self.spending.charge_render(now_millis)?;
+        observe(editor, request, &mut self.viewport)
     }
 
     /// Invoke a command as this agent.
@@ -316,15 +507,12 @@ impl AgentSession {
         result
     }
 
-    fn attempt(
-        &mut self,
-        editor: &mut Editor,
-        registry: &Registry,
-        confirmer: &mut dyn Confirmer,
-        command: &str,
-        arguments: &Arguments,
-        now_millis: u64,
-    ) -> Result<Outcome> {
+    /// Whether this connection may act at all, before any particular command is considered.
+    ///
+    /// Revocation, pausing and supersession, in that order, and all three before anything is spent:
+    /// an operation that was never going to happen must not cost the connection the invocation it
+    /// could have used on the corrected one.
+    fn may_act(&mut self, editor: &Editor, command: &str) -> Result<()> {
         if self.revoked {
             return Err(Problem::new(
                 format!("invoke {command}"),
@@ -338,7 +526,41 @@ impl AgentSession {
                     .with_remedy("wait: the human at the interface paused it and can resume it"),
             );
         }
-        if let Some(reason) = self.exclusions.reason(command) {
+        if let Some(claim) = &self.claim
+            && let Conflict::Superseded { by, what, nodes } = claim.check(editor)
+        {
+            self.claim = None;
+            return Err(Problem::new(
+                format!("invoke {command}"),
+                format!(
+                    "a person changed {} of the objects this connection claimed, so the operation \
+                     was superseded by {what:?} ({by})",
+                    nodes.len()
+                ),
+            )
+            .with_remedy(
+                "read the document again and claim the objects afresh; the human's change stands",
+            ));
+        }
+        Ok(())
+    }
+
+    fn attempt(
+        &mut self,
+        editor: &mut Editor,
+        registry: &Registry,
+        confirmer: &mut dyn Confirmer,
+        command: &str,
+        arguments: &Arguments,
+        now_millis: u64,
+    ) -> Result<Outcome> {
+        self.may_act(editor, command)?;
+
+        let metadata = registry.metadata(command).ok_or_else(|| {
+            Problem::not_found(format!("a command named {command:?}"))
+                .with_remedy("list the tools to see what there is")
+        })?;
+        if let Some(reason) = metadata.agent_exclusion() {
             return Err(Problem::new(
                 format!("invoke {command}"),
                 format!("this command is not offered to agents: {reason}"),
@@ -346,13 +568,41 @@ impl AgentSession {
             .with_remedy("ask a person to do it, or use a command that is offered"));
         }
 
-        let metadata = registry.metadata(command).ok_or_else(|| {
-            Problem::not_found(format!("a command named {command:?}"))
-                .with_remedy("list the tools to see what there is")
-        })?;
-        let effect = metadata.effect;
+        // The class this INVOCATION has, which for a command that computes it is narrower than the
+        // one it declares — see `design.md` §4 on writing source. Asking for the declared class
+        // here would prompt a human for an edit undo already covers, which is the habit the
+        // confirmation rule exists to avoid.
+        let effect = registry
+            .effect_of(command, editor, arguments)
+            .unwrap_or(metadata.effect);
+
+        // What this connection started and has since finished gives its slots back, before anything
+        // asks for one. Doing it here rather than on a timer means the accounting is exact at every
+        // point a decision is made, and costs nothing when there is no background work.
+        self.settle();
+
+        // The scope is checked BEFORE anybody is asked to confirm. `Registry::invoke` checks it too
+        // and would refuse the same call a moment later, but a moment later is after a human has
+        // been prompted about an operation the connection was never allowed to perform — which
+        // trains the person to approve without reading, which is the habit
+        // `editor-agent-interface`'s confirmation rule exists to prevent.
+        self.scope.admit_effect(metadata, effect)?;
 
         self.spending.charge_invocation(now_millis)?;
+
+        // A concurrency slot is taken BEFORE the invocation and given back immediately if it turned
+        // out to start no background work.
+        //
+        // Reserving rather than counting afterwards is what makes the bound a bound: nothing can
+        // say in advance whether a command will start a build, so an accounting that only charged
+        // once work existed could never refuse the invocation that exceeded the ceiling — it could
+        // only notice. A read is exempt and always is: an agent has to be able to poll the
+        // operations resource to find out when its own work finished, and a bound that blocked that
+        // would deadlock the very agent it was protecting the editor from.
+        let reserves = effect != EffectClass::Read;
+        if reserves {
+            self.spending.begin_operation(now_millis)?;
+        }
 
         if effect.needs_confirmation() && !self.spend_grant(effect) {
             let confirmation = Confirmation {
@@ -366,6 +616,9 @@ impl AgentSession {
                 },
             };
             if confirmer.confirm(&confirmation) == Decision::Refuse {
+                if reserves {
+                    self.spending.end_operation();
+                }
                 return Err(Problem::new(
                     format!("invoke {command}"),
                     format!(
@@ -389,8 +642,41 @@ impl AgentSession {
             self.identity.session.clone(),
             self.intent.clone(),
         ));
+        let before: Vec<*const cy_editor_core::progress::Operation> = editor
+            .operations
+            .all()
+            .iter()
+            .map(std::sync::Arc::as_ptr)
+            .collect();
         let outcome = editor.invoke(registry, command, &self.scope, arguments);
         editor.acting_as(previous);
+
+        // Whatever this invocation started is this connection's until it settles. Compared by
+        // pointer rather than by label, because two builds of the same module have the same label
+        // and are different operations.
+        let started: Vec<_> = editor
+            .operations
+            .all()
+            .iter()
+            .filter(|operation| {
+                !before.contains(&std::sync::Arc::as_ptr(operation))
+                    && !operation.state().is_settled()
+            })
+            .map(std::sync::Arc::clone)
+            .collect();
+        if reserves {
+            if started.is_empty() {
+                // It started nothing, so the slot it reserved goes straight back. Holding it would
+                // make an agent that only ever edits run out of concurrency it never used.
+                self.spending.end_operation();
+            } else {
+                // One slot was reserved and one is kept, whichever of the started operations is
+                // held: an invocation that started three would be a command doing something this
+                // accounting does not model, and taking three slots for it would be inventing a
+                // rule nobody wrote down.
+                self.running.push(started[0].clone());
+            }
+        }
         outcome
     }
 

@@ -21,6 +21,8 @@
 
 #include "jolt_common.h"
 
+#include <atomic>
+
 // clang-format off
 #include <Jolt/Core/FixedSizeFreeList.h>
 #include <Jolt/Core/JobSystemWithBarrier.h>
@@ -61,6 +63,16 @@ private:
 
     cy::jobs::JobSystem* jobs_;
     JPH::FixedSizeFreeList<Job> pool_;
+
+    /// Submissions that have reached an engine worker and have not finished with the job yet.
+    ///
+    /// THE DESTRUCTOR WAITS ON THIS, AND THAT IS THE WHOLE REASON IT EXISTS. `QueueJob` hands a job
+    /// to another thread, which calls `Execute()` and `Release()` on it — and `Release()` reaches
+    /// `FreeJob`, which touches `pool_`. A destructor that returned while one of those was in
+    /// flight would destroy the free list underneath it. Found by M5.5's gate at about one run in
+    /// forty, as a heap corruption inside Jolt with no physics call on the stack, which is the
+    /// least diagnosable shape this failure could take.
+    std::atomic<JPH::uint32> in_flight_{0};
 };
 
 }  // namespace cy::physics::jolt

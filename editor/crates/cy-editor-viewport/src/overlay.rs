@@ -242,6 +242,284 @@ impl OrientationWidget {
     pub fn activate(self, navigator: &Navigator, state: &mut ViewState, axis: ViewAxis) {
         navigator.snap_to_axis(state, axis);
     }
+
+    /// Perform one of the widget's gestures.
+    ///
+    /// **The signature is the requirement.** A [`Navigator`], a [`ViewState`] and nothing else: no
+    /// document, no selection, no transform binding, no actor. `docs/design/images/scene-orientation-
+    /// gizmo.png` puts four interactions on this widget — click an axis, drag to orbit, scroll to
+    /// zoom, modifier-drag to pan — and every one of them is a camera move, so *none* of them can
+    /// open a transaction. That is why this returns a [`ViewPreset`] rather than a `Result`: there is
+    /// no failure a camera move can have, and nothing for a caller to record.
+    pub fn perform(
+        self,
+        navigator: &mut Navigator,
+        state: &mut ViewState,
+        gesture: WidgetGesture,
+    ) -> ViewPreset {
+        match gesture {
+            WidgetGesture::Choose(preset) => preset.apply(navigator, state),
+            WidgetGesture::ClickAxis(axis) => {
+                navigator.snap_to_axis(state, axis);
+            }
+            WidgetGesture::Cycle { forward } => {
+                let next = if forward {
+                    ViewPreset::of_view(state).next()
+                } else {
+                    ViewPreset::of_view(state).previous()
+                };
+                next.apply(navigator, state);
+            }
+            WidgetGesture::Orbit { dx, dy } => navigator.orbit(state, dx, dy),
+            WidgetGesture::Pan { dx, dy } => navigator.pan(state, dx, dy),
+            WidgetGesture::Zoom { notches } => navigator.zoom(state, notches),
+        }
+        ViewPreset::of_view(state)
+    }
+}
+
+/// One of the seven views the widget offers.
+///
+/// Seven, from the reference: perspective, top, bottom, front, back, left and right. Six of them are
+/// [`ViewAxis`] under another name and the seventh is the absence of one, which is why this is an
+/// enumeration of its own rather than an `Option<ViewAxis>` — the widget shows *the current view as
+/// cycleable text*, and "Persp" has to be one of the values that text can take.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ViewPreset {
+    /// A three-quarter perspective view. The one a scene is authored from.
+    #[default]
+    Perspective,
+    /// Looking down.
+    Top,
+    /// Looking up.
+    Bottom,
+    /// Looking along −Z.
+    Front,
+    /// Looking along +Z.
+    Back,
+    /// Looking along +X.
+    Left,
+    /// Looking along −X.
+    Right,
+}
+
+impl ViewPreset {
+    /// The seven, in the order the widget's list shows them.
+    pub const ALL: [ViewPreset; 7] = [
+        ViewPreset::Perspective,
+        ViewPreset::Top,
+        ViewPreset::Bottom,
+        ViewPreset::Front,
+        ViewPreset::Back,
+        ViewPreset::Left,
+        ViewPreset::Right,
+    ];
+
+    /// The short text the widget draws under the cube — "Persp", "Top".
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            ViewPreset::Perspective => "Persp",
+            ViewPreset::Top => "Top",
+            ViewPreset::Bottom => "Bottom",
+            ViewPreset::Front => "Front",
+            ViewPreset::Back => "Back",
+            ViewPreset::Left => "Left",
+            ViewPreset::Right => "Right",
+        }
+    }
+
+    /// The identifier a command and a keymap use.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            ViewPreset::Perspective => "perspective",
+            ViewPreset::Top => "top",
+            ViewPreset::Bottom => "bottom",
+            ViewPreset::Front => "front",
+            ViewPreset::Back => "back",
+            ViewPreset::Left => "left",
+            ViewPreset::Right => "right",
+        }
+    }
+
+    /// The preset with this identifier.
+    #[must_use]
+    pub fn of_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|preset| preset.id() == id)
+    }
+
+    /// The axis this preset looks along, or `None` for the perspective view.
+    #[must_use]
+    pub const fn axis(self) -> Option<ViewAxis> {
+        match self {
+            ViewPreset::Perspective => None,
+            ViewPreset::Top => Some(ViewAxis::Top),
+            ViewPreset::Bottom => Some(ViewAxis::Bottom),
+            ViewPreset::Front => Some(ViewAxis::Front),
+            ViewPreset::Back => Some(ViewAxis::Back),
+            ViewPreset::Left => Some(ViewAxis::Left),
+            ViewPreset::Right => Some(ViewAxis::Right),
+        }
+    }
+
+    /// The next in the list, wrapping. What the `›` beside the view text does.
+    #[must_use]
+    pub fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|preset| *preset == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    /// The previous, wrapping.
+    #[must_use]
+    pub fn previous(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|preset| *preset == self)
+            .unwrap_or(0);
+        Self::ALL[(index + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+
+    /// Point the camera at this view.
+    ///
+    /// **The projection is not changed.** Every other editor switches to orthographic on an axis view
+    /// and it is the one thing users complain about afterwards, because the switch is invisible until
+    /// something looks wrong — and because judging a scene's appearance through a projection the game
+    /// will never use is exactly what the viewport exists not to do. Projection is its own control,
+    /// in the viewport's own chrome, and it stays where the user put it.
+    pub fn apply(self, navigator: &Navigator, state: &mut ViewState) {
+        if let Some(axis) = self.axis() {
+            navigator.snap_to_axis(state, axis);
+        } else {
+            // The three-quarter view a scene is authored from, at the distance the camera is already
+            // at, so that "back to perspective" does not also mean "somewhere else".
+            let pivot = navigator.pivot(state);
+            let distance = navigator.pivot_distance();
+            let direction = crate::math::Vec3::new(0.559, 0.408, 0.722);
+            state.camera.position = pivot + direction * distance;
+            state.camera.rotation = crate::navigation::look_along(-direction);
+        }
+    }
+
+    /// Which preset the camera is currently in, for the widget's text.
+    ///
+    /// A view is one of the six axis views only when it is *exactly* one — within a degree — because
+    /// text that said "Top" for a view a degree off top would be a widget that lies about the one
+    /// thing it exists to report.
+    #[must_use]
+    pub fn of_view(state: &ViewState) -> Self {
+        let forward = state.camera.forward();
+        for preset in Self::ALL {
+            let Some(axis) = preset.axis() else {
+                continue;
+            };
+            if forward.dot(axis.forward()) > AXIS_VIEW_COSINE {
+                return preset;
+            }
+        }
+        ViewPreset::Perspective
+    }
+}
+
+/// How near an axis a view must be to be reported as that axis view: one degree.
+const AXIS_VIEW_COSINE: f32 = 0.999_847_7;
+
+/// Something a person did to the orientation widget.
+///
+/// A closed set of five, all of them camera moves. There is no variant that names an object, and a
+/// sixth that did would have to explain why the widget the specification calls "not a manipulator" is
+/// manipulating something.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum WidgetGesture {
+    /// A click on one of the axis stubs: snap the camera to that view.
+    ClickAxis(ViewAxis),
+    /// A choice from the preset list, or a click on the view text's arrows.
+    Choose(ViewPreset),
+    /// The `‹` and `›` beside the current view text.
+    Cycle {
+        /// Forward through [`ViewPreset::ALL`], or backward.
+        forward: bool,
+    },
+    /// A drag anywhere on the widget: orbit.
+    Orbit {
+        /// Pixels moved horizontally.
+        dx: f32,
+        /// And vertically.
+        dy: f32,
+    },
+    /// A modifier-drag: pan.
+    Pan {
+        /// Pixels moved horizontally.
+        dx: f32,
+        /// And vertically.
+        dy: f32,
+    },
+    /// The wheel over the widget: zoom.
+    Zoom {
+        /// Wheel notches, positive toward the subject.
+        notches: f32,
+    },
+}
+
+/// How prominent the widget is right now.
+///
+/// Four, from the reference's "Visual States" row. `Disabled` is the one an implementation forgets,
+/// and it is the one that matters most: a viewport looking through a game camera during play has an
+/// orientation widget that cannot move the camera, and a widget that looked live and did nothing
+/// would be worse than one that says so.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum WidgetState {
+    /// Nothing is happening to it.
+    #[default]
+    Normal,
+    /// The pointer is over it, or over one of its stubs.
+    Hovered,
+    /// It is being dragged, or a stub is being pressed.
+    Active,
+    /// The camera it would move is not the editor's to move.
+    Disabled,
+}
+
+impl WidgetState {
+    /// Every state, for a theme check that draws all four.
+    pub const ALL: [WidgetState; 4] = [
+        WidgetState::Normal,
+        WidgetState::Hovered,
+        WidgetState::Active,
+        WidgetState::Disabled,
+    ];
+
+    /// Whether a gesture is accepted in this state.
+    #[must_use]
+    pub const fn accepts_input(self) -> bool {
+        !matches!(self, WidgetState::Disabled)
+    }
+}
+
+/// The smallest the widget may be drawn, in logical pixels.
+pub const WIDGET_MINIMUM_SIZE: f32 = 56.0;
+
+/// The largest.
+pub const WIDGET_MAXIMUM_SIZE: f32 = 96.0;
+
+/// The size it is drawn at unless somebody has changed it.
+pub const WIDGET_DEFAULT_SIZE: f32 = 72.0;
+
+/// The range is a range, checked where it is declared rather than in a test that could be deleted.
+const _: () = assert!(WIDGET_MINIMUM_SIZE <= WIDGET_DEFAULT_SIZE);
+const _: () = assert!(WIDGET_DEFAULT_SIZE <= WIDGET_MAXIMUM_SIZE);
+
+/// A widget size inside the range the visual language fixes.
+///
+/// **Constant screen size**, so this is a number of logical pixels rather than a factor of anything:
+/// a widget that scaled with the camera would be hardest to read exactly when orientation is hardest
+/// to judge, which is the same failure the transform gizmo's screen-constant sizing prevents.
+#[must_use]
+pub fn widget_size(requested: f32) -> f32 {
+    requested.clamp(WIDGET_MINIMUM_SIZE, WIDGET_MAXIMUM_SIZE)
 }
 
 /// A viewport image captured for reference or for a defect report.
@@ -320,6 +598,125 @@ impl Capture {
 mod tests {
     use super::*;
     use crate::math::Vec3;
+
+    /// A document with one node, to prove a widget gesture cannot touch one.
+    fn a_document_with_a_node() -> (cy_editor_documents::Document, cy_editor_core::ids::NodeId) {
+        use cy_editor_core::Actor;
+        let mut document = cy_editor_documents::Document::new("worlds/city.cyworld");
+        let node = document
+            .with_transaction("Populate", Actor::human("designer"), |document| {
+                document.create_node(None)
+            })
+            .expect("a node");
+        (document, node)
+    }
+
+    #[test]
+    fn the_widget_offers_seven_presets_and_cycles_through_all_of_them() {
+        // `docs/design/images/scene-orientation-gizmo.png`: "Seven presets — perspective, top,
+        // bottom, front, back, left, right — and the current view shown as cycleable text."
+        assert_eq!(ViewPreset::ALL.len(), 7);
+        let mut seen = std::collections::BTreeSet::new();
+        let mut preset = ViewPreset::default();
+        for _ in 0..ViewPreset::ALL.len() {
+            seen.insert(preset.label());
+            preset = preset.next();
+        }
+        assert_eq!(seen.len(), 7, "cycling forward does not reach every view");
+        assert_eq!(preset, ViewPreset::default(), "cycling does not wrap");
+        for preset in ViewPreset::ALL {
+            assert_eq!(preset.next().previous(), preset);
+            assert_eq!(ViewPreset::of_id(preset.id()), Some(preset));
+        }
+    }
+
+    #[test]
+    fn clicking_a_preset_points_the_camera_and_the_text_then_reads_that_preset() {
+        let navigator = Navigator::new();
+        let mut state = ViewState::new();
+        for preset in ViewPreset::ALL {
+            preset.apply(&navigator, &mut state);
+            assert_eq!(
+                ViewPreset::of_view(&state),
+                preset,
+                "after choosing {} the widget reads {}",
+                preset.label(),
+                ViewPreset::of_view(&state).label()
+            );
+        }
+        // And a view a degree off an axis is honestly reported as perspective rather than as the
+        // axis it nearly is.
+        ViewPreset::Top.apply(&navigator, &mut state);
+        // Vertically: orbiting horizontally from a top view turns about the axis the camera is
+        // already looking down, which changes nothing — the one case a test would pass by accident.
+        navigator.orbit(&mut state, 0.0, 40.0);
+        assert_eq!(ViewPreset::of_view(&state), ViewPreset::Perspective);
+    }
+
+    #[test]
+    fn every_widget_gesture_moves_the_camera_and_none_of_them_touches_a_document() {
+        // "Dragging the widget orbits the camera, never the selection, and produces no transaction."
+        // The proof is structural — `perform` has no document — so the test drives every gesture and
+        // then asserts the document is untouched and no transaction was left open.
+        let (document, _node) = a_document_with_a_node();
+        let revision = document.revision();
+        let entries = document.history().entries().len();
+
+        let widget = OrientationWidget;
+        let mut navigator = Navigator::new();
+        let mut state = ViewState::new();
+        let before = state.camera;
+        for gesture in [
+            WidgetGesture::ClickAxis(ViewAxis::Top),
+            WidgetGesture::Choose(ViewPreset::Front),
+            WidgetGesture::Cycle { forward: true },
+            WidgetGesture::Cycle { forward: false },
+            WidgetGesture::Orbit {
+                dx: 30.0,
+                dy: -12.0,
+            },
+            WidgetGesture::Pan { dx: 8.0, dy: 4.0 },
+            WidgetGesture::Zoom { notches: 2.0 },
+        ] {
+            let reported = widget.perform(&mut navigator, &mut state, gesture);
+            assert_eq!(reported, ViewPreset::of_view(&state));
+        }
+        assert_ne!(
+            before.position.to_array().map(f32::to_bits),
+            state.camera.position.to_array().map(f32::to_bits),
+            "the camera did not move"
+        );
+        assert_eq!(
+            document.revision(),
+            revision,
+            "a gesture changed a document"
+        );
+        assert_eq!(document.history().entries().len(), entries);
+        assert!(!document.is_transaction_open());
+    }
+
+    #[test]
+    fn the_widget_is_drawn_between_fifty_six_and_ninety_six_pixels_and_defaults_to_seventy_two() {
+        assert_eq!(
+            widget_size(WIDGET_DEFAULT_SIZE).to_bits(),
+            72.0_f32.to_bits()
+        );
+        assert_eq!(widget_size(10.0).to_bits(), WIDGET_MINIMUM_SIZE.to_bits());
+        assert_eq!(widget_size(400.0).to_bits(), WIDGET_MAXIMUM_SIZE.to_bits());
+    }
+
+    #[test]
+    fn a_disabled_widget_refuses_input_and_the_other_three_states_accept_it() {
+        assert_eq!(WidgetState::ALL.len(), 4);
+        assert!(!WidgetState::Disabled.accepts_input());
+        for state in [
+            WidgetState::Normal,
+            WidgetState::Hovered,
+            WidgetState::Active,
+        ] {
+            assert!(state.accepts_input(), "{state:?}");
+        }
+    }
 
     #[test]
     fn every_overlay_is_individually_toggleable() {

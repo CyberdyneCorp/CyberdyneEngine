@@ -30,6 +30,9 @@
 //! | [`navigation`] | 4.1 | Orbit, pan, zoom, fly, focus, axis snap; bindings and presets |
 //! | [`picking`] | 4.2 | Pick requests against a presented frame, and the selection they produce |
 //! | [`gizmo`] | 4.3 | Manipulation from captured drag-start state, as exactly one transaction |
+//! | [`layout`] | 2.4 | Where the runtime drew the gizmo's handles, and the hit test over them |
+//! | [`entry`] | 2.4.6 | Per-axis numeric entry, as the same one transaction a drag produces |
+//! | [`interaction`] | 2.2–2.4 | What a pointer and a keyboard do to a viewport, with no toolkit |
 //! | [`snapping`] | 4.3 | Grid, angle, scale and surface snapping; numeric entry with units and expressions |
 //! | [`viewmode`] | 4.4 | The engine's debug views, described well enough for a palette |
 //! | [`overlay`] | 4.4 | Overlays, the orientation widget, and what a capture contains |
@@ -65,7 +68,10 @@
 #![forbid(unsafe_code)]
 
 pub mod budget;
+pub mod entry;
 pub mod gizmo;
+pub mod interaction;
+pub mod layout;
 pub mod math;
 pub mod navigation;
 pub mod overlay;
@@ -79,7 +85,10 @@ pub mod viewmode;
 pub mod viewport;
 
 pub use budget::{Cadence, ViewportBudget};
-pub use gizmo::{Drag, GizmoMode, GizmoSpace, Pivot, TransformBinding};
+pub use entry::{Field, Fields, Row};
+pub use gizmo::{AxisLock, Drag, DragInput, GizmoMode, GizmoSpace, Pivot, TransformBinding};
+pub use interaction::{Interaction, Outcome};
+pub use layout::{GizmoLayout, HandleSpot};
 pub use math::{Bounds, Quat, Ray, Vec3};
 pub use navigation::{Bindings, NavigationPreset, Navigator, ViewAxis};
 pub use picking::{PickIntent, PickRequest, PickResponse, SelectionMode};

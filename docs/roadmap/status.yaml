@@ -246,9 +246,9 @@ capabilities:
     milestone: M5
     change: implement-m5-authorable
   editor-agent-interface:
-    tier: seed
-    milestone: M5
-    change: implement-m5-authorable
+    tier: working
+    milestone: M5B
+    change: implement-m5b-operable
   editor-architecture:
     tier: seed
     milestone: M5
@@ -262,13 +262,13 @@ capabilities:
     milestone: M5
     change: implement-m5-authorable
   editor-ui-ux:
-    tier: seed
-    milestone: M5
-    change: implement-m5-authorable
+    tier: working
+    milestone: M5B
+    change: implement-m5b-operable
   editor-visual-language:
-    tier: seed
-    milestone: M5
-    change: implement-m5-authorable
+    tier: working
+    milestone: M5B
+    change: implement-m5b-operable
   editor-viewport-and-gizmos:
     tier: working
     milestone: M5

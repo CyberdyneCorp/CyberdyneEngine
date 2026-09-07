@@ -12,102 +12,32 @@
 //! exposed tools anywhere in this crate, and there is no place to add one: a command that is not in
 //! the registry is not a tool, and every command that is in it is.
 //!
-//! # Where the exclusion lives, stated plainly
+//! # The exclusion is on the command, which is where it moved at M5.5
 //!
 //! The specification says an unsuitable command "SHALL be **excluded by a declared property on the
 //! command**, and the exclusion SHALL state a reason — never by omission from a list".
 //!
-//! `cy_editor_commands::Metadata` has no such property, and adding one is a single
-//! `Option<String>` field in a crate this change does not own. So [`Exclusions`] is that property
-//! held beside the registry rather than on it: an exclusion cannot be constructed without a reason,
-//! every exclusion is reported by [`project`] rather than making a tool vanish, and
-//! [`ToolDescriptor::exclusion`] carries it — which satisfies the two things the requirement is
-//! actually for ("the exclusion and its reason", "the reason SHALL be reportable").
+//! At M5 that property did not exist, so this module held the exclusions beside the registry and its
+//! own note said what the fix was: "`Metadata::agent_exclusion: Option<String>` and deleting this
+//! type; it is one field and one function, and it belongs in the change that owns
+//! `cy-editor-commands`." This is that change, and the field is there. A contributor removing a
+//! command now removes its exclusion with it, because they are the same object, and there is no
+//! table left over to go stale.
 //!
-//! What it does not yet satisfy is locality: the reason lives next to the projection instead of next
-//! to the command it describes, so a contributor removing a command has two places to look. The fix
-//! is `Metadata::agent_exclusion: Option<String>` and deleting this type; it is one field and one
-//! function, and it belongs in the change that owns `cy-editor-commands`.
-
-use std::collections::BTreeMap;
+//! `cy_editor_commands::Metadata::validate` refuses an exclusion whose reason says nothing, so the
+//! registry itself is what enforces "the reason SHALL be reportable" — the same way it enforces a
+//! description a caller can act on.
+//!
+//! # An excluded command is reported, not hidden
+//!
+//! [`project`] returns it with [`ToolDescriptor::exclusion`] set. An agent that could not see a
+//! command at all could not be told why it may not use it, and would spend its next turn looking for
+//! the thing it already has an answer about.
 
 use cy_editor_commands::metadata::{EffectClass, Metadata, ParameterSpec};
 use cy_editor_commands::registry::Registry;
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
-
-/// Why a command is not offered to an agent.
-///
-/// The reason is required and is checked for length, because "excluded" with no explanation is
-/// exactly the state the requirement forbids: an agent that is told a command exists and cannot be
-/// invoked learns nothing it can act on.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Exclusion {
-    /// The command's identifier.
-    pub command: String,
-    /// Why, in a sentence a caller can act on.
-    pub reason: String,
-}
-
-impl Exclusion {
-    /// Declare an exclusion, refusing one whose reason says nothing.
-    pub fn new(command: impl Into<String>, reason: impl Into<String>) -> Result<Self> {
-        let command = command.into();
-        let reason = reason.into();
-        if reason.trim().len() < MINIMUM_REASON {
-            return Err(Problem::new(
-                format!("exclude {command}"),
-                "the exclusion states no reason an agent could act on",
-            )
-            .with_remedy(
-                "say why the command is unsuitable — what it would do that an agent must not, or \
-                 what it needs that an agent cannot supply",
-            ));
-        }
-        Ok(Self { command, reason })
-    }
-}
-
-/// The shortest exclusion reason this crate accepts. Twenty characters is not a quality bar; it is a
-/// floor that catches the two failures that actually occur — an empty string, and the word "no".
-const MINIMUM_REASON: usize = 20;
-
-/// The commands an agent is not offered, and why.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct Exclusions {
-    by_command: BTreeMap<String, String>,
-}
-
-impl Exclusions {
-    /// Nothing excluded, which is the default: a command is a tool unless somebody says otherwise.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Declare one.
-    pub fn declare(&mut self, exclusion: Exclusion) {
-        self.by_command.insert(exclusion.command, exclusion.reason);
-    }
-
-    /// The reason a command is excluded, when it is.
-    #[must_use]
-    pub fn reason(&self, command: &str) -> Option<&str> {
-        self.by_command.get(command).map(String::as_str)
-    }
-
-    /// How many are declared.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.by_command.len()
-    }
-
-    /// Whether nothing is excluded.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.by_command.is_empty()
-    }
-}
 
 /// One parameter, as a caller that cannot see the interface reads it.
 #[derive(Clone, PartialEq, Debug)]
@@ -165,6 +95,15 @@ pub struct ToolDescriptor {
     /// Why it is not offered, when it is not. A tool with an exclusion is REPORTED rather than
     /// omitted; see the module note.
     pub exclusion: Option<String>,
+    /// Whether the command works out its effect class from the invocation rather than declaring
+    /// one.
+    ///
+    /// When this is true, [`ToolDescriptor::effect`] is the **worst case** and a particular
+    /// invocation may be admitted as something narrower — writing a source file the editor can
+    /// restore, say. Stated rather than left implicit, because an agent that budgeted its
+    /// confirmations against the declared class alone would ask a human about work that undo
+    /// already covers.
+    pub effect_may_narrow: bool,
 }
 
 impl ToolDescriptor {
@@ -189,15 +128,20 @@ impl ToolDescriptor {
         match &self.exclusion {
             Some(reason) => format!("{}({parameters}) [excluded] — {reason}", self.name),
             None => format!(
-                "{}({parameters}) [{}] — {}",
+                "{}({parameters}) [{}{}] — {}",
                 self.name,
                 self.effect.name(),
+                if self.effect_may_narrow {
+                    ", at most"
+                } else {
+                    ""
+                },
                 self.description
             ),
         }
     }
 
-    fn of(metadata: &Metadata, exclusion: Option<&str>) -> Self {
+    fn of(metadata: &Metadata, effect_may_narrow: bool) -> Self {
         Self {
             name: metadata.id.clone(),
             title: metadata.label.clone(),
@@ -210,7 +154,8 @@ impl ToolDescriptor {
                 .collect(),
             effect: metadata.effect,
             needs_confirmation: metadata.effect.needs_confirmation(),
-            exclusion: exclusion.map(ToString::to_string),
+            exclusion: metadata.agent_exclusion().map(ToString::to_string),
+            effect_may_narrow,
         }
     }
 }
@@ -220,23 +165,139 @@ impl ToolDescriptor {
 /// In identifier order, because the registry is: two listings of the same editor are the same
 /// listing, which is what lets an agent cache one and lets a test compare two.
 #[must_use]
-pub fn project(registry: &Registry, exclusions: &Exclusions) -> Vec<ToolDescriptor> {
+pub fn project(registry: &Registry) -> Vec<ToolDescriptor> {
     registry
         .all()
-        .map(|metadata| ToolDescriptor::of(metadata, exclusions.reason(&metadata.id)))
+        .map(|metadata| ToolDescriptor::of(metadata, registry.computes_effect(&metadata.id)))
         .collect()
 }
 
 /// The one tool a caller asked for, or nothing.
 #[must_use]
-pub fn project_one(
-    registry: &Registry,
-    exclusions: &Exclusions,
-    command: &str,
-) -> Option<ToolDescriptor> {
+pub fn project_one(registry: &Registry, command: &str) -> Option<ToolDescriptor> {
     registry
         .metadata(command)
-        .map(|metadata| ToolDescriptor::of(metadata, exclusions.reason(command)))
+        .map(|metadata| ToolDescriptor::of(metadata, registry.computes_effect(command)))
+}
+
+// --- The wire's values, turned into the registry's -------------------------------------------------
+//
+// `crate::transport::AgentRequest::Invoke` carries arguments as RENDERED strings, and its own
+// comment says why: a transport that carried `cy_editor_core::Value` would make the editor's value
+// type part of the protocol, which is the coupling the seam exists to prevent. This is the
+// conversion that comment promises — "the projection above converts" — and it lives here, beside the
+// projection, rather than in whichever transport happens to be first.
+
+/// Turn one rendered argument into the value the parameter declares.
+///
+/// The rendering is [`Value`]'s own `Display`, so this is its inverse and the two are tested against
+/// each other. A value of the wrong shape is refused with what the parameter means, because a caller
+/// that typed a name where an entity belonged learns nothing from "invalid argument".
+pub fn coerce(kind: ValueKind, text: &str) -> Result<Value> {
+    let trimmed = text.trim();
+    let refuse = |wanted: &str| {
+        Problem::new(
+            format!("read {text:?} as {kind}"),
+            format!("it is not {wanted}"),
+        )
+        .with_remedy(format!("supply {wanted}"))
+    };
+    match kind {
+        ValueKind::Nil => Ok(Value::Nil),
+        ValueKind::Text => Ok(Value::Text(text.to_string())),
+        ValueKind::Bool => match trimmed {
+            "true" | "1" | "yes" => Ok(Value::Bool(true)),
+            "false" | "0" | "no" => Ok(Value::Bool(false)),
+            _ => Err(refuse("true or false")),
+        },
+        ValueKind::Int => trimmed
+            .parse()
+            .map(Value::Int)
+            .map_err(|_| refuse("a whole number")),
+        ValueKind::Float => trimmed
+            .parse()
+            .map(Value::Float)
+            .map_err(|_| refuse("a number")),
+        ValueKind::Double => trimmed
+            .parse()
+            .map(Value::Double)
+            .map_err(|_| refuse("a number")),
+        ValueKind::Entity => trimmed
+            .trim_start_matches("entity#")
+            .parse()
+            .map(Value::Entity)
+            .map_err(|_| refuse("an entity identity, as a command's result printed it")),
+        ValueKind::Bytes => Ok(Value::Bytes(text.as_bytes().to_vec())),
+        ValueKind::Vec2 => lanes::<2>(trimmed)
+            .map(Value::Vec2)
+            .ok_or_else(|| refuse("two numbers")),
+        ValueKind::Vec3 => lanes::<3>(trimmed)
+            .map(Value::Vec3)
+            .ok_or_else(|| refuse("three numbers, as \"(x, y, z)\"")),
+        ValueKind::Vec4 => lanes::<4>(trimmed)
+            .map(Value::Vec4)
+            .ok_or_else(|| refuse("four numbers")),
+        ValueKind::Quat => lanes::<4>(trimmed)
+            .map(Value::Quat)
+            .ok_or_else(|| refuse("four numbers, in x, y, z, w order")),
+    }
+}
+
+/// The lanes of a vector, however the caller spelled the separators.
+///
+/// `"(1, 2, 3)"`, `"1,2,3"` and `"1 2 3"` are all accepted, because all three are what somebody
+/// types and refusing two of them would be a rule with no purpose behind it.
+fn lanes<const N: usize>(text: &str) -> Option<[f32; N]> {
+    let inner = text.trim_start_matches('(').trim_end_matches(')');
+    let parsed: Vec<f32> = inner
+        .split([',', ' '])
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse().ok())
+        .collect();
+    parsed.try_into().ok()
+}
+
+/// Build a command's arguments from rendered name and value pairs.
+///
+/// Each value is read as the kind the command's own parameter declares, so the *command* decides
+/// what its arguments mean and the transport carries text. A name the command does not have is
+/// refused here rather than passed through, with the names it does have — the registry would refuse
+/// it a moment later, and refusing it here means the message names the parameter rather than the
+/// invocation.
+pub fn arguments(
+    registry: &Registry,
+    command: &str,
+    supplied: &[(String, String)],
+) -> Result<cy_editor_commands::registry::Arguments> {
+    let metadata = registry.metadata(command).ok_or_else(|| {
+        Problem::not_found(format!("a command named {command:?}"))
+            .with_remedy("list the tools to see what there is")
+    })?;
+    let mut arguments = cy_editor_commands::registry::Arguments::new();
+    for (name, text) in supplied {
+        let parameter = metadata
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == *name)
+            .ok_or_else(|| {
+                Problem::new(
+                    format!("invoke {command}"),
+                    format!("it has no parameter named {name:?}"),
+                )
+                .with_remedy(format!(
+                    "its parameters are: {}",
+                    metadata
+                        .parameters
+                        .iter()
+                        .map(|parameter| parameter.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            })?;
+        arguments = arguments.with(name.clone(), coerce(parameter.kind, text)?);
+    }
+    Ok(arguments)
 }
 
 #[cfg(test)]
@@ -282,7 +343,7 @@ mod tests {
 
     #[test]
     fn a_command_registered_for_a_menu_is_a_tool_with_no_further_work() {
-        let tools = project(&registry(), &Exclusions::new());
+        let tools = project(&registry());
         assert_eq!(tools.len(), 2);
         let created = tools
             .iter()
@@ -297,7 +358,7 @@ mod tests {
 
     #[test]
     fn every_tool_states_its_effect_class_before_it_is_invoked() {
-        let tools = project(&registry(), &Exclusions::new());
+        let tools = project(&registry());
         let deleting = tools
             .iter()
             .find(|tool| tool.name == "assets.delete")
@@ -312,44 +373,83 @@ mod tests {
         // A renamed command leaves no stale tool and a removed one disappears, because there is
         // nothing to leave behind: the projection is computed, not maintained.
         let mut registry = registry();
-        let tools = project(&registry, &Exclusions::new());
+        let tools = project(&registry);
         assert!(tools.iter().any(|tool| tool.name == "assets.delete"));
 
         registry = Registry::new();
-        assert!(project(&registry, &Exclusions::new()).is_empty());
+        assert!(project(&registry).is_empty());
     }
 
     #[test]
     fn an_exclusion_is_reported_rather_than_making_the_tool_vanish() {
-        let mut exclusions = Exclusions::new();
-        exclusions.declare(
-            Exclusion::new(
-                "assets.delete",
-                "deleting from disk needs a human at the interface, because undo cannot put the \
-                 file back",
-            )
-            .unwrap(),
-        );
-        let tools = project(&registry(), &exclusions);
-        let deleting = tools
-            .iter()
-            .find(|tool| tool.name == "assets.delete")
+        let mut registry = Registry::new();
+        registry
+            .register(Command::new(
+                Metadata::new(
+                    "file.open-dialog",
+                    "Open...",
+                    "File",
+                    "Opens the platform's file chooser so a person can pick a project to open.",
+                    EffectClass::Read,
+                )
+                .not_for_agents(
+                    "it opens a file chooser, which needs a person at the interface to answer; \
+                     invoke file.open with a path instead",
+                ),
+                |_: &mut dyn CommandContext, _: &Arguments| Ok(Outcome::default()),
+            ))
             .unwrap();
-        assert!(!deleting.is_offered());
-        assert!(
-            deleting
-                .exclusion
-                .as_deref()
-                .unwrap()
-                .contains("undo cannot")
-        );
-        assert!(deleting.summary().contains("[excluded]"));
+        let tools = project(&registry);
+        let dialog = &tools[0];
+        assert!(!dialog.is_offered());
+        assert!(dialog.exclusion.as_deref().unwrap().contains("file.open"));
+        assert!(dialog.summary().contains("[excluded]"));
     }
 
     #[test]
-    fn an_exclusion_with_no_reason_cannot_be_declared() {
-        let refused = Exclusion::new("assets.delete", "no").unwrap_err();
+    fn an_exclusion_with_no_reason_cannot_be_registered() {
+        // The registry refuses it, which is what makes "never by omission from a list" hold: there
+        // is no list, and the property cannot be set to something meaningless.
+        let mut registry = Registry::new();
+        let refused = registry
+            .register(Command::new(
+                Metadata::new(
+                    "file.open-dialog",
+                    "Open...",
+                    "File",
+                    "Opens the platform's file chooser so a person can pick a project to open.",
+                    EffectClass::Read,
+                )
+                .not_for_agents("no"),
+                |_: &mut dyn CommandContext, _: &Arguments| Ok(Outcome::default()),
+            ))
+            .unwrap_err();
         assert!(refused.remedy.as_deref().unwrap().contains("why"));
+    }
+
+    #[test]
+    fn a_command_that_computes_its_effect_says_so_in_its_listing() {
+        let mut registry = Registry::new();
+        registry
+            .register(
+                Command::new(
+                    Metadata::new(
+                        "source.write",
+                        "Write Source File",
+                        "Source",
+                        "Writes a project source file; reversible when the editor can read what \
+                         it held.",
+                        EffectClass::IrreversibleMutation,
+                    ),
+                    |_: &mut dyn CommandContext, _: &Arguments| Ok(Outcome::default()),
+                )
+                .effect_when(|_, _| EffectClass::ReversibleMutation),
+            )
+            .unwrap();
+        let tool = project_one(&registry, "source.write").unwrap();
+        assert!(tool.effect_may_narrow);
+        assert_eq!(tool.effect, EffectClass::IrreversibleMutation);
+        assert!(tool.summary().contains("[irreversible-mutation, at most]"));
     }
 
     #[test]
@@ -375,7 +475,7 @@ mod tests {
                 |_: &mut dyn CommandContext, _: &Arguments| Ok(Outcome::default()),
             ))
             .unwrap();
-        let projected = project_one(&registry, &Exclusions::new(), "scene.rename").unwrap();
+        let projected = project_one(&registry, "scene.rename").unwrap();
         assert_eq!(
             projected.parameters[0].description,
             registry.metadata("scene.rename").unwrap().parameters[0].description

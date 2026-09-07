@@ -529,6 +529,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v3
+      # THE MINIMUM SUPPORTED RUST VERSION, PINNED WHERE IT IS ACTUALLY USED.
+      #
+      # `editor/Cargo.toml` declares 1.95 and `rust-toolchain.toml` selects it; this step is what
+      # makes the declaration true on a runner, whose default toolchain is whatever the image
+      # happens to ship and moves without anybody deciding it should. A version pinned locally and
+      # floating in continuous integration is a version that is not pinned — and the failure it
+      # produces is a compiler error inside a dependency, on one platform, in a log nobody reads
+      # until a release is blocked.
+      #
+      # It moved from 1.92 at M5.5 because the interface toolkit chosen there — egui 0.36 over
+      # wgpu 30 — refuses to build on 1.92.
+      - name: The toolchain the editor declares
+        run: just build-editor-toolchain
+        shell: bash
       - uses: actions/cache@v4
         with:
           path: build/editor
@@ -536,8 +550,21 @@ jobs:
           restore-keys: |
             cy-editor-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock', 'editor/Cargo.toml') }}-
             cy-editor-${{ matrix.label }}-
-      # No `cargo install` step and no registry access: [workspace.dependencies] is empty, so the
-      # workspace builds offline in a bare checkout. That is a decision editor/Cargo.toml argues.
+      # The registry is reached now, which it was not before M5.5: this workspace depended on
+      # nothing but the standard library for five milestones, and the milestone with a window in it
+      # ended that. `editor/Cargo.lock` is committed and pins every version exactly, so what is
+      # fetched is decided by a reviewed file rather than by the day the job ran.
+      #
+      # The viewport transport's dependencies — wgpu, ash, libc — are declared only for Linux, so
+      # the macOS and Windows legs still resolve a small tree. That is a property of
+      # `crates/cy-editor-viewport-transport/Cargo.toml` and the reason its `cfg` note gives.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: cy-cargo-${{ matrix.label }}-${{ hashFiles('editor/Cargo.lock') }}
+          restore-keys: cy-cargo-${{ matrix.label }}-
       - name: The editor's gates and its whole test suite
         run: just build-editor-check
 

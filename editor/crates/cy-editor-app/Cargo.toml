@@ -1,8 +1,12 @@
 # The editor application: the binary, and the tests that hold the workspace's own rules.
 #
-# Layer 5, the top. It is the only crate that may name every other, and it is where the three
-# structural checks live — layering, safety, and the profile mapping — because a check that lives in
-# the crate it checks can be disabled by the same edit that breaks it.
+# Layer 6, the top. It is the only crate that may name every other, and it is where the four
+# structural checks live — layering, safety, containment, and the profile mapping — because a check
+# that lives in the crate it checks can be disabled by the same edit that breaks it.
+#
+# It moved from layer 5 to 6 at M5.5, when the render crate arrived. `cy-editor-shell` is the one
+# crate that may see an interface toolkit, and this crate has to be *above* it in order to hand it a
+# built `Editor` — so the binary took the new top and the render crate took the layer below.
 [package]
 name = "cy-editor-app"
 description = "CyberEditor: a Rust client of the Cyberdyne engine over its stable C ABI."
@@ -14,19 +18,41 @@ repository.workspace = true
 publish.workspace = true
 
 [package.metadata.cy]
-layer = 5
+layer = 6
 
 [[bin]]
 name = "cyberdyne-editor"
 path = "src/main.rs"
 
+# --- THE AGENT INTERFACE IS OPTIONAL AT BUILD TIME -------------------------------------------------
+#
+# `editor-agent-interface`: "The interface SHALL be optional at build time and absent from a shipped
+# runtime", and its scenario: "WHEN the editor is built without the agent interface THEN no agent
+# transport SHALL be compiled, linked, or listening."
+#
+# An optional dependency behind a feature is how Cargo says that: with the feature off, nothing in
+# `cy-editor-mcp` is compiled at all, and `tests/gating.rs` reads this manifest to check that the
+# wiring stays that shape. The feature is ON by default, because a delivered capability that has to
+# be asked for is a capability nothing exercises — which is the mistake M3 and M4 made three times
+# between them, and which the window being the default at M5.5 is the other half of.
+#
+# `cy-editor-agent` is NOT optional. It is the projection — the tools, the read surface, the session,
+# the budget — and it holds no transport, no socket and no wire format. Making it optional would put
+# the editor's own "what can an agent see" model behind a flag, and there is nothing to save by it.
+[features]
+default = ["agent-interface"]
+agent-interface = ["dep:cy-editor-mcp"]
+
 [dependencies]
+cy-editor-agent = { path = "../cy-editor-agent" }
 cy-editor-commands = { path = "../cy-editor-commands" }
 cy-editor-core = { path = "../cy-editor-core" }
 cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-mcp = { path = "../cy-editor-mcp", optional = true }
 cy-editor-protocol = { path = "../cy-editor-protocol" }
 cy-editor-sdk = { path = "../cy-editor-sdk" }
 cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-shell = { path = "../cy-editor-shell" }
 cy-editor-viewmodels = { path = "../cy-editor-viewmodels" }
 
 # The runtime stub is a separate PROCESS in the integration tests, not a linked dependency: the

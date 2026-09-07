@@ -43,7 +43,9 @@ pub mod metadata;
 pub mod registry;
 pub mod scope;
 
-pub use context::{CommandContext, Outcome};
+pub use context::{
+    CommandContext, Manipulation, ManipulationKind, Outcome, ProjectHost, ViewportControls,
+};
 pub use metadata::{Availability, EffectClass, Metadata, ParameterSpec};
 pub use registry::{Arguments, Command, CommandId, Registry};
 pub use scope::Scope;

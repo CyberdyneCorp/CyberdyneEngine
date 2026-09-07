@@ -1,0 +1,87 @@
+# The viewport's transport, on the editor's side of the process boundary: the engine's rendered
+# image, imported rather than copied, and the synchronisation that makes reading it safe.
+#
+# --- WHY THIS IS A CRATE OF ITS OWN, AND NOT PART OF THE RENDER CRATE -----------------------------
+#
+# Because two different programs must exercise *this exact code*: the editor's window, and a
+# headless probe with no window at all. The M5.5 synchronisation spike made that split first and it
+# earned its keep immediately — a clean run of a windowed editor proves nothing about a code path
+# the probe took instead, and the probe is what can be run in a loop, killed, and measured on a
+# machine with no display.
+#
+# It is also the crate that keeps `cy-editor-viewport` honest. That crate is the viewport MODEL:
+# what the editor decides should be shown, headless, with no device. This one is the PLATFORM
+# module underneath it — dma-buf, Vulkan timeline semaphores, `memfd`, `SCM_RIGHTS` — and it is the
+# only crate besides the single render crate that is allowed to name a graphics API at all
+# (`cy-editor-app/tests/containment.rs` enforces exactly that).
+#
+# --- LAYER 3 ---------------------------------------------------------------------------------------
+#
+# It depends on the viewport model (layer 2) because it produces the model's `PresentedFrame` and
+# implements the model's `Transport` trait: the shared-texture transport is not a second kind of
+# frame, it is the same frame with its pixels left where the runtime put them. Nothing at layer 2 or
+# below may depend on it, which is what stops a `wgpu::Texture` reaching the panels.
+#
+# --- THE DEPENDENCIES, EACH WITH ITS REASON --------------------------------------------------------
+#
+# `editor/Cargo.toml` argued for five milestones that this workspace should depend on nothing. This
+# crate is where that stops being possible, and the reason is not convenience: importing another
+# process's `VkImage` requires calling Vulkan, and there is no standard-library path to
+# `vkImportSemaphoreFdKHR`.
+#
+#   * `ash` — the Vulkan API. Used for the parts wgpu does not expose: timeline semaphore import,
+#     the bounded host wait, and the DRM-format-modifier queries the publisher needs.
+#   * `wgpu` / `wgpu-hal` / `wgpu-types` — the editor's own graphics device. The escape hatch this
+#     crate is built on (`Adapter::open_with_callback`) is `wgpu-hal`'s, and the imported image must
+#     become a `wgpu::Texture` because that is what the editor's renderer draws with.
+#   * `libc` — `memfd_create`, `mmap`, `sendmsg`/`SCM_RIGHTS`. The shared announcement page and the
+#     descriptor passing are POSIX, not Rust.
+#   * `pollster` — three lines of executor, because `wgpu::Instance::enumerate_adapters` is async
+#     and this crate has no runtime and wants none.
+[package]
+name = "cy-editor-viewport-transport"
+description = "CyberEditor's viewport transport: the engine's image imported across the process boundary, and the synchronisation that makes reading it safe."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 3
+
+[dependencies]
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
+
+# Only where the mechanism exists. See the `cfg` note at the top of src/lib.rs: on macOS and Windows
+# this crate compiles to a constant, and pulling wgpu and ash in there would make two platforms pay
+# a dependency tree for a transport they cannot use.
+[target.'cfg(target_os = "linux")'.dependencies]
+ash = { workspace = true }
+libc = { workspace = true }
+pollster = { workspace = true }
+wgpu = { workspace = true }
+wgpu-hal = { workspace = true }
+wgpu-types = { workspace = true }
+
+[lints]
+workspace = true
+
+# The reference publisher: the runtime half of the protocol, in a real second process.
+#
+# It exists because a transport with nothing on the other end is a transport nobody has run. The
+# engine's render server will grow its own publisher against this same wire format; until it does,
+# this is what the tests, the measurements and the SIGKILL runs talk to, and it is the executable
+# description of what a publisher must do.
+[[bin]]
+name = "cy-viewport-publisher"
+path = "src/bin/cy_viewport_publisher.rs"
+
+# The headless consumer: the same import, wait and release code the editor's window will run, with
+# no window. Every number in this crate's README came out of it.
+[[bin]]
+name = "cy-viewport-transport-probe"
+path = "src/bin/cy_viewport_transport_probe.rs"

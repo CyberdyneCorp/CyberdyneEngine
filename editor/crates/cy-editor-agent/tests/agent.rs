@@ -10,7 +10,7 @@ use cy_editor_agent::resource::Resources;
 use cy_editor_agent::session::{
     AgentIdentity, AgentSession, Confirmation, Confirmer, Decision, RefuseEverything,
 };
-use cy_editor_agent::tool::{Exclusion, Exclusions, project};
+use cy_editor_agent::tool::project;
 use cy_editor_commands::context::{CommandContext, Outcome};
 use cy_editor_commands::metadata::{EffectClass, Metadata, ParameterSpec};
 use cy_editor_commands::registry::{Arguments, Command, Registry};
@@ -643,39 +643,54 @@ fn a_throttled_agent_is_told_what_is_left() {
 
 #[test]
 fn an_excluded_command_is_refused_with_its_reason_and_still_listed() {
-    let registry = registry();
+    // The exclusion is a property ON THE COMMAND at M5.5, which is what the requirement asks for:
+    // "excluded by a declared property on the command ... never by omission from a list". So the
+    // test declares it where a contributor would, in the command's own metadata.
+    let mut registry = registry();
+    registry
+        .register(Command::new(
+            Metadata::new(
+                "file.open-dialog",
+                "Open...",
+                "File",
+                "Opens the platform's file chooser so a person can pick a project to open.",
+                EffectClass::Read,
+            )
+            .not_for_agents(
+                "it opens a file chooser, which needs a person at the interface to answer; use \
+                 file.open with a path instead",
+            ),
+            |_: &mut dyn CommandContext, _: &Arguments| Ok(Outcome::new("Opened")),
+        ))
+        .unwrap();
     let (mut editor, _) = editor_with_document();
     let mut connection = session(Scope::unrestricted());
-    connection.exclusions_mut().declare(
-        Exclusion::new(
-            "assets.delete",
-            "deleting from disk needs a human at the interface, because undo cannot put the file \
-             back",
-        )
-        .unwrap(),
-    );
 
     let refused = connection
         .invoke(
             &mut editor,
             &registry,
             &mut RefuseEverything,
-            "assets.delete",
-            &Arguments::new().with("asset", Value::Text("a.png".to_string())),
+            "file.open-dialog",
+            &Arguments::new(),
             0,
         )
         .unwrap_err();
-    assert!(refused.because.contains("undo cannot"), "{refused}");
+    assert!(refused.because.contains("file chooser"), "{refused}");
+    assert!(
+        refused.remedy.as_deref().unwrap().contains("ask a person"),
+        "{refused}"
+    );
 
     // Listed rather than hidden: "the command SHALL carry the exclusion and its reason, and the
     // reason SHALL be reportable".
     let tools = connection.tools(&registry);
-    let deleting = tools
+    let dialog = tools
         .iter()
-        .find(|tool| tool.name == "assets.delete")
+        .find(|tool| tool.name == "file.open-dialog")
         .unwrap();
-    assert!(!deleting.is_offered());
-    assert!(deleting.exclusion.is_some());
+    assert!(!dialog.is_offered());
+    assert!(dialog.exclusion.is_some());
 }
 
 #[test]
@@ -696,7 +711,7 @@ fn a_command_registered_for_a_menu_is_an_agent_tool_with_no_further_work() {
         ))
         .unwrap();
 
-    let tools = project(&registry, &Exclusions::default());
+    let tools = project(&registry);
     assert!(
         tools
             .iter()

@@ -26,7 +26,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use cy_editor_protocol::{FrameId, write_frame};
 use cy_editor_viewport::state::ViewState;
-use cy_editor_viewport::transport::{FrameImage, PresentedFrame};
+use cy_editor_viewport::transport::{FrameImage, PresentedFrame, SharedImage};
 
 fn main() {
     let settings = Settings::from_arguments(std::env::args().skip(1));
@@ -53,7 +53,7 @@ fn main() {
         let image = if settings.payload_bytes == 0 {
             FrameImage::SharedTexture {
                 handle: 0x00C0_FFEE,
-                bytes: 1920 * 1080 * 4,
+                image: SharedImage::unpadded(1920, 1080, 0, 3),
             }
         } else {
             FrameImage::Encoded(payload.clone())

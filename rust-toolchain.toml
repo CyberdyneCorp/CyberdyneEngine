@@ -1,0 +1,20 @@
+# The Rust toolchain this repository builds with, so that `cargo` in a checkout selects it rather
+# than whatever the machine's default happens to be.
+#
+# `editor/Cargo.toml` declares `rust-version = "1.95"` and this file makes that declaration
+# operative. Without it, a developer whose default toolchain is older gets the MSRV as a Cargo error
+# — better than a compiler error inside a dependency, but still a failure where an automatic
+# toolchain selection would have been a success. rustup reads this file from the working directory,
+# and every recipe in `just/` runs from the repository root.
+#
+# WHY 1.95 AND NOT `stable`. M5.5 chose an interface toolkit — egui 0.36 over wgpu 30 — that refuses
+# to build on 1.92, and the profile table's four configurations are only meaningful if every one of
+# them compiled the same source with the same compiler. A floating `stable` would also make a
+# compiler release a change to the build that nobody reviewed, which is the property this project
+# refuses for every other dependency.
+#
+# rustfmt and clippy are listed because `just build-editor-check` runs both, and a toolchain
+# installed without them fails in the gate rather than at installation.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

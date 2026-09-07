@@ -263,9 +263,31 @@ small, cornered, arrows and a cube and nothing else.
 It also shows a **third layout variant**. The RTS and adventure references put the content browser
 bottom-left with the outliner above it; this one puts the hierarchy bottom-left, the project browser
 centre, and the inspector right, with the view presets and a rotation read-out floating in the
-viewport. The composition requirement fixes *regions*, not pixel positions, and all three satisfy it
-— but if one is meant to be the default, it should be said rather than left to whichever a
-contributor opens first.
+viewport. The composition requirement fixes *regions*, not pixel positions, and all three satisfy it.
+
+**The default is decided, at M5.5, and it is the RTS one.** `editor-rts-desertfrontier.png`: the
+outliner upper-left with the content browser beneath it, the viewport centre with its chrome
+overlaid, the specialised editor below the viewport, the inspector down the right, and the
+diagnostics tabs beneath the inspector. `cy_editor_interface::docking::Layout::scene_editing` builds
+it, and it derives its proportions from `cy_editor_visual::chrome::Composition` rather than restating
+them, so this document and the product cannot drift.
+
+Why that one, in the order the reasons decided it:
+
+1. It is what `Composition::default()` already encodes and what the **Default workspace** diagram
+   above already draws. Choosing either of the others would have made this document disagree with
+   the product on the day the editor opened.
+2. The adventure reference is the same arrangement plus a vertical tool rail and a graph docked
+   below the viewport. The rail spends permanent width on a second route to mode-level tools before
+   there are enough modes to need it, and the graph is M8 — so shipping it means shipping two
+   regions that are empty.
+3. The editor scene view puts the project browser in the **centre-lower** region. That region is
+   where a specialised editor goes — script graph, animation, sequencer — so a browser living there
+   is displaced every time one opens. A panel that moves because of context is the one thing
+   *"content adapts; position does not"* exists to prevent.
+
+The other two remain normative about visual language, which is what a reference image is for. They
+are not competing defaults.
 
 
 

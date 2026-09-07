@@ -145,12 +145,20 @@ ci_job = "generated-code"
 
 # --- The job system, memory and the runtime --------------------------------------------------------
 
+# A BUILD DIRECTORY OF ITS OWN, and that is the whole of the difference from the obvious spelling.
+#
+# `just test-bench-jobs --profile profile` resolves `${CY_BUILD_DIR:-build/$profile}`, so under a
+# ledger — where every other criterion is using the Development tree — it reconfigured the shared
+# tree to Profile and the next criterion reconfigured it back. Two full engine and Slang rebuilds per
+# run, about ten minutes, for nothing: M5.5's gate measured 450 s and 319 s for this criterion and
+# 281 s for its neighbour, against about 4 s for the rest. `m4:sanitizers` had the right shape
+# already and this now matches it.
 [[criterion]]
 id = "job-throughput"
 describe = "the job system throughput benchmark meets its committed thresholds"
 source = "tasks 6.3, ROADMAP M1"
-kind = "recipe"
-run = "just test-bench-jobs --profile profile"
+kind = "command"
+run = "d=\"${CY_BUILD_DIR:-build}/m1-bench\"; CY_BUILD_DIR=\"$d\" just test-bench-jobs --profile profile"
 timeout_s = 3600
 ci_job = "job-throughput"
 

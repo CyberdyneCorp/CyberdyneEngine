@@ -23,6 +23,8 @@
 //! will be lost, which is the other forbidden pattern, "a confirmation prompt that does not say what
 //! will be lost".
 
+use std::time::{Duration, Instant};
+
 use cy_editor_commands::Arguments;
 use cy_editor_core::observe::Cursor;
 use cy_editor_core::problem::{Problem, Result};
@@ -71,6 +73,12 @@ pub struct Toast {
     pub offer: Option<Offer>,
     /// Whether the user has dismissed it. Dismissed is not deleted: it stays reviewable.
     pub dismissed: bool,
+    /// When it first appeared, so a transient one can retire itself.
+    ///
+    /// See [`NotificationCentre::retire_transient`]. It is on the toast rather than on the
+    /// notification because it is a fact about the *screen* — the same message arriving twice is two
+    /// toasts and one history of two entries.
+    pub shown_at: Instant,
 }
 
 impl Toast {
@@ -142,6 +150,7 @@ impl NotificationCentre {
                 notification,
                 offer,
                 dismissed: false,
+                shown_at: Instant::now(),
             });
         }
         if self.toasts.len() > KEPT {
@@ -159,6 +168,49 @@ impl NotificationCentre {
             .filter(|toast| !toast.dismissed)
             .take(VISIBLE)
             .collect()
+    }
+
+    /// The notifications on screen, each with its position in the history.
+    ///
+    /// The index is what [`NotificationCentre::dismiss`] takes, and it is **not** the position in
+    /// [`NotificationCentre::showing`] — that list is newest-first and skips what has been
+    /// dismissed. Handing an interface the two separately is how a user clicks "dismiss" on one
+    /// notification and watches a different one disappear, so the pair travels together.
+    #[must_use]
+    pub fn showing_indexed(&self) -> Vec<(usize, &Toast)> {
+        self.toasts
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, toast)| !toast.dismissed)
+            .take(VISIBLE)
+            .collect()
+    }
+
+    /// Retire the informational notifications that have been on screen longer than `after`.
+    ///
+    /// Returns how many were retired. Only [`Severity::Info`] with nothing to offer: a warning, a
+    /// failure, and anything carrying an action a user might take stay until they are dismissed,
+    /// because those are the ones that were worth interrupting for.
+    ///
+    /// This exists because "notifications SHALL NOT interrupt" has a slow failure mode as well as a
+    /// fast one. A toast that steals focus interrupts immediately; a stack of four that never leaves
+    /// covers the panel underneath and interrupts every subsequent glance. Retiring the transient
+    /// ones costs nothing — [`NotificationCentre::history`] still has all of them, which is what
+    /// "reviewable afterwards" means.
+    pub fn retire_transient(&mut self, after: Duration) -> usize {
+        let now = Instant::now();
+        let mut retired = 0;
+        for toast in &mut self.toasts {
+            let transient = !toast.dismissed
+                && toast.offer.is_none()
+                && toast.notification.severity == Severity::Info;
+            if transient && now.duration_since(toast.shown_at) >= after {
+                toast.dismissed = true;
+                retired += 1;
+            }
+        }
+        retired
     }
 
     /// Everything the editor has said, oldest first — the reviewable history.
@@ -307,12 +359,76 @@ impl Modal {
     }
 }
 
+/// How long an informational notification stays on screen before it retires itself.
+///
+/// Long enough to read a sentence, short enough that a run of successful commands does not build a
+/// wall over the panel underneath. It is a constant here rather than a caller's choice so that every
+/// window agrees, and so that changing it is one edit with this reasoning beside it.
+pub const TRANSIENT: Duration = Duration::from_secs(6);
+
 #[cfg(test)]
 mod tests {
     use cy_editor_core::Value;
     use cy_editor_core::ids::{FieldId, TypeId};
 
     use super::*;
+
+    #[test]
+    fn the_index_a_dismissal_uses_is_the_one_that_came_with_the_toast() {
+        // A regression test for a defect that is invisible in code review and obvious in use: the
+        // position in `showing()` is newest-first and skips dismissed entries, and `dismiss` takes a
+        // position in the history. Passing one to the other dismisses the wrong notification.
+        let mut editor = Editor::default();
+        for message in ["first", "second", "third"] {
+            editor.notifications.post(Notification::info(message));
+        }
+        let mut centre = NotificationCentre::new();
+        centre.pump(&editor);
+
+        let (index, toast) = centre.showing_indexed()[0];
+        assert_eq!(
+            toast.notification.message, "third",
+            "showing is newest first"
+        );
+        centre.dismiss(index);
+        assert!(
+            centre.history()[2].dismissed,
+            "dismissing the newest toast dismissed something else"
+        );
+        assert_eq!(centre.showing_count(), 2);
+    }
+
+    #[test]
+    fn an_informational_notification_retires_and_a_failure_does_not() {
+        // "Notifications SHALL NOT interrupt" fails slowly as well as quickly: four toasts that
+        // never leave cover the panel underneath and interrupt every subsequent glance. What must
+        // not retire is anything a user might still need to act on.
+        let mut editor = Editor::default();
+        editor.notifications.post(Notification::info("saved"));
+        editor.notifications.post(Notification::warning(
+            "a world has recoverable transactions",
+        ));
+        editor.notifications.post(Notification::error(
+            "open the world",
+            Problem::new("open the world", "it is not there").with_remedy("check the path"),
+        ));
+        let mut centre = NotificationCentre::new();
+        centre.pump(&editor);
+        assert_eq!(centre.showing_count(), 3);
+
+        // Zero, so the test does not sleep: everything already on screen is older than nothing.
+        assert_eq!(centre.retire_transient(Duration::ZERO), 1);
+        assert_eq!(centre.showing_count(), 2);
+        assert!(
+            centre
+                .showing()
+                .iter()
+                .all(|toast| toast.notification.severity != Severity::Info),
+            "an informational notification survived retirement"
+        );
+        // And it is still reviewable, which is the half that makes retiring it acceptable at all.
+        assert_eq!(centre.history().len(), 3);
+    }
 
     #[test]
     fn a_background_failure_does_not_interrupt_an_edit_in_progress() {

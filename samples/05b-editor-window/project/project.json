@@ -1,0 +1,6 @@
+{
+  "name": "CityBlock",
+  "engine": "CyberEngine",
+  "scripts": "game",
+  "worlds": "worlds"
+}

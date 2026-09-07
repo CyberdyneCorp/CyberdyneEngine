@@ -186,7 +186,7 @@ def test_record_rules(root: Path) -> None:
 # section 6. A floor rather than an equality: a ledger that grows a criterion is a ledger that got
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
-MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20}
+MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -395,7 +395,28 @@ def test_flat_ledger(root: Path) -> None:
           f"{len(oldest.entries)} entries, {len(oldest.inherited)} inherited")
 
     _check_four_profiles(plan)
+    _check_failure_evidence_names_the_failure()
     _check_collapse_rules()
+
+
+def _check_failure_evidence_names_the_failure() -> None:
+    """REGRESSION, M5.5's gate: a failure whose name is not in the last lines was printed nameless.
+
+    `just test-all` runs every suite after a failing one and prints its verdict last, so the tail of
+    the output is passing summary. The gate re-ran a suite 433 times without reproducing a failure it
+    had never been told the name of.
+    """
+    output = "\n".join(
+        ["the test that failed: FAILED integration.physics_jolt"]
+        + [f"filler line {index}" for index in range(200)]
+    )
+    lines = [line for line in output.splitlines() if line.strip()]
+    named = [index for index, line in enumerate(lines) if roadmap_module._names_a_failure(line)]
+    check("a line naming the failure is kept however far from the end it is",
+          named == [0],
+          f"kept {named}")
+    check("an ordinary line is not mistaken for one that names a failure",
+          not roadmap_module._names_a_failure("filler line 3"))
 
 
 def _check_four_profiles(plan: criteria_module.Plan) -> None:

@@ -25,7 +25,33 @@ DEFAULT_SPECS = REPO_ROOT / "openspec" / "specs"
 SCHEMA = 1
 TIERS = ("none", "seed", "working", "complete")
 TIER_LABEL = {"none": "not started", "seed": "seed", "working": "working", "complete": "complete"}
-MILESTONES = tuple(f"m{index}" for index in range(12))
+# The ladder, in order. It is written out rather than generated because it is no longer a range:
+# `implement-m5b-operable` INSERTS M5.5 between M5 and M6 rather than renumbering M6 through M11, so
+# that every existing reference to a later milestone stays valid. Its identifier is `m5b` and not
+# `m5.5` because a milestone id is also a file name under `tools/roadmap/milestones/` and a record
+# value, and a dot in either is a needless special case.
+#
+# The ORDER is the whole point of the tuple. `criteria.rung` reads its index to decide which closed
+# milestones a ledger inherits, so `m5b` sitting between `m5` and `m6` is what makes M6's ledger
+# inherit M5.5's criteria rather than rank below them. `m5b.toml`'s header asked for exactly this
+# edit and said why it could not make it itself.
+#
+# A capability row in docs/roadmap/status.yaml that M5.5 advanced therefore names `M5B`.
+MILESTONES = (
+    "m0",
+    "m1",
+    "m2",
+    "m3",
+    "m4",
+    "m5",
+    "m5b",
+    "m6",
+    "m7",
+    "m8",
+    "m9",
+    "m10",
+    "m11",
+)
 ENTRY_KEYS = ("tier", "milestone", "change")
 
 

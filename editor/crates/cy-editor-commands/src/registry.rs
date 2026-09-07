@@ -11,7 +11,7 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
 
 use crate::context::{CommandContext, Outcome};
-use crate::metadata::{Availability, Metadata};
+use crate::metadata::{Availability, EffectClass, Metadata};
 use crate::scope::Scope;
 
 /// A command's identifier: its dotted name.
@@ -72,10 +72,20 @@ pub type AvailabilityFn = dyn Fn(&dyn CommandContext) -> Availability + Send + S
 /// A command's implementation.
 pub type RunFn = dyn Fn(&mut dyn CommandContext, &Arguments) -> Result<Outcome> + Send + Sync;
 
+/// What class of consequence *this* invocation has, given its arguments.
+///
+/// Takes `&mut` for the same reason [`CommandContext::project`] does: the state that decides the
+/// answer — whether the editor can restore a file it is about to overwrite — is reached through an
+/// accessor that hands out a mutable borrow. **An implementation must not mutate anything.** It is
+/// called before the scope is checked, so a predicate with a side effect would be a way to act
+/// outside a scope, which is the one thing this crate exists to prevent.
+pub type EffectFn = dyn Fn(&mut dyn CommandContext, &Arguments) -> EffectClass + Send + Sync;
+
 /// One registered action.
 pub struct Command {
     metadata: Metadata,
     availability: Box<AvailabilityFn>,
+    effect: Option<Box<EffectFn>>,
     run: Box<RunFn>,
 }
 
@@ -91,6 +101,7 @@ impl Command {
         Self {
             metadata,
             availability: Box::new(|_| Availability::Available),
+            effect: None,
             run: Box::new(run),
         }
     }
@@ -105,10 +116,35 @@ impl Command {
         self
     }
 
+    /// Let the command compute its effect class from the invocation rather than declaring one.
+    ///
+    /// `design.md` §4, on writing source: "The class is **computed, not assumed**, and the
+    /// confirmation rule follows from it. That keeps `editor-agent-interface`'s promise that
+    /// confirmation is rare and meaningful rather than a habit."
+    ///
+    /// The declared [`Metadata::effect`] stays, and stays the **ceiling**: it is what a tool listing
+    /// shows before any arguments exist, so a caller reasoning about consequence in the abstract is
+    /// told the worst case. What the computed class does is let a particular invocation be admitted
+    /// as the narrower thing it actually is.
+    #[must_use]
+    pub fn effect_when(
+        mut self,
+        effect: impl Fn(&mut dyn CommandContext, &Arguments) -> EffectClass + Send + Sync + 'static,
+    ) -> Self {
+        self.effect = Some(Box::new(effect));
+        self
+    }
+
     /// What the command says about itself.
     #[must_use]
     pub const fn metadata(&self) -> &Metadata {
         &self.metadata
+    }
+
+    /// Whether this command's effect class depends on the invocation.
+    #[must_use]
+    pub const fn computes_effect(&self) -> bool {
+        self.effect.is_some()
     }
 }
 
@@ -167,6 +203,38 @@ impl Registry {
         self.commands.values().map(Command::metadata)
     }
 
+    /// Whether this command works out its effect class from the invocation rather than declaring
+    /// one. `false` for a command that is not registered.
+    #[must_use]
+    pub fn computes_effect(&self, id: &str) -> bool {
+        self.commands.get(id).is_some_and(Command::computes_effect)
+    }
+
+    /// What class of consequence one particular invocation has.
+    ///
+    /// The declared class for almost every command, and the computed one where the command declares
+    /// a predicate — see [`Command::effect_when`]. Arguments are validated first, because an effect
+    /// class computed from arguments the registry would have refused is a class for an invocation
+    /// that will never happen.
+    pub fn effect_of(
+        &self,
+        id: &str,
+        context: &mut dyn CommandContext,
+        arguments: &Arguments,
+    ) -> Result<EffectClass> {
+        let command = self.commands.get(id).ok_or_else(|| {
+            Problem::not_found(format!("a command named {id:?}"))
+                .with_remedy("list the registry to see what there is")
+        })?;
+        let arguments = validate_arguments(&command.metadata, arguments)?;
+        Ok(command
+            .effect
+            .as_ref()
+            .map_or(command.metadata.effect, |effect| {
+                effect(context, &arguments)
+            }))
+    }
+
     /// Whether a command can be invoked right now, and why not when it cannot.
     #[must_use]
     pub fn availability(&self, id: &str, context: &dyn CommandContext) -> Availability {
@@ -196,8 +264,17 @@ impl Registry {
                 .with_remedy("list the registry to see what there is")
         })?;
 
-        scope.admit(&command.metadata)?;
+        // A command that declares one class checks it before anything else, so a refusal for being
+        // out of scope does not depend on the arguments being right. One that COMPUTES its class
+        // cannot: the answer needs the arguments, so they are validated first and the computed
+        // class is what the scope admits. See `Command::effect_when`.
+        if !command.computes_effect() {
+            scope.admit(&command.metadata)?;
+        }
         let arguments = validate_arguments(&command.metadata, arguments)?;
+        if let Some(effect) = command.effect.as_ref() {
+            scope.admit_effect(&command.metadata, effect(context, &arguments))?;
+        }
 
         match (command.availability)(context) {
             Availability::Available => {}

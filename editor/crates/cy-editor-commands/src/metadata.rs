@@ -132,6 +132,17 @@ pub struct Metadata {
     pub effect: EffectClass,
     /// A default keyboard binding, when it has one. Not required: most commands do not.
     pub default_binding: Option<String>,
+    /// Why this command is not offered to an agent, when it is not.
+    ///
+    /// `editor-agent-interface`: "Where a command is unsuitable for agent invocation, it SHALL be
+    /// **excluded by a declared property on the command**, and the exclusion SHALL state a reason —
+    /// **never by omission from a list**."
+    ///
+    /// So it is a field here, beside the command it describes, rather than an entry in a table the
+    /// agent interface keeps: a contributor deleting a command deletes its exclusion with it, and
+    /// there is no list to go stale. The projection reports an excluded command *with* its reason
+    /// rather than hiding it, because an agent that cannot see a command cannot be told why.
+    pub agent_exclusion: Option<String>,
 }
 
 impl Metadata {
@@ -151,6 +162,7 @@ impl Metadata {
             parameters: Vec::new(),
             effect,
             default_binding: None,
+            agent_exclusion: None,
         }
     }
 
@@ -166,6 +178,23 @@ impl Metadata {
     pub fn bound_to(mut self, binding: impl Into<String>) -> Self {
         self.default_binding = Some(binding.into());
         self
+    }
+
+    /// Declare that an agent may not invoke this, and say why.
+    ///
+    /// The reason is checked for length by [`Metadata::validate`] for the same reason a description
+    /// is: "excluded" with no explanation leaves an agent knowing a command exists, knowing it
+    /// cannot use it, and unable to act on either fact.
+    #[must_use]
+    pub fn not_for_agents(mut self, reason: impl Into<String>) -> Self {
+        self.agent_exclusion = Some(reason.into());
+        self
+    }
+
+    /// Why an agent may not invoke this, when it may not.
+    #[must_use]
+    pub fn agent_exclusion(&self) -> Option<&str> {
+        self.agent_exclusion.as_deref()
     }
 
     /// Refuse metadata a caller that cannot see the interface could not act on.
@@ -211,6 +240,19 @@ impl Metadata {
             .with_remedy(
                 "write a sentence for someone who cannot see the interface: what it changes, and \
                  what it needs",
+            ));
+        }
+        if let Some(reason) = &self.agent_exclusion
+            && reason.trim().len() < MINIMUM_DESCRIPTION
+        {
+            return Err(Problem::new(
+                format!("register {}", self.id),
+                "it is excluded from the agent interface and states no reason an agent could act \
+                 on",
+            )
+            .with_remedy(
+                "say why the command is unsuitable — what it would do that an agent must not, or \
+                 what it needs that an agent cannot supply",
             ));
         }
         for parameter in &self.parameters {
@@ -404,6 +446,29 @@ mod tests {
         );
         assert!(EffectClass::IrreversibleMutation.needs_confirmation());
         assert!(EffectClass::ExternalEffect.needs_confirmation());
+    }
+
+    #[test]
+    fn an_exclusion_lives_on_the_command_and_must_say_why() {
+        // `editor-agent-interface`: excluded "by a declared property on the command", never by
+        // omission from a list — and the reason has to be one an agent could act on.
+        let excluded = good().not_for_agents(
+            "it opens a file chooser, which needs a person at the interface to answer",
+        );
+        excluded.validate().unwrap();
+        assert!(excluded.agent_exclusion().unwrap().contains("person"));
+
+        let empty = good().not_for_agents("no");
+        let problem = empty.validate().unwrap_err();
+        assert!(
+            problem.remedy.as_deref().unwrap().contains("why"),
+            "{problem}"
+        );
+    }
+
+    #[test]
+    fn a_command_is_offered_to_agents_unless_somebody_says_otherwise() {
+        assert!(good().agent_exclusion().is_none());
     }
 
     #[test]

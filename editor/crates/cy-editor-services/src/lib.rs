@@ -25,13 +25,17 @@
 
 #![forbid(unsafe_code)]
 
+pub mod authoring;
 pub mod builtin;
 pub mod documents;
 pub mod editor;
+pub mod manipulate;
 pub mod notifications;
 pub mod operations;
+pub mod project;
 pub mod runtime;
 pub mod selection;
+pub mod viewports;
 pub mod workspace;
 
 // Re-exported so that a view model can say which mode the engine is in without naming the SDK. A
@@ -43,6 +47,8 @@ pub use documents::DocumentService;
 pub use editor::Editor;
 pub use notifications::{Notification, NotificationService, Severity};
 pub use operations::OperationService;
+pub use project::{BuildState, ModuleBuilder, ProjectService};
 pub use runtime::RuntimeSession;
 pub use selection::SelectionService;
+pub use viewports::ViewportService;
 pub use workspace::{ViewState, Workspace};

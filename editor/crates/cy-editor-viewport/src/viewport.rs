@@ -378,7 +378,7 @@ mod tests {
             state,
             FrameImage::SharedTexture {
                 handle: 1,
-                bytes: 0,
+                image: crate::transport::SharedImage::unpadded(1920, 1080, 0, 3),
             },
             produced_micros,
         )

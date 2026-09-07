@@ -509,3 +509,47 @@ CY_TEST_CASE("many entities raycast concurrently and every one gets the same ans
 
     jobs.shutdown();
 }
+
+CY_TEST_CASE("a world torn down mid-step does not destroy the job pool underneath a worker") {
+    // REGRESSION, M5.5's gate. `EngineJobSystem::QueueJob` hands a `JPH::Job` to an engine worker,
+    // which calls `Execute()` and then `Release()` — and `Release()` reaches `FreeJob`, which
+    // touches the fixed-size free list the destructor was about to destroy. The destructor was
+    // `= default` and drained nothing, so a teardown that overtook an in-flight `physics.jolt` task
+    // corrupted Jolt's free list. It reproduced about once in forty runs, as a heap fault inside
+    // Jolt with no physics call on the stack.
+    //
+    // The shape that finds it is teardown UNDER LOAD: enough bodies that a step actually partitions
+    // work, and a world destroyed immediately after submitting it rather than after a settled
+    // simulation. M6 makes this far more likely than M5.5 did — streaming creates and destroys
+    // worlds continuously rather than once per fixture.
+    cy::jobs::JobSystem jobs;
+    cy::jobs::JobSystemConfig config;
+    config.worker_count = 4;
+    CY_REQUIRE(jobs.start(config).has_value());
+
+    for (u32 round = 0; round < 64; ++round) {
+        const Fixture fixture(&jobs);
+        CY_REQUIRE(fixture.server->capabilities().uses_engine_jobs);
+        (void)fixture.body(fixture.box(Vec3{20.0f, 0.5f, 20.0f}), MotionType::Static,
+                           Vec3{0.0f, -0.5f, 0.0f});
+        const ShapeHandle sphere = fixture.sphere(0.35f);
+        for (u32 index = 0; index < 48; ++index) {
+            // A 12-wide grid, stacked: the integer division is the row and is meant to truncate.
+            const u32 column = index % 12;
+            const u32 row = index / 12;
+            (void)fixture.body(sphere, MotionType::Dynamic,
+                               Vec3{(static_cast<f32>(column) * 0.8f) - 4.0f,
+                                    1.0f + (static_cast<f32>(index) * 0.15f),
+                                    (static_cast<f32>(row) * 0.8f) - 1.0f});
+        }
+        // Two steps: the first populates the broad phase, the second is the one with real parallel
+        // work in flight when the fixture goes out of scope on the next line.
+        CY_REQUIRE(fixture.step(0).has_value());
+        CY_REQUIRE(fixture.step(1).has_value());
+    }
+
+    // Reaching here without a fault is the assertion. The counter the fix added is private, so what
+    // is checked is the observable consequence: the pool outlived every worker that touched it.
+    CY_CHECK(jobs.is_running());
+    jobs.shutdown();
+}

@@ -15,9 +15,16 @@ from its first symbol whether that symbol appears next month or next year. The r
 
 ## The shape of it
 
-Twelve milestones, four eras. Each milestone ends in something that runs, committed to the
+Thirteen milestones, four eras. Each milestone ends in something that runs, committed to the
 repository and exercised by continuous integration — so it becomes a regression gate for everything
 after it.
+
+Thirteen and not twelve because [`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposal.md)
+**inserted M5.5 · Operable between M5 and M6** rather than renumbering M6 through M11: M5 claimed
+`editor-ui-ux` at Working and closed on a scripted session with no window, and the correct repair
+was to give the window a milestone rather than to make the plan retroactively right. Inserting keeps
+every reference to a later milestone valid, and the fractional number says plainly that the ladder
+gained an entry rather than always having had one.
 
 ```mermaid
 flowchart LR
@@ -33,7 +40,8 @@ flowchart LR
         M3["M3 · First light<br/><i>a frame</i>"]
         M4["M4 · Playable<br/><i>Swift gameplay</i>"]
         M5["M5 · Authorable<br/><i>the editor</i>"]
-        M3 --> M4 --> M5
+        M5B["M5.5 · Operable<br/><i>a window, and an agent</i>"]
+        M3 --> M4 --> M5 --> M5B
     end
     subgraph S["Production scale"]
         direction TB
@@ -50,7 +58,7 @@ flowchart LR
         M9 --> M10 --> M11
     end
     M2 --> M3
-    M5 --> M6
+    M5B --> M6
     M8 --> M9
 
     classDef gate fill:#3b1f1f,stroke:#f87171,stroke-width:2px,color:#fee2e2
@@ -60,7 +68,7 @@ flowchart LR
 | Era | Milestones | What exists at the end |
 |---|---|---|
 | **Foundation** | M0 – M2 | A headless simulation that is deterministic and serializable. Nothing user-visible. |
-| **First playable** | M3 – M5 | A game you can write in Swift and edit in the editor. |
+| **First playable** | M3 – M5.5 | A game you can write in Swift and edit in the editor — in a window, or through an agent driving the same editor. |
 | **Production scale** | M6 – M8 | A world larger than memory, rendered at film detail, playable as a real game. |
 | **Shipping** | M9 – M11 | Multiplayer, open worlds, every platform, 1.0. |
 
@@ -396,13 +404,130 @@ to [`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposa
 
 ---
 
+## M5.5 — Operable
+
+*A window somebody can use, and the same editor an agent can drive.*
+
+**Entry**: M5 green.
+
+**Why this milestone exists at all.** M5 delivered docking, workspaces, the command palette,
+keyboard-first operation and the generated inspector — *as models a test can drive, with no window,
+no graphics device and no interface toolkit.* That satisfied `editor-ui-ux` to the letter and
+satisfied `delivery-roadmap` not at all, which requires a milestone to end in an artefact exercising
+its capabilities **through the entry points a user would use**. The row was wrong when it was
+written. M5.5 is the repair, and it is an insertion rather than a renumbering so that every existing
+reference to M6 through M11 stays valid.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `editor-ui-ux` | W | A window and an application shell; docking, floating, tabbing and named workspaces that persist and reset; the hierarchy, the generated inspector and the content browser; the command palette over M5's registry; keyboard-first operation with chords; density modes; validation surfacing; notifications |
+| `editor-visual-language` | W | The identity lockup; charcoal chrome around a viewport that carries the screen's colour; the semantic palette; X red, Y green, Z blue everywhere; selection as a thin gold outline; gizmos separated by **shape**; the orientation widget that is not a manipulator; chrome as overlay; surfaces by luminance step; the engine's own vocabulary, enforced by a gate |
+| `editor-agent-interface` | W | MCP behind an engine-owned interface, gated at build time; tools projected from the command registry with declared exclusions; resources for the hierarchy, an entity, the selection, assets and diagnostics; manipulation through the interactive path; **source authoring as a transaction with a computed effect class**; attribution; scope, confirmation and budget |
+| `editor-viewport-and-gizmos` | W | Unchanged from M5 in tier and **exercised interactively for the first time**: the viewport presents another process's rendered image with no copy through the CPU, camera navigation, the transform gizmo's four modes and three states, snapping, pivots and per-axis numeric entry, and the scene orientation widget |
+| `live-editing` | S | Unchanged. The cross-process viewport transport is new and measured; the runtime on the other end of it is still a fixture |
+
+**The toolkit decision, taken here.** egui 0.36.1 + `egui_dock` 0.21.1 over wgpu 30.0.1, and the
+minimum supported Rust version moves to 1.95 with it. Every candidate presented an engine-rendered
+GPU image with no CPU copy; what decided it was **byte-exactness** — Dear ImGui's wgpu renderer puts
+a gamma curve over the whole draw list, so "is the viewport the engine's image" would have had to be
+a tolerance rather than `==` — and accessibility, which the Dear ImGui ecosystem structurally cannot
+offer. The decision is kept reversible by a containment test: exactly one crate may name a toolkit,
+that crate and the viewport transport may name a graphics API, and nothing at layer 2 or below may
+name either.
+
+**Closing artefact**: two, because the milestone has two audiences.
+`samples/05b-editor-window` — the editor's window opened on a project and operated through
+**synthesised X11 input**, so it cannot tell the driver from a hand on a keyboard: three entities
+created from the keyboard, a selection by pointer, undo and redo, a command found by typing in the
+palette, and a save, each observed through the journal, the outliner's drawn rows and the viewport's
+pixels. `samples/05b-agent-authoring` — an agent over the Model Context Protocol composing a scene
+in an empty project, writing a gameplay script that undo removes and redo restores byte for byte,
+finding its own changes in the editor's history with actor, session and intent, and being refused
+what its scope does not grant. The second needs no display and is therefore the half continuous
+integration runs.
+
+**Exit criteria**
+
+- The editor opens on a project and a person can select and manipulate
+- The viewport image is the engine's, proven by comparison against a direct render
+- A gizmo drag returned to its origin restores exact values, in one transaction
+- An agent composes a scene, writes and reloads a script, and observes the result
+- An agent's source write is a transaction with an actor and an intent
+- No agent capability exceeds a human one
+- All four profiles build clean and `just test-all` is green in each
+
+**Risk spike**: the interface toolkit, on the one criterion that dominates — can the viewport present
+an engine-rendered GPU image without a copy through the CPU?
+
+*Measured, and the answer changed what the milestone had to build.* All three candidates could, at
+**below the measurement floor** — 0.44 ms with the image and 0.44 ms without, the same at 4K —
+against ≈ 2.0 ms per frame quiet and ≈ 8.9 ms at 4K for the device→host→device path the deferral had
+implicitly been costing. A second spike settled cross-process synchronisation: `wgpu_hal`'s
+`Adapter::open_with_callback` hands over the extension list before `vkCreateDevice`, so pushing
+`VK_KHR_external_semaphore_fd` and passing the result to `create_device_from_hal` is about thirty
+lines, and timeline semaphores then export and import over `OPAQUE_FD`. Three findings are written
+down rather than rediscovered: **three images minimum and four preferred**, because one wedges and
+two cost a whole editor frame of latency; the editor's wait must be a **bounded host wait and never
+a queue wait**, because an unsatisfiable value staged on the queue is an editor that renders nothing
+and cannot be closed; and the runtime must **announce after `vkQueueSubmit`**, which is the only
+reason a SIGKILLed runtime leaves the editor alive on its last complete frame.
+
+**What closed, and what did not.** The record of what the milestone reached is
+[`status.yaml`](roadmap/status.yaml); where this row and the record differ the record wins. Three
+tiers advanced — `editor-ui-ux`, `editor-visual-language` and `editor-agent-interface`, each to
+Working — and the evidence and the shortfalls are in
+[the capability matrix](roadmap/capability-matrix.md#where-m55s-tiers-are-thin). Two of the seven
+exit criteria above are **half met, and the artefacts report it on every run rather than narrowing
+the claim**:
+
+* *A person can select and manipulate.* Selecting works, through the outliner and the keyboard.
+  **Manipulating does not**: `DocumentService::open` builds an empty schema because there is no
+  world loader, so a gizmo has no `Transform` to bind to and a drag over the viewport commits
+  nothing. The gizmo itself is real and its one-transaction rule, its three states, its snapping,
+  its pivot and space modes and its per-axis numeric entry are held by tests against a document that
+  declares a `Transform` — which a test can build and an editor cannot yet open.
+* *An agent composes, writes and reloads a script, and observes the result.* Composing and writing
+  close. **Reloading and observing do not**: no `--agent-scope` grants the `external-effect` class,
+  so no agent connection can start a build; and the code that claims frames from the viewport
+  transport lives in the window's crate, so `--mcp`, which runs without a window, has no host for it.
+
+And the sentence "the viewport image is the engine's" is **stronger than what runs**. The comparison
+itself is as strong as it can be made: twenty consecutive imported frames at 1920×1080, each of
+8,294,400 bytes, matched an independently recomputed image **byte for byte** — `==`, not a tolerance,
+which is the property the toolkit was chosen for — with the comparison shown to fail on a one-bit
+change to a single channel. What the other end of it is, though, is `cy-viewport-publisher`: a Vulkan
+fixture in the editor's own Cargo workspace. No binary under `src/` speaks this wire, so **the
+engine's renderer has still never appeared in the editor**. Closing that is `live-editing`'s, which
+is why it stays at Seed — and it is also why the transform gizmo, normative in
+`docs/design/images/transform-gizmo.png` since M3, is drawn in no pixel at M5.5:
+`editor-viewport-and-gizmos` assigns gizmo drawing to the engine, and the engine is not there.
+
+`just roadmap-milestone m5b` evaluates 112 criteria — 101 inherited from M0 through M5, 11 new — and
+**it exits zero without exiting zero reliably, for a reason that is not M5.5's**:
+`integration.physics_jolt` traps at teardown about one run in forty, the ledger runs it at least five
+times, and two of the four full runs at this gate went red on it. The defect is real, it is in
+`src/backends/physics-jolt/`, and it is the first finding in six milestones that is a defect in the
+engine rather than in a gate or a claim. It is written up with its stack in
+[the capability matrix](roadmap/capability-matrix.md#where-m55s-tiers-are-thin).
+
+The gate found two further defects worth carrying forward by name, both of them silences rather than
+crashes, and both recorded with their fix in the capability matrix: **the editor survives its
+runtime being killed and does not say so** — the sentence is computed and drawn only when there is
+no image, which after a death is never — and **clicking in the viewport reports that no frame has
+arrived while the overlay beside it counts a thousand**, because nothing in the product calls
+`Viewport::pump`.
+
+---
+
 # Production scale
 
 ## M6 — Scale
 
 *A world larger than memory, and a build that is a graph rather than a script.*
 
-**Entry**: M5 green.
+**Entry**: M5.5 green.
 
 **Work**
 

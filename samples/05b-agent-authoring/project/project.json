@@ -1,0 +1,6 @@
+{
+  "name": "OpeningScene",
+  "engine": "CyberEngine",
+  "scripts": "game",
+  "worlds": "worlds"
+}

@@ -31,6 +31,15 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     registry.register(undo())?;
     registry.register(redo())?;
     registry.register(save())?;
+    // The viewport's own controls — transform modes, pivots, view presets and the engine's debug
+    // views. In their own module because there are thirty of them and they are generated from the
+    // model rather than written out.
+    crate::viewports::register(registry)?;
+    // Move, rotate and scale by a stated amount, through the same manipulation a gizmo drag
+    // performs — see `crate::manipulate`.
+    crate::manipulate::register(registry)?;
+    // Writing source, building it, reloading it, and play. See `crate::authoring`.
+    crate::authoring::register(registry)?;
     Ok(())
 }
 
@@ -152,7 +161,12 @@ fn undo() -> Command {
             let document = context
                 .document_mut(id)
                 .ok_or_else(|| Problem::not_found("the active document"))?;
-            match document.undo()? {
+            let undone = document.undo()?;
+            // A source edit's operation is one the document model records and does not interpret,
+            // so undoing it in the document is only half of the work: the file has to go back too.
+            // See `crate::project::rewind` for why that lives here rather than in the document.
+            rewind_sources(context, id, undone.as_ref());
+            match undone {
                 Some(transaction) => Ok(Outcome::new(format!("Undid {}", transaction.name))),
                 None => Ok(Outcome::new("Nothing to undo")),
             }
@@ -176,9 +190,11 @@ fn redo() -> Command {
             let document = context
                 .document_mut(id)
                 .ok_or_else(|| Problem::not_found("the active document"))?;
-            match document.redo()? {
+            let redone = document.redo()?;
+            replay_sources(context, id, redone.as_ref());
+            match redone {
                 Some(transaction) => Ok(Outcome::new(format!("Redid {}", transaction.name))),
-                None => Ok(Outcome::new("Nothing to redo")),
+                None => Ok(Outcome::new("Redid nothing")),
             }
         },
     )
@@ -259,6 +275,76 @@ fn save() -> Command {
     })
 }
 
+/// Put the files a just-undone transaction changed back to what they were.
+///
+/// Nothing happens for a transaction with no source operations in it, which is almost all of them.
+fn rewind_sources(
+    context: &mut dyn CommandContext,
+    document: cy_editor_core::ids::DocumentId,
+    transaction: Option<&cy_editor_documents::transaction::Transaction>,
+) {
+    apply_sources(context, document, transaction, false);
+}
+
+/// Put them back to what it made them.
+fn replay_sources(
+    context: &mut dyn CommandContext,
+    document: cy_editor_core::ids::DocumentId,
+    transaction: Option<&cy_editor_documents::transaction::Transaction>,
+) {
+    apply_sources(context, document, transaction, true);
+}
+
+/// The half the two share, expressed against the [`CommandContext`] so that undo works the same
+/// whether it was invoked by a key, the palette or an agent.
+fn apply_sources(
+    context: &mut dyn CommandContext,
+    document: cy_editor_core::ids::DocumentId,
+    transaction: Option<&cy_editor_documents::transaction::Transaction>,
+    forward: bool,
+) {
+    let Some(transaction) = transaction else {
+        return;
+    };
+    let Some(path) = context
+        .document(document)
+        .and_then(|document| document.assets().first().cloned())
+    else {
+        return;
+    };
+    let wanted: Vec<Option<String>> = transaction
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            cy_editor_documents::operation::Operation::Domain {
+                kind,
+                before,
+                after,
+                ..
+            } if kind == crate::project::SOURCE_DOMAIN => {
+                Some(crate::project::decode_source(if forward {
+                    after
+                } else {
+                    before
+                }))
+            }
+            _ => None,
+        })
+        .collect();
+    if wanted.is_empty() {
+        return;
+    }
+    let Some(project) = context.project() else {
+        return;
+    };
+    for contents in wanted {
+        // Swallowed deliberately: the history has already moved, and refusing here would leave the
+        // editor's history and the file system disagreeing with nothing able to say so. See
+        // `crate::project::apply_domain`, which makes the same argument at greater length.
+        let _ = project.put_source(&path, contents.as_deref());
+    }
+}
+
 /// A node identity as this editor prints it, or `None` for an empty string.
 fn parse_node(text: &str) -> Result<Option<NodeId>> {
     if text.is_empty() {
@@ -295,10 +381,15 @@ mod tests {
     #[test]
     fn every_built_in_command_satisfies_a_caller_that_cannot_see_the_interface() {
         // `register` fails if any of them does not. Asserting the count as well means a command
-        // added without metadata cannot slip through by simply not being registered.
+        // added without metadata cannot slip through by simply not being registered. The number
+        // grew twice at M5.5: with the viewport's own controls — thirty-seven generated in
+        // `crate::viewports` from the four transform modes, four pivots, seven view presets,
+        // nineteen debug views and three switches — and with the authoring loop: three stated
+        // manipulations in `crate::manipulate`, and two source commands, a build, a reload and
+        // three play states in `crate::authoring`.
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(registry.len(), 6);
+        assert_eq!(registry.len(), 6 + 37 + 3 + 7);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

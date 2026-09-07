@@ -16,8 +16,11 @@ Arrives at M5.
 target. That is what makes a runtime crash cost a restart rather than a session, what makes editing
 a remote or embedded target the same code path as editing locally, and what makes the boundary
 enforced by the language instead of by discipline. `crates/cy-editor-app/tests/safety.rs` checks it:
-every crate but the SDK carries `#![forbid(unsafe_code)]`, and nothing outside the SDK names a C
-type.
+every crate but three carries `#![forbid(unsafe_code)]`, and nothing outside the SDK names a C type.
+The three are the SDK, the test fixture that implements the C ABI, and `cy-editor-viewport-transport`
+— the platform module that imports the runtime's rendered image, which is dma-buf, `memfd` and
+Vulkan and has no safe standard-library path. That file also asserts that the list is exactly three
+long, so widening it is a decision rather than an edit.
 
 **Transactions are the only path for persistent mutation.** `DocumentContent` has no public mutating
 method that does not take a `WriteToken`, and a `WriteToken` has a private field — so no code outside
@@ -44,11 +47,37 @@ depends upward or sideways. Each crate declares its layer in `[package.metadata.
 | 2 | `cy-editor-commands` | The command registry, its machine-readable metadata, and connection scopes |
 | 2 | `cy-editor-testhost` | A test fixture that implements `cy_get_interface` in Rust, plus `cy-runtime-stub` |
 | 3 | `cy-editor-services` | Authoritative state: documents, selection, workspace, notifications, operations, runtime sessions |
+| 3 | `cy-editor-viewport-transport` | The engine's image across the process boundary: dma-buf import, timeline semaphores, the ring. **Linux only, and the only crate besides the render crate that may name a graphics API** |
+| 1 | `cy-editor-visual` | The visual language as data: semantic colour, the axis triad, density, gizmo and chrome rules, vocabulary |
+| 2 | `cy-editor-viewport` | The viewport model: camera, picking, gizmo geometry, snapping, view modes — headless |
+| 3 | `cy-editor-reflection` | One description of a type, whatever described it, and the input the generated inspector reads |
+| 4 | `cy-editor-interface` | Docking, workspaces, the palette, the keymap, the generated inspector, problems, notifications — as models, with no toolkit |
 | 4 | `cy-editor-viewmodels` | Presentation state derived from services. Never a second source of truth |
-| 5 | `cy-editor-app` | The `cyberdyne-editor` binary, and the workspace's own structural checks |
+| 4 | `cy-editor-agent` | The projection of the command registry, the read surface, the session and its budget. No transport |
+| 5 | `cy-editor-shell` | **The window.** The one crate that may see an interface toolkit: egui 0.36.1 + egui_dock 0.21.1 over wgpu 30.0.1 |
+| 5 | `cy-editor-mcp` | **The wire.** The Model Context Protocol over JSON-RPC on stdio, and the only crate that knows what JSON is. Optional at build time |
+| 6 | `cy-editor-app` | The `cyberdyne-editor` binary, and the workspace's own structural checks |
 
-`ui`, `inspector`, `assets`, `viewport` and the domain editors named by `editor-rust-application`
-arrive with tasks 4.x and 5.x. Their layer positions are already decided by the rule above.
+`cy-editor-app` moved from layer 5 to 6 at M5.5, when the render crate arrived: the binary hands a
+built `Editor` to the window, so it has to sit above it.
+
+**The agent interface is a projection and a wire, and they are separate crates on purpose.**
+`cy-editor-agent` holds what an agent can see and do — the tools, which are the registry; the read
+surface, which is the services; the session, its scope, its budget and its claims. It names no
+protocol and has no socket. `cy-editor-mcp` holds the protocol and nothing else, behind
+`cy_editor_agent::AgentTransport`, which is what `editor-agent-interface` means by "no MCP type SHALL
+appear in the editor's command, document, or view-model layers": the dependency direction makes it
+impossible rather than discouraged, and `crates/cy-editor-app/tests/gating.rs` checks that the
+transport stays optional, stays on by default, and stays named by nothing but the binary.
+
+The domain editors named by `editor-rust-application` arrive later. Their layer positions are
+already decided by the rule above.
+
+**The interface toolkit is contained by a test, now that there is one.**
+`crates/cy-editor-app/tests/containment.rs` fails if more than one crate names egui, eframe,
+egui_dock or winit, if any crate but that one and the viewport transport names a graphics API, and
+if anything at layer 2 or below names either. Without it `egui::Color32` reaches `cy-editor-visual`
+inside a milestone, because importing it is locally reasonable every single time.
 
 ## The workflow
 
@@ -73,16 +102,34 @@ it:
 | `profile` | Profile | off | `profiling` |
 | `release` | Shipping | off | `shipping` |
 
-## No third-party dependencies
+## The dependencies, and the rule they arrived under
 
-The workspace depends on nothing but the Rust standard library, and `[workspace.dependencies]` is
-empty rather than absent so that adding the first one is a visible edit in a reviewed file.
-`cargo build --offline` works in a fresh checkout.
+Through M5 the workspace depended on nothing but the Rust standard library, and
+`[workspace.dependencies]` was empty rather than absent so that adding the first one would be a
+visible edit in a reviewed file. M5.5 is that edit, and it was a decision about *when* rather than
+about *whether*: the interface toolkit is specified to be "an implementation choice behind editor
+abstractions, **selected on measurement**", the measurement was taken, and the choice is recorded in
+`openspec/changes/implement-m5b-operable/design.md` with the numbers that decided it.
 
-That is a decision about *when*, not about *whether*. The interface toolkit is specified to be "an
-implementation choice behind editor abstractions, selected on measurement", and the crates delivered
-here are precisely the ones that must be testable with no window, no graphics device and no toolkit.
-Choosing one now would put its types in the layer that is specified never to see them.
+| Crate | Version | Named by |
+|---|---|---|
+| `eframe`, `egui`, `egui_dock`, `egui-wgpu` | `=0.36.1` / `=0.21.1` | `cy-editor-shell`, and nothing else |
+| `wgpu`, `wgpu-hal`, `wgpu-types` | `=30.0.1` | `cy-editor-shell` and `cy-editor-viewport-transport` |
+| `ash`, `libc`, `pollster` | pinned | `cy-editor-viewport-transport` |
+| `image` | `=0.25.9` | `cy-editor-shell`, for the identity PNGs |
+
+`cy-editor-mcp` has none, deliberately: what it needs is a JSON value, a parser and a writer for the
+subset JSON-RPC carries, which is four hundred lines with its own round-trip tests. A serialisation
+library would bring a derive macro and a proc-macro toolchain into a workspace that has kept
+`cargo build --offline` working for five milestones, in exchange for code the crate would still have
+to review.
+
+Every version is exact rather than caret-ranged, because the spike measured *those*. The consequence
+is that `cargo build --offline` no longer works in a bare checkout, so the continuous-integration
+editor job carries a registry cache keyed on `Cargo.lock`.
+
+Everything below layer 5 still builds and tests with no window, no graphics device and no interface
+toolkit, and `crates/cy-editor-app/tests/containment.rs` is what keeps that true.
 
 ## The SDK is generated, and cannot drift
 
@@ -125,4 +172,25 @@ structural in `cy-editor-protocol` rather than advisory:
 
 **Not measured: the viewport transport.** The spike covered the control path only. If the image a
 user drags against is two or three frames stale, the drag feels laggy however fast the transform
-applies. That belongs to task 4.1 and should be measured before panels are built on it.
+applies. M5.5's synchronisation spike measured exactly that and `cy-editor-viewport-transport` was
+built on the result; see its README for the numbers.
+
+## The window
+
+`just run-editor` opens it. The window is the **default** — `--headless` is what asks for the
+scripted driver, and `--script` implies it — because a capability that has to be asked for is a
+capability nothing exercises, which is the defect M5.5 exists to correct.
+
+What it draws and what it refuses to draw:
+
+* **The viewport shows the engine's own frame, or a sentence saying why it cannot.** There is no
+  toolkit-drawn approximation, no grid and no placeholder cube. `editor-viewport-and-gizmos` forbids
+  a second renderer, and an approximation is one arriving a frame at a time.
+* **The inspector is generated from reflection**, from the open world's schema or from the engine's
+  registered component types. There is no type name anywhere in `panels/inspector.rs`; when nothing
+  has been described it says so rather than showing a hand-written form.
+* **Panels whose capability has not arrived say which milestone brings it**, rather than drawing an
+  empty canvas that looks like a working one.
+* **The default workspace is the arrangement of `docs/design/images/editor-rts-desertfrontier.png`.**
+  Three references exist and they differ; `crates/cy-editor-shell/src/lib.rs` says which is shipped
+  and why.

@@ -224,6 +224,26 @@ impl Session {
         Ok(request)
     }
 
+    /// Ask the runtime to load a newly built generation of a script module.
+    ///
+    /// Queued like every other message and answered by a [`Message::Reloaded`] carrying the same
+    /// request, so a caller learns which reload finished when several are in flight.
+    pub fn reload(
+        &self,
+        module: impl Into<String>,
+        library: impl Into<String>,
+        generation: u32,
+    ) -> Result<RequestId> {
+        let request = RequestId::from_raw(self.next_request.fetch_add(1, Ordering::AcqRel));
+        self.send(&Message::Reload {
+            request,
+            module: module.into(),
+            library: library.into(),
+            generation,
+        })?;
+        Ok(request)
+    }
+
     /// Everything that has arrived since the last call. Never blocks.
     ///
     /// The call an interface frame makes. It returns what is there and nothing else, so a frame's

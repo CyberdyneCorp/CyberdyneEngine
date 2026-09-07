@@ -17,7 +17,19 @@ use std::path::{Path, PathBuf};
 /// `cy-editor-sdk` is the audited interoperation overlay the specification permits — it is the only
 /// crate that names a C type. `cy-editor-testhost` implements the C ABI itself, which is the
 /// definition of an interoperation module; it is a test fixture and ships in nothing.
-const AUDITED: [&str; 2] = ["cy-editor-sdk", "cy-editor-testhost"];
+///
+/// `cy-editor-viewport-transport` is the **platform** half of the same sentence: the specification
+/// permits "narrow, audited interoperation **and platform** modules", and importing another
+/// process's `VkImage` is `memfd_create`, `mmap`, `sendmsg` with `SCM_RIGHTS`, and
+/// `vkImportSemaphoreFdKHR`. None of those has a safe standard-library path, and there is no
+/// version of this crate without them. It is narrow in the way the specification means: it holds
+/// the transport and nothing else, its unsafe blocks each carry the argument for why they are
+/// sound, and `containment.rs` stops anything above it from acquiring the same dependencies.
+const AUDITED: [&str; 3] = [
+    "cy-editor-sdk",
+    "cy-editor-testhost",
+    "cy-editor-viewport-transport",
+];
 
 fn crates_directory() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -158,7 +170,7 @@ fn the_audited_list_is_as_short_as_it_claims_to_be() {
     // than an edit. Two crates: the SDK, and the fixture that implements the C ABI it talks to.
     assert_eq!(
         AUDITED.len(),
-        2,
+        3,
         "the set of crates permitted unsafe has changed. That is a decision worth stating: which \
          crate, and why it is a narrow, audited interoperation or platform module."
     );

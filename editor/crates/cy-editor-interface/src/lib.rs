@@ -7,6 +7,7 @@
 //! | Module | The requirement it implements |
 //! |---|---|
 //! | [`docking`] | Docking, floating, tabbing, multiple windows, named workspaces, reset |
+//! | [`panels`] | Stable panel identity, kept apart from the title a person reads |
 //! | [`palette`] | The command palette: one input, fuzzy, ranked, incremental, never blocking |
 //! | [`keymap`] | Keyboard-first operation, chords, contexts, conflicts reported with both commands |
 //! | [`inspector`] | The inspector generated from reflection, with no per-type editor code |
@@ -52,6 +53,7 @@ pub mod inspector;
 pub mod keymap;
 pub mod notifications;
 pub mod palette;
+pub mod panels;
 pub mod problems;
 pub mod progress;
 pub mod shell;
@@ -65,6 +67,7 @@ pub use inspector::{
 pub use keymap::{Chord, Keymap, Resolution, Stroke};
 pub use notifications::{Modal, NotificationCentre, Offer, Toast};
 pub use palette::{Action, Entry, Index, Match};
+pub use panels::{PanelKey, PanelTitles};
 pub use problems::{Problems, Report, Site};
 pub use progress::{Artefact, ProgressSurface};
 pub use shell::Shell;

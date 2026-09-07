@@ -23,6 +23,15 @@ pub struct HierarchyRow {
     pub selected: bool,
     /// Whether it has children, so a disclosure triangle can be drawn.
     pub has_children: bool,
+    /// What a person reads on the row.
+    ///
+    /// A node has no name in the document model — identity is a `NodeId` and nothing else, which is
+    /// deliberate — so the label is the node's **kind**: the name of the first component it carries
+    /// that has data. That is the same definition
+    /// [`SelectionSummary`](cy_editor_interface::SelectionSummary) uses, so the outliner and the
+    /// inspector's header say the same word about the same node, and a node with no components
+    /// reads as `Node` in the engine's own vocabulary rather than as an identifier.
+    pub label: String,
 }
 
 /// The hierarchy panel's presentation state.
@@ -78,6 +87,15 @@ impl HierarchyViewModel {
         self.rebuilds
     }
 
+    /// Whether a node is expanded.
+    ///
+    /// A panel needs it to draw the disclosure and to know what a click on one means, and deriving
+    /// it from the rows — "the next row is deeper" — is wrong the moment a filter flattens them.
+    #[must_use]
+    pub fn is_expanded(&self, node: NodeId) -> bool {
+        self.expanded.contains(&node)
+    }
+
     /// Expand or collapse a node. Presentation state; nothing is written to the document.
     pub fn set_expanded(&mut self, node: NodeId, expanded: bool) {
         if expanded {
@@ -89,6 +107,12 @@ impl HierarchyViewModel {
         }
         // The rows change shape, so the next refresh must rebuild even though no revision moved.
         self.document_watch = Watch::new();
+    }
+
+    /// The filter in force.
+    #[must_use]
+    pub fn filter(&self) -> &str {
+        &self.filter
     }
 
     /// Set the name filter. Presentation state, like expansion.
@@ -122,17 +146,29 @@ impl HierarchyViewModel {
             .map(|node| (*node, 0))
             .collect();
 
+        let filter = self.filter.trim().to_lowercase();
         while let Some((node, depth)) = stack.pop() {
             let Some(state) = document.content().node(node) else {
                 continue;
             };
-            rows.push(HierarchyRow {
-                node,
-                depth,
-                selected: selection.nodes().any(|selected| selected == node),
-                has_children: !state.children.is_empty(),
-            });
-            if self.expanded.contains(&node) {
+            let label = label_of(document, state);
+            // A filtered outliner shows the matches, flattened. Keeping the depth would draw
+            // indentation against ancestors that are not on screen, which reads as a broken tree
+            // rather than as a filtered one; and expansion is left untouched so clearing the filter
+            // restores exactly the tree the user had.
+            let matched = filter.is_empty() || label.to_lowercase().contains(&filter);
+            if matched {
+                rows.push(HierarchyRow {
+                    node,
+                    depth: if filter.is_empty() { depth } else { 0 },
+                    selected: selection.nodes().any(|selected| selected == node),
+                    has_children: !state.children.is_empty(),
+                    label,
+                });
+            }
+            // A filter searches the whole tree, not the part that happens to be expanded — an
+            // outliner that only finds what is already visible finds nothing worth finding.
+            if !filter.is_empty() || self.expanded.contains(&node) {
                 for child in state.children.iter().rev() {
                     stack.push((*child, depth + 1));
                 }
@@ -140,6 +176,16 @@ impl HierarchyViewModel {
         }
         rows
     }
+}
+
+/// The node's kind: the first component it carries that has fields, or `Node`.
+fn label_of(document: &Document, state: &cy_editor_documents::content::NodeState) -> String {
+    state
+        .components
+        .keys()
+        .filter_map(|component| document.schema().type_of(*component))
+        .find(|definition| !definition.fields.is_empty())
+        .map_or_else(|| "Node".to_string(), |definition| definition.name.clone())
 }
 
 #[cfg(test)]
@@ -161,6 +207,60 @@ mod tests {
             })
             .unwrap();
         (editor, root, child)
+    }
+
+    #[test]
+    fn the_search_filter_actually_filters_and_searches_the_whole_tree() {
+        // A regression test, and the defect it catches was real: `set_filter` stored a string that
+        // `build` never read, so the outliner's permanent search field would have been a control
+        // that does nothing — the worst kind, because it looks like it works.
+        let mut editor = Editor::default();
+        let id = editor.open_document("worlds/city.cyworld").unwrap();
+        let document = editor.documents.get_mut(id).unwrap();
+        let light = document.schema_mut().declare_type("Light", false);
+        let intensity = document
+            .schema_mut()
+            .declare_field(
+                light,
+                "intensity",
+                cy_editor_core::value::ValueKind::Float,
+                "how bright it is",
+            )
+            .unwrap();
+        let (root, child) = document
+            .with_transaction("Build", Actor::human("designer"), |document| {
+                let root = document.create_node(None)?;
+                let child = document.create_node(Some(root))?;
+                document.add_component(
+                    child,
+                    light,
+                    vec![(intensity, cy_editor_core::value::Value::Float(1.0))],
+                )?;
+                Ok((root, child))
+            })
+            .unwrap();
+
+        let mut hierarchy = HierarchyViewModel::new();
+        hierarchy.refresh(&editor);
+        // Collapsed: only the root is on screen, and it is not a Light.
+        assert_eq!(hierarchy.rows().len(), 1);
+        assert_eq!(hierarchy.rows()[0].node, root);
+        assert_eq!(hierarchy.rows()[0].label, "Node");
+
+        // Filtering finds the child even though its parent is collapsed, which is the whole point
+        // of a search field in an outliner of thousands of entities.
+        hierarchy.set_filter("light");
+        hierarchy.refresh(&editor);
+        assert_eq!(hierarchy.rows().len(), 1);
+        assert_eq!(hierarchy.rows()[0].node, child);
+        assert_eq!(hierarchy.rows()[0].label, "Light");
+        assert_eq!(hierarchy.rows()[0].depth, 0, "a filtered list is flat");
+
+        // Clearing it restores exactly the tree that was there before: expansion was never touched.
+        hierarchy.set_filter("");
+        hierarchy.refresh(&editor);
+        assert_eq!(hierarchy.rows().len(), 1);
+        assert_eq!(hierarchy.rows()[0].node, root);
     }
 
     #[test]

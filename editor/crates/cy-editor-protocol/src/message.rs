@@ -131,6 +131,31 @@ pub enum Message {
         /// The frame the probe carried.
         frame: FrameId,
     },
+    /// Load a newly built generation of a script module into the running world.
+    ///
+    /// M5.5 task 3.7 — "build and reload triggered by the agent, over M4's proven model". The model
+    /// is M4's exactly: the build produces a **different file** per generation, because `dlopen` of a
+    /// path already open returns the same image, and the loader is handed that path. Nothing about
+    /// it is agent-specific; a person pressing the reload key sends the same message.
+    Reload {
+        /// The request's identity, so the answer can be paired with it.
+        request: RequestId,
+        /// Which module, as `module.toml` names it.
+        module: String,
+        /// The library the build produced, absolute.
+        library: String,
+        /// Which generation this is. Monotonic per module, and part of the file name.
+        generation: u32,
+    },
+    /// The runtime confirming a module was reloaded, with live state intact.
+    Reloaded {
+        /// Which request.
+        request: RequestId,
+        /// Which module.
+        module: String,
+        /// The generation now resident.
+        generation: u32,
+    },
 }
 
 impl Message {
@@ -204,6 +229,28 @@ impl Message {
                 writer.u8(7);
                 writer.u64(frame.as_u64());
             }
+            Message::Reload {
+                request,
+                module,
+                library,
+                generation,
+            } => {
+                writer.u8(8);
+                writer.u64(request.as_u64());
+                writer.text(module);
+                writer.text(library);
+                writer.u32(*generation);
+            }
+            Message::Reloaded {
+                request,
+                module,
+                generation,
+            } => {
+                writer.u8(9);
+                writer.u64(request.as_u64());
+                writer.text(module);
+                writer.u32(*generation);
+            }
         }
         writer.finish()
     }
@@ -254,6 +301,17 @@ impl Message {
             7 => Message::Pong {
                 frame: FrameId::from_raw(reader.u64()?),
             },
+            8 => Message::Reload {
+                request: RequestId::from_raw(reader.u64()?),
+                module: reader.text()?,
+                library: reader.text()?,
+                generation: reader.u32()?,
+            },
+            9 => Message::Reloaded {
+                request: RequestId::from_raw(reader.u64()?),
+                module: reader.text()?,
+                generation: reader.u32()?,
+            },
             other => {
                 return Err(Problem::new(
                     "decode a message",
@@ -269,7 +327,9 @@ impl Message {
     #[must_use]
     pub const fn request(&self) -> Option<RequestId> {
         match self {
-            Message::Applied { request, .. } | Message::Rejected { request, .. } => Some(*request),
+            Message::Applied { request, .. }
+            | Message::Rejected { request, .. }
+            | Message::Reloaded { request, .. } => Some(*request),
             _ => None,
         }
     }
@@ -295,6 +355,17 @@ mod tests {
             Message::Refused {
                 reason: "abi mismatch".into(),
                 remedy: "rebuild".into(),
+            },
+            Message::Reload {
+                request: RequestId::from_raw(11),
+                module: "character".into(),
+                library: "/tmp/libCyGame_g3.so".into(),
+                generation: 3,
+            },
+            Message::Reloaded {
+                request: RequestId::from_raw(11),
+                module: "character".into(),
+                generation: 3,
             },
             Message::Apply {
                 request: RequestId::from_raw(7),

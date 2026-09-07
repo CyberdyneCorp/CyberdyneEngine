@@ -1,0 +1,78 @@
+# The render crate: the one crate in this workspace that may see an interface toolkit.
+#
+# --- WHY IT IS ONE CRATE, AND WHY IT IS NOT THE BINARY ---------------------------------------------
+#
+# `editor-rust-application` makes the interface toolkit "an implementation choice behind editor
+# abstractions, selected on measurement". M5.5 made the choice — egui 0.36.1 + egui_dock 0.21.1 over
+# wgpu 30.0.1 — and from the moment a toolkit exists, that sentence is only true if the toolkit is
+# reachable from exactly one place. `cy-editor-app/tests/containment.rs` derives which crate that is
+# rather than naming it, and fails on a second.
+#
+# It is a crate of its own rather than a module of `cy-editor-app` because the design note put a
+# number on the boundary: swapping the toolkit is "one render crate plus four adapters". A render
+# crate that also held the binary, the argument parsing and the workspace's structural tests would
+# make that number unmeasurable, and the tests in `cy-editor-app` would then be testing the crate
+# they live in — which is the shape the workspace already refuses for layering and safety.
+#
+# --- LAYER 5 -------------------------------------------------------------------------------------
+#
+# Above the panels' models (layer 4) and below the binary (layer 6). It renders what the layers
+# below decide and decides nothing itself: the dock tree is `cy_editor_interface::Layout`, the
+# colours are `cy_editor_visual::Theme`, the palette's ranking is `cy_editor_interface::palette`,
+# the key resolution is `cy_editor_interface::keymap`, and the inspector's rows come from
+# reflection. When this crate is asked a question it cannot answer by asking one of them, that is
+# the signal that a decision has leaked upward.
+#
+# --- THE DEPENDENCIES ------------------------------------------------------------------------------
+#
+#   * `eframe` — the window, the event loop, the wgpu surface, and AccessKit. Its `persistence`
+#     feature is NOT enabled: workspaces persist through `cy_editor_interface::Workspaces`, which is
+#     tested headlessly, and a second persistence mechanism owned by the toolkit would be a second
+#     source of truth for the thing `editor-ui-ux` specifies most carefully.
+#   * `egui` — the immediate-mode interface itself.
+#   * `egui_dock` — docking, floating and tabbing. Third-party and on its own cadence, which the
+#     M5.5 design note named as a cost of this choice; `dock.rs` is the one file that sees it.
+#   * `egui-wgpu` — the bridge that lets the viewport panel paint with the editor's own device, and
+#     the type that accepts an already-created device (`WgpuSetup::Existing`). That is what keeps
+#     the editor to ONE device rather than one for the interface and one for the viewport.
+#   * `wgpu` — named because `WgpuSetup::Existing` and the viewport's render pass are wgpu types.
+#   * `image` — decodes the identity PNGs at start-up. egui's own image loaders are a heavier
+#     dependency tree for formats this editor does not ship.
+[package]
+name = "cy-editor-shell"
+description = "CyberEditor's window: the one crate that sees an interface toolkit."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 5
+
+[dependencies]
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-interface = { path = "../cy-editor-interface" }
+cy-editor-reflection = { path = "../cy-editor-reflection" }
+cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-viewmodels = { path = "../cy-editor-viewmodels" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
+cy-editor-visual = { path = "../cy-editor-visual" }
+
+eframe = { workspace = true }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+egui_dock = { workspace = true }
+image = { workspace = true }
+wgpu = { workspace = true }
+
+# The viewport's image comes from another process, and the mechanism that carries it is Linux's.
+# Elsewhere the viewport says so and shows nothing, which is `design.md` §2 rather than a stub.
+[target.'cfg(target_os = "linux")'.dependencies]
+cy-editor-viewport-transport = { path = "../cy-editor-viewport-transport" }
+
+[lints]
+workspace = true

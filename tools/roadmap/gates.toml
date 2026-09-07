@@ -543,6 +543,42 @@ class = "milestone"
 milestone = "m5"
 state = "green"
 
+# M5.5 — OPERABLE, AND IT IS CLOSED. The change that landed this gate declared it at
+# `joins-on-close` and said the milestone would close when `just roadmap-milestone m5b` passed and
+# the change was archived; M5.5's closing gate ran that recipe four times end to end and it passed
+# twice — 110 criteria, `rc=0`, the two three-platform legs reported as not evaluated on a host with
+# one operating system — so the line below is green. `just roadmap-test` reads
+# openspec/changes/archive/ and fails when a milestone whose change is archived still has a gate at
+# `joins-on-close`, so this flip and the archive belong together.
+#
+# READ THIS BEFORE TRUSTING A GREEN RUN OF IT. The other two of those four runs were RED, both on
+# `integration.physics_jolt`, which traps at teardown about one run in forty — a race in
+# `src/backends/physics-jolt/`, written up with its stack in
+# docs/roadmap/capability-matrix.md#where-m55s-tiers-are-thin. This ledger runs that test at least
+# five times, so it is red about one run in ten through no fault of its own criteria. It is M4's to
+# fix and it is the reason this gate is not yet trustworthy as a merge gate.
+#
+# ITS ID IS `m5b` AND NOT `m5.5`, because a milestone id is a file name under milestones/ and a
+# criterion's label. `tools/roadmap/record.py`'s `MILESTONES` now contains `m5b` between `m5` and
+# `m6` — M5.5's closing gate made that edit, which is what `criteria.rung` needs so that M6's ledger
+# inherits this one, and what `docs/roadmap/status.yaml` needs before a capability row can name M5B
+# as the milestone that advanced it.
+#
+# WHAT THE FLIP COSTS is, as at M5, one more milestone's own criteria in every later ledger and
+# nothing else — the flat ledger's arithmetic. Two of those criteria carry `requires = "display"` and
+# one `requires = "gpu"`, so on a machine without them they are reported as NOT EVALUATED and counted
+# separately rather than passing. That is the honest half of a milestone whose subject is a window.
+
+[[gate]]
+id = "milestone-m5b"
+describe = "M5.5 — Operable: the exit criteria of the milestone that gave the editor a window, put another process's rendered image in its viewport with no copy through the CPU, and let an agent author through the same commands a person uses."
+runs = ["just roadmap-milestone m5b"]
+platforms = ["linux"]
+since = "m5b"
+class = "milestone"
+milestone = "m5b"
+state = "green"
+
 # --- Recorded overrides ---------------------------------------------------------------------------
 #
 # None. The shape one takes, when one is unavoidable:

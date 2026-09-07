@@ -14,16 +14,20 @@ use cy_editor_commands::{Arguments, CommandContext, Outcome, Registry, Scope};
 use cy_editor_core::Actor;
 use cy_editor_core::ids::DocumentId;
 use cy_editor_core::observe::Revision;
-use cy_editor_core::problem::Result;
+use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
 use cy_editor_sdk::HostingMode;
+use cy_editor_viewport::play::PlayState;
 
 use crate::documents::DocumentService;
+use crate::manipulate;
 use crate::notifications::{Notification, NotificationService};
 use crate::operations::OperationService;
+use crate::project::ProjectService;
 use crate::runtime::RuntimeSession;
 use crate::selection::SelectionService;
+use crate::viewports::ViewportService;
 use crate::workspace::Workspace;
 
 /// The editor's authoritative state.
@@ -40,8 +44,23 @@ pub struct Editor {
     pub operations: OperationService,
     /// The engine, or the considered absence of one.
     pub runtime: RuntimeSession,
+    /// What the editor is showing: the viewports, their cameras and their tools.
+    ///
+    /// A service like the others, and for the same reason: a viewport's transform mode is state a
+    /// command changes, a panel reads and an agent asks about, so it cannot live in the window.
+    pub viewports: ViewportService,
+    /// The project around the documents: its source tree, its build, and what has been built.
+    pub project: ProjectService,
     /// Who the editor believes is acting. Attribution, not authorisation.
     actor: Actor,
+    /// The directories the invocation in progress may touch, and the scope that says so.
+    ///
+    /// Set by [`Editor::invoke`] for the duration and restored afterwards, exactly as the actor is,
+    /// and for the same reason: the value belongs to the invocation rather than to the editor. A
+    /// command that touches a path reads it through
+    /// [`cy_editor_commands::CommandContext::permitted_paths`], because only the command knows which
+    /// of its arguments is a path.
+    permitted: (String, Vec<String>),
 }
 
 impl Default for Editor {
@@ -61,8 +80,18 @@ impl Editor {
             notifications: NotificationService::new(),
             operations: OperationService::new(),
             runtime: RuntimeSession::none(),
+            viewports: ViewportService::new(),
+            project: ProjectService::default(),
             actor,
+            permitted: unrestricted(),
         }
+    }
+
+    /// Point the editor at a project on disk.
+    #[must_use]
+    pub fn with_project(mut self, project: ProjectService) -> Self {
+        self.project = project;
+        self
     }
 
     /// Act as somebody else — an agent, with its session and its stated intent.
@@ -117,7 +146,16 @@ impl Editor {
         scope: &Scope,
         arguments: &Arguments,
     ) -> Result<Outcome> {
-        registry.invoke(id, scope, self, arguments)
+        // The directory half of the scope travels with the invocation. The registry checks the
+        // effect class and the documents; it cannot check a path, because it does not know which
+        // argument is one — so the command does, and this is how it is told.
+        let previous = std::mem::replace(
+            &mut self.permitted,
+            (scope.name.clone(), scope.directories.clone()),
+        );
+        let outcome = registry.invoke(id, scope, self, arguments);
+        self.permitted = previous;
+        outcome
     }
 
     /// One frame of the editor's own housekeeping.
@@ -179,6 +217,139 @@ impl CommandContext for Editor {
 
     fn notify(&mut self, message: &str) {
         self.notifications.post(Notification::info(message));
+    }
+
+    fn viewport(&mut self) -> Option<&mut dyn cy_editor_commands::ViewportControls> {
+        Some(&mut self.viewports)
+    }
+
+    fn project(&mut self) -> Option<&mut dyn cy_editor_commands::ProjectHost> {
+        Some(self)
+    }
+
+    fn open_document(&mut self, asset: &str) -> Result<DocumentId> {
+        Editor::open_document(self, asset)
+    }
+
+    fn play_state(&self) -> Option<String> {
+        Some(cy_editor_commands::ProjectHost::play_state(self))
+    }
+
+    fn permitted_paths(&self) -> Option<(String, Vec<String>)> {
+        Some(self.permitted.clone())
+    }
+
+    fn manipulate(&mut self, request: &cy_editor_commands::Manipulation) -> Result<String> {
+        manipulate::apply(self, request)
+    }
+}
+
+/// What a human at the interface may touch: everything.
+///
+/// Not a claim that the human is trusted more than an agent — `cy_editor_commands::scope` makes that
+/// argument in full — but the observation that an editor which refused its own menu items would be
+/// refusing itself.
+fn unrestricted() -> (String, Vec<String>) {
+    ("interactive".to_string(), vec![String::new()])
+}
+
+/// The project's source tree, its build, and the runtime that runs it.
+///
+/// Implemented on [`Editor`] rather than on [`ProjectService`] because two of the three reach past
+/// it: a reload goes to [`Editor::runtime`] and a play switch to [`Editor::viewports`]. They are one
+/// trait because they are one loop — write, build, reload, play — and splitting them into three
+/// would put three hooks on [`CommandContext`] for one capability.
+impl cy_editor_commands::ProjectHost for Editor {
+    fn project_root(&self) -> String {
+        self.project.root().display().to_string()
+    }
+
+    fn source_paths(&self) -> Vec<String> {
+        self.project.source_paths()
+    }
+
+    fn source_exists(&self, path: &str) -> bool {
+        self.project.source_exists(path)
+    }
+
+    fn read_source(&self, path: &str) -> Result<String> {
+        self.project.read_source(path)
+    }
+
+    fn source_is_restorable(&self, path: &str) -> bool {
+        self.project.source_is_restorable(path)
+    }
+
+    fn put_source(&mut self, path: &str, contents: Option<&str>) -> Result<()> {
+        self.project.put_source(path, contents)
+    }
+
+    fn build(&mut self) -> Result<String> {
+        let (label, work) = self.project.next_build()?;
+        // Off the interface thread, where every other long operation goes. "The editor stays usable
+        // while an agent works" is not satisfiable by a build that blocks the caller, and an agent
+        // reads the operations resource for progress exactly as a person reads the same panel.
+        let operation = self.operations.start(label.clone(), move |_| {
+            work();
+            Ok(())
+        });
+        Ok(format!("{} — {}", label, operation.label()))
+    }
+
+    fn build_state(&self) -> String {
+        self.project.describe_build()
+    }
+
+    fn reload(&mut self, module: &str) -> Result<String> {
+        let (library, generation) = self.project.built()?;
+        let module = if module.trim().is_empty() {
+            self.project.module().to_string()
+        } else {
+            module.to_string()
+        };
+        let request = self
+            .runtime
+            .reload(&module, &library.display().to_string(), generation)?;
+        Ok(format!(
+            "Asked the runtime to load {module} generation {generation} (request {})",
+            request.as_u64()
+        ))
+    }
+
+    fn set_play(&mut self, state: &str) -> Result<String> {
+        let wanted = match state {
+            "playing" => PlayState::Playing,
+            "paused" => PlayState::Paused,
+            "editing" => PlayState::Editing,
+            other => {
+                return Err(Problem::new(
+                    format!("set the play state to {other:?}"),
+                    "there is no such play state",
+                )
+                .with_remedy("the states are: editing, playing, paused"));
+            }
+        };
+        // Every viewport, because play is a property of the runtime rather than of a panel: two
+        // viewports showing different play states would be two runtimes.
+        for viewport in self.viewports.all_mut().iter_mut() {
+            viewport.play = wanted;
+        }
+        Ok(format!(
+            "{} — {}",
+            wanted.badge(),
+            wanted
+                .persistence(cy_editor_viewport::play::Persistence::default())
+                .statement()
+        ))
+    }
+
+    fn play_state(&self) -> String {
+        match self.viewports.focused().play {
+            PlayState::Editing => "editing",
+            PlayState::Playing => "playing",
+            PlayState::Paused => "paused",
+        }
+        .to_string()
     }
 }
 

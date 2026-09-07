@@ -1,0 +1,394 @@
+# M5.5 — Operable: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m5b-operable/tasks.md and the M5.5 row the same change
+# inserts into docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each
+# to be a recipe that exits zero, a test that passes, a benchmark within a threshold, or a committed
+# artefact that is regenerated and compared — so an intention that cannot be run is a note at the
+# bottom of this file, not a criterion.
+#
+# `ci_job` names the gate in tools/roadmap/gates.toml under which continuous integration runs the
+# criterion. It is required on every criterion, including the ones this machine can evaluate: a
+# criterion that passes locally and runs nowhere else is not a gate.
+#
+# --- THIS LEDGER DECLARES ONLY M5.5's OWN CRITERIA, AND THERE IS NO `m5-green` ---------------------
+#
+# The ledger has been flat since M5. `just roadmap-milestone m5b` evaluates the permanent set
+# directly — the criteria of every milestone whose `class = "milestone"` gate carries
+# `state = "green"` and which sits below M5.5 on the ladder, merged and deduplicated, each distinct
+# check run exactly once — and then the criteria in this file. `criteria.build_plan` is the rule and
+# tools/roadmap/README.md states it. A criterion here whose `run` string is identical to one an
+# earlier ledger declared COLLAPSES INTO IT and is reported under the earlier label, `m0:format`
+# rather than `m5b:format`. The static gates are declared anyway, as M3's, M4's and M5's are,
+# because a ledger that does not name the checks its milestone had to satisfy is a ledger nobody can
+# read.
+#
+# --- WHY M5.5 IS `m5b` AND WHAT THAT COSTS --------------------------------------------------------
+#
+# `record.MILESTONES` is `m0`…`m11` and does not contain `m5b`, so `criteria.rung("m5b")` answers
+# `len(MILESTONES)` and this ledger sorts to the END of the ladder rather than between M5 and M6.
+# For THIS ledger that is harmless and in fact exactly right: it inherits every green milestone below
+# it, which is M0 through M5, and nothing sits above it yet. It stops being harmless the day M6's
+# ledger lands, because M6 would then rank BELOW M5.5 and would not inherit it. Whoever writes
+# m6.toml must add `m5b` to `record.MILESTONES` between `m5` and `m6` first — and that same edit is
+# what `docs/roadmap/status.yaml` needs before any capability row can name M5.5 as the milestone that
+# advanced it, since `record._entry` refuses a milestone that is not on the ladder. Recorded here
+# rather than fixed in passing because `tools/roadmap/record.py` is not this change's file and the
+# edit changes the meaning of every ledger at once.
+#
+# --- WHY THERE ARE TWO ARTEFACTS AND ONLY ONE OF THEM IS IN A PERMANENT GATE -----------------------
+#
+# `design.md` §5: "A single artefact cannot demonstrate both a person operating an editor and an
+# agent authoring through it, and pretending otherwise would repeat M5's mistake in a different
+# shape." So there are two, and they are asymmetric on purpose:
+#
+#   samples/05b-agent-authoring  needs no display and no graphics device. It is a CTest smoke entry,
+#                                so `just test-all` runs it and the `build-and-test` gate covers it
+#                                on every pull request. That is the half continuous integration can
+#                                judge.
+#   samples/05b-editor-window    needs an X server with XTEST, a device that can import a dma-buf
+#                                with an explicit DRM format modifier, python-xlib and Pillow. No
+#                                hosted runner has any of that. Its criteria carry
+#                                `requires = "display"` and a reason, so they are reported as NOT
+#                                EVALUATED rather than as passed — which is the same position
+#                                m3.toml takes about the golden images.
+#
+# THE WINDOW CRITERIA NAME `milestone-m5b` AS THEIR JOB AND THAT IS DELIBERATE. A `class =
+# "permanent"` gate whose commands no workflow runs fails `just ci-check`, and no workflow can run
+# these. Declaring one anyway would trade an honest "not evaluated" for a gate that is red on every
+# pull request — and `delivery-roadmap` forbids exactly that trade. The gate that evaluates them is
+# this milestone's own recipe, on a machine that has a display.
+
+schema = 1
+id = "m5b"
+name = "Operable"
+artefact = "samples/05b-editor-window — the editor's window opened on a project and operated through synthesised X11 input, compositing another process's GPU image with no copy through the CPU; and samples/05b-agent-authoring — an agent over the Model Context Protocol composing a scene, writing gameplay source as an undoable transaction, and being refused what its scope does not grant"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "`just roadmap-milestone m5b` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 5.9 — docs/roadmap/status.yaml and docs/roadmap/capability-matrix.md are the closing change's, and they cannot record M5.5 until `record.MILESTONES` contains `m5b`: `record._entry` refuses a milestone that is not on the ladder. See the header. `roadmap-tiers` below checks the record; no tool can tell an intention from its correction.",
+    "tasks 5.10 — archiving this change happens after this recipe passes, so it cannot be one of the criteria it must satisfy.",
+    "tasks 5.11 — opening the M6 change is `m6-open` below, which asks only that the change exists. Whether the derivation key model is the right named spike is a judgement.",
+    "TASK 5.1, 'a person can select AND MANIPULATE' — HALF SATISFIED, and the artefact says so on every run rather than being quietly narrowed. Selection works through the outliner and the keyboard; a gizmo drag commits nothing, because `DocumentService::open` calls `Document::new` — a name and an EMPTY SCHEMA — and there is no world loader, so `TransformBinding::of_schema` finds no `Transform` to bind to. Nothing outside a test calls `DocumentSchema::declare_type`. The gizmo itself is real and tested: its three states, snapping, pivot and space modes, per-axis numeric entry and one-transaction rule are held by cy-editor-viewport's own suites against a document that declares a Transform. samples/05b-editor-window/README.md carries the argument, and the driver re-attempts the drag every run.",
+    "TASK 5.3, 'a gizmo drag returned to its origin restores exact values, in one transaction' — HELD BY `editor` BELOW rather than by an artefact criterion, for the reason above: it is a Cargo test (`a_drag_that_ended_where_it_began_records_nothing`) and the artefact cannot reach it until opening a world produces content.",
+    "TASK 5.4, 'an agent composes a scene, writes and reloads a script, and observes the result' — TWO OF FOUR. Composing and writing are exercised by `agent-artefact` below, including undo removing the written file from disk and redo restoring it byte for byte. RELOADING is unreachable: `project.build` is `external-effect`, no `--agent-scope` grants that class (cy-editor-app/src/main.rs declares `read` and `author` and no third), so `project.reload` answers 'nothing has been built'. OBSERVING is unreachable in the same configuration: `viewport:` needs a frame and the code that claims frames — cy-editor-shell's `ViewportLink` — belongs to the window, so `--mcp` has no host for it. Both refusals are asserted by the artefact, so the day either is closed the run reports it.",
+    "TASK 5.2, 'the viewport image is the engine's, proven by comparison against a direct render' — PROVEN ACROSS A PROCESS BOUNDARY rather than against a direct render, and the stronger half is the one that runs: `viewport-transport` below requires the editor's imported image to match the publisher's frames with zero torn and zero newer, on a real second process, under the validation layer. `window-artefact` adds the composited half — the pixels in the window's viewport are saturated, which the editor's own charcoal chrome never is, so they came out of another process's GPU allocation. A byte-for-byte comparison against a direct render needs an engine that renders a world, which is `live-editing`'s.",
+    "TASK 2.3, 'selection by clicking, over M5's engine-side picking' — DARK IN THE WINDOW, AND FOUND BY DRIVING IT. The window composites the runtime's frames and the viewport MODEL never learns that any arrived: `cy-editor-shell::viewport_link` imports the texture and calls `set_view_state`, and nothing anywhere calls `cy_editor_viewport::Viewport::pump`. So `Viewport::pick` answers `None`, a click reports 'No frame has arrived yet' while the overlay beside it reads 'announced 1016 · skipped 0', `interaction_view()` falls back to the state the editor ASKED for rather than the state a frame was rendered with, and the published gizmo layout has nothing to arrive on. `ViewportSession` already implements `Transport`, so the fix is one `viewport.pump(&mut session, now)` per frame in `ViewportLink::begin_frame`. Recorded in samples/05b-editor-window/README.md; it is in a crate this change does not own.",
+    "TASK 4.4 — the built editor is compared against both reference images, difference by difference, with a verdict on each, in samples/05b-editor-window/README.md. THREE ROWS SAY THE REFERENCES ARE WRONG: they brand the publisher as the product, the console carries another engine's vocabulary, and the header says nothing about the runtime. Replacing the reference files and folding those verdicts into docs/design/editor-visual-language.md is the closing change's, because that document is not this one's to edit.",
+    "THERE IS NO NEW `class = \"permanent\"` GATE IN THIS CHANGE. Every criterion below runs under a gate that already exists, and the two that no workflow can run name `milestone-m5b`. `just ci-check` fails a permanent gate no workflow runs, and .github/workflows/ci.yml is not this change's file. The closing change should add an `editor-window` gate for a self-hosted runner with a display, and an `agent` gate beside it, together with their jobs — a gate and its job land in the same change or neither does.",
+    "The gate set this milestone's criteria join on close is tools/roadmap/gates.toml; `just roadmap-gates` prints it. `milestone-m5b` is declared there at `joins-on-close`, and the change that closes M5.5 flips it to green.",
+]
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes with editor-ui-ux, editor-visual-language and editor-agent-interface at Working"
+source = "tasks 5.10"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green. M5.5 adds no C or C++ at all — its whole implementation is Rust and two Python drivers — so this criterion is here to say that the milestone did not disturb the engine rather than to check anything it added"
+source = "tasks 5.7"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean. The same reading as `format` above: what M5.5 added is checked by `editor` below, which is rustfmt and clippy over a workspace that grew a window, a transport, a shell and an MCP server"
+source = "tasks 5.7"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the engine's layer order holds. The editor is still not in this check, because it still reaches the engine ONLY over the C ABI and links no engine target — which is what makes a runtime crash cost a restart rather than a session, and is the property M5.5's window had the most opportunity to break"
+source = "tasks 5.7, design.md"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate is run by a job in .github/workflows/, and no job reimplements a recipe. This is the criterion that fails if a gate is declared and its job is not, and it is why M5.5 declares no new permanent gate"
+source = "delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifest — which is worth running at the milestone that ended five years of the editor workspace having no third-party dependency at all, because the C and C++ manifest is a different file and must not have moved"
+source = "tasks 5.7, delivery-roadmap"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 5.9, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M5.5's exit tiers, each naming the change that advanced it"
+source = "tasks 5.9, implement-m5b-operable/proposal.md"
+kind = "tiers"
+ci_job = "milestone-m5b"
+
+# The M5.5 row the proposal inserts, as data. An exit tier is a FLOOR rather than an equality: a
+# later milestone advancing one of these past its M5.5 level must not make this recipe fail.
+#
+# --- READ THESE FOUR AS CLAIMS SOMEBODY STILL HAS TO EARN -----------------------------------------
+#
+# M5's ledger amended four rows at its own gate and wrote down why, which is the practice this table
+# inherits. The four to watch here, and what would have to be true:
+#
+#   editor-ui-ux         working.  The window exists, docks, tabs, persists a workspace, runs
+#       keyboard-first with chords, generates its inspector from reflection and surfaces
+#       notifications without interrupting — and samples/05b-editor-window drives all of it through
+#       synthesised input rather than through a model. What is thinner than the task list: no
+#       per-row visibility toggle in the outliner (NodeState has no visibility field), no content
+#       thumbnails, and no complex-script text shaping — egui has no HarfBuzz, so RTL and Indic are
+#       unhandled, which design.md §1 names as a cost of the toolkit choice and which cannot be
+#       fixed from here.
+#
+#   editor-visual-language working.  Charcoal chrome, the semantic palette, X red / Y green / Z blue,
+#       selection as a thin outline that does not glow, gizmos separated by SHAPE, the orientation
+#       widget carrying three axes and nothing else, chrome as overlay, surfaces by luminance step,
+#       tabular figures, and the engine's own vocabulary — with `cy-editor-interface`'s vocabulary
+#       gate rejecting another engine's product words in any registered command's prose. What is
+#       thinner: the performance overlay sits bottom-left where the reference and the design document
+#       both put it top-left. Recorded in samples/05b-editor-window/README.md's task 4.4 table.
+#
+#   editor-agent-interface working.  MCP behind an engine-owned interface, gated at build time and
+#       proven absent without the feature; tools projected from the registry with declared
+#       exclusions; resources for the hierarchy, an entity, the selection, assets and diagnostics;
+#       manipulation through the interactive path; source authoring as a transaction with a COMPUTED
+#       effect class; attribution; scope and budget. What is thinner, and it is the milestone's own
+#       headline: an agent cannot trigger a build, cannot therefore reload, and cannot look at the
+#       viewport in the configuration it runs in. Three small changes, none of them in this file, and
+#       every one of them is asserted by the artefact so that closing it is visible.
+#
+#   editor-viewport-and-gizmos working (unchanged from M5, exercised for the first time).  The
+#       viewport presents the engine's own image with no copy through the CPU, across a process
+#       boundary, measured. Gizmo geometry, states, snapping, pivots and numeric entry are built and
+#       tested. What is NOT exercised is a drag against a real world, for the reason the notes above
+#       give.
+[criterion.expect_tiers]
+editor-ui-ux = "working"
+editor-visual-language = "working"
+editor-agent-interface = "working"
+editor-viewport-and-gizmos = "working"
+editor-rust-application = "working"
+editor-documents-and-transactions = "working"
+editor-architecture = "seed"
+asset-import-pipeline = "working"
+live-editing = "seed"
+text-and-fonts = "seed"
+project-and-plugins = "working"
+core-type-system = "complete"
+scene-graph-and-nodes = "complete"
+native-abi = "complete"
+
+# --- The editor, which is still where the milestone lives -------------------------------------------
+
+[[criterion]]
+id = "editor"
+describe = "the editor's own gates and its whole test suite: the generated SDK bindings are what regeneration produces, rustfmt and clippy are clean over a workspace that gained a window, a shell, a viewport transport and an MCP server, and every invariant the two milestones pin is held by a test — a document mutated only through a transaction, undo and redo round-tripping, the journal replaying after an abnormal termination, no crate depending upward or sideways, unsafe confined to the audited SDK and the audited platform module, the four Cargo profiles meaning what they mean in CMake, the inspector generated from a real CyInterface table reached through dlopen, the editor surviving a runtime process killed under it, a ring turning about its own axis whatever the camera is doing, a drag that ended where it began recording nothing, and several egui passes over one frame of input counting as one press"
+source = "tasks 1.x, 2.x, 3.x, 5.7, ROADMAP M5.5"
+kind = "recipe"
+run = "just build-editor-check"
+timeout_s = 3600
+ci_job = "editor"
+
+[[criterion]]
+id = "editor-profiles"
+describe = "the editor's gates and tests in all four profiles, so the two configurations that compile the assertions out are configurations something has been run in. M5.5 is the milestone that made this expensive and made it matter: the shipping profile is where the transport's cross-process test reproduced a Vulkan image-layout defect that dev did not"
+source = "tasks 5.7"
+kind = "command"
+run = "for p in debug dev profile release; do just build-editor-check --profile \"$p\" || exit 1; done"
+timeout_s = 7200
+ci_job = "editor"
+
+# TASK 1.0.3, AND IT IS THE ONE CHECK THAT KEEPS THE TOOLKIT DECISION REVERSIBLE. design.md §1:
+# "Without a test, `egui::Color32` will appear in `cy-editor-visual` within a milestone, because it
+# is locally reasonable every single time." A separate criterion from `editor` above — which does run
+# it — because this is the one whose FAILURE has a different meaning from every other failure in that
+# suite: it does not mean the editor is broken, it means the boundary that lets the toolkit be
+# replaced has gone, and nothing else in the tree would say so.
+[[criterion]]
+id = "toolkit-containment"
+describe = "the interface toolkit is named by at most one crate, the graphics API by that crate and the viewport transport and nothing else, the exception list is as short as it claims to be, no headless crate names either, and the transport draws nothing"
+source = "tasks 1.0.3, design.md §1 (Reversibility, checked rather than assumed)"
+kind = "command"
+run = "CARGO_TARGET_DIR=\"$(just _editor-target-dir)\" cargo test --manifest-path editor/Cargo.toml -p cy-editor-app --test containment"
+timeout_s = 3600
+ci_job = "editor"
+
+# TASK 3.1. "WHEN the editor is built without the agent interface THEN no agent transport SHALL be
+# compiled, linked, or listening" is a requirement with a scenario, and a configuration nothing runs
+# is a configuration that is broken. The agent-crate handoff reported this as a by-hand run and asked
+# for a gate; this is the gate, declared here because the CI job that would also carry it belongs to
+# a file this change does not own.
+[[criterion]]
+id = "editor-without-the-agent-interface"
+describe = "the editor builds and its suites pass with the agent interface compiled out, so the requirement that it be optional at build time is a configuration something has run rather than a feature flag nobody has tried"
+source = "tasks 3.1, editor-agent-interface (The interface is optional at build time)"
+kind = "command"
+run = "CARGO_TARGET_DIR=\"$(just _editor-target-dir)\" cargo test --manifest-path editor/Cargo.toml -p cy-editor-app --no-default-features"
+timeout_s = 3600
+ci_job = "editor"
+
+[[criterion]]
+id = "editor-three-platforms"
+describe = "the editor's headless tests run in continuous integration on Linux, Windows and macOS. Still true at M5.5 and harder than it was: the window, the toolkit and the graphics device are all new, and the viewport transport's platform code is declared only under cfg(target_os = \"linux\") so that the other two resolve a small dependency tree and build a workspace with no dma-buf in it"
+source = "ROADMAP M5 (Editor headless tests run in continuous integration on all three platforms), tasks 1.0.4"
+kind = "recipe"
+run = "just build-editor-check"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "editor"
+
+# --- The viewport, which is the milestone's hardest claim -------------------------------------------
+
+# TASK 2.1 AND TASK 5.2. This is the criterion that would fail if the editor ever started drawing an
+# approximation, and it is the one the whole toolkit decision was taken on: the editor imports the
+# runtime's dma-buf, waits on a timeline semaphore across a process boundary with a BOUNDED HOST WAIT
+# rather than a queue wait, and reads whole frames while the runtime writes the others. It also holds
+# the two defects this milestone found and fixed — an image imported in a layout the validation layer
+# disagreed with, and the announce-after-submit ordering that is the only reason a SIGKILLed runtime
+# leaves the editor alive.
+[[criterion]]
+id = "viewport-transport"
+describe = "the engine's frame reaches the editor across a real process boundary with nothing torn and nothing newer than announced, in a layout the Vulkan validation layer agrees with, and the editor survives that process being killed"
+source = "tasks 1.0.1, 1.0.1b, 1.0.1c, 1.0.1d, 2.1, 5.2"
+kind = "command"
+run = "CARGO_TARGET_DIR=\"$(just _editor-target-dir)\" cargo test --manifest-path editor/Cargo.toml -p cy-editor-viewport-transport --test across_a_process_boundary"
+timeout_s = 3600
+requires = "gpu"
+reason = "the transport imports a dma-buf with an explicit DRM format modifier and waits on an exported timeline semaphore; there is no software path and a machine with no device cannot judge it"
+ci_job = "milestone-m5b"
+
+# --- The artefacts ------------------------------------------------------------------------------------
+
+# TASK 4.2. The half of the milestone continuous integration can judge, and it is a CTest smoke entry
+# so `just test-all` runs it — which is why `build-and-test` is its job rather than a gate of its own.
+# m5.toml made the same call for `text` and stated the rule.
+[[criterion]]
+id = "agent-artefact"
+describe = "an agent over the Model Context Protocol composes a scene in an empty project, reads it back, writes a gameplay script whose file appears on disk and which undo removes and redo restores byte for byte, finds its own changes in the editor's history carrying actor, session and intent, is refused a write outside its directories and an effect its scope does not grant, enters and leaves play, and is told what it has spent — with every tool it was offered checked against the registry's own projection, so a hand-written tool entry would fail this criterion"
+source = "tasks 3.2, 3.3, 3.6, 3.8, 3.9, 3.10, 3.12, 4.2, ROADMAP M5.5"
+kind = "recipe"
+run = "just test-smoke -R agent_authoring"
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "agent-recipe"
+describe = "just run-agent-authoring runs the agent artefact through the workflow a contributor uses, rather than only through the test that registers it"
+source = "tasks 4.2, developer-workflow-and-just"
+kind = "recipe"
+run = "just run-agent-authoring"
+ci_job = "milestone-m5b"
+
+# TASK 4.1, AND THE REASON THIS MILESTONE EXISTS. M5's row claimed editor-ui-ux at Working while
+# closing on a script that drove command objects; `delivery-roadmap` requires an artefact to exercise
+# a milestone's capabilities "through the same entry points a user would use". This one synthesises
+# X11 key presses and pointer drags through XTEST and delivers them to the server, so the editor
+# cannot tell the driver from a hand on a keyboard. Nothing in it is a test hook.
+[[criterion]]
+id = "window-artefact"
+describe = "the editor's window opens on a project, composites another process's rendered image in its viewport, creates three entities from the keyboard, selects one with the pointer, undoes and redoes them, finds a command by typing in the palette, and saves — each observed rather than assumed: the journal's records, the outliner's rows, the viewport's saturation against a charcoal interface, and a second headless editor over the same journal being offered no recovery"
+source = "tasks 1.1, 1.2, 1.3, 1.4, 2.1, 4.1, 5.1, ROADMAP M5.5"
+kind = "recipe"
+run = "just test-smoke -R editor_window"
+requires = "display"
+reason = "this artefact is about a window: it needs an X server with the XTEST extension, a device that can import a dma-buf, python-xlib and Pillow. A hosted runner has none of them, and a check that reported green because the window never opened is the exact failure M5.5 exists to correct"
+ci_job = "milestone-m5b"
+
+[[criterion]]
+id = "window-recipe"
+describe = "just run-editor-window runs the window artefact through the workflow a contributor uses, and exits 3 — a reported skip rather than a pass — where the display it was given cannot be driven"
+source = "tasks 4.1, developer-workflow-and-just"
+kind = "recipe"
+run = "just run-editor-window"
+requires = "display"
+reason = "the same reason as `window-artefact`: there is no display on a hosted runner and this artefact is about a window"
+ci_job = "milestone-m5b"
+
+# TASK 4.3, AND IT IS A `path` CRITERION FOR THE REASON `delivery-roadmap` ALLOWS ONE: a committed
+# artefact that is regenerated and compared. Both images are produced by the artefacts themselves —
+# `just run-editor-window --shot <path>` photographs the window it just drove, and
+# `just run-agent-authoring --shot <path>` renders the transcript of the session it just ran, in the
+# editor's own palette. An image taken by hand is an image nobody can refresh, and this project went
+# six milestones with one screenshot.
+[[criterion]]
+id = "screenshot-window"
+describe = "the window artefact's screenshot is committed under docs/design/images/, so the milestone can be evaluated by looking and the concept art can be compared against what was actually built"
+source = "tasks 4.3"
+kind = "path"
+path = "docs/design/images/editor-window-m5b.png"
+ci_job = "milestone-m5b"
+
+[[criterion]]
+id = "screenshot-agent"
+describe = "the agent artefact's screenshot is committed under docs/design/images/. It has no window, so what is photographed is the conversation — the session's own transcript, rendered in the editor's palette so the two images read as one product"
+source = "tasks 4.3"
+kind = "path"
+path = "docs/design/images/agent-authoring-m5b.png"
+ci_job = "milestone-m5b"
+
+# --- Every profile, and the platforms -------------------------------------------------------------
+
+# THE IDENTICAL COMMAND M1, M2, M3, M4 AND M5 DECLARE, written out rather than varied so that the
+# plan COLLAPSES all six into one run of it, reported as `m1:four-profiles`. That is the whole point
+# of the flat ledger and the reason this string must not be "improved" here.
+#
+# It now covers M5.5's agent artefact too, without saying so: `just test-all` includes
+# `smoke.agent_authoring`, which builds the editor in the profile under test before running it.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including M5.5's agent artefact, which builds the editor in the profile under test and drives it over MCP"
+source = "tasks 5.7"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+[[criterion]]
+id = "three-platforms"
+describe = "build and test are green on Linux, Windows and macOS with M5.5's modules in the tree"
+source = "ROADMAP M5.5, delivery-roadmap"
+kind = "command"
+run = "just env-doctor && just build-engine && just test-all"
+where = "ci"
+reason = "this host runs one operating system; the other two are built only by the CI matrix"
+ci_job = "build-and-test"
+
+# --- What comes next ---------------------------------------------------------------------------------
+
+# `**` rather than `*`, for the reason recorded against M0's `m1-open`: `openspec archive` moves a
+# closed change under `openspec/changes/archive/`, and a pattern that only matches an *open* change
+# turns red on the day the next milestone closes — which is the one day this criterion should be most
+# satisfied.
+#
+# M5's ledger renamed its own successor criterion to `m5b-open` when M5.5 was inserted, and said in
+# as many words: "this criterion will name `*m6*` again the moment M5.5's ledger is written — at
+# which point it becomes M5.5's `m6-open`". This is that criterion, and the rung after M5.5 is M6.
+[[criterion]]
+id = "m6-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M6, whose named spike is the derivation key model"
+source = "tasks 5.11, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m6*/proposal.md"
+ci_job = "milestone-m5b"

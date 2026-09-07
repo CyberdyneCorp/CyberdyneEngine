@@ -113,7 +113,17 @@ impl Scope {
     /// "WHEN an agent invokes a command outside its declared scope THEN it SHALL be refused, and the
     /// refusal SHALL name the scope that excluded it."
     pub fn admit(&self, metadata: &Metadata) -> Result<()> {
-        if self.effects.contains(&metadata.effect) {
+        self.admit_effect(metadata, metadata.effect)
+    }
+
+    /// Refuse a *particular invocation* whose effect class this scope does not grant.
+    ///
+    /// The class is passed rather than read off the metadata, because a command may work its class
+    /// out from the invocation — see `crate::registry::Command::effect_when`. Writing a source file
+    /// the editor can restore is a reversible mutation; writing one it cannot is not, and the same
+    /// command is both.
+    pub fn admit_effect(&self, metadata: &Metadata, effect: EffectClass) -> Result<()> {
+        if self.effects.contains(&effect) {
             return Ok(());
         }
         Err(Problem::new(
@@ -121,14 +131,14 @@ impl Scope {
             format!(
                 "the scope {:?} does not grant the effect class {} ({})",
                 self.name,
-                metadata.effect.name(),
-                metadata.effect.consequence()
+                effect.name(),
+                effect.consequence()
             ),
         )
         .with_remedy(format!(
             "grant {} to this connection deliberately, or invoke a command whose effect class is \
              one of: {}",
-            metadata.effect.name(),
+            effect.name(),
             self.granted_effects()
         )))
     }

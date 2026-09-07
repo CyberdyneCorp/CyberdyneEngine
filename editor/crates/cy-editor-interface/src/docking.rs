@@ -310,6 +310,32 @@ impl Layout {
         }
     }
 
+    /// A layout assembled from windows, as a dock manager hands one back.
+    ///
+    /// The counterpart of [`Layout::windows`], and it exists for the round trip. A dock manager
+    /// *renders* a layout and returns the user's rearrangement; without a way to build a layout
+    /// from what it returns, the toolkit's own tree would have to become the thing that is saved,
+    /// named and restored — and the editor would have acquired a persisted format owned by a
+    /// third-party crate on its own release cadence.
+    ///
+    /// An empty set yields the default rather than a layout with no window at all, for the reason
+    /// [`Layout::remove`] gives: an editor with no window is not a recoverable state.
+    #[must_use]
+    pub fn from_windows(windows: Vec<DockWindow>) -> Self {
+        if windows.is_empty() {
+            return Self::scene_editing();
+        }
+        let next_window = windows
+            .iter()
+            .map(|window| window.id.0 + 1)
+            .max()
+            .unwrap_or(1);
+        Self {
+            windows,
+            next_window,
+        }
+    }
+
     /// The windows, in creation order.
     #[must_use]
     pub fn windows(&self) -> &[DockWindow] {

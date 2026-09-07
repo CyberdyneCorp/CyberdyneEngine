@@ -109,6 +109,24 @@ impl RuntimeSession {
         session.apply(transaction, when)
     }
 
+    /// Ask the attached runtime to load a newly built generation of a script module.
+    ///
+    /// Task 3.7. Refused with a remedy when there is no runtime, for the same reason
+    /// [`RuntimeSession::apply`] is: an editor with no engine attached is an ordinary state, and the
+    /// answer is "start one", not an error a caller has to treat as a failure of the build.
+    pub fn reload(&self, module: &str, library: &str, generation: u32) -> Result<RequestId> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new(
+                format!("reload {module} into the running world"),
+                "no runtime is attached",
+            )
+            .with_remedy(
+                "start a runtime and connect to it; the library is built and will still be there",
+            )
+        })?;
+        session.reload(module, library, generation)
+    }
+
     /// Advance the editor's frame counter, which every request is keyed by.
     pub fn advance_frame(&self) {
         if let Some(session) = &self.session {

@@ -1,18 +1,30 @@
 //! `cyberdyne-editor` — the editor binary.
 //!
-//! Headless today, by choice rather than by omission: `editor-rust-application` requires the
-//! interface toolkit to be "an implementation choice behind editor abstractions, **selected on
-//! measurement**", and this milestone delivers the layers that must be finished before that
-//! measurement is worth making. What the binary does now is what a test, a script and an agent do —
-//! invoke commands against the same registry — so the day a window arrives it is one more caller
-//! rather than a rewrite.
+//! **It opens a window.** That is the default and it needs no flag, because a delivered capability
+//! that has to be asked for is a capability nothing exercises: M5's editor was headless by design
+//! and the milestone closed on a scripted session that could not show docking, workspaces, the
+//! palette or keyboard-first operation. M5.5 is the correction, and the window being the default is
+//! the part of it that keeps working.
+//!
+//! The headless driver is still here and is still what a test, a script and an agent use — the same
+//! `Registry::invoke`, so the window is one more caller rather than a second path. It is selected by
+//! asking for something that has no window in it: `--script`, `--list-commands`, `--version`, or
+//! `--headless` when you want the loop without a display.
 //!
 //! ```text
+//! cyberdyne-editor                                     # opens the window
+//! cyberdyne-editor --open worlds/city.cyworld          # opens the window on a world
 //! cyberdyne-editor --version
 //! cyberdyne-editor --list-commands
+//! cyberdyne-editor --headless --open worlds/city.cyworld
 //! cyberdyne-editor --open worlds/city.cyworld --script session.cyscript
 //! cyberdyne-editor --open worlds/city.cyworld --host /run/cyberdyne.sock --script session.cyscript
+//! cyberdyne-editor --open worlds/city.cyworld --mcp --agent-scope author
 //! ```
+//!
+//! `--mcp` is the agent interface, over the Model Context Protocol on standard input and output.
+//! It is compiled only when the `agent-interface` feature is on, which it is by default; a build
+//! without it has no transport at all and `tests/gating.rs` is what says so.
 
 #![forbid(unsafe_code)]
 
@@ -34,7 +46,15 @@ fn main() -> ExitCode {
 }
 
 /// What the command line asked for.
-#[derive(Default)]
+///
+/// A flat record of flags rather than an enumeration of modes, because that is what a command line
+/// is: `--headless --open x --journal y` is four independent answers, and folding them into a mode
+/// enumeration would need one variant per combination.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each is one command-line flag, independent of the others; grouping them into \
+              sub-structures would make the parser longer and say nothing new"
+)]
 struct Options {
     open: Vec<String>,
     script: Option<String>,
@@ -42,6 +62,30 @@ struct Options {
     list_commands: bool,
     version: bool,
     journal: Option<String>,
+    headless: bool,
+    mcp: bool,
+    agent_scope: String,
+    agent_intent: String,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            open: Vec::new(),
+            script: None,
+            host: None,
+            list_commands: false,
+            version: false,
+            journal: None,
+            headless: false,
+            mcp: false,
+            // The narrowest useful setting, which is what `editor-agent-interface` requires a scope
+            // to default to: an agent may look at everything and change nothing until somebody says
+            // otherwise. `--agent-scope author` is that somebody.
+            agent_scope: "read".to_string(),
+            agent_intent: "an agent session started from the command line".to_string(),
+        }
+    }
 }
 
 fn run(arguments: &[String]) -> Result<()> {
@@ -89,6 +133,27 @@ fn run(arguments: &[String]) -> Result<()> {
 
     for asset in &options.open {
         application.editor.open_document(asset)?;
+    }
+
+    if options.mcp {
+        return serve_agent(&mut application, &options);
+    }
+
+    // The window, unless something was asked for that has no window in it. `--script` implies
+    // headless because a script is a session that ends, and a window is a session that does not.
+    if !options.headless && options.script.is_none() {
+        let Application {
+            editor,
+            registry,
+            scope,
+        } = application;
+        let window = cy_editor_shell::EditorWindow::new(editor, registry, scope)?;
+        return cy_editor_shell::run(window).map_err(|error| {
+            Problem::new("open the editor window", error.to_string()).with_remedy(
+                "run with --headless to use the editor without a display, or check that a display \
+                 is available",
+            )
+        });
     }
 
     if let Some(path) = &options.script {
@@ -142,6 +207,14 @@ fn parse(arguments: &[String]) -> Result<Options> {
             "--script" => options.script = Some(value(arguments, &mut index, "--script")?),
             "--host" => options.host = Some(value(arguments, &mut index, "--host")?),
             "--journal" => options.journal = Some(value(arguments, &mut index, "--journal")?),
+            "--headless" => options.headless = true,
+            "--mcp" => options.mcp = true,
+            "--agent-scope" => {
+                options.agent_scope = value(arguments, &mut index, "--agent-scope")?;
+            }
+            "--agent-intent" => {
+                options.agent_intent = value(arguments, &mut index, "--agent-intent")?;
+            }
             "--help" | "-h" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -169,6 +242,86 @@ fn value(arguments: &[String], index: &mut usize, option: &str) -> Result<String
     })
 }
 
+/// Serve one agent over standard input and output.
+///
+/// **Standard output is the wire.** Nothing else may print to it while this runs, which is why the
+/// editor's own notifications go to standard error here and nowhere near `println!`.
+///
+/// The confirmer is `RefuseEverything`, and that is the honest answer rather than a limitation: an
+/// irreversible operation "SHALL require explicit human confirmation ... unless the connection has
+/// been granted that effect class deliberately", and there is no human on this connection — the
+/// only thing at the other end of standard input is the agent asking. A person who wants to grant
+/// an effect class does it by starting the editor differently, which is a decision they make once,
+/// deliberately, rather than a prompt they answer while reading something else.
+#[cfg(feature = "agent-interface")]
+fn serve_agent(application: &mut Application, options: &Options) -> Result<()> {
+    use cy_editor_agent::budget::Budget;
+    use cy_editor_agent::session::{AgentIdentity, AgentSession, RefuseEverything};
+    use cy_editor_commands::EffectClass;
+    use cy_editor_commands::scope::{DocumentScope, Scope};
+
+    let scope = match options.agent_scope.as_str() {
+        "read" => Scope::new("read", DocumentScope::All, [EffectClass::Read]),
+        "author" => Scope::new(
+            "author",
+            DocumentScope::All,
+            [EffectClass::Read, EffectClass::ReversibleMutation],
+        )
+        .with_directory("game/"),
+        other => {
+            return Err(Problem::new(
+                format!("read --agent-scope {other:?}"),
+                "there is no such scope",
+            )
+            .with_remedy(
+                "the scopes are: read (look at everything, change nothing) and author (also make \
+                 undoable changes, and write scripts under game/)",
+            ));
+        }
+    };
+
+    let session = AgentSession::new(
+        AgentIdentity {
+            agent: std::env::var("CY_AGENT").unwrap_or_else(|_| "agent".into()),
+            session: format!("cli-{}", std::process::id()),
+        },
+        options.agent_intent.clone(),
+        scope,
+        Budget::default(),
+        "unversioned",
+        0,
+    );
+
+    eprintln!(
+        "cyberdyne-editor: serving the agent interface on standard input; scope {:?}, {} command(s)",
+        options.agent_scope,
+        application.registry.len()
+    );
+    let mut server = cy_editor_mcp::McpServer::new(std::io::stdout().lock(), session);
+    cy_editor_mcp::serve(
+        std::io::stdin().lock(),
+        &mut server,
+        &mut application.editor,
+        &application.registry,
+        &mut RefuseEverything,
+    )
+}
+
+/// The refusal a build without the agent interface gives.
+///
+/// "WHEN the editor is built without the agent interface THEN no agent transport SHALL be compiled,
+/// linked, or listening." This function is what is left in its place: the option is still *named*,
+/// so a person who asks for it is told the build does not have it rather than that the option does
+/// not exist — which is the difference between a diagnosable answer and a puzzling one.
+#[cfg(not(feature = "agent-interface"))]
+fn serve_agent(_application: &mut Application, _options: &Options) -> Result<()> {
+    Err(Problem::new(
+        "serve the agent interface",
+        "this build does not contain one",
+    )
+    .with_remedy("rebuild with the agent-interface feature, which is on by default"))
+}
+
 /// The name to attribute this session's transactions to.
 ///
 /// Attribution, not authorisation: `editor-documents-and-transactions` is explicit that it "is not a
@@ -181,9 +334,13 @@ fn whoami() -> String {
 }
 
 const USAGE: &str = "\
-cyberdyne-editor — the Cyberdyne editor, a client of the engine over its stable C ABI
+cyberdyne-editor — CyberEngine, a client of the engine over its stable C ABI
 
     --open <asset>        open a document (repeatable)
+    --headless            run without a window; the default is to open one
+    --mcp                 serve one agent over the Model Context Protocol on stdin and stdout
+    --agent-scope <name>  what that agent may do: read (the default) or author
+    --agent-intent <text> what it says it is trying to do; recorded on every change it makes
     --script <path>       run a script of commands, one per line
     --host <socket>       attach a hosted runtime over a Unix domain socket
     --journal <directory> write transaction journals here, for crash recovery

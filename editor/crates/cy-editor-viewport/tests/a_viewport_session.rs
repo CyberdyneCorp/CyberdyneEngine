@@ -24,7 +24,8 @@ use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
 use cy_editor_protocol::FrameId;
 use cy_editor_viewport::gizmo::{
-    Drag, DragRequest, GizmoRegistry, GizmoSpace, Handle, Pivot, Transform3, TransformBinding,
+    Drag, DragInput, DragRequest, GizmoRegistry, GizmoSpace, Handle, Pivot, Transform3,
+    TransformBinding,
 };
 use cy_editor_viewport::math::{Quat, Vec3};
 use cy_editor_viewport::picking::{
@@ -35,7 +36,7 @@ use cy_editor_viewport::reconcile::{Prediction, Reconciler};
 use cy_editor_viewport::snapping::SnapSettings;
 use cy_editor_viewport::state::ViewState;
 use cy_editor_viewport::transport::{
-    FrameImage, Mailbox, MailboxTransport, PresentedFrame, TransportKind,
+    FrameImage, Mailbox, MailboxTransport, PresentedFrame, SharedImage, TransportKind,
 };
 use cy_editor_viewport::viewport::{Viewport, ViewportId};
 
@@ -137,7 +138,7 @@ fn a_click_a_drag_and_a_disagreement() {
         rendered.clone(),
         FrameImage::SharedTexture {
             handle: 7,
-            bytes: 8_294_400,
+            image: SharedImage::unpadded(1920, 1080, 1, 3),
         },
         1_000,
     ));
@@ -295,12 +296,14 @@ fn drag_along_x(
             manipulator: "translate",
             handle: Handle::AxisX,
             space: GizmoSpace::World,
-            pivot: Pivot::Origin,
+            pivot: Pivot::Individual,
             nodes,
             binding,
             view,
             pixel: (960.0, 540.0),
             actor: Actor::human("designer"),
+            duplicate: false,
+            bounds: None,
         },
     )
     .expect("a drag on the selected lamp");
@@ -312,8 +315,15 @@ fn drag_along_x(
         // predicts what it has just drawn. Nothing waits.
         sent_on = FrameId::from_raw(41 + u64::from(step));
         let pixel = (960.0 + f32::from(step) * 8.0, 540.0);
-        drag.update(registry, &mut project.document, view, pixel, &snap, false)
-            .expect("the drag continues");
+        drag.update(
+            registry,
+            &mut project.document,
+            view,
+            pixel,
+            &snap,
+            DragInput::NONE,
+        )
+        .expect("the drag continues");
         reconciler.predict(Prediction {
             frame: sent_on,
             node: lamp,

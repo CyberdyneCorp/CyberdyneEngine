@@ -1,0 +1,49 @@
+# The Model Context Protocol transport. Task 3.1.
+#
+# Layer 5, above the agent interface it speaks for and below the binary that starts it. It is where
+# the wire format lives and it is the ONLY crate in the workspace that knows what JSON is — which is
+# the point: `editor-agent-interface` requires the protocol to "sit behind an engine-owned interface
+# ... so that the wire format is replaceable without touching the projection above it. No MCP type
+# SHALL appear in the editor's command, document, or view-model layers." The dependency direction is
+# what enforces that: nothing below this crate can name anything in it.
+#
+# --- WHY IT HAS NO DEPENDENCIES ---------------------------------------------------------------------
+#
+# `thirdparty-dependencies` requires every dependency to be justified, and a JSON library cannot be
+# here: what this crate needs is a value tree, a parser and a writer for the subset JSON-RPC 2.0
+# actually carries, which is about four hundred lines and is exercised by its own round-trip tests.
+# Serde would bring a derive macro, a proc-macro toolchain and a build-time cost into a workspace
+# that has spent five milestones keeping `cargo build --offline` working in a bare checkout, in
+# exchange for code this crate would still have to review.
+#
+# The engine makes the same argument in `src/core/serialize`, and for the same reason: a format the
+# project owns end to end is one whose failure modes it can state.
+[package]
+name = "cy-editor-mcp"
+description = "The Model Context Protocol transport for CyberEditor's agent interface."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[package.metadata.cy]
+layer = 5
+
+[dependencies]
+cy-editor-agent = { path = "../cy-editor-agent" }
+cy-editor-commands = { path = "../cy-editor-commands" }
+cy-editor-core = { path = "../cy-editor-core" }
+cy-editor-services = { path = "../cy-editor-services" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
+
+# The wire is driven as bytes in `tests/`, which needs a frame to look at and an identity to name it
+# by. Both are the viewport's and the protocol's own types; neither appears in this crate's own
+# interface.
+[dev-dependencies]
+cy-editor-documents = { path = "../cy-editor-documents" }
+cy-editor-protocol = { path = "../cy-editor-protocol" }
+
+[lints]
+workspace = true

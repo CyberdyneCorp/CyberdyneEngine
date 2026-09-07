@@ -33,11 +33,36 @@
 # out of `justfile` and asserts that each row's Cargo profile exists here with the assertion setting
 # the row claims, so the two tables cannot drift.
 #
-# --- NO THIRD-PARTY DEPENDENCIES, DELIBERATELY ----------------------------------------------------
+# --- THE MINIMUM SUPPORTED RUST VERSION, AND WHY IT MOVED -----------------------------------------
 #
-# This workspace depends on nothing but the Rust standard library, and `[workspace.dependencies]`
-# below is empty rather than absent so that adding the first one is a visible edit in a reviewed
-# file. Three reasons, in the order they matter:
+# 1.92 through M5, 1.95 from M5.5. It moved because the interface toolkit chosen in M5.5 —
+# egui 0.36 over wgpu 30 — refuses to build on 1.92, and a declared MSRV the workspace cannot
+# actually build under is a lie a contributor discovers as a compiler error in a dependency.
+#
+# It is declared in three places on purpose, and they say the same thing:
+#   * here, so Cargo refuses an older toolchain with a sentence naming this file;
+#   * in `rust-toolchain.toml` at the repository root, so that `cargo` in a checkout SELECTS 1.95
+#     rather than failing with whatever the machine's default happens to be — this machine's is
+#     1.92, which is exactly the case that would otherwise be discovered late;
+#   * on every continuous-integration leg that runs Cargo, because a version pinned locally and
+#     unpinned in CI is a version that is not pinned.
+#
+# --- THE THIRD-PARTY DEPENDENCIES, AND THE RULE THEY ARRIVED UNDER ---------------------------------
+#
+# This workspace depended on nothing but the Rust standard library through M5, and
+# `[workspace.dependencies]` was empty rather than absent so that adding the first one would be a
+# visible edit in a reviewed file. This is that edit. The reasoning below is kept, because it is
+# still the rule — what changed is that the milestone with a window in it reached the two things the
+# standard library genuinely cannot do: draw a window, and import another process's `VkImage`.
+#
+# Every entry is pinned, and every entry names the crate that may use it. `thirdparty-dependencies`
+# requires each to be justified; the justification lives in the manifest of the crate that names it,
+# beside the code, rather than in a table nobody reads. The containment test
+# (`crates/cy-editor-app/tests/containment.rs`) is what keeps "the toolkit is an implementation
+# detail" true after the dependencies exist: exactly one crate may name the toolkit, and only it and
+# the viewport transport may name a graphics API.
+#
+# The three reasons the empty table was worth keeping for five milestones, unchanged:
 #
 #   * The interface toolkit is an implementation detail (`editor-rust-application`), and the crates
 #     delivered here — core, sdk, protocol, documents, commands, services, view models — are the
@@ -56,13 +81,48 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.5.0"
 edition = "2024"
-rust-version = "1.92"
+rust-version = "1.95"
 license = "Apache-2.0"
 repository = "https://github.com/leonardoaraujosantos/CyberdyneEngine"
 publish = false
 
-# Empty on purpose. See the note above.
+# Versions are exact rather than caret-ranged: the spike measured THESE, and "0.36.1" reading as
+# "any 0.36.x" would let a patch release change a measured number without an edit.
 [workspace.dependencies]
+# The window, the event loop, the immediate-mode interface and the docking on top of it. Named by
+# `cy-editor-shell` and by nothing else, which `crates/cy-editor-app/tests/containment.rs` enforces
+# by deriving the render crate rather than trusting this comment.
+#
+# `eframe` carries `default-features = false` plus exactly what the editor uses: the wgpu renderer
+# (there is no glow path, because the viewport imports a `VkImage`), X11 and Wayland, and
+# AccessKit — which `editor-ui-ux` requires and which was one of the two properties that decided the
+# toolkit. `persistence` is deliberately absent; see `crates/cy-editor-shell/Cargo.toml`.
+eframe = { version = "=0.36.1", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "wayland",
+    "wgpu",
+    "x11",
+] }
+egui = "=0.36.1"
+egui-wgpu = "=0.36.1"
+egui_dock = "=0.21.1"
+# PNG decoding for the identity assets, and nothing else: no encoders, no other formats.
+image = { version = "=0.25.9", default-features = false, features = ["png"] }
+# The Vulkan API, for the parts wgpu does not expose: timeline semaphore import and export, the
+# bounded host wait, and the DRM-format-modifier queries. `cy-editor-viewport-transport` only.
+ash = "=0.38.0"
+# `memfd_create`, `mmap`, and `SCM_RIGHTS` descriptor passing. Both platform crates.
+libc = "=0.2.189"
+# Three lines of executor for `wgpu::Instance::enumerate_adapters`, which is async. This workspace
+# has no async runtime and wants none.
+pollster = "=0.4.0"
+# The editor's graphics device. `wgpu-hal` is not an accident of the dependency tree: the supported
+# escape hatch that adds `VK_KHR_external_semaphore_fd` before `vkCreateDevice` is
+# `wgpu_hal::vulkan::Adapter::open_with_callback`, and there is no wgpu-level equivalent.
+wgpu = "=30.0.1"
+wgpu-hal = { version = "=30.0.1", features = ["vulkan"] }
+wgpu-types = "=30.0.1"
 
 # --- The profiles ---------------------------------------------------------------------------------
 #

@@ -184,6 +184,32 @@ build-editor-format:
     rustfmt --edition 2024 "${sources[@]}"
     echo "build-editor-format: formatted ${#sources[@]} file(s)"
 
+# Install and select the Rust toolchain this repository declares, and print what it selected.
+#
+# WHY THIS IS A RECIPE AND NOT FOUR LINES IN A WORKFLOW. `just ci-check` refuses a workflow step that
+# is not a recipe, and it is right to: a version pinned in a YAML file is a version a developer
+# cannot reproduce and a reviewer has to read a workflow to discover. It is also the third place the
+# minimum supported version would otherwise be written down — after `editor/Cargo.toml` and
+# `rust-toolchain.toml` — and three copies of a number is two too many.
+#
+# So the version comes from `rust-toolchain.toml`, which is the file rustup itself reads, and
+# `crates/cy-editor-app/tests/toolchain.rs` fails if it and `editor/Cargo.toml` ever disagree.
+build-editor-toolchain:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    version="$(just _editor-toolchain)"
+    echo "==> toolchain   ${version}, from rust-toolchain.toml"
+    rustup toolchain install "${version}" --profile minimal --component rustfmt --component clippy
+    rustup default "${version}"
+    cargo --version
+    rustc --version
+
+# The toolchain rust-toolchain.toml selects.
+[private]
+_editor-toolchain:
+    @grep -m1 '^channel' "{{root}}/rust-toolchain.toml" | sed 's/.*"\(.*\)".*/\1/'
+
 # The Cargo profile a workflow profile maps to, from the profile table. Column 5.
 [private]
 _cargo-profile profile:

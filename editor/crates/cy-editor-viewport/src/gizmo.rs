@@ -52,11 +52,17 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::Value;
 use cy_editor_documents::Document;
 
-use crate::math::{Quat, Ray, Vec3};
+use crate::math::{Bounds, Quat, Ray, Vec3};
 use crate::snapping::{Quantity, SnapSettings};
 use crate::state::ViewState;
 
 /// Which gizmo is in force.
+///
+/// Four, on `W`, `E`, `R` and `T`, which is what `docs/design/images/transform-gizmo.png` shows and
+/// what `cy_editor_visual::gizmo::GizmoMode` — the *appearance* half of the same decision — already
+/// listed. The two enumerations are checked against each other by
+/// `tests/the_two_gizmos_are_unmistakable.rs`, so a mode that exists in one and not the other is a
+/// failing test rather than a toolbar button that does nothing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum GizmoMode {
     /// Move.
@@ -66,9 +72,20 @@ pub enum GizmoMode {
     Rotate,
     /// Resize.
     Scale,
+    /// All three at once. Which manipulation a drag performs is decided by the handle that was
+    /// grabbed rather than by the mode, which is the whole of what makes it universal.
+    Universal,
 }
 
 impl GizmoMode {
+    /// Every mode, in the order the toolbar and the `W`/`E`/`R`/`T` bindings put them.
+    pub const ALL: [GizmoMode; 4] = [
+        GizmoMode::Translate,
+        GizmoMode::Rotate,
+        GizmoMode::Scale,
+        GizmoMode::Universal,
+    ];
+
     /// A name for the interface and for a command identifier.
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -76,16 +93,101 @@ impl GizmoMode {
             GizmoMode::Translate => "translate",
             GizmoMode::Rotate => "rotate",
             GizmoMode::Scale => "scale",
+            GizmoMode::Universal => "universal",
         }
     }
 
     /// What quantity this mode's numeric entry takes.
+    ///
+    /// The universal gizmo has no single answer — its arrows move, its rings turn and its boxes
+    /// resize — so it answers with the quantity of whichever handle is in question through
+    /// [`GizmoMode::quantity_of`], and this returns the one its numeric panel opens on.
     #[must_use]
     pub const fn quantity(self) -> Quantity {
         match self {
-            GizmoMode::Translate => Quantity::Length,
+            GizmoMode::Translate | GizmoMode::Universal => Quantity::Length,
             GizmoMode::Rotate => Quantity::Angle,
             GizmoMode::Scale => Quantity::Factor,
+        }
+    }
+
+    /// What quantity a numeric entry takes for one handle of this mode.
+    #[must_use]
+    pub const fn quantity_of(self, handle: Handle) -> Quantity {
+        match self {
+            GizmoMode::Universal => handle.role().quantity(),
+            other => other.quantity(),
+        }
+    }
+
+    /// The handles this mode presents, in a stable order.
+    ///
+    /// This is the set `docs/design/images/transform-gizmo.png` is normative about: three axis
+    /// handles, three planar handles at the axis pairs, three rotation rings plus the outer
+    /// screen-space ring, and a centre carrying **three separately targetable affordances** —
+    /// screen move, uniform scale and screen rotate.
+    #[must_use]
+    pub fn handles(self) -> Vec<Handle> {
+        match self {
+            GizmoMode::Translate => vec![
+                Handle::AxisX,
+                Handle::AxisY,
+                Handle::AxisZ,
+                Handle::PlaneYZ,
+                Handle::PlaneZX,
+                Handle::PlaneXY,
+                Handle::Screen,
+            ],
+            GizmoMode::Rotate => vec![
+                Handle::RingX,
+                Handle::RingY,
+                Handle::RingZ,
+                Handle::ScreenRing,
+            ],
+            GizmoMode::Scale => vec![Handle::BoxX, Handle::BoxY, Handle::BoxZ, Handle::Uniform],
+            GizmoMode::Universal => {
+                let mut handles = GizmoMode::Translate.handles();
+                handles.extend(GizmoMode::Rotate.handles());
+                handles.extend(GizmoMode::Scale.handles());
+                handles
+            }
+        }
+    }
+}
+
+/// What a handle does when it is dragged.
+///
+/// The universal gizmo is the reason this exists as a value rather than as a mode: a drag on a ring
+/// turns whatever mode is in force, and a drag on a box resizes, so the manipulator is chosen from
+/// the handle. [`GizmoRegistry::for_handle`] is the one place that choice is made.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HandleRole {
+    /// Arrows, planar handles and the centre circle.
+    Move,
+    /// Rings, and the outer screen-space ring.
+    Turn,
+    /// Box handles, and the centre cube.
+    Resize,
+}
+
+impl HandleRole {
+    /// The manipulator identifier this role selects.
+    #[must_use]
+    pub const fn manipulator(self) -> &'static str {
+        match self {
+            HandleRole::Move => "translate",
+            HandleRole::Turn => "rotate",
+            HandleRole::Resize => "scale",
+        }
+    }
+
+    /// The quantity its numeric entry takes.
+    #[must_use]
+    pub const fn quantity(self) -> Quantity {
+        match self {
+            HandleRole::Move => Quantity::Length,
+            HandleRole::Turn => Quantity::Angle,
+            HandleRole::Resize => Quantity::Factor,
         }
     }
 }
@@ -106,21 +208,134 @@ pub enum GizmoSpace {
     Custom(Quat),
 }
 
+impl GizmoSpace {
+    /// The two the toolbar offers, which is what `World / Local Space` in the reference is.
+    pub const TOGGLED: [GizmoSpace; 2] = [GizmoSpace::World, GizmoSpace::Local];
+
+    /// The word the interface uses.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            GizmoSpace::World => "World",
+            GizmoSpace::Local => "Local",
+            GizmoSpace::Parent => "Parent",
+            GizmoSpace::View => "View",
+            GizmoSpace::Custom(_) => "Custom",
+        }
+    }
+
+    /// The identifier a command uses.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            GizmoSpace::World => "world",
+            GizmoSpace::Local => "local",
+            GizmoSpace::Parent => "parent",
+            GizmoSpace::View => "view",
+            GizmoSpace::Custom(_) => "custom",
+        }
+    }
+
+    /// The space with this identifier. `custom` has no identifier form: it carries a rotation, and
+    /// a command that named it would have nowhere to get one.
+    #[must_use]
+    pub fn of_id(id: &str) -> Option<Self> {
+        [
+            GizmoSpace::World,
+            GizmoSpace::Local,
+            GizmoSpace::Parent,
+            GizmoSpace::View,
+        ]
+        .into_iter()
+        .find(|space| space.id() == id)
+    }
+}
+
 /// What the manipulation happens about.
+///
+/// The reference's four, named as it names them. They are genuinely four different answers and the
+/// difference only shows with more than one object selected, which is why an editor that offers two
+/// of them looks correct until the day it does not:
+///
+/// | Mode | The point | With several objects |
+/// |---|---|---|
+/// | [`Pivot::Pivot`] | the active object's own origin | they all turn about that one object |
+/// | [`Pivot::Center`] | the mean of the origins | they turn about the middle of the group |
+/// | [`Pivot::Bounds`] | the centre of the box containing them | they turn about the box, which is not the mean |
+/// | [`Pivot::Individual`] | each object's own origin | each turns in place |
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Pivot {
-    /// Each object about its own origin. Several objects rotate in place rather than about a shared
-    /// point.
+    /// The active object's own origin — the last one selected, which is the one the gizmo is drawn
+    /// on. The default, because it is the only one that behaves identically for one object and for
+    /// many.
     #[default]
-    Origin,
-    /// The centre of the selection's bounds.
+    Pivot,
+    /// The mean of the selection's origins.
     Center,
-    /// The last object selected, which is the one the gizmo is drawn on.
-    Active,
+    /// The centre of the axis-aligned box containing the selection's origins.
+    ///
+    /// **Origins, not extents.** A document knows where its objects are; how big they are is the
+    /// renderer's answer, and asking for it here would make the pivot depend on a frame having
+    /// arrived. When the runtime's bounds are available the caller passes them in as
+    /// [`DragRequest::bounds`] and this becomes the true bounds centre.
+    Bounds,
+    /// Each object about its own origin. Several objects turn in place rather than about a shared
+    /// point.
+    Individual,
+}
+
+impl Pivot {
+    /// Every mode, for a toolbar and for a command.
+    pub const ALL: [Pivot; 4] = [
+        Pivot::Pivot,
+        Pivot::Center,
+        Pivot::Bounds,
+        Pivot::Individual,
+    ];
+
+    /// The word the interface uses, which is the reference's word.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Pivot::Pivot => "Pivot",
+            Pivot::Center => "Center",
+            Pivot::Bounds => "Bounds",
+            Pivot::Individual => "Individual",
+        }
+    }
+
+    /// The identifier a command and a keymap use.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Pivot::Pivot => "pivot",
+            Pivot::Center => "center",
+            Pivot::Bounds => "bounds",
+            Pivot::Individual => "individual",
+        }
+    }
+
+    /// The mode with this identifier.
+    #[must_use]
+    pub fn of_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.id() == id)
+    }
 }
 
 /// Which part of the gizmo the cursor grabbed.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+///
+/// One enumeration for all four modes, because a handle is what a *drag* is about and a drag does
+/// not know which mode drew it — see [`HandleRole`]. The vocabulary is the reference's:
+///
+/// | Reference | Here |
+/// |---|---|
+/// | axis arrows | [`Handle::AxisX`], `AxisY`, `AxisZ` |
+/// | planar handles at the axis pairs | [`Handle::PlaneXY`], `PlaneYZ`, `PlaneZX` |
+/// | rotation rings | [`Handle::RingX`], `RingY`, `RingZ` |
+/// | the outer screen-space ring | [`Handle::ScreenRing`] |
+/// | box handles | [`Handle::BoxX`], `BoxY`, `BoxZ` |
+/// | the centre's three affordances | [`Handle::Screen`], [`Handle::Uniform`], [`Handle::ScreenRing`] |
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum Handle {
     /// The first axis of the gizmo's space.
     AxisX,
@@ -134,49 +349,257 @@ pub enum Handle {
     PlaneYZ,
     /// The plane spanned by the third and first.
     PlaneZX,
-    /// The plane facing the camera: free movement, and the trackball rotation.
+    /// The ring about the first axis.
+    RingX,
+    /// The ring about the second.
+    RingY,
+    /// The ring about the third.
+    RingZ,
+    /// The outer ring, in the camera's plane: screen rotate. One of the centre's three affordances.
+    ScreenRing,
+    /// The box handle on the first axis.
+    BoxX,
+    /// The box handle on the second.
+    BoxY,
+    /// The box handle on the third.
+    BoxZ,
+    /// The plane facing the camera: free movement. The centre circle.
     Screen,
-    /// Every axis at once, for a uniform scale.
+    /// Every axis at once, for a uniform scale. The centre cube.
     Uniform,
 }
 
 impl Handle {
-    /// The axis this handle acts along, in the gizmo's own space. `None` for a plane or the screen
-    /// handle, which act in a plane rather than along a line.
+    /// Every handle any mode can present, for a hit test and for a check.
+    pub const ALL: [Handle; 15] = [
+        Handle::AxisX,
+        Handle::AxisY,
+        Handle::AxisZ,
+        Handle::PlaneXY,
+        Handle::PlaneYZ,
+        Handle::PlaneZX,
+        Handle::RingX,
+        Handle::RingY,
+        Handle::RingZ,
+        Handle::ScreenRing,
+        Handle::BoxX,
+        Handle::BoxY,
+        Handle::BoxZ,
+        Handle::Screen,
+        Handle::Uniform,
+    ];
+
+    /// The axis this handle acts along or about, in the gizmo's own space.
+    ///
+    /// `None` for a plane, for the two screen handles and for the uniform one, which act in a plane
+    /// or on everything at once rather than along a line.
     #[must_use]
     pub const fn axis(self) -> Option<Vec3> {
         match self {
-            Handle::AxisX => Some(Vec3::X),
-            Handle::AxisY => Some(Vec3::Y),
-            Handle::AxisZ => Some(Vec3::Z),
+            Handle::AxisX | Handle::RingX | Handle::BoxX => Some(Vec3::X),
+            Handle::AxisY | Handle::RingY | Handle::BoxY => Some(Vec3::Y),
+            Handle::AxisZ | Handle::RingZ | Handle::BoxZ => Some(Vec3::Z),
             _ => None,
         }
     }
 
-    /// The normal of the plane this handle acts in, in the gizmo's own space. `None` for an axis
-    /// handle and for the screen handle, whose plane is the camera's and is supplied at drag start.
+    /// The normal of the plane this handle acts in, in the gizmo's own space.
+    ///
+    /// `None` for an axis handle and for the screen handles, whose plane is the camera's and is
+    /// supplied at drag start. **A ring's plane normal is its own axis**, which is what makes a
+    /// rotation about X a rotation about X whatever the camera is doing — the property
+    /// `a_ring_turns_about_its_own_axis_whatever_the_camera_is_doing` holds.
     #[must_use]
     pub const fn plane_normal(self) -> Option<Vec3> {
         match self {
-            Handle::PlaneXY => Some(Vec3::Z),
-            Handle::PlaneYZ => Some(Vec3::X),
-            Handle::PlaneZX => Some(Vec3::Y),
+            Handle::PlaneYZ | Handle::RingX => Some(Vec3::X),
+            Handle::PlaneZX | Handle::RingY => Some(Vec3::Y),
+            Handle::PlaneXY | Handle::RingZ => Some(Vec3::Z),
             _ => None,
         }
+    }
+
+    /// What dragging this handle does.
+    #[must_use]
+    pub const fn role(self) -> HandleRole {
+        match self {
+            Handle::AxisX
+            | Handle::AxisY
+            | Handle::AxisZ
+            | Handle::PlaneXY
+            | Handle::PlaneYZ
+            | Handle::PlaneZX
+            | Handle::Screen => HandleRole::Move,
+            Handle::RingX | Handle::RingY | Handle::RingZ | Handle::ScreenRing => HandleRole::Turn,
+            Handle::BoxX | Handle::BoxY | Handle::BoxZ | Handle::Uniform => HandleRole::Resize,
+        }
+    }
+
+    /// Which of the three centre affordances this is, if it is one.
+    ///
+    /// The reference draws them concentrically — circle, cube, outer ring — and requires them to be
+    /// **separately targetable**. Three variants rather than one `Centre` is what makes that a
+    /// property of the type instead of a note in a drawing routine.
+    #[must_use]
+    pub const fn is_centre(self) -> bool {
+        matches!(self, Handle::Screen | Handle::Uniform | Handle::ScreenRing)
     }
 
     /// A name for the numeric feedback: "X", "XY", "screen".
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
-            Handle::AxisX => "X",
-            Handle::AxisY => "Y",
-            Handle::AxisZ => "Z",
+            Handle::AxisX | Handle::RingX | Handle::BoxX => "X",
+            Handle::AxisY | Handle::RingY | Handle::BoxY => "Y",
+            Handle::AxisZ | Handle::RingZ | Handle::BoxZ => "Z",
             Handle::PlaneXY => "XY",
             Handle::PlaneYZ => "YZ",
             Handle::PlaneZX => "ZX",
             Handle::Screen => "screen",
+            Handle::ScreenRing => "screen ring",
             Handle::Uniform => "uniform",
+        }
+    }
+}
+
+/// Which axes a manipulation is allowed to touch.
+///
+/// `X`/`Y`/`Z` during a drag, per the reference's shortcut table. It is *not* a modifier: it is a
+/// state a keystroke toggles mid-drag, and pressing the same key again releases it — which is why it
+/// lives beside the modifiers in [`DragInput`] rather than inside them.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct AxisLock {
+    /// Whether the first axis may move.
+    pub x: bool,
+    /// The second.
+    pub y: bool,
+    /// The third.
+    pub z: bool,
+}
+
+impl AxisLock {
+    /// No lock: every axis is free.
+    pub const NONE: Self = Self {
+        x: false,
+        y: false,
+        z: false,
+    };
+
+    /// A lock on one axis alone.
+    #[must_use]
+    pub const fn only(axis: usize) -> Self {
+        Self {
+            x: axis == 0,
+            y: axis == 1,
+            z: axis == 2,
+        }
+    }
+
+    /// Whether anything is locked at all.
+    #[must_use]
+    pub const fn constrains(self) -> bool {
+        self.x || self.y || self.z
+    }
+
+    /// Toggle one axis, which is what pressing `X` twice does.
+    #[must_use]
+    pub const fn toggled(self, axis: usize) -> Self {
+        let mut lock = self;
+        match axis {
+            0 => lock.x = !lock.x,
+            1 => lock.y = !lock.y,
+            _ => lock.z = !lock.z,
+        }
+        lock
+    }
+
+    /// Zero the components no axis lock admits. With no lock in force the value passes through
+    /// **untouched**, which is what keeps the exactness property true when nothing is locked.
+    #[must_use]
+    pub fn constrain(self, value: Vec3) -> Vec3 {
+        if !self.constrains() {
+            return value;
+        }
+        Vec3::new(
+            if self.x { value.x } else { 0.0 },
+            if self.y { value.y } else { 0.0 },
+            if self.z { value.z } else { 0.0 },
+        )
+    }
+
+    /// The single locked axis, when exactly one is locked. A rotate drag uses it to override the
+    /// ring it grabbed, which is what `E` then `Z` means.
+    #[must_use]
+    pub const fn single(self) -> Option<Vec3> {
+        match (self.x, self.y, self.z) {
+            (true, false, false) => Some(Vec3::X),
+            (false, true, false) => Some(Vec3::Y),
+            (false, false, true) => Some(Vec3::Z),
+            _ => None,
+        }
+    }
+
+    /// The lock as it is written in the interface: `X`, `XY`, or nothing.
+    #[must_use]
+    pub fn label(self) -> String {
+        let mut label = String::new();
+        for (held, name) in [(self.x, "X"), (self.y, "Y"), (self.z, "Z")] {
+            if held {
+                label.push_str(name);
+            }
+        }
+        label
+    }
+}
+
+/// How much of the cursor's movement a precision drag applies.
+///
+/// `Shift` in the reference's shortcut table. A tenth is the figure every tool this one will be
+/// compared against uses, and the property that matters is that it is a *linear* factor: scaling the
+/// offset cannot move a drag that returned to its origin away from zero.
+pub const PRECISION_FACTOR: f32 = 0.1;
+
+/// The keyboard state a drag is advanced with.
+///
+/// `Ctrl` is temporary snap, `Shift` is precision, and `X`/`Y`/`Z` are the axis lock. `Alt` —
+/// duplicate and transform — is not here because it acts once, when the drag *begins*; it is
+/// [`DragRequest::duplicate`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct DragInput {
+    /// Whether the transient snap modifier is held. It **toggles** the snapping setting rather than
+    /// enabling it, so holding it while snapping is on turns snapping off — see
+    /// [`SnapSettings::active`].
+    pub snap_modifier: bool,
+    /// Whether the precision modifier is held.
+    pub precision: bool,
+    /// Which axes the manipulation is confined to.
+    pub lock: AxisLock,
+}
+
+impl DragInput {
+    /// Nothing held and nothing locked.
+    pub const NONE: Self = Self {
+        snap_modifier: false,
+        precision: false,
+        lock: AxisLock::NONE,
+    };
+
+    /// The snap modifier alone.
+    #[must_use]
+    pub const fn snapping() -> Self {
+        Self {
+            snap_modifier: true,
+            ..Self::NONE
+        }
+    }
+
+    /// The factor the cursor's movement is multiplied by.
+    #[must_use]
+    pub const fn precision_factor(self) -> f32 {
+        if self.precision {
+            PRECISION_FACTOR
+        } else {
+            1.0
         }
     }
 }
@@ -196,6 +619,34 @@ pub struct TransformBinding {
     pub rotation: FieldId,
     /// The field holding a `Value::Vec3` scale.
     pub scale: FieldId,
+}
+
+impl TransformBinding {
+    /// The name of the component a gizmo edits by default.
+    pub const COMPONENT: &'static str = "Transform";
+
+    /// The three field names, in the order [`TransformBinding`] holds them.
+    pub const FIELDS: [&'static str; 3] = ["translation", "rotation", "scale"];
+
+    /// Find the binding in a document's own schema, or answer that there is none.
+    ///
+    /// **By name, and only by name.** A document's schema is the editor's own — it exists before any
+    /// runtime does — so the only thing that can identify a transform is what the schema calls it.
+    /// A document whose transform component is called something else is not broken; it simply has no
+    /// gizmo until a tool declares a binding for it, which is what [`TransformBinding`] being a value
+    /// rather than three hard-coded names is for.
+    #[must_use]
+    pub fn of_schema(schema: &cy_editor_documents::schema::DocumentSchema) -> Option<Self> {
+        let definition = schema.type_named(Self::COMPONENT)?;
+        let [translation, rotation, scale] =
+            Self::FIELDS.map(|name| definition.field_named(name).map(|field| field.id));
+        Some(Self {
+            component: definition.id,
+            translation: translation?,
+            rotation: rotation?,
+            scale: scale?,
+        })
+    }
 }
 
 /// A transform, in the three parts a document stores.
@@ -247,6 +698,8 @@ pub struct DragFrame {
     pub handle: Handle,
     /// The rotation that takes the gizmo's own axes into world space.
     pub orientation: Quat,
+    /// Whether each object turns about its own origin rather than about [`DragFrame::pivot`].
+    pub individual: bool,
 }
 
 /// What the runtime needs in order to draw the gizmo.
@@ -315,11 +768,31 @@ pub struct ManipulationContext<'a> {
     pub ray: Ray,
     /// The increments in force.
     pub snap: &'a SnapSettings,
-    /// Whether the transient snap modifier is held.
-    pub modifier_held: bool,
+    /// The modifiers held and the axes locked, this frame.
+    pub input: DragInput,
 }
 
 impl ManipulationContext<'_> {
+    /// Whether the transient snap modifier is held.
+    #[must_use]
+    pub const fn modifier_held(&self) -> bool {
+        self.input.snap_modifier
+    }
+
+    /// The point one object turns or grows about.
+    ///
+    /// The same as the drag's pivot for three of the four modes, and the object's own captured
+    /// origin for [`Pivot::Individual`]. It is a function of the *captured* start state, never of
+    /// what the document holds now, for the same reason everything else here is.
+    #[must_use]
+    pub fn pivot_for(&self, start: &DragStart) -> Vec3 {
+        if self.frame.individual {
+            start.transform.translation
+        } else {
+            self.frame.pivot
+        }
+    }
+
     /// Where the ray meets the drag's plane, or the plane's start point when it does not.
     ///
     /// Falling back to the start point rather than to nothing is what keeps a drag that swings past
@@ -357,13 +830,15 @@ impl Manipulator for Translate {
         let offset = translation_offset(context);
         // EXACTNESS. A drag that has come back to where it started produces a zero offset, and the
         // captured value is written back untouched rather than recomputed — which also means that a
-        // returning drag is not moved onto the grid by a snap it never asked for.
+        // returning drag is not moved onto the grid by a snap it never asked for. The precision
+        // factor and the axis lock are both linear in the offset, so neither can turn a zero into
+        // something else.
         if offset == Vec3::ZERO {
             return start.transform;
         }
         let moved = start.transform.translation + offset;
         Transform3 {
-            translation: context.snap.position(moved, context.modifier_held),
+            translation: context.snap.position(moved, context.modifier_held()),
             ..start.transform
         }
     }
@@ -374,13 +849,18 @@ impl Manipulator for Translate {
 }
 
 /// The world-space offset a translate drag represents.
+///
+/// The axis lock is applied to the **world-space** offset, which is what `X` means to a user looking
+/// at a world-space gizmo. A local-space gizmo whose axis lock followed the object would be a second
+/// rule to learn for no gain.
 fn translation_offset(context: &ManipulationContext<'_>) -> Vec3 {
-    match context.frame.handle {
+    let raw = match context.frame.handle {
         Handle::AxisX | Handle::AxisY | Handle::AxisZ => {
             context.frame.axis * (context.axis_parameter() - context.frame.start_parameter)
         }
         _ => context.plane_hit() - context.frame.start_hit,
-    }
+    };
+    context.input.lock.constrain(raw) * context.input.precision_factor()
 }
 
 /// Turn about an axis, or about the camera's axis for the screen handle.
@@ -400,8 +880,9 @@ impl Manipulator for Rotate {
         if angle == 0.0 {
             return start.transform;
         }
-        let snapped = context.snap.radians(angle, context.modifier_held);
-        let turn = Quat::from_axis_angle(context.frame.plane_normal, snapped);
+        let snapped = context.snap.radians(angle, context.modifier_held());
+        let turn = Quat::from_axis_angle(rotation_axis(context), snapped);
+        let pivot = context.pivot_for(start);
         Transform3 {
             // The turn is applied in WORLD space — on the left — because the axis is already a
             // world-space direction. Applying it on the right would turn about the object's own
@@ -409,8 +890,7 @@ impl Manipulator for Rotate {
             rotation: turn.after(start.transform.rotation).normalized(),
             // About a pivot that is not the object's own origin, a rotation also moves it. Computed
             // from the captured position rather than from the current one, like everything else.
-            translation: context.frame.pivot
-                + turn.rotate(start.transform.translation - context.frame.pivot),
+            translation: pivot + turn.rotate(start.transform.translation - pivot),
             ..start.transform
         }
     }
@@ -418,8 +898,22 @@ impl Manipulator for Rotate {
     fn magnitude(&self, context: &ManipulationContext<'_>) -> f32 {
         context
             .snap
-            .radians(rotation_angle(context), context.modifier_held)
+            .radians(rotation_angle(context), context.modifier_held())
     }
+}
+
+/// The world-space axis a rotate drag turns about.
+///
+/// The ring's own axis, unless exactly one axis is locked — `E` then `Z` — in which case the lock
+/// wins. A lock naming two axes is ambiguous for a rotation and is ignored rather than guessed at.
+fn rotation_axis(context: &ManipulationContext<'_>) -> Vec3 {
+    context
+        .input
+        .lock
+        .single()
+        .map_or(context.frame.plane_normal, |axis| {
+            context.frame.orientation.rotate(axis)
+        })
 }
 
 /// The signed angle a rotate drag has swept in its plane.
@@ -435,7 +929,7 @@ fn rotation_angle(context: &ManipulationContext<'_>) -> f32 {
     // gizmo built on it turns the same way whichever way the cursor goes.
     let sine = from.cross(to).dot(normal);
     let cosine = from.dot(to);
-    sine.atan2(cosine)
+    sine.atan2(cosine) * context.input.precision_factor()
 }
 
 /// Resize along an axis or uniformly.
@@ -458,15 +952,10 @@ impl Manipulator for Scale {
         if factor.to_bits() == 1.0_f32.to_bits() {
             return start.transform;
         }
-        let along = match context.frame.handle {
-            Handle::AxisX => Vec3::new(factor, 1.0, 1.0),
-            Handle::AxisY => Vec3::new(1.0, factor, 1.0),
-            Handle::AxisZ => Vec3::new(1.0, 1.0, factor),
-            _ => Vec3::new(factor, factor, factor),
-        };
+        let along = scale_lanes(context.frame.handle, context.input.lock, factor);
         let scaled = start.transform.scale.component_mul(along);
         Transform3 {
-            scale: context.snap.scale_factor(scaled, context.modifier_held),
+            scale: context.snap.scale_factor(scaled, context.modifier_held()),
             ..start.transform
         }
     }
@@ -487,7 +976,73 @@ fn scale_factor(context: &ManipulationContext<'_>) -> f32 {
         return 1.0;
     }
     let now = (context.plane_hit() - context.frame.pivot).length();
-    (now / start).max(1e-4)
+    let ratio = (now / start).max(1e-4);
+    // Precision moves the ratio toward 1 rather than toward 0: a tenth of "twice as big" is "a tenth
+    // bigger", not "a fifth the size". Multiplicative quantities have their own arithmetic and this
+    // is the one place in the module where forgetting it would be silent.
+    (1.0 + (ratio - 1.0) * context.input.precision_factor()).max(1e-4)
+}
+
+/// The shortest spoke a rotation or a scale can be measured from.
+///
+/// The same 1e-4 `scale_factor` refuses to divide by, stated once so the two cannot disagree.
+const SPOKE_MINIMUM: f32 = 1e-4;
+
+/// A ray that makes the manipulation come out at exactly `amount`.
+///
+/// Constructed by inverting what each manipulator reads, which is why it is beside them: a
+/// translation along an axis reads [`ManipulationContext::axis_parameter`], and everything else
+/// reads [`ManipulationContext::plane_hit`].
+fn ray_for_amount(frame: &DragFrame, mode: GizmoMode, amount: f32) -> Ray {
+    let normal = frame.plane_normal.normalized_or(Vec3::Z);
+    let along_axis = matches!(frame.handle, Handle::AxisX | Handle::AxisY | Handle::AxisZ);
+    if mode == GizmoMode::Translate && along_axis {
+        // `closest_parameter_on_axis` is exact for a ray whose origin sits on the axis and whose
+        // direction is perpendicular to it: the determinant is one and the result is the origin's
+        // own parameter. The plane normal is perpendicular to the axis for an axis handle, by
+        // construction in `world_plane`.
+        return Ray {
+            origin: frame.pivot + frame.axis * (frame.start_parameter + amount),
+            direction: normal,
+        };
+    }
+    let spoke = frame.start_hit - frame.pivot;
+    let target = match mode {
+        GizmoMode::Rotate => frame.pivot + Quat::from_axis_angle(normal, amount).rotate(spoke),
+        GizmoMode::Scale => frame.pivot + spoke * amount,
+        // A plane or screen translate moves in the plane; the direction is the spoke's, so a stated
+        // amount is a distance along it. A universal drag is resolved by its handle before it gets
+        // here, so this arm is the free-move case rather than an ambiguity.
+        GizmoMode::Translate | GizmoMode::Universal => {
+            frame.start_hit + spoke.normalized_or(Vec3::X) * amount
+        }
+    };
+    // The plane intersection refuses a distance of zero, so the ray starts one unit behind the
+    // target along the plane normal and travels toward it. `at(1)` is then the target.
+    Ray {
+        origin: target - normal,
+        direction: normal,
+    }
+}
+
+/// Which lanes a scale drag multiplies.
+///
+/// An axis lock overrides the handle: `R` then `Y` scales along Y whichever box was grabbed, which
+/// is what makes the lock worth having on a gizmo that is nearly edge-on.
+fn scale_lanes(handle: Handle, lock: AxisLock, factor: f32) -> Vec3 {
+    if lock.constrains() {
+        return Vec3::new(
+            if lock.x { factor } else { 1.0 },
+            if lock.y { factor } else { 1.0 },
+            if lock.z { factor } else { 1.0 },
+        );
+    }
+    match handle {
+        Handle::AxisX | Handle::BoxX => Vec3::new(factor, 1.0, 1.0),
+        Handle::AxisY | Handle::BoxY => Vec3::new(1.0, factor, 1.0),
+        Handle::AxisZ | Handle::BoxZ => Vec3::new(1.0, 1.0, factor),
+        _ => Vec3::new(factor, factor, factor),
+    }
 }
 
 /// The manipulators available, built in and registered.
@@ -534,9 +1089,30 @@ impl GizmoRegistry {
     }
 
     /// The manipulator a mode selects, which is the built-in unless a plugin replaced it.
+    ///
+    /// [`GizmoMode::Universal`] has no manipulator of its own — it is three gizmos drawn at once —
+    /// so it answers with the one its **default** handle would select. Use
+    /// [`GizmoRegistry::for_handle`] wherever a handle is known, which is everywhere a drag begins.
     #[must_use]
     pub fn for_mode(&self, mode: GizmoMode) -> Option<&dyn Manipulator> {
-        self.get(mode.name())
+        match mode {
+            GizmoMode::Universal => self.get(HandleRole::Move.manipulator()),
+            other => self.get(other.name()),
+        }
+    }
+
+    /// The manipulator a mode and a grabbed handle select.
+    ///
+    /// **This is where the universal gizmo happens**, and it is three lines rather than a mode of
+    /// its own: a ring turns, a box resizes, an arrow moves, and the mode only decides which of them
+    /// were drawn. A universal mode implemented as a fourth `Manipulator` would have had to
+    /// re-implement all three and would have drifted from them.
+    #[must_use]
+    pub fn for_handle(&self, mode: GizmoMode, handle: Handle) -> Option<&dyn Manipulator> {
+        match mode {
+            GizmoMode::Universal => self.get(handle.role().manipulator()),
+            other => self.get(other.name()),
+        }
     }
 
     /// Every registered identifier, for a toolbar and for a test.
@@ -565,6 +1141,9 @@ pub struct Drag {
     starts: Vec<DragStart>,
     binding: TransformBinding,
     open: bool,
+    /// Whether the drag created the objects it is moving, which decides whether a drag that ended
+    /// where it began has anything to record.
+    duplicated: bool,
 }
 
 /// What a drag needs to begin.
@@ -587,6 +1166,18 @@ pub struct DragRequest<'a> {
     pub pixel: (f32, f32),
     /// Who is dragging. An agent's drag is a person's drag with a different name on the entry.
     pub actor: Actor,
+    /// **Duplicate and transform** — `Alt` in the reference's shortcut table.
+    ///
+    /// The copies are made *inside the drag's own transaction*, so the whole gesture is one history
+    /// entry and one undo puts the scene back exactly as it was. Duplicating first and dragging
+    /// afterwards would be two entries, and the undo that removed the copy would leave the original
+    /// moved.
+    pub duplicate: bool,
+    /// The selection's world bounds, when the runtime has reported them.
+    ///
+    /// Only [`Pivot::Bounds`] reads it, and it falls back to the box containing the objects' origins
+    /// — which is the honest answer a document can give on its own. See [`Pivot::Bounds`].
+    pub bounds: Option<Bounds>,
 }
 
 impl Drag {
@@ -617,16 +1208,35 @@ impl Drag {
             .with_remedy("select an object with that component, or choose another gizmo"));
         }
 
-        let frame = build_frame(request, &starts);
+        let handle = normalise(request.handle, manipulator.mode());
+        let frame = build_frame(request, handle, &starts);
         document.begin_interaction(
             format!(
-                "{} {}",
+                "{}{} {}",
+                if request.duplicate {
+                    "Duplicate and "
+                } else {
+                    ""
+                },
                 capitalised(manipulator.id()),
-                request.handle.name()
+                handle.name()
             ),
             request.actor.clone(),
             format!("gizmo:{}:{}", manipulator.id(), starts[0].node),
         );
+        let starts = if request.duplicate {
+            match duplicate_all(document, &starts, request.binding) {
+                Ok(copies) => copies,
+                Err(problem) => {
+                    // The transaction is already open, and leaving it open would make the *next*
+                    // commit fail with a problem that names something else entirely.
+                    document.cancel()?;
+                    return Err(problem);
+                }
+            }
+        } else {
+            starts
+        };
         Ok(Self {
             manipulator_id: manipulator.id().to_string(),
             mode: manipulator.mode(),
@@ -634,6 +1244,7 @@ impl Drag {
             starts,
             binding: request.binding,
             open: true,
+            duplicated: request.duplicate,
         })
     }
 
@@ -673,7 +1284,7 @@ impl Drag {
         view: &ViewState,
         pixel: (f32, f32),
         snap: &SnapSettings,
-        modifier_held: bool,
+        input: DragInput,
     ) -> Result<Feedback> {
         if !self.open {
             return Err(Problem::new(
@@ -682,6 +1293,94 @@ impl Drag {
             )
             .with_remedy("begin a new drag"));
         }
+        let frame = self.frame;
+        self.write_frame(
+            registry,
+            document,
+            &frame,
+            view.ray_through_pixel(pixel.0, pixel.1),
+            snap,
+            input,
+        )
+    }
+
+    /// Advance the drag by a **stated amount** rather than by a cursor position.
+    ///
+    /// Metres along the handle's axis for a translate, radians about it for a rotate, a factor for a
+    /// scale — the same units [`Manipulator::magnitude`] reports, so "move it back by what it just
+    /// moved" is one negation rather than an inverse projection.
+    ///
+    /// --- WHY THIS IS HERE AND NOT IN THE CALLER -------------------------------------------------
+    ///
+    /// `editor-agent-interface` requires that an agent's translate, rotate and scale "execute
+    /// through **the same manipulation implementation** a gizmo drag uses", inheriting its
+    /// guarantees — start-state capture, one transaction, cancellability, and identical treatment of
+    /// pivot, space, snapping and constraints. A caller outside this module can only satisfy that by
+    /// synthesising a ray, and synthesising a ray needs the drag's private geometry: which plane, in
+    /// which orientation, through which pivot. So the synthesis lives beside the geometry, and every
+    /// caller — an agent, a script, a nudge key — gets the same manipulator, the same snapping and
+    /// the same write path as a hand on a mouse.
+    ///
+    /// The frame is **conditioned** first; see [`Drag::conditioned_frame`].
+    pub fn advance_by(
+        &mut self,
+        registry: &GizmoRegistry,
+        document: &mut Document,
+        amount: f32,
+        snap: &SnapSettings,
+        input: DragInput,
+    ) -> Result<Feedback> {
+        if !self.open {
+            return Err(Problem::new(
+                "continue a drag",
+                "it has already been committed or cancelled",
+            )
+            .with_remedy("begin a new drag"));
+        }
+        let frame = self.conditioned_frame();
+        let ray = ray_for_amount(&frame, self.mode, amount);
+        self.write_frame(registry, document, &frame, ray, snap, input)
+    }
+
+    /// The drag's geometry with a usable spoke, for a stated-amount manipulation.
+    ///
+    /// A rotate and a scale are both measured from the vector between the pivot and where the ray
+    /// first met the plane. That vector is zero in two cases a *cursor* never has to care about,
+    /// because in both of them a drag simply does nothing: the ray ran parallel to the plane, or it
+    /// met it exactly at the pivot. A stated amount has to work anyway — "turn it 90°" cannot depend
+    /// on where a camera happens to be — so a degenerate spoke is replaced here, in a **copy**, and
+    /// the drag's own frame is left exactly as the interactive path recorded it.
+    fn conditioned_frame(&self) -> DragFrame {
+        let mut frame = self.frame;
+        if (frame.start_hit - frame.pivot).length() > SPOKE_MINIMUM {
+            return frame;
+        }
+        let normal = frame.plane_normal.normalized_or(Vec3::Z);
+        // Any unit vector in the plane will do: the amount is measured relative to this one, so the
+        // result is the same whichever is chosen. Crossing with the least-aligned cardinal axis is
+        // what keeps it from collapsing when the normal is itself cardinal, which it usually is.
+        let seed = if normal.x.abs() < 0.9 {
+            Vec3::X
+        } else {
+            Vec3::Y
+        };
+        frame.start_hit = frame.pivot + normal.cross(seed).normalized_or(Vec3::X);
+        frame
+    }
+
+    /// One step of the manipulation, from whatever ray and whatever frame the caller resolved.
+    ///
+    /// The only place a transform is written, so the interactive path and the stated-amount path
+    /// cannot drift apart: they differ in the ray and in nothing else.
+    fn write_frame(
+        &self,
+        registry: &GizmoRegistry,
+        document: &mut Document,
+        frame: &DragFrame,
+        ray: Ray,
+        snap: &SnapSettings,
+        input: DragInput,
+    ) -> Result<Feedback> {
         let manipulator = registry.get(&self.manipulator_id).ok_or_else(|| {
             Problem::new(
                 "continue a drag",
@@ -691,10 +1390,10 @@ impl Drag {
         })?;
 
         let context = ManipulationContext {
-            frame: &self.frame,
-            ray: view.ray_through_pixel(pixel.0, pixel.1),
+            frame,
+            ray,
             snap,
-            modifier_held,
+            input,
         };
         for start in &self.starts {
             let transform = manipulator.manipulate(&context, start);
@@ -705,16 +1404,42 @@ impl Drag {
 
     /// Finish the drag. One transaction, or none when nothing actually changed.
     ///
-    /// Returns whether an entry was recorded. A drag that ended where it began has recorded
-    /// operations whose before and after are identical, and the document's own commit drops a
-    /// transaction whose operations changed nothing — so "exactly one transaction" and "a history
-    /// full of moves that moved nothing" do not have to be traded against each other.
+    /// Returns whether an entry was recorded.
+    ///
+    /// **A drag that ended where it began records nothing.** That has to be decided here rather than
+    /// left to the document: `Document::commit` drops a transaction with *no* operations, and a
+    /// returning drag has operations — a run of `SetField`s that `Transaction::compact` collapses
+    /// into one whose before and after are the same bits. Without this check, nudging an object and
+    /// changing your mind leaves a "Translate X" in the history that undoes to the state it was
+    /// already in, and a history full of those is a history nobody reads.
+    ///
+    /// A **duplicating** drag is the exception and is always recorded: the copies exist whether or
+    /// not they were moved afterwards, and discarding them because the hand came back would throw
+    /// away what the user asked for.
     pub fn commit(&mut self, document: &mut Document) -> Result<bool> {
         if !self.open {
             return Err(Problem::new("commit a drag", "it is already finished"));
         }
         self.open = false;
+        if !self.duplicated && !self.moved_anything(document) {
+            document.cancel()?;
+            return Ok(false);
+        }
         Ok(document.commit()?.is_some())
+    }
+
+    /// Whether anything the drag captured differs, bit for bit, from what the document holds now.
+    fn moved_anything(&self, document: &Document) -> bool {
+        self.starts.iter().any(|start| {
+            read_transform(document, start.node, self.binding).is_none_or(|now| {
+                now.translation.to_array().map(f32::to_bits)
+                    != start.transform.translation.to_array().map(f32::to_bits)
+                    || now.rotation.to_array().map(f32::to_bits)
+                        != start.transform.rotation.to_array().map(f32::to_bits)
+                    || now.scale.to_array().map(f32::to_bits)
+                        != start.transform.scale.to_array().map(f32::to_bits)
+            })
+        })
     }
 
     /// Abandon the drag. The document returns to what it was and no entry is recorded.
@@ -737,7 +1462,17 @@ impl Drag {
             .starts
             .last()
             .map_or_else(Transform3::default, |start| start.transform);
-        match self.mode {
+        // The universal gizmo's feedback is the *handle's*, not the mode's: dragging a ring says
+        // degrees whichever mode drew it.
+        let reported = match self.mode {
+            GizmoMode::Universal => match self.frame.handle.role() {
+                HandleRole::Move => GizmoMode::Translate,
+                HandleRole::Turn => GizmoMode::Rotate,
+                HandleRole::Resize => GizmoMode::Scale,
+            },
+            other => other,
+        };
+        match reported {
             GizmoMode::Translate => Feedback {
                 delta: format!("{magnitude:.3} m along {}", self.frame.handle.name()),
                 value: format_vec3(active.translation, "m"),
@@ -750,12 +1485,67 @@ impl Drag {
                 ),
                 value: format!("{:.2}°", rotation_degrees(active.rotation)),
             },
-            GizmoMode::Scale => Feedback {
+            GizmoMode::Scale | GizmoMode::Universal => Feedback {
                 delta: format!("×{magnitude:.3} on {}", self.frame.handle.name()),
                 value: format_vec3(active.scale, ""),
             },
         }
     }
+}
+
+/// The handle a mode actually drags, given the one the caller named.
+///
+/// A rotate drag on `AxisX` is a drag on the **X ring**, and the difference is not cosmetic: a ring
+/// turns about its own axis, while an axis handle is intersected against the plane most nearly
+/// facing the camera. Without this, `rotate` on `AxisX` turned the object about whichever axis the
+/// camera happened to make most visible — correct-looking on screen and wrong in the document.
+const fn normalise(handle: Handle, mode: GizmoMode) -> Handle {
+    match (mode, handle) {
+        (GizmoMode::Rotate, Handle::AxisX) => Handle::RingX,
+        (GizmoMode::Rotate, Handle::AxisY) => Handle::RingY,
+        (GizmoMode::Rotate, Handle::AxisZ) => Handle::RingZ,
+        (GizmoMode::Rotate, Handle::Screen) => Handle::ScreenRing,
+        (GizmoMode::Scale, Handle::AxisX) => Handle::BoxX,
+        (GizmoMode::Scale, Handle::AxisY) => Handle::BoxY,
+        (GizmoMode::Scale, Handle::AxisZ) => Handle::BoxZ,
+        _ => handle,
+    }
+}
+
+/// Copy every captured object, and return the copies as the objects the drag will move.
+///
+/// Components and their fields, the layer, and the parent. Not the children: duplicating a subtree
+/// is a command with its own name and its own semantics for prefabs, and doing half of it here would
+/// be the worse kind of surprise.
+fn duplicate_all(
+    document: &mut Document,
+    starts: &[DragStart],
+    binding: TransformBinding,
+) -> Result<Vec<DragStart>> {
+    let mut copies = Vec::with_capacity(starts.len());
+    for start in starts {
+        let source = document
+            .content()
+            .node(start.node)
+            .ok_or_else(|| {
+                Problem::new(
+                    "duplicate and transform",
+                    "the object being dragged is no longer in the document",
+                )
+                .with_remedy("release the modifier and drag again")
+            })?
+            .clone();
+        let copy = document.create_node(source.parent)?;
+        for (component, fields) in source.components {
+            document.add_component(copy, component, fields.into_iter().collect::<Vec<_>>())?;
+        }
+        copies.push(DragStart {
+            node: copy,
+            transform: start.transform,
+        });
+    }
+    let _ = binding;
+    Ok(copies)
 }
 
 /// The transform each node carries now, refusing a node that does not carry one.
@@ -859,12 +1649,12 @@ fn write_field(
 }
 
 /// Set the drag's geometry up once, from the state captured at drag start.
-fn build_frame(request: &DragRequest<'_>, starts: &[DragStart]) -> DragFrame {
+fn build_frame(request: &DragRequest<'_>, handle: Handle, starts: &[DragStart]) -> DragFrame {
     let active = starts.last().expect("callers check for an empty capture");
     let orientation = orientation_of(request.space, active.transform.rotation, request.view);
-    let pivot = pivot_of(request.pivot, starts);
-    let axis = world_axis(request.handle, orientation, request.view);
-    let plane_normal = world_plane(request.handle, orientation, request.view, axis);
+    let pivot = pivot_of(request.pivot, request.bounds, starts);
+    let axis = world_axis(handle, orientation, request.view);
+    let plane_normal = world_plane(handle, orientation, request.view, axis);
 
     let ray = request
         .view
@@ -878,8 +1668,9 @@ fn build_frame(request: &DragRequest<'_>, starts: &[DragStart]) -> DragFrame {
         plane_normal,
         start_hit,
         start_parameter,
-        handle: request.handle,
+        handle,
         orientation,
+        individual: request.pivot == Pivot::Individual,
     }
 }
 
@@ -898,10 +1689,13 @@ fn orientation_of(space: GizmoSpace, object: Quat, view: &ViewState) -> Quat {
     }
 }
 
-fn pivot_of(pivot: Pivot, starts: &[DragStart]) -> Vec3 {
+fn pivot_of(pivot: Pivot, bounds: Option<Bounds>, starts: &[DragStart]) -> Vec3 {
     let active = starts.last().expect("callers check for an empty capture");
     match pivot {
-        Pivot::Origin | Pivot::Active => active.transform.translation,
+        // Individual objects turn about their own origins, which `ManipulationContext::pivot_for`
+        // resolves per object; the frame's pivot is the active object's, so that the gizmo is drawn
+        // where the user grabbed it.
+        Pivot::Pivot | Pivot::Individual => active.transform.translation,
         Pivot::Center => {
             let sum = starts.iter().fold(Vec3::ZERO, |total, start| {
                 total + start.transform.translation
@@ -913,6 +1707,17 @@ fn pivot_of(pivot: Pivot, starts: &[DragStart]) -> Vec3 {
             let count = starts.len() as f32;
             sum * (1.0 / count)
         }
+        Pivot::Bounds => bounds.map_or_else(
+            || {
+                starts
+                    .iter()
+                    .map(|start| Bounds::point(start.transform.translation))
+                    .reduce(Bounds::union)
+                    .unwrap_or_else(|| Bounds::point(active.transform.translation))
+                    .center()
+            },
+            Bounds::center,
+        ),
     }
 }
 
@@ -1041,12 +1846,28 @@ mod tests {
             manipulator,
             handle,
             space: GizmoSpace::World,
-            pivot: Pivot::Origin,
+            pivot: Pivot::Individual,
             nodes,
             binding,
             view,
             pixel: (960.0, 540.0),
             actor: Actor::human("designer"),
+            duplicate: false,
+            bounds: None,
+        }
+    }
+
+    /// Snapping turned off, for the tests that measure a distance rather than a grid.
+    fn free_snapping() -> SnapSettings {
+        SnapSettings {
+            modes: crate::snapping::SnapModes {
+                grid: false,
+                angle: false,
+                scale: false,
+                vertex: false,
+                surface: false,
+            },
+            ..SnapSettings::default()
         }
     }
 
@@ -1091,8 +1912,15 @@ mod tests {
         .expect("a drag on a node with a transform");
 
         for step in 0..64 {
-            drag.update(&registry, &mut document, &view, pixel(step), &snap, false)
-                .expect("the drag continues");
+            drag.update(
+                &registry,
+                &mut document,
+                &view,
+                pixel(step),
+                &snap,
+                DragInput::NONE,
+            )
+            .expect("the drag continues");
         }
         // And back to exactly where it started.
         drag.update(
@@ -1101,7 +1929,7 @@ mod tests {
             &view,
             (960.0, 540.0),
             &snap,
-            false,
+            DragInput::NONE,
         )
         .expect("the drag continues");
         drag.commit(&mut document).expect("the drag finishes");
@@ -1112,6 +1940,58 @@ mod tests {
             after.map(f32::to_bits),
             "{before:?} became {after:?}"
         );
+    }
+
+    #[test]
+    fn a_drag_that_ended_where_it_began_records_nothing() {
+        // A REGRESSION TEST, and a claim this module used to make and not keep. `Document::commit`
+        // drops a transaction with no operations; a returning drag has operations whose before and
+        // after are identical, which is a different thing. Without the check in `Drag::commit`,
+        // nudging an object and changing your mind leaves an entry in the history that undoes to
+        // the state it was already in.
+        let Fixture {
+            mut document,
+            node,
+            binding,
+            registry,
+            view,
+        } = fixture();
+        let nodes = [node];
+        let entries = document.history().entries().len();
+        let snap = SnapSettings::default();
+        let mut drag = Drag::begin(
+            &registry,
+            &mut document,
+            &request(&view, binding, &nodes, "translate", Handle::AxisX),
+        )
+        .expect("a drag");
+        for step in 0..12 {
+            drag.update(
+                &registry,
+                &mut document,
+                &view,
+                pixel(step),
+                &snap,
+                DragInput::NONE,
+            )
+            .expect("the drag continues");
+        }
+        drag.update(
+            &registry,
+            &mut document,
+            &view,
+            (960.0, 540.0),
+            &snap,
+            DragInput::NONE,
+        )
+        .expect("the drag continues");
+
+        assert!(
+            !drag.commit(&mut document).expect("it finishes"),
+            "a drag that moved nothing recorded an entry"
+        );
+        assert_eq!(document.history().entries().len(), entries);
+        assert!(!document.is_transaction_open());
     }
 
     #[test]
@@ -1134,8 +2014,15 @@ mod tests {
         .expect("a drag");
         let snap = SnapSettings::default();
         for step in 1..200 {
-            drag.update(&registry, &mut document, &view, pixel(step), &snap, false)
-                .expect("the drag continues");
+            drag.update(
+                &registry,
+                &mut document,
+                &view,
+                pixel(step),
+                &snap,
+                DragInput::NONE,
+            )
+            .expect("the drag continues");
         }
         assert!(drag.commit(&mut document).expect("it commits"));
 
@@ -1177,7 +2064,7 @@ mod tests {
             &view,
             (1400.0, 540.0),
             &SnapSettings::default(),
-            false,
+            DragInput::NONE,
         )
         .expect("the drag continues");
         assert_ne!(
@@ -1218,7 +2105,7 @@ mod tests {
                 &view,
                 (1200.0, 540.0),
                 &SnapSettings::default(),
-                false,
+                DragInput::NONE,
             )
             .expect("the drag continues");
         drag.cancel(&mut document).expect("it cancels");
@@ -1255,7 +2142,7 @@ mod tests {
             &view,
             (1100.0, 540.0),
             &snap,
-            false,
+            DragInput::NONE,
         )
         .expect("the drag continues");
         let first = translation_of(&document, binding, node);
@@ -1265,7 +2152,7 @@ mod tests {
             &view,
             (1100.0, 540.0),
             &snap,
-            false,
+            DragInput::NONE,
         )
         .expect("the drag continues");
         let second = translation_of(&document, binding, node);
@@ -1301,7 +2188,7 @@ mod tests {
             &view,
             (1100.0, 640.0),
             &SnapSettings::default(),
-            false,
+            DragInput::NONE,
         )
         .expect("the drag continues");
         let after = translation_of(&document, binding, node);
@@ -1362,7 +2249,7 @@ mod tests {
             &view,
             (1200.0, 540.0),
             &SnapSettings::default(),
-            false,
+            DragInput::NONE,
         )
         .expect("the drag continues");
         assert!(drag.commit(&mut document).expect("it commits"));
@@ -1496,10 +2383,378 @@ mod tests {
                 &view,
                 (1000.0, 540.0),
                 &SnapSettings::default(),
-                false,
+                DragInput::NONE,
             )
             .expect_err("the drag is over");
         assert!(problem.remedy.is_some(), "{problem}");
+    }
+
+    #[test]
+    fn a_ring_turns_about_its_own_axis_whatever_the_camera_is_doing() {
+        // A REGRESSION TEST. `rotate` on `Handle::AxisX` used to be intersected against the plane
+        // "most nearly facing the camera", which is right for an arrow and wrong for a ring: the
+        // object turned about whichever axis the camera happened to make most visible. It looked
+        // plausible on screen and was wrong in the document, which is the worst combination.
+        for (handle, axis) in [
+            (Handle::AxisX, Vec3::X),
+            (Handle::AxisY, Vec3::Y),
+            (Handle::AxisZ, Vec3::Z),
+        ] {
+            for camera in [
+                Vec3::new(0.0, 0.0, 20.0),
+                Vec3::new(20.0, 0.0, 0.0),
+                Vec3::new(6.0, 9.0, 13.0),
+            ] {
+                let Fixture {
+                    mut document,
+                    node,
+                    binding,
+                    registry,
+                    mut view,
+                } = fixture();
+                view.camera.position = camera;
+                let nodes = [node];
+                let drag = Drag::begin(
+                    &registry,
+                    &mut document,
+                    &request(&view, binding, &nodes, "rotate", handle),
+                )
+                .expect("a drag");
+                assert!(
+                    drag.frame().plane_normal.nearly_equals(axis, 1e-6),
+                    "{handle:?} from {camera:?} turns about {:?}",
+                    drag.frame().plane_normal
+                );
+                assert_eq!(drag.frame().handle.role(), HandleRole::Turn);
+            }
+        }
+    }
+
+    #[test]
+    fn the_universal_gizmo_chooses_its_manipulator_from_the_handle() {
+        // The whole of what `T` is: one mode, three manipulations, decided by what was grabbed.
+        let registry = GizmoRegistry::with_builtins();
+        for (handle, expected) in [
+            (Handle::AxisX, "translate"),
+            (Handle::PlaneXY, "translate"),
+            (Handle::Screen, "translate"),
+            (Handle::RingY, "rotate"),
+            (Handle::ScreenRing, "rotate"),
+            (Handle::BoxZ, "scale"),
+            (Handle::Uniform, "scale"),
+        ] {
+            let manipulator = registry
+                .for_handle(GizmoMode::Universal, handle)
+                .expect("a manipulator for every handle");
+            assert_eq!(manipulator.id(), expected, "{handle:?}");
+        }
+        // And every handle any mode draws has one, so a universal gizmo can have no dead handle.
+        for handle in Handle::ALL {
+            assert!(
+                registry.for_handle(GizmoMode::Universal, handle).is_some(),
+                "{handle:?} has no manipulator"
+            );
+        }
+    }
+
+    #[test]
+    fn the_centre_carries_three_separately_targetable_affordances() {
+        // `docs/design/images/transform-gizmo.png`: "Screen Move (drag center circle), Uniform Scale
+        // (center cube), Screen Rotate (outer ring)". Three handles, three roles, one place.
+        let centre: Vec<Handle> = Handle::ALL
+            .into_iter()
+            .filter(|handle| handle.is_centre())
+            .collect();
+        assert_eq!(centre.len(), 3, "{centre:?}");
+        let roles: Vec<HandleRole> = centre.iter().map(|handle| handle.role()).collect();
+        assert!(roles.contains(&HandleRole::Move));
+        assert!(roles.contains(&HandleRole::Turn));
+        assert!(roles.contains(&HandleRole::Resize));
+    }
+
+    #[test]
+    fn an_axis_lock_confines_the_movement_and_releasing_it_restores_the_original_bits() {
+        let Fixture {
+            mut document,
+            node,
+            binding,
+            registry,
+            view,
+        } = fixture();
+        let nodes = [node];
+        let before = translation_of(&document, binding, node);
+        let mut drag = Drag::begin(
+            &registry,
+            &mut document,
+            &request(&view, binding, &nodes, "translate", Handle::Screen),
+        )
+        .expect("a drag");
+
+        // Snapping off: this measures the constraint, and a grid would quantise the answer into
+        // agreeing with it by accident.
+        let free = free_snapping();
+        let locked = DragInput {
+            lock: AxisLock::only(1),
+            ..DragInput::NONE
+        };
+        drag.update(
+            &registry,
+            &mut document,
+            &view,
+            (1400.0, 300.0),
+            &free,
+            locked,
+        )
+        .expect("the drag continues");
+        let after = translation_of(&document, binding, node);
+        assert_eq!(
+            after[0].to_bits(),
+            before[0].to_bits(),
+            "X moved under a Y lock"
+        );
+        assert_eq!(after[2].to_bits(), before[2].to_bits(), "Z moved");
+        assert_ne!(after[1].to_bits(), before[1].to_bits(), "Y did not move");
+
+        // Back to the start with the lock still held: exactness survives the constraint, because it
+        // is a linear function of the offset and a zero offset stays zero.
+        drag.update(
+            &registry,
+            &mut document,
+            &view,
+            (960.0, 540.0),
+            &free,
+            locked,
+        )
+        .expect("the drag continues");
+        assert_eq!(
+            translation_of(&document, binding, node).map(f32::to_bits),
+            before.map(f32::to_bits)
+        );
+        drag.cancel(&mut document).expect("it cancels");
+    }
+
+    #[test]
+    fn the_precision_modifier_moves_a_tenth_as_far() {
+        let mut travelled = Vec::new();
+        for precision in [false, true] {
+            let Fixture {
+                mut document,
+                node,
+                binding,
+                registry,
+                view,
+            } = fixture();
+            let nodes = [node];
+            let before = translation_of(&document, binding, node);
+            let mut drag = Drag::begin(
+                &registry,
+                &mut document,
+                &request(&view, binding, &nodes, "translate", Handle::AxisX),
+            )
+            .expect("a drag");
+            drag.update(
+                &registry,
+                &mut document,
+                &view,
+                (1400.0, 540.0),
+                &free_snapping(),
+                DragInput {
+                    precision,
+                    ..DragInput::NONE
+                },
+            )
+            .expect("the drag continues");
+            let after = translation_of(&document, binding, node);
+            drag.cancel(&mut document).expect("it cancels");
+            travelled.push(after[0] - before[0]);
+        }
+        let ratio = travelled[1] / travelled[0];
+        assert!(
+            (ratio - PRECISION_FACTOR).abs() < 1e-4,
+            "a precision drag travelled {ratio} of a normal one"
+        );
+    }
+
+    #[test]
+    fn duplicate_and_transform_leaves_the_original_where_it_was_and_undoes_as_one_entry() {
+        // `Alt` in the reference's shortcut table. The property that decides the implementation:
+        // ONE history entry. Duplicating in its own transaction and dragging in another would make
+        // the first undo leave a moved original behind.
+        let Fixture {
+            mut document,
+            node,
+            binding,
+            registry,
+            view,
+        } = fixture();
+        let nodes = [node];
+        let before = translation_of(&document, binding, node);
+        let entries = document.history().entries().len();
+        let count = document.content().node_count();
+
+        let mut drag = Drag::begin(
+            &registry,
+            &mut document,
+            &DragRequest {
+                duplicate: true,
+                ..request(&view, binding, &nodes, "translate", Handle::AxisX)
+            },
+        )
+        .expect("a duplicating drag");
+        assert_eq!(
+            document.content().node_count(),
+            count + 1,
+            "a copy was made"
+        );
+        let copy = drag.starts()[0].node;
+        assert_ne!(copy, node, "the drag moves the copy, not the original");
+
+        drag.update(
+            &registry,
+            &mut document,
+            &view,
+            (1400.0, 540.0),
+            &SnapSettings::default(),
+            DragInput::NONE,
+        )
+        .expect("the drag continues");
+        assert!(drag.commit(&mut document).expect("it commits"));
+
+        assert_eq!(
+            translation_of(&document, binding, node).map(f32::to_bits),
+            before.map(f32::to_bits),
+            "the original moved"
+        );
+        assert_ne!(
+            translation_of(&document, binding, copy).map(f32::to_bits),
+            before.map(f32::to_bits),
+            "the copy did not move"
+        );
+        assert_eq!(
+            document.history().entries().len(),
+            entries + 1,
+            "one gesture, one entry"
+        );
+
+        document.undo().expect("undo").expect("an entry");
+        assert_eq!(
+            document.content().node_count(),
+            count,
+            "undo left the copy behind"
+        );
+    }
+
+    #[test]
+    fn the_four_pivot_modes_are_four_different_answers() {
+        // Two objects, deliberately not symmetrical about their mean, so that Center and Bounds
+        // differ — an editor offering both and computing one is indistinguishable from a correct one
+        // until somebody selects three objects.
+        let starts = [
+            DragStart {
+                node: NodeId::from_u128(1),
+                transform: Transform3 {
+                    translation: Vec3::new(0.0, 0.0, 0.0),
+                    ..Transform3::default()
+                },
+            },
+            DragStart {
+                node: NodeId::from_u128(2),
+                transform: Transform3 {
+                    translation: Vec3::new(9.0, 0.0, 0.0),
+                    ..Transform3::default()
+                },
+            },
+            DragStart {
+                node: NodeId::from_u128(3),
+                transform: Transform3 {
+                    translation: Vec3::new(12.0, 0.0, 0.0),
+                    ..Transform3::default()
+                },
+            },
+        ];
+        assert_eq!(
+            pivot_of(Pivot::Pivot, None, &starts),
+            Vec3::new(12.0, 0.0, 0.0),
+            "the active object is the last selected"
+        );
+        assert_eq!(
+            pivot_of(Pivot::Center, None, &starts),
+            Vec3::new(7.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            pivot_of(Pivot::Bounds, None, &starts),
+            Vec3::new(6.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            pivot_of(Pivot::Individual, None, &starts),
+            Vec3::new(12.0, 0.0, 0.0),
+            "the gizmo is drawn on the active object even when each turns in place"
+        );
+        // And the runtime's bounds win over the box of origins when they are known.
+        assert_eq!(
+            pivot_of(
+                Pivot::Bounds,
+                Some(Bounds::from_center_extents(
+                    Vec3::new(-4.0, 0.0, 0.0),
+                    Vec3::new(1.0, 1.0, 1.0)
+                )),
+                &starts
+            ),
+            Vec3::new(-4.0, 0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn individual_pivots_turn_each_object_in_place() {
+        let starts = [
+            DragStart {
+                node: NodeId::from_u128(1),
+                transform: Transform3 {
+                    translation: Vec3::new(-5.0, 0.0, 0.0),
+                    ..Transform3::default()
+                },
+            },
+            DragStart {
+                node: NodeId::from_u128(2),
+                transform: Transform3 {
+                    translation: Vec3::new(5.0, 0.0, 0.0),
+                    ..Transform3::default()
+                },
+            },
+        ];
+        let frame = DragFrame {
+            pivot: Vec3::ZERO,
+            axis: Vec3::Y,
+            plane_normal: Vec3::Y,
+            start_hit: Vec3::new(1.0, 0.0, 0.0),
+            start_parameter: 0.0,
+            handle: Handle::RingY,
+            orientation: Quat::IDENTITY,
+            individual: true,
+        };
+        let snap = SnapSettings::default();
+        let context = ManipulationContext {
+            frame: &frame,
+            ray: ViewState::new().ray_through_pixel(960.0, 540.0),
+            snap: &snap,
+            input: DragInput::NONE,
+        };
+        for start in &starts {
+            assert_eq!(context.pivot_for(start), start.transform.translation);
+        }
+        let shared = DragFrame {
+            individual: false,
+            ..frame
+        };
+        let context = ManipulationContext {
+            frame: &shared,
+            ray: ViewState::new().ray_through_pixel(960.0, 540.0),
+            snap: &snap,
+            input: DragInput::NONE,
+        };
+        for start in &starts {
+            assert_eq!(context.pivot_for(start), Vec3::ZERO);
+        }
     }
 
     #[test]
@@ -1525,7 +2780,7 @@ mod tests {
                 &view,
                 (1400.0, 540.0),
                 &SnapSettings::default(),
-                false,
+                DragInput::NONE,
             )
             .expect("the drag continues");
         drag.cancel(&mut document).expect("it cancels");

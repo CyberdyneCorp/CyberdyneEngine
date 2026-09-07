@@ -23,6 +23,7 @@ cy-editor-core = { path = "../cy-editor-core" }
 cy-editor-documents = { path = "../cy-editor-documents" }
 cy-editor-protocol = { path = "../cy-editor-protocol" }
 cy-editor-sdk = { path = "../cy-editor-sdk" }
+cy-editor-viewport = { path = "../cy-editor-viewport" }
 
 [lints]
 workspace = true

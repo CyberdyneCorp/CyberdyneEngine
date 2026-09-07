@@ -157,3 +157,46 @@ run-headless *args:
     # chooses its display server at run time. When a standalone host binary lands, this recipe runs
     # that instead and `run-sample empty --headless` keeps working unchanged.
     just run-sample {{args}} --headless
+
+# M5.5's ARTEFACTS, AND WHY THERE ARE TWO OF THEM.
+#
+# M5 closed on a scripted session that could not show docking, workspaces, the palette or
+# keyboard-first operation, because at M5 the editor had no window. M5.5 is the correction, and it
+# has two audiences that one program cannot both demonstrate (`design.md` §5): a person operating a
+# window, and an agent authoring through the same editor over the Model Context Protocol.
+#
+# Neither is `just run-sample <name>`, for the reason `run-editor-session` above records: that recipe
+# finds `samples/*/cy_sample_<name>` and neither directory declares a C++ target. What they declare
+# is orchestration, in the language this tree already orchestrates multi-toolchain artefacts in.
+
+# Run the M5.5 window artefact: the editor opened, operated and photographed. Usage: just run-editor-window [--profile <p>] [--hold] [--shot <path>]
+run-editor-window *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-editor --profile "${profile}"
+
+    # THIS ONE NEEDS A DISPLAY AND SAYS SO RATHER THAN PASSING. The driver exits 3 where it cannot
+    # run — no display, no XTEST, no python-xlib — and this recipe passes that exit code through
+    # unchanged, so a machine that cannot judge the claim reports that it could not rather than that
+    # it did. `--hold` leaves the window open at the end, which is what a person watching wants.
+    echo "==> run         editor-window  profile=${profile}"
+    python3 samples/05b-editor-window/window.py --profile "${profile}" ${rest}
+
+# Run the M5.5 agent artefact: an agent composes, authors and observes over MCP. Usage: just run-agent-authoring [--profile <p>] [--shot <path>]
+run-agent-authoring *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-editor --profile "${profile}"
+
+    # No display, no graphics device, no window: the editor is started with `--mcp` and this driver
+    # is the client. That is why this half of the milestone is the half continuous integration runs.
+    echo "==> run         agent-authoring  profile=${profile}"
+    python3 samples/05b-agent-authoring/authoring.py --profile "${profile}" ${rest}

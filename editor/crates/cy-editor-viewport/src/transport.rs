@@ -88,18 +88,143 @@ impl TransportKind {
     }
 }
 
+/// What a shared image is, in enough detail for another process to read it correctly.
+///
+/// --- WHY THIS IS NOT `{ handle: u64 }` --------------------------------------------------------------
+///
+/// It was, until the M5.5 synchronisation spike ran the transport rather than describing it. Each
+/// field below is one thing that spike could not do without, and three of them are things an
+/// obvious implementation gets wrong in a way that does not fail — it produces a wrong picture:
+///
+///   * `modifier` — the DRM format modifier the runtime's driver chose. **`DRM_FORMAT_MOD_LINEAR`
+///     is not available on this hardware**, so an importer that assumed a linear layout reads a
+///     tiled image as though it were linear and shows a scrambled frame.
+///   * `stride` — the driver's row pitch, which is not `width * 4` for a tiled image.
+///   * `allocation_bytes` — the size `vkGetImageMemoryRequirements` reported, **not**
+///     `width * height * 4`. The two differ by the modifier's alignment, and importing against the
+///     smaller number is refused by the driver in a way that reads as a driver defect.
+///
+/// The rest carry identity rather than layout: which slot of the ring the pixels are in, how many
+/// slots there are, which **generation** of the ring the slot belongs to — so that a resize cannot
+/// be sampled against an image that has already been destroyed — and the value the runtime's
+/// timeline reaches when this frame's GPU work is done.
+///
+/// --- WHERE THE FILE DESCRIPTORS ARE ---------------------------------------------------------------
+///
+/// Not here, and deliberately. The dma-buf descriptor, the two timeline semaphore descriptors and
+/// the announcement page's `memfd` are passed once, at connection, by `SCM_RIGHTS` — they are the
+/// business of `cy-editor-viewport-transport`, which is the crate that may name a graphics API. A
+/// descriptor NUMBER means nothing in another process, so putting one in a frame that can be
+/// encoded and sent would be a field that is wrong wherever it is read.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct SharedImage {
+    /// The image's width in pixels.
+    pub width: u32,
+    /// The image's height in pixels.
+    pub height: u32,
+    /// The DRM fourcc of the pixel format.
+    pub fourcc: u32,
+    /// The DRM format modifier the runtime's driver chose.
+    pub modifier: u64,
+    /// Bytes between the starts of two rows, from the driver rather than from arithmetic.
+    pub stride: u64,
+    /// Where the plane starts inside the allocation.
+    pub offset: u64,
+    /// The **allocation's** size in bytes. Not `width * height * 4`.
+    pub allocation_bytes: u64,
+    /// Which image of the ring these pixels are in.
+    pub slot: u32,
+    /// How many images the ring holds. Three is the minimum that pipelines; four is preferred.
+    pub buffer_count: u32,
+    /// Which generation of the ring the slot belongs to.
+    pub generation: u32,
+    /// The value the runtime's timeline reaches when this frame's GPU work is done.
+    pub timeline_value: u64,
+}
+
+impl SharedImage {
+    /// Whether this description could address the image it claims to describe.
+    ///
+    /// A cheap consistency check for a description that crossed a boundary: a stride narrower than
+    /// a row, or an allocation shorter than the rows it must hold, is a description that will
+    /// produce a wrong picture rather than an error.
+    #[must_use]
+    pub fn is_addressable(&self) -> bool {
+        self.width > 0
+            && self.height > 0
+            && self.stride >= u64::from(self.width)
+            && self.allocation_bytes >= self.stride.saturating_mul(u64::from(self.height))
+            && u64::from(self.slot) < u64::from(self.buffer_count)
+    }
+
+    /// A description of an image whose rows are exactly `width * 4` bytes and whose allocation is
+    /// exactly its rows.
+    ///
+    /// What a description without a driver behind it can honestly say: an in-process surface, or a
+    /// fixture. A real import fills `stride`, `offset` and `allocation_bytes` from the driver, and
+    /// on this project's hardware they are all larger than this.
+    #[must_use]
+    pub fn unpadded(width: u32, height: u32, slot: u32, buffer_count: u32) -> Self {
+        let stride = u64::from(width) * 4;
+        Self {
+            width,
+            height,
+            fourcc: 0x3432_4241,
+            modifier: 0,
+            stride,
+            offset: 0,
+            allocation_bytes: stride * u64::from(height),
+            slot,
+            buffer_count,
+            generation: 1,
+            timeline_value: 0,
+        }
+    }
+
+    /// Write the description into a frame's encoding.
+    fn write(&self, writer: &mut Writer) {
+        writer.u32(self.width);
+        writer.u32(self.height);
+        writer.u32(self.fourcc);
+        writer.u64(self.modifier);
+        writer.u64(self.stride);
+        writer.u64(self.offset);
+        writer.u64(self.allocation_bytes);
+        writer.u32(self.slot);
+        writer.u32(self.buffer_count);
+        writer.u32(self.generation);
+        writer.u64(self.timeline_value);
+    }
+
+    /// Read a description a peer wrote.
+    fn read(reader: &mut Reader<'_>) -> Result<Self> {
+        Ok(Self {
+            width: reader.u32()?,
+            height: reader.u32()?,
+            fourcc: reader.u32()?,
+            modifier: reader.u64()?,
+            stride: reader.u64()?,
+            offset: reader.u64()?,
+            allocation_bytes: reader.u64()?,
+            slot: reader.u32()?,
+            buffer_count: reader.u32()?,
+            generation: reader.u32()?,
+            timeline_value: reader.u64()?,
+        })
+    }
+}
+
 /// The image itself, which is the only thing the three kinds disagree about.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum FrameImage {
     /// An editor-owned surface the runtime presented into. The number identifies which.
     Surface(u64),
-    /// A texture shared between processes. The number is the platform handle's identifier, and no
-    /// pixels crossed the boundary to deliver it.
+    /// A texture shared between processes. No pixels crossed the boundary to deliver it.
     SharedTexture {
-        /// The shared handle's identifier.
+        /// The shared allocation's identifier, for a report and a log.
         handle: u64,
-        /// How large the image is, for a report. Not how much was copied — nothing was.
-        bytes: u64,
+        /// Everything a second process needs to read those pixels correctly. See [`SharedImage`].
+        image: SharedImage,
     },
     /// A compressed image. The bytes are here because they genuinely crossed the boundary.
     Encoded(Vec<u8>),
@@ -225,10 +350,10 @@ impl PresentedFrame {
                 writer.u8(0);
                 writer.u64(*id);
             }
-            FrameImage::SharedTexture { handle, bytes } => {
+            FrameImage::SharedTexture { handle, image } => {
                 writer.u8(1);
                 writer.u64(*handle);
-                writer.u64(*bytes);
+                image.write(&mut writer);
             }
             FrameImage::Encoded(bytes) => {
                 writer.u8(2);
@@ -256,7 +381,7 @@ impl PresentedFrame {
             0 => FrameImage::Surface(reader.u64()?),
             1 => FrameImage::SharedTexture {
                 handle: reader.u64()?,
-                bytes: reader.u64()?,
+                image: SharedImage::read(&mut reader)?,
             },
             2 => FrameImage::Encoded(reader.bytes()?),
             other => {
@@ -616,13 +741,31 @@ impl Clock {
 mod tests {
     use super::*;
 
+    /// A 1080p image in a three-deep ring, with the numbers this hardware actually produces: a
+    /// tiled modifier, a row pitch wider than the row, and an allocation larger than both.
+    fn a_shared_image() -> SharedImage {
+        SharedImage {
+            width: 1920,
+            height: 1080,
+            fourcc: 0x3432_4241,
+            modifier: 0x0300_0000_0000_0006,
+            stride: 7936,
+            offset: 0,
+            allocation_bytes: 8_650_752,
+            slot: 1,
+            buffer_count: 3,
+            generation: 4,
+            timeline_value: 77,
+        }
+    }
+
     fn frame(number: u64, produced_micros: u64) -> PresentedFrame {
         PresentedFrame::new(
             FrameId::from_raw(number),
             ViewState::new(),
             FrameImage::SharedTexture {
                 handle: 0xAB,
-                bytes: 8_294_400,
+                image: a_shared_image(),
             },
             produced_micros,
         )
@@ -730,6 +873,43 @@ mod tests {
         };
         let decoded = PresentedFrame::decode(&original.encode()).expect("our own encoding");
         assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn a_shared_texture_round_trips_with_the_layout_a_second_process_needs() {
+        // The regression this test exists for: the variant was `{ handle: u64 }` through M5, which
+        // is enough to name an image and not enough to read one. Every field below is one the
+        // synchronisation spike could not import without.
+        let original = frame(5, 1_000);
+        let decoded = PresentedFrame::decode(&original.encode()).expect("our own encoding");
+        assert_eq!(decoded, original);
+        let FrameImage::SharedTexture { image, .. } = decoded.image else {
+            panic!("a shared texture");
+        };
+        assert_eq!(image, a_shared_image());
+        assert!(image.is_addressable());
+        assert_eq!(
+            decoded.image.transferred_bytes(),
+            0,
+            "a shared texture moves no pixels however large it is"
+        );
+    }
+
+    #[test]
+    fn a_layout_that_could_not_address_the_image_is_recognisable() {
+        // `width * height * 4` is the wrong number, and this is the check that says so out loud
+        // rather than importing against it and getting a driver error with no explanation in it.
+        let mut naive = a_shared_image();
+        naive.allocation_bytes = u64::from(naive.width) * u64::from(naive.height) * 4;
+        assert!(
+            !naive.is_addressable(),
+            "the driver's rows are padded, so width * height * 4 does not hold them — which is the \
+             exact arithmetic the M5 variant's `bytes` field invited"
+        );
+
+        let mut wrong_slot = a_shared_image();
+        wrong_slot.slot = wrong_slot.buffer_count;
+        assert!(!wrong_slot.is_addressable(), "slot 3 of a three-image ring");
     }
 
     #[test]
