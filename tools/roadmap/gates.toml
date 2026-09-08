@@ -790,20 +790,25 @@ platforms = ["linux"]
 since = "m7"
 class = "milestone"
 milestone = "m7"
-# `joins-on-close`, and it was briefly `green` before the gate ran. M7's closing gate ran the ledger
-# and it is not green: `samples/07-fidelity` fails its own oscillation criterion on the runs where
-# the device's measured frame is substituted for the geometry subsystem's authored cost — six of
-# twenty on a quiet machine, with the reproduction and the two modes in
-# docs/roadmap/capability-matrix.md#where-m7s-tiers-are-thin. A milestone gate flipped to green in
-# advance of its criteria passing is the M2 and M4 failure exactly, one level up, so this goes back
-# to what it was until `just roadmap-milestone m7` exits 0.
+# GREEN, AND IT WAS RED FIRST. This gate was briefly flipped to green before the ledger had passed,
+# which is the M2 and M4 failure one level up; the closing gate put it back and held the milestone
+# open. `samples/07-fidelity` was failing its own oscillation criterion on six runs in twenty,
+# because the artefact substitutes the device's measured frame for the geometry subsystem's authored
+# cost and a discrete GPU's frame is bimodal by power state — so the same binary put the control loop
+# at 2.4 ms of headroom on some runs and 0.9 ms on others.
 #
-# .github/workflows/ci.yml's `milestone` job stays on `just roadmap-milestone m7`. That is not the
-# coupled edit going out of step: `tools/ci/check_workflows.py` requires every GREEN milestone gate
-# to be covered by some workflow's ledger, and a ledger ABOVE the newest green one covers them all.
-# Running m7 there now is what makes the remaining failure visible on main rather than at the next
-# gate. `just ci-check` is green with this pair, and task 12.4's edit to ci.yml stands.
-state = "joins-on-close"
+# Three changes closed it, and the third is the one that mattered. The artefact now discards twelve
+# warm-up frames, so it measures a clocked-up device rather than a cold one. `rendering-architecture`
+# states the arbiter's convergence guarantee with an operating envelope — four deadbands of nominal
+# headroom — measured rather than asserted: the law's last clean operating point is three and a half
+# deadbands and it oscillates below that. And `integration.render_arbiter_sweep` now sweeps the
+# OPERATING POINT as well as the step magnitude, which is the hole the whole episode came out of: it
+# swept 71 step magnitudes over one nominal cost, so the guarantee had only ever been checked where
+# it was comfortable.
+#
+# `just roadmap-milestone m7` now exits 0 — 165 criteria, each evaluated once, 163 passing and 4 not
+# evaluable on this OS.
+state = "green"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

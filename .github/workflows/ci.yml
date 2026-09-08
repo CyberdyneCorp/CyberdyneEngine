@@ -979,8 +979,8 @@ jobs:
   # here rather than found there. `tools/ci/check_workflows.py` now fails when a green milestone
   # gate is unevaluated, so this job cannot quietly disappear again.
   #
-  # ONE LEDGER, NOT EIGHT. The ledger has been flat since M5: `just roadmap-milestone m6` evaluates
-  # M0 through M6 merged and deduplicated, each distinct check exactly once. Seven separate
+  # ONE LEDGER, NOT NINE. The ledger has been flat since M5: `just roadmap-milestone m7` evaluates
+  # M0 through M7 merged and deduplicated, each distinct check exactly once. Seven separate
   # invocations would run `four-profiles` seven times, which is the multiplication the flattening
   # removed and which `check_workflows.gate_coverage` therefore does not ask for.
   #
