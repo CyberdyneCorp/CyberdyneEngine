@@ -25,10 +25,10 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | **1 — Foundations** | | | | | | | |  | | | | | | | |
 | [`engine-architecture`](../../openspec/specs/engine-architecture/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |  |  | **C** | M11 |
 | [`core-type-system`](../../openspec/specs/core-type-system/spec.md) | 13 |  | W |  |  |  | **C** |  |  |  |  |  |  |  | M5 |
-| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |       | **C** |  |  |  |  | M7 |
+| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |       |       | **C** |  |  |  | M8 |
 | [`core-math`](../../openspec/specs/core-math/spec.md) | 10 |  | W |  | **C** |  |  |  |  |  |  |  |  |  | M3 |
 | [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  | **C** |  |  | M9 |
-| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |       | **C** |  |  |  |  | M7 |
+| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |       |       | **C** |  |  |  | M8 |
 | [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |  |  | **C** | M11 |
 | **2 — World model** | | | | | | | |  | | | | | | | |
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  | **C** |  |  | M9 |
@@ -56,14 +56,14 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 12 |  |  |  |  | W |  |  |  |  | **C** |  |  |  | M8 |
 | **4 — Rendering** | | | | | | | |  | | | | | | | |
 | [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 12 |  |  |  | W |  |  |  |  |  |  |  |  | **C** | M11 |
-| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  | **C** |  |  |  |  | M7 |
-| [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | 9 |  |  |  | S |  |  |  | W | **C** |  |  |  |  | M7 |
+| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  |       | **C** |  |  |  | M8 |
+| [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | 9 |  |  |  | S |  |  |  | W |       | **C** |  |  |  | M8 |
 | [`virtual-geometry`](../../openspec/specs/virtual-geometry/spec.md) | 26 |  |  |  |  |  |  |  |  | W |  |  |  | **C** | M11 |
 | [`virtual-texturing`](../../openspec/specs/virtual-texturing/spec.md) | 16 |  |  |  |  |  |  |  | W | **C** |  |  |  |  | M7 |
 | [`virtual-shadows`](../../openspec/specs/virtual-shadows/spec.md) | 20 |  |  |  |  |  |  |  |  | W |  |  |  | **C** | M11 |
 | [`residency`](../../openspec/specs/residency/spec.md) | 8 |  |  |  |  |  |  |  | W | **C** |  |  |  |  | M7 |
 | [`rendering-forward-clustered`](../../openspec/specs/rendering-forward-clustered/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |  |  | **C** | M11 |
-| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  | **C** |  |  |  |  | M7 |
+| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  |       | **C** |  |  |  | M8 |
 | [`rendering-materials-and-shading`](../../openspec/specs/rendering-materials-and-shading/spec.md) | 9 |  |  |  | W |  |  |  |  | **C** |  |  |  |  | M7 |
 | [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W | **C** |  |  |  | M8 |
 | [`rendering-lighting-and-shadows`](../../openspec/specs/rendering-lighting-and-shadows/spec.md) | 13 |  |  |  | S |  |  |  |  | W |  |  |  | **C** | M11 |
@@ -91,7 +91,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | 12 |  |  |  |  |  | W |  |  |  | **C** |  |  |  | M8 |
 | [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | 16 |  |  |  |  |  | W |  |  |  |  |  |  | **C** | M11 |
 | [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | 16 |  |  |  |  |  | S | W |  |  |  |  |  | **C** | M11 |
-| [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  |  | **C** |  |  |  |  | M7 |
+| [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  |  |       | **C** |  |  |  | M8 |
 | [`editor-visual-language`](../../openspec/specs/editor-visual-language/spec.md) | 22 |  |  |  |  |  | S | W |  |  |  |  |  | **C** | M11 |
 | [`live-editing`](../../openspec/specs/live-editing/spec.md) | 11 |  |  |  |  |  | W |  |  |  | **C** |  |  |  | M8 |
 | [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | 11 | S | W |  |  |  | **C** |  |  |  |  |  |  |  | M5 |
@@ -139,8 +139,8 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M5** · Authorable | 16 | 4 | `core-type-system`, `native-abi`, `project-and-plugins`, `scene-graph-and-nodes` |
 | **M5.5** · Operable | 3 | 0 | — |
 | **M6** · Scale | 6 | 0 | — |
-| **M7** · Fidelity | 19 | 9 | `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-materials-and-shading`, `residency`, `shader-system`, `virtual-texturing` |
-| **M8** · Game systems | 23 | 10 | `asset-import-pipeline`, `audio`, `editor-documents-and-transactions`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `swift-scripting`, `text-and-fonts` |
+| **M7** · Fidelity | 13 | 3 | `rendering-materials-and-shading`, `residency`, `virtual-texturing` |
+| **M8** · Game systems | 29 | 16 | `asset-import-pipeline`, `audio`, `core-assets-and-io`, `core-memory-and-containers`, `editor-documents-and-transactions`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting`, `text-and-fonts` |
 | **M9** · Integrity | 12 | 10 | `camera-system`, `core-jobs-and-concurrency`, `diagnostics-profiling-and-crash`, `ecs-core`, `gameplay-abilities-and-effects`, `gameplay-framework`, `physics`, `save-and-persistence`, `sequencing-and-cinematics`, `simulation-and-determinism` |
 | **M10** · Worlds | 10 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
 | **M11** · Reach | 38 | 38 | everything remaining |
@@ -186,26 +186,47 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M6 forty-eight capabilities have left `—`, and four have reached Complete. **Every entry
-below was read out of `just roadmap-status` at M6's gate rather than carried forward from the
+As of M7 fifty-seven capabilities have left `—`, and seven have reached Complete. **Every entry
+below was read out of `just roadmap-status` at M7's gate rather than carried forward from the
 previous edition of this list.**
 
-- **Complete (4)**: `core-math`, `core-type-system`, `native-abi`, `scene-graph-and-nodes`.
-- **Working (31)**: `asset-import-pipeline`, `build-and-packaging`, `core-assets-and-io`,
+- **Complete (7)**: `core-math`, `core-type-system`, `native-abi`,
+  `rendering-materials-and-shading`, `residency`, `scene-graph-and-nodes`, `virtual-texturing`.
+- **Working (37)**: `asset-import-pipeline`, `build-and-packaging`, `core-assets-and-io`,
   `core-jobs-and-concurrency`, `core-memory-and-containers`, `core-platform-abstraction`,
-  `delivery-roadmap`, `ecs-core`, `editor-agent-interface`, `editor-documents-and-transactions`,
-  `editor-rust-application`, `editor-ui-ux`, `editor-viewport-and-gizmos`, `editor-visual-language`,
-  `engine-architecture`, `input-and-actions`, `physics`, `project-and-plugins`,
-  `rendering-architecture`, `rendering-culling-and-lod`, `rendering-forward-clustered`,
-  `rendering-geometry-and-resources`, `rendering-materials-and-shading`, `residency`,
-  `rhi-and-render-graph`, `save-and-persistence`, `serialization-and-prefabs`, `shader-system`,
-  `swift-scripting`, `virtual-texturing`, `world-partition-and-streaming`.
-- **Seed (13)**: `audio`, `build-system-and-platforms`, `camera-system`,
-  `developer-workflow-and-just`, `diagnostics-profiling-and-crash`, `editor-architecture`,
-  `gameplay-framework`, `live-editing`, `rendering-lighting-and-shadows`,
-  `simulation-and-determinism`, `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
+  `delivery-roadmap`, `denoising`, `ecs-core`, `editor-agent-interface`,
+  `editor-documents-and-transactions`, `editor-rust-application`, `editor-ui-ux`,
+  `editor-viewport-and-gizmos`, `editor-visual-language`, `engine-architecture`,
+  `input-and-actions`, `material-compiler`, `physics`, `project-and-plugins`,
+  `ray-tracing-infrastructure`, `rendering-architecture`, `rendering-culling-and-lod`,
+  `rendering-forward-clustered`,
+  `rendering-geometry-and-resources`, `rendering-global-illumination`,
+  `rendering-lighting-and-shadows`, `rendering-post-processing`, `rhi-and-render-graph`,
+  `save-and-persistence`, `serialization-and-prefabs`, `shader-system`, `swift-scripting`,
+  `temporal-rendering`, `virtual-geometry`, `virtual-shadows`, `world-partition-and-streaming`.
+- **Seed (13)**: `atmosphere-sky-and-clouds`, `audio`, `build-system-and-platforms`,
+  `camera-system`, `developer-workflow-and-just`, `diagnostics-profiling-and-crash`,
+  `editor-architecture`, `gameplay-framework`, `live-editing`, `simulation-and-determinism`,
+  `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
 
-The remaining 28 have not started. **M6 advanced six, and started five of them**:
+The remaining 19 have not started. **M7 advanced thirteen, and started nine of them**:
+`material-compiler`, `virtual-geometry`, `virtual-shadows`, `temporal-rendering`,
+`rendering-post-processing`, `rendering-global-illumination`, `denoising` and
+`ray-tracing-infrastructure` went from `—` to Working and `atmosphere-sky-and-clouds` from `—` to
+Seed; `rendering-lighting-and-shadows` went from Seed to Working; and
+`rendering-materials-and-shading`, `residency` and `virtual-texturing` reached Complete — each
+recorded against `implement-m7-fidelity` at milestone `M7`. **Six rows the plan had completing here
+did not reach it**: `rendering-architecture`, `rendering-culling-and-lod`, `shader-system`,
+`core-assets-and-io`, `core-memory-and-containers` and `editor-viewport-and-gizmos`. Every one of
+the six received substantial implementation in this milestone — the budget arbiter and its
+71-magnitude sweep, the GPU cull dispatch, the material compiler, `StreamingSystem`, four
+attribution axes, and the engine's own frame inside the editor's viewport — and none of the six
+closed the last requirement between it and Complete, so their rows still name the milestone that
+last advanced their tier rather than this one. Where M7's tiers are
+thinner than the tier they reached is [below](#where-m7s-tiers-are-thin).
+
+The paragraph below is M6's, kept because it is the record of what that milestone moved.
+**M6 advanced six, and started five of them**:
 `build-and-packaging`, `residency`, `save-and-persistence`, `virtual-texturing` and
 `world-partition-and-streaming` went from `—` to Working, and `rendering-culling-and-lod` from Seed
 to Working, each recorded against `implement-m6-scale` at milestone `M6`. **Five rows the plan had
@@ -288,6 +309,121 @@ Three cells were filled: `editor-ui-ux`'s **W** moved out of M5 into M5.5 and it
 **W** at M5.5; and `editor-agent-interface` reaches **W** at M5.5 rather than at M8, which is the
 one place the plan changed rather than being corrected — the proposal argues that the agent loop is
 most valuable *while* the engine is being built.
+
+## Where M7's tiers are thin
+
+The thirteen tiers M7 advanced are in [the status record](#the-status-record); the six the plan
+expected to complete and that did not are argued under [milestone load](#milestone-load) and in
+`tools/roadmap/milestones/m7.toml` beside `[criterion.expect_tiers]`. What follows is where the
+implementation is **thinner than the tier it reached**, and what M7's own gate found. Everything
+below was measured or reproduced at that gate on this tree: Linux 6.8, GCC 13.3.0 and Clang 18.1.3,
+clang-format and clang-tidy at 22.1.8, Swift 6.3.3, Rust 1.95.0, an NVIDIA RTX 5060 with Vulkan
+1.4.312, X11 on `:0`.
+
+### The five the plan had completing, and what each is short of
+
+Each of the five is stated in full in `tools/roadmap/milestones/m7.toml` and summarised in the
+[M7 section of the roadmap](../ROADMAP.md#m7--fidelity). The shortest form:
+
+| Row | Recorded | The requirement between it and Complete |
+|---|---|---|
+| `rendering-architecture` | Working | "Renderer budget arbiter". The arbiter is built and certified over 71 step magnitudes; `libcy_rendering_arbiter.a` is linked by its own two test binaries and by `samples/07-fidelity` and by nothing else, and the seven `SubsystemController`s live in that sample over a hard-coded cost table. No instance under `src/` reports a measured cost to it. |
+| `rendering-culling-and-lod` | Working | "Occlusion culling". `GpuCullPass::upload` refuses `kGpuCullOcclusion` with `NotImplemented`; there is no hierarchical depth buffer on the device, and cluster-granular occlusion for virtual geometry has no implementation. `Hzb` and `TwoPassCull` are a CPU model, tested as one. |
+| `shader-system` | Working | "Visual material editor". The compiler exists and `cy_material compile` prints every lowering stage; the editor has no material graph panel. |
+| `core-assets-and-io` | Working | "Hot reload" (`AssetSystem::reload` refuses an asset served from a package) and the "Development file serving" scenario (`RemoteFileProvider` is an interface with no transport). |
+| `core-memory-and-containers` | Working | "Memory diagnostics". All four missing axes were built and **nothing pushes one**: `MemoryAttributionScope` appears nowhere outside `src/core/memory/`. |
+| `editor-viewport-and-gizmos` | Working | "The rendering responsibility split" (what you see is what ships) and "Selection and picking". See below — this is the row that moved furthest. |
+
+### The engine has no assembled renderer, and that is the shape behind three of the six
+
+This is worth stating once rather than three times. Of the modules under `src/rendering/`, the
+following are linked by **nothing but their own test binaries** — checked in `build.ninja` rather
+than in CMake source: `cy_rendering_forward` (the forward+clustered renderer itself, since M3),
+`cy_rendering_material`, `cy_rendering_post`, `cy_rendering_shadows`, `cy_rendering_sky`,
+`cy_rendering_temporal`, `cy_rendering_gpu_culling` and `cy_rendering_virtual_texturing`.
+`samples/03-first-light` links `cy::core-math` and `cy::rendering-graph` and builds its render graph
+by hand. `samples/07-fidelity` links `cy::rendering-virtual-geometry`, `cy::rendering-gi` (which
+pulls in denoise and ray tracing) and `cy::rendering-arbiter`. Nothing anywhere assembles a frame
+out of the renderer's own parts.
+
+That does not make the modules wrong — every one of them is tested against a reference rather than
+against a screenshot, which was the deliberate choice — but it is why `rendering-architecture`,
+`rendering-culling-and-lod` and, one level down, the arbiter's degradation criterion are recorded as
+they are. It is the single largest thing M8 will trip over.
+
+### `editor-viewport-and-gizmos` at Working, and what a person can now see
+
+**A person can now open the editor and see the engine's own three-dimensional world in the
+viewport, with a translate gizmo on the selected object, and drag it.** That was not true at M6 and
+it is the thing this milestone was asked for. `just run-editor-window` photographs it: a perspective
+scene of five shaded boxes on a checkerboard ground with cast shadows, drawn by
+`cy_editor_window_runtime` — which links `cy::sample-first-light`, `cy::servers-render` and
+`cy::rhi-vulkan` — and delivered into the editor's viewport over an imported dma-buf with no copy
+through the CPU. The engine publishes the gizmo's layout; the editor's drawn X arrow lands 6 px from
+where the published layout maps to; a drag on it moves the object **in the engine's world** and the
+engine re-centres its own gizmo from (365, 471) to (433, 530); `Ctrl+Z` returns it to within a pixel
+and the inspector's `translation X` returns from 1.250 to 0.000.
+
+What stops it being Complete, in the runtime's own words. `samples/05b-editor-window/runtime/session.h`:
+
+> What this file does is the smallest honest thing that makes the interaction real: the runtime
+> associates each identity the editor names with one of its own objects, in first-seen order …
+> It is a stand-in for a shared world and it is named as one; a reader should not mistake it for one.
+
+Three consequences, each observed rather than inferred:
+
+* **The viewport is not the document.** Three entities created in the editor during the artefact
+  (`Ctrl+Shift+N`, three journal records, the outliner going from 3 rows to 7) produced no change in
+  the rendered image: the same five boxes before and after. `editor-viewport-and-gizmos` requires
+  "the image SHALL be produced by the same render graph the game uses", and it is — but of a
+  different scene.
+* **Task 5b.2 is not done.** `.cyworld` is still read and written by nothing under `src/` or
+  `tools/`; `grep -rl cyworld src/ tools/` returns two build-description headers that mean something
+  else and one README.
+* **Engine-side picking is unexercised.** The artefact's own counter reads `pick 0`: selection in
+  the run is by clicking an outliner row, not by clicking the image.
+
+### `denoising` at Working
+
+There is exactly one denoiser and no second implementation, and the stochastic many-light path
+refuses to enable without it (`validate_many_light`, "this path SHALL NOT be enabled without
+denoising"). But of the five `SignalKind`s it declares — `IndirectDiffuse`, `IndirectSpecular`,
+`RayTracedShadow`, `AmbientOcclusion`, `StochasticDirect` — only the first two have a producer that
+routes through it: `src/rendering/gi/` is the only module in the tree that names `Denoiser`.
+
+### `virtual-texturing` at Complete, and the ceiling it has
+
+The device-side page table is the **flat** form. `PageTable::create()` refuses a texture whose
+pyramid exceeds 65,536 entries, naming the limit, rather than allocating 128 MB of mostly-zero
+words. A hash on the device is what a 512k-texel virtual space needs and it is not here. The CPU
+side has had flat and sparse behind one lookup since M6; it is the shader-visible half that is flat.
+
+### What the gate found in the checking machinery
+
+* **The unit suite's per-case budget charges kernel time the test did not spend.**
+  `cy::test::BudgetGuard` measures `CLOCK_THREAD_CPUTIME_ID`, which includes time the kernel spends
+  on the thread's behalf — page-fault handling and direct reclaim included — and its failure message
+  states the opposite: *"The clock is the case's own CPU time, so this is not a busy machine: it is
+  work the test did."* Under sustained memory reclaim on this host,
+  `cy_test_unit_material_compiler`, `cy_test_unit_render_arbiter` and `cy_test_unit_virtual_geometry`
+  each failed **8 of 8** runs on cases whose quiet-machine worst is 0.55 ms against a 1.00 ms budget;
+  the same binary is 0 of 40 when the machine is quiet. This is why every milestone since M4 has a
+  report of "one unit suite failed once" — four separate M7 agents recorded
+  `unit.material_compiler` — and it is a defect in the harness, not in the suites.
+* **`just run-agent-authoring` reports four unsatisfied steps and exits 0.** M7 task 5b.5 made "a
+  GAP is not a pass" structural in `samples/harness/`, with negative fixtures, and
+  `samples/05b-editor-window/window.py` and `samples/07-fidelity/fidelity.py` are held to it. The
+  M5.5 agent artefact was not migrated: its `Report.failed` reads `self.steps`, and `Report.gap`
+  appends to `self.gaps`, so `return 1 if report.failed else 0` cannot see a gap. It is a permanent
+  merge gate.
+* **One of those four gaps names a reason that is no longer true.** It reads "opening a document
+  builds an empty one — `DocumentService::open` calls `Document::new` and there is no world loader",
+  and `editor/crates/cy-editor-services/src/documents.rs:121` calls `worldfile::load`. The file's own
+  header says a gap whose reason changed is a different gap.
+* **"The four plan documents agree" does not catch an omission.**
+  `plan._check_work_against_matrix` iterates the rows the roadmap's work table *names*; a capability
+  the matrix advances at a milestone whose work table omits it is never compared. Eight of M7's
+  nineteen planned rows were in the matrix and the proposal and not in the roadmap's M7 work table.
 
 ## Where M6's tiers are thin
 

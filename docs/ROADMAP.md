@@ -633,6 +633,47 @@ while the arbiter reallocates under a scripted load spike.
 **Risk spikes**, in this order: the material IR and closure lowering; the budget arbiter's control
 loop; virtual geometry's cluster hierarchy build and GPU traversal.
 
+*Both spikes were run before the implementing work and both met their criterion; what they found is
+in `implement-m7-fidelity/design.md` §1 and §2. The third was not given a spike, by decision, because
+the first two settle what it may assume.*
+
+**What M7 actually reached, which is not what it planned.** The table above is the plan M7 was
+written against; the record is [status.yaml](roadmap/status.yaml), and where the two differ the
+record wins. The proposal named **nine** capabilities reaching Complete here. Three did:
+`rendering-materials-and-shading`, `residency` and `virtual-texturing`. Six did not, and their
+**C** cell has moved to M8:
+
+- `rendering-architecture` — the budget arbiter is built, and it is the best-certified thing in the
+  milestone: 71 step magnitudes, none oscillating, with a negative control that oscillates 252 times
+  when every controller runs its own copy of the decision. What is missing is a renderer that uses
+  it. `cy::rendering-arbiter` is linked by its own two test binaries and by `samples/07-fidelity`,
+  and by nothing else in the tree; the seven `SubsystemController`s exist only inside
+  `samples/07-fidelity/spike.cpp`, against a hard-coded cost table, with one of the seven costs
+  substituted from the device. "Subsystem controllers SHALL … report their measured cost to the
+  arbiter" has no instance in `src/`.
+- `rendering-culling-and-lod` — the GPU dispatch landed and agrees with M6's CPU reference, but
+  `GpuCullPass::upload` refuses `kGpuCullOcclusion` with `NotImplemented`: there is no hierarchical
+  depth buffer on the device, so no frame occlusion-culls, and cluster-granular occlusion for
+  virtual geometry has no implementation at all.
+- `shader-system` — the "Visual material editor" requirement asks for a node-graph material editor
+  in the editor. The compiler exists and `cy_material` shows every lowering stage on a command line;
+  the editor has no material graph panel.
+- `core-assets-and-io` — `StreamingSystem` closes "Streaming". "Hot reload" names cooked outputs and
+  `AssetSystem::reload` refuses a packaged asset, and the "Development file serving" scenario has no
+  implementation: `RemoteFileProvider` is an interface with no transport.
+- `core-memory-and-containers` — all four missing attribution axes were built, and nothing pushes
+  one: `MemoryAttributionScope` appears nowhere outside `src/core/memory/`, so in a running engine
+  every axis but `thread` reports `unattributed_bytes`.
+- `editor-viewport-and-gizmos` — the row that moved furthest without arriving. The engine's own
+  renderer fills the viewport over a dma-buf, the engine generates the gizmo geometry, a drag lands
+  on a published handle and undo restores the value exactly. But the editor and the runtime are
+  still two worlds — `.cyworld` is read by nothing under `src/` or `tools/` — so "what you see is
+  what ships" does not hold, and engine-side picking is unexercised.
+
+The exit criterion "the Metal seed renders the M3 golden scene" is **not evaluated**: it needs an
+Apple GPU and this project has no macOS runner with one. `src/backends/rhi-metal/README.md` says of
+`src/device.mm` that nothing in that file has been compiled or run.
+
 ---
 
 ## M8 — Game systems

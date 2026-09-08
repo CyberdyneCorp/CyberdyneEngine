@@ -11,6 +11,78 @@
 # The planned path of each capability through the milestone ladder is in
 # capability-matrix.md; this file records what is actually true today.
 
+# --- M7's amendment, and why six rows the plan marked Complete are still Working -------------------
+#
+# M7's plan (docs/ROADMAP.md, the matrix, and implement-m7-fidelity/proposal.md) had NINE
+# capabilities reaching Complete here. M7's closing gate checked each against the code; three are
+# supported and six are not. The tiers below are what the tree holds. The argument for each, with
+# the requirement that is unmet and the command that shows it, is in
+# tools/roadmap/milestones/m7.toml beside `[criterion.expect_tiers]` and in
+# docs/roadmap/capability-matrix.md#where-m7s-tiers-are-thin. In short:
+#
+#   rendering-architecture            working  The budget arbiter is built and certified over 71
+#                                              step magnitudes with a negative control. Nothing in
+#                                              the engine uses it: `libcy_rendering_arbiter.a` is
+#                                              linked by its own two test binaries and by
+#                                              samples/07-fidelity, and the seven
+#                                              `SubsystemController`s live inside that sample over a
+#                                              hard-coded cost table with one of seven costs taken
+#                                              from the device. "Subsystem controllers SHALL …
+#                                              report their measured cost to the arbiter" has no
+#                                              instance under src/.
+#   core-memory-and-containers        working  "Memory diagnostics" asks that a report be
+#                                              attributable by domain, type, thread, world cell and
+#                                              asset. Task 3.1 built all four axes — and NOTHING
+#                                              PUSHES ONE. `grep -rn MemoryAttributionScope src/
+#                                              tools/ samples/` outside src/core/memory/ returns
+#                                              nothing, so the scenario "attribution answers a
+#                                              question" is answerable only by a test that pushes
+#                                              the scope itself. The mechanism is real; it has no
+#                                              producer.
+#   core-assets-and-io                working  Task 2.1's `StreamingSystem` is real and closes the
+#                                              "Streaming" requirement M6 planned and did not touch.
+#                                              Two others are not closed: "Hot reload" names cooked
+#                                              outputs and `AssetSystem::reload` returns
+#                                              NotImplemented for an asset served from a package
+#                                              (asset_system.cpp:1182), and the "Development file
+#                                              serving" scenario has no implementation —
+#                                              `RemoteFileProvider` is an interface with no
+#                                              transport, as src/core/assets/README.md has said
+#                                              since M1.
+#   rendering-culling-and-lod         working  M7 landed the GPU dispatch and it agrees with M6's
+#                                              CPU reference. "Occlusion culling" is not closed:
+#                                              `GpuCullPass::upload` REFUSES `kGpuCullOcclusion`
+#                                              with NotImplemented because no hierarchical depth
+#                                              buffer exists on the device, and the requirement's
+#                                              "the HZB SHALL additionally serve cluster-granular
+#                                              occlusion for virtual geometry" has no
+#                                              implementation. `Hzb` and `TwoPassCull` are a CPU
+#                                              model, tested as one; no frame occlusion-culls.
+#   shader-system                     working  "Visual material editor" requires a node-graph
+#                                              material editor in the editor that is a front-end
+#                                              onto the material compiler. The compiler is here and
+#                                              `cy_material` shows every lowering stage on a command
+#                                              line; the editor has no material graph panel.
+#   editor-viewport-and-gizmos        working  The engine's own renderer now fills the viewport over
+#                                              a dma-buf, the engine generates the gizmo geometry,
+#                                              a drag lands on a published handle and undo restores
+#                                              the value exactly — all of it photographed. Task 5b.2
+#                                              is NOT done: `.cyworld` is still read and written by
+#                                              nothing under src/ or tools/, and
+#                                              samples/05b-editor-window/runtime/session.h says so
+#                                              in its own header — the runtime associates the
+#                                              editor's identities with its own scene objects in
+#                                              first-seen order and calls that "a stand-in for a
+#                                              shared world". So "what you see is what ships" is not
+#                                              true: three entities created in the editor during the
+#                                              artefact changed nothing in the rendered image. The
+#                                              "Selection and picking" requirement is engine-side
+#                                              picking, and the artefact's own counter reads
+#                                              `pick 0`.
+#
+# Three rows did reach Complete — rendering-materials-and-shading, residency and
+# virtual-texturing — and nine advanced to Working with one new Seed.
+
 # --- M6's amendment, and why five rows the plan marked Complete are still Working ------------------
 #
 # M6's plan (docs/ROADMAP.md, the matrix, and implement-m6-scale/proposal.md) had five capabilities
@@ -138,9 +210,9 @@ capabilities:
     milestone: null
     change: null
   atmosphere-sky-and-clouds:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M7
+    change: implement-m7-fidelity
   terrain:
     tier: none
     milestone: null
@@ -174,21 +246,21 @@ capabilities:
     milestone: M6
     change: implement-m6-scale
   virtual-geometry:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   virtual-texturing:
-    tier: working
-    milestone: M6
-    change: implement-m6-scale
+    tier: complete
+    milestone: M7
+    change: implement-m7-fidelity
   virtual-shadows:
-    tier: none
-    milestone: null
-    change: null
-  residency:
     tier: working
-    milestone: M6
-    change: implement-m6-scale
+    milestone: M7
+    change: implement-m7-fidelity
+  residency:
+    tier: complete
+    milestone: M7
+    change: implement-m7-fidelity
   rendering-forward-clustered:
     tier: working
     milestone: M3
@@ -198,37 +270,37 @@ capabilities:
     milestone: M3
     change: implement-m3-first-light
   rendering-materials-and-shading:
-    tier: working
-    milestone: M3
-    change: implement-m3-first-light
+    tier: complete
+    milestone: M7
+    change: implement-m7-fidelity
   material-compiler:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   rendering-lighting-and-shadows:
-    tier: seed
-    milestone: M3
-    change: implement-m3-first-light
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   rendering-global-illumination:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   denoising:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   ray-tracing-infrastructure:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   rendering-post-processing:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   temporal-rendering:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M7
+    change: implement-m7-fidelity
   rendering-geometry-and-resources:
     tier: working
     milestone: M3

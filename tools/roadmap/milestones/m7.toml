@@ -183,44 +183,84 @@ ci_job = "milestone-m7"
 # The M7 row of docs/ROADMAP.md, as data. An exit tier is a FLOOR rather than an equality: a later
 # milestone advancing one of these past its M7 level must not make this recipe fail.
 #
-# --- READ THE NINE COMPLETES AS CLAIMS SOMEBODY STILL HAS TO EARN ---------------------------------
+# --- THE NINE COMPLETES WERE CLAIMS. FOUR WERE EARNED AND FIVE WERE NOT -------------------------
 #
 # M5's ledger amended four rows at its own gate, M5.5's inherited the practice and M6's demoted five.
-# The nine this milestone plans to complete, and what would have to be true of each:
+# M7's gate checked each of the nine against the code. Four are recorded Complete and five are
+# recorded Working; the table below is the record, and each line is the reason with the thing that
+# shows it.
 #
-#   rendering-architecture  complete. The budget arbiter, renderer profiles and pipeline
-#       configuration are all here and measured over a 71-magnitude sweep, and samples/07-fidelity
-#       is the shipped path that drives them — which is the gap the arbiter's own author recorded.
-#
-#   rendering-culling-and-lod  complete. The dispatch computes what M6's CPU reference computes and
-#       is compared against it. What is thinner: GPU occlusion culling is REFUSED with a named error
-#       rather than ignored, and cluster-granular culling for virtual geometry routes into a
-#       separate list that section 7's traversal consumes.
+# EARNED:
 #
 #   residency  complete. The policy gained the one field its own spike said it needed —
 #       `LeverSchedule::relative_cost` — and it now has two claimants in shipped code fed by real
-#       frame feedback: virtual texturing's mip ladder and virtual geometry's page ladder.
+#       frame feedback: `FrameResidency::register_subsystems` registers Texture and Geometry, and
+#       src/rendering/virtual_geometry/src/residency.cpp declares the second policy.
 #
 #   virtual-texturing  complete. The device side arrived: a feedback buffer written by a shader and
 #       a page table sampled by one, with `bytes_read` making "no per-pixel stream reaches the CPU" a
 #       measurement. What is thinner: the device-side page table is the FLAT form and `create()`
 #       refuses a pyramid above 65,536 entries rather than pretending.
 #
-#   shader-system, rendering-materials-and-shading  complete. The material compiler produces the
-#       `MaterialProgram` parameter layout the M3 module already defined, and one cook key covers the
-#       compiler version, the IR version, the module digest, the profile and every emitted program.
+#   rendering-materials-and-shading  complete. The material compiler produces the `MaterialProgram`
+#       parameter layout the M3 module already defined, and one cook key covers the compiler
+#       version, the IR version, the module digest, the profile and every emitted program — the same
+#       key under clang++ -O0+ASan, clang++ -O2, g++ -O0 and g++ -O2.
 #
-#   core-assets-and-io  complete. `StreamingSystem` is the requirement M6 planned and did not touch:
-#       a declared ladder of byte ranges, requests driven by renderer feedback, and a budget the
-#       residency arbiter sets.
+# NOT EARNED, AND THE C CELL MOVED TO M8:
 #
-#   core-memory-and-containers  complete. `MemoryAttributionScope` adds the world-cell and asset
-#       axes. What is thinner, and it is named in the module rather than implied by absence: nothing
-#       PUSHES those axes yet, so every axis but `thread` reports `unattributed_bytes`.
+#   rendering-architecture  WORKING, and this is the demotion that will surprise a reader, because
+#       the budget arbiter is the best-certified thing in the milestone: 71 step magnitudes, none
+#       oscillating, none settling over budget, beside a negative control that oscillates 252 times
+#       in 450 frames when every controller runs its own copy of the decision. What is missing is a
+#       renderer that uses it. From build.ninja: `libcy_rendering_arbiter.a` is linked by
+#       `cy_test_unit_render_arbiter`, `cy_test_integration_render_arbiter_sweep` and
+#       `samples/07-fidelity/cy_sample_fidelity`, and by nothing else in the tree. The seven
+#       `SubsystemController`s exist only inside `samples/07-fidelity/spike.cpp`, over a hard-coded
+#       cost table (`kRows`), with exactly one of the seven costs substituted from the device. So
+#       "Subsystem controllers SHALL hold their own allocation using their own levers … and SHALL
+#       report their measured cost to the arbiter" has no instance anywhere under `src/`. This is
+#       the same bar M7's own proposal applied to M6 — "linked by nothing but their own test
+#       binaries — not by the renderer, and not by M6's own artefact" — and applying a weaker one to
+#       M7's headline capability than M7 applied to M6's is the drift a gate exists to stop.
 #
-#   editor-viewport-and-gizmos  complete. The engine's own publisher renders into the editor's
-#       viewport with no copy through the CPU, and the gizmo's layout is a committed cross-language
-#       wire fixture rather than two implementations that agree today.
+#   rendering-culling-and-lod  WORKING. The dispatch computes what M6's CPU reference computes and
+#       is compared against it, which is real and is what section 5 was for. But "Occlusion culling"
+#       is a requirement of its own and `GpuCullPass::upload` REFUSES `kGpuCullOcclusion` with
+#       NotImplemented — "no hierarchical depth buffer exists on the device yet" — so no frame in
+#       this engine occlusion-culls. `Hzb` and `TwoPassCull` are a CPU model, tested as one. The
+#       requirement's "the HZB SHALL additionally serve cluster-granular occlusion for virtual
+#       geometry" has no implementation at all.
+#
+#   shader-system  WORKING. "Visual material editor" requires a node-graph material editor in the
+#       editor which is a front-end onto the material compiler. The compiler is here and
+#       `cy_material compile` prints every lowering stage; the editor has no material graph panel —
+#       its graph dock says visual scripting arrives at M8.
+#
+#   core-assets-and-io  WORKING. `StreamingSystem` closes the "Streaming" requirement M6 planned and
+#       did not touch. Two other requirements are open: "Hot reload" names cooked outputs and
+#       `AssetSystem::reload` (asset_system.cpp:1182) returns NotImplemented for an asset served
+#       from a package, and the "Development file serving" scenario has no implementation —
+#       `RemoteFileProvider` is an interface with no transport.
+#
+#   core-memory-and-containers  WORKING. `MemoryAttributionScope` adds the world-cell and asset
+#       axes and `report_attribution` groups by any of them. NOTHING PUSHES ONE: the symbol does not
+#       appear anywhere outside src/core/memory/. The scenario "attribution answers a question" is
+#       therefore answerable only by a test that pushes the scope itself, and in a running engine
+#       every axis but `thread` reports `unattributed_bytes`. The mechanism is real and has no
+#       producer.
+#
+#   editor-viewport-and-gizmos  WORKING, and this is the row that moved furthest without arriving.
+#       The engine's own renderer fills the viewport over a dma-buf with no copy through the CPU,
+#       the engine generates the gizmo geometry, a drag lands on a published handle, and undo
+#       restores the value exactly — photographed in build/<tree>/editor-window/shots/. Task 5b.2 is
+#       not done: `.cyworld` is still read and written by nothing under src/ or tools/, and
+#       samples/05b-editor-window/runtime/session.h says in its own header that the runtime
+#       associates the editor's identities with its own scene objects in first-seen order and that
+#       this "is a stand-in for a shared world and it is named as one". So "what you see is what
+#       ships" does not hold — three entities created in the editor during the artefact changed
+#       nothing in the rendered image — and "Selection and picking", which is engine-side picking,
+#       is unexercised: the artefact's own counter reads `pick 0`.
 #
 # WHAT IS NOT ADVANCED. `rendering-geometry-and-resources` stays where M6's gate put it — Complete at
 # M8, because "Skinning" requires bone matrices read from the GPU pose world and
@@ -238,15 +278,15 @@ denoising = "working"
 ray-tracing-infrastructure = "working"
 rendering-lighting-and-shadows = "working"
 atmosphere-sky-and-clouds = "seed"
-rendering-architecture = "complete"
-rendering-culling-and-lod = "complete"
+rendering-architecture = "working"
+rendering-culling-and-lod = "working"
 residency = "complete"
 virtual-texturing = "complete"
-shader-system = "complete"
+shader-system = "working"
 rendering-materials-and-shading = "complete"
-editor-viewport-and-gizmos = "complete"
-core-assets-and-io = "complete"
-core-memory-and-containers = "complete"
+editor-viewport-and-gizmos = "working"
+core-assets-and-io = "working"
+core-memory-and-containers = "working"
 world-partition-and-streaming = "working"
 build-and-packaging = "working"
 save-and-persistence = "working"
@@ -475,7 +515,7 @@ ci_job = "residency"
 
 [[criterion]]
 id = "assets-streaming"
-describe = "`core-assets-and-io` to Complete: partial residency for textures, meshes and audio driven by a residency budget and renderer feedback — the requirement M6 planned to complete and did not touch, whose own header said in M6's tree 'STREAMING IS M6. There is no residency budget driven by renderer feedback, no per-mip request and no priority derived from distance here'"
+describe = "partial residency for textures, meshes and audio driven by a residency budget and renderer feedback — the requirement that was to take `core-assets-and-io` to Complete and did not, because Hot reload still refuses a packaged asset and the remote mount has no transport — the requirement M6 planned to complete and did not touch, whose own header said in M6's tree 'STREAMING IS M6. There is no residency budget driven by renderer feedback, no per-mip request and no priority derived from distance here'"
 source = "tasks 2.1, 2.2, ROADMAP M7, implement-m6-scale (what M6 handed forward)"
 kind = "recipe"
 run = "just test-integration -R assets_streaming"
@@ -483,7 +523,7 @@ ci_job = "milestone-m7"
 
 [[criterion]]
 id = "memory-attribution"
-describe = "`core-memory-and-containers` to Complete: memory attributable by domain, by type, by thread, by world cell and by asset — five axes where M6 had three, with the two new ones opaque u64s because core-memory sits below core-values, core-reflect and world"
+describe = "memory attributable by domain, by type, by thread, by world cell and by asset — the mechanism that was to take `core-memory-and-containers` to Complete and did not, because nothing outside src/core/memory/ pushes an axis — five axes where M6 had three, with the two new ones opaque u64s because core-memory sits below core-values, core-reflect and world"
 source = "tasks 3.1, ROADMAP M7, implement-m6-scale (what M6 handed forward)"
 kind = "recipe"
 run = "just test-integration -R memory_diagnostics"
@@ -491,7 +531,7 @@ ci_job = "milestone-m7"
 
 [[criterion]]
 id = "shader-system"
-describe = "`shader-system` to Complete: the cache key refuses an incomplete toolchain fingerprint rather than defaulting, which invalidated every existing shader cache entry on purpose, and `derive_cache_key` returns an Expected rather than a value it might have had to invent"
+describe = "the cache key refuses an incomplete toolchain fingerprint — one of the two things that were to take `shader-system` to Complete; the other, a node-graph material editor in the editor, does not exist rather than defaulting, which invalidated every existing shader cache entry on purpose, and `derive_cache_key` returns an Expected rather than a value it might have had to invent"
 source = "tasks 1.1, 1.2, ROADMAP M7"
 kind = "command"
 run = "just test-unit -R unit.shader && just test-integration -R shader_pipeline"
@@ -522,7 +562,7 @@ ci_job = "editor-window"
 # and no engine.
 [[criterion]]
 id = "artefact-harness"
-describe = "a recorded gap cannot exit zero and an extreme value cannot be a headline — the two rules M6's gate found broken, held by the module every artefact in samples/ reports through rather than by each artefact's own bookkeeping"
+describe = "a recorded gap cannot exit zero and an extreme value cannot be a headline — the two rules M6's gate found broken, held by the harness module rather than by an artefact's own bookkeeping. samples/05b-editor-window and samples/07-fidelity report through it; samples/05b-agent-authoring does NOT, and still exits 0 with four recorded gaps"
 source = "tasks 5b.5, 5b.5b"
 kind = "recipe"
 run = "just test-unit -R unit.artefact_harness"
@@ -551,6 +591,20 @@ ci_job = "milestone-m7"
 # budget, the median and worst frame at each spike magnitude, and the FILTERED frame where the loop
 # settled, which is the quantity the arbiter actually controls — with the run's own transcript
 # beside it in the editor's palette.
+# TASK 5b.7's EXIT CRITERION IS A PICTURE, AND UNTIL M7's GATE NOTHING NAMED THE FILE. `viewport`
+# above runs the artefact that takes it, and `just run-editor-window` writes its shots into the
+# build tree, which is not committed. The one that IS committed — the editor with the engine's own
+# 3-D frame in its viewport, a translate gizmo on the selected object and the inspector beside it —
+# is the file below, and a milestone whose headline is "you can see it" should have a criterion that
+# fails when the picture is not there.
+[[criterion]]
+id = "screenshot-viewport"
+describe = "the picture task 5b.7 asks for is committed: the editor's viewport showing the engine's rendered world with a transform gizmo on a selected object"
+source = "tasks 5b.7"
+kind = "path"
+path = "docs/design/images/editor-viewport-engine-frame.png"
+ci_job = "milestone-m7"
+
 [[criterion]]
 id = "screenshot-fidelity"
 describe = "the artefact's own picture is committed under docs/design/images/, so the milestone can be evaluated by looking"

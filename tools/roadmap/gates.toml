@@ -790,7 +790,7 @@ platforms = ["linux"]
 since = "m7"
 class = "milestone"
 milestone = "m7"
-state = "joins-on-close"
+state = "green"
 
 # --- Recorded overrides ---------------------------------------------------------------------------
 #

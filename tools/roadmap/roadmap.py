@@ -209,8 +209,18 @@ def _print_failure(entry: criteria_module.PlanEntry, result: criteria_module.Res
 #: Substrings that mean "this line names what failed". Deliberately small: a wider net would bury the
 #: tail it is meant to supplement, and every entry here is a marker some runner in this repository
 #: actually prints.
+#
+#: "(Failed)" AND ITS SIBLINGS ARE HERE BECAUSE THE FIX ABOVE DID NOT REACH THE THING IT WAS FOR.
+#: CTest prints the header "The following tests FAILED:" and then the names beneath it as
+#: "  178 - smoke.fidelity (Failed)" — mixed case, no marker this list held. M7's gate hit exactly
+#: that: `m0:test` reported "The following tests FAILED:" followed by "... 752 line(s)", and the
+#: name of the suite that failed was inside the 752. It had to be read out of
+#: Testing/Temporary/LastTestsFailed.log instead, which is the state this whole block exists to
+#: prevent. A marker is worth adding only when a runner in this repository prints it, and CTest
+#: prints all four of these.
 FAILURE_MARKERS = ("FAILED", "FAIL:", "error:", "Errors while running", "SIGSEGV", "SIGTRAP",
-                   "Assertion", "panicked at")
+                   "Assertion", "panicked at",
+                   "(Failed)", "(Timeout)", "(Subprocess aborted)", "(Not Run)")
 
 
 def _names_a_failure(line: str) -> bool:

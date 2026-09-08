@@ -425,6 +425,29 @@ def _check_failure_evidence_names_the_failure() -> None:
     check("an ordinary line is not mistaken for one that names a failure",
           not roadmap_module._names_a_failure("filler line 3"))
 
+    # M7's gate: THE FIXTURE ABOVE IS NOT WHAT CTEST PRINTS, and that is why this check was green
+    # while the thing it guards was broken. CTest writes the header and the names on separate lines:
+    #
+    #     The following tests FAILED:
+    #             178 - smoke.fidelity (Failed)
+    #
+    # The header carries the marker; the NAME carries "(Failed)", mixed case, which no marker
+    # matched. `m0:test` in M7's ledger run therefore printed "The following tests FAILED:" followed
+    # by "... 752 line(s)" and the suite had to be read out of Testing/Temporary/LastTestsFailed.log.
+    # A fixture written to match the marker list instead of the tool's output is a fixture that
+    # cannot fail.
+    ctest = "\n".join(
+        ["The following tests FAILED:", "\t178 - smoke.fidelity (Failed)",
+         "\t 12 - unit.slow (Timeout)", "\t  3 - unit.crashed (Subprocess aborted)",
+         "\t  9 - smoke.absent (Not Run)"]
+        + [f"filler line {index}" for index in range(200)]
+    )
+    lines = [line for line in ctest.splitlines() if line.strip()]
+    named = [index for index, line in enumerate(lines) if roadmap_module._names_a_failure(line)]
+    check("CTest's own two-line shape keeps the NAME, not only the header",
+          named == [0, 1, 2, 3, 4],
+          f"kept {named} of the first five lines")
+
 
 def _check_four_profiles(plan: criteria_module.Plan) -> None:
     """The measured case: four ledgers declare `four-profiles`, and one run must execute it once."""
