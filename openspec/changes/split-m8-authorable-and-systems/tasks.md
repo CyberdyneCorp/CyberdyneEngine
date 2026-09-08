@@ -50,6 +50,14 @@ applying the split to the plan documents and the ladder tooling.
       still missing after M6
 - [ ] 4.3 **Import from inside the editor** — `tools/import` handles `.fbx`, `.gltf`, `.glb` and
       `.tga`, but there is no `asset.import` command, so content is cooked outside the editor
-- [ ] 4.4 **OBJ** — decide it explicitly: add it to `asset-import-pipeline` or record why not. It is
-      not in any specification today. Trivial to implement, but a spec change rather than a bug fix,
-      so it needs the user's decision
+- [ ] 4.4 **OBJ** — DECIDED: supported. The user confirmed on 2026-09-07 that OBJ must work
+      alongside FBX, not instead of it, and the spec delta in this change adds it to
+      `asset-import-pipeline`'s Model import requirement. There was never a trade to make: FBX
+      landed at M6 and OBJ is additive — a text format with no rig, no animation and no scene graph,
+      slotting into the importer interface that already has two implementations to copy
+- [ ] 4.5 An OBJ carries no rig, so it reaches only steps 1–6 and 9. **The report names the steps it
+      did not reach, and does not warn about them** — a format's absent capability is not a defect
+      in the file, and the FBX importer already sets the precedent by naming what it skipped
+- [ ] 4.6 It goes through the SAME derivation key as every other format. M7 unified those; a second
+      key added for a third importer is exactly the correctness bug M7 spent its first section
+      repairing

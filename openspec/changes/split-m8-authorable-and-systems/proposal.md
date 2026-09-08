@@ -55,6 +55,13 @@ recorded as one, where the cheap and visible half is blocked by the expensive an
 
 ### Modified Capabilities
 
+- `asset-import-pipeline` — **OBJ is supported**, decided rather than left as an omission. FBX
+  landed at M6 via ufbx and glTF has been the primary format since M5; OBJ was in no specification
+  at all, which is how it came to be missing rather than declined. It is additive and not a
+  substitute for either: a text format with no rig, no animation and no scene graph, exercising only
+  steps 1–6 and 9 of the import sequence. The requirement also gains the rule that a step a format
+  cannot express is *reported* rather than *warned about* — an absent capability is not a defect in
+  the file.
 - `delivery-roadmap` — the ladder gains one entry. M8 becomes M8.a and M8.b, and the rule that
   produced this split is written down: a milestone whose closing artefact cannot be reached without
   its own risk spike succeeding is two milestones.
