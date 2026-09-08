@@ -47,8 +47,9 @@ flowchart LR
         direction TB
         M6["M6 · Scale<br/><i>build graph, streaming</i>"]
         M7["M7 · Fidelity<br/><i>the modern renderer</i>"]
-        M8["M8 · Game systems<br/><i>a vertical slice</i>"]
-        M6 --> M7 --> M8
+        M8A["M8.a · Authorable<br/><i>build a scene, press play</i>"]
+        M8B["M8.b · Systems<br/><i>a vertical slice</i>"]
+        M6 --> M7 --> M8A --> M8B
     end
     subgraph SH["Shipping"]
         direction TB
@@ -59,7 +60,7 @@ flowchart LR
     end
     M2 --> M3
     M5B --> M6
-    M8 --> M9
+    M8B --> M9
 
     classDef gate fill:#3b1f1f,stroke:#f87171,stroke-width:2px,color:#fee2e2
     class M11 gate
@@ -69,7 +70,7 @@ flowchart LR
 |---|---|---|
 | **Foundation** | M0 – M2 | A headless simulation that is deterministic and serializable. Nothing user-visible. |
 | **First playable** | M3 – M5.5 | A game you can write in Swift and edit in the editor — in a window, or through an agent driving the same editor. |
-| **Production scale** | M6 – M8 | A world larger than memory, rendered at film detail, playable as a real game. |
+| **Production scale** | M6 – M8.b | A world larger than memory, rendered at film detail, playable as a real game. |
 | **Shipping** | M9 – M11 | Multiplayer, open worlds, every platform, 1.0. |
 
 Foundation is one unbroken sequence. M0, M1 and M2 produce nothing usable individually, and the
@@ -569,7 +570,7 @@ advanced, all to Working: `build-and-packaging`, `residency`, `save-and-persiste
   are what makes this the milestone someone can bring a model through. "Model import" also requires
   skeletons, animations and a prefab, "Texture import" requires BC7 and ASTC variants where the
   importer reads Targa alone, and "Virtual geometry cooking" is a whole requirement whose subject is
-  M7's. **Complete moves to M8.**
+  M7's. **Complete moves to M8.b.**
 - `core-assets-and-io` — the scope line above is "streaming under the residency policy" and nothing
   under `src/core/assets/` changed in this milestone at all. Its own header still reads "STREAMING IS
   M6. There is no residency budget driven by renderer feedback, no per-mip request and no priority
@@ -580,12 +581,12 @@ advanced, all to Working: `build-and-packaging`, `residency`, `save-and-persiste
 - `serialization-and-prefabs` — the authoring schema landed and is what made `DocumentService::open`
   produce a schema instead of an empty one, which was M5.5's handover and this milestone's first job.
   "Apply and extract" has no implementation anywhere in the tree and no recorded exemption.
-  **Complete moves to M8.**
+  **Complete moves to M8.b.**
 - `rendering-geometry-and-resources` — "Skinning" reads bone matrices from the **GPU pose world**,
-  which is `animation-and-skinning` at M8, and the matrix's own rule forbids Complete before a
+  which is `animation-and-skinning` at M8.b, and the matrix's own rule forbids Complete before a
   prerequisite reaches Working. The module refuses the value in code rather than working around it —
-  `SkinningDescriptor::validate()` returns `NotImplemented` naming M8 and the suite asserts it.
-  **Complete moves to M8**, which is the tier moving rather than the requirement being scoped away.
+  `SkinningDescriptor::validate()` returns `NotImplemented` naming M8.b and the suite asserts it.
+  **Complete moves to M8.b**, which is the tier moving rather than the requirement being scoped away.
 
 The reasoning per row, with the evidence, is in
 [the capability matrix](roadmap/capability-matrix.md#where-m6s-tiers-are-thin) and in
@@ -641,7 +642,7 @@ the first two settle what it may assume.*
 written against; the record is [status.yaml](roadmap/status.yaml), and where the two differ the
 record wins. The proposal named **nine** capabilities reaching Complete here. Three did:
 `rendering-materials-and-shading`, `residency` and `virtual-texturing`. Six did not, and their
-**C** cell has moved to M8:
+**C** cell has moved to M8.b:
 
 - `rendering-architecture` — the budget arbiter is built, and it is the best-certified thing in the
   milestone: 71 step magnitudes, none oscillating, with a negative control that oscillates 252 times
@@ -679,15 +680,63 @@ thinner than a tier suggests — are in*
 [Where M7's tiers are thin](roadmap/capability-matrix.md#where-m7s-tiers-are-thin). *The one a reader
 of this page should carry forward: none of the thirteen renderer modules M7 added is assembled into a
 frame by anything but a test or `samples/07-fidelity`, and neither is M3's `cy_rendering_forward`.
-That is what M8 will trip over.*
+That is what M8.a will trip over.*
 
 ---
 
-## M8 — Game systems
+## M8.a — Authorable
 
-*Everything a game touches, at Working.*
+*A scene a person builds by hand, and a game they can press play on.*
 
 **Entry**: M7 green.
+
+**Why this milestone exists at all.** M8 as planned advanced ten capabilities; M6's gate demoted five
+more into it, and three pieces with no home belonged there too. That is twenty-two capability
+advances against M9's ten and M10's three. And its named risk spike — one graph IR that seven
+consumers must agree on — is the hardest thing on the ladder. So *the milestone that lets someone
+build a scene and press play was sitting behind the riskiest design work in the project.* Nothing in
+M8.a is architecturally unsettled. It was blocked only by sharing a number with work that is.
+
+The rule that produced the split is in `delivery-roadmap` rather than applied once: a milestone whose
+artefact cannot be reached without its own risk spike succeeding, when some other coherent artefact
+could be reached without it, contains two. It is not a rule about size.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `editor-ui-ux` | — | **Primitive creation**: box, cylinder, sphere, plane and capsule, through the existing transaction path. There is no `scene.create` today and no shape generation anywhere in the tree |
+| `asset-import-pipeline` | W | **Import from inside the editor** — there is no `asset.import` command, so content is cooked outside it — and **OBJ**, which was in no specification at all until this change |
+| `physics` | W | **The ECS bridge.** `physics` requires bodies expressed as ECS components; `src/physics/`, which would register them in a world, create bodies and write `LocalTransform` back, does not exist. M4's gate flagged it and it is still absent |
+| `gameplay-framework` | S | Spawning, and enough of the session model for play mode to host a world |
+| `serialization-and-prefabs` | C | The requirement M6 could not close, so that what the editor authors is what the runtime loads |
+| `editor-documents-and-transactions` | C | A created primitive, an imported mesh and an added body are each one transaction, and undo returns the world to empty |
+
+**Closing artefact**: `samples/08a-authoring` — **create a sphere, drop it on a box, press play,
+watch it fall, stop, and undo back to an empty world.** One run that exercises primitive creation,
+the gizmo, the physics ECS bridge, play mode and the transaction system together, and that cannot be
+satisfied by a fixture.
+
+**Exit criteria**
+
+- A primitive created in the editor is a transaction like any other, and undo removes it
+- An FBX and an OBJ both import from inside the editor, through the same derivation key as every
+  other format
+- A body added in the inspector simulates when play is pressed, and stops when it is released
+- Undo returns the world to empty, exactly — no residue in the document, the scene or the overlay
+- What the editor authored is what the runtime loaded: the same world, not a fixture beside it
+
+**Risk spike**: none, and that is the point. The one thing worth measuring first is where the
+editor's document and the engine's scene meet, because M7 left them associated in first-seen order
+by a file whose own header calls itself a stand-in.
+
+---
+
+## M8.b — Systems
+
+*Everything that lowers through one graph.*
+
+**Entry**: M8.a green.
 
 **Work**
 
@@ -723,7 +772,8 @@ animate and think, abilities with effects, a cinematic, a heads-up interface, ef
 - Interface accessibility checks pass; the interface holds its frame budget
 
 **Risk spike**: the shared graph infrastructure across seven consumers. If one consumer needs a
-semantic the shared IR cannot express, that is better known before six others are built on it.
+semantic the shared IR cannot express, that is better known before six others are built on it. It
+now carries its own failure budget rather than blocking the authoring work.
 
 ---
 
@@ -733,7 +783,7 @@ semantic the shared IR cannot express, that is better known before six others ar
 
 *One command log, read five ways.*
 
-**Entry**: M8 green.
+**Entry**: M8.b green.
 
 **Work**
 

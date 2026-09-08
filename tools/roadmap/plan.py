@@ -63,8 +63,19 @@ class PlanError(Exception):
 
 
 def milestone_id(column: str) -> str:
-    """`M5.5` is `m5b` everywhere a milestone is a file name or a record value."""
-    return column.strip().lower().replace(".5", "b").replace(" ", "")
+    """A matrix column heading as the identifier a file name and a record value use.
+
+    `M5.5` is `m5b`, and `M8.a`/`M8.b` are `m8a`/`m8b`: a milestone id is also a file name under
+    `tools/roadmap/milestones/`, and a dot in one is a needless special case.
+
+    The mapping is a table rather than a chain of `replace` calls because the chain was one:
+    `.replace(".5", "b")` turned `M5.5` into `m5b` correctly and turned `M8.a` into `m8.a`, which
+    matched no milestone at all — so the split columns parsed as nothing, every M8 cell vanished
+    from the matrix, and the Complete column of nine capabilities pointed at a milestone the matrix
+    no longer contained. The checks below caught it, which is what they are for.
+    """
+    text = column.strip().lower().replace(" ", "")
+    return {"m5.5": "m5b", "m8.a": "m8a", "m8.b": "m8b"}.get(text, text)
 
 
 def tier_rank(tier: str) -> int:
@@ -137,7 +148,10 @@ def read_matrix(path: Path = MATRIX) -> Matrix:
             if row[0] != "Capability":
                 continue
             for index, header in enumerate(row):
-                if re.fullmatch(r"M\d+(\.5)?", header):
+                # `M5.5` and `M8.a`/`M8.b` are insertions: a milestone heading is a number with an
+                # optional `.5` or `.a`/`.b` suffix. A pattern that admitted only `.5` silently
+                # dropped the split columns and took every M8 cell with them.
+                if re.fullmatch(r"M\d+(\.5|\.[ab])?", header):
                     columns[index] = milestone_id(header)
                 elif header == "Complete":
                     complete_column = index
@@ -184,7 +198,11 @@ def read_load_summary(path: Path = MATRIX) -> dict[str, Load]:
         row = _split_row(line)
         if len(row) < 4:
             continue
-        name = re.match(r"\*\*(M\d+(?:\.5)?)\*\*", row[0])
+        # The third place the insertion suffix has to be admitted, and the last: header columns,
+        # section headings, and this table's row labels all name a milestone, and all three read it
+        # with a pattern of their own. Three patterns for one grammar is why the split had to be
+        # made three times before the checks went quiet.
+        name = re.match(r"\*\*(M\d+(?:\.5|\.[ab])?)\*\*", row[0])
         if name is None:
             continue
         which = row[3].replace("—", "").strip()
@@ -249,7 +267,11 @@ def read_sections(path: Path = ROADMAP) -> dict[str, Section]:
             sections[current] = Section(dict(work), frozenset(mentioned), catch_all)
 
     for line in path.read_text(encoding="utf-8").splitlines():
-        heading = re.match(r"^## (M\d+(?:\.5)?) ", line)
+        # Insertions again: `## M5.5 — Operable`, `## M8.a — Authorable`, `## M8.b — Systems`. A
+        # pattern that admits only `.5` reads a split milestone's section as a continuation of the
+        # one above it, so its whole work table is attributed to the previous milestone — which is
+        # how thirty-six of M8.b's tier claims briefly became M7's.
+        heading = re.match(r"^## (M\d+(?:\.5|\.[ab])?) ", line)
         if heading is not None:
             close()
             current = milestone_id(heading.group(1))

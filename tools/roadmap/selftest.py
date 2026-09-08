@@ -404,7 +404,46 @@ def test_flat_ledger(root: Path) -> None:
     _check_four_profiles(plan)
     _check_failure_evidence_names_the_failure()
     _check_an_insertion_takes_a_rung()
+    _check_every_reader_admits_an_insertion()
     _check_collapse_rules()
+
+
+def _check_every_reader_admits_an_insertion() -> None:
+    """A milestone heading with an insertion suffix parses in all THREE places that read one.
+
+    REGRESSION, and it cost three separate silent failures in one change. `M5.5`, `M8.a` and `M8.b`
+    are read by a matrix column header, a ROADMAP section heading and a load-table row label — each
+    with its own regular expression, each admitting only `.5`. Splitting M8 therefore:
+
+      * dropped both new columns from the matrix, taking every M8 cell with them, so nine
+        capabilities' Complete column pointed at a milestone the matrix no longer contained;
+      * read `## M8.b — Systems` as a continuation of M7, so thirty-six of M8.b's tier claims
+        briefly became M7's;
+      * and found no load row for either half.
+
+    None of it was visible in the documents. All of it was visible to `check_documents_agree`, which
+    is the argument for that check existing — but only after the readers could see the headings at
+    all, which is what this asserts.
+    """
+    for column in ("M5.5", "M8.a", "M8.b"):
+        check(f"the matrix header admits {column}",
+              plan_module.milestone_id(column) in record_module.MILESTONES,
+              f"{column} -> {plan_module.milestone_id(column)!r}")
+
+    matrix = plan_module.read_matrix()
+    for rung in ("m5b", "m8a", "m8b"):
+        check(f"{rung} is a column the matrix reader returns", rung in matrix.milestones,
+              f"columns are {matrix.milestones}")
+
+    sections = plan_module.read_sections()
+    for rung in ("m5b", "m8a", "m8b"):
+        check(f"{rung} is a section the roadmap reader returns", rung in sections,
+              f"sections are {sorted(sections)}")
+
+    summary = plan_module.read_load_summary()
+    for rung in ("m5b", "m8a", "m8b"):
+        check(f"{rung} is a row the load table reader returns", rung in summary,
+              f"rows are {sorted(summary)}")
 
 
 def _check_an_insertion_takes_a_rung() -> None:

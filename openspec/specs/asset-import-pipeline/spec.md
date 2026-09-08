@@ -90,6 +90,12 @@ The model importer SHALL support **glTF 2.0** (`.gltf`, `.glb`) as the primary i
 format and **FBX** via ufbx, producing meshes, materials, textures, skeletons, animations, and a
 scene hierarchy as a prefab. **USD** SHALL be supported as an optional, tool-time-only importer.
 
+**OBJ** (`.obj`, with its companion `.mtl`) SHALL be supported. It carries no rig, no animation and
+no scene graph, so it exercises only steps 1 to 6 and 9 of the sequence below and SHALL report the
+steps it did not reach rather than appearing to have performed them. It is supported because it is
+the format a mesh arrives in when it came from anywhere at all — a sculpt, a scan, a generator, a
+thirty-year-old archive — and an engine that cannot open one cannot be handed a model by a stranger.
+
 Import SHALL perform, in a defined order:
 1. Parse and convert to engine coordinate conventions (handedness, up axis, unit scale)
 2. Build meshes: index and vertex buffers, split by material, weld vertices within a tolerance
@@ -103,6 +109,9 @@ Import SHALL perform, in a defined order:
    time ranges, and optionally retargeting through a retarget profile
 9. Import materials, mapping source parameters to the standard material
 10. Produce a prefab representing the hierarchy
+
+A format that cannot express a step SHALL skip it and say so in the import report. A step skipped
+for that reason is not a warning about the file and SHALL NOT be reported as one.
 
 Node-level options SHALL be editable per node in an import settings dialog and stored in the
 `.meta`, so an artist's naming convention or a designer's per-node choice both work.
@@ -128,6 +137,16 @@ Node-level options SHALL be editable per node in an import settings dialog and s
 - **WHEN** USD import is enabled
 - **THEN** it SHALL be available in the editor and cooker only, and no USD code SHALL be linked
   into a shipped runtime
+
+#### Scenario: An OBJ produces a mesh
+- **WHEN** an `.obj` is imported
+- **THEN** it SHALL produce meshes, its `.mtl` materials, generated normals and tangents, an LOD
+  chain and collision, through the same steps and the same derivation key as every other format
+
+#### Scenario: A format's absent steps are reported, not warned about
+- **WHEN** a format carries no skeleton and no animation
+- **THEN** the import report SHALL name the steps it did not reach, and SHALL NOT emit a warning
+  implying the file is deficient
 
 ### Requirement: Mesh processing
 Mesh processing SHALL provide, as reusable steps available to importers and to runtime tools:
@@ -234,6 +253,7 @@ with warnings, and assets whose import is slowest.
 #### Scenario: Finding size regressions
 - **WHEN** a build's package grows unexpectedly
 - **THEN** the size report SHALL identify which assets and categories grew
+
 ### Requirement: Cook profiles
 Cooking SHALL be parameterised by a **cook profile** declaring what a build needs, so that content
 selection is a declared policy rather than an accumulation of per-asset flags.
@@ -269,6 +289,7 @@ inclusions are visible.
 #### Scenario: Accidental inclusion is visible
 - **WHEN** a server cook unexpectedly includes a large texture
 - **THEN** the size report SHALL surface it rather than it passing unnoticed
+
 ### Requirement: Virtual geometry cooking
 The import pipeline SHALL support cooking meshes into virtual geometry (see `virtual-geometry`),
 as a per-asset option with project-level defaults.

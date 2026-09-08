@@ -109,9 +109,9 @@
 #                                              capability.
 #   rendering-geometry-and-resources  working  Its "Skinning" requirement reads bone matrices from
 #                                              the GPU pose world, which is `animation-and-skinning`
-#                                              at M8. `SkinningDescriptor::validate()` REFUSES that
+#                                              at M8.b. `SkinningDescriptor::validate()` REFUSES that
 #                                              value with NotImplemented and the suite asserts the
-#                                              refusal. Task 10.8; the Complete cell moves to M8.
+#                                              refusal. Task 10.8; the Complete cell moves to M8.b.
 #
 # Six rows did advance, all to Working, all recorded against implement-m6-scale.
 

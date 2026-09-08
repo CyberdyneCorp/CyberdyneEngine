@@ -119,7 +119,7 @@ picking runs engine-side so what is picked is what was actually rendered.
 
 ---
 
-## Production scale — M6 to M8
+## Production scale — M6 to M8.b
 
 Wider, because the foundations are in place — but with three hard sequencing constraints.
 
@@ -144,7 +144,15 @@ flowchart TB
         ARB["renderer budget arbiter"]
     end
 
-    subgraph M8["M8 · Game systems"]
+    subgraph M8A["M8.a · Authorable"]
+        PRIM["editor-ui-ux<br/><i>primitives</i>"] --> AUTH["editor-documents-and-transactions"]
+        IMPED["asset-import-pipeline<br/><i>in the editor, and OBJ</i>"] --> AUTH
+        PHYSB["physics<br/><i>the ECS bridge</i>"] --> PLAY["gameplay-framework<br/><i>spawning, play mode</i>"]
+        SERC["serialization-and-prefabs"] --> PLAY
+        AUTH --> PLAY
+    end
+
+    subgraph M8B["M8.b · Systems"]
         VS["visual-scripting<br/><i>shared graph IR</i>"] --> ABIL["gameplay-abilities-and-effects"]
         VS --> AI["ai-system"]
         VS --> SEQ["sequencing-and-cinematics"]
@@ -218,7 +226,7 @@ primitives that are the *same mechanism* as replay. Built before those, it is bu
 
 **Why environment is after game systems.** Terrain, foliage, water and weather are the largest block
 of work whose absence blocks nothing else. They consume the field substrate, the streaming
-contracts, the material compiler's environment-aware inputs and the GPU scene — all settled by M8.
+contracts, the material compiler's environment-aware inputs and the GPU scene — all settled by M8.b.
 
 ---
 
@@ -252,7 +260,7 @@ than M7.
 `ai-system` needs navigation for locomotion; `navigation` needs streaming for its tiles;
 `world-partition-and-streaming` would like agent density as a streaming input.
 
-**Break**: navigation seeds at **M8** against M6's streaming, which is already complete in the
+**Break**: navigation seeds at **M8.b** against M6's streaming, which is already complete in the
 direction that matters. The third edge — density feeding back into streaming priority — is
 **deferred**, recorded in [risks and deferrals](risks.md). It is an optimisation, not a contract,
 and cutting it removes the cycle entirely.
@@ -266,8 +274,8 @@ places them late and why they could move without disturbing anything:
 
 | Capability | Consumed by | Placed at |
 |---|---|---|
-| `rendering-2d` | Nothing — a parallel pipeline sharing infrastructure | M8 |
-| `ml-inference` | `ai-system`, optionally | M8 seed |
+| `rendering-2d` | Nothing — a parallel pipeline sharing infrastructure | M8.b |
+| `ml-inference` | `ai-system`, optionally | M8.b seed |
 | `replay-and-rollback` | `networking-and-replication` only | M9 |
 | `xr-support` | Nothing; deferred | prerequisites from M3 |
 

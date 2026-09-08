@@ -10,13 +10,13 @@ applying the split to the plan documents and the ladder tooling.
 
 ## 1. The ladder tooling, before the documents
 
-- [ ] 1.1 Add `m8a` and `m8b` to `record.MILESTONES` **in position**, replacing `m8`. M6's gate made
+- [x] 1.1 Add `m8a` and `m8b` to `record.MILESTONES` **in position**, replacing `m8`. M6's gate made
       this an explicit ordered tuple precisely so an insertion could be ordered rather than appended
-- [ ] 1.2 A test asserting the rung order: M8.a inherits M7's criteria, M8.b inherits M8.a's, and
+- [x] 1.2 A test asserting the rung order: M8.a inherits M7's criteria, M8.b inherits M8.a's, and
       neither inherits from above. **This is the `delivery-roadmap` requirement this change adds**,
       and it exists because M5.5's insertion sorted `m5b` to the end of the ladder — harmless only
       because nothing sat above it
-- [ ] 1.3 `just roadmap-test` and `just ci-check` green
+- [x] 1.3 `just roadmap-test` and `just ci-check` green
 
 ## 2. Reconcile with whatever M7's gate opened
 
@@ -26,16 +26,16 @@ applying the split to the plan documents and the ladder tooling.
 
 ## 3. The plan documents — all four must agree
 
-- [ ] 3.1 `docs/ROADMAP.md`: M8 becomes two sections. **M8.a · Authorable** entry "M7 green", closing
+- [x] 3.1 `docs/ROADMAP.md`: M8 becomes two sections. **M8.a · Authorable** entry "M7 green", closing
       artefact *create a sphere, drop it on a box, press play, watch it fall, stop, and undo back to
       an empty world*. **M8.b · Systems** entry "M8.a green", closing artefact
       `samples/08-vertical-slice`, unchanged, and the shared graph IR spike stays with it
-- [ ] 3.2 `docs/roadmap/capability-matrix.md`: split the M8 column into M8.a and M8.b, and move each
+- [x] 3.2 `docs/roadmap/capability-matrix.md`: split the M8 column into M8.a and M8.b, and move each
       row's tier to whichever half actually advances it
-- [ ] 3.3 `docs/roadmap/status.yaml`: no tier changes — this is a plan change, not an implementation
+- [x] 3.3 `docs/roadmap/status.yaml`: no tier changes — this is a plan change, not an implementation
       one. Only the `milestone` fields that name `M8` need to say which half
-- [ ] 3.4 `docs/roadmap/dependencies.md`: the M8 subgraph splits with it
-- [ ] 3.5 **M7's task 12.7 built a tool that checks the four plan documents agree.** Run it. This
+- [x] 3.4 `docs/roadmap/dependencies.md`: the M8 subgraph splits with it
+- [x] 3.5 **M7's task 12.7 built a tool that checks the four plan documents agree.** Run it. This
       change is the first real exercise of it, and if it does not catch a mistake here it is not
       doing its job
 
@@ -61,3 +61,38 @@ applying the split to the plan documents and the ladder tooling.
 - [ ] 4.6 It goes through the SAME derivation key as every other format. M7 unified those; a second
       key added for a third importer is exactly the correctness bug M7 spent its first section
       repairing
+
+---
+
+## What applying this split actually found
+
+**Task 3.5 asked whether M7's plan-consistency tool would catch a mistake in this change. It caught
+three, and none of them was visible in the documents.**
+
+A milestone heading with an insertion suffix is read in *three* places, each with a regular
+expression of its own, and all three admitted only `.5`:
+
+| Reader | What it did with `M8.a` / `M8.b` |
+|---|---|
+| the matrix column header | dropped both columns — **every M8 cell vanished**, and nine capabilities' Complete column pointed at a milestone the matrix no longer contained |
+| the ROADMAP section heading | read `## M8.b — Systems` as a continuation of M7, so **36 of M8.b's tier claims became M7's** |
+| the load-table row label | found no row for either half |
+
+The documents looked correct throughout. `check_documents_agree` reported 34, then 36, then 23, then
+2 problems as each reader was fixed, and the count only reached zero when all three could see the
+headings. Without it this change would have gone in with a matrix that silently lost a column.
+
+`_check_every_reader_admits_an_insertion` in `tools/roadmap/selftest.py` now asserts all three, so
+the next insertion fails loudly in one place instead of quietly in three.
+
+**Also corrected while here:** four dependency-rule violations that were reported and then
+disappeared. They were an artefact of the missing columns rather than real — the checker was reading
+a matrix with a hole in it. Worth recording because a checker's findings are only as good as its
+parse, and a confident wrong answer is the failure mode this whole apparatus exists to prevent.
+
+## What is deliberately left unchecked
+
+Tasks 2.1, 2.2 and section 4 belong to M8.a's own implementation rather than to this split:
+primitive creation, the physics ECS bridge, import from inside the editor, and OBJ. They are
+recorded in `docs/ROADMAP.md`'s M8.a section as that milestone's work, which is where an implementing
+agent will look for them.
