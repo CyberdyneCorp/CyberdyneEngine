@@ -403,7 +403,33 @@ def test_flat_ledger(root: Path) -> None:
 
     _check_four_profiles(plan)
     _check_failure_evidence_names_the_failure()
+    _check_an_insertion_takes_a_rung()
     _check_collapse_rules()
+
+
+def _check_an_insertion_takes_a_rung() -> None:
+    """An inserted milestone sorts BETWEEN its neighbours, not at one end of the ladder.
+
+    REGRESSION, and the bug is real rather than hypothetical: `m5b` was inserted without being added
+    to `record.MILESTONES`, so `criteria.rung` answered with the length of the tuple and M5.5's
+    ledger sorted to the END of the ladder. That was harmless only because nothing sat above it —
+    the next milestone to close would have inherited the wrong set in both directions. M6's gate had
+    to repair it before M6's ledger was written, and `m8a`/`m8b` are the same insertion again.
+    """
+    order = record_module.MILESTONES
+    for inserted, below, above in (("m5b", "m5", "m6"), ("m8a", "m7", "m8b"),
+                                   ("m8b", "m8a", "m9")):
+        check(f"{inserted} sits between {below} and {above} on the ladder",
+              inserted in order and below in order and above in order
+              and order.index(below) < order.index(inserted) < order.index(above),
+              f"order is {order}")
+
+    # The property the rung exists for: a ledger inherits what is BELOW it and nothing above.
+    check("a rung past the end of the ladder is not silently assigned a position",
+          criteria_module.rung("m8a") < criteria_module.rung("m8b")
+          < criteria_module.rung("m9"),
+          f"m8a={criteria_module.rung('m8a')} m8b={criteria_module.rung('m8b')} "
+          f"m9={criteria_module.rung('m9')}")
 
 
 def _check_failure_evidence_names_the_failure() -> None:

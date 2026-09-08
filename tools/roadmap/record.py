@@ -37,6 +37,14 @@ TIER_LABEL = {"none": "not started", "seed": "seed", "working": "working", "comp
 # edit and said why it could not make it itself.
 #
 # A capability row in docs/roadmap/status.yaml that M5.5 advanced therefore names `M5B`.
+#
+# M8 IS SPLIT THE SAME WAY, and for a reason worth stating rather than repeating by habit.
+# `split-m8-authorable-and-systems` divides it into `m8a` — a scene a person builds by hand:
+# primitives, import from inside the editor, a body on an object, play mode — and `m8b`, everything
+# that lowers through one graph IR. The rule it added to `delivery-roadmap` is the general form: a
+# milestone whose artefact cannot be reached without its own risk spike succeeding, when some other
+# coherent artefact could be reached without it, contains two. M8's settled half was blocked by an IR
+# that seven consumers have to agree on, and nothing in the settled half is architecturally open.
 MILESTONES = (
     "m0",
     "m1",
@@ -47,7 +55,8 @@ MILESTONES = (
     "m5b",
     "m6",
     "m7",
-    "m8",
+    "m8a",
+    "m8b",
     "m9",
     "m10",
     "m11",
