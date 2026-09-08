@@ -43,6 +43,17 @@ struct FrameOptions {
     u32 width = 1280;
     u32 height = 720;
     u32 frames = 48;
+    /// Frames rendered before timing starts, and excluded from every statistic.
+    ///
+    /// WITHOUT THIS THE ARTEFACT MEASURES THE GPU'S POWER STATE. A discrete GPU idles at a low
+    /// clock and takes tens of milliseconds of sustained work to reach its boost state, so the
+    /// first frames of a cold run are two-thirds slower than the steady state — measured here as
+    /// a bimodal median, ~3.7 ms warm against ~5.2 ms cold, on the same binary and the same scene.
+    /// That figure is handed to the arbiter as the geometry subsystem's authored cost, so a cold
+    /// run and a warm run put the control loop at materially different operating points and the
+    /// artefact's verdict flipped with the weather. A frame measured before the device has
+    /// clocked up is measuring the device, not the renderer.
+    u32 warmup_frames = 12;
     /// `virtual-geometry`'s quality lever: the maximum acceptable geometric error, in pixels.
     f32 threshold_pixels = 1.0F;
     /// Covered pixels shaded through the illumination system, per shot.

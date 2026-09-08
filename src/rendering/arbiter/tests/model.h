@@ -93,6 +93,30 @@ public:
         return {};
     }
 
+    /// Move the OPERATING POINT: scale every subsystem's nominal cost, so the nominal state sits
+    /// closer to or further from the budget without changing the step load.
+    ///
+    /// The sweep that certifies this arbiter varies the step magnitude, because one magnitude can
+    /// make any control law look stable. M7's gate established that one NOMINAL COST can do the
+    /// same: the law is clean with generous headroom and oscillates on 7 of 71 loads when the
+    /// nominal state sits 0.90 ms below a 13.90 ms budget. Both axes have to be swept or the
+    /// convergence claim is only tested where it is comfortable.
+    void scale_nominal(f32 factor) noexcept {
+        for (f32& nominal : nominal_ms_) {
+            nominal *= factor;
+        }
+    }
+
+    /// Every registered subsystem's nominal cost at authored quality, which is what the envelope
+    /// in `rendering-architecture` measures headroom against.
+    [[nodiscard]] f32 nominal_total_ms() const noexcept {
+        f32 total = 0.0F;
+        for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
+            total += registered_[index] ? nominal_ms_[index] : 0.0F;
+        }
+        return total;
+    }
+
     void set_load(f32 load) noexcept { load_ = load; }
     void set_noise(f32 amplitude) noexcept { noise_ = amplitude; }
     void set_pinned(bool pinned) noexcept {

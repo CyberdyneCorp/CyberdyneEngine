@@ -218,8 +218,14 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     const auto span = static_cast<f32>(options.frames > 1U ? options.frames - 1U : 1U);
     u32 material_bits = 0;
 
-    for (u32 frame = 0; frame < options.frames; ++frame) {
-        const f32 t = static_cast<f32>(frame) / span;
+    // The warm-up frames run through the identical path and are then discarded: the device has to
+    // do the work to clock up, so skipping them would defeat the purpose. See `warmup_frames`.
+    for (u32 frame = 0; frame < options.frames + options.warmup_frames; ++frame) {
+        const bool timed = frame >= options.warmup_frames;
+        // The shot parameter runs 0..1 over the TIMED frames. Deriving it from the raw loop index
+        // would spend the warm-up on the interior half and leave the timed frames all exterior,
+        // which is the shape the smoke test caught: `interior 0, exterior 17,016,037`.
+        const f32 t = static_cast<f32>(timed ? frame - options.warmup_frames : 0U) / span;
         const Vec3 camera = camera_at(scene, t);
         const Mat4 view = look_at(camera, camera_target(scene, t), Vec3{0.0F, 1.0F, 0.0F});
         const Mat4 projection = perspective_reversed_z_infinite(kFovY, aspect, 0.05F);
@@ -268,6 +274,9 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
             return read;
         }
 
+        if (!timed) {
+            continue;
+        }
         if (Status added = out.frame_ms.push_back(elapsed_ms); !added) {
             return added;
         }

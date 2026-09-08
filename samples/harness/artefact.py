@@ -44,8 +44,10 @@ two rules above plus the shared vocabulary that makes a run readable.
 from __future__ import annotations
 
 import math
+import re
 import statistics
 import sys
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -98,9 +100,20 @@ STABLE_WORDS = ("median", "p50", "mean", "average", "typical", "total", "count")
 
 
 def _mentions(text: str, words: tuple[str, ...]) -> str | None:
-    lowered = text.lower()
+    """Whether `text` uses one of `words` AS A WORD.
+
+    A substring test looks equivalent and is not: "min" is inside "nominal", "determine" and
+    "minute", and "best" is inside "asbestos". Labelling a headroom figure "nominal headroom" is
+    exactly the sort of thing an artefact does, and under a substring test it was refused as an
+    extreme value with a message about maxima.
+
+    That is the same defect M7's gate found one layer down, where a milestone criterion selected its
+    suites with `--tests text` and swept up `render.virtual_texturing_gpu` because
+    "virtual_texturing" contains "text". A check that matches inside words is a check that fails on
+    content nobody wrote wrong.
+    """
     for word in words:
-        if word in lowered:
+        if re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE) is not None:
             return word
     return None
 

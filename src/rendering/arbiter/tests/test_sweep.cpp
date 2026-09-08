@@ -43,6 +43,9 @@ struct PlateauResult {
     u32 settle_frame = 0;
     f32 final_true_frame_ms = 0.0F;
     bool everything_at_minimum = false;
+    /// The width the arbiter derived for itself, which is the unit the convergence envelope is
+    /// stated in — see the operating-point case below.
+    f32 deadband_ms = 0.0F;
 };
 
 /// Hold `load` for `kPlateauFrames` and report what the last `kTailFrames` did.
@@ -58,6 +61,7 @@ struct PlateauResult {
             }
         }
         result.final_true_frame_ms = step.true_frame_ms;
+        result.deadband_ms = step.report.deadband_ms;
     }
     result.everything_at_minimum = true;
     for (u32 index = 0; index < kBudgetSubsystemCount; ++index) {
@@ -115,6 +119,113 @@ CY_TEST_CASE("arbiter sweep: 71 step loads settle, none oscillates, none settles
 
     CY_CHECK_EQ(oscillating, 0U);
     CY_CHECK_EQ(over_budget, 0U);
+}
+
+CY_TEST_CASE("arbiter sweep: the operating point is swept too, and the envelope holds inside it") {
+    // M7's GATE, AND THE HOLE IT FOUND. The sweep above varies the step magnitude across 71 loads
+    // because one magnitude can make any control law look stable. It varies them over ONE nominal
+    // cost — and one nominal cost can make any control law look settled, for exactly the same
+    // reason. The artefact caught it by accident: its geometry cost comes from the device, this
+    // machine's GPU is bimodal by power state, and the milestone's headline criterion passed or
+    // failed depending on which mode the GPU happened to be in.
+    //
+    // Measured across the operating point, the law degrades monotonically as headroom shrinks and
+    // starts oscillating at about three and a half deadbands, so the envelope is stated at four.
+    // `rendering-architecture` now states that as the convergence envelope, in deadbands rather
+    // than milliseconds — the deadband is a property of the content's lever ladder, so the same
+    // absolute headroom is comfortable for fine levers and marginal for coarse ones. THIS CASE IS
+    // WHAT MAKES THAT STATEMENT CHECKABLE: inside the envelope the guarantee holds and is asserted;
+    // outside it the behaviour is measured and reported, and a failure there is not a regression.
+    const RendererProfile profile = named_profile(ProfileName::Standard);
+    const f32 budget = profile.arbiter.frame_budget_ms;
+
+    // Coarse over the operating point and coarse over the load: the full cross product is 71 x 25
+    // plateaux of 700 frames, which is minutes. Nine loads spanning the same range find the same
+    // boundary, and the case above already covers the load axis densely at one operating point.
+    constexpr u32 kPointCount = 36;
+    constexpr u32 kLoadsPerPoint = 9;
+    constexpr f32 kEnvelopeDeadbands = 4.0F;
+
+    u32 inside_envelope = 0;
+    u32 inside_oscillating = 0;
+    u32 outside_envelope = 0;
+    u32 outside_oscillating = 0;
+    f32 tightest_clean_deadbands = 1e9F;
+    f32 loosest_oscillating_deadbands = 0.0F;
+    f32 narrowest_reached_deadbands = 1e9F;
+
+    for (u32 point = 0; point < kPointCount; ++point) {
+        // 1.00 upward in one-per-cent steps, walking the nominal state from comfortable down to a
+        // fraction of a deadband under the budget. The range is chosen so the sweep passes THROUGH
+        // the envelope's edge rather than stopping short of it — a sweep that never leaves the
+        // guarantee is the comfortable case again under a new name.
+        const f32 factor = 1.0F + (0.01F * static_cast<f32>(point));
+
+        for (u32 load = 0; load < kLoadsPerPoint; ++load) {
+            Renderer renderer;
+            CY_REQUIRE(renderer.build(profile));
+            renderer.scale_nominal(factor);
+
+            const PlateauResult settled = hold(renderer, 1.0F);
+            const f32 deadband = settled.deadband_ms;
+            CY_REQUIRE(deadband > 0.0F);
+            const f32 headroom = budget - renderer.nominal_total_ms();
+            const f32 deadbands = headroom / deadband;
+
+            const f32 magnitude = kLoadFirst + ((kLoadLast - kLoadFirst) * static_cast<f32>(load) /
+                                                static_cast<f32>(kLoadsPerPoint - 1U));
+            const PlateauResult plateau = hold(renderer, magnitude);
+            const bool oscillated = plateau.tail_changes > 0;
+
+            if (deadbands >= kEnvelopeDeadbands) {
+                ++inside_envelope;
+                inside_oscillating += oscillated ? 1U : 0U;
+                if (!oscillated && deadbands < tightest_clean_deadbands) {
+                    tightest_clean_deadbands = deadbands;
+                }
+            } else {
+                ++outside_envelope;
+                outside_oscillating += oscillated ? 1U : 0U;
+                if (oscillated && deadbands > loosest_oscillating_deadbands) {
+                    loosest_oscillating_deadbands = deadbands;
+                }
+            }
+            narrowest_reached_deadbands =
+                deadbands < narrowest_reached_deadbands ? deadbands : narrowest_reached_deadbands;
+            if (deadbands < 0.5F) {
+                // Past here the nominal state no longer fits at authored quality at all, which is a
+                // content defect rather than a control-law one — `design.md` §2.11 names it. The
+                // sweep stops rather than certifying behaviour nobody claims.
+                point = kPointCount;
+                break;
+            }
+        }
+    }
+
+    CY_TEST_MESSAGE("operating point: ", inside_envelope, " runs at or above ", kEnvelopeDeadbands,
+                    " deadbands, ", inside_oscillating, " oscillating; ", outside_envelope,
+                    " below it, ", outside_oscillating, " oscillating; tightest clean ",
+                    tightest_clean_deadbands, ", loosest oscillating ",
+                    loosest_oscillating_deadbands, ", narrowest reached ",
+                    narrowest_reached_deadbands);
+
+    // THE GUARANTEE, over the axis nothing swept before.
+    CY_CHECK_EQ(inside_oscillating, 0U);
+
+    // The sweep has to actually reach past the envelope, or it certifies the comfortable case
+    // again under a new name — which is the failure this whole case exists to prevent.
+    CY_CHECK(outside_envelope > 0U);
+    CY_CHECK(narrowest_reached_deadbands < 1.0F);
+    CY_CHECK(narrowest_reached_deadbands > 0.0F);
+
+    // WHAT THIS CASE DOES NOT CATCH, MEASURED RATHER THAN ASSUMED. This harness does not oscillate
+    // at ANY operating point — swept to negative headroom it still made zero tail changes. The
+    // artefact's model does, on 7 of 71 loads below about three deadbands. So the two models differ
+    // in something the arbiter is sensitive to and this harness is not: seven rows against this
+    // one's set, a spike that strikes a subset rather than everything, and the artefact's own +/-2%
+    // per-frame noise. This case closes the missing AXIS — nothing swept the operating point before
+    // it — and `samples/07-fidelity` is where the envelope is exercised against content that can
+    // actually reach its edge. Both are needed; neither is sufficient.
 }
 
 CY_TEST_CASE("arbiter sweep: authored quality returns on every load when the spike ends") {
