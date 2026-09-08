@@ -42,6 +42,15 @@ geometry subsystem's authored cost is the frame the device just measured — tha
 only when the nominal state that results still keeps its headroom inside the budget, and *both*
 numbers are printed either way so the substitution is visible rather than implied.
 
+**What the headline does across runs, measured rather than asserted.** Nine whole runs of
+`just run-fidelity` on this machine — each of them already a median over four runs of the program —
+led with 11.6, 11.6, 11.5, 11.6, 11.6, 11.4, 11.0, 11.5 and 11.5 ms: a median of 11.5 and a range of
+0.6. The spread is not noise in the loop, and the run says where it comes from on the line above:
+the geometry subsystem's authored cost IS the frame the device measured, so a run whose device frame
+came out 3.2 ms rather than 3.7 leads with a figure half a millisecond lower and everything
+downstream of it moves together. The `worst modelled frame` printed beside it moved 13.5 to 14.2 ms
+over the same nine runs, which is why it is a figure and not the headline.
+
 ## Three things this artefact found
 
 **1. `check_watertight`'s monotonicity test is sensitive to the scale a mesh is cooked at, and the
