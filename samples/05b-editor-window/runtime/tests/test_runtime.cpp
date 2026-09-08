@@ -297,25 +297,10 @@ CY_TEST_CASE("an empty layout draws nothing at all") {
     CY_CHECK_NEAR(total, 0.0F, 1e-6F);
 }
 
-CY_TEST_CASE("drawing outside the frame is clipped rather than corrupting memory") {
-    // A handle whose object is at the edge of the viewport is drawn partly off it, and every
-    // rasteriser in this file goes through one bounds-checked blend for exactly that reason.
-    Frame frame(24, 24);
-    cy::render::GizmoLayout layout;
-    layout.frame_id = 1;
-    layout.centre_x = 0.0F;
-    layout.centre_y = 0.0F;
-    layout.extent = 100.0F;
-    CY_REQUIRE(layout.spots.push_back(
-        cy::render::GizmoHandleSpot{cy::render::GizmoHandle::AxisX, -50.0F, -50.0F, 9.0F, 1.0F}));
-    CY_REQUIRE(layout.spots.push_back(
-        cy::render::GizmoHandleSpot{cy::render::GizmoHandle::AxisY, 400.0F, 400.0F, 9.0F, 1.0F}));
-    draw_gizmo(frame.canvas(), layout, cy::render::GizmoHandle::Count);
-    draw_selection_marker(frame.canvas(), -20.0F, 200.0F, 30.0F);
-    // Reaching here without a sanitiser report is the assertion; the pixel is a witness that the
-    // canvas was not simply ignored.
-    CY_CHECK(frame.at(0, 0).x >= 0.0F);
-}
+// `drawing outside the frame is clipped rather than corrupting memory` was here and is now in
+// test_overlay_clipping.cpp, in the integration suite. Walking axis lines that are hundreds of
+// pixels long past a 24x24 canvas measured 0.81 to 0.98 ms of CPU in the Debug configuration
+// against a 1.00 ms unit budget. That file carries the measurement.
 
 CY_TEST_CASE("a null canvas is a no-op rather than a crash") {
     const Canvas nothing;

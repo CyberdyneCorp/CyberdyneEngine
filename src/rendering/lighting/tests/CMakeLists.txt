@@ -49,10 +49,17 @@ function(cy_render_lighting_declare_tests)
             "${cy_lighting_tests_dir}/test_units.cpp"
         DEPENDENCIES cy::rendering-lighting)
 
+    # The lighting cases that do not fit a millisecond. `test_reference.cpp`'s own header says why
+    # every case needing an `LtcTable` is here; `test_cookie_scroll.cpp` joined it at M7's closing
+    # gate for the same kind of reason, measured rather than argued — its 20,000-frame scroll loop
+    # left five per cent of margin against the unit budget in the Debug configuration and none at
+    # all on a busy machine.
     cy_add_test(
         NAME render_lighting_reference
         KIND integration
-        SOURCES "${cy_lighting_tests_dir}/test_reference.cpp"
+        SOURCES
+            "${cy_lighting_tests_dir}/test_reference.cpp"
+            "${cy_lighting_tests_dir}/test_cookie_scroll.cpp"
         DEPENDENCIES cy::rendering-lighting)
 endfunction()
 

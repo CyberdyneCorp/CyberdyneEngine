@@ -320,9 +320,9 @@ below was measured or reproduced at that gate on this tree: Linux 6.8, GCC 13.3.
 clang-format and clang-tidy at 22.1.8, Swift 6.3.3, Rust 1.95.0, an NVIDIA RTX 5060 with Vulkan
 1.4.312, X11 on `:0`.
 
-### The five the plan had completing, and what each is short of
+### The six the plan had completing, and what each is short of
 
-Each of the five is stated in full in `tools/roadmap/milestones/m7.toml` and summarised in the
+Each of the six is stated in full in `tools/roadmap/milestones/m7.toml` and summarised in the
 [M7 section of the roadmap](../ROADMAP.md#m7--fidelity). The shortest form:
 
 | Row | Recorded | The requirement between it and Complete |
@@ -398,24 +398,180 @@ pyramid exceeds 65,536 entries, naming the limit, rather than allocating 128 MB 
 words. A hash on the device is what a 512k-texel virtual space needs and it is not here. The CPU
 side has had flat and sparse behind one lookup since M6; it is the shader-visible half that is flat.
 
+### How the ledger was run, twice, and what it failed on
+
+`just roadmap-milestone m7` evaluates **165 declarations, 68 of them duplicates of a criterion an
+earlier milestone already declares, so 163 distinct checks run once each** — 134 inherited from M0
+through M6 and 31 new here. The end-to-end run took 33 minutes and reported **three failures**, none
+of them in a criterion M7 wrote:
+
+| Failed | What it was | What was done |
+|---|---|---|
+| `m0:test` | `just test-all` — `unit.material_compiler`, and beside it `unit.editor_window_runtime` and `smoke.fidelity` | three over-budget cases moved to the integration suite; see below |
+| `m1:four-profiles` | the same, in the **Debug** configuration, where four material cases are over the unit budget with nothing else running | the same move, which was necessary and is not sufficient — see the budget instrument below |
+| `m5:sanitizers` | AddressSanitizer reported 15 leaked allocations, 10,102 bytes | `tests/lsan-suppressions.txt`; see below |
+
+**The ledger was then run a second time, end to end, with those repairs in.** `m5:sanitizers` is
+green. `m0:test` and `m1:four-profiles` are not, and what is left under them is two separate things:
+`smoke.fidelity`, which is the milestone's own exit criterion and is the subject of the next section,
+and the budget instrument, which is the first entry under the machinery below. Verdict:
+**`M7 is not closed: 2 of 163 evaluated criteria failed`, `rc=1`.** All four profiles were also built
+**from empty** and tested outside the ledger: debug, profile and release are `test-all` green
+(56 unit, 102 integration, 13 or 14 smoke, 8 render); dev is green but for `smoke.fidelity`.
+
+The **three-platform** entries (`m0:three-platforms`, `m5:editor-three-platforms`) are reported NOT
+EVALUATED on a host with one operating system, which is not the same as passed.
+
+### The milestone's own exit criterion fails three runs in ten, and the run says which
+
+Neither ledger run showed this on its own — both reported `m0:test` and it took a `dev` tree
+configured **from empty** to separate `smoke.fidelity` from the budget instrument sitting on top of
+it. It is the failure that decides the milestone.
+
+`samples/07-fidelity` is the artefact for *"the arbiter's allocations converge without oscillation
+under a step load"*. Run twenty times on a quiet machine, from `build/gate/dev`, it **failed six**:
+
+```
+    GAP   no magnitude oscillates — 1 of 9 kept moving levers after the load returned to nominal
+    fig   total frames over budget after the loop settled 31 to 37 over 6480 samples
+```
+
+The outcome is not noisy, it is **bimodal**, and the two modes are exactly the two branches of one
+`if`. Within each branch it is deterministic: **six of the six runs that took the substitution
+reported the gap, and fourteen of the fourteen that refused it did not.** What varies between runs is
+not the control loop, which is fed seeded noise and reproduces exactly; it is which operating point
+the machine hands it.
+
+| Runs | Nominal headroom | Frames over budget after settling | Result |
+|---|---|---|---|
+| 14 of 20 | **3.00 ms** — the modelled geometry cost, 3.10 ms | 0 | pass |
+| 6 of 20 | **1.03 to 1.12 ms** — the device's measured frame, about 5.0 ms | 31 to 37 | **GAP, exit 1** |
+
+`samples/07-fidelity/spike.cpp` substitutes the frame the device just measured for the geometry
+subsystem's authored cost — which is the artefact's best property, because six of the seven rows are
+a model and that one is not — but only when the nominal state that results still keeps
+`kNominalHeadroom = 0.92F` inside the allocatable budget. **The device frame on this machine is
+itself bimodal**, 3.3 ms or about 5.2 ms depending on the GPU's power state when the frame act runs,
+so the substitution is taken on some runs and refused on others. When it is taken, the shipped
+control law does not settle: one of the nine magnitudes keeps moving levers after the load returns to
+nominal, and about 35 frames of 6,480 are over budget with the loop no longer acting.
+
+Three things follow, and the third is the one that matters.
+
+1. **The harness rule works.** The run reports the gap and returns 1, so `smoke.fidelity` goes red
+   rather than green-with-a-note. That is task 5b.5 doing exactly what it was written for, and
+   the first thing it caught was this milestone's own artefact.
+2. **The guard was already there and is not sufficient.** `spike.cpp`'s own comment records that an
+   earlier draft landed "within four MICROseconds of the ceiling" and that `geometry_measured`
+   flipped between runs; the ceiling was moved and the figure still flips — and now the *verdict*
+   flips with it rather than only the number.
+3. **The 71-magnitude sweep cannot see this, and the reason generalises.**
+   `integration.render_arbiter_sweep` reports 0 of 71 oscillating on every run, because it sweeps the
+   step LOAD over a fixed cost table. What differs here is the OPERATING POINT — the nominal cost the
+   ladders start from, and therefore how coarse each lever's quantum is relative to the headroom.
+   `design.md` §2.1 says "one step magnitude can make any law look stable" and swept magnitudes for
+   that reason; one nominal cost can make any law look settled, and nothing sweeps that.
+
+**Raising `kNominalHeadroom` until the substitution is refused would make the artefact green and
+would be the thing this project has been burned by eight times.** It is not done. The two honest
+repairs are to sweep the nominal cost the way the load is swept and find where the law stops
+settling, or to establish that ~1.05 ms of headroom over a 5 ms geometry row is outside what the law
+claims and say so in `rendering-architecture`. Both are `src/rendering/arbiter/`'s, and until one of
+them lands **`rendering-architecture`'s Working tier is the right one and M7's exit criterion is not
+met**.
+
 ### What the gate found in the checking machinery
 
-* **The unit suite's per-case budget charges kernel time the test did not spend.**
-  `cy::test::BudgetGuard` measures `CLOCK_THREAD_CPUTIME_ID`, which includes time the kernel spends
-  on the thread's behalf — page-fault handling and direct reclaim included — and its failure message
-  states the opposite: *"The clock is the case's own CPU time, so this is not a busy machine: it is
-  work the test did."* Under sustained memory reclaim on this host,
-  `cy_test_unit_material_compiler`, `cy_test_unit_render_arbiter` and `cy_test_unit_virtual_geometry`
-  each failed **8 of 8** runs on cases whose quiet-machine worst is 0.55 ms against a 1.00 ms budget;
-  the same binary is 0 of 40 when the machine is quiet. This is why every milestone since M4 has a
-  report of "one unit suite failed once" — four separate M7 agents recorded
-  `unit.material_compiler` — and it is a defect in the harness, not in the suites.
+* **A closed milestone's criterion selects its suites by substring, and M7 changed what that
+  substring means.** `m5:sanitizers` reads `for t in import text assets abi_live_reload; do just
+  test-sanitize --sanitizer address,undefined --tests "$t"`. `text` was written to select
+  `unit.text`. M7 added `render.virtual_texturing_gpu`, and `virtual_texturing` contains `text`, so
+  a **device** test entered a leak-checked sanitizer run for the first time in this project's
+  history and the criterion went red. Every one of the 15 leaked allocations is inside
+  `/lib/x86_64-linux-gnu/libdbus-1.so.3`, reached from the Vulkan ICD through `dbus_bus_register`;
+  no frame is in engine code and there is no handle to release. `tests/lsan-suppressions.txt`
+  carries the one entry with that stack written down, wired in by `just test-sanitize` with
+  `print_suppressions=1` so the entry reports its count and byte total on every run. Verified: the
+  criterion as written now exits 0, over 6, 4, 6 and 1 tests. **The general defect is the selector**
+  — a substring is not a name, and a suite added three milestones later can silently join a closed
+  milestone's gate.
+* **The unit suite's per-case budget measures the CPU's clock rate as much as the test, and an IDLE
+  machine is its worst case.** This is the finding worth carrying forward, and it is the opposite of
+  what everyone including this page assumed an hour earlier. `cy::test::BudgetGuard` measures
+  `CLOCK_THREAD_CPUTIME_ID`, which counts **seconds, not cycles** — so it reports work divided by
+  whatever frequency the governor was running at. This host has `scaling_governor = powersave`, cores
+  idling at 800 MHz. Same binary, `cy_test_unit_scene` in the Debug tree — an M2 suite that nothing
+  in M7 touches — worst case per run:
+
+  | | worst case per run, ms |
+  |---|---|
+  | idle machine, five runs | 0.716 · 0.734 · 0.877 · 0.939 · 0.846 |
+  | four spinners beside it, five runs | 0.211 · 0.206 · 0.200 · (2 under the probe's floor) |
+  | idle again, five runs | **1.049** · 0.922 · 0.702 · 0.904 · 0.727 |
+
+  **A case doing 0.21 ms of work fails a 1.00 ms budget with nothing else running on the machine**,
+  and the same case beside four busy cores measures a fifth of that, because the spinners keep the
+  cores boosted. `cy_test_unit_material_compiler` behaves identically: 0.56 to 2.68 ms idle, 0.42 to
+  0.61 ms boosted. This is the mechanism behind "one unit suite failed once" in every milestone
+  report since M4, behind the four separate M7 agents who recorded `unit.material_compiler`, and
+  behind the six suites the ledger's `four-profiles` reported red in the Debug tree minutes after the
+  same tree ran clean. It is not contention, not memory reclaim and not the suites. Swapping wall
+  clock for CPU time at M2 was still right — wall clock moved by ten — but the remaining factor is
+  five, not zero, and the failure message said it was zero. It now says what was measured.
+  **The repair is to normalise: measure a fixed reference workload in the same process and scale
+  every budget by it, so the taxonomy's question ("what does this test cost?") stops being answered
+  in seconds on an unknown clock.** Nothing else in the harness needs to change, and nothing short of
+  it will make `four-profiles` reliable.
+
+  **How far the reading drifts over one session, on one tree, with nothing else running.** The same
+  Debug tree was surveyed twice, four hours apart, with `CY_TEST_BUDGET_SCALE=0.75` — which lists
+  every case within a third of its budget:
+
+  | | suites with a case over 0.75 ms | worst case |
+  |---|---|---|
+  | after the three moves, early | **none of 56** | under 0.60 ms |
+  | four hours later, same binaries | **ten of 56**, six of them over 1.00 ms | 2.322 ms |
+
+  The ten include `unit.scene` (M2), `unit.rhi` (M3), `unit.render_extract` (M3), `unit.save` (M6)
+  and `unit.virtual_texturing` (M6) — five suites no part of M7 touches. `ctest -L unit` in that tree
+  run three times in a row on an idle machine gave **5, 1 and 4 failures**. The set is not a property
+  of the tests; it is a property of the hour.
+* **Underneath that, three cases were genuinely too big for the suite they were in**, and the Debug
+  configuration is where it showed. `CY_TEST_BUDGET_SCALE=0.5` over every unit binary names every
+  case within a factor of two of its budget; in Debug it named `material_lowering`'s family cases
+  (1.23 to 2.26 ms against 1.00, **over budget on an idle machine**), the cookie scroll case (0.87 to
+  0.95 ms, five per cent of margin) and the overlay clipping case (0.81 to 0.98 ms, two per cent).
+  All three are now integration suites — `integration.material_lowering`,
+  `integration.render_lighting_reference` and `integration.editor_window_overlay` — each with the
+  measurement written into the CMake declaration beside it, exactly as `material_ibl` has carried
+  its own since M3. After the move **no unit case in the Debug configuration exceeds 0.60 ms and
+  none in Development exceeds 0.40 ms**, where before the worst was 2.26 ms and three suites had
+  under 15 per cent of margin. Every assertion is conserved: lighting 467+78 before and 460+85
+  after, material 10,460+247 before and 233+10,227+247 after.
 * **`just run-agent-authoring` reports four unsatisfied steps and exits 0.** M7 task 5b.5 made "a
   GAP is not a pass" structural in `samples/harness/`, with negative fixtures, and
   `samples/05b-editor-window/window.py` and `samples/07-fidelity/fidelity.py` are held to it. The
   M5.5 agent artefact was not migrated: its `Report.failed` reads `self.steps`, and `Report.gap`
   appends to `self.gaps`, so `return 1 if report.failed else 0` cannot see a gap. It is a permanent
-  merge gate.
+  merge gate, and the ledger reports it as `ok` in 0.3 s: reproduced at M7's gate, the run prints
+  `13 step(s) satisfied` then `4 step(s) NOT SATISFIED, each named above and in README.md` and
+  returns 0. **It is left as it is deliberately and it is the one thing on this page a reader should
+  argue with.** Migrating it to `samples/harness/` turns `m5b:agent-recipe` and `smoke.agent_authoring`
+  — a green permanent gate and a closed milestone's criterion — red for four steps that name changes
+  in the editor that do not exist, three of them outside M7's scope. Doing that at M7's close would
+  make this milestone answer for M5.5's, so the finding is recorded here with the reproduction and
+  the decision is the next change's. What is NOT acceptable is leaving it undecided a third time.
+* **And the other rule has an unmigrated artefact too, which is the one M6's gate was actually
+  about.** Of the five sample drivers under `samples/`, two report through `samples/harness/`
+  (`05b-editor-window`, `07-fidelity`), one has its own `Report` with the gap defect above
+  (`05b-agent-authoring`), one claims no figures at all (`05-editor-session`), and
+  `06-open-world/openworld.py` still writes `worst tick {worst_us} us of CPU time, no hitch` as the
+  detail of its frame-budget step and `worst tick … us` into the footer of the committed
+  screenshot — the exact statistic, in the exact place, that task 5b.5b was written about. The rule
+  is structural for anything that reports through the harness and it binds no sample that does not.
+  Migrating this one is cheap, because the figures it needs are already computed
+  (`run.cpp:794` prints `median`, `p99` and `worst` side by side) and only the choice of which to
+  lead with would change.
 * **One of those four gaps names a reason that is no longer true.** It reads "opening a document
   builds an empty one — `DocumentService::open` calls `Document::new` and there is no world loader",
   and `editor/crates/cy-editor-services/src/documents.rs:121` calls `worldfile::load`. The file's own
@@ -424,6 +580,13 @@ side has had flat and sparse behind one lookup since M6; it is the shader-visibl
   `plan._check_work_against_matrix` iterates the rows the roadmap's work table *names*; a capability
   the matrix advances at a milestone whose work table omits it is never compared. Eight of M7's
   nineteen planned rows were in the matrix and the proposal and not in the roadmap's M7 work table.
+  **Quantified at the gate**, by running the reverse direction over the committed documents: 63
+  matrix cells across seven milestone columns — M3 2, M4 2, M5 4, M8 15, M9 6, M10 3, M11 31 — are
+  advanced by the matrix and named by neither the work table nor the prose of their milestone's
+  section. **None of the 63 is M7's**, because M7's section names every row it advances in prose.
+  Turning the check symmetrical is therefore a one-line change with 63 findings behind it, all of
+  them in milestones that are closed or not yet written; it is a change to make at the start of a
+  milestone and not at the end of one, and it belongs to whoever writes M8's plan.
 
 ## Where M6's tiers are thin
 

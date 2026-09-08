@@ -18,10 +18,8 @@ namespace {
 
 using cy::f32;
 using cy::u32;
-using cy::Vec2;
 using cy::Vec3;
 using cy::rendering::active_lighting_path;
-using cy::rendering::advance_cookie_scroll;
 using cy::rendering::apply_light_function;
 using cy::rendering::assign_cluster_lights;
 using cy::rendering::channel_bit;
@@ -131,36 +129,10 @@ CY_TEST_CASE("cookies: a spot's cookie lands on the cone, and nothing behind the
     CY_CHECK_FALSE(cookie_uv(projection, Vec3{50.0F, 0.0F, -5.0F}).inside);
 }
 
-CY_TEST_CASE(
-    "cookies: a directional cloud cookie is the same at any altitude and costs no shadow") {
-    CookieProjection clouds;
-    clouds.kind = CookieProjectionKind::OrthographicPlane;
-    clouds.forward = Vec3{0.0F, 0.0F, -1.0F};
-    clouds.right = Vec3{1.0F, 0.0F, 0.0F};
-    clouds.up = Vec3{0.0F, 1.0F, 0.0F};
-    clouds.world_scale = 500.0F;
-    clouds.tile = true;
-
-    // A directional light has no position, so two points on the same vertical line get the same
-    // cookie value — which is what makes this a cloud SHADOW and not a projector.
-    const auto low = cookie_uv(clouds, Vec3{120.0F, 40.0F, 0.0F});
-    const auto high = cookie_uv(clouds, Vec3{120.0F, 40.0F, 900.0F});
-    CY_CHECK_NEAR(low.uv.x, high.uv.x, 1.0e-6F);
-    CY_CHECK_NEAR(low.uv.y, high.uv.y, 1.0e-6F);
-
-    // Scrolling moves it, wraps into [0, 1), and never grows: an unwrapped f32 UV drifts into its
-    // own quantisation after an hour of play and the pattern visibly steps.
-    for (u32 frame = 0; frame < 20000; ++frame) {
-        advance_cookie_scroll(clouds, Vec2{0.1F, 0.05F}, Vec3{}, 1.0F / 60.0F);
-    }
-    CY_CHECK_GE(clouds.scroll_uv.x, 0.0F);
-    CY_CHECK_LT(clouds.scroll_uv.x, 1.0F);
-    CY_CHECK_GE(clouds.scroll_uv.y, 0.0F);
-    CY_CHECK_LT(clouds.scroll_uv.y, 1.0F);
-
-    // And a tiling cookie is inside everywhere, so a scrolling cloud layer never leaves a hole.
-    CY_CHECK(cookie_uv(clouds, Vec3{-9000.0F, 12000.0F, 0.0F}).inside);
-}
+// `cookies: a directional cloud cookie is the same at any altitude and costs no shadow` was
+// here and is now in test_cookie_scroll.cpp, in the integration suite. Its 20,000-frame scroll
+// loop measured 0.87 to 0.95 ms of CPU in the Debug configuration against a 1.00 ms unit
+// budget, and the loop length IS the property. That file carries the measurement.
 
 CY_TEST_CASE("cookies: a point light's cookie covers the whole sphere") {
     CookieProjection projection;

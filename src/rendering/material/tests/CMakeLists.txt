@@ -11,10 +11,25 @@
 #                 than a few kilobytes and none of them integrates anything.
 #
 #   material_compiler
-#                 M7's compiler: the IR and its content hash, the two front-ends, the optimisation
-#                 pipeline, closure lowering and the program family, and the node preview. Unit
-#                 cost: the spike measured a 24-node material at a median of 57 us from graph to
-#                 generated Slang, and the heaviest case here compiles the family twelve times.
+#                 M7's compiler at unit cost: the IR and its content hash, the two front-ends, and
+#                 the node preview. The spike measured a 24-node material at a median of 57 us from
+#                 graph to generated Slang, and nothing in these three files compiles the family
+#                 more than twice.
+#
+#   material_lowering
+#                 The same compiler where a case compiles the whole PROGRAM FAMILY — twelve programs
+#                 across four uses and three tiers — several times over and diffs the results.
+#                 `material_ibl` below is in this file for exactly this reason and says so; these
+#                 cases are the second instance and were found the same way, by M7's closing gate
+#                 rather than by a person reading. Measured on this tree, Debug configuration, on a
+#                 quiet machine: `a derivation that changes albedo is flagged` 2.26 ms, `every
+#                 switch is load-bearing` 1.24 ms, `cost scales with programs, not with instances`
+#                 1.23 ms and `an opaque material has no shadow program at all` 1.29 ms, each
+#                 against the unit suite's 1 ms. In Development they are 0.35 to 0.62 ms, which is
+#                 why `unit.material_compiler` was green in dev and red in Debug, and why it also
+#                 failed whenever the machine was busy. Making them cheaper means compiling fewer
+#                 programs, and the number of programs IS the property: `material-compiler` requires
+#                 a derived program to be checked against the primary one it was derived from.
 #
 #   material_ibl  the parts of image-based lighting that cannot fit a millisecond. The DFG bake is
 #                 `size² · samples` importance samples with a square root and two transcendentals
@@ -68,9 +83,20 @@ function(cy_material_declare_tests)
         SOURCES
             "${cy_material_tests_dir}/test_ir.cpp"
             "${cy_material_tests_dir}/test_frontends.cpp"
+            "${cy_material_tests_dir}/test_preview.cpp"
+        DEPENDENCIES cy::rendering-material)
+
+    # The same compiler, integration cost. Nothing about these two files is slower than it should
+    # be — they are the cases that build the twelve-program family repeatedly, which is the subject
+    # rather than an accident of how they are written — and `testing-and-quality`'s taxonomy has a
+    # suite for exactly that. Splitting them out is what keeps `unit.material_compiler` inside its
+    # budget in every configuration rather than only in the optimised ones.
+    cy_add_test(
+        NAME material_lowering
+        KIND integration
+        SOURCES
             "${cy_material_tests_dir}/test_passes.cpp"
             "${cy_material_tests_dir}/test_lowering.cpp"
-            "${cy_material_tests_dir}/test_preview.cpp"
         DEPENDENCIES cy::rendering-material)
 
     cy_add_test(

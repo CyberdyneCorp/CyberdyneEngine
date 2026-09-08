@@ -674,6 +674,13 @@ The exit criterion "the Metal seed renders the M3 golden scene" is **not evaluat
 Apple GPU and this project has no macOS runner with one. `src/backends/rhi-metal/README.md` says of
 `src/device.mm` that nothing in that file has been compiled or run.
 
+*The closing gate's own findings — how the ledger was run, what its three failures were, and what is
+thinner than a tier suggests — are in*
+[Where M7's tiers are thin](roadmap/capability-matrix.md#where-m7s-tiers-are-thin). *The one a reader
+of this page should carry forward: none of the thirteen renderer modules M7 added is assembled into a
+frame by anything but a test or `samples/07-fidelity`, and neither is M3's `cy_rendering_forward`.
+That is what M8 will trip over.*
+
 ---
 
 ## M8 — Game systems

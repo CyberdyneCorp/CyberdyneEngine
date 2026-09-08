@@ -367,8 +367,16 @@ test-sanitize *args:
     # trace reported them; M1 task 2.12 closed that in src/core/diagnostics/src/lifetime.h, which
     # declares the slot and its ring at the allocation site. A leak reported here is now a defect.
     # `--leaks off` turns detection off for a bisect; it is not a state anything should be left in.
+    #
+    # tests/lsan-suppressions.txt carries the one thing this project cannot free, with the stack
+    # that says so. `print_suppressions=1` makes every entry report its count and byte total on
+    # every run, so a suppression that has stopped matching, or has started matching more than it
+    # was written for, shows up in the run's own output. Found by M7's gate: `--tests text` began
+    # selecting `render.virtual_texturing_gpu` when M7 added it, and the Vulkan driver's D-Bus
+    # registration is fifteen allocations no engine frame appears in.
     if [ "${leaks}" = "on" ]; then
         export ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=1"
+        export LSAN_OPTIONS="${LSAN_OPTIONS:-}${LSAN_OPTIONS:+:}suppressions={{root}}/tests/lsan-suppressions.txt:print_suppressions=1"
     else
         export ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=0"
     fi

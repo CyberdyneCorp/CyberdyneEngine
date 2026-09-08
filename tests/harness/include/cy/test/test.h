@@ -58,8 +58,32 @@ inline constexpr unsigned long long kStallMultiplier = 100;
 /// That is a defect in the instrument. The taxonomy's question is "what does this test cost?", and
 /// the answer must not change with what else the machine is doing, or the gate reports on the
 /// build agent rather than on the change. So the budget is the CPU time the case's own thread
-/// consumed. Load is invisible to it; the work is not, so the split that moved seven scene and
-/// reflection cases into the integration suite at M2's close stands on exactly the same numbers.
+/// consumed, and the split that moved seven scene and reflection cases into the integration suite
+/// at M2's close stands on exactly those numbers.
+///
+/// THE CLOCK IS STILL NOT INDEPENDENT OF THE MACHINE, AND M7'S GATE MEASURED WHICH WAY. A thread
+/// CPU clock counts SECONDS, not cycles, so what it reports is work divided by the frequency the
+/// governor happened to be running at. On a host with `scaling_governor = powersave`, cores idling
+/// at 800 MHz and boosting to several GHz, that ratio moves by a factor of five — and it moves in
+/// the OPPOSITE direction to the one this comment used to assume. The same binary,
+/// `cy_test_unit_scene` in the Debug tree, worst case per run:
+///
+///     idle machine, five runs        0.716  0.734  0.877  0.939  0.846 ms
+///     four spinners beside it        0.211  0.206  0.200   —      —    ms
+///     idle again, five runs          1.049  0.922  0.702  0.904  0.727 ms
+///
+/// **An idle machine is this instrument's worst case**, because an idle machine is a slow one; a
+/// busy machine that keeps the cores boosted measures the same work at a fifth of the figure. The
+/// 1.049 ms row is a case doing about 0.21 ms of work failing a 1 ms budget with nothing else
+/// running. That is the mechanism behind "one unit suite failed once" in every milestone report
+/// since M4, and it is not contention, not reclaim and not the suites.
+///
+/// Swapping wall clock for CPU time was still right — wall clock moved by ten — and the remaining
+/// factor is not zero. Until the budget is normalised against a reference workload measured in the
+/// same process, treat any case within a factor of two of its budget as a case that will fail
+/// somewhere: `CY_TEST_BUDGET_SCALE=0.5 ./cy_test_unit_<suite>` lists them. M7's gate moved the
+/// three that were worst (`material_lowering`, the cookie scroll case and the overlay clipping
+/// case) into the integration suite, which raises the margin but does not fix the instrument.
 ///
 /// The fix deliberately is NOT any of: shrinking a case (the case is not the problem), raising the
 /// budget (a budget raised until a flake hides measures nothing), or scaling it under load (which

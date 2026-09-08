@@ -154,8 +154,10 @@ BudgetGuard::~BudgetGuard() {
             "over budget: '%s' spent %.3f ms of CPU (%llu ns) against a budget of %.3f ms "
             "(%llu ns), in %.3f ms of wall clock. The taxonomy in `testing-and-quality` places a "
             "test this expensive in the next suite up — move it, or make it cheaper. The clock is "
-            "the case's own CPU time, so this is not a busy machine: it is work the test did. Set "
-            "CY_TEST_BUDGET_SCALE to relax the budget for one run.",
+            "the case's own CPU time, which counts SECONDS rather than cycles: on a host whose "
+            "governor idles at 800 MHz, M7's gate measured the same case at five times its "
+            "boosted-clock figure, so an IDLE machine is this instrument's worst case. Check the "
+            "margin with CY_TEST_BUDGET_SCALE=0.5 before believing a regression.",
             name_, static_cast<double>(cpu_ns) / 1e6, static_cast<unsigned long long>(cpu_ns),
             static_cast<double>(budget_ns_) / 1e6, budget_ns_, static_cast<double>(wall_ns) / 1e6);
         DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);

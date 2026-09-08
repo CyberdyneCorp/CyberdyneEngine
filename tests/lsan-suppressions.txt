@@ -1,0 +1,27 @@
+# LeakSanitizer suppressions. One entry, and adding a second one is a decision, not a habit.
+#
+# THE RULE THIS FILE OPERATES UNDER. A leak reported by `just test-sanitize` is a defect in this
+# repository until it is shown not to be, and "shown" means a stack with no frame in engine code and
+# a reason the engine cannot free the allocation. LeakSanitizer prints `Suppressions used:` with a
+# count and a byte total for every entry below on every run, so a suppression that stops matching —
+# or one that starts swallowing more than it was written for — is visible in the run's own output
+# rather than in this comment.
+#
+# libdbus-1.so
+#   Found by M7's closing gate. `just roadmap-milestone m7` reported `m5:sanitizers` red, and the
+#   cause was not M5's code and not a new leak: M5's criterion selects its suites by the substring
+#   `text`, M7 added `render.virtual_texturing_gpu`, and `virtual_texturing` contains `text`. A
+#   device test was pulled into a leak-checked sanitizer run for the first time.
+#
+#   Every frame of every one of the fifteen allocations is inside `/lib/x86_64-linux-gnu/libdbus-1.so.3`,
+#   entered from an unsymbolised module that is the Vulkan ICD: `dbus_bus_register` ->
+#   `dbus_connection_send_with_reply_and_block` -> `dbus_pending_call_block`. The driver registers on
+#   the session bus while the instance is created and never tears that registration down. There is no
+#   engine frame in any of the stacks and no engine handle to release, so this is not something
+#   `cy::rhi` can close by destroying anything it owns.
+#
+#   Scope: the module, not a function, because the driver reaches libdbus through several entry
+#   points (`dbus_message_new_method_call`, `dbus_message_new_signal`, `dbus_message_new_error`) and
+#   suppressing each separately would be a list that goes stale. Nothing in this engine links
+#   libdbus, so the module name cannot match engine code.
+leak:libdbus-1.so

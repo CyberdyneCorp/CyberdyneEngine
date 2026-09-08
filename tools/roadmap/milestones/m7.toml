@@ -306,10 +306,10 @@ native-abi = "complete"
 # same hash, and provenance in a SIDE TABLE because CSE merges two authoring nodes into one value.
 [[criterion]]
 id = "material-compiler"
-describe = "a graph and a hand-written material compile to the SAME program, proven by the round trip and by the two front-ends being different before the compiler runs; every one of the nine pass switches is load-bearing, asserted as a table on every build; and a node preview is the final program with a different root"
-source = "tasks 6.1, 6.2, 6.4, ROADMAP M7 (The material compiler's IR round-trips; Node previews use the real compiler)"
-kind = "recipe"
-run = "just test-unit -R unit.material_compiler"
+describe = "a graph and a hand-written material compile to the SAME program, proven by the round trip and by the two front-ends being different before the compiler runs; every one of the nine pass switches is load-bearing, asserted as a table on every build; and a node preview is the final program with a different root. BOTH SUITES, because the compiler's cases live in two of them: M7's closing gate moved the ones that build the twelve-program family repeatedly into `integration.material_lowering` — 1.23 to 2.26 ms of CPU each in the Debug configuration against a 1 ms unit budget, so `unit.material_compiler` was green in dev and red in Debug — and a criterion that had kept naming only the unit suite would have stopped covering closure lowering, the pass table and binning on the day they moved"
+source = "tasks 6.1, 6.2, 6.4, 13.2, ROADMAP M7 (The material compiler's IR round-trips; Node previews use the real compiler)"
+kind = "command"
+run = "just test-unit -R unit.material_compiler && just test-integration -R material_lowering"
 ci_job = "render-frame"
 
 [[criterion]]
