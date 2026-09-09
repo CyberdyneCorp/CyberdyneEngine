@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -443,6 +444,87 @@ def test_unsupported_platform_module_is_off(workspace: Path) -> None:
 def collect() -> list:
     module = sys.modules[__name__]
     return [getattr(module, name) for name in sorted(dir(module)) if name.startswith("test_")]
+
+
+def test_a_conditional_target_is_guarded_where_a_test_names_it(workspace: Path) -> None:
+    """REGRESSION, M8.b's spike: `add_test` naming a target a feature option may not declare.
+
+    `samples/05b-editor-window/runtime/CMakeLists.txt` returns before declaring
+    `cy_editor_window_runtime` when the Vulkan backend is off or the host is not Linux. The parent's
+    `add_test` named it unconditionally, so with `-DCY_RENDERER_VULKAN=OFF` the generator expression
+    resolved against nothing and CMake failed at GENERATE:
+
+        CMake Error at samples/05b-editor-window/CMakeLists.txt:113 (add_test):
+          No target "cy_editor_window_runtime"
+
+    CONFIGURE FAILED OUTRIGHT rather than the entry being skipped, so the option could not be
+    configured at all — and `build-system-and-platforms` requires every CY_* option to build with it
+    and without it. A feature that cannot be switched off is one nothing proves is separable.
+
+    THE RULE IS NARROWER THAN IT FIRST LOOKS, AND THE NARROWING IS THE WORK. A first draft flagged
+    every `$<TARGET_FILE:...>` in an `add_test` without an `if(TARGET ...)` beside it and found
+    seventeen, of which none was the defect: most targets come from `cy_add_module` and are declared
+    unconditionally, and three more are declared in the same file ABOVE its guard, so reaching the
+    `add_test` already proves the target exists. A check that reports sixteen false positives is a
+    check somebody switches off. What is actually unsafe is a CROSS-FILE reference to a target whose
+    declaring file can return BEFORE declaring it.
+    """
+    del workspace  # a repository scan, not a fixture configure
+
+    # The source directories only. A glob from the repository root walks the build trees first and
+    # filters afterwards, which on a machine with four configured profiles is tens of gigabytes of
+    # `_deps` before the first source file — measured, after it turned this into a timeout.
+    paths = [REPO / "CMakeLists.txt"]
+    for name in ("src", "samples", "tests", "tools", "bindings", "editor"):
+        root = REPO / name
+        if root.is_dir():
+            paths.extend(root.glob("**/CMakeLists.txt"))
+    files = [
+        path
+        for path in sorted(paths)
+        if path.is_file() and "_deps" not in path.parts and ".build" not in path.parts
+    ]
+
+    declared: dict[str, tuple[Path, int]] = {}
+    first_return: dict[Path, int | None] = {}
+    declaration = re.compile(
+        r"(?:cy_add_module\s*\(\s*NAME\s+|add_executable\s*\(\s*|add_library\s*\(\s*)"
+        r"([A-Za-z0-9_.-]+)"
+    )
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        found = re.search(r"^\s*return\(\)", text, re.M)
+        first_return[path] = found.start() if found else None
+        for match in declaration.finditer(text):
+            declared.setdefault(match.group(1), (path, match.start()))
+
+    offenders: list[str] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        if "add_test" not in text:
+            continue
+        for target in sorted(set(re.findall(r"\$<TARGET_FILE:([A-Za-z0-9_:.-]+)>", text))):
+            where = declared.get(target)
+            if where is None:
+                continue  # an imported or third-party target; not ours to reason about
+            owner, declared_at = where
+            if owner == path:
+                continue  # same file: reaching the add_test proves the declaration ran
+            returns_at = first_return.get(owner)
+            if returns_at is None or returns_at > declared_at:
+                continue  # nothing in that file can skip the declaration
+            if f"if(TARGET {target})" in text:
+                continue
+            offenders.append(
+                f"{path.relative_to(REPO)}: $<TARGET_FILE:{target}>, declared in "
+                f"{owner.relative_to(REPO)} after a guard that can return first"
+            )
+
+    check(
+        not offenders,
+        "an add_test names a target another file may decline to declare; guard it with "
+        "if(TARGET ...):\n  " + "\n  ".join(offenders),
+    )
 
 
 def main(argv: list[str]) -> int:

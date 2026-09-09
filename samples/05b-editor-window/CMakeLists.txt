@@ -110,6 +110,19 @@ endif()
 # wrong place — and the symptom is this artefact reporting that the viewport is neutral, which reads
 # as a defect in the transport rather than as a path. Found on the release profile, which is where
 # M6's release run found the other path defect (task 5b.6).
+# THE SAME GUARD THE TARGET HAS, AND IT WAS MISSING. `runtime/CMakeLists.txt` returns before
+# declaring `cy_editor_window_runtime` when the Vulkan backend is off or the host is not Linux — its
+# publisher needs a device that can export a dma-buf. This `add_test` named that target
+# unconditionally, so `$<TARGET_FILE:...>` resolved against nothing and CMake failed at GENERATE:
+#
+#     CMake Error at samples/05b-editor-window/CMakeLists.txt:113 (add_test):
+#       No target "cy_editor_window_runtime"
+#
+# Configure failed outright rather than the test being skipped, so `-DCY_RENDERER_VULKAN=OFF` could
+# not be configured at all. M8.b's spike reproduced it from an empty tree. It matters beyond the
+# option: a feature that cannot be switched off is a feature nothing proves is separable, and
+# `build-system-and-platforms` requires every CY_* option to build with and without it.
+if(TARGET cy_editor_window_runtime)
 add_test(NAME smoke.editor_window
          COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/window.py"
                  --build --profile "${CY_WINDOW_PROFILE}"
@@ -120,3 +133,4 @@ set_tests_properties(smoke.editor_window PROPERTIES
                      LABELS "smoke" TIMEOUT "${CY_WINDOW_TIMEOUT}"
                      SKIP_RETURN_CODE 3
                      RUN_SERIAL TRUE)
+endif()
