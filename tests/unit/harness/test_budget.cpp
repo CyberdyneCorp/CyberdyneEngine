@@ -46,6 +46,28 @@ CY_TEST_CASE("harness: the instrument says which clock it is") {
 #endif
 }
 
+CY_TEST_CASE("harness: the budget is calibrated against the machine it is running on") {
+    // REGRESSION, M8.a's gate, and the general form of a failure that has been recurring since M4.
+    //
+    // `CY_TEST_BUDGET_NS` is written as a duration, and a duration is not a property of a test — it
+    // is a property of the test AND the machine AND the optimiser AND whatever else is running. Two
+    // gates measured that from opposite ends. M7's found the same suite taking 1.05 ms alone and
+    // 0.20 ms beside four spinners, because this governor idles at 800 MHz and an IDLE machine is
+    // therefore the harness's worst case. M8.a's found sixteen unit cases failing in the Debug
+    // configuration in directories with no modifications at all, and five of the seven offending
+    // suites passing standalone and failing only inside a 57-suite run.
+    //
+    // So the budget is scaled by a reference workload measured in this process. What this case
+    // asserts is the property that makes that safe rather than merely convenient: THE SCALE NEVER
+    // TIGHTENS THE BUDGET. A machine faster than the reference does not earn a stricter budget than
+    // the suite was written against, because a check that gets stricter on good hardware is a check
+    // that starts failing for reasons nobody introduced.
+    if (std::getenv("CY_TEST_BUDGET_SCALE") != nullptr) {
+        return;  // an explicit override owns the scale outright, including values below one
+    }
+    CY_CHECK_GE(cy::test::budget_scale(), 1.0);
+}
+
 CY_TEST_CASE("harness: the budget scale is whatever the environment asked for, zero included") {
     // `CY_TEST_BUDGET_SCALE=0` switches the check off. It is a documented value — `just
     // test-sanitize` used to export it — so the harness's own suite must not assert it away: a test
