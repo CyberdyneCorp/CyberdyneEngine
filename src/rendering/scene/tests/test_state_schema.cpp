@@ -74,10 +74,12 @@ CY_TEST_CASE("a handle is declared and not hashed, because its value is allocati
     const cy::determinism::SubjectSchema* mesh =
         fixture.schema.find(cy::determinism::SchemaSubject{fixture.components.mesh_renderer});
     CY_REQUIRE(mesh != nullptr);
-    CY_CHECK_EQ(mesh->field_count, 15U);
-    // Eight of the fifteen are the handles and the bounds (`Derived`) and one is the importance
-    // (`Presentation`); the remaining six are what a designer sets.
-    CY_CHECK_EQ(mesh->hashed_field_count, 6U);
+    CY_CHECK_EQ(mesh->field_count, 19U);
+    // Eight of the nineteen are the two handles and the bounds (`Derived`) and one is the
+    // importance (`Presentation`); the remaining ten are what a designer sets — the six flags and
+    // numbers, plus the four lanes of the two ASSET references M8.b's task 11.3 added. An asset id
+    // is content identity and is the same in every process, which is exactly what a handle is not.
+    CY_CHECK_EQ(mesh->hashed_field_count, 10U);
 }
 
 CY_TEST_CASE("a camera is declared and contributes nothing, which is not the same as undeclared") {
@@ -127,8 +129,10 @@ CY_TEST_CASE("what a designer changes is hashed and what the renderer computes i
         cy::determinism::SimulationClass classification;
     };
     const Expected expected[] = {
-        {"mesh", cy::determinism::SimulationClass::Derived},
-        {"material", cy::determinism::SimulationClass::Derived},
+        {"mesh_handle", cy::determinism::SimulationClass::Derived},
+        {"material_handle", cy::determinism::SimulationClass::Derived},
+        {"mesh.high", cy::determinism::SimulationClass::Authoritative},
+        {"mesh.low", cy::determinism::SimulationClass::Authoritative},
         {"importance", cy::determinism::SimulationClass::Presentation},
         {"visible", cy::determinism::SimulationClass::Authoritative},
         {"layer_mask", cy::determinism::SimulationClass::Authoritative},

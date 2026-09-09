@@ -18,7 +18,7 @@
 
 
 version = 1
-next_type_id = 10
+next_type_id = 13
 
 [[type]]
 id = 1
@@ -270,4 +270,218 @@ status = "live"
 [[type.field]]
 id = 10
 name = "value.scale.z"
+status = "live"
+
+[[type]]
+id = 10
+name = "cy::rendering::Camera"
+module = "rendering-scene"
+header = "src/rendering/scene/include/cy/rendering/scene/components.h"
+status = "live"
+next_field_id = 15
+
+[[type.field]]
+id = 1
+name = "projection.kind"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "projection.fov_y_radians"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "projection.ortho_height"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "projection.near_plane"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "projection.far_plane"
+status = "live"
+
+[[type.field]]
+id = 6
+name = "viewport.x"
+status = "live"
+
+[[type.field]]
+id = 7
+name = "viewport.y"
+status = "live"
+
+[[type.field]]
+id = 8
+name = "viewport.width"
+status = "live"
+
+[[type.field]]
+id = 9
+name = "viewport.height"
+status = "live"
+
+[[type.field]]
+id = 10
+name = "purpose"
+status = "live"
+
+[[type.field]]
+id = 11
+name = "layer_mask"
+status = "live"
+
+[[type.field]]
+id = 12
+name = "importance"
+status = "live"
+
+[[type.field]]
+id = 13
+name = "history_id"
+status = "live"
+
+[[type.field]]
+id = 14
+name = "enabled"
+status = "live"
+
+[[type]]
+id = 11
+name = "cy::rendering::LightSource"
+module = "rendering-scene"
+header = "src/rendering/scene/include/cy/rendering/scene/components.h"
+status = "live"
+next_field_id = 9
+
+[[type.field]]
+id = 1
+name = "kind"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "intensity"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "range"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "inner_cone_radians"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "outer_cone_radians"
+status = "live"
+
+[[type.field]]
+id = 6
+name = "layer_mask"
+status = "live"
+
+[[type.field]]
+id = 7
+name = "casts_shadow"
+status = "live"
+
+[[type.field]]
+id = 8
+name = "enabled"
+status = "live"
+
+[[type]]
+id = 12
+name = "cy::rendering::MeshRenderer"
+module = "rendering-scene"
+header = "src/rendering/scene/include/cy/rendering/scene/components.h"
+status = "live"
+next_field_id = 17
+
+[[type.field]]
+id = 1
+name = "mesh.high"
+status = "live"
+
+[[type.field]]
+id = 2
+name = "mesh.low"
+status = "live"
+
+[[type.field]]
+id = 3
+name = "material.high"
+status = "live"
+
+[[type.field]]
+id = 4
+name = "material.low"
+status = "live"
+
+[[type.field]]
+id = 5
+name = "local_bounds.min.x"
+status = "live"
+
+[[type.field]]
+id = 6
+name = "local_bounds.min.y"
+status = "live"
+
+[[type.field]]
+id = 7
+name = "local_bounds.min.z"
+status = "live"
+
+[[type.field]]
+id = 8
+name = "local_bounds.max.x"
+status = "live"
+
+[[type.field]]
+id = 9
+name = "local_bounds.max.y"
+status = "live"
+
+[[type.field]]
+id = 10
+name = "local_bounds.max.z"
+status = "live"
+
+[[type.field]]
+id = 11
+name = "layer_mask"
+status = "live"
+
+[[type.field]]
+id = 12
+name = "lod_bias"
+status = "live"
+
+[[type.field]]
+id = 13
+name = "visible"
+status = "live"
+
+[[type.field]]
+id = 14
+name = "casts_shadow"
+status = "live"
+
+[[type.field]]
+id = 15
+name = "receives_shadow"
+status = "live"
+
+[[type.field]]
+id = 16
+name = "two_sided"
 status = "live"

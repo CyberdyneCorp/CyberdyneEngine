@@ -325,12 +325,12 @@ private:
     [[nodiscard]] Status apply_arguments(Span<const ParameterArgument> arguments,
                                          ResolvedGraph& out) noexcept;
 
-    [[nodiscard]] Status apply_overrides(OverrideList& overrides, const IdMap& map,
-                                         ValueSource source, AssetId owner, LocalId instance,
+    /// `map` is not const because `AddEntity` extends it — see `apply_one`.
+    [[nodiscard]] Status apply_overrides(OverrideList& overrides, IdMap& map, ValueSource source,
+                                         AssetId owner, LocalId instance,
                                          ResolvedGraph& out) noexcept;
-    [[nodiscard]] Status apply_one(Override& item, const IdMap& map, ValueSource source,
-                                   AssetId owner, ResolvedGraph& out,
-                                   ConflictKind& conflict) noexcept;
+    [[nodiscard]] Status apply_one(Override& item, IdMap& map, ValueSource source, AssetId owner,
+                                   ResolvedGraph& out, ConflictKind& conflict) noexcept;
     [[nodiscard]] Status set_field(Override& item, ResolvedEntity& entity, ValueSource source,
                                    AssetId owner, ConflictKind& conflict) noexcept;
     [[nodiscard]] static Status remove_subtree(ResolvedGraph& out, LocalId root) noexcept;
@@ -600,7 +600,7 @@ Status Resolver::remove_subtree(ResolvedGraph& out, LocalId root) noexcept {
     return ok();
 }
 
-Status Resolver::apply_one(Override& item, const IdMap& map, ValueSource source, AssetId owner,
+Status Resolver::apply_one(Override& item, IdMap& map, ValueSource source, AssetId owner,
                            ResolvedGraph& out, ConflictKind& conflict) noexcept {
     LocalId entity_id = map.find(item.target().entity);
     if (!entity_id.valid()) {
@@ -627,7 +627,14 @@ Status Resolver::apply_one(Override& item, const IdMap& map, ValueSource source,
             (*added)->parent = parent;
             (*added)->origin = owner;
             (*added)->origin_local = item.target().entity;
-            return ok();
+            // AN ADDED ENTITY JOINS THE MAP, or the overrides that fill it cannot find it. The id
+            // the container invented is not in the source's id space, so every later override
+            // addressing it — the `AddComponent` that puts data on the new entity, the
+            // `ReparentEntity` that moves something under it — looked the id up, missed, and was
+            // recorded as a `MissingEntity` conflict. `IdMap::find` returns the FIRST match, so a
+            // source entity that happens to share the number keeps its own mapping and this entry
+            // is inert, which is the conservative half of the fix.
+            return map.add(entity_id, entity_id);
         }
         case OverrideOp::RemoveEntity: {
             if (out.find(entity_id) == nullptr) {
@@ -682,7 +689,7 @@ Status Resolver::apply_one(Override& item, const IdMap& map, ValueSource source,
     return fail(ErrorCode::Internal, "unhandled override operation");
 }
 
-Status Resolver::apply_overrides(OverrideList& overrides, const IdMap& map, ValueSource source,
+Status Resolver::apply_overrides(OverrideList& overrides, IdMap& map, ValueSource source,
                                  AssetId owner, LocalId instance, ResolvedGraph& out) noexcept {
     for (usize index = 0; index < overrides.size(); ++index) {
         Override& item = overrides[index];

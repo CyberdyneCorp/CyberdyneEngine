@@ -30,11 +30,24 @@ Status declare_render_state(determinism::StateSchema& schema,
     // A handle is one `u64` — a slot index and a generation — and it is declared `Derived` because
     // that number is the render server's allocation order rather than anything about the world. See
     // the header.
+    //
+    // THE ASSET REFERENCES ARE AUTHORITATIVE and the handles are not, which is the whole reason the
+    // component holds both (components.h). An id is content identity and is the same in every
+    // process; the slot it resolved to here is not, and hashing it would make two machines running
+    // the same world disagree because they loaded their meshes in a different order.
     const StateField mesh_fields[] = {
-        StateField{"mesh", 1, offsetof(MeshRenderer, mesh), FieldKind::U64,
+        StateField{"mesh_handle", 1, offsetof(MeshRenderer, mesh_handle), FieldKind::U64,
                    SimulationClass::Derived, StateEncoding::Direct},
-        StateField{"material", 2, offsetof(MeshRenderer, material), FieldKind::U64,
+        StateField{"material_handle", 2, offsetof(MeshRenderer, material_handle), FieldKind::U64,
                    SimulationClass::Derived, StateEncoding::Direct},
+        StateField{"mesh.high", 16, offsetof(MeshRenderer, mesh) + offsetof(AssetRef, high),
+                   FieldKind::U64, SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"mesh.low", 17, offsetof(MeshRenderer, mesh) + offsetof(AssetRef, low),
+                   FieldKind::U64, SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"material.high", 18, offsetof(MeshRenderer, material) + offsetof(AssetRef, high),
+                   FieldKind::U64, SimulationClass::Authoritative, StateEncoding::Direct},
+        StateField{"material.low", 19, offsetof(MeshRenderer, material) + offsetof(AssetRef, low),
+                   FieldKind::U64, SimulationClass::Authoritative, StateEncoding::Direct},
         StateField{"bounds.min.x", 3, offsetof(MeshRenderer, local_bounds) + offsetof(Aabb, min),
                    FieldKind::F32, SimulationClass::Derived, StateEncoding::Direct},
         StateField{"bounds.min.y", 4,
@@ -71,7 +84,7 @@ Status declare_render_state(determinism::StateSchema& schema,
     };
     if (Status declared =
             schema.declare(SchemaSubject{components.mesh_renderer}, kMeshRendererComponentName,
-                           Span<const StateField>(mesh_fields, 15));
+                           Span<const StateField>(mesh_fields, 19));
         !declared) {
         return declared;
     }

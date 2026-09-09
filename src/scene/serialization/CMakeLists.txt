@@ -46,6 +46,7 @@ cy_add_module(
         src/document_text.cpp
         src/library.cpp
         src/overrides.cpp
+        src/prefab_edit.cpp
         src/resolve.cpp
         src/spawn.cpp
         src/world_transaction.cpp

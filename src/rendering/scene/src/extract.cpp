@@ -85,8 +85,8 @@ struct Placement {
     const Placement placement = placement_of(columns, row);
     render::InstanceSnapshot instance;
     instance.stable_id = columns.entities[row].bits();
-    instance.mesh = renderer.mesh;
-    instance.material = renderer.material;
+    instance.mesh = renderer.mesh_handle;
+    instance.material = renderer.material_handle;
     instance.transform = placement.current;
     instance.previous_transform = placement.previous;
     instance.teleported = placement.teleported;

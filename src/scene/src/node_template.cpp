@@ -20,21 +20,47 @@ constexpr TemplateComponent kBaseComponents[] = {
     {kNodeFlagsComponentName, nullptr, 0},      {kNodeStateComponentName, nullptr, 0},
 };
 
-// The components the shipped templates name. Most of them belong to milestones that have not
-// happened: there is no renderer until M3, no physics or audio until M4 and M8, and no UI system
-// until M7. Naming them here is the declaration `scene-graph-and-nodes` asks the engine to ship;
-// registering them is those milestones' work, and until then the template is declared and reports
-// itself as not instantiable rather than pretending otherwise. See the header.
-constexpr TemplateComponent kMeshRendererComponents[] = {{"cy::render::MeshRenderer", nullptr, 0}};
+// The components the shipped templates name. Several of them belong to milestones that have not
+// happened: there is no UI system yet and no effect system yet. Naming them here is the declaration
+// `scene-graph-and-nodes` asks the engine to ship; registering them is those milestones' work, and
+// until then the template is declared and reports itself as not instantiable rather than pretending
+// otherwise. See the header.
+//
+// ================================================================================================
+// M8.b TASK 11.3: FIVE OF THESE NAMED A COMPONENT THAT NEVER EXISTED
+// ================================================================================================
+//
+// The renderer's components have been `cy::rendering::MeshRenderer`, `cy::rendering::Camera` and
+// `cy::rendering::LightSource` since M3, in src/rendering/scene/. This table asked for
+// `cy::render::MeshRenderer`, `cy::render::Camera` and four separate light components — a namespace
+// that is the render SERVER's and a light model the engine does not have — so the templates stayed
+// "declared but not instantiable" in a world that had registered every one of them, and an author
+// who created a MeshRenderer node got an entity with no renderer component on it. That is the
+// smaller half of why M8.a's artefact photograph shows an authored sphere as a unit box.
+//
+// The three light templates the engine's light model supports now name ONE component: `LightSource`
+// carries a `render::LightKind`, and a template is "a component archetype template plus defaults"
+// precisely so that three node types can be three defaults over one component rather than three
+// structs. THE DEFAULTS THEMSELVES ARE NOT HERE — a `defaults` blob is the component's own bytes
+// and this layer may not include the renderer's header. `cy::rendering::declare_render_templates()`
+// supplies them through `NodeTemplateRegistry::redeclare`, and until it is called these templates
+// instantiate a zeroed component, which for a `LightSource` is a disabled light of zero intensity.
+constexpr TemplateComponent kMeshRendererComponents[] = {
+    {"cy::rendering::MeshRenderer", nullptr, 0}};
 constexpr TemplateComponent kSkinnedMeshComponents[] = {{"cy::render::SkinnedMesh", nullptr, 0}};
 constexpr TemplateComponent kInstancedMeshComponents[] = {
     {"cy::render::InstancedMesh", nullptr, 0}};
-constexpr TemplateComponent kCameraComponents[] = {{"cy::render::Camera", nullptr, 0}};
+constexpr TemplateComponent kCameraComponents[] = {{"cy::rendering::Camera", nullptr, 0}};
+
 constexpr TemplateComponent kDirectionalLightComponents[] = {
-    {"cy::render::DirectionalLight", nullptr, 0}};
-constexpr TemplateComponent kPointLightComponents[] = {{"cy::render::PointLight", nullptr, 0}};
-constexpr TemplateComponent kSpotLightComponents[] = {{"cy::render::SpotLight", nullptr, 0}};
-constexpr TemplateComponent kAreaLightComponents[] = {{"cy::render::AreaLight", nullptr, 0}};
+    {"cy::rendering::LightSource", nullptr, 0}};
+constexpr TemplateComponent kPointLightComponents[] = {{"cy::rendering::LightSource", nullptr, 0}};
+constexpr TemplateComponent kSpotLightComponents[] = {{"cy::rendering::LightSource", nullptr, 0}};
+// AN AREA LIGHT IS NOT A KIND THIS ENGINE HAS. `render::LightKind` is directional, point and spot,
+// and giving this template a fourth default would write a number the enumeration does not define.
+// It keeps naming a component nothing registers, so `template_status()` reports it as declared and
+// not instantiable — which is the true answer and the one the header asks for.
+constexpr TemplateComponent kAreaLightComponents[] = {{"cy::rendering::AreaLight", nullptr, 0}};
 constexpr TemplateComponent kReflectionProbeComponents[] = {
     {"cy::render::ReflectionProbe", nullptr, 0}};
 constexpr TemplateComponent kDecalComponents[] = {{"cy::render::Decal", nullptr, 0}};
@@ -93,22 +119,17 @@ Span<const TemplateComponent> node_base_components() noexcept {
     return {kBaseComponents, sizeof(kBaseComponents) / sizeof(kBaseComponents[0])};
 }
 
-Status NodeTemplateRegistry::add(World& world, const NodeTemplateDesc& desc) noexcept {
-    const Name name = Name::intern(desc.name);
-    if (contains(name)) {
-        return fail(ErrorCode::AlreadyExists, "a node template with this name is registered");
-    }
-
-    Entry entry;
-    entry.name = name;
-    entry.behaviour = desc.behaviour;
+Status NodeTemplateRegistry::bind_entry(World& world, Entry& entry) noexcept {
     entry.first_binding = static_cast<u32>(bindings_.size());
-    for (const TemplateComponent& component : desc.components) {
+    entry.missing_component = "";
+    entry.missing_count = 0;
+    for (const TemplateComponent& component : entry.declared) {
         const ecs::ComponentInfo* info = world.components().find(component.component_name);
         if (info == nullptr) {
             // Declared but not instantiable in this world. Recorded rather than refused: the
             // catalogue names components several milestones will register, and a registry that
-            // refused them would make the catalogue undeclarable until M8.
+            // refused them would make the catalogue undeclarable until M8. `rebind()` is what turns
+            // this back into a binding once the milestone that owns the component arrives.
             ++entry.missing_count;
             if (entry.missing_component[0] == '\0') {
                 entry.missing_component = component.component_name;
@@ -124,7 +145,53 @@ Status NodeTemplateRegistry::add(World& world, const NodeTemplateDesc& desc) noe
         }
     }
     entry.binding_count = static_cast<u32>(bindings_.size()) - entry.first_binding;
+    return ok();
+}
+
+Status NodeTemplateRegistry::add(World& world, const NodeTemplateDesc& desc) noexcept {
+    const Name name = Name::intern(desc.name);
+    if (contains(name)) {
+        return fail(ErrorCode::AlreadyExists, "a node template with this name is registered");
+    }
+
+    Entry entry;
+    entry.name = name;
+    entry.behaviour = desc.behaviour;
+    entry.declared = desc.components;
+    if (Status bound = bind_entry(world, entry); !bound) {
+        return bound;
+    }
     return entries_.push_back(entry);
+}
+
+Status NodeTemplateRegistry::redeclare(World& world, const NodeTemplateDesc& desc) noexcept {
+    const Name name = Name::intern(desc.name);
+    Entry* entry = nullptr;
+    for (Entry& candidate : entries_) {
+        if (candidate.name == name) {
+            entry = &candidate;
+        }
+    }
+    if (entry == nullptr) {
+        return fail(ErrorCode::NotFound, "no node template with this name is registered");
+    }
+    entry->behaviour = desc.behaviour;
+    entry->declared = desc.components;
+    return rebind(world);
+}
+
+Status NodeTemplateRegistry::rebind(World& world) noexcept {
+    // The whole binding array is rebuilt rather than patched: an entry's bindings are a contiguous
+    // run, and a template that gains one has to grow in the middle. Rebuilding is O(templates) with
+    // one pass and no special case, and this runs once per subsystem registration rather than per
+    // frame.
+    bindings_.clear();
+    for (Entry& entry : entries_) {
+        if (Status bound = bind_entry(world, entry); !bound) {
+            return bound;
+        }
+    }
+    return ok();
 }
 
 Status NodeTemplateRegistry::add_builtins(World& world) noexcept {

@@ -52,6 +52,7 @@ function(cy_scene_serialization_declare_tests)
             "${tests_dir}/test_authoring_schema.cpp"
             "${tests_dir}/test_documents.cpp"
             "${tests_dir}/test_identity.cpp"
+            "${tests_dir}/test_prefab_edit.cpp"
             "${tests_dir}/test_prefabs.cpp"
             "${tests_dir}/test_worldfile.cpp"
         DEPENDENCIES cy::scene-serialization cy::scene

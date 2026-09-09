@@ -36,8 +36,9 @@ function(cy_render_extract_declare_tests)
         KIND unit
         SOURCES
             "${cy_extract_tests_dir}/test_extract.cpp"
+            "${cy_extract_tests_dir}/test_reflection.cpp"
             "${cy_extract_tests_dir}/test_state_schema.cpp"
-        DEPENDENCIES cy::rendering-scene)
+        DEPENDENCIES cy::rendering-scene cy::scene-serialization)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_render_extract_declare_tests)

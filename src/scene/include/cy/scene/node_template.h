@@ -97,6 +97,35 @@ public:
     /// `builtin_templates()`, and what `SceneTree::initialize` calls.
     [[nodiscard]] Status add_builtins(World& world) noexcept;
 
+    /// Re-resolve every component a registered template named and this world did not hold at the
+    /// time. M8.b task 11.3.
+    ///
+    /// WHY A TEMPLATE HAS TO BE ABLE TO BECOME INSTANTIABLE LATER. Binding happens once, at
+    /// `add()`, and most of the shipped catalogue names components a SUBSYSTEM registers: the
+    /// renderer's three arrive with `cy::rendering::RenderComponents::register_all`, which a host
+    /// calls after it has built its scene tree, because a tree is what the renderer extracts from.
+    /// Without this call, whether `MeshRenderer` is instantiable would be decided by the order two
+    /// unrelated initialisations happened to run in — and in the order every host actually uses, it
+    /// would be permanently dead. That is half of why M8.a's artefact drew an authored sphere as a
+    /// box.
+    ///
+    /// Idempotent, and it never UNbinds: a world cannot lose a component, so a template that is
+    /// instantiable stays so. Invalidates the spans `bindings_of()` returned.
+    [[nodiscard]] Status rebind(World& world) noexcept;
+
+    /// Replace a registered template's declaration, and rebind everything.
+    ///
+    /// The other half of the same problem `rebind()` solves, and the half that carries DATA. A
+    /// shipped template's `defaults` blob is the component's own bytes, and the catalogue in
+    /// src/scene/ cannot supply one for a component it may not include the header of — so the
+    /// catalogue declares the name and the module that owns the component redeclares it with the
+    /// defaults. `cy::rendering::declare_render_templates()` is the first caller.
+    ///
+    /// Refuses `NotFound` for a name nothing registered: this replaces a declaration and does not
+    /// create one, because a typo that silently added a template would be a node type nobody
+    /// declared.
+    [[nodiscard]] Status redeclare(World& world, const NodeTemplateDesc& desc) noexcept;
+
     [[nodiscard]] bool contains(Name name) const noexcept { return find(name) != nullptr; }
     [[nodiscard]] NodeTemplateStatus status(Name name) const noexcept;
     /// Every registered template's status, in registration order. Appends to `out`.
@@ -112,9 +141,9 @@ public:
 
     /// The bound component list for a template, or an error naming what is missing.
     ///
-    /// The span points into the registry's own storage and is valid until the next `add()`. Every
-    /// caller uses it immediately, and saying so here is cheaper than a second allocation per
-    /// template.
+    /// The span points into the registry's own storage and is valid until the next `add()` or
+    /// `rebind()`. Every caller uses it immediately, and saying so here is cheaper than a second
+    /// allocation per template.
     [[nodiscard]] Expected<Span<const Binding>, Error> bindings_of(Name name) const noexcept;
     [[nodiscard]] const char* behaviour_of(Name name) const noexcept;
 
@@ -122,11 +151,18 @@ private:
     struct Entry {
         Name name;
         const char* behaviour = "";
+        /// What the template DECLARED, borrowed from the module that registered it — normally a
+        /// `constexpr` array, as the type comment says. Kept so `rebind()` can resolve the names
+        /// again; the bindings alone cannot, because a missing component leaves no binding.
+        Span<const TemplateComponent> declared;
         u32 first_binding = 0;
         u32 binding_count = 0;
         const char* missing_component = "";
         u32 missing_count = 0;
     };
+
+    /// Resolve one entry's declared components against `world`, appending its bindings.
+    [[nodiscard]] Status bind_entry(World& world, Entry& entry) noexcept;
 
     [[nodiscard]] const Entry* find(Name name) const noexcept;
 

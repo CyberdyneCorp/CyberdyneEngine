@@ -37,6 +37,15 @@ add_subdirectory(save)
 add_subdirectory(scene)
 add_subdirectory(rendering)
 
+# graph/ is CyberGraph and M8.b section 2: the shared authoring layer, the shared pure-expression
+# SSA core, and one lowering per consumer. It declares LAYER scene (4) for the reason
+# src/gameplay/CMakeLists.txt and src/world/CMakeLists.txt both give — there is no `graph` rung in
+# `engine-architecture`'s table and inventing one is not this milestone's change to make — and it
+# depends on nothing above cy::core, because a graph compiler that needed a scene, a device or a
+# server would be a compiler that cannot run in a cook. Read after rendering/ and before the
+# consumers that lower through it.
+add_subdirectory(graph)
+
 # physics/ is the physics ECS bridge and M8.a section 4: it registers the components
 # src/servers/physics/ declares the layouts for, creates bodies from them, drives `PhysicsStepper`
 # in the `Physics` stage and writes `cy::scene::LocalTransform` back. Layer 4, mirroring

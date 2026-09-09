@@ -58,7 +58,11 @@ set(cy_reflect_annotated_headers
 #
 # Each row is NAME|OUTPUT_DIR|HEADER, source-root relative.
 set(cy_reflect_module_headers
-    "scene|src/scene/generated|src/scene/include/cy/scene/components.h")
+    "scene|src/scene/generated|src/scene/include/cy/scene/components.h"
+    # M8.b task 11.3. `cy::rendering::MeshRenderer` was a name in src/scene/'s node catalogue with
+    # no reflected type behind it, so an authored mesh reached no renderer and M8.a's own artefact
+    # photograph shows an authored sphere as a unit box.
+    "rendering|src/rendering/scene/generated|src/rendering/scene/include/cy/rendering/scene/components.h")
 
 # The include directories the frontend needs to parse those headers. A reflected header at layer 4
 # reaches most of the engine's lower layers, and the generator parses with a real C++ frontend: a
@@ -73,7 +77,11 @@ set(cy_reflect_module_includes
     src/core/diagnostics/include
     src/core/reflect/include
     src/ecs/include
-    src/scene/include)
+    src/scene/include
+    # The renderer's components name the render server's model — a handle family, a projection and a
+    # layer mask — so the frontend needs its include directory to parse them at all.
+    src/servers/render/include
+    src/rendering/scene/include)
 
 set(cy_reflect_attribute_schemas
     "${CMAKE_CURRENT_SOURCE_DIR}/reflect_attributes.toml")

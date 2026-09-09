@@ -114,3 +114,11 @@ add_subdirectory(arbiter)
 # exposure, depth of field, motion blur, bloom, tonemap, grading, the display-space effects and the
 # output encoding. Task 8.4. Last, because it consumes temporal/ and is the end of the frame.
 add_subdirectory(post)
+
+# THE FRAME ITSELF, ASSEMBLED. M8.b task 11.2, and the answer to M7's closing gate: eight modules in
+# this directory were linked by nothing but their own test binaries and nothing in the tree built a
+# frame out of them. This one does — it is the only module here that consumes another module's
+# OUTPUT rather than its interface, which is why it is last and why it has to exist at all.
+#
+# It depends on every one of the eight and calls each of them, so it must be read after all of them.
+add_subdirectory(assembly)

@@ -140,11 +140,49 @@ struct Split {
            field.attributes.persistence != reflect::PersistenceKind::Derived;
 }
 
+/// How many consecutive lanes make up an ASSET REFERENCE starting at `first`: two, named `high` and
+/// `low`, the first of which declares `AssetRef`.
+///
+/// M8.b task 11.3. An asset id is 128 bits and reflection describes only fixed-width scalars, so a
+/// component holding one holds two lanes (`cy::rendering::AssetRef`). A person does not author two
+/// integers: they pick an asset, and the editor's value vocabulary for that is `Text` — which is
+/// what `cy_editor_services::primitives` has been writing into a `mesh` field since M8.a.
+///
+/// This is the same GROUPING the header describes for vectors, on the same terms: consecutive lanes
+/// with a common dotted prefix become one field, and the group takes the identifier of its first
+/// lane, so an override or a migration naming that identifier still names the same bytes. It keys
+/// off the DECLARED `AssetRef` attribute rather than off a name, because the attribute exists to
+/// say exactly this and a naming rule would silently reinterpret the next `high`/`low` pair
+/// somebody writes.
+[[nodiscard]] u32 asset_lanes(const reflect::TypeInfo& type, u32 first) noexcept {
+    if (first + 1 >= type.field_count ||
+        !type.fields[first].attributes.declares(reflect::AttributeKind::AssetRef)) {
+        return 0;
+    }
+    const Split head = split_lane(type.fields[first].name);
+    const Split tail = split_lane(type.fields[first + 1].name);
+    const bool paired = !head.prefix.empty() && head.prefix == tail.prefix && head.lane == "high" &&
+                        tail.lane == "low";
+    return paired ? 2U : 0U;
+}
+
 [[nodiscard]] Status add_fields(const reflect::TypeInfo& type, AuthoringType& out) noexcept {
     for (u32 index = 0; index < type.field_count;) {
         const reflect::FieldInfo& field = type.fields[index];
         if (!is_authorable(field)) {
             ++index;
+            continue;
+        }
+        if (const u32 asset = asset_lanes(type, index); asset != 0) {
+            AuthoringField reference;
+            reference.id = field.id;
+            reference.kind = AuthoringKind::Text;
+            reference.name = leaf_of(split_lane(field.name).prefix);
+            reference.description = description_of(field);
+            if (Status added = out.fields.push_back(reference); !added) {
+                return added;
+            }
+            index += asset;
             continue;
         }
         const u32 lanes = vector_lanes(type, index);

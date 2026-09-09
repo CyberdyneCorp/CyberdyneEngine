@@ -18,20 +18,39 @@
 // the node layer, or `src/scene/` becomes the union of every subsystem's per-entity data.
 //
 // ================================================================================================
-// REGISTERED BY NAME, NOT REFLECTED — AND THE SAME SEAM src/scene/ RECORDS
+// REFLECTED AT M8.b, AND WHAT THAT CHANGED — TASK 11.3
 // ================================================================================================
 //
-// The reflection generator's annotated-header list lives in src/core/reflect/CMakeLists.txt and the
-// identifiers in identity/manifest.toml. `core-type-system` is explicit that a manifest identifier
-// is assigned once and never guessed, so a component whose identifiers this module invented would
-// be a component with a fabricated identity. They are registered with `register_builtin` instead,
-// exactly as the ECS's `Parent`/`Children` and the scene's twelve are.
+// These three were registered BY NAME until M8.b, with the note that "the reflection generator's
+// annotated-header list lives in src/core/reflect/CMakeLists.txt and the identifiers in
+// identity/manifest.toml", so a component whose identifiers this module invented would be a
+// component with a fabricated identity.
 //
-// THE CONSEQUENCE IS PAID FOR IMMEDIATELY AND NOT DEFERRED. A component registered by name is
-// invisible to the state hash unless something declares a schema for it, which is M2's carried-
-// forward debt 1.2 and the reason `state_schema.h` in this directory exists and is written in the
-// same change as this header. `declare_render_state()` is one call, made where a host already makes
-// `ecs::declare_relationship_state` and `scene::declare_scene_state`.
+// The cost of that came due at M8.a, and its own artefact report is the evidence: an authored
+// sphere was drawn as a unit box, because `MeshRenderer` was a name in `src/scene/`'s node
+// catalogue with no `reflect::TypeId` behind it. Nothing downstream could act on it — the template
+// was declared and not instantiable, `AuthoringSchema` did not carry it, so `resolve_against` could
+// not match a `.cyworld`'s `MeshRenderer` to anything, and the mesh a designer picked reached no
+// renderer. So they are reflected here, with identifiers the manifest issued, and the header is
+// named in src/core/reflect/CMakeLists.txt's module list.
+//
+// THE STATE SCHEMA STAYS. Reflection describes a type; `state_schema.h` says which of its fields
+// the determinism hash folds and which it must not, and that is a different statement — a reflected
+// field is not automatically authoritative, and `importance` must never be hashed. Both are here.
+//
+// ================================================================================================
+// WHAT A `MeshRenderer` NAMES: AN ASSET, AND SEPARATELY A HANDLE
+// ================================================================================================
+//
+// `core-type-system` — "Asset ids are distinct from handles": an asset id is 128-bit persistent
+// identity, "handles are runtime-only and are never serialized". Until M8.b this component held
+// only the handles, which is why it had nothing an authoring document could carry: a designer picks
+// an ASSET, and the slot the render server happened to give it is not a thing a file can hold.
+//
+// So `mesh` and `material` are asset references and are reflected; `mesh_handle` and
+// `material_handle` are what the asset resolved to in this process, are not reflected, and are
+// filled in by whoever loaded the asset. The extract stage reads the handles, because that is what
+// a snapshot carries; an authoring document reads the references, because that is what survives.
 //
 // ================================================================================================
 // CLASSIFICATION, DECIDED AT THE MOMENT THE STRUCT IS WRITTEN
@@ -50,6 +69,8 @@
 #include <cy/core/base/types.h>
 #include <cy/core/determinism/classification.h>
 #include <cy/core/math/shapes.h>
+#include <cy/core/reflect/annotations.h>
+#include <cy/core/values/asset_id.h>
 #include <cy/ecs/world.h>
 #include <cy/servers/render/model.h>
 
@@ -62,6 +83,34 @@ using ecs::Entity;
 using ecs::kInvalidComponent;
 using ecs::World;
 
+/// A 128-bit asset id in the shape reflection can describe.
+///
+/// `cy::AssetId` is the engine's asset identity and this is NOT a second one: `to_asset_id()` and
+/// `from_asset_id()` are the whole of the relationship, and neither loses a bit. The reason for the
+/// two-lane spelling is a rule of the generator rather than a design preference — tools/gen/reflect
+/// refuses a field whose type hides its representation, "because `offsetof` would compile from
+/// inside the class and not from the generated file, and a type that hides its representation is a
+/// type whose representation is not the contract". `AssetId` holds its halves privately, so a field
+/// of that type is a field reflection cannot describe, and a component holding one would be a
+/// component with no authored mesh in its schema — which is the defect task 11.3 exists to close.
+///
+/// The two lanes are `high` then `low`, big-endian reading order, exactly as `AssetId` documents
+/// them, so the pair reads the same way the canonical text form does.
+struct AssetRef {
+    u64 high = 0;
+    u64 low = 0;
+
+    [[nodiscard]] constexpr bool is_nil() const noexcept { return high == 0 && low == 0; }
+    [[nodiscard]] constexpr AssetId to_asset_id() const noexcept { return AssetId{high, low}; }
+    [[nodiscard]] static constexpr AssetRef from_asset_id(AssetId id) noexcept {
+        return AssetRef{id.high(), id.low()};
+    }
+
+    friend constexpr bool operator==(AssetRef, AssetRef) noexcept = default;
+};
+
+static_assert(std::is_trivially_copyable_v<AssetRef>);
+
 /// An entity with a mesh to draw.
 ///
 /// Everything the extract stage needs to publish an instance, and nothing it would have to ask a
@@ -70,15 +119,36 @@ using ecs::World;
 /// render server is neither thread-safe nor reachable from a system's access declaration. Whoever
 /// assigns the mesh copies the bounds with it — one write when the mesh changes, instead of a
 /// handle resolution per entity per tick.
-struct MeshRenderer {
-    render::MeshHandle mesh;
-    render::MaterialHandle material;
+struct CY_REFLECT_TYPE(Category("Rendering"), Tooltip("A mesh this entity draws")) MeshRenderer {
+    /// The mesh asset this entity draws. AUTHORED: this is what a `.cyworld` carries, what a
+    /// dependency tracker follows, and what a rename rewrites.
+    ///
+    /// The field is called `mesh` because that is the name the editor's own mesh binding looks for
+    /// (`cy_editor_services::primitives::MeshBinding::FIELD`), and the two sides being one name is
+    /// what makes an authored primitive resolve here instead of round-tripping unread.
+    CY_REFLECT_FIELD(AssetRef(Mesh), Category("Rendering"), Persistence(Authoring),
+                     Tooltip("The mesh asset this entity draws."))
+    AssetRef mesh;
+    CY_REFLECT_FIELD(AssetRef(Material), Category("Rendering"), Persistence(Authoring),
+                     Tooltip("The material this entity draws with."))
+    AssetRef material;
+    /// What the two references resolved to in THIS process. Runtime-only and never serialized, so
+    /// deliberately not reflected: a handle is a slot index and a generation, and a file holding
+    /// one loads into a process where that slot holds something else.
+    render::MeshHandle mesh_handle;
+    render::MaterialHandle material_handle;
     /// In the mesh's own space. The world bounds are derived from this and the transform, by
     /// whoever needs them; storing world bounds here would make them a second thing to keep in
     /// step.
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Derived),
+                     Tooltip("The mesh's own bounds, in local space"))
     Aabb local_bounds = Aabb::from_center_extents(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.5F, 0.5F, 0.5F});
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Authoring),
+                     Tooltip("Which layers this instance is drawn in"))
     render::LayerMask layer_mask = render::kDefaultLayer;
     /// Screen-coverage bias applied to LOD selection. Positive keeps more detail.
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Authoring),
+                     Tooltip("Positive keeps more detail"))
     f32 lod_bias = 0.0F;
 
     /// `residency`'s unified render importance: "published once per instance and consumed by every
@@ -94,12 +164,17 @@ struct MeshRenderer {
     ///
     /// Writing it from an authoritative system is legal and stays legal: authority flowing downhill
     /// is how a designer pins an object as important.
+    ///
+    /// NOT REFLECTED, and that is the wrapper's doing rather than an omission: the generator
+    /// refuses a field whose members are private, and `Presentation<>` holds its value behind an
+    /// accessor precisely so an authoritative system cannot name it. A reflected lane here would be
+    /// a second door into the value the wrapper exists to shut.
     determinism::Presentation<f32> importance{1.0F};
 
-    bool visible = true;
-    bool casts_shadow = true;
-    bool receives_shadow = true;
-    bool two_sided = false;
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Authoring)) bool visible = true;
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Authoring)) bool casts_shadow = true;
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Authoring)) bool receives_shadow = true;
+    CY_REFLECT_FIELD(Category("Rendering"), Persistence(Authoring)) bool two_sided = false;
 };
 
 static_assert(std::is_trivially_copyable_v<MeshRenderer>,
@@ -111,21 +186,33 @@ static_assert(std::is_trivially_copyable_v<MeshRenderer>,
 /// extraction fills in from the entity. Restating them rather than embedding the description keeps
 /// the component free of a field a designer must not set — a `stable_id` an author could type would
 /// be an identity two entities could share, and the sort key rests on that being impossible.
-struct LightSource {
+struct CY_REFLECT_TYPE(Category("Rendering"), Tooltip("A light attached to this entity"))
+    LightSource {
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring),
+                     Enum(Directional = 0, Point = 1, Spot = 2))
     render::LightKind kind = render::LightKind::Point;
     /// Linear, un-premultiplied. `intensity` carries the magnitude.
+    ///
+    /// AN ARRAY IS NOT A REFLECTED FIELD — the generator flattens an aggregate's members and a C
+    /// array is not one — so the three channels are not in the schema. `state_schema.cpp` declares
+    /// them by offset and does hash them, which is the statement that actually matters here.
     f32 color[3] = {1.0F, 1.0F, 1.0F};
     /// PHYSICAL UNITS, and which one depends on the kind: lux for a directional light, candela for
     /// a point or a spot. `rendering-lighting-and-shadows` requires the unit to be stated where the
     /// value is, because "intensity 5" means two different things for two kinds.
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring),
+                     Tooltip("Lux for a directional light, candela for a point or a spot"))
     f32 intensity = 1000.0F;
     /// Metres. Zero for a directional light.
-    f32 range = 10.0F;
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring), Unit(Metres)) f32 range = 10.0F;
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring), Unit(Radians))
     f32 inner_cone_radians = 0.0F;
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring), Unit(Radians))
     f32 outer_cone_radians = 0.7853981634F;
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring))
     render::LayerMask layer_mask = render::kAllLayers;
-    bool casts_shadow = true;
-    bool enabled = true;
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring)) bool casts_shadow = true;
+    CY_REFLECT_FIELD(Category("Lighting"), Persistence(Authoring)) bool enabled = true;
 };
 
 static_assert(std::is_trivially_copyable_v<LightSource>);
@@ -138,19 +225,23 @@ static_assert(std::is_trivially_copyable_v<LightSource>);
 /// projection." A component holding a `Mat4` would be a camera that had already chosen a depth
 /// convention, and design.md §3 is that reversed-Z is decided in exactly one place
 /// (`render::Projection::matrix`).
-struct Camera {
-    render::Projection projection;
-    render::ViewportRect viewport;
+struct CY_REFLECT_TYPE(Category("Rendering"), Tooltip("A camera this entity carries")) Camera {
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(Authoring)) render::Projection projection;
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(Authoring)) render::ViewportRect viewport;
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(Authoring),
+                     Enum(Primary = 0, Shadow = 1, ReflectionProbe = 2, SceneCapture = 3,
+                          EditorViewport = 4, Thumbnail = 5, XrEye = 6))
     render::ViewPurpose purpose = render::ViewPurpose::Primary;
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(Authoring))
     render::LayerMask layer_mask = render::kAllLayers;
     /// What share of the frame budget this camera's view asks for. A secondary view draws from its
     /// own allocation and degrades before the primary one does.
-    f32 importance = 1.0F;
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(Authoring)) f32 importance = 1.0F;
     /// The identity temporal history keys off across frames — reprojection, TAA and any resource a
     /// view keeps between frames. Stable while the camera exists, and distinct from the entity id
     /// so that two views produced from one camera can carry different histories.
-    u64 history_id = 0;
-    bool enabled = true;
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(RuntimeState), ReadOnly) u64 history_id = 0;
+    CY_REFLECT_FIELD(Category("Camera"), Persistence(Authoring)) bool enabled = true;
 };
 
 static_assert(std::is_trivially_copyable_v<Camera>);

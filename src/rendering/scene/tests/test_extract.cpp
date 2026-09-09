@@ -90,8 +90,9 @@ struct Fixture {
             return cy::ecs::Entity{};
         }
         MeshRenderer renderer;
-        renderer.mesh = cy::render::MeshHandle::from_slot(1, 1);
-        renderer.material = cy::render::MaterialHandle::from_slot(2, 1);
+        renderer.mesh = AssetRef{0, 0x1234};
+        renderer.mesh_handle = cy::render::MeshHandle::from_slot(1, 1);
+        renderer.material_handle = cy::render::MaterialHandle::from_slot(2, 1);
         if (!world.set(*entity, render().mesh_renderer, renderer).has_value()) {
             return cy::ecs::Entity{};
         }
@@ -223,7 +224,7 @@ CY_TEST_CASE("changing the renderable and not the transform re-extracts too") {
 
     auto* renderer = fixture.world.get_mut<MeshRenderer>(entity, fixture.render().mesh_renderer);
     CY_REQUIRE(renderer != nullptr);
-    renderer->material = cy::render::MaterialHandle::from_slot(9, 1);
+    renderer->material_handle = cy::render::MaterialHandle::from_slot(9, 1);
 
     CY_REQUIRE(fixture.commit(2));
     CY_REQUIRE_EQ(fixture.published().changed.size(), 1U);
