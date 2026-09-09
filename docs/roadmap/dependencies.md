@@ -153,14 +153,20 @@ flowchart TB
     end
 
     subgraph M8B["M8.b · Systems"]
-        VS["visual-scripting<br/><i>shared graph IR</i>"] --> ABIL["gameplay-abilities-and-effects"]
+        VS["visual-scripting<br/><i>CyberGraph: one authoring layer,<br/>one expression core, a lowering each</i>"] --> ABIL["gameplay-abilities-and-effects"]
         VS --> AI["ai-system"]
-        VS --> SEQ["sequencing-and-cinematics"]
         VS --> ANIM["animation-and-skinning"]
-        VS --> VFX["vfx-system"]
         NAV["navigation"] --> AI
         UI["ui-system"] --> TXT["text-and-fonts"]
     end
+
+    subgraph M8C["M8.c · Spectacle"]
+        SEQ["sequencing-and-cinematics"]
+        VFX["vfx-system"]
+        ML["ml-inference<br/><i>the determinism boundary</i>"]
+    end
+    VS --> SEQ
+    VS --> VFX
 
     SER2["serialization-and-prefabs · M2"] --> BP
     IMP2["asset-import-pipeline · M5"] --> BP
@@ -287,7 +293,7 @@ places them late and why they could move without disturbing anything:
 | Capability | Consumed by | Placed at |
 |---|---|---|
 | `rendering-2d` | Nothing — a parallel pipeline sharing infrastructure | M8.b |
-| `ml-inference` | `ai-system`, optionally | M8.b seed |
+| `ml-inference` | `ai-system`, optionally | M8.c seed |
 | `replay-and-rollback` | `networking-and-replication` only | M9 |
 | `xr-support` | Nothing; deferred | prerequisites from M3 |
 

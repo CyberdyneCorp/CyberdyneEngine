@@ -426,23 +426,23 @@ def _check_every_reader_admits_an_insertion() -> None:
     is the argument for that check existing — but only after the readers could see the headings at
     all, which is what this asserts.
     """
-    for column in ("M5.5", "M8.a", "M8.b"):
+    for column in ("M5.5", "M8.a", "M8.b", "M8.c"):
         check(f"the matrix header admits {column}",
               plan_module.milestone_id(column) in record_module.MILESTONES,
               f"{column} -> {plan_module.milestone_id(column)!r}")
 
     matrix = plan_module.read_matrix()
-    for rung in ("m5b", "m8a", "m8b"):
+    for rung in ("m5b", "m8a", "m8b", "m8c"):
         check(f"{rung} is a column the matrix reader returns", rung in matrix.milestones,
               f"columns are {matrix.milestones}")
 
     sections = plan_module.read_sections()
-    for rung in ("m5b", "m8a", "m8b"):
+    for rung in ("m5b", "m8a", "m8b", "m8c"):
         check(f"{rung} is a section the roadmap reader returns", rung in sections,
               f"sections are {sorted(sections)}")
 
     summary = plan_module.read_load_summary()
-    for rung in ("m5b", "m8a", "m8b"):
+    for rung in ("m5b", "m8a", "m8b", "m8c"):
         check(f"{rung} is a row the load table reader returns", rung in summary,
               f"rows are {sorted(summary)}")
 
@@ -458,7 +458,7 @@ def _check_an_insertion_takes_a_rung() -> None:
     """
     order = record_module.MILESTONES
     for inserted, below, above in (("m5b", "m5", "m6"), ("m8a", "m7", "m8b"),
-                                   ("m8b", "m8a", "m9")):
+                                   ("m8b", "m8a", "m8c"), ("m8c", "m8b", "m9")):
         check(f"{inserted} sits between {below} and {above} on the ladder",
               inserted in order and below in order and above in order
               and order.index(below) < order.index(inserted) < order.index(above),
@@ -467,9 +467,9 @@ def _check_an_insertion_takes_a_rung() -> None:
     # The property the rung exists for: a ledger inherits what is BELOW it and nothing above.
     check("a rung past the end of the ladder is not silently assigned a position",
           criteria_module.rung("m8a") < criteria_module.rung("m8b")
-          < criteria_module.rung("m9"),
+          < criteria_module.rung("m8c") < criteria_module.rung("m9"),
           f"m8a={criteria_module.rung('m8a')} m8b={criteria_module.rung('m8b')} "
-          f"m9={criteria_module.rung('m9')}")
+          f"m8c={criteria_module.rung('m8c')} m9={criteria_module.rung('m9')}")
 
 
 def _check_failure_evidence_names_the_failure() -> None:

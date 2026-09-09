@@ -75,7 +75,7 @@ def milestone_id(column: str) -> str:
     no longer contained. The checks below caught it, which is what they are for.
     """
     text = column.strip().lower().replace(" ", "")
-    return {"m5.5": "m5b", "m8.a": "m8a", "m8.b": "m8b"}.get(text, text)
+    return {"m5.5": "m5b", "m8.a": "m8a", "m8.b": "m8b", "m8.c": "m8c"}.get(text, text)
 
 
 def tier_rank(tier: str) -> int:
@@ -151,7 +151,7 @@ def read_matrix(path: Path = MATRIX) -> Matrix:
                 # `M5.5` and `M8.a`/`M8.b` are insertions: a milestone heading is a number with an
                 # optional `.5` or `.a`/`.b` suffix. A pattern that admitted only `.5` silently
                 # dropped the split columns and took every M8 cell with them.
-                if re.fullmatch(r"M\d+(\.5|\.[ab])?", header):
+                if re.fullmatch(r"M\d+(\.5|\.[abc])?", header):
                     columns[index] = milestone_id(header)
                 elif header == "Complete":
                     complete_column = index
@@ -202,7 +202,7 @@ def read_load_summary(path: Path = MATRIX) -> dict[str, Load]:
         # section headings, and this table's row labels all name a milestone, and all three read it
         # with a pattern of their own. Three patterns for one grammar is why the split had to be
         # made three times before the checks went quiet.
-        name = re.match(r"\*\*(M\d+(?:\.5|\.[ab])?)\*\*", row[0])
+        name = re.match(r"\*\*(M\d+(?:\.5|\.[abc])?)\*\*", row[0])
         if name is None:
             continue
         which = row[3].replace("—", "").strip()
@@ -271,7 +271,7 @@ def read_sections(path: Path = ROADMAP) -> dict[str, Section]:
         # pattern that admits only `.5` reads a split milestone's section as a continuation of the
         # one above it, so its whole work table is attributed to the previous milestone — which is
         # how thirty-six of M8.b's tier claims briefly became M7's.
-        heading = re.match(r"^## (M\d+(?:\.5|\.[ab])?) ", line)
+        heading = re.match(r"^## (M\d+(?:\.5|\.[abc])?) ", line)
         if heading is not None:
             close()
             current = milestone_id(heading.group(1))

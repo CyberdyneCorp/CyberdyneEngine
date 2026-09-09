@@ -3,25 +3,42 @@
 Ordered. Section 1 first and alone: it is the spike, it has a failure budget, and six of the sections
 below are built on its answer.
 
-## 1. The spike — one graph IR against seven consumers
+## 1. The spike — RUN, AND IT REFUTED THE PREMISE
 
-- [ ] 1.1 State, per consumer, the semantics its specification requires of an authored graph:
-      `visual-scripting`, `gameplay-abilities-and-effects`, `ai-system`, `animation-and-skinning`,
-      `sequencing-and-cinematics`, `vfx-system`, `camera-system`
-- [ ] 1.2 Measure each against `src/rendering/material/`'s IR — the only compiled-graph
-      implementation in the tree — and record what it expresses, what it could express with a
-      specified extension, and what it cannot
-- [ ] 1.3 Spend against `design.md` §1's failure budget explicitly: name every extension and every
-      escape hatch. **Two escape hatches ends the milestone's premise and re-plans it**
-- [ ] 1.4 Commit the spike's report, as M7's two are committed
+- [x] 1.1 Semantics stated per consumer, from each specification rather than generalised from one
+- [x] 1.2 Measured against `src/rendering/material/`'s IR, the only compiled-graph implementation in
+      the tree
+- [x] 1.3 **Five escape hatches against a budget of two.** One IR cannot serve seven consumers: the
+      material IR is a hash-consed pure-expression DAG whose identity is a content hash, so it has no
+      back edges, cannot express a write, re-sorts commutative operands, deletes a value nothing
+      reads, and evaluates both arms of a select. `visual-scripting`'s own "No universal
+      representation" requirement forbade it by name before the spike ran
+- [x] 1.4 Report committed; `design.md` §1 carries the finding
 
-## 2. The shared graph — `visual-scripting` → W
+## 2. CyberGraph, the expression core, and a lowering each — `visual-scripting` → W
 
-- [ ] 2.1 Shared graph infrastructure, typed pins, stable node identity
-- [ ] 2.2 The IR, and execution backends
-- [ ] 2.3 Async graphs, semantic merge, debugging
-- [ ] 2.4 **No graph is interpreted at runtime** — a test that fails on a per-entity virtual tick in
-      any consumer, not a review that looks for one
+The spike's answer, and its three layers are separable work. **Do not modify
+`src/rendering/material/`**: it is M7's closed work, one extension invalidates its cook keys, and
+re-testing it mid-milestone buys nothing.
+
+- [ ] 2.1 **CyberGraph** — the shared authoring layer every consumer adopts: nodes, typed pins, typed
+      connections, stable identity, layout separated from semantics, deterministic textual source,
+      subgraphs, semantic diff and three-way merge, versioning and migration, opaque preservation of
+      nodes whose plugin is missing, node- and pin-precise diagnostics, the debug map, capability
+      sets, the determinism audit
+- [ ] 2.2 **A shared pure-expression SSA core**, generalised from the material IR by the four named
+      extensions: an open type lattice, an open operation table, declared roots, and a declared phase
+      boundary. Operation and type identity move to TEXT at the same time — the enumerator values are
+      part of every content hash and therefore of every cook key
+- [ ] 2.3 **The core's criterion is an anchor, not a port**: given the material op table and type
+      lattice as a domain, it must reproduce the tree's own reference material at IR digest
+      `f48f3faf395e52fd`, post-pipeline digest `178a3630921e0506` and program digest
+      `7f74500626ea001a`. Hit all three and porting the material compiler later is mechanical
+- [ ] 2.4 A lowering per consumer, each to the form its own specification names, **all compiling and
+      none interpreting**: CyberGraph IR for scripting and abilities, an animation IR with poses as
+      values and a lazily-evaluated state machine, a flat AI instruction stream over a register
+      machine, and a camera rig program on the shared core
+- [ ] 2.5 Execution backends, async graphs, semantic merge and debugging, per `visual-scripting`
 
 ## 3. The gameplay framework — `gameplay-framework` → W
 
@@ -51,18 +68,11 @@ below are built on its answer.
 - [ ] 6.4 Compiled behaviour programs, batched perception, knowledge, environment queries, smart
       objects, AI LOD
 
-## 7. Sequences and cameras — `sequencing-and-cinematics` → W, `camera-system` → W
+## 7. Cameras — `camera-system` → W
 
 - [ ] 7.1 Compiled timelines, exact time, bindings, tracks and authority
 - [ ] 7.2 Batched dispatch, arbitration, capture and restore, seek and skip, preload plans
 - [ ] 7.3 Rig graphs compiled to programs, blending, framing, aim, shake, volumes, cuts
-
-## 8. Effects — `vfx-system` → W
-
-- [ ] 8.1 The graph compiler and IR, GPU-first simulation, derived attribute layout
-- [ ] 8.2 The unified world and scheduler, data interfaces, GPU scene integration, GPU events
-- [ ] 8.3 Budget scalability, and **the determinism firewall**: VFX cannot write gameplay state,
-      proven by a test rather than by a convention
 
 ## 9. The interface — `ui-system` → W, `text-and-fonts` → C, `rendering-2d` → W
 
@@ -72,11 +82,11 @@ below are built on its answer.
 - [ ] 9.4 Shaping, BiDi, line breaking, layout objects, localisation
 - [ ] 9.5 Sprites, ordering, batching, tilemaps, 2D lights and shadows, the screen-space SDF
 
-## 10. Audio and inference — `audio` → C, `ml-inference` → S
+## 10. Audio — `audio` → C
 
-- [ ] 10.1 Steam Audio, acoustic geometry, importance tiers, voice virtualisation, effects,
-      interactive audio
-- [ ] 10.2 Model assets, tensors and sessions, the backend abstraction, **the determinism boundary**
+- [ ] 10.1 Steam Audio behind the engine's own interface, declared in `deps/manifest.toml` and
+      `THIRD_PARTY.md` with a licence identifier and a justification
+- [ ] 10.2 Acoustic geometry, importance tiers, voice virtualisation, effects, interactive audio
 
 ## 11. The debts this milestone inherited
 
@@ -91,11 +101,12 @@ below are built on its answer.
 
 ## 12. The artefact — `samples/08-vertical-slice`
 
-- [ ] 12.1 A level, characters that animate and think, abilities with effects, a cinematic, a
-      heads-up interface, effects, sound and a 2D menu
+- [ ] 12.1 A level, characters that animate and think, abilities with effects, a heads-up
+      interface, sound and a 2D menu. **The cinematic and the particles are M8.c's**, layered onto
+      this same slice rather than a second one
 - [ ] 12.2 8,000 agents and 100 concurrent effects hold their declared budgets
-- [ ] 12.3 Ability activation, sequence playback and animation evaluation are deterministic under
-      the simulation's declared profile
+- [ ] 12.3 Ability activation and animation evaluation are deterministic under the simulation's
+      declared profile
 - [ ] 12.4 Runs from a single recipe; a recorded gap exits non-zero; the headline figure reproduces
 - [ ] 12.5 Commit a screenshot
 

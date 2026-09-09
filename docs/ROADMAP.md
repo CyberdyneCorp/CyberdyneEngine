@@ -788,7 +788,7 @@ renderer M7 built.*
 
 ## M8.b — Systems
 
-*Everything that lowers through one graph.*
+*Everything a game needs to be played.*
 
 **Entry**: M8.a green.
 
@@ -799,22 +799,19 @@ renderer M7 built.*
 | `gameplay-framework` | W | Rules, session fragments, participants and teams, ownership/control/authority, capabilities, tags, phases, spawning, time domains, interaction, features, indexes |
 | `gameplay-abilities-and-effects` | W | Compiled ability programs, attributes and modifiers, effects and stacking, costs and cooldowns, targeting, the activation pipeline |
 | `visual-scripting` | W | Shared graph infrastructure, typed pins, stable identity, the IR, execution backends, async graphs, semantic merge, debugging |
-| `sequencing-and-cinematics` | W | Compiled timelines, exact time, bindings, tracks and authority, batched dispatch, arbitration, capture and restore, seek and skip, preload plans |
 | `animation-and-skinning` | W | Skeletons and bone LOD, clips and compression, the animation graph, compiled programs, batched evaluation, layers and masks, root motion, IK, retargeting, the GPU pose world, pose sharing |
 | `ai-system` | W | Agents as entities, the unified graph with tree/utility/GOAP semantics, compiled behaviour programs, batched perception, knowledge, environment queries, smart objects, AI LOD |
 | `navigation` | W | Navmesh over Recast, runtime updates, streaming, A* and funnel, hierarchical paths, flow fields, off-mesh links, avoidance, crowds |
-| `vfx-system` | W | The graph compiler and IR, GPU-first simulation, derived attribute layout, the unified world and scheduler, data interfaces, GPU scene integration, GPU events, budget scalability |
 | `ui-system` | W | Dedicated element storage, the retained tree, documents, declarative authoring, layout, `.cyss`, data binding, input routing, the layer stack, the widget set, GPU-driven rendering, accessibility |
 | `text-and-fonts` | C | Shaping, BiDi, line breaking, layout objects, localisation |
 | `rendering-2d` | W | Sprites, ordering, batching, tilemaps, 2D lights and shadows, the screen-space SDF |
 | `audio` | C | Steam Audio, acoustic geometry, importance tiers, voice virtualisation, effects, interactive audio |
-| `ml-inference` | S | Model assets, tensors and sessions, the backend abstraction, **the determinism boundary** |
 | `camera-system` | W | Rig graphs compiled to programs, blending, framing, aim, shake, volumes, cuts |
 | `serialization-and-prefabs` | C | **Apply and extract** — pushing an instance's overrides back onto its prefab, and lifting a subtree into a new prefab asset — which is the one requirement between this capability and Complete. Inherited from M8.a's closing gate; it belongs here because it is the same editor-over-the-data-model work as `live-editing` and `editor-viewport-and-gizmos`, both of which complete in this milestone |
 
 **Closing artefact**: `samples/08-vertical-slice` — a playable game: a level, characters that
-animate and think, abilities with effects, a cinematic, a heads-up interface, effects, sound, and a
-2D menu.
+animate and think, abilities with effects, a heads-up interface, sound, and a 2D menu. The cinematic
+and the particles are M8.c's, layered onto this same slice rather than a second one.
 
 **Exit criteria**
 
@@ -823,12 +820,62 @@ animate and think, abilities with effects, a cinematic, a heads-up interface, ef
 - Cost is bounded by configuration: 8,000 agents and 100 concurrent effects hold their budgets
 - Ability activation, sequence playback and animation evaluation are deterministic under the
   simulation's declared profile
-- The determinism firewall holds: VFX and inference cannot write gameplay state, proven by a test
 - Interface accessibility checks pass; the interface holds its frame budget
 
-**Risk spike**: the shared graph infrastructure across seven consumers. If one consumer needs a
-semantic the shared IR cannot express, that is better known before six others are built on it. It
-now carries its own failure budget rather than blocking the authoring work.
+**The spike has run, and it refuted the plan's premise.** One IR cannot serve seven consumers: the
+material IR is a hash-consed pure-expression DAG whose identity is a content hash, so it has no back
+edges, cannot express a write, re-sorts commutative operands, deletes a value nothing reads, and
+evaluates both arms of a select — which animation and AI each forbid by name.
+`visual-scripting`'s own "No universal representation" requirement said so before the spike ran.
+
+**What is built instead**: one authoring layer (CyberGraph — nodes, typed pins, stable identity,
+semantic diff and three-way merge, migration, opaque preservation of unknown plugin nodes) that all
+consumers adopt; one shared pure-expression core generalised from the material IR by four named
+extensions; and a lowering per consumer, each to the form its own specification names, all compiling
+and none interpreting. `src/rendering/material/` is not modified — it is M7's closed work, and the
+generalised core's criterion is reproducing its reference digests instead.
+
+*Reject on sight any later proposal to reach for one IR again because several compilers looks like
+duplication. It was measured, not argued.*
+
+---
+
+## M8.c — Spectacle
+
+*What makes a game look finished, once it already plays.*
+
+**Entry**: M8.b green.
+
+**Why this is separate.** M8.b's spike found that milestone larger than its plan assumed — six
+compilers where one IR had been budgeted — so the scope was reduced before it was built rather than
+after it failed to close. Nothing here is a prerequisite of anything M8.b keeps: `animation` names
+VFX only as a consumer of its curves and its pose world, `camera-system` calls sequences "the
+principal producer of anticipated cuts" and works without one, `gameplay-framework` requires that the
+simulation cannot distinguish a sequence-issued command from any other, and `ml-inference` is
+recorded as "`ai-system`, optionally".
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `vfx-system` | W | The graph compiler and IR, GPU-first simulation, derived attribute layout, the unified world and scheduler, data interfaces, GPU scene integration, GPU events, budget scalability |
+| `sequencing-and-cinematics` | W | Compiled timelines, exact time, bindings, tracks and authority, batched dispatch, arbitration, capture and restore, seek and skip, preload plans |
+| `ml-inference` | S | Model assets, tensors and sessions, the backend abstraction, **the determinism boundary** |
+
+**Closing artefact**: `samples/08-vertical-slice`, extended — the same playable game with particles
+and a cinematic. Extended rather than replaced, because a second slice would prove these systems work
+beside a copy of the game rather than inside it.
+
+**Exit criteria**
+
+- Particles and a sequence run inside the existing slice, holding its frame budget
+- A sequence drives cameras through the camera stack and does not write camera transforms
+- **The determinism firewall holds: VFX and inference cannot write gameplay state, proven by a
+  test.** Moved here with its subjects — a criterion whose subject was deferred is a criterion its
+  milestone satisfies vacuously
+
+**Risk spike**: none new. Both graph consumers lower through the layer M8.b built, and the spike that
+sized that layer already accounted for them.
 
 ---
 
