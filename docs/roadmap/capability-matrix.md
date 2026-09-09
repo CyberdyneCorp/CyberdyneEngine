@@ -34,7 +34,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |   | **C** |  |  | M9 |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |   |  |  |  | M5 |
 | [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |       |  | W | **C** |  |  |  | M8.b |
-| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 33 |  |  |  |  | S |  |  |  |  | S | W | **C** |  |  | M9 |
+| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 34 |  |  |  |  | S |  |  |  |  | S | W | **C** |  |  | M9 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W | **C** |  |  | M9 |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |     | W | **C** |  |  | M9 |
@@ -76,7 +76,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
 | [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 24 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
 | **5 — Simulation** | | | | | | | |  | | | | | | | |
-| [`physics`](../../openspec/specs/physics/spec.md) | 15 |  |  |  |  | W |  |  |  |  | W |   | **C** |  |  | M9 |
+| [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |   | **C** |  |  | M9 |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |     | W |  | **C** |  | M10 |
@@ -85,12 +85,12 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | **6 — Content and tooling** | | | | | | | |  | | | | | | | |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |     | **C** |  |  |  | M8.b |
 | [`ui-system`](../../openspec/specs/ui-system/spec.md) | 25 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
-| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 13 |  |  |  |  |  | W |  |       |  | W | **C** |  |  |  | M8.b |
+| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 15 |  |  |  |  |  | W |  |       |  | W | **C** |  |  |  | M8.b |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | 18 |  |  |  |  |  | S | W |  |  |  |   |  |  | **C** | M11 |
 | [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | 13 |  |  |  |  |  | W |  |  |  |  |   |  |  | **C** | M11 |
 | [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | 12 |  |  |  |  |  | W |  |  |  | W |   |  |  | **C** | M11 |
 | [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | 16 |  |  |  |  |  | W |  |  |  |  |   |  |  | **C** | M11 |
-| [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | 16 |  |  |  |  |  | S | W |  |  |  |   |  |  | **C** | M11 |
+| [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | 17 |  |  |  |  |  | S | W |  |  |  |   |  |  | **C** | M11 |
 | [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  |  |       |     | **C** |  |  |  | M8.b |
 | [`editor-visual-language`](../../openspec/specs/editor-visual-language/spec.md) | 22 |  |  |  |  |  | S | W |  |  |  |   |  |  | **C** | M11 |
 | [`live-editing`](../../openspec/specs/live-editing/spec.md) | 11 |  |  |  |  |  | W |  |  |  |     | **C** |  |  |  | M8.b |

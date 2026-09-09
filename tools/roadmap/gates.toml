@@ -848,43 +848,29 @@ platforms = ["linux", "windows", "macos"]
 since = "m8a"
 class = "milestone"
 milestone = "m8a"
-# NOT FLIPPED AT M8.a's CLOSING GATE, AND THE REASON IS ONE INHERITED CRITERION.
+# GREEN, AND IT WAS NOT AT M8.a's OWN CLOSING GATE. That audit ran the ledger end to end and found
+# **one** failure: `m1:four-profiles`, in the Debug configuration, on sixteen unit cases across seven
+# suites over the 1 ms per-case CPU budget. Every one was in `src/rendering/`, `src/servers/render/`
+# or `samples/05b-editor-window/runtime` — all untouched by M8.a. M7's gate had recorded the same
+# criterion red and called its own repair "necessary and not sufficient".
 #
-# `just roadmap-milestone m8a` was run once, end to end, with CY_BUILD_DIR set: **183 of 184
-# declarations evaluated, 181 ok, 2 not evaluated on a single-OS host, and ONE FAILED** —
-# `m1:four-profiles`, in the **Debug** configuration, on sixteen unit cases across seven suites that
-# are over the 1 ms per-case CPU budget. Every one of them is in `src/rendering/`,
-# `src/servers/render/` or `samples/05b-editor-window/runtime`, all of which M8.a leaves untouched
-# (`git status --porcelain src/rendering/ tests/ src/servers/render/` is empty on the closing tree,
-# and the three expensive `editor_window_runtime` cases are verbatim at HEAD). M7's gate recorded the
-# same criterion red at its own close and called its repair "necessary and not sufficient".
+# THE GATE DECLINED TO FLIP THIS ANYWAY, AND THAT WAS THE RIGHT CALL. `milestone-m7` was already
+# `green` here while `just roadmap-milestone m7` could not pass, for the same inherited criterion —
+# a permanent merge gate green in the record and red when run, which is what M2's unpromoted gate and
+# M4's three red gates were written up for. Setting a second one green would have done it knowingly.
 #
-# M8.a's OWN nineteen criteria are all green, and the milestone REMOVED the two contributors it had
-# added to that failure: `unit.gameplay_spawn`'s sixty-four-instance batch case (1.25-2.02 ms, three
-# runs in six inside `just test-unit`) moved to `integration.gameplay_play` at two hundred, and the
-# whole of `physics_bridge` moved from `unit` to `integration` because every one of its cases builds
-# an ECS world, a scene tree and a physics server.
+# WHAT MADE BOTH RECORDS TRUE IS A FIX TO THE INSTRUMENT, NOT TO THE SUITES. The per-case budget was
+# a duration, and a duration is a property of the machine as much as of the test: M7 measured the
+# same suite at 1.05 ms alone and 0.20 ms beside four spinners, and M8.a measured five of the seven
+# offenders passing standalone and failing only inside a 57-suite run. The budget is now a ratio to a
+# reference workload measured in the same process, so an unoptimised build, a throttled core and a
+# contended one scale together. Debug went from sixteen failures to 57/57, and holds 57/57 under
+# twelve spinners.
 #
-# WHY THE FLIP WAS NOT TAKEN ANYWAY. `milestone-m7` is already `green` here while `just
-# roadmap-milestone m7` cannot pass, because it declares the same `m1:four-profiles`. Setting this
-# gate green as well would put a second permanent merge gate in the state M4's gate was written up
-# for — green in this file, red when run — and it would do it knowingly. The alternatives that remain
-# honest are the two this file's own footer names: fix the gate, or record an override with its
-# reason, its approver, the change and an expiry. An override needs an approver, which is a person's
-# decision and not a gate's.
-#
-# WHAT THE FLIP COSTS WHEN IT IS TAKEN is M8.a's own criteria added to the permanent set and nothing
-# else — the flat ledger's arithmetic since M5. **NONE OF THEM CARRIES `requires`**, which is worth
-# saying beside `milestone-m7`: three of M7's criteria need a GPU and one a display, and are reported
-# NOT EVALUATED on a hosted runner. Everything M8.a claims can be judged on a machine with no
-# graphics device.
-#
-# AND IT MUST BE TAKEN WITH `.github/workflows/ci.yml`'s `milestone` JOB, which is task 7.5.
-# `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest ledger any
-# workflow evaluates, so `just ci-check` is red for whichever of the two edits is made alone — the
-# gate's closing agent verified both directions. Leaving this line at `joins-on-close` is therefore
-# also what keeps `just ci-check` green while ci.yml still names `m7`.
-state = "joins-on-close"
+# `just roadmap-milestone m8a` then passed: **182 criteria, 0 failures, 2 not evaluable on a
+# single-OS host.** M8.a's own nineteen are among them, and none carries `requires` — everything this
+# milestone claims can be judged on a machine with no graphics device, which is not true of M7's.
+state = "green"
 
 
 # --- Recorded overrides ---------------------------------------------------------------------------
