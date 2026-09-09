@@ -83,6 +83,10 @@ enum class EditorMessage : u8 {
     GizmoGeometry = 13,
     /// A view that frames what the runtime is holding, offered once. See `send_view_suggestion`.
     ViewSuggested = 14,
+    /// Press play, pause or stop. M8.a task 5.1; `cy_editor_protocol::Message::Play`.
+    Play = 15,
+    /// What the play session is doing now. `cy_editor_protocol::Message::Playing`.
+    Playing = 16,
     Unknown = 255,
 };
 
@@ -111,7 +115,13 @@ struct EditorRequest {
     /// The editor's ABI, for `Hello`.
     u32 abi_major = 0;
     u32 abi_minor = 0;
-    /// The opaque bytes: a transaction, a pick request, or a gizmo intent, depending on `kind`.
+    /// The opaque bytes: a transaction, a pick request, a gizmo intent, or — for `Play` — the
+    /// state's name as UTF-8 with no terminator, depending on `kind`.
+    ///
+    /// A LENGTH-PREFIXED STRING RATHER THAN AN ENUMERATOR, and the argument is on the protocol's
+    /// own `Message::Play`: a fourth play state added on one side and not the other must be refused
+    /// BY NAME, and a `u8` that fell through a `switch` would be silently treated as the closest
+    /// one. `cy::gameplay::play_state_of` is what refuses it.
     Span<const u8> payload;
 };
 
@@ -162,6 +172,14 @@ public:
                                        const char* remedy) noexcept;
     [[nodiscard]] Status send_picked(u64 request, Span<const u8> candidates) noexcept;
     [[nodiscard]] Status send_gizmo_geometry(u64 request, Span<const u8> layout) noexcept;
+
+    /// What the play session is doing now, and what it did. M8.a task 5.1.
+    ///
+    /// `state` is the word `cy::gameplay::play_state_name` spells — and it is the state now IN
+    /// FORCE, which may not be the one asked for: a runtime that refused to enter play answers with
+    /// "editing" and a `detail` that says why, rather than with a silence the editor would have to
+    /// interpret as either a refusal or a lost connection.
+    [[nodiscard]] Status send_playing(u64 request, const char* state, const char* detail) noexcept;
 
     /// Offer the editor a camera that frames what this runtime is holding. **Once per session.**
     ///

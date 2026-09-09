@@ -49,3 +49,10 @@ cy_add_module(
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
+
+# play/ — spawning and the play session, M8.a section 5. A SEPARATE TARGET on purpose: it needs
+# cy::scene, cy::scene-serialization and cy::physics-bridge, and putting those on THIS target's
+# dependency list would put four modules' headers on tests/test_bypass.cpp's include path, whose
+# whole argument is about what is not reachable from here. It depends on cy::gameplay rather than
+# the other way round, so the list above is unchanged. See play/CMakeLists.txt.
+add_subdirectory(play)

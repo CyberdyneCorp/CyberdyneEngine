@@ -210,26 +210,61 @@ Neither is in this artefact's files.
 | | |
 |---|---|
 | `window.py` | the artefact |
-| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, and the CPU compositor that draws it into the frame |
+| `runtime/` | **the engine on the far end of the transport.** M3's scene and renderer, the viewport publisher, the editor bridge, the gizmo geometry, the CPU compositor that draws it into the frame, and — since M8.a — the editor's own world |
+| `one_world.py` | the M8.a probe: it speaks the editor's protocol to the runtime, creates an object, asks where the gizmo is and picks it there |
 | `project/` | a project with a world in it — three entities in `worlds/city.cyworld`, written by the engine's own authoring schema. Copied into the work directory on every run, so a run never edits it |
 | `CMakeLists.txt` | the CTest entry, and why the runtime is declared before the `CY_BUILD_TESTS` guard |
 
-## What the runtime is a stand-in for
+## One world — what M8.a changed here
 
-Stated here rather than left to be discovered:
+The three bullets this section used to hold were the three things the runtime could not do, and all
+three were the same thing: it held its own scene rather than the editor's world. It holds the world
+now.
 
-* **The runtime holds its own scene, not the editor's world.** It associates each identity the
-  editor names with one of its own objects, in first-seen order, and keeps that association for the
-  session (`runtime/session.h`). A shared world — the editor and the runtime opening the same
-  authoring document — is M7 task 5b.2 and `live-editing`'s at M8.
-* **A `Vec3` field that changed is a translation while the editor's stated gizmo mode is a move.**
-  The identifiers in a transaction are the *document's*, assigned in schema-declaration order, so
-  the runtime cannot know which field is `translation`. The mode is the signal it legitimately has,
-  and it refuses to guess at a scale.
-* **A pick is refused by name.** Engine-side picking needs the draw list the frame produced, and
-  this renderer is M3's: it draws from a scene rather than publishing `GpuInstance` records, so
-  there is nothing for `cy::render::pick_ray` to resolve against. An invented hit is the forbidden
-  pattern `editor-viewport-and-gizmos` names; a refusal the editor can show is the honest answer.
+    cy_editor_window_runtime --project samples/05b-editor-window/project \
+                             --world worlds/city.cyworld --host /tmp/c.sock
+
+`runtime/world_view.h` opens **the same `.cyworld` the editor opens** through
+`cy::scene::serialization::read_world`, and the file's nodes are written into the scene's object
+slots every frame. So:
+
+* **An identity names a node, not the next unused object.** `runtime/session.h`, whose own header
+  called itself a stand-in, is gone. A node's identity is derived here the way `cy_editor_core::ids`
+  derives it — an FNV-1a-128 of the document's asset path and the node's ordinal — so the object the
+  editor selects is the object the gizmo lands on, and an identity from another document names
+  nothing rather than something.
+* **A create creates and a scale scales.** The editor's operation stream is applied by
+  `cy::scene::serialization::apply_transaction`, and the field identifiers in it are the ones the
+  world file's own `type` section declared. There is no gizmo-mode guess left.
+* **A pick is answered.** `WorldView::publish` writes a `GpuInstance` and a `DrawItem` per drawn
+  object out of the same placement the frame was drawn from, and `runtime/pick_wire.cpp` decodes the
+  editor's `PickRequest` and encodes the answer `cy::render::pick_ray` produced.
+
+`one_world.py` drives all three against a running runtime over the editor's own protocol, and is
+the measurement rather than the assertion:
+
+```
+editor-window-runtime: world     4 node(s) presented, 0 overflowed the 64 slots; 1 transaction(s), 2 field(s) applied, 1 created, 0 deleted
+editor-window-runtime: same-frame 1 change(s) measured, worst 0 frame(s) and 1338 us from commit to the frame that carried it
+editor-window-runtime: picking   2 answered, 1 candidate(s) reported
+  gizmo_centre: (320.0, 180.0)
+  candidates: [('0d583fb848ef21ba', 11.03)]
+```
+
+`0d583fb848ef21ba` is the low half of `NodeId::in_document(DocumentId::of_asset(
+"worlds/city.cyworld"), 4)` — the fourth node of that document, which is the one the driver created
+and which the runtime had never heard of when it started.
+
+## What the runtime is still a stand-in for
+
+* **The scene has a fixed number of slots.** `first_light::Scene` is built once and its objects
+  cannot be grown, so the runtime builds it with `kWorldCapacity` box slots and blanks the ones the
+  world does not fill. A world with more nodes than that is reported with both numbers rather than
+  silently truncated.
+* **Every authored node is drawn as the unit box.** A mesh asset per node is `asset-import-pipeline`'s
+  and M8.a's later phases; what this artefact demonstrates is the seam, not the content.
+* **A rotation is rendered as its yaw.** `first_light::Object` holds one angle. The world keeps the
+  whole quaternion and writes it back out unchanged.
 * **The frame reaches the shared image through host memory.** The engine renders on the RHI's device
   and the publisher owns its own, so the frame is read back and uploaded — 106 µs a frame at
   1280x720, measured. `src/backends/viewport/README.md` says what would remove it.

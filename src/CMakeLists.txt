@@ -37,6 +37,14 @@ add_subdirectory(save)
 add_subdirectory(scene)
 add_subdirectory(rendering)
 
+# physics/ is the physics ECS bridge and M8.a section 4: it registers the components
+# src/servers/physics/ declares the layouts for, creates bodies from them, drives `PhysicsStepper`
+# in the `Physics` stage and writes `cy::scene::LocalTransform` back. Layer 4, mirroring
+# rendering/scene/ — which is where src/servers/physics/include/cy/servers/physics/components.h
+# said it would be, in those words, at M4. It is read after scene/ because it consumes `SceneTree`,
+# and before world/ and runtime/, both of which may drive it.
+add_subdirectory(physics)
+
 # world/ is CyberWorld: the spatial and persistence layer above the ECS, and M6 section 3. It is
 # read after scene/ because it declares LAYER scene (4) — there is no `world` rung in
 # `engine-architecture`'s table and src/gameplay/CMakeLists.txt already declined to invent one — and

@@ -42,9 +42,11 @@ cy_add_module(
         src/live_import.cpp
         src/mesh.cpp
         src/model.cpp
+        src/obj.cpp
         src/texture.cpp
         src/options.cpp
         src/pipeline.cpp
+        src/primitive.cpp
         src/report.cpp
         src/sidecar.cpp
         src/unwrap.cpp

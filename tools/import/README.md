@@ -3,9 +3,9 @@
 Layer 7, targets `cy::import` and `cy_import_cli`, headers `<cy/import/*.h>`, namespace `cy::import`.
 M5 tasks 5.1 and 5.2, governed by `asset-import-pipeline` and (for live reload) `live-editing`.
 
-The importer framework and the two importers M5 names: a source file in, cooked sub-assets and two
-sidecars out, with a content-addressed cache in the middle so that the second run of a project costs
-a file open per asset rather than a re-cook.
+The importer framework and every importer this build ships — glTF, FBX, OBJ, textures and generated
+primitives: a source file in, cooked sub-assets and two sidecars out, with a content-addressed cache
+in the middle so that the second run of a project costs a file open per asset rather than a re-cook.
 
 ```
 digest    the source, and build the derivation key from it, the TOOLCHAIN THAT COMPILED THIS
@@ -30,6 +30,8 @@ report    what happened, with the reason, per asset and for the run
 | `texture.h` | Image decoding, format selection from declared usage, mip generation in the correct colour space, alpha coverage, and the mistake detector |
 | `gltf.h` | glTF 2.0 and GLB, and the two cooked payload formats a model import produces |
 | `fbx.h` | FBX via ufbx: the same interface, the same option names, and every post-parse step shared with `gltf.h` through `model.h` |
+| `obj.h` | Wavefront OBJ and its `.mtl`: the same interface and the same option names again, with no third-party parser, and the three steps the format cannot express DECLARED rather than warned about |
+| `primitive.h` | Generated primitives — box, sphere, cylinder, plane and capsule — as an importer over a `.cyprim` source file, so a generated mesh and an imported one differ in nothing after step 1 |
 | `json.h` | A strict JSON reader, written to be deleted when a glTF dependency is integrated |
 | `pipeline.h` | The driver: the cache, the sidecars, the parallel phase, cancellation and the report |
 | `report.h` | Per-asset rows and the project-level summary `asset-import-pipeline` asks for |
@@ -103,6 +105,49 @@ the BUILD recording it. Put together, a glTF's external `.bin` is a declared dep
 so editing it invalidates the node — which is the whole point of a derivation graph and is what
 running the importer beside the graph could not give.
 
+## What M8.a added
+
+**OBJ, with its `.mtl`** (task 3.2). `src/obj.cpp` parses the format and does nothing else: welding,
+normal and tangent generation, the three optimisers, the level-of-detail chain and collision from the
+naming convention are `model.h`'s and are the same code the glTF and FBX importers run. That sharing
+is the reason a quad exported to all three formats welds to one vertex count, and `test_obj.cpp`
+asserts the option schema matches BOTH of the others name for name, because the three lists are
+edited in three files.
+
+There is no third-party parser and `deps/manifest.toml` gains nothing. OBJ is a line-based ASCII
+format with eight statements that matter; a dependency for it would be larger than the parser. That
+is a judgement about this format, not a policy — ufbx and xatlas are still the right call for theirs.
+
+**A format's absent steps are declared, not warned about** (task 3.3). `asset-import-pipeline` now
+states the rule generally: "A step skipped for that reason is not a warning about the file and SHALL
+NOT be reported as one." An OBJ carries no rig, no animation and no scene graph, so it reaches steps
+1-6 and 9 and not 7, 8 or 10 — and an importer that raised three warnings per file would train every
+project to ignore its warnings.
+
+The mechanism is `ImporterInfo::steps`, a declared set, with `ImportReport::format` naming what is
+missing from it under its own heading. It is on the IMPORTER rather than in a per-import diagnostic
+for a reason that only shows up on the second run: diagnostics are deliberately not bundled into the
+cache (see `pipeline.h`), so a per-import diagnostic would vanish on a cache hit and the report would
+change without the content changing.
+
+```
+steps not reached (a format's own limits, not a defect in the file):
+  obj: 7 (import skeletons), 8 (import animations), 10 (produce a prefab of the hierarchy)
+```
+
+**One key and one cache, with a third format in it** (task 3.4). OBJ builds no key of its own: it
+goes through `import_derivation_key` like everything else, which is the function M7 repaired.
+`test_pipeline.cpp`'s `key: the three model formats share one cache and never serve each other's
+bytes` cooks a glTF, an FBX and an OBJ through one `DerivedCache` and requires three misses, three
+distinct identities, then three hits with each row still naming its own importer. M6's gate measured
+that going wrong as 1 hit / 0 miss, and adding a format is exactly when it would happen again.
+
+**`--json`** (task 3.1). `cy_import_cli` can print the run as JSON instead of the human report:
+per source, the importer, the identity, the cache outcome, the counts, the absent steps, and the
+sub-asset name-to-identity table read back out of the `.import` record. It exists because the
+editor's `asset.import` command has to know WHICH sub-assets an import produced, and a tool boundary
+crossed by prose is a source of bugs rather than an interface.
+
 ## What it deliberately does not do
 
 * **It links no simplification library or block encoder.** meshoptimizer and the BC7/ASTC encoders
@@ -122,6 +167,37 @@ running the importer beside the graph could not give.
 * **It does not produce a `cy::scene` prefab.** A prefab is a layer-4 concept over an ECS world, and
   a layer-7 tool that constructed one would have to instantiate a world to write a file. The importer
   produces a documented flat node table; turning it into a prefab is the cook step's.
+
+## What M8.a added: a primitive is an import (task 2.1)
+
+**`src/primitive.cpp` generates the five shapes `editor-ui-ux` names, and it is an `Importer` doing
+it.** A `.cyprim` is a source asset in the project — six lines of text naming a shape and its
+parameters — and it is found by extension in the same `ImporterRegistry`, keyed by the same
+`import_derivation_key`, stored in the same `DerivedCache` and published through the same two
+sidecars as a glTF. `register_builtin_importers` registers it, so a caller gets `.cyprim` without
+asking for it.
+
+That arrangement is the requirement rather than a convenience. `design.md` §2 of
+`implement-m8a-authorable` refuses a `PrimitiveNode` with a shape enum and says why: "every later
+system must be unable to tell the difference, and the way to guarantee that is to give it nothing to
+tell apart". After the parse there is only one code path — `finish_mesh`, `emit_mesh_with_lods`,
+`emit_collision`, `emit_prefab`, in `model.h`'s order, under option names the model importers
+already declare — and `tests/test_primitive.cpp` asserts the consequence rather than the intention:
+a generated box and a glTF carrying the same geometry produce **byte-identical cooked mesh
+payloads**.
+
+Two things worth knowing before changing it:
+
+* **Collision is the importers' naming convention, not a parameter.** A primitive named
+  `Crate_collision` becomes a collider and is not drawn, because that is what a model importer does
+  with a node of that name. A `collision:` line in the source would have been friendlier and would
+  have been the first place a downstream system could tell a generated mesh from an imported one.
+* **The editor writes this format, in Rust.** `cy_editor_services::primitives` composes the same
+  text, and the source bytes are hashed into the derivation key — so the two spellings must agree
+  byte for byte. The identical golden string is pinned in `tests/test_primitive.cpp` and in
+  `editor/crates/cy-editor-services/tests/primitives_are_ordinary_mesh_instances.rs`; a change to
+  either turns the other red. Numbers are written with up to six decimals, trailing zeros trimmed,
+  because that is a rule both languages implement identically and neither's default formatter does.
 
 ## Two sidecars, and why
 

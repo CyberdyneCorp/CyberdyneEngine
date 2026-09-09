@@ -43,6 +43,15 @@ pub fn register(registry: &mut Registry) -> Result<()> {
     crate::manipulate::register(registry)?;
     // Writing source, building it, reloading it, and play. See `crate::authoring`.
     crate::authoring::register(registry)?;
+    // Creating a box, a sphere, a cylinder, a plane or a capsule — as a generated source asset and
+    // an ordinary mesh instance. See `crate::primitives`.
+    crate::primitives::register(registry)?;
+    // Importing a source asset from inside the editor, and landing it in the world. See
+    // `crate::assets`.
+    crate::assets::register(registry)?;
+    // Adding a physics body and its collider to an entity, as one undoable transaction. See
+    // `crate::bodies`.
+    crate::bodies::register(registry)?;
     Ok(())
 }
 
@@ -439,9 +448,13 @@ mod tests {
         // nineteen debug views and three switches — and with the authoring loop: three stated
         // manipulations in `crate::manipulate`, and two source commands, a build, a reload and
         // three play states in `crate::authoring`.
+        // M8.a grew it again: two primitive commands in `crate::primitives`
+        // (`scene.create-primitive` and `asset.write-primitive`), `asset.import` in
+        // `crate::assets`, and three body commands in `crate::bodies` (`scene.add-body`,
+        // `scene.add-collider` and `scene.remove-body`).
         let mut registry = Registry::new();
         register(&mut registry).unwrap();
-        assert_eq!(registry.len(), 6 + 37 + 3 + 7);
+        assert_eq!(registry.len(), 6 + 37 + 3 + 7 + 2 + 1 + 3);
         for metadata in registry.all() {
             metadata.validate().unwrap();
             assert!(!metadata.description.is_empty());

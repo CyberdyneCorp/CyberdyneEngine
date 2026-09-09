@@ -94,10 +94,18 @@ EXPECTED_SUB_ASSETS = (
 
 # The commands the session would use if the editor had them, with what each would demonstrate. Every
 # run prints which are present and which are not; see the module note.
+#
+# A `None` invocation means REPORT ITS PRESENCE AND DO NOT RUN IT HERE. `asset.import` landed at M8.a
+# and is the first entry to need that: this session runs the editor with the REPOSITORY as its
+# working directory, so the editor has no project open and `assets/lamppost.gltf` is not a path it
+# can resolve — act 2 already cooks that file, by running `cy_import_cli` against the sample's own
+# project. Where the command itself is exercised is
+# `editor/crates/cy-editor-services/tests/importing_from_inside_the_editor.rs`, which drives it
+# through the registry and asserts the entity it creates.
 OPTIONAL_STEPS = (
     ("viewport.transform", "scene.create-entity", "a gizmo drag, as a transform transaction"),
     ("runtime.play", "runtime.play", "entering play mode"),
-    ("asset.import", "asset.import source=assets/lamppost.gltf", "importing from inside the editor"),
+    ("asset.import", None, "importing from inside the editor"),
 )
 
 
@@ -423,7 +431,8 @@ def act_survive(binaries: Binaries, work: Path, report: Report, kill_runtime: bo
                 f"{editor.poll() is None}")
             expect(editor.poll() is None, "the editor outlives the runtime")
         # Only now does the act reach the editor, so every command in it runs after the kill.
-        extra = [line for identifier, line, _ in OPTIONAL_STEPS if identifier in report.present]
+        extra = [line for identifier, line, _ in OPTIONAL_STEPS
+                 if line is not None and identifier in report.present]
         fifo.write_text(act_from(SAMPLE / "acts/02-manipulate.cyscript", extra), encoding="utf-8")
         session = EditorRun(exit_code=editor.wait(timeout=120), output=editor.stdout.read())
     finally:

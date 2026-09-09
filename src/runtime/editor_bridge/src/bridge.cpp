@@ -178,6 +178,11 @@ private:
             out.kind = EditorMessage::GizmoIntent;
             return reader.u64_value(out.request) && reader.u64_value(out.viewport) &&
                    reader.byte_span(out.payload);
+        case static_cast<u8>(EditorMessage::Play):
+            out.kind = EditorMessage::Play;
+            // The state's name lands in `payload`, because a length-prefixed string and a
+            // length-prefixed byte string are the same three lines on the wire. See the field.
+            return reader.u64_value(out.request) && reader.byte_span(out.payload);
         default:
             // A tag this build does not know is REPORTED rather than closing the connection: the
             // editor is entitled to be newer, and a message a runtime cannot answer is a missing
@@ -221,6 +226,10 @@ const char* editor_message_name(EditorMessage message) noexcept {
             return "gizmo-geometry";
         case EditorMessage::ViewSuggested:
             return "view-suggested";
+        case EditorMessage::Play:
+            return "play";
+        case EditorMessage::Playing:
+            return "playing";
         case EditorMessage::Unknown:
             break;
     }
@@ -508,6 +517,23 @@ Status EditorBridge::send_rejected(u64 request, const char* reason, const char* 
         return written;
     }
     if (Status written = writer.text(remedy); !written) {
+        return written;
+    }
+    return send(outgoing_.span());
+}
+
+Status EditorBridge::send_playing(u64 request, const char* state, const char* detail) noexcept {
+    Writer writer(outgoing_);
+    if (Status written = writer.u8_value(static_cast<u8>(EditorMessage::Playing)); !written) {
+        return written;
+    }
+    if (Status written = writer.u64_value(request); !written) {
+        return written;
+    }
+    if (Status written = writer.text(state); !written) {
+        return written;
+    }
+    if (Status written = writer.text(detail); !written) {
         return written;
     }
     return send(outgoing_.span());

@@ -1,6 +1,7 @@
 #include <cy/import/importer.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace cy::import {
@@ -89,6 +90,67 @@ const char* import_severity_name(ImportSeverity severity) noexcept {
             return "error";
     }
     return "info";
+}
+
+const char* model_import_step_name(ModelImportStep step) noexcept {
+    switch (step) {
+        case ModelImportStep::Parse:
+            return "parse and convert to engine coordinate conventions";
+        case ModelImportStep::Meshes:
+            return "build meshes, split by material and welded";
+        case ModelImportStep::GenerateMissing:
+            return "generate missing normals, tangents and lightmap coordinates";
+        case ModelImportStep::Optimise:
+            return "optimise for the vertex cache, overdraw and fetch";
+        case ModelImportStep::Lods:
+            return "generate the level-of-detail chain";
+        case ModelImportStep::Collision:
+            return "generate collision";
+        case ModelImportStep::Skeletons:
+            return "import skeletons";
+        case ModelImportStep::Animations:
+            return "import animations";
+        case ModelImportStep::Materials:
+            return "import materials";
+        case ModelImportStep::Prefab:
+            return "produce a prefab of the hierarchy";
+    }
+    return "an unnamed step";
+}
+
+usize format_absent_model_steps(ModelImportStepSet set, char* out, usize capacity) noexcept {
+    if (out == nullptr || capacity == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (set == 0) {
+        return 0;
+    }
+    usize written = 0;
+    for (u32 index = 0; index < kModelImportStepCount; ++index) {
+        const auto step = static_cast<ModelImportStep>(index);
+        if (reaches(set, step)) {
+            continue;
+        }
+        // Two writes rather than one `snprintf` of the whole list, so that a list that does not fit
+        // stops at a whole entry instead of half of one — a truncated "8 (import anim" reads as a
+        // step nobody can look up.
+        char entry[128] = {};
+        const int length =
+            std::snprintf(entry, sizeof(entry), "%s%u (%s)", written == 0 ? "" : ", ",
+                          model_import_step_number(step), model_import_step_name(step));
+        if (length <= 0) {
+            continue;
+        }
+        const auto size = static_cast<usize>(length);
+        if (written + size + 1 > capacity) {
+            break;
+        }
+        std::memcpy(out + written, entry, size);
+        written += size;
+        out[written] = '\0';
+    }
+    return written;
 }
 
 std::string_view SubAsset::view() const noexcept {

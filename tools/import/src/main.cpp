@@ -9,9 +9,11 @@
 // It is the same split tools/cook/ made, for the same reason.
 
 #include <cy/core/assets/derived_cache.h>
+#include <cy/core/assets/file.h>
 #include <cy/core/assets/path.h>
 #include <cy/core/jobs/job_system.h>
 #include <cy/import/pipeline.h>
+#include <cy/import/sidecar.h>
 
 #include <cstdio>
 #include <cstring>
@@ -40,6 +42,8 @@ constexpr const char* kUsage =
     "                    two cold builds of one project produce different bytes.\n"
     "  --jobs N          worker threads for the import phase (default: the machine's)\n"
     "  --list-importers  print what this build can import, with each importer's options\n"
+    "  --json            print the run as JSON on stdout instead of the human report, for a\n"
+    "                    caller that has to act on it. What the editor's asset.import uses.\n"
     "  --help            this text\n";
 
 /// Print every importer and every option it declares, which is what a person or a machine caller
@@ -120,6 +124,125 @@ void list_importers(const cy::import::ImporterRegistry& registry) {
     return true;
 }
 
+/// Write a JSON string body, escaping what a report row can actually contain.
+///
+/// A path, a diagnostic and an importer name are the only strings that reach this, so the escape
+/// set is the one JSON requires of them rather than a full encoder: quote, backslash and the
+/// control characters. A caller that fed it arbitrary bytes would get valid JSON with the bytes
+/// replaced, which is the right failure for a diagnostic.
+void put_json_string(const char* text) {
+    std::fputc('"', stdout);
+    for (const char* at = text; *at != '\0'; ++at) {
+        const auto character = static_cast<unsigned char>(*at);
+        if (character == '"' || character == '\\') {
+            std::fprintf(stdout, "\\%c", *at);
+        } else if (character < 0x20) {
+            std::fprintf(stdout, "\\u%04x", character);
+        } else {
+            std::fputc(*at, stdout);
+        }
+    }
+    std::fputc('"', stdout);
+}
+
+/// The sub-asset name-to-id table this source's `.import` record holds, or nothing when it has
+/// none.
+///
+/// Read back rather than carried out of the pipeline, because the record IS the authority: it is
+/// what makes a reference survive a re-import, and a second copy of the table inside the tool would
+/// be a second thing that could disagree with the file a review reads.
+void print_sub_assets(const std::string& project, const cy::assets::VirtualPath& source,
+                      const cy::import::ImporterRegistry& registry) {
+    std::fputs(",\n    \"assets\": [", stdout);
+    cy::Expected<cy::assets::VirtualPath, cy::Error> record_path =
+        cy::import::import_record_path_for(source);
+    if (!record_path) {
+        std::fputs("]", stdout);
+        return;
+    }
+    std::string native = project;
+    native += "/";
+    native += record_path.value().view();
+    cy::Array<cy::u8> bytes;
+    if (!cy::assets::fs::read_whole(native.c_str(), bytes)) {
+        std::fputs("]", stdout);
+        return;
+    }
+    const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    // The options are not wanted here, and passing a null schema is how `parse` says so — it reads
+    // the identity and the sub-assets and skips the option values.
+    cy::Expected<cy::import::ImportRecord, cy::Error> record =
+        cy::import::ImportRecord::parse(text, nullptr);
+    if (!record) {
+        std::fputs("]", stdout);
+        return;
+    }
+    (void)registry;
+    for (cy::usize index = 0; index < record.value().binding_count(); ++index) {
+        const std::string name(record.value().binding_name(index));
+        char id_text[cy::AssetId::kTextLength + 1] = {};
+        (void)record.value().binding_id(index).format(id_text);
+        std::fputs(index == 0 ? "\n      {\"name\": " : ",\n      {\"name\": ", stdout);
+        put_json_string(name.c_str());
+        std::fputs(", \"id\": ", stdout);
+        put_json_string(id_text);
+        std::fputs("}", stdout);
+    }
+    std::fputs(record.value().binding_count() == 0 ? "]" : "\n    ]", stdout);
+}
+
+/// The whole run, as JSON on stdout.
+///
+/// The human report is a paragraph a person reads; this is the same facts in the shape a caller
+/// acts on. It exists because `asset.import` — the editor command M8.a task 3.1 adds — has to know
+/// WHICH sub-assets an import produced and what identity each one holds, and parsing a paragraph
+/// for that is how a tool boundary becomes a source of bugs.
+void print_json(const cy::import::ImportPipeline& pipeline, const std::string& project,
+                const cy::Array<cy::assets::VirtualPath>& sources,
+                const cy::import::ImporterRegistry& registry) {
+    std::fputs("{\n  \"sources\": [", stdout);
+    const cy::Span<const cy::import::AssetImportOutcome> rows = pipeline.report().rows();
+    for (cy::usize index = 0; index < rows.size(); ++index) {
+        const cy::import::AssetImportOutcome& row = rows[index];
+        char id_text[cy::AssetId::kTextLength + 1] = {};
+        (void)row.id.format(id_text);
+        char absent[512] = {};
+        (void)cy::import::format_absent_model_steps(row.steps, absent, sizeof(absent));
+
+        std::fputs(index == 0 ? "\n    {\n" : ",\n    {\n", stdout);
+        std::fputs("      \"source\": ", stdout);
+        put_json_string(row.source);
+        std::fputs(",\n      \"importer\": ", stdout);
+        put_json_string(row.importer);
+        std::fputs(",\n      \"id\": ", stdout);
+        put_json_string(id_text);
+        std::fputs(",\n      \"cache\": ", stdout);
+        put_json_string(cy::assets::cache_outcome_name(row.cache));
+        std::fputs(",\n      \"cache_reason\": ", stdout);
+        put_json_string(row.cache_reason);
+        std::fprintf(stdout,
+                     ",\n      \"sub_assets\": %zu,\n      \"warnings\": %zu,\n"
+                     "      \"errors\": %zu,\n      \"cooked_bytes\": %zu,\n"
+                     "      \"minted_ids\": %zu,\n      \"duration_micros\": %llu",
+                     row.sub_assets, row.warnings, row.errors, row.cooked_bytes, row.minted_ids,
+                     static_cast<unsigned long long>(row.duration_micros));
+        // Named rather than warned about: a format's absent capability is not a defect in the file.
+        // Empty when the importer reaches every step, and absent-as-a-concept when the sequence
+        // does not apply to it at all — which is why this is a string and not a list of numbers.
+        std::fputs(",\n      \"steps_not_reached\": ", stdout);
+        put_json_string(absent);
+        if (index < sources.size()) {
+            print_sub_assets(project, sources[index], registry);
+        }
+        std::fputs("\n    }", stdout);
+    }
+    std::fprintf(stdout,
+                 "\n  ],\n  \"warnings\": %zu,\n  \"errors\": %zu,\n  \"cache_hits\": %zu,\n"
+                 "  \"cache_misses\": %zu\n}\n",
+                 pipeline.report().total_warnings(), pipeline.report().total_errors(),
+                 pipeline.report().cache_hits(), pipeline.report().cache_misses());
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -137,6 +260,7 @@ int main(int argc, char** argv) {
     bool write_shared = false;
     bool ignore_cache = false;
     bool listing = false;
+    bool as_json = false;
     unsigned worker_count = 0;
 
     for (int index = 1; index < argc; ++index) {
@@ -154,6 +278,8 @@ int main(int argc, char** argv) {
         }
         if (argument == "--list-importers") {
             listing = true;
+        } else if (argument == "--json") {
+            as_json = true;
         } else if (argument == "--project") {
             const char* value = next("--project");
             if (value == nullptr) {
@@ -332,8 +458,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::vector<char> text(static_cast<std::size_t>(64) * 1024, '\0');
-    (void)pipeline.report().format(text.data(), text.size());
-    std::fputs(text.data(), stdout);
+    if (as_json) {
+        print_json(pipeline, project, paths, registry);
+    } else {
+        std::vector<char> text(static_cast<std::size_t>(64) * 1024, '\0');
+        (void)pipeline.report().format(text.data(), text.size());
+        std::fputs(text.data(), stdout);
+    }
     return pipeline.report().total_errors() == 0 ? 0 : 1;
 }

@@ -1,0 +1,6 @@
+{
+  "name": "Authoring",
+  "engine": "CyberEngine",
+  "scripts": "game",
+  "worlds": "worlds"
+}

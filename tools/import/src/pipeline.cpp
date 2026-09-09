@@ -6,6 +6,8 @@
 #include <cy/core/jobs/parallel.h>
 #include <cy/import/fbx.h>
 #include <cy/import/gltf.h>
+#include <cy/import/obj.h>
+#include <cy/import/primitive.h>
 #include <cy/import/texture.h>
 
 #include <chrono>
@@ -286,6 +288,10 @@ Status ImportPipeline::prepare(const assets::VirtualPath& source, const ImportSe
     }
     const ImporterInfo info = out.importer->info();
     copy_into(out.outcome.importer, sizeof(out.outcome.importer), info.name);
+    // A property of the FORMAT, copied onto every row so that a cache HIT reports the same absent
+    // steps a miss does — diagnostics are not bundled, so a per-import diagnostic would say nothing
+    // on the second run of an unchanged project. M8.a task 3.3.
+    out.outcome.steps = info.steps;
 
     char native[assets::kMaxPathLength * 2] = {};
     if (Status joined = join_native(project_root_, source.view(), native, sizeof(native));
@@ -809,7 +815,9 @@ Expected<usize, Error> ImportPipeline::import_all(Span<const assets::VirtualPath
 namespace {
 GltfImporter g_gltf;
 FbxImporter g_fbx;
+ObjImporter g_obj;
 TextureImporter g_texture;
+PrimitiveImporter g_primitive;
 }  // namespace
 
 Status register_builtin_importers(ImporterRegistry& registry) noexcept {
@@ -820,6 +828,20 @@ Status register_builtin_importers(ImporterRegistry& registry) noexcept {
         return registered;
     }
     if (Status registered = registry.register_importer(&g_fbx); !registered) {
+        return registered;
+    }
+    // M8.a task 3.2. OBJ joins the other two model importers in the SAME registry, so it reaches
+    // the same pipeline, the same `import_derivation_key` and the same `DerivedCache` — which is
+    // task 3.4, and is the property M6's gate measured going wrong when two importer binaries with
+    // two keys shared one cache. There is nowhere here to put a second key.
+    if (Status registered = registry.register_importer(&g_obj); !registered) {
+        return registered;
+    }
+    // M8.a task 2.1. A generated primitive is registered here, beside the three that parse a file,
+    // because that is what makes it indistinguishable from them: one registry, one lookup by
+    // extension, one derivation key. A caller that builds a registry gets `.cyprim` without asking
+    // for it, which is what "a delivered feature is on by default" means for this one.
+    if (Status registered = registry.register_importer(&g_primitive); !registered) {
         return registered;
     }
     return registry.register_importer(&g_texture);

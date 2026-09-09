@@ -108,12 +108,14 @@ Status finish_mesh(MeshData& mesh, const ModelBuildOptions& options, ImportResul
 }
 
 Status emit_mesh_with_lods(const MeshData& mesh, std::string_view name,
-                           const ModelBuildOptions& options, ImportResult& out) noexcept {
+                           const ModelBuildOptions& options, ImportResult& out,
+                           bool primary) noexcept {
     Array<u8> payload;
     if (Status written = write_cooked_mesh(mesh, payload); !written) {
         return written;
     }
-    if (Status added = out.add(assets::AssetKind::Mesh, name, std::move(payload), false); !added) {
+    if (Status added = out.add(assets::AssetKind::Mesh, name, std::move(payload), primary);
+        !added) {
         return added;
     }
 

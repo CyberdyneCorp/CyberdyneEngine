@@ -29,8 +29,23 @@ function(cy_editor_window_runtime_declare_tests)
         SOURCES
             "${tests_dir}/test_runtime.cpp"
             "${tests_dir}/../overlay.cpp"
-            "${tests_dir}/../session.cpp"
+            "${tests_dir}/../pick_wire.cpp"
         DEPENDENCIES cy::servers-render)
+
+    # ONE WORLD, END TO END WITHOUT A DEVICE. M8.a tasks 1.1 and 1.4: open the world the editor
+    # opened, apply the transactions the editor sends, and resolve a pick against the records the
+    # frame produced. It is `integration` rather than `unit` because it builds a scene with 64 box
+    # slots and reads a file, which is more than a millisecond of an idle machine's CPU — the same
+    # reason `editor_window_overlay` is, and its note says the rest.
+    cy_add_test(
+        NAME editor_window_one_world
+        KIND integration
+        SOURCES
+            "${tests_dir}/test_one_world.cpp"
+            "${tests_dir}/../world_view.cpp"
+        DEPENDENCIES cy::servers-render cy::scene-serialization cy::scene cy::sample-first-light
+        DEFINITIONS
+            "CY_SAMPLE_PROJECT=\"${tests_dir}/../../project\"")
 
     # The one case in this directory that does not fit a millisecond, and the file says why it
     # cannot be made to. M7's closing gate measured it at 0.81 to 0.98 ms of CPU in the Debug
@@ -43,7 +58,8 @@ function(cy_editor_window_runtime_declare_tests)
             "${tests_dir}/../overlay.cpp"
         DEPENDENCIES cy::servers-render)
 
-    foreach(target cy_test_unit_editor_window_runtime cy_test_integration_editor_window_overlay)
+    foreach(target cy_test_unit_editor_window_runtime cy_test_integration_editor_window_overlay
+                   cy_test_integration_editor_window_one_world)
         target_include_directories(${target} PRIVATE "${tests_dir}/..")
     endforeach()
 endfunction()

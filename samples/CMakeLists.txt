@@ -69,3 +69,13 @@ add_subdirectory(06-open-world)
 # is what makes a recorded gap a non-zero exit. Its CMakeLists.txt argues the shape and declares
 # nothing where python3 is absent.
 add_subdirectory(07-fidelity)
+# M8.a's artefact is a SEVENTH shape, and the split is the milestone's own claim: the editor has to
+# do it, and somebody has to measure what happened. `authoring.py` drives a real editor and a real
+# engine runtime over the editor's control socket — create a box and a sphere, place one above the
+# other, add a body to each, press play, stop, undo back to empty — and `cy_sample_authoring` plays
+# the SAME authored world headlessly and says how far the sphere fell, whether it came to rest where
+# the two colliders say it should, and whether stopping put the file back byte for byte. The runtime
+# counts sessions and ticks; it does not count metres, which is why there are two programs and not
+# one. Its CMakeLists.txt argues the shape and declares nothing where python3, cargo or just is
+# absent.
+add_subdirectory(08a-authoring)

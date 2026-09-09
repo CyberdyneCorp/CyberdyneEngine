@@ -102,7 +102,7 @@ fn host(context: &mut dyn CommandContext) -> Result<&mut dyn cy_editor_commands:
 /// documents, **which directories** ... Operations outside that scope SHALL be refused with the
 /// scope as the reason." The directories are the connection's, carried on the context for the
 /// duration of the invocation — see `crate::editor::Editor::invoke`.
-fn within_scope(context: &dyn CommandContext, path: &str) -> Result<()> {
+pub(crate) fn within_scope(context: &dyn CommandContext, path: &str) -> Result<()> {
     let Some((scope, directories)) = context.permitted_paths() else {
         return Ok(());
     };

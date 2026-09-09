@@ -25,7 +25,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod assets;
 pub mod authoring;
+pub mod bodies;
 pub mod builtin;
 pub mod documents;
 pub mod editor;
@@ -35,6 +37,7 @@ pub mod mirror;
 pub mod notifications;
 pub mod operations;
 pub mod picking;
+pub mod primitives;
 pub mod project;
 pub mod runtime;
 pub mod selection;

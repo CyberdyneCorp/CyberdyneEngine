@@ -48,6 +48,8 @@ cy_add_module(
         src/overrides.cpp
         src/resolve.cpp
         src/spawn.cpp
+        src/world_transaction.cpp
+        src/worldfile.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-serialize cy::core-math cy::core-reflect cy::ecs)
 

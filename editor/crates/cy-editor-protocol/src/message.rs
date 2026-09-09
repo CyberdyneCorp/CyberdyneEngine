@@ -241,6 +241,40 @@ pub enum Message {
         /// A `cy_editor_viewport::layout::GizmoLayout`, encoded by that module.
         layout: Vec<u8>,
     },
+    /// Press play, pause, or stop. M8.a task 5.1.
+    ///
+    /// --- WHY PLAY IS A MESSAGE AND NOT A FLAG ON THE NEXT APPLY -----------------------------------
+    ///
+    /// Before this, `play.enter` set `cy_editor_viewport::play::PlayState` on every viewport and
+    /// told the runtime nothing — so pressing play changed a badge and simulated nothing, which is
+    /// what design.md §4 means by "today it reports `hosting: NoRuntime`". Entering play is a thing
+    /// the RUNTIME does: it builds a simulation from the authored world, steps it, and puts the
+    /// world back when play ends (`cy::gameplay::PlaySession`). None of that is expressible as an
+    /// attribute of an edit.
+    ///
+    /// `state` is the word `cy::gameplay::play_state_name` spells — "editing", "playing" or
+    /// "paused" — rather than a number, for the reason `ApplyWhen` is a number and this is not: a
+    /// fourth state added on one side and not the other must be REFUSED by name, and a `u8` that
+    /// fell through a match would be silently treated as the closest one.
+    Play {
+        /// The request's identity, so the answer can be paired with it.
+        request: RequestId,
+        /// The state the editor wants: `editing`, `playing` or `paused`.
+        state: String,
+    },
+    /// What the runtime's play session is doing now, and what it did.
+    ///
+    /// Sent in answer to [`Message::Play`] and never unprompted, so a runtime cannot decide on its
+    /// own that a session has ended — a designer who pressed play and found the editor back in
+    /// authoring mode with no action of their own would have no way to tell that from a crash.
+    Playing {
+        /// Which request this answers.
+        request: RequestId,
+        /// The state now in force, which may not be the one asked for when the runtime refused.
+        state: String,
+        /// One line for a person: how many entities and bodies the session built, or why not.
+        detail: String,
+    },
 }
 
 impl Message {
@@ -248,13 +282,22 @@ impl Message {
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = Writer::new();
-        // TWO FUNCTIONS RATHER THAN ONE MATCH, because the message set has grown past the point
-        // where one function of it can be read in a sitting. The split is the protocol's own: the
-        // first group opens and keeps a connection, the second does work on a world. A message that
-        // belongs to neither would fail to encode loudly, which is why the fall-through is a
-        // debug assertion rather than a silent empty frame.
-        if !self.write_connection(&mut writer) {
-            self.write_work(&mut writer);
+        // THREE FUNCTIONS RATHER THAN ONE MATCH, because the message set has grown past the point
+        // where one function of it can be read in a sitting — and past the point where two can:
+        // M8.a's play pair took `write_work` over the hundred lines clippy's `too_many_lines`
+        // allows, which is the same observation with a number on it. The split is the protocol's
+        // own: the first group opens and keeps a connection, the second does work on a world, the
+        // third starts and stops a simulation of it. A message that belongs to none would fail to
+        // encode loudly, which is why the fall-through is a debug assertion rather than a silent
+        // empty frame.
+        if !self.write_connection(&mut writer)
+            && !self.write_work(&mut writer)
+            && !self.write_play(&mut writer)
+        {
+            debug_assert!(
+                false,
+                "{self:?} belongs to no message group and would encode as an empty frame"
+            );
         }
         writer.finish()
     }
@@ -320,7 +363,8 @@ impl Message {
     }
 
     /// Everything that acts on a world: a change, its echo, a refusal, a reload, a pick.
-    fn write_work(&self, writer: &mut Writer) {
+    /// `true` when this message was one of them.
+    fn write_work(&self, writer: &mut Writer) -> bool {
         match self {
             Message::Apply {
                 request,
@@ -409,11 +453,36 @@ impl Message {
                 writer.u64(request.as_u64());
                 writer.bytes(layout);
             }
-            other => debug_assert!(
-                false,
-                "{other:?} belongs to neither message group and would encode as an empty frame"
-            ),
+            _ => return false,
         }
+        true
+    }
+
+    /// Starting, pausing and stopping a simulation of a world. M8.a task 5.1.
+    ///
+    /// Its own group rather than more of `write_work`, and the reason is in `encode`: play is not a
+    /// change to a world, it is a change to what is running over one, and the two answer to
+    /// different halves of the editor.
+    fn write_play(&self, writer: &mut Writer) -> bool {
+        match self {
+            Message::Play { request, state } => {
+                writer.u8(15);
+                writer.u64(request.as_u64());
+                writer.text(state);
+            }
+            Message::Playing {
+                request,
+                state,
+                detail,
+            } => {
+                writer.u8(16);
+                writer.u64(request.as_u64());
+                writer.text(state);
+                writer.text(detail);
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// Decode a message, refusing a tag this build does not know.
@@ -491,6 +560,15 @@ impl Message {
                 request: RequestId::from_raw(reader.u64()?),
                 layout: reader.bytes()?,
             },
+            15 => Message::Play {
+                request: RequestId::from_raw(reader.u64()?),
+                state: reader.text()?,
+            },
+            16 => Message::Playing {
+                request: RequestId::from_raw(reader.u64()?),
+                state: reader.text()?,
+                detail: reader.text()?,
+            },
             14 => Message::ViewSuggested {
                 position: [reader.f32()?, reader.f32()?, reader.f32()?],
                 rotation: [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?],
@@ -516,6 +594,7 @@ impl Message {
             | Message::Rejected { request, .. }
             | Message::Reloaded { request, .. }
             | Message::Picked { request, .. }
+            | Message::Playing { request, .. }
             | Message::GizmoGeometry { request, .. } => Some(*request),
             _ => None,
         }
@@ -594,9 +673,35 @@ mod tests {
                 request: RequestId::from_raw(13),
                 layout: vec![1],
             },
+            Message::Play {
+                request: RequestId::from_raw(14),
+                state: "playing".into(),
+            },
+            Message::Playing {
+                request: RequestId::from_raw(14),
+                state: "playing".into(),
+                detail: "2 entities, 2 bodies".into(),
+            },
         ];
         for message in &messages {
             assert_eq!(&Message::decode(&message.encode()).unwrap(), message);
+        }
+    }
+
+    #[test]
+    fn a_play_state_the_runtime_does_not_know_is_carried_as_a_word_and_refused_by_name() {
+        // The word, not a number: a fourth state added on one side and not the other has to be
+        // REFUSED by the far end, and a `u8` that fell through a match would be silently treated
+        // as the closest one. The protocol carries it; `cy::gameplay::play_state_of` refuses it.
+        let asked = Message::Play {
+            request: RequestId::from_raw(1),
+            state: "rewinding".into(),
+        };
+        let back = Message::decode(&asked.encode()).unwrap();
+        assert_eq!(back, asked);
+        match back {
+            Message::Play { state, .. } => assert_eq!(state, "rewinding"),
+            other => panic!("{other:?}"),
         }
     }
 
@@ -617,6 +722,24 @@ mod tests {
             observed: Vec::new(),
         };
         assert_eq!(applied.request(), Some(RequestId::from_raw(3)));
+        // A play answer names its request too; the ask does not, because it IS the request.
+        assert_eq!(
+            Message::Playing {
+                request: RequestId::from_raw(5),
+                state: "editing".into(),
+                detail: String::new(),
+            }
+            .request(),
+            Some(RequestId::from_raw(5))
+        );
+        assert_eq!(
+            Message::Play {
+                request: RequestId::from_raw(5),
+                state: "playing".into(),
+            }
+            .request(),
+            None
+        );
         assert_eq!(
             Message::Ping {
                 frame: FrameId::default()

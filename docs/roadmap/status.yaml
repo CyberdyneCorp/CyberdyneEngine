@@ -11,6 +11,64 @@
 # The planned path of each capability through the milestone ladder is in
 # capability-matrix.md; this file records what is actually true today.
 
+# --- M8.a's amendment: two rows the plan marked Complete are still Working, and one row moved -----
+#
+# M8.a planned TWO capabilities reaching Complete. Its closing gate checked both against the code and
+# neither is supported, so the plan was corrected rather than the record relaxed — the practice M5's
+# gate started, M6's continued over five rows and M7's over six. The argument for each, with the
+# unmet requirement and the command that shows it, is in tools/roadmap/milestones/m8a.toml beside
+# `[criterion.expect_tiers]`, in the M8.a section of docs/ROADMAP.md, and in
+# docs/roadmap/capability-matrix.md#where-m8as-tiers-are-thin. In short:
+#
+#   serialization-and-prefabs         working  The engine reads and writes `.cyworld`, the file's
+#                                              type section is the schema a transaction addresses,
+#                                              an unknown type survives a round trip byte for byte,
+#                                              and all twelve editor operation variants decode. What
+#                                              is absent is what M6's gate named and M8.a did not
+#                                              touch: "Apply and extract" has no implementation
+#                                              anywhere, and src/scene/serialization/README.md still
+#                                              says so in its own words. `InstantiatePrefab` and
+#                                              `SetPrefabOverride` are DECODED and counted as
+#                                              IGNORED. The Complete cell moves to M8.b.
+#   editor-documents-and-transactions working  One transaction per created primitive, per imported
+#                                              mesh and per added body; undo empties the document and
+#                                              the engine's world together; the out-of-band write
+#                                              audit reads zero over a full session. But "Source
+#                                              control integration" is UNSTARTED — no provider trait,
+#                                              no Git, no Perforce, no null provider — and a
+#                                              capability with one of twelve requirements unstarted
+#                                              is not Complete. The Complete cell moves to M11,
+#                                              beside every other editor-* row.
+#
+# ONE ROW'S `milestone` FIELD MOVED, AND ONLY ONE, BECAUSE THE FIELD MEANS "THE MILESTONE THAT LAST
+# ADVANCED THE TIER" — the rule M5.5's gate wrote down when it declined to inflate two rows that had
+# received substantial implementation without changing tier.
+#
+#   physics  M4 -> M8A.  This is a CORRECTION, not an advance, and it is the same correction M5.5's
+#       gate made when it moved `editor-ui-ux`'s Working out of M5. `physics` was recorded Working at
+#       M4 with NO `src/physics/` IN THE TREE: the capability's "Physics components" requirement —
+#       bodies and colliders expressed as ECS components, created in a world, with
+#       `cy::scene::LocalTransform` written back — had no implementation for four milestones, so
+#       "the requirements a real project depends on are satisfied" was not true of the row.
+#       `samples/04-character` did that work longhand in its own host, which is why M4's gate flagged
+#       the absence and why implement-m8a-authorable's proposal opens with it. M8.a is the milestone
+#       at which Working became true, and the record now says so.
+#
+# THE OTHER THREE ROWS M8.a NAMES DID NOT MOVE, and that is deliberate:
+#   asset-import-pipeline (M5) gained `asset.import`, an OBJ importer, a primitive importer and one
+#       derivation key across four formats. Working was already supportable at M5 — a project could
+#       cook glTF and FBX — so the tier did not advance and the field does not move.
+#   gameplay-framework (M4) gained `cy::gameplay::PlaySession` and spawning, so pressing play
+#       simulates the authored world instead of reporting `hosting: NoRuntime`. Seed —
+#       "interfaces, data model and invariants exist" — was already true at M4.
+#   serialization-and-prefabs (M2) and editor-documents-and-transactions (M5) are the two above.
+#
+# SO M8.a ADVANCES NO CAPABILITY TIER. That is worth stating rather than leaving to be inferred from
+# a diff of this file, and it is not the same as saying the milestone delivered little: it built
+# src/physics/, src/gameplay/play/, two importers, the engine's `.cyworld` reader and writer, and a
+# play session that restores a document byte for byte. It is what happens when a milestone's job is
+# to make three existing records honest rather than to reach a new tier.
+
 # --- M7's amendment, and why six rows the plan marked Complete are still Working -------------------
 #
 # M7's plan (docs/ROADMAP.md, the matrix, and implement-m7-fidelity/proposal.md) had NINE
@@ -315,8 +373,8 @@ capabilities:
     change: null
   physics:
     tier: working
-    milestone: M4
-    change: implement-m4-playable
+    milestone: M8A
+    change: implement-m8a-authorable
   animation-and-skinning:
     tier: none
     milestone: null

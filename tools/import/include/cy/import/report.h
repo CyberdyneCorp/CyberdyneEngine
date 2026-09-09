@@ -66,6 +66,12 @@ struct AssetImportOutcome {
     usize excluded_bytes = 0;
     /// Which profile this row was cooked under, so a report over a mixed run is readable.
     CookProfile profile = CookProfile::Client;
+    /// Which of the ten model-import steps the importer that ran reaches. M8.a task 3.3.
+    ///
+    /// Copied from `ImporterInfo::steps` rather than observed, because it is a property of the
+    /// FORMAT and not of this file: an OBJ has no rig to skip. Zero means the sequence does not
+    /// apply, which is a texture's honest answer. See `ModelImportStep`.
+    ModelImportStepSet steps = 0;
     u64 duration_micros = 0;
 
     [[nodiscard]] bool succeeded() const noexcept { return errors == 0; }
@@ -99,6 +105,12 @@ public:
     [[nodiscard]] usize cache_misses() const noexcept;
     [[nodiscard]] usize invalidations() const noexcept;
     [[nodiscard]] u64 total_micros() const noexcept;
+
+    /// Whether any row's importer reached fewer than all ten model-import steps.
+    ///
+    /// What decides whether `format` prints the "steps not reached" section at all, and what a
+    /// caller asserts on when it wants the property rather than the sentence.
+    [[nodiscard]] bool has_absent_steps() const noexcept;
 
     /// The `count` largest rows by cooked size, most first, written into `out`. Returns how many
     /// were written, which is the smaller of `count` and the number of rows.

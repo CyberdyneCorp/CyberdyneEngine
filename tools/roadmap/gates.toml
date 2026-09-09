@@ -810,6 +810,83 @@ milestone = "m7"
 # evaluable on this OS.
 state = "green"
 
+# M8.a IS NOT CLOSED BY THE CHANGE THAT CARRIES THIS LINE, and the state says so. Section 6 lands the
+# artefact and section 7 the records; the milestone closes when `just roadmap-milestone m8a` passes
+# in every profile and the change is archived, which is section 8 and not a thing this file can
+# assert about itself.
+#
+# THE FLIP IS NOT SOMETHING SOMEBODY HAS TO REMEMBER. `just roadmap-test` reads
+# openspec/changes/archive/ and fails when a milestone whose change is archived still has a gate at
+# `joins-on-close`, so archiving this change without flipping the line below turns `roadmap-test`
+# red, in the `roadmap` job, on the next pull request.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED is M8.a's own criteria added to the permanent set and nothing
+# else — the flat ledger's arithmetic since M5. **NONE OF THEM CARRIES `requires`**, which is worth
+# saying beside `milestone-m7`: three of M7's criteria need a GPU and one a display, and are reported
+# NOT EVALUATED on a hosted runner. Everything M8.a claims can be judged on a machine with no
+# graphics device — the artefact's measuring half replays the editor's own transaction journal into a
+# play session and needs neither, and its photograph is a committed file rather than a criterion that
+# takes one. A milestone about authoring should be checkable by the machines that build it.
+#
+# AND IT IS ALSO THE FLIP THAT MOVES ci.yml's `milestone` JOB, which is task 7.5 and the same rule M6
+# landed: `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest
+# ledger any workflow evaluates, so setting `state = "green"` below WITHOUT changing that job's
+# milestone id turns `just ci-check` red. The two edits belong in the archiving commit together,
+# exactly as the flip and the archive already do.
+#
+# ONE THING THIS GATE CARRIES THAT NO EARLIER ONE DID: a NEGATIVE CONTROL over the artefact.
+# `m8a:authoring-control` runs the closing artefact against a physics backend that declares it
+# resolves no contacts, and PASSES ONLY IF THAT RUN FAILS. Every earlier milestone's artefact
+# criterion could go green over an artefact that had quietly stopped checking anything; this one
+# cannot, because a run that reports no gap where a gap is guaranteed turns the gate red.
+
+[[gate]]
+id = "milestone-m8a"
+describe = "M8.a — Authorable: the exit criteria of the milestone that made a scene something a person builds by hand — primitives generated beside the importers, import from inside the editor, OBJ, the physics ECS bridge, play mode against a real runtime, and one world that the editor edits and the engine simulates."
+runs = ["just roadmap-milestone m8a"]
+platforms = ["linux", "windows", "macos"]
+since = "m8a"
+class = "milestone"
+milestone = "m8a"
+# NOT FLIPPED AT M8.a's CLOSING GATE, AND THE REASON IS ONE INHERITED CRITERION.
+#
+# `just roadmap-milestone m8a` was run once, end to end, with CY_BUILD_DIR set: **183 of 184
+# declarations evaluated, 181 ok, 2 not evaluated on a single-OS host, and ONE FAILED** —
+# `m1:four-profiles`, in the **Debug** configuration, on sixteen unit cases across seven suites that
+# are over the 1 ms per-case CPU budget. Every one of them is in `src/rendering/`,
+# `src/servers/render/` or `samples/05b-editor-window/runtime`, all of which M8.a leaves untouched
+# (`git status --porcelain src/rendering/ tests/ src/servers/render/` is empty on the closing tree,
+# and the three expensive `editor_window_runtime` cases are verbatim at HEAD). M7's gate recorded the
+# same criterion red at its own close and called its repair "necessary and not sufficient".
+#
+# M8.a's OWN nineteen criteria are all green, and the milestone REMOVED the two contributors it had
+# added to that failure: `unit.gameplay_spawn`'s sixty-four-instance batch case (1.25-2.02 ms, three
+# runs in six inside `just test-unit`) moved to `integration.gameplay_play` at two hundred, and the
+# whole of `physics_bridge` moved from `unit` to `integration` because every one of its cases builds
+# an ECS world, a scene tree and a physics server.
+#
+# WHY THE FLIP WAS NOT TAKEN ANYWAY. `milestone-m7` is already `green` here while `just
+# roadmap-milestone m7` cannot pass, because it declares the same `m1:four-profiles`. Setting this
+# gate green as well would put a second permanent merge gate in the state M4's gate was written up
+# for — green in this file, red when run — and it would do it knowingly. The alternatives that remain
+# honest are the two this file's own footer names: fix the gate, or record an override with its
+# reason, its approver, the change and an expiry. An override needs an approver, which is a person's
+# decision and not a gate's.
+#
+# WHAT THE FLIP COSTS WHEN IT IS TAKEN is M8.a's own criteria added to the permanent set and nothing
+# else — the flat ledger's arithmetic since M5. **NONE OF THEM CARRIES `requires`**, which is worth
+# saying beside `milestone-m7`: three of M7's criteria need a GPU and one a display, and are reported
+# NOT EVALUATED on a hosted runner. Everything M8.a claims can be judged on a machine with no
+# graphics device.
+#
+# AND IT MUST BE TAKEN WITH `.github/workflows/ci.yml`'s `milestone` JOB, which is task 7.5.
+# `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest ledger any
+# workflow evaluates, so `just ci-check` is red for whichever of the two edits is made alone — the
+# gate's closing agent verified both directions. Leaving this line at `joins-on-close` is therefore
+# also what keeps `just ci-check` green while ci.yml still names `m7`.
+state = "joins-on-close"
+
+
 # --- Recorded overrides ---------------------------------------------------------------------------
 #
 # None. The shape one takes, when one is unavoidable:

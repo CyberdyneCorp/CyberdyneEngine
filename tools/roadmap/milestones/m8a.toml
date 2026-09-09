@@ -1,0 +1,487 @@
+# M8.a — Authorable: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m8a-authorable/tasks.md and the M8.a row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a recipe
+# that exits zero, a command that exits zero, a benchmark within a threshold, or a committed artefact
+# that is regenerated and compared — so an intention that cannot be run is a note at the bottom of
+# this file, not a criterion.
+#
+# --- THIS LEDGER DECLARES ONLY M8.a's OWN CRITERIA, AND THERE IS NO `m7-green` --------------------
+#
+# The ledger has been flat since M5 and `just roadmap-test` fails a ledger that invokes another one.
+# `just roadmap-milestone m8a` evaluates the permanent set directly — the criteria of every milestone
+# whose `class = "milestone"` gate carries `state = "green"` and which sits BELOW M8.a on the ladder,
+# merged and deduplicated, each distinct check run exactly once — and then the criteria in this file.
+# `criteria.build_plan` is the rule and tools/roadmap/README.md states it.
+#
+# A criterion here whose `run` string is identical to one an earlier ledger declared COLLAPSES into
+# it and is reported under the earlier label — `m0:format` rather than `m8a:format`. The static gates
+# are declared anyway, as every ledger since M3 has, because a ledger that does not name the checks
+# its milestone had to satisfy is a ledger nobody can read. `editor`, `editor-profiles` and
+# `four-profiles` below are deliberately spelled with the identical string an earlier ledger used,
+# for the same reason.
+#
+# --- EVERY COMMAND IN THIS FILE WAS RUN, EXACTLY AS WRITTEN ---------------------------------------
+#
+# M6's closing gate found FOUR criteria in m6.toml that had never executed anything: they were
+# written as `just test-integration -R "world_(activation|streaming)"`, `just`'s `*args` is a string
+# interpolated textually into `bash -c`, and the parentheses reached bash unquoted. Each reported
+# `FAILED exit 2` in 0.0 s having run no test. M7's ledger recorded that the defect in
+# `just/test.just` was still live; it still is, and this file works around it the same way.
+#
+# So: no argument passed THROUGH a `just` recipe in this file contains a shell metacharacter. Every
+# `-R` pattern is one plain word (`smoke.authoring`'s dot is a regular expression's, not a shell's),
+# suites are joined with `&&` at the criterion's own level rather than with an alternation inside a
+# recipe's arguments, and every command below was executed on this machine and its output pasted
+# into the closing report. Each was also checked to have SELECTED something: `1/1 Test #NNN … Passed`
+# rather than a green run over nothing.
+#
+# --- WHY SO MANY CRITERIA NAME `milestone-m8a` AS THEIR CI JOB ------------------------------------
+#
+# The same arithmetic M7's ledger recorded. M8.a declares ONE new gate — `milestone-m8a`, at
+# `joins-on-close` — and points its own suites at it rather than inventing a dozen more permanent
+# gates whose jobs belong to `.github/workflows/ci.yml`, which is task 7.5's file and not this
+# change's section 6. Until that gate flips to green the criteria below whose `ci_job` is
+# `milestone-m8a` are run by `just roadmap-milestone m8a` and by nothing in continuous integration;
+# the moment it flips they join the permanent set entire. Where an existing permanent gate's own
+# `runs` list demonstrably covers a criterion it is named instead, and eleven of them are.
+#
+# --- WHAT M8.a ADDS TO THE PERMANENT SET, AND WHAT IT COSTS ---------------------------------------
+#
+# NINETEEN own criteria beyond the static gates, of which sixteen run suites this milestone's two new
+# directories and four new editor modules brought: `src/physics/`, `src/gameplay/play/`,
+# `tools/import`'s primitive and OBJ importers, and `cy_editor_services`' primitives, assets and
+# bodies. **None carries `requires = "gpu"` or `requires = "display"`.** That is worth saying
+# plainly beside M7, whose subject was a frame and four of whose criteria a hosted runner cannot
+# judge: everything M8.a claims can be checked on a machine with no graphics device, because the
+# artefact's measuring half is headless by construction and its photograph is a committed file
+# rather than a criterion that takes one.
+#
+# --- THE ARTEFACT, AND WHY IT IS FOUR CRITERIA RATHER THAN ONE ------------------------------------
+#
+# `samples/08a-authoring` is one driver and one program, and the four ways of reaching it answer
+# different questions — the split m6.toml and m7.toml both made, plus one they did not.
+#
+#   authoring-artefact   the CTest entry, so `just test-all` runs it and `build-and-test` covers it
+#                        on every pull request. 3.5 s, no display, no device.
+#   authoring-recipe     the same run through the workflow a contributor types, which also builds
+#                        the editor and the engine first — so it fails when the recipe rots, which
+#                        the CTest entry cannot see.
+#   authoring-control    THE NEGATIVE CONTROL, and it is new here. `--physics reference` swaps in a
+#                        backend that declares `contact_resolution = false`, the sphere falls through
+#                        the box, the artefact records a GAP and returns 1. The criterion passes only
+#                        when that run FAILS. Task 6.7 asks that a recorded gap exit non-zero; this
+#                        is that, demonstrated on every ledger run rather than asserted once.
+#   screenshot-authoring the committed picture, which is what makes the milestone evaluable by
+#                        LOOKING.
+
+schema = 1
+id = "m8a"
+name = "Authorable"
+artefact = "samples/08a-authoring — one editor session against one engine runtime that creates a box and a sphere in an empty world, places the sphere three metres above the box through the gizmo's own manipulation, adds a rigid body to each, presses play so that the runtime builds two Jolt bodies from the authored world and simulates it, stops so that the world's bytes are identical to what was authored, and undoes back to an empty world in both processes — with the fall itself measured headlessly by replaying the editor's own transaction journal into `cy::gameplay::PlaySession`: 2270 mm in 55 ticks, coming to rest 20 mm inside the contact height the two colliders imply, identically over six sessions"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "`just roadmap-milestone m8a` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 7.4 — docs/roadmap/status.yaml, docs/roadmap/capability-matrix.md, docs/ROADMAP.md and docs/roadmap/dependencies.md are the closing change's. `roadmap-tiers` below checks the record, `roadmap-record` checks that the record and openspec/specs/ agree, and `plan-consistency` checks that the four plan documents agree with each other. AT THE TIME THIS FILE WAS WRITTEN `roadmap-tiers` FAILS, and it is meant to: the record still carries `serialization-and-prefabs` and `editor-documents-and-transactions` at working, and M8.a's row of ROADMAP.md exits both at complete. It is the forcing function for task 7.4 and nothing else can be.",
+    "tasks 7.5 — moving ci.yml's `milestone` job to `m8a` is checked by `workflows` below (`just ci-check`), which goes red the moment `milestone-m8a` is green above the newest ledger any workflow evaluates. It is a check, but it is the closing change's edit to make and not this file's.",
+    "tasks 7.6 — opening the M8.b change is `m8b-open` below, which asks only that the change exists.",
+    "tasks 8.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "THE EDITOR'S TWO HEADLESS SURFACES CANNOT, BETWEEN THEM, AUTHOR A PLACED SCENE, and the artefact performs both refusals rather than describing them. `cy_editor_app::run_script` makes every argument a `Value::Text` and the registry validates kinds, so a `.cyscript` cannot supply a vec3, a float, an int or a bool — `scene.translate amount=0,3,0` is refused and so is `scene.add-body mass=2`. The `author` agent scope parses typed arguments (`cy_editor_agent::tool`) but grants `game/` and no irreversible mutation, so `scene.create-primitive` (which writes `assets/primitives/`) and `file.save` are both refused to it. Neither is a defect in what M8.a built; together they decide how the artefact has to be driven, and each is a few lines away in a file section 6 does not own.",
+    "A NODE HAS NO NAME. `cy_editor_documents` carries none — the third field of a `.cyworld`'s `node` line is its LAYER — so `cy_editor_viewmodels::hierarchy::label_of` labels a node by the first component it carries that has fields, and the milestone's own screenshot shows a box and a sphere as two outliner rows both reading `Transform`. `scene.create-primitive`'s description says its `name` argument names \"the source asset, the generated mesh sub-asset and the node\"; it names the first two. No criterion here can check it, because naming a node is a concept the document model does not have.",
+    "THE MESH A PRIMITIVE REFERENCES REACHES NO RENDERER. `cy::render::MeshRenderer` is a declared name in `src/scene/src/node_template.cpp`'s catalogue with no reflected type behind it, so a `MeshRenderer` component round-trips through `.cyworld` and is read by nothing that draws. `samples/05b-editor-window/runtime` presents every node through M3's fixed box slots, which is why the artefact's photograph shows a box above a box. That is `editor-viewport-and-gizmos` and the renderer's work, and it is why this milestone does not claim `rendering-*` anything.",
+]
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes with the capabilities this milestone advances and the two it completes"
+source = "tasks 7.4"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained src/physics/, src/gameplay/play/ and a sample"
+source = "tasks 8.2"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over the physics ECS bridge, the play session, the primitive and OBJ importers and the artefact"
+source = "tasks 8.2"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the engine's layer order holds with src/physics/ and src/gameplay/play/ in the tree — both layer 4, and the second depends on the first rather than widening cy::gameplay's list, which is the arrangement tests/test_bypass.cpp's __has_include check exists to protect"
+source = "tasks 4.1, 5.1, 8.2, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate is run by a job in .github/workflows/, and no job reimplements a recipe. This is also the check that fails if ci.yml's `milestone` job was not moved to the newest closed milestone when its gate went green — task 7.5's forcing function"
+source = "tasks 7.5, delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which matters here because M8.a added no third-party parser for OBJ and the manifest has to keep saying so"
+source = "tasks 8.2, 3.2"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 7.4, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the tier plan obeys its own dependency rules, and the four plan documents agree with each other — both checked by a tool rather than by reading, which is how both of M6's were found. It also runs the ledger self-test, which is what fails when this file declares fewer criteria than its floor"
+source = "tasks 7.2, 7.4, delivery-roadmap (Forbidden roadmap patterns)"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+# --- One world: the seam M7 left open, which everything else is downstream of ---------------------
+
+# TASKS 1.1, 1.2 AND 1.3. THE CLAIM IS NOT "A FILE FORMAT EXISTS", it is that the editor's document
+# and the engine's scene are ONE WORLD. `unit.scene_serialization` holds the arithmetic that makes
+# that possible without transmitting anything: `DocumentId = FNV-1a-128(asset path)` and
+# `NodeId = FNV-1a-128(document ++ ordinal)` computed identically in C++ and in Rust, a `.cyworld`
+# that round-trips byte for byte, and all twelve of `cy_editor_documents::Operation`'s variants
+# decoded — including the three this module has nothing to do with, because a reader that skipped one
+# by guessing its length would misread the next operation as something it is not.
+[[criterion]]
+id = "world-transactions"
+describe = "the engine reads and writes .cyworld and decodes the editor's own transaction stream: derived identities that cross the process boundary without being sent, a byte-identical round trip, every operation variant decoded rather than skipped, and an unknown tag refusing the whole transaction instead of guessing its length"
+source = "tasks 1.1, 1.2, design.md §1"
+kind = "recipe"
+run = "just test-unit -R scene_serialization"
+ci_job = "milestone-m8a"
+
+# TASK 1.3 AND 1.4, and this is the half that only exists when there are two processes:
+# `integration.editor_window_one_world` drives the runtime's world view and its pick wire without a
+# device, which is what makes it a criterion a hosted runner can judge rather than one it skips.
+[[criterion]]
+id = "one-world"
+describe = "the runtime's view of the editor's world: a transaction lands in the frame the commit produced, a pick resolves against the frame the viewport is showing, and a world larger than the scene's slots reports the overflow with both numbers rather than dropping nodes quietly"
+source = "tasks 1.1, 1.3, 1.4"
+kind = "recipe"
+run = "just test-integration -R editor_window_one_world"
+ci_job = "milestone-m8a"
+
+[[criterion]]
+id = "world-runtime"
+describe = "the runtime that hosts the authored world, checked without one: the world view, the overlay and the message counter that `Message::Play` pushed past the end of its own array before this milestone caught it"
+source = "tasks 1.1, 5.1"
+kind = "recipe"
+run = "just test-unit -R editor_window_runtime"
+ci_job = "milestone-m8a"
+
+# --- Primitives, and the property that a generated one is not a special case ----------------------
+
+# TASKS 2.1 TO 2.4. A `.cyprim` is a SOURCE ASSET and `PrimitiveImporter` is an entry in the same
+# `ImporterRegistry` as glTF, FBX and OBJ, so after the parse there is one code path: `finish_mesh`,
+# `emit_mesh_with_lods`, `emit_collision`, `emit_prefab`, under the option names the model importers
+# already declare. That is what makes design.md §2's "give it nothing to tell apart" true rather than
+# policed, and it is why 2.4 needs no criterion of its own: a generated mesh goes through the single
+# derivation key because it goes through the single importer pipeline.
+[[criterion]]
+id = "primitives"
+describe = "box, sphere, cylinder, plane and capsule generated beside the importers rather than in the editor: a .cyprim is a source asset, its importer is an ordinary entry in the registry, a parameter the shape does not take is an error on both sides of the boundary, and the mesh is cooked through the derivation key and cache every other format uses"
+source = "tasks 2.1, 2.4, design.md §2"
+kind = "recipe"
+run = "just test-integration -R import_primitive"
+ci_job = "milestone-m8a"
+
+# --- Import from inside the editor ----------------------------------------------------------------
+
+[[criterion]]
+id = "obj"
+describe = "OBJ with its .mtl: negative indices relative to the end (the one dialect difference that corrupts a mesh silently), `g` starting a new object only until the first `o`, fan triangulation, and a material that is dielectric unless it says Pm — because the standard material's own default of metallic = 1 would import every OBJ in the world as polished metal"
+source = "tasks 3.2, split-m8-authorable-and-systems"
+kind = "recipe"
+run = "just test-integration -R import_obj"
+ci_job = "milestone-m8a"
+
+[[criterion]]
+id = "import-steps"
+describe = "an OBJ reaches only steps 1-6 and 9 of the import sequence and the report NAMES the steps it did not reach rather than warning about them — a fact about the format, declared on the importer so that it survives a cache hit, which a per-import diagnostic could not"
+source = "tasks 3.3"
+kind = "recipe"
+run = "just test-unit -R import"
+ci_job = "milestone-m8a"
+
+[[criterion]]
+id = "import-cache"
+describe = "glTF, FBX, OBJ and .cyprim share one derivation key and one cache, and the pipeline's own suite is what says so: a second import of an unchanged file costs a file open, and a changed source is a different key"
+source = "tasks 3.4, 2.4"
+kind = "recipe"
+run = "just test-integration -R import_pipeline"
+ci_job = "milestone-m8a"
+
+[[criterion]]
+id = "import-formats"
+describe = "the two formats that were already there still import the same way after a fifth importer joined the registry and after `emit_mesh_with_lods` grew the argument OBJ needed. Two suites joined with && at this level rather than an alternation inside a recipe's arguments, which is M6's dead-criterion defect and is still live in just/test.just"
+source = "tasks 3.4"
+kind = "command"
+run = "just test-integration -R import_gltf && just test-integration -R import_fbx"
+ci_job = "milestone-m8a"
+
+# --- The physics ECS bridge -----------------------------------------------------------------------
+
+[[criterion]]
+id = "physics-bridge"
+describe = "src/physics/ at layer 4: the components `physics` specifies registered in a world with a fixed id order, bodies created from them, the stepper installed in the Physics stage, and cy::scene::LocalTransform written back with the propagation bit set — which a bridge that wrote the component and not the bit would not do, and the body's world placement would never change. `test-integration` rather than `test-unit`: the suite was declared unit, passed at -O2 and failed the Debug profile, and every one of its cases builds an ECS world, a scene tree and a physics server — the same argument gameplay_play is integration for. Moved at the closing gate"
+source = "tasks 4.1, 4.2"
+kind = "recipe"
+run = "just test-integration -R physics_bridge"
+ci_job = "milestone-m8a"
+
+# TASK 4.4, AND IT IS THE ONE THAT EXISTS BECAUSE OF A FAULT WITH NO PHYSICS CALL ON THE STACK.
+# M5.5's gate found Jolt destroying its job free list underneath a worker still releasing a job, one
+# run in forty. Play mode creates and destroys worlds constantly, which is exactly the shape that
+# found it, so the teardown ordering is a suite of its own rather than a case inside another.
+[[criterion]]
+id = "physics-teardown"
+describe = "a physics world torn down under load, in a test — the shape of M5.5's one-in-forty fault, exercised deliberately rather than waited for"
+source = "tasks 4.4, design.md §3"
+kind = "recipe"
+run = "just test-integration -R physics_teardown"
+ci_job = "milestone-m8a"
+
+[[criterion]]
+id = "physics-simulation"
+describe = "the bridge against a real solver: a sphere dropped on a box comes to rest on it, and the placement the authored world holds afterwards is the simulation's"
+source = "tasks 4.1, 4.2"
+kind = "recipe"
+run = "just test-integration -R physics_simulation"
+ci_job = "milestone-m8a"
+
+# --- Play mode ---------------------------------------------------------------------------------
+
+# TASK 5.2 IS THE HARD ONE AND THIS IS THE SUITE THAT KEEPS IT. `integration.gameplay_play` compares
+# the world's bytes ITSELF rather than reading `PlayReport::restored_exactly` and trusting it — a
+# report that graded its own homework is the shape of criterion M6 shipped four of — and it runs a
+# session TWICE over one world, which reproduces only if the first left nothing behind.
+[[criterion]]
+id = "play-session"
+describe = "pressing play builds the authored world into an ECS world with its bodies, ticks it in the Physics stage, writes the simulated placements back so that whatever draws the world draws the simulation, and on stop restores every placement and leaves the file byte for byte as it was — checked by comparing the strings, and by running a second session that must reproduce the first"
+source = "tasks 5.1, 5.2"
+kind = "recipe"
+run = "just test-integration -R gameplay_play"
+ci_job = "milestone-m8a"
+
+[[criterion]]
+id = "spawning"
+describe = "spawning, its three honoured policies and the five it refuses BY NAME rather than falling back to the nearest one, and `spawn_many`'s contract: one call, one batch counted, every instance alive and placed. The O(N^2) naming cost that contract hides is measured at two hundred instances by `play-session` below — moved there at the closing gate, because at sixty-four it spent up to 2.02 ms against this suite's 1.000 ms budget and failed `just test-unit` three runs in six"
+source = "tasks 5.1, gameplay-framework"
+kind = "recipe"
+run = "just test-unit -R gameplay_spawn"
+ci_job = "milestone-m8a"
+
+# --- The editor's own half --------------------------------------------------------------------
+
+# `just build-editor-check` below runs all of these and more, and is declared with the string M5's
+# ledger used so that the two collapse. This criterion is the narrower one, and it earns its place
+# for the reason m5b.toml gives for splitting `no-toolkit-leak` out of `editor`: these six suites
+# fail for a different reason from the rest of that command, and naming them is what tells a reader
+# which of M8.a's claims the editor holds up.
+[[criterion]]
+id = "editor-authoring"
+describe = "the editor's own M8.a suites: a primitive is one transaction that undoes and redoes to the same identity, a generated primitive and an imported mesh are literally the same entity because one function builds both, an import lands in the world through a transaction, a body and its collider are ONE transaction (because cy::physics refuses a dynamic body with no collider, so two would leave a world that cannot simulate for one undo step), pressing play reaches the runtime, and a world opens and saves"
+source = "tasks 2.2, 2.3, 3.1, 3.5, 4.3, 5.1"
+kind = "command"
+run = "CARGO_TARGET_DIR=\"$(just _editor-target-dir)\" CY_EDITOR_PROFILE=dev cargo test --manifest-path editor/Cargo.toml --profile development -p cy-editor-services --test a_body_is_a_transaction --test primitives_are_ordinary_mesh_instances --test importing_from_inside_the_editor --test pressing_play_reaches_the_runtime --test the_authoring_loop --test a_person_opens_a_world_and_saves_it"
+timeout_s = 3600
+ci_job = "milestone-m8a"
+
+# THE IDENTICAL COMMAND M5 AND M5.5 DECLARE, written out rather than varied so that the plan
+# COLLAPSES all three into one run of it. It is what runs the editor's rustfmt, its clippy with the
+# workspace's pedantic lint table as errors, and every one of its tests — including the six above.
+[[criterion]]
+id = "editor"
+describe = "the editor's own gates and its whole test set, which M8.a grew by four modules and six suites: the SDK generator's selftest, rustfmt, clippy as errors, and every test in the workspace"
+source = "tasks 8.2, testing-and-quality"
+kind = "recipe"
+run = "just build-editor-check"
+timeout_s = 3600
+ci_job = "editor"
+
+# THE IDENTICAL COMMAND M5.5 DECLARES, and it collapses into it. Two of the four profiles compile the
+# assertions out, which is exactly where a new module's `CY_ASSERT` habits stop protecting it.
+[[criterion]]
+id = "editor-profiles"
+describe = "the editor's gates and tests in all four profiles, so the two configurations that compile the assertions out are configurations something has been run in"
+source = "tasks 8.2"
+kind = "command"
+run = "for p in debug dev profile release; do just build-editor-check --profile \"$p\" || exit 1; done"
+timeout_s = 7200
+ci_job = "editor"
+
+# --- The artefact ------------------------------------------------------------------------------
+
+[[criterion]]
+id = "authoring-artefact"
+describe = "the closing artefact as `just test-all` runs it: one editor session against one engine runtime — a box and a sphere created in an empty world, the sphere placed three metres above the box through the gizmo's own manipulation, a rigid body added to each, play pressed and the runtime building two Jolt bodies and ticking them, play stopped with the world identical, and undo emptying the document AND the engine's world; then the fall measured headlessly by replaying the editor's own journal. No display, no graphics device, 3.5 s"
+source = "tasks 6.1 to 6.7"
+kind = "recipe"
+run = "just test-smoke -R smoke.authoring"
+timeout_s = 1800
+ci_job = "build-and-test"
+
+[[criterion]]
+id = "authoring-recipe"
+describe = "the same run through the workflow a contributor types, which builds the editor and the engine first — so a recipe that rotted fails here, which the CTest entry above cannot see. `--no-window` leaves out the photograph, which is the one act that needs a display"
+source = "tasks 6.7, developer-workflow-and-just"
+kind = "recipe"
+run = "just run-authoring --no-window"
+timeout_s = 3600
+ci_job = "milestone-m8a"
+
+# TASK 6.7, "A RECORDED GAP EXITS NON-ZERO", DEMONSTRATED RATHER THAN ASSERTED — and demonstrated
+# with a real backend rather than a switch that fakes a failure. `cy::physics::reference` declares
+# `Capabilities::contact_resolution = false`: it integrates motion and resolves nothing, so the
+# sphere falls THROUGH the box, the artefact records a gap and `artefact.Report.exit_code` derives 1
+# from it. This criterion passes only when that run FAILS.
+#
+# It is also the check that `physics`'s "swapping the backend changes no gameplay" is being taken
+# seriously: the same authored world, the same session, the same bridge, and the only difference is
+# which solver was asked for.
+[[criterion]]
+id = "authoring-control"
+describe = "the artefact's negative control: run against a backend that resolves no contacts, the sphere falls through the box, a gap is recorded and the run returns non-zero. The criterion inverts it, so it fails if the artefact ever passes a run it should not"
+source = "tasks 6.7, samples/harness/artefact.py"
+kind = "command"
+run = "if just run-authoring --no-window --runs 1 --physics reference; then echo 'the negative control PASSED, which means it is not a control'; exit 1; fi; echo 'the negative control failed, as it must'"
+timeout_s = 3600
+ci_job = "milestone-m8a"
+
+# TASK 6.8. `just run-authoring --shot <path>` is what takes it and this is the file it takes. A
+# milestone whose headline is "you can build a scene and press play on it" should have a criterion
+# that fails when the picture of that scene is not there.
+[[criterion]]
+id = "screenshot-authoring"
+describe = "the artefact's own picture is committed under docs/design/images/, so the milestone can be evaluated by looking: the editor's window on the world the session authored, with the engine's own rendered frame in the viewport"
+source = "tasks 6.8"
+kind = "path"
+path = "docs/design/images/authoring-m8a.png"
+ci_job = "milestone-m8a"
+
+# --- The record --------------------------------------------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M8.a's exit tiers, each naming the change that advanced it"
+source = "tasks 7.4, implement-m8a-authorable/proposal.md, ROADMAP M8.a"
+kind = "tiers"
+ci_job = "milestone-m8a"
+
+# The M8.a row of docs/ROADMAP.md, as data. An exit tier is a FLOOR rather than an equality: a later
+# milestone advancing one of these past its M8.a level must not make this recipe fail.
+#
+# --- READ THE TWO COMPLETES AS CLAIMS SOMEBODY STILL HAS TO EARN ---------------------------------
+#
+# M5's ledger amended four rows at its own gate, M5.5's inherited the practice, M6's demoted five and
+# M7's demoted five more. These two are the ones M8.a's gate has to judge, and what would have to be
+# true:
+#
+#   serialization-and-prefabs  complete.  A `.cyworld` is now read AND written by the engine
+#       (`cy::scene::serialization`), the type section is the document's own schema so a transaction
+#       addresses the fields the file declares, a name this build does not know is CARRIED rather
+#       than dropped, and the round trip is byte-identical. What a gate should look at before
+#       agreeing: prefab instantiation and override are `Operation` variants that
+#       `apply_transaction` decodes and COUNTS AS IGNORED — the engine does not act on them — so
+#       "prefabs" in the capability's name is held up by the editor's side alone.
+#
+#   editor-documents-and-transactions  complete.  A created primitive, an imported mesh and an added
+#       body are each one transaction; undo returns the world to empty in the document AND in the
+#       engine's world, which the artefact checks from both ends. What a gate should look at: a node
+#       still has no NAME in this model (see the notes above), and `file.save` remains the only way
+#       a document reaches disk, which no agent scope grants.
+#
+# AT THE TIME THIS FILE WAS WRITTEN THIS CRITERION FAILS, on exactly those two rows, because
+# docs/roadmap/status.yaml still records both at working. Task 7.4 is what closes it. It is declared
+# now rather than later precisely so that it is impossible to close this milestone without doing so.
+# --- AMENDED AT THE CLOSING GATE, AND THIS IS THE THIRD LEDGER IN A ROW TO BE ------------------------
+#
+# The two floors above read `complete` when this file was written and they now read `working`. Task
+# 7.4 did not close the criterion by editing the record to agree with the plan; the gate checked both
+# claims against the code and neither is supported, so the PLAN was corrected. M5's gate amended four
+# rows this way, M6's five, M7's six. The two arguments, in full, are in docs/ROADMAP.md's M8.a
+# section and in docs/roadmap/capability-matrix.md#where-m8as-tiers-are-thin. In one line each:
+#
+#   serialization-and-prefabs  "Apply and extract" has no implementation anywhere in the tree —
+#       `grep -rniE 'apply.?(overrides|to.?prefab)|extract.?(to.?)?prefab' src/ tools/ editor/crates`
+#       finds `Resolver::apply_overrides` (resolution, not authoring) and `InputUser` and nothing
+#       else — and src/scene/serialization/README.md has said so since M2 and still says so on this
+#       tree. M8.a taught the engine to DECODE `InstantiatePrefab` and `SetPrefabOverride` and to
+#       count them as ignored, which is honest and is not the requirement. The Complete cell is now
+#       M8.b.
+#
+#   editor-documents-and-transactions  "Source control integration" is unstarted: no provider trait,
+#       no Git provider, no Perforce provider, no null provider. `grep -rniE 'source.control'
+#       editor/crates/*/src/` returns seven hits and every one is a comment or a remedy string. A
+#       capability with one of twelve requirements unstarted is not Complete. The Complete cell is
+#       now M11, beside every other editor-* row.
+#
+# WHAT THAT LEAVES THIS CRITERION CHECKING, said plainly rather than left for a reader to notice:
+# all six floors below are now at or under what the record ALREADY held before this milestone, so
+# `roadmap-tiers` passes over an unchanged status.yaml tier column. It is a floor, not an advance —
+# it fails if a later change demotes one of these rows, which is what a floor is for, and it is NOT
+# evidence that M8.a moved anything. What M8.a moved is recorded in the `milestone` and `change`
+# fields of those rows, which now name it: three of them recorded a tier the tree did not support
+# until this milestone built `src/physics/`, `asset.import` and `cy::gameplay::PlaySession`.
+#
+[criterion.expect_tiers]
+editor-ui-ux = "working"
+asset-import-pipeline = "working"
+physics = "working"
+gameplay-framework = "seed"
+serialization-and-prefabs = "working"
+editor-documents-and-transactions = "working"
+
+# TASK 7.6 AND 7.3. THE DOUBLE-STAR GLOB IS THE POINT, and m6.toml's own comment says why: a change
+# lives at `openspec/changes/<name>/` while it is open and at `openspec/changes/archive/<date>-<name>/`
+# once it closes, so a pattern that only matched an open change would turn red on the day the next
+# milestone closed — which is the one day this criterion should be most satisfied. `**` matches both
+# depths.
+[[criterion]]
+id = "m8b-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M8.b, whose named risk spike is the one graph IR seven consumers must agree on, and which is the whole reason M8 was split"
+source = "tasks 7.3, 7.6, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m8b*/proposal.md"
+ci_job = "milestone-m8a"
+
+# --- Every profile ------------------------------------------------------------------------------
+
+# THE IDENTICAL COMMAND M1, M2, M3, M4, M5, M5.5, M6 AND M7 DECLARE, written out rather than varied
+# so that the plan COLLAPSES all nine into one run of it, reported as `m1:four-profiles`. That is the
+# whole point of the flat ledger and the reason this string must not be "improved" here.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including M8.a's artefact and the six suites its two new directories brought, none of which is behind a CY_* option except the Jolt backend, which is ON and whose absence the bridge's own tests tolerate"
+source = "tasks 8.2"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"

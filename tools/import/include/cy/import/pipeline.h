@@ -188,7 +188,7 @@ private:
     std::atomic<usize> total_{0};
 };
 
-/// Register the importers this build ships: glTF, FBX and texture.
+/// Register the importers this build ships: glTF, FBX, OBJ, primitive and texture.
 ///
 /// A separate function rather than a constructor's body, because `asset-import-pipeline` requires a
 /// project to be able to register its own importers with the same weight as a built-in — so the

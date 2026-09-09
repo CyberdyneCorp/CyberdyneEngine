@@ -1,16 +1,22 @@
-// The engine-side runtime's two decisions and its one drawing. M7 tasks 5b.1, 5b.3 and 5b.4.
+// The engine-side runtime's wire and its one drawing. M7 tasks 5b.3 and 5b.4; M8.a task 1.4.
 //
 // Everything here is testable without a device, which is why it is in its own translation units
-// rather than in `main.cpp`: the association between an editor's identity and one of this scene's
-// objects, the reading of a transaction the editor committed, and the drawing of a published layout
-// into a frame. The Vulkan is `smoke.editor_window`'s to exercise, because it needs a display and
-// an editor anyway.
+// rather than in `main.cpp`: the decoding of a pick the editor sent, the encoding of the answer,
+// and the drawing of a published layout into a frame. The Vulkan is `smoke.editor_window`'s to
+// exercise, because it needs a display and an editor anyway; the world itself is
+// `integration.editor_window_one_world`'s, because building a scene costs more than a millisecond.
+//
+// **WHAT LEFT THIS FILE AT M8.a.** The association between an editor identity and one of this
+// scene's objects, and the transaction decoder that went with it. Both were `session.h`, both were
+// a stand-in for a shared world, and there is a shared world now: see `world_view.h` and
+// `cy/scene/serialization/worldfile.h`.
 
 #include <cy/core/memory/system_allocator.h>
+#include <cy/servers/render/picking.h>
 #include <cy/test/test.h>
 
 #include "overlay.h"
-#include "session.h"
+#include "pick_wire.h"
 
 #include <cstring>
 
@@ -28,50 +34,10 @@ void little_endian(cy::Array<u8>& out, u64 value, cy::usize width) {
     }
 }
 
-void text(cy::Array<u8>& out, const char* value) {
-    const cy::usize length = std::strlen(value);
-    little_endian(out, length, 4);
-    for (cy::usize index = 0; index < length; ++index) {
-        CY_REQUIRE(out.push_back(static_cast<u8>(value[index])));
-    }
-}
-
 void float_value(cy::Array<u8>& out, f32 value) {
     u32 bits = 0;
     std::memcpy(&bits, &value, sizeof(bits));
     little_endian(out, bits, 4);
-}
-
-/// A transaction as `cy_editor_documents::transaction::Transaction::encode` writes one.
-///
-/// Written out by hand rather than captured, so that a change to the editor's encoding fails here
-/// with a sentence about the field that moved rather than as a runtime that stopped applying
-/// moves — which is how this decoder's first defect presented.
-[[nodiscard]] cy::Array<u8> a_move(u64 node, f32 from_x, f32 to_x) {
-    cy::Array<u8> bytes;
-    little_endian(bytes, 0x1234, 8);  // the transaction's identity
-    little_endian(bytes, node, 8);    // the document's, as two halves
-    little_endian(bytes, 0, 8);
-    text(bytes, "Translate X");      // its name
-    CY_REQUIRE(bytes.push_back(0));  // Actor::Human
-    text(bytes, "designer");
-    CY_REQUIRE(bytes.push_back(1));  // a coalesce key follows
-    text(bytes, "gizmo-drag");
-    little_endian(bytes, 1, 4);      // one operation
-    CY_REQUIRE(bytes.push_back(6));  // Operation::SetField
-    little_endian(bytes, node, 8);   // the node, as two halves
-    little_endian(bytes, 0, 8);
-    little_endian(bytes, 3, 8);      // the component
-    little_endian(bytes, 4, 8);      // the field
-    CY_REQUIRE(bytes.push_back(6));  // Value::Vec3, before
-    float_value(bytes, from_x);
-    float_value(bytes, 0.0F);
-    float_value(bytes, 0.0F);
-    CY_REQUIRE(bytes.push_back(6));  // Value::Vec3, after
-    float_value(bytes, to_x);
-    float_value(bytes, 0.0F);
-    float_value(bytes, 0.0F);
-    return bytes;
 }
 
 /// A canvas of `width * height` opaque black pixels.
@@ -152,80 +118,82 @@ constexpr u32 kCanvasHeight = 72;
 
 }  // namespace
 
-CY_TEST_CASE("an identity keeps the object it was first given") {
-    // The association `session.h` explains: a stand-in for a shared world, and the property that
-    // makes it usable is that it does not move. A gizmo that landed on a different object every
-    // frame would be worse than no gizmo.
-    EditorSession session;
-    const u32 first = session.object_for(0xAAAA, 6);
-    CY_CHECK_EQ(session.object_for(0xAAAA, 6), first);
-    CY_CHECK_NE(session.object_for(0xBBBB, 6), first);
-    CY_CHECK_EQ(session.object_for(0xAAAA, 6), first);
-    CY_CHECK_EQ(session.associations(), 2U);
-    // A scene with nothing in it has no object to give, and says so rather than choosing zero.
-    CY_CHECK_EQ(session.object_for(0xCCCC, 0), EditorSession::kNoObject);
+// --- the pick wire, M8.a task 1.4 -------------------------------------------------------------
+
+/// A `PickRequest` as `cy_editor_viewport::picking::PickRequest::encode` writes one.
+[[nodiscard]] cy::Array<u8> a_click(u64 frame, f32 x, f32 y) {
+    cy::Array<u8> out;
+    little_endian(out, 3, 8);      // the viewport
+    little_endian(out, frame, 8);  // the frame that was on screen
+    CY_REQUIRE(out.push_back(0));  // PickIntent::Click
+    float_value(out, x);
+    float_value(out, y);
+    little_endian(out, 0xFFFFFFFFULL, 4);  // layers
+    CY_REQUIRE(out.push_back(1));          // include_transparent
+    little_endian(out, 16, 4);             // max_candidates
+    little_endian(out, 1, 4);              // one excluded identity
+    little_endian(out, 0xDEADULL, 8);
+    return out;
 }
 
-CY_TEST_CASE("more identities than objects wrap rather than failing") {
-    // An editor with more selected than the runtime holds is a legitimate state, and the
-    // alternative — no gizmo at all — would be less informative than a gizmo on one of them.
-    EditorSession session;
-    for (u64 identity = 0; identity < 10; ++identity) {
-        CY_CHECK(session.object_for(identity, 3) < 3U);
-    }
-    CY_CHECK_EQ(session.object_for(0, 3), 0U);
-    CY_CHECK_EQ(session.object_for(3, 3), 0U);
+CY_TEST_CASE("a click the editor sent decodes to the pixel it named") {
+    const cy::Array<u8> bytes = a_click(42, 640.5F, 360.25F);
+    PickRequest request(cy::system_allocator(cy::MemoryDomain::Gpu));
+    CY_REQUIRE(decode_pick_request(cy::Span<const u8>{bytes.data(), bytes.size()}, request));
+    CY_CHECK_EQ(request.viewport, 3ULL);
+    CY_CHECK_EQ(request.frame, 42ULL);
+    CY_CHECK(request.kind == PickKind::Click);
+    CY_CHECK_NEAR(request.x, 640.5F, 1e-6F);
+    CY_CHECK_NEAR(request.y, 360.25F, 1e-6F);
+    CY_CHECK_EQ(request.max_candidates, 16U);
+    CY_REQUIRE_EQ(request.excluded.size(), 1U);
+    CY_CHECK_EQ(request.excluded[0], 0xDEADULL);
 }
 
-CY_TEST_CASE("a move the editor committed is read out of its transaction") {
-    cy::Array<TranslationDelta> deltas;
-    const cy::Array<u8> transaction = a_move(0x5EED, 1.0F, 3.5F);
-    const cy::Expected<u32, cy::Error> operations =
-        read_translations(cy::Span<const u8>{transaction.data(), transaction.size()}, deltas);
-    CY_REQUIRE(operations.has_value());
-    CY_CHECK_EQ(*operations, 1U);
-    CY_REQUIRE_EQ(deltas.size(), 1U);
-    CY_CHECK_EQ(deltas[0].identity, 0x5EEDULL);
-    CY_CHECK_NEAR(deltas[0].amount.x, 2.5F, 1e-5F);
-    CY_CHECK_NEAR(deltas[0].amount.y, 0.0F, 1e-6F);
-}
-
-CY_TEST_CASE("a truncated transaction is refused at every length rather than half-applied") {
-    // A transaction cut short at any point must not produce a partial move: the editor's document
-    // has recorded the whole thing, and a runtime that applied half of it would drift from the
-    // document with nothing to say about when.
-    const cy::Array<u8> transaction = a_move(1, 0.0F, 1.0F);
-    for (cy::usize length = 0; length + 1 < transaction.size(); ++length) {
-        cy::Array<TranslationDelta> deltas;
-        const cy::Expected<u32, cy::Error> read =
-            read_translations(cy::Span<const u8>{transaction.data(), length}, deltas);
-        CY_CHECK_FALSE(read.has_value());
+CY_TEST_CASE("a truncated pick is refused at every length rather than half read") {
+    // The same rule the transaction decoder follows, and for the same reason: a request read past
+    // its end resolves against a misread filter, which is a confident wrong answer.
+    const cy::Array<u8> bytes = a_click(7, 1.0F, 2.0F);
+    for (cy::usize length = 0; length + 1 < bytes.size(); ++length) {
+        PickRequest request(cy::system_allocator(cy::MemoryDomain::Gpu));
+        CY_CHECK_FALSE(decode_pick_request(cy::Span<const u8>{bytes.data(), length}, request));
     }
 }
 
-CY_TEST_CASE("an operation this runtime cannot apply is declined by name") {
-    // A create or a delete needs the shared world M8's live editing brings. Declining is not a
-    // failure of the editor's edit — the document has already recorded it — and the message says
-    // which milestone answers it rather than leaving a reader to guess.
-    cy::Array<u8> transaction;
-    little_endian(transaction, 1, 8);
-    little_endian(transaction, 1, 8);
-    little_endian(transaction, 0, 8);
-    text(transaction, "Delete entity");
-    CY_REQUIRE(transaction.push_back(0));
-    text(transaction, "designer");
-    CY_REQUIRE(transaction.push_back(0));
-    little_endian(transaction, 1, 4);
-    CY_REQUIRE(transaction.push_back(1));  // Operation::DeleteNode
-    little_endian(transaction, 5, 8);
-    little_endian(transaction, 0, 8);
+CY_TEST_CASE("a pick intent from a newer editor is refused by name") {
+    cy::Array<u8> bytes;
+    little_endian(bytes, 1, 8);
+    little_endian(bytes, 1, 8);
+    CY_REQUIRE(bytes.push_back(9));  // an intent kind that does not exist
+    PickRequest request(cy::system_allocator(cy::MemoryDomain::Gpu));
+    CY_CHECK_FALSE(decode_pick_request(cy::Span<const u8>{bytes.data(), bytes.size()}, request));
+}
 
-    cy::Array<TranslationDelta> deltas;
-    const cy::Expected<u32, cy::Error> read =
-        read_translations(cy::Span<const u8>{transaction.data(), transaction.size()}, deltas);
-    CY_REQUIRE_FALSE(read.has_value());
-    CY_CHECK(read.error().code == cy::ErrorCode::NotImplemented);
-    CY_CHECK(deltas.empty());
+CY_TEST_CASE("an answer encodes as the editor reads it") {
+    // `PickResponse::decode`: the frame, a count, then identity, distance and a transparency byte.
+    cy::Array<cy::render::PickCandidate> candidates;
+    cy::render::PickCandidate near;
+    near.stable_id = 0x1122'3344'5566'7788ULL;
+    near.distance = 2.5F;
+    CY_REQUIRE(candidates.push_back(near));
+
+    cy::Array<u8> reply;
+    CY_REQUIRE(encode_pick_response(42, candidates.span(), reply));
+    CY_REQUIRE_EQ(reply.size(), cy::usize{8 + 4 + 8 + 4 + 1});
+    CY_CHECK_EQ(reply[0], 42U);
+    CY_CHECK_EQ(reply[8], 1U);  // one candidate
+    CY_CHECK_EQ(reply[12], 0x88U);
+    CY_CHECK_EQ(reply[19], 0x11U);
+    CY_CHECK_EQ(reply[24], 0U);  // opaque
+}
+
+CY_TEST_CASE("a click on nothing is an empty answer rather than a failure") {
+    // "The user clicked the sky" is not an error, and the editor's `Replace` mode clears the
+    // selection on one. An empty list has to encode.
+    cy::Array<u8> reply;
+    CY_REQUIRE(encode_pick_response(9, {}, reply));
+    CY_REQUIRE_EQ(reply.size(), cy::usize{12});
+    CY_CHECK_EQ(reply[8], 0U);
 }
 
 CY_TEST_CASE("the axis triad is drawn in the editor's own colours") {

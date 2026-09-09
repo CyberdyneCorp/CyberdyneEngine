@@ -348,6 +348,10 @@ ImporterInfo FbxImporter::info() const noexcept {
         "Imports an FBX file into cooked meshes with levels of detail, standard materials, "
         "collision proxies from a naming convention, and the node hierarchy the cook step turns "
         "into a prefab. Parsing is ufbx's; every step after it is shared with the glTF importer.";
+    // The eight of the ten model-import steps this build reaches. 7 and 8 — skeletons and
+    // animations — are absent for the reason gltf.h states at length, and the report NAMES them
+    // rather than warning about them. M8.a task 3.3.
+    info.steps = kHierarchyModelSteps;
     return info;
 }
 

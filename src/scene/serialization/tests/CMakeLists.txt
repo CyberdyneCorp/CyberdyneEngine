@@ -53,9 +53,11 @@ function(cy_scene_serialization_declare_tests)
             "${tests_dir}/test_documents.cpp"
             "${tests_dir}/test_identity.cpp"
             "${tests_dir}/test_prefabs.cpp"
+            "${tests_dir}/test_worldfile.cpp"
         DEPENDENCIES cy::scene-serialization cy::scene
         DEFINITIONS
-            "CY_AUTHORING_SCHEMA_GOLDEN=\"${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project/types.cytypes\"")
+            "CY_AUTHORING_SCHEMA_GOLDEN=\"${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project/types.cytypes\""
+            "CY_SAMPLE_WORLD=\"${CMAKE_SOURCE_DIR}/samples/05b-editor-window/project/worlds/city.cyworld\"")
 
     cy_add_test(
         NAME scene_cooking

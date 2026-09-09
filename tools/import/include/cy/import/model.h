@@ -100,9 +100,14 @@ private:
 /// Each level is simplified from the level above it rather than from the full-detail mesh, so a
 /// chain of 0.5 ratios halves, quarters and eighths. `name` is the mesh's stable sub-asset name;
 /// the levels take `<name>/lod<n>`.
+///
+/// `primary` marks the full-detail mesh as the sub-asset the SOURCE resolves to, and is what a
+/// format with no prefab has instead. A level of detail is never primary. It defaults to false
+/// because the two importers that produce a hierarchy nominate their prefab and not a mesh; the
+/// OBJ importer, which reaches no step 10, passes true for its first render mesh. M8.a task 3.2.
 [[nodiscard]] Status emit_mesh_with_lods(const MeshData& mesh, std::string_view name,
-                                         const ModelBuildOptions& options,
-                                         ImportResult& out) noexcept;
+                                         const ModelBuildOptions& options, ImportResult& out,
+                                         bool primary = false) noexcept;
 
 /// Step 6: emit the collision representation of one node, derived from the SOURCE mesh.
 ///

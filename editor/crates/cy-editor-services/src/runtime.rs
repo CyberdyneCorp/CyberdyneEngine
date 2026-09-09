@@ -145,6 +145,36 @@ impl RuntimeSession {
         Ok(request)
     }
 
+    /// Ask the attached runtime to enter, pause or leave play. M8.a task 5.1.
+    ///
+    /// **This is what pressing play now does that it did not before.** Until M8.a, `play.enter` set
+    /// a badge on every viewport and told the runtime nothing, so the world simulated nothing and
+    /// the editor reported `hosting: NoRuntime` — design.md §4's opening sentence. The runtime end
+    /// is `cy::gameplay::PlaySession`: it builds a simulation from the authored world, steps it in
+    /// the `Physics` stage, and restores the world exactly when play ends.
+    ///
+    /// Refused with a remedy when there is no runtime, exactly as [`RuntimeSession::apply`] is —
+    /// and the refusal is the interesting half: an editor with no engine attached can still switch
+    /// its own badge (which [`crate::editor::Editor::set_play`] does), but it must not claim
+    /// anything is simulating.
+    pub fn play(&self, state: &str) -> Result<RequestId> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            Problem::new(
+                format!("switch the runtime to {state}"),
+                "no runtime is attached",
+            )
+            .with_remedy(
+                "start a runtime and connect to it; there is nothing to simulate the world in",
+            )
+        })?;
+        let request = session.next_request();
+        session.send(&Message::Play {
+            request,
+            state: state.to_string(),
+        })?;
+        Ok(request)
+    }
+
     /// Ask the attached runtime to load a newly built generation of a script module.
     ///
     /// Task 3.7. Refused with a remedy when there is no runtime, for the same reason

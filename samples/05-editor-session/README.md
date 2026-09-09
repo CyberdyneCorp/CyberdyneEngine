@@ -66,6 +66,14 @@ editor's command surface**, and the artefact says so on every run rather than fa
     asset.import         NOT ON THE COMMAND SURFACE — importing from inside the editor
 ```
 
+**`asset.import` closed at M8.a**, and act 0 now prints it as present. Its `OPTIONAL_STEPS` entry
+carries no invocation, and the reason is about this session rather than about the command: the
+editor here runs with the REPOSITORY as its working directory, so it has no project open and
+`assets/lamppost.gltf` is not a path it can resolve — act 2 already cooks that file by running
+`cy_import_cli` against the sample's own project. The command itself is driven through the registry,
+with the entity it creates asserted, by
+`editor/crates/cy-editor-services/tests/importing_from_inside_the_editor.rs`.
+
 `cy_editor_services::builtin::register` registers six commands — create and delete an entity,
 select, undo, redo, save — and none of them transforms anything, starts a simulation, or imports.
 The machinery behind all three exists and is tested: `cy_editor_viewport::gizmo` does the

@@ -30,6 +30,9 @@
 //   cy::servers-render          `build_gizmo_layout` — where the handles are, in this frame's
 //                               pixels, at a constant screen size.
 //   cy::runtime-editor-bridge   the control socket the editor's `--host` connects to.
+//   cy::gameplay-play           M8.a's play session: the authored world becomes an ECS world with
+//                               bodies, steps in the `Physics` stage, and is restored EXACTLY when
+//                               play ends. This program is what presses it.
 //
 // This file is the loop that joins them, and it holds the one thing none of them can: which of the
 // scene's objects the editor's selection means. `session.h` says why that association exists and
@@ -39,7 +42,9 @@
 // USAGE
 // ================================================================================================
 //
-//   cy_editor_window_runtime [--socket PATH] [--host PATH] [--width W] [--height H]
+//   cy_editor_window_runtime [--socket PATH] [--host PATH] [--project DIR] [--world PATH]
+//                            [--physics jolt|reference]
+//                            [--width W] [--height H]
 //                            [--buffers N] [--seconds S] [--frames N] [--rate HZ]
 //                            [--adapter SUBSTRING] [--orbit TURNS-PER-SECOND]
 //                            [--layout PATH] [--no-validation]
@@ -56,13 +61,21 @@
 #include <cy/backends/viewport/publisher.h>
 #include <cy/core/math/quat.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/reflect/registry.h>
+#include <cy/gameplay/play/session.h>
+#include <cy/servers/physics/reference/server.h>
+#if defined(CY_PHYSICS)
+#    include <cy/backends/physics/jolt/server.h>
+#endif
 #include <cy/runtime/editor_bridge/bridge.h>
 #include <cy/servers/render/gizmo.h>
 #include <cy/servers/render/picking.h>
 #include <cy/servers/render/viewport_transport.h>
+#include <cy_reflect_generated_scene.h>
 
 #include "overlay.h"
-#include "session.h"
+#include "pick_wire.h"
+#include "world_view.h"
 
 #include "renderer.h"
 #include "scene.h"
@@ -91,8 +104,16 @@ extern "C" void on_signal(int) {
 struct Options {
     const char* socket = "/tmp/cy-viewport.sock";
     const char* host = "";
+    /// The project directory the world lives in, and the path the EDITOR names the world by.
+    /// Separate on purpose: see `WorldView::open`.
+    const char* project = "";
+    const char* world = "";
     const char* adapter = "";
     const char* layout_path = "";
+    /// Which solver a play session simulates in. `jolt` where this build has it — the reference
+    /// backend integrates motion and resolves no contacts, so a sphere would fall through the
+    /// floor and the artefact would photograph it doing so.
+    const char* physics = "";
     u32 width = 1280;
     u32 height = 720;
     u32 buffers = 4;
@@ -131,8 +152,11 @@ struct Options {
     Options options;
     options.socket = value_of(argc, argv, "--socket", options.socket);
     options.host = value_of(argc, argv, "--host", options.host);
+    options.project = value_of(argc, argv, "--project", options.project);
+    options.world = value_of(argc, argv, "--world", options.world);
     options.adapter = value_of(argc, argv, "--adapter", options.adapter);
     options.layout_path = value_of(argc, argv, "--layout", options.layout_path);
+    options.physics = value_of(argc, argv, "--physics", options.physics);
     options.width = static_cast<u32>(number_of(argc, argv, "--width", options.width));
     options.height = static_cast<u32>(number_of(argc, argv, "--height", options.height));
     options.buffers = static_cast<u32>(number_of(argc, argv, "--buffers", options.buffers));
@@ -251,7 +275,36 @@ struct Host {
     /// reports is about the frames the editor actually received rather than about a second count.
     render::ViewportTransport transport{render::ViewportTransportKind::SharedTexture};
     runtime::EditorBridge* bridge = nullptr;
-    EditorSession session;
+    /// THE WORLD, and the whole of what M7's `EditorSession` used to stand in for. See
+    /// `world_view.h`: there is no association here, because the runtime opened the same file the
+    /// editor did and a node's identity is derived on both sides from the same two numbers.
+    WorldView* view_world = nullptr;
+    /// M8.a TASK 5.1: what pressing play actually does. Null until a world is open — a play session
+    /// over M3's ring would be a simulation of a fixture, which is what this milestone ends.
+    gameplay::PlaySession* play = nullptr;
+    /// The solver a session simulates in. Owned by `main`, not by the session: which backend a
+    /// project uses is the host's decision (`cy::physics::PhysicsBridge`'s header argues it), and a
+    /// session that created one would create and destroy a whole backend per press of play.
+    physics::PhysicsServer* physics = nullptr;
+    /// What the sessions did, for the report. Cumulative across presses of play, because a session
+    /// that left something behind would show up in the SECOND one.
+    u64 play_sessions = 0;
+    u64 play_ticks = 0;
+    u64 play_bodies = 0;
+    /// False the moment any session's stop failed to restore the authored world byte for byte,
+    /// which is task 5.2's claim measured rather than asserted. Starts true and can only fall.
+    bool play_restored_exactly = true;
+    /// The gizmo mode the editor last asked for. Still kept — it decides which handles are drawn —
+    /// but no longer used to guess what a changed value meant, because the transaction says.
+    render::GizmoMode mode = render::GizmoMode::Translate;
+    /// The scene object the gizmo is on, and the identity it stands for.
+    u32 anchored = WorldView::kNoObject;
+    u64 anchored_identity = 0;
+    /// Whether the "that is not my document" warning has already been printed. Once, not per
+    /// message: a wall of them would bury the one line that says what to do.
+    bool warned_about_document = false;
+    /// The frame identity the pixel half last announced. What a pick is resolved against.
+    u64 published_frame = 0;
     /// The gizmo in the FRAME's pixels, which is what is drawn into the frame.
     render::GizmoLayout layout;
     /// The size the editor last said its viewport is, or zero. What the published layout is scaled
@@ -271,11 +324,33 @@ struct Host {
     u64 frames_published = 0;
     u64 gizmos_answered = 0;
     u64 moves_applied = 0;
+    u64 picks_answered = 0;
+    u64 pick_candidates = 0;
+    u64 transactions_applied = 0;
+    u64 nodes_created = 0;
+    u64 nodes_deleted = 0;
+    /// TASK 1.3, MEASURED RATHER THAN ASSERTED. When a transaction is applied, the number of frames
+    /// published so far is recorded; the next frame published carries the change, so the difference
+    /// is how many frames the editor waited to see its own edit. Zero is the claim, and the worst
+    /// case over the run is what the report prints — an average would hide the one frame that was
+    /// late.
+    bool change_pending = false;
+    u64 change_at_frame = 0;
+    u64 change_at_micros = 0;
+    u64 worst_frames_to_visible = 0;
+    u64 worst_micros_to_visible = 0;
+    u64 changes_measured = 0;
+    /// The frame's records, kept across frames so a pick does not allocate on the message path.
+    Array<render::GpuInstance> instances{system_allocator(MemoryDomain::Gpu)};
+    Array<render::DrawItem> draws{system_allocator(MemoryDomain::Gpu)};
     /// What the editor sent, by kind. Printed at the end rather than logged per message: an
     /// artefact that reports "0 gizmos answered" needs to be able to say whether the editor asked
     /// and the runtime refused, or whether nothing arrived at all — which is two very different
     /// places to look, and the difference cost this milestone an afternoon.
-    u64 received[static_cast<usize>(runtime::EditorMessage::GizmoGeometry) + 1] = {};
+    /// SIZED BY THE LAST TAG, not by the last one this runtime answers: `Play` is 15 and
+    /// `GizmoGeometry` is 13, so an array sized by the latter would be written past its end by the
+    /// counter above the switch the first time an editor pressed play.
+    u64 received[static_cast<usize>(runtime::EditorMessage::Playing) + 1] = {};
     u64 unknown_messages = 0;
 };
 
@@ -341,14 +416,21 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
                                          "rebuild the editor and the runtime together");
         return;
     }
-    host.session.set_mode(intent.mode);
+    host.mode = intent.mode;
     host.asked_width = intent.viewport_width;
     host.asked_height = intent.viewport_height;
     adopt_camera(host, intent);
-    const u32 object_count = static_cast<u32>(host.scene->objects().size());
-    if (intent.identities.empty() || object_count == 0) {
+    // THE OBJECT THE EDITOR NAMED, by identity. Not the next unused one: the world this runtime
+    // holds is the world the editor has open, so an identity either names a node in it or names
+    // nothing, and naming nothing must take the gizmo off the screen rather than move it to an
+    // unrelated object.
+    const u32 object = intent.identities.empty()
+                           ? WorldView::kNoObject
+                           : host.view_world->object_for(intent.identities[0]);
+    if (object == WorldView::kNoObject) {
         // An empty selection is a REQUEST, not an absence: it must take the gizmo off the screen.
-        host.session.anchor(EditorSession::kNoObject);
+        host.anchored = WorldView::kNoObject;
+        host.anchored_identity = 0;
         host.layout.spots.clear();
         host.layout.extent = 0.0F;
         // THE FRAME THE INTENT NAMED, which is inside the intent rather than on the message.
@@ -361,8 +443,8 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
         (void)publish_layout(host, request.request);
         return;
     }
-    const u32 object = host.session.object_for(intent.identities[0], object_count);
-    host.session.anchor(object);
+    host.anchored = object;
+    host.anchored_identity = intent.identities[0];
 
     const Vec3 pivot = relative_position(host.scene->objects()[object], host.camera);
     // THE FRAME THE EDITOR IS SHOWING, not the one this runtime has since rendered. The editor
@@ -377,40 +459,181 @@ void answer_gizmo(Host& host, const runtime::EditorRequest& request) noexcept {
     }
 }
 
-/// Apply what the editor committed, so that the frame the editor is looking at moves with it.
-void apply_transaction(Host& host, const runtime::EditorRequest& request) noexcept {
-    Array<TranslationDelta> deltas;
-    const Expected<u32, Error> operations = read_translations(request.payload, deltas);
-    if (!operations) {
-        // Declining is not a failure of the editor's edit: the document has already recorded it,
-        // and this runtime simply has nothing to do with a create or a delete until the worlds are
-        // shared. The editor is told so rather than left waiting.
-        (void)host.bridge->send_rejected(request.request, operations.error().message,
-                                         "this runtime holds its own scene; M8's live editing "
-                                         "shares one");
+/// Answer one pick against the frame the editor was looking at. M8.a task 1.4.
+///
+/// **M7 refused this by name**, and its reason was exact: *"this runtime renders through M3's
+/// sample renderer, which publishes no draw list for cy::render::pick_ray to resolve against"*.
+/// There is one now. `WorldView::publish` writes a `GpuInstance` and a `DrawItem` for every object
+/// the frame drew, out of the same placement the frame was drawn from, so what is picked is what
+/// was rendered rather than a second traversal that agrees on the day it is written.
+void answer_pick(Host& host, const runtime::EditorRequest& request) noexcept {
+    Allocator& allocator = system_allocator(MemoryDomain::Gpu);
+    PickRequest pick(allocator);
+    if (!decode_pick_request(request.payload, pick)) {
+        (void)host.bridge->send_rejected(request.request, "read the pick request",
+                                         "rebuild the editor and the runtime together");
         return;
     }
-    const u32 object_count = static_cast<u32>(host.scene->objects().size());
-    // A Vec3 that changed is a translation only while the editor's stated mode is a move. See
-    // session.h: the identifiers in a transaction are the document's, so this is the signal the
-    // runtime legitimately has, and it refuses to guess at a scale.
-    const bool moving = host.session.mode() == render::GizmoMode::Translate ||
-                        host.session.mode() == render::GizmoMode::Universal;
-    for (const TranslationDelta& delta : deltas) {
-        if (!moving || object_count == 0) {
-            continue;
+    // THE FRAME THE CLICK WAS AIMED AT. The records were published with the frame that produced
+    // them, and a click against a frame this runtime has moved past would be resolved against a
+    // camera the user never saw. A pick that names no frame — a probe, or a test — is answered
+    // against the current one, which is the only frame there is to answer against.
+    Array<render::PickCandidate> candidates(allocator);
+    if (pick.frame == 0 || pick.frame == host.published_frame) {
+        if (Status resolved =
+                resolve_pick(pick, host.view, host.instances.span(), host.draws.span(), candidates);
+            !resolved) {
+            (void)host.bridge->send_rejected(request.request, resolved.error().message,
+                                             "the pick names an intent or a size this runtime "
+                                             "cannot resolve");
+            return;
         }
-        const u32 object = host.session.object_for(delta.identity, object_count);
-        // INTO THE SCENE, so the next frame the editor sees has the object where the drag put it.
-        // The gizmo's pivot is read back out of the same place, so the handles follow the box
-        // rather than the box following a copy of the handles.
-        first_light::Object& moved = host.scene->objects_mutable()[object];
-        moved.world_position[0] += static_cast<f64>(delta.amount.x);
-        moved.world_position[1] += static_cast<f64>(delta.amount.y);
-        moved.world_position[2] += static_cast<f64>(delta.amount.z);
-        host.moves_applied += 1;
+    }
+    Array<u8> reply(allocator);
+    if (Status encoded = encode_pick_response(pick.frame, candidates.span(), reply); !encoded) {
+        (void)host.bridge->send_rejected(request.request, "encode the pick answer",
+                                         "the runtime ran out of memory");
+        return;
+    }
+    if (Status sent = host.bridge->send_picked(request.request, reply.span()); sent) {
+        host.picks_answered += 1;
+        host.pick_candidates += candidates.size();
+    }
+}
+
+/// Apply what the editor committed, to THE WORLD, so the next frame is the world it authored.
+///
+/// M7 applied a translation to a scene object it had associated with the identity in first-seen
+/// order, and declined everything else — its own message said so: *"this runtime holds its own
+/// scene; M8's live editing shares one"*. It shares one now. The bytes go to
+/// `cy::scene::serialization::apply_transaction`, which addresses the world by the identity the
+/// editor allocated and by the field identifiers the world file itself declared, so a create
+/// creates, a delete deletes and a scale scales.
+void apply_transaction(Host& host, const runtime::EditorRequest& request) noexcept {
+    scene::serialization::TransactionReport report;
+    if (Status applied = host.view_world->apply(request.payload, report); !applied) {
+        // Still a refusal, but a different one: the stream was unreadable, not the operation
+        // unsupported. The editor is told which, because they are two very different places to
+        // look.
+        (void)host.bridge->send_rejected(request.request, applied.error().message,
+                                         "rebuild the editor and the runtime together");
+        return;
+    }
+    if (!scene::serialization::verify_document_identity(host.view_world->world(),
+                                                        report.document)) {
+        // NOT AN ERROR, and worth saying once rather than per message: an editor may hold documents
+        // this runtime never loaded, and a transaction for one of them changes nothing here.
+        if (!host.warned_about_document) {
+            std::fprintf(stderr,
+                         "%s: warning: a transaction names a document this runtime did not load. "
+                         "--world must be the path the editor opened, spelled the same way\n",
+                         kTag);
+            host.warned_about_document = true;
+        }
+    }
+    host.transactions_applied += 1;
+    host.moves_applied += report.applied;
+    host.nodes_created += report.created;
+    host.nodes_deleted += report.deleted;
+    if (report.applied > 0 && !host.change_pending) {
+        // TASK 1.3, MEASURED. The next frame published is the one that carries this change; the
+        // report says how many frames it actually took, worst case over the run.
+        host.change_pending = true;
+        host.change_at_frame = host.frames_published;
+        host.change_at_micros = monotonic_nanos() / 1000ULL;
     }
     (void)host.bridge->send_applied(request.request, request.frame, request.payload);
+}
+
+/// Enter, pause or leave play. M8.a tasks 5.1 and 5.2.
+///
+/// THE ANSWER IS ALWAYS THE STATE NOW IN FORCE, never a silence. A runtime that ignored a play it
+/// could not honour would leave the editor showing "PLAYING" over a world that is not moving, which
+/// is worse than a refusal: it is a refusal a person cannot see.
+void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
+    const std::string_view asked(reinterpret_cast<const char*>(request.payload.data()),
+                                 request.payload.size());
+    const Expected<gameplay::PlayState, Error> wanted = gameplay::play_state_of(asked);
+    if (!wanted) {
+        (void)host.bridge->send_playing(
+            request.request,
+            host.play == nullptr ? "editing" : gameplay::play_state_name(host.play->state()),
+            wanted.error().message);
+        return;
+    }
+    if (host.play == nullptr) {
+        // No world, so nothing to simulate. `--world` is what makes a play session possible at all,
+        // and saying so is more useful than reporting a state that would be a lie.
+        (void)host.bridge->send_playing(
+            request.request, "editing",
+            "this runtime has no world open; start it with --project and --world");
+        return;
+    }
+
+    char detail[192] = {};
+    switch (*wanted) {
+        case gameplay::PlayState::Playing: {
+            if (host.play->state() == gameplay::PlayState::Paused) {
+                if (Status resumed = host.play->resume(); !resumed) {
+                    (void)host.bridge->send_playing(request.request,
+                                                    gameplay::play_state_name(host.play->state()),
+                                                    resumed.error().message);
+                    return;
+                }
+                (void)std::snprintf(detail, sizeof(detail), "resumed");
+                break;
+            }
+            if (host.play->state() == gameplay::PlayState::Playing) {
+                (void)std::snprintf(detail, sizeof(detail), "already playing");
+                break;
+            }
+            gameplay::PlayConfiguration configuration;
+            configuration.physics = host.physics;
+            configuration.body_capacity = kWorldCapacity * 2;
+            if (Status entered = host.play->enter(configuration); !entered) {
+                (void)host.bridge->send_playing(request.request, "editing",
+                                                entered.error().message);
+                return;
+            }
+            host.play_sessions += 1;
+            host.play_bodies = host.play->report().bodies;
+            (void)std::snprintf(detail, sizeof(detail), "%u entities, %u bodies, %u colliders",
+                                host.play->report().entities, host.play->report().bodies,
+                                host.play->report().colliders);
+            break;
+        }
+        case gameplay::PlayState::Paused:
+            if (Status paused = host.play->pause(); !paused) {
+                (void)std::snprintf(detail, sizeof(detail), "%s", paused.error().message);
+            } else {
+                (void)std::snprintf(detail, sizeof(detail), "paused at tick %llu",
+                                    static_cast<unsigned long long>(host.play->report().ticks));
+            }
+            break;
+        case gameplay::PlayState::Editing: {
+            const bool was_playing = host.play->state() != gameplay::PlayState::Editing;
+            if (Status stopped = host.play->stop(); !stopped) {
+                (void)std::snprintf(detail, sizeof(detail), "%s", stopped.error().message);
+                break;
+            }
+            if (was_playing) {
+                // TASK 5.2, REPORTED RATHER THAN ASSUMED. The session compared the world's bytes
+                // before and after; if they differ it has already put the whole snapshot back, and
+                // the editor is told so in the same sentence a designer reads.
+                const gameplay::PlayReport& report = host.play->report();
+                host.play_restored_exactly = host.play_restored_exactly && report.restored_exactly;
+                (void)std::snprintf(
+                    detail, sizeof(detail), "%llu ticks, %u placements restored, document %s",
+                    static_cast<unsigned long long>(report.ticks), report.restored,
+                    report.restored_exactly ? "identical" : "REBUILT FROM THE SNAPSHOT");
+            } else {
+                (void)std::snprintf(detail, sizeof(detail), "nothing was playing");
+            }
+            break;
+        }
+    }
+    (void)host.bridge->send_playing(request.request, gameplay::play_state_name(host.play->state()),
+                                    detail);
 }
 
 void serve_editor(Host& host) noexcept {
@@ -435,7 +658,9 @@ void serve_editor(Host& host) noexcept {
                 // viewport opens at the origin looking down −Z, and this runtime is the only side
                 // that knows where its world is. Sent on the handshake rather than on every frame,
                 // because a runtime that re-aimed the camera continuously would own it.
-                const first_light::Camera framed = host.scene->camera_at(kFramingPhase);
+                const first_light::Camera framed = host.view_world->loaded()
+                                                       ? host.view_world->framing(*host.scene)
+                                                       : host.scene->camera_at(kFramingPhase);
                 const f32 position[3] = {static_cast<f32>(framed.position[0]),
                                          static_cast<f32>(framed.position[1]),
                                          static_cast<f32>(framed.position[2])};
@@ -455,16 +680,10 @@ void serve_editor(Host& host) noexcept {
                 apply_transaction(host, request);
                 break;
             case runtime::EditorMessage::Pick:
-                // ENGINE-SIDE PICKING NEEDS THE DRAW LIST THIS FRAME PRODUCED, and this renderer is
-                // M3's: it draws from a scene rather than publishing `GpuInstance` records, so
-                // there is nothing for `cy::render::pick_ray` to resolve against. Refused by name
-                // rather than answered with a guess — an invented hit is the forbidden pattern
-                // `editor-viewport-and-gizmos` names, and a refusal the editor can show is the
-                // honest answer until the render server drives this frame.
-                (void)host.bridge->send_rejected(
-                    request.request, "resolve a pick against this frame",
-                    "this runtime renders through M3's sample renderer, which publishes no draw "
-                    "list for cy::render::pick_ray to resolve against");
+                answer_pick(host, request);
+                break;
+            case runtime::EditorMessage::Play:
+                answer_play(host, request);
                 break;
             default:
                 break;
@@ -472,10 +691,120 @@ void serve_editor(Host& host) noexcept {
     }
 }
 
+/// Open the world the editor opened, with the engine's own component types registered.
+///
+/// REFUSED RATHER THAN FALLEN BACK TO M3's RING. A runtime that silently rendered a different world
+/// from the one the editor opened is the defect this milestone exists to end, and it would present
+/// to a user as "my objects are not there" with nothing to look at.
+///
+/// Without `--world` this does nothing and answers `ok()`: that is the headless run and
+/// `cy-viewport-transport-probe`'s, and it is still M3's ring.
+[[nodiscard]] Status open_world(const Options& options, reflect::TypeRegistry& registry,
+                                WorldView& out) noexcept {
+    if (options.world[0] == '\0') {
+        return ok();
+    }
+    // The engine's own scene components, which is what makes the file's `Transform` this build's
+    // `cy::scene::LocalTransform` rather than a name that happens to match.
+    if (Status registered = reflect::register_scene_types(registry); !registered) {
+        return registered;
+    }
+    if (Status opened = out.open(options.project, options.world, registry); !opened) {
+        return opened;
+    }
+    std::fprintf(stdout, "%s: world    %s  %llu node(s), %llu type(s), document %016llx%016llx\n",
+                 kTag, options.world, static_cast<unsigned long long>(out.world().nodes().size()),
+                 static_cast<unsigned long long>(out.world().types().size()),
+                 static_cast<unsigned long long>(out.world().document().high),
+                 static_cast<unsigned long long>(out.world().document().low));
+    return ok();
+}
+
+/// The solver a play session simulates in.
+///
+/// **Jolt by default where this build has it**, because the reference backend integrates motion and
+/// declares that it does not resolve contacts (`Capabilities::contact_resolution` is false) — a
+/// sphere dropped on a box would fall straight through it and the artefact would photograph that
+/// happening. `--physics reference` asks for the other one deliberately, which is what a run
+/// checking that the bridge does not depend on a backend wants.
+[[nodiscard]] physics::PhysicsServer* create_physics(Allocator& allocator, const char* wanted,
+                                                     const char*& chosen) noexcept {
+    const bool ask_reference = std::strcmp(wanted, "reference") == 0;
+#if defined(CY_PHYSICS)
+    if (!ask_reference) {
+        const Expected<physics::PhysicsServer*, Error> made =
+            physics::jolt::create_server(allocator, nullptr);
+        if (made && (*made)->initialize()) {
+            chosen = "jolt";
+            return *made;
+        }
+        if (made) {
+            physics::jolt::destroy_server(*made, allocator);
+        }
+    }
+#else
+    (void)ask_reference;
+#endif
+    const Expected<physics::PhysicsServer*, Error> made =
+        physics::reference::create_server(allocator);
+    if (!made) {
+        return nullptr;
+    }
+    if (!(*made)->initialize()) {
+        physics::reference::destroy_server(*made, allocator);
+        return nullptr;
+    }
+    chosen = "reference";
+    return *made;
+}
+
+void destroy_physics(Allocator& allocator, physics::PhysicsServer* server,
+                     const char* chosen) noexcept {
+    if (server == nullptr) {
+        return;
+    }
+    server->shutdown();
+#if defined(CY_PHYSICS)
+    if (std::strcmp(chosen, "jolt") == 0) {
+        physics::jolt::destroy_server(server, allocator);
+        return;
+    }
+#else
+    (void)chosen;
+#endif
+    physics::reference::destroy_server(server, allocator);
+}
+
 /// Render one frame, composite the gizmo into it, and publish it.
 [[nodiscard]] bool publish_frame(Host& host, f32 phase) noexcept {
     host.camera = host.editor_camera ? host.asked_camera : host.scene->camera_at(phase);
     host.view = view_of(host.camera, host.options.width, host.options.height);
+
+    // THE WORLD BECOMES THE FRAME, here, once, every frame. Everything the editor committed since
+    // the last frame is already in the world — `serve_editor` ran first in this same iteration —
+    // so a change and the frame that shows it are one pass of this loop apart, which is what task
+    // 1.3 measures rather than assumes.
+    // ONE FIXED STEP OF THE PLAY SESSION, BEFORE THE WORLD BECOMES THE FRAME. The session writes
+    // the simulated placements back into the authored world, so the presentation below draws the
+    // simulation without knowing a session exists — and when nothing is playing, `tick()` succeeds
+    // and does nothing, which is why there is no state check here.
+    if (host.play != nullptr) {
+        if (Status stepped = host.play->tick(); !stepped) {
+            report("play", stepped.error());
+        } else if (host.play->state() == gameplay::PlayState::Playing) {
+            host.play_ticks += 1;
+        }
+    }
+
+    if (host.view_world->loaded()) {
+        (void)host.view_world->present(*host.scene);
+        // And the records a pick resolves against, from the same placement, before the draw.
+        if (Status published =
+                host.view_world->publish(*host.scene, host.camera, host.instances, host.draws);
+            !published) {
+            report("pick records", published.error());
+        }
+    }
 
     const Expected<first_light::FrameReport, Error> frame =
         host.renderer->render(*host.scene, host.camera);
@@ -500,8 +829,9 @@ void serve_editor(Host& host) noexcept {
     // is the SAME layout, not a second computation: what a person aims at and what the editor
     // hit-tests came out of one call to `build_gizmo_layout`.
     const Canvas canvas{staging.pixels, staging.width, staging.height};
-    if (host.session.anchored() != EditorSession::kNoObject && !host.layout.empty()) {
-        const u32 object = host.session.anchored();
+    if (host.anchored != WorldView::kNoObject && host.anchored < host.scene->objects().size() &&
+        !host.layout.empty()) {
+        const u32 object = host.anchored;
         const Vec3 pivot = relative_position(host.scene->objects()[object], host.camera);
         Vec2 marker{0.0F, 0.0F};
         if (project_to_pixel(host.view, pivot, marker)) {
@@ -509,8 +839,8 @@ void serve_editor(Host& host) noexcept {
         }
         // Rebuilt for THIS frame's camera, and republished with it, so the drawn gizmo and the
         // published one are the same handles even while the camera moves.
-        host.layout = render::build_gizmo_layout(host.view, pivot, Quat::identity(),
-                                                 host.session.mode(), host.layout.frame_id);
+        host.layout = render::build_gizmo_layout(host.view, pivot, Quat::identity(), host.mode,
+                                                 host.layout.frame_id);
         draw_gizmo(canvas, host.layout, render::GizmoHandle::Count);
     }
 
@@ -531,11 +861,103 @@ void serve_editor(Host& host) noexcept {
         report("transport", recorded.error());
     }
     host.layout.frame_id = *published;
+    host.published_frame = *published;
     host.frames_published += 1;
+    // TASK 1.3'S NUMBER, taken here because this is where the change actually reached a viewer.
+    if (host.change_pending) {
+        const u64 frames = host.frames_published - 1 - host.change_at_frame;
+        const u64 micros = (monotonic_nanos() / 1000ULL) - host.change_at_micros;
+        host.worst_frames_to_visible = math::max(host.worst_frames_to_visible, frames);
+        host.worst_micros_to_visible = math::max(host.worst_micros_to_visible, micros);
+        host.changes_measured += 1;
+        host.change_pending = false;
+    }
     return true;
 }
 
 }  // namespace
+
+/// Everything the run measured, printed once at the end.
+///
+/// PRINTED RATHER THAN LOGGED PER EVENT, because the numbers a reader needs are differences: "0
+/// gizmos answered" needs to be readable beside "1243 gizmo intents received" to say whether the
+/// editor asked and the runtime refused, or whether nothing arrived at all. That distinction is two
+/// very different places to look, and it cost M7 an afternoon.
+void print_report(const Host& host, const WorldView& view_world,
+                  const runtime::EditorBridge& bridge, u64 started) noexcept {
+    const render::ViewportPacing& pacing = host.transport.pacing();
+    std::fprintf(stdout,
+                 "%s: pacing    %llu published, %llu late, mean interval %u us, worst %u us\n",
+                 kTag, static_cast<unsigned long long>(pacing.published),
+                 static_cast<unsigned long long>(pacing.late), pacing.mean_interval_micros,
+                 pacing.worst_interval_micros);
+
+    const viewport::PublisherStatistics& statistics = host.publisher->statistics();
+    const f64 seconds = static_cast<f64>(monotonic_nanos() - started) / 1'000'000'000.0;
+    std::fprintf(stdout,
+                 "%s: published %llu frames in %.2f s = %.1f fps, dropped %llu on a full ring, "
+                 "%llu vetoed; %llu gizmo(s) answered, %llu move(s) applied; %llu us of host "
+                 "copy\n",
+                 kTag, static_cast<unsigned long long>(statistics.published), seconds,
+                 seconds > 0.0 ? static_cast<double>(statistics.published) / seconds : 0.0,
+                 static_cast<unsigned long long>(statistics.dropped_full_ring),
+                 static_cast<unsigned long long>(statistics.vetoed),
+                 static_cast<unsigned long long>(host.gizmos_answered),
+                 static_cast<unsigned long long>(host.moves_applied),
+                 static_cast<unsigned long long>(statistics.upload_micros));
+    // TASK 1.1, 1.3 AND 1.4, AS THREE NUMBERS A READER CAN CHECK. "0 frames" is the claim
+    // that a change is visible in the frame the transaction commits; "n created" is the claim
+    // that an entity the editor made exists here; "n candidate(s)" is the claim that a pick
+    // resolved against what was drawn rather than being refused by name.
+    if (view_world.loaded()) {
+        std::fprintf(stdout,
+                     "%s: world     %llu node(s) presented, %llu overflowed the %u slots; "
+                     "%llu transaction(s), %llu field(s) applied, %llu created, %llu deleted\n",
+                     kTag, static_cast<unsigned long long>(view_world.presented()),
+                     static_cast<unsigned long long>(view_world.overflowed()), kWorldCapacity,
+                     static_cast<unsigned long long>(host.transactions_applied),
+                     static_cast<unsigned long long>(host.moves_applied),
+                     static_cast<unsigned long long>(host.nodes_created),
+                     static_cast<unsigned long long>(host.nodes_deleted));
+        std::fprintf(stdout,
+                     "%s: same-frame %llu change(s) measured, worst %llu frame(s) and %llu us "
+                     "from commit to the frame that carried it\n",
+                     kTag, static_cast<unsigned long long>(host.changes_measured),
+                     static_cast<unsigned long long>(host.worst_frames_to_visible),
+                     static_cast<unsigned long long>(host.worst_micros_to_visible));
+        std::fprintf(stdout, "%s: picking   %llu answered, %llu candidate(s) reported\n", kTag,
+                     static_cast<unsigned long long>(host.picks_answered),
+                     static_cast<unsigned long long>(host.pick_candidates));
+        // TASKS 5.1 AND 5.2, AS THREE NUMBERS AND A WORD. "n session(s)" is the claim that pressing
+        // play reached this runtime at all; "n tick(s)" is the claim that it simulated rather than
+        // sat in a mode; and "document identical" is the claim that stopping put the authored world
+        // back byte for byte — which is the one a play session that left residue would fail.
+        std::fprintf(stdout,
+                     "%s: play      %llu session(s), %llu tick(s), %llu bodies, document %s\n",
+                     kTag, static_cast<unsigned long long>(host.play_sessions),
+                     static_cast<unsigned long long>(host.play_ticks),
+                     static_cast<unsigned long long>(host.play_bodies),
+                     host.play_restored_exactly ? "identical after every stop"
+                                                : "REBUILT FROM THE SNAPSHOT — see task 5.2");
+    }
+    std::fprintf(stdout,
+                 "%s: editor    %llu connection(s); hello %llu, ping %llu, gizmo-intent %llu, "
+                 "apply %llu, pick %llu, play %llu, unknown %llu\n",
+                 kTag, static_cast<unsigned long long>(bridge.connections()),
+                 static_cast<unsigned long long>(
+                     host.received[static_cast<usize>(runtime::EditorMessage::Hello)]),
+                 static_cast<unsigned long long>(
+                     host.received[static_cast<usize>(runtime::EditorMessage::Ping)]),
+                 static_cast<unsigned long long>(
+                     host.received[static_cast<usize>(runtime::EditorMessage::GizmoIntent)]),
+                 static_cast<unsigned long long>(
+                     host.received[static_cast<usize>(runtime::EditorMessage::Apply)]),
+                 static_cast<unsigned long long>(
+                     host.received[static_cast<usize>(runtime::EditorMessage::Pick)]),
+                 static_cast<unsigned long long>(
+                     host.received[static_cast<usize>(runtime::EditorMessage::Play)]),
+                 static_cast<unsigned long long>(host.unknown_messages));
+}
 
 int main(int argc, char** argv) {
     (void)std::signal(SIGPIPE, SIG_IGN);
@@ -565,12 +987,25 @@ int main(int argc, char** argv) {
     std::fprintf(stdout, "%s: device   backend=%s\n", kTag,
                  selection.selected != nullptr ? selection.selected : "(none)");
 
+    // THE SCENE IS BUILT WITH CAPACITY when a world is to be loaded: one ground plane and enough
+    // box slots for the world's nodes, which `WorldView::present` writes into and blanks the rest
+    // of. Without `--world` it is M3's ring, unchanged, which is what a headless run and
+    // `cy-viewport-transport-probe` still see.
+    const bool authoring = options.world[0] != '\0';
     first_light::SceneDescription scene_description;
-    scene_description.box_count = 6;
+    scene_description.box_count = authoring ? kWorldCapacity : 6;
     scene_description.sun_shadows = true;
     first_light::Scene scene(allocator);
     if (Status built = scene.build(scene_description); !built) {
         report("scene", built.error());
+        rhi::destroy_device(allocator, device.value());
+        return 1;
+    }
+
+    reflect::TypeRegistry registry;
+    WorldView view_world(allocator);
+    if (Status opened = open_world(options, registry, view_world); !opened) {
+        report("world", opened.error());
         rhi::destroy_device(allocator, device.value());
         return 1;
     }
@@ -621,9 +1056,37 @@ int main(int argc, char** argv) {
             std::fprintf(stdout, "%s: bridge   %s\n", kTag, options.host);
         }
 
+        // THE PLAY SESSION AND ITS SOLVER, created only when there is a world to play. Both are
+        // owned here, outside the loop, and destroyed after it in the order task 4.4 is about: the
+        // session lets its bodies and its physics world go, and only then does the server go.
+        const char* physics_backend = "none";
+        physics::PhysicsServer* physics_server = nullptr;
+        UniquePtr<gameplay::PlaySession> play;
+        if (view_world.loaded()) {
+            physics_server = create_physics(allocator, options.physics, physics_backend);
+            if (physics_server == nullptr) {
+                report("physics",
+                       Error{ErrorCode::Unavailable,
+                             "no physics backend could be created; play is unavailable"});
+            } else {
+                Expected<UniquePtr<gameplay::PlaySession>, Error> made =
+                    make_unique<gameplay::PlaySession>(allocator, allocator, view_world.world());
+                if (!made) {
+                    report("play", made.error());
+                } else {
+                    play = std::move(*made);
+                }
+            }
+            std::fprintf(stdout, "%s: play     backend=%s, session=%s\n", kTag, physics_backend,
+                         play ? "ready" : "unavailable");
+        }
+
         Host host;
         host.options = options;
         host.scene = &scene;
+        host.view_world = &view_world;
+        host.play = play.get();
+        host.physics = physics_server;
         host.renderer = &renderer;
         host.publisher = publisher->get();
         host.bridge = &bridge;
@@ -661,41 +1124,18 @@ int main(int argc, char** argv) {
             }
         }
 
-        const render::ViewportPacing& pacing = host.transport.pacing();
-        std::fprintf(stdout,
-                     "%s: pacing    %llu published, %llu late, mean interval %u us, worst %u us\n",
-                     kTag, static_cast<unsigned long long>(pacing.published),
-                     static_cast<unsigned long long>(pacing.late), pacing.mean_interval_micros,
-                     pacing.worst_interval_micros);
+        print_report(host, view_world, bridge, started);
 
-        const viewport::PublisherStatistics& statistics = host.publisher->statistics();
-        const f64 seconds = static_cast<f64>(monotonic_nanos() - started) / 1'000'000'000.0;
-        std::fprintf(stdout,
-                     "%s: published %llu frames in %.2f s = %.1f fps, dropped %llu on a full ring, "
-                     "%llu vetoed; %llu gizmo(s) answered, %llu move(s) applied; %llu us of host "
-                     "copy\n",
-                     kTag, static_cast<unsigned long long>(statistics.published), seconds,
-                     seconds > 0.0 ? static_cast<double>(statistics.published) / seconds : 0.0,
-                     static_cast<unsigned long long>(statistics.dropped_full_ring),
-                     static_cast<unsigned long long>(statistics.vetoed),
-                     static_cast<unsigned long long>(host.gizmos_answered),
-                     static_cast<unsigned long long>(host.moves_applied),
-                     static_cast<unsigned long long>(statistics.upload_micros));
-        std::fprintf(stdout,
-                     "%s: editor    %llu connection(s); hello %llu, ping %llu, gizmo-intent %llu, "
-                     "apply %llu, pick %llu, unknown %llu\n",
-                     kTag, static_cast<unsigned long long>(bridge.connections()),
-                     static_cast<unsigned long long>(
-                         host.received[static_cast<usize>(runtime::EditorMessage::Hello)]),
-                     static_cast<unsigned long long>(
-                         host.received[static_cast<usize>(runtime::EditorMessage::Ping)]),
-                     static_cast<unsigned long long>(
-                         host.received[static_cast<usize>(runtime::EditorMessage::GizmoIntent)]),
-                     static_cast<unsigned long long>(
-                         host.received[static_cast<usize>(runtime::EditorMessage::Apply)]),
-                     static_cast<unsigned long long>(
-                         host.received[static_cast<usize>(runtime::EditorMessage::Pick)]),
-                     static_cast<unsigned long long>(host.unknown_messages));
+        // THE SESSION BEFORE THE SERVER. A session destroyed after the server it holds a world in
+        // would call `destroy_body` on freed memory, which is exactly the shape M5.5's gate found
+        // one layer down. `PlaySession::~PlaySession` tears the bridge and the physics world down;
+        // it deliberately does NOT stop play, because a destructor that wrote into the authored
+        // world would put a restore on a path nobody asked for.
+        if (play && play->state() != gameplay::PlayState::Editing) {
+            (void)play->stop();
+        }
+        play.reset();
+        destroy_physics(allocator, physics_server, physics_backend);
     }
 
     rhi::destroy_device(allocator, device.value());

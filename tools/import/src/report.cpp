@@ -4,6 +4,8 @@
 #include <cstring>
 
 #include <algorithm>
+#include <iterator>
+#include <string_view>
 #include <vector>
 
 namespace cy::import {
@@ -98,6 +100,12 @@ usize ImportReport::invalidations() const noexcept {
         total += row.cache == assets::CacheOutcome::Invalidated ? 1U : 0U;
     }
     return total;
+}
+
+bool ImportReport::has_absent_steps() const noexcept {
+    return std::ranges::any_of(rows_, [](const AssetImportOutcome& row) noexcept {
+        return row.steps != 0 && row.steps != kAllModelStepsMask;
+    });
 }
 
 u64 ImportReport::total_micros() const noexcept {
@@ -208,6 +216,39 @@ usize ImportReport::format(char* out, usize capacity) const noexcept {
                 line, sizeof(line), "  %8llu ms  %s (%s)\n",
                 static_cast<unsigned long long>(ranked_rows[index]->duration_micros / 1000),
                 ranked_rows[index]->source, ranked_rows[index]->importer);
+            line_of(line);
+        }
+    }
+
+    // "A format that cannot express a step SHALL skip it and say so in the import report. A step
+    // skipped for that reason is not a warning about the file and SHALL NOT be reported as one."
+    // M8.a task 3.3.
+    //
+    // So this is its OWN section, above the warnings and outside them, and its heading says whose
+    // limit it is. Grouped by importer rather than printed per row because the set is a property of
+    // the format: a project importing four hundred OBJs gets one line, not four hundred.
+    if (has_absent_steps()) {
+        line_of("steps not reached (a format's own limits, not a defect in the file):\n");
+        char named[64][sizeof(AssetImportOutcome::importer)] = {};
+        usize distinct = 0;
+        for (const AssetImportOutcome& row : rows_) {
+            if (row.steps == 0 || row.steps == kAllModelStepsMask) {
+                continue;
+            }
+            bool seen = false;
+            for (usize index = 0; index < distinct; ++index) {
+                seen = seen || std::string_view(named[index]) == std::string_view(row.importer);
+            }
+            if (seen) {
+                continue;
+            }
+            if (distinct < std::size(named)) {
+                (void)std::snprintf(named[distinct], sizeof(named[distinct]), "%s", row.importer);
+                ++distinct;
+            }
+            char absent[384] = {};
+            (void)format_absent_model_steps(row.steps, absent, sizeof(absent));
+            (void)std::snprintf(line, sizeof(line), "  %s: %s\n", row.importer, absent);
             line_of(line);
         }
     }

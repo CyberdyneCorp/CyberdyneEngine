@@ -96,11 +96,38 @@ Two rules do the work, and both are in the header's own note:
 project's schema drifting away from the engine that has to load its worlds; it is the same shape
 `just generate-check` uses for the reflection headers.
 
-**What is still the editor's rather than the engine's.** The *world* file the editor reads and writes
-(`cyworld 1`, `cy_editor_services::worldfile`) is not this module's `cydoc` form. They are two
-authoring representations of overlapping things, and reconciling them — teaching the engine's
-`Document` reader to load what the editor saved, or the editor to read `cydoc` — is not done. Recorded
-here rather than left to be discovered, because the two will otherwise drift.
+## `.cyworld`, read and written here — M8.a tasks 1.1 and 1.2
+
+M7's gate recorded the gap this closes: *"`.cyworld` is a third authoring format that nothing under
+`src/` or `tools/` reads, beside `cydoc` and `CookedCell`"*, and the editor's document and the
+runtime's scene were *"associated in first-seen order by a file whose own header calls itself a
+stand-in"*.
+
+`worldfile.h` is the engine's reader and writer for that format, and `world_transaction.h` applies
+the editor's own operation stream to what it produced. Three properties make the two sides one
+world rather than two that agree:
+
+* **Identity is derived on both sides, never transmitted.** `DocumentId` is an FNV-1a-128 of the
+  document's asset path and a `NodeId` is the same hash of that and the node's ordinal; a node
+  written at file position `p` is ordinal `p + 1`, because `cy_editor_services::worldfile::load`
+  creates them in file order. `editor_document_identity` and `editor_node_identity` compute what
+  the editor computed, and `test_worldfile.cpp` and
+  `cy_editor_services::worldfile::tests::the_engine_derives_the_same_identities` pin the same four
+  numbers from opposite sides.
+* **The file's type numbers are the transaction's.** A `.cyworld`'s `type` section is written out of
+  the document's own `DocumentSchema`, so a `SetField` naming component 3 field 5 names exactly the
+  field the file declared as `scale`. Nothing infers a field's meaning from the shape of its value,
+  which is what `samples/05b-editor-window/runtime/session.h` had to do and said it should not have
+  to.
+* **A round trip is byte-identical**, including a type this build has never heard of, which is
+  `serialization-and-prefabs`' requirement that an editor without a plugin not silently strip that
+  plugin's data.
+
+**What remains two formats.** `.cyworld` and this module's `cydoc` are still two authoring text
+grammars. `cydoc` carries what a world file does not — prefab instances with their overrides and
+parameters, variants, motion classification, flattening policy — so folding them together is a
+format decision rather than a reader, and it is not this milestone's. What is no longer true is that
+nothing under `src/` reads a world.
 
 ## The dependency list, and why it is not `cy::scene`
 

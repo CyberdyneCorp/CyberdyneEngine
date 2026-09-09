@@ -30,11 +30,15 @@
 
 use cy_editor_core::ids::NodeId;
 use cy_editor_core::problem::{Problem, Result};
+use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
 use cy_editor_protocol::RequestId;
-use cy_editor_viewport::picking::{PickIntent, PickResolution, PickResponse, SelectionMode};
+use cy_editor_viewport::picking::{
+    IdentityMap, PickIntent, PickResolution, PickResponse, SelectionMode,
+};
 use cy_editor_viewport::viewport::Viewport;
 
+use crate::mirror::engine_identity;
 use crate::runtime::RuntimeSession;
 
 /// Ask the runtime what is under the pointer of `viewport`.
@@ -55,6 +59,30 @@ pub fn request(
         .with_remedy("wait for the first frame, or start a runtime that publishes one")
     })?;
     runtime.pick(pick.frame, pick.encode())
+}
+
+/// The correspondence between what the engine drew and what a transaction addresses. M8.a task 1.4.
+///
+/// **DERIVED, NOT ACCUMULATED.** [`cy_editor_viewport::picking::IdentityMap`]'s own note calls
+/// itself session-scoped — *"a runtime restart issues new identities, and the map is rebuilt"* —
+/// which was true while a runtime handed out identities of its own. It does not any more: since
+/// M8.a the runtime opens the document's own world file and derives a node's identity the way
+/// `cy_editor_core::ids` derives it, so the engine's identity for a node is exactly
+/// [`engine_identity`] of that node and this map is a fact about the document rather than about the
+/// connection.
+///
+/// It is built rather than removed because the protocol narrows to 64 bits and the inverse of a
+/// narrowing is a lookup. Two nodes of one document could in principle share a low half — around
+/// one in `2^45` at the sizes a document reaches, as `engine_identity` says — and a map built from
+/// the document at least makes that collision a wrong selection in a known place rather than an
+/// unknown one.
+#[must_use]
+pub fn identity_map(document: &Document) -> IdentityMap {
+    let mut map = IdentityMap::new();
+    for node in document.content().nodes() {
+        map.insert(engine_identity(node), node);
+    }
+    map
 }
 
 /// What a resolved pick did, so a caller can say something rather than only having done it.
@@ -106,7 +134,6 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
     use cy_editor_core::value::ValueKind;
-    use cy_editor_documents::Document;
     use cy_editor_viewport::picking::{
         DocumentFilter, Granularity, IdentityMap, PickCandidate, PickResolution, PickResponse,
     };
@@ -193,6 +220,31 @@ mod tests {
         assert!(
             selection.is_empty(),
             "and it selects nothing rather than the nearest thing it does know"
+        );
+    }
+
+    /// M8.a task 1.4: the map is a fact about the document, not about the connection.
+    ///
+    /// The engine derives the same number from the same two inputs — the document's asset path and
+    /// the node's ordinal — so a node the editor created has an entry here the instant it exists,
+    /// with nothing exchanged and no runtime attached at all.
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the narrowing is what the protocol carries; see `engine_identity`"
+    )]
+    fn the_identity_map_is_derived_from_the_document() {
+        let (document, node) = a_document();
+        let map = identity_map(&document);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.node(engine_identity(node)), Some(node));
+        assert_eq!(map.node(0xDEAD_BEEF), None);
+
+        // And it is the identity the engine computes for the first ordinal of this document, which
+        // `cy::scene::serialization::editor_node_identity` pins on the other side.
+        assert_eq!(
+            engine_identity(node),
+            NodeId::in_document(document.id(), 1).as_u128() as u64
         );
     }
 

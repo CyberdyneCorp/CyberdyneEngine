@@ -1310,6 +1310,14 @@ def main() -> int:
         runtime = subprocess.Popen(
             [
                 str(publisher),
+                # ONE WORLD, M8.a task 1.1. The runtime opens the SAME world file the editor
+                # opens, and derives each node's identity the way `cy_editor_core::ids` derives
+                # it, so an identity the editor names is a node in the runtime's world rather
+                # than whichever object it handed out first. Without these two arguments the
+                # runtime renders M3's ring, which is what it did until M8.a and which is why its
+                # gizmo used to land on an unrelated box.
+                "--project", str(root),
+                "--world", WORLD,
                 "--socket", socket,
                 "--host", host_socket,
                 "--layout", str(layout_file),

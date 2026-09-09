@@ -259,3 +259,35 @@ run-fidelity *args:
     echo "==> run         fidelity  profile=${profile}"
     python3 samples/07-fidelity/fidelity.py --profile "${profile}" \
         --build-dir "${build_dir}" --work "${build_dir}/fidelity" ${rest}
+
+# M8.a's ARTEFACT, AND WHY IT IS NOT `just run-sample authoring`.
+#
+# `run-sample` finds a sample's binary and runs it, and samples/08a-authoring DOES declare one —
+# `just run-sample authoring --world <path>` plays a `.cyworld` headlessly and says how far the
+# sphere fell. What that cannot do is AUTHOR it: the milestone's claim is a scene a person builds by
+# hand, which is a real editor, a real engine runtime and six steps in order, and the two halves
+# together are what `authoring.py` runs. Its CMakeLists.txt argues the split.
+#
+# It builds the editor AND the engine first, for the reason `run-editor-window` records: the thing
+# on the far end of the editor's control socket is `cy_editor_window_runtime`, and building only the
+# editor would leave the driver reporting an absent runtime, which reads as a defect rather than as
+# an unbuilt target.
+#
+# `--no-window` leaves out the photograph, which is the one act that needs a display; the CTest entry
+# passes it. `--shot <path>` is what refreshes docs/design/images/authoring-m8a.png.
+
+# Run the M8.a artefact: a scene authored in the editor, played, stopped and undone. Usage: just run-authoring [--profile <p>] [--no-window] [--shot <path>] [--runs <n>]
+run-authoring *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-editor --profile "${profile}"
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    echo "==> run         authoring  profile=${profile}"
+    python3 samples/08a-authoring/authoring.py --profile "${profile}" --binaries \
+        --build-dir "${build_dir}" --work "${build_dir}/authoring" ${rest}

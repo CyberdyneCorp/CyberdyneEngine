@@ -33,7 +33,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | **2 — World model** | | | | | | | |  | | | | | | | |
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |   | **C** |  |  | M9 |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |   |  |  |  | M5 |
-| [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |       |  | **C** |   |  |  |  | M8.a |
+| [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |       |  | W | **C** |  |  |  | M8.b |
 | [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 33 |  |  |  |  | S |  |  |  |  | S | W | **C** |  |  | M9 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W | **C** |  |  | M9 |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
@@ -88,7 +88,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 13 |  |  |  |  |  | W |  |       |  | W | **C** |  |  |  | M8.b |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | 18 |  |  |  |  |  | S | W |  |  |  |   |  |  | **C** | M11 |
 | [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | 13 |  |  |  |  |  | W |  |  |  |  |   |  |  | **C** | M11 |
-| [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | 12 |  |  |  |  |  | W |  |  |  | **C** |   |  |  |  | M8.a |
+| [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | 12 |  |  |  |  |  | W |  |  |  | W |   |  |  | **C** | M11 |
 | [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | 16 |  |  |  |  |  | W |  |  |  |  |   |  |  | **C** | M11 |
 | [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | 16 |  |  |  |  |  | S | W |  |  |  |   |  |  | **C** | M11 |
 | [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  |  |       |     | **C** |  |  |  | M8.b |
@@ -104,7 +104,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | 12 | S |  |  | W |  |  |  |  |  |  |   |  |  | **C** | M11 |
 | [`diagnostics-profiling-and-crash`](../../openspec/specs/diagnostics-profiling-and-crash/spec.md) | 18 | S |  |  |  |  | W |  |  |  |  |   | **C** |  |  | M9 |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | 9 | S |  |  |  |  |  |  |  |  |     | W |  |  | **C** | M11 |
-| [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md) | 15 | W |  |  |  |  |  |  |  |  |  |   |  |  | **C** | M11 |
+| [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md) | 21 | W |  |  |  |  |  |  |  |  |  |   |  |  | **C** | M11 |
 
 ---
 
@@ -140,11 +140,11 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M5.5** · Operable | 3 | 0 | — |
 | **M6** · Scale | 6 | 0 | — |
 | **M7** · Fidelity | 13 | 3 | `rendering-materials-and-shading`, `residency`, `virtual-texturing` |
-| **M8.a** · Authorable | 5 | 2 | `editor-documents-and-transactions`, `serialization-and-prefabs` |
-| **M8.b** · Systems | 27 | 14 | `asset-import-pipeline`, `audio`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `shader-system`, `swift-scripting`, `text-and-fonts` |
+| **M8.a** · Authorable | 5 | 0 | — |
+| **M8.b** · Systems | 28 | 15 | `asset-import-pipeline`, `audio`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting`, `text-and-fonts` |
 | **M9** · Integrity | 12 | 10 | `camera-system`, `core-jobs-and-concurrency`, `diagnostics-profiling-and-crash`, `ecs-core`, `gameplay-abilities-and-effects`, `gameplay-framework`, `physics`, `save-and-persistence`, `sequencing-and-cinematics`, `simulation-and-determinism` |
 | **M10** · Worlds | 10 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
-| **M11** · Reach | 38 | 38 | everything remaining |
+| **M11** · Reach | 39 | 39 | everything remaining |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not
@@ -210,7 +210,18 @@ previous edition of this list.**
   `editor-architecture`, `gameplay-framework`, `live-editing`, `simulation-and-determinism`,
   `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
 
-The remaining 19 have not started. **M7 advanced thirteen, and started nine of them**:
+The remaining 19 have not started. **M8.a advanced no tier, and the lists above are unchanged by
+it** — which is the whole of what its closing gate found about the record. It planned two rows
+reaching Complete, `serialization-and-prefabs` and `editor-documents-and-transactions`; neither is
+supported and each **C** cell has moved, to M8.b and to M11 respectively. The other three rows it
+names — `physics`, `asset-import-pipeline` and `gameplay-framework` — were already recorded at the
+tiers it was asked to reach, and what the milestone did was make those records true rather than move
+them. One `milestone` field changes: `physics` from M4 to M8.a, as a correction, because M4 recorded
+it at Working with `src/physics/` absent from the tree. Where M8.a's tiers are thinner than the tier
+they hold is [below](#where-m8as-tiers-are-thin).
+
+The paragraph below is M7's, kept because it is the record of what that milestone moved.
+**M7 advanced thirteen, and started nine of them**:
 `material-compiler`, `virtual-geometry`, `virtual-shadows`, `temporal-rendering`,
 `rendering-post-processing`, `rendering-global-illumination`, `denoising` and
 `ray-tracing-infrastructure` went from `—` to Working and `atmosphere-sky-and-clouds` from `—` to
@@ -310,6 +321,183 @@ Three cells were filled: `editor-ui-ux`'s **W** moved out of M5 into M5.5 and it
 **W** at M5.5; and `editor-agent-interface` reaches **W** at M5.5 rather than at M8, which is the
 one place the plan changed rather than being corrected — the proposal argues that the agent loop is
 most valuable *while* the engine is being built.
+
+## Where M8.a's tiers are thin
+
+The five tiers M8.a's plan named are in [the status record](#the-status-record); **none of them
+moved**, and the two the plan had completing are argued under [milestone load](#milestone-load) and
+in `tools/roadmap/milestones/m8a.toml` beside `[criterion.expect_tiers]`. What follows is where the
+implementation is **thinner than the tier it holds**, and what M8.a's own gate found. Everything
+below was measured or reproduced at that gate on this tree: Linux 6.8, GCC 13.3.0 and Clang 18.1.3,
+clang-format and clang-tidy at 22.1.8, Swift 6.3.3, Rust 1.95.0, an NVIDIA RTX 5060 with Vulkan
+1.4.312, X11 on `:0`.
+
+### The two the plan had completing, and what each is short of
+
+| Row | Recorded | The requirement between it and Complete |
+|---|---|---|
+| `serialization-and-prefabs` | Working | **"Apply and extract"**. Pushing an instance's overrides back onto its prefab, and lifting a subtree into a new prefab asset, have no implementation anywhere in the tree — `src/scene/serialization/README.md` has said so since M2 and still says so on this tree, and a grep for the operations finds only `Resolver::apply_overrides`, which is resolution rather than authoring. M8.a taught the engine to *decode* `InstantiatePrefab` and `SetPrefabOverride` and to **count them as ignored**, which is honest and is not the requirement. Complete moves to M8.b. |
+| `editor-documents-and-transactions` | Working | **"Source control integration"**, and it is unstarted rather than partial. The requirement asks for a provider interface — status, history, diff, check out, revert, submit, lock — with Git, Perforce and a null provider behind it. There is no such trait, no provider and no null implementation: `grep -rniE 'source.control' editor/crates/*/src/` returns seven hits and every one is a comment or a remedy string. Complete moves to M11, beside every other `editor-*` row. |
+
+### M8.a advances no capability tier, and that is the honest reading of it
+
+The other three rows — `physics`, `asset-import-pipeline` and `gameplay-framework` — were already
+recorded at the tiers M8.a was asked to reach. What the milestone did to them is make their records
+**true**:
+
+* `physics` was Working at **M4 with no `src/physics/` in the tree at all**, so the capability's
+  "Physics components" requirement — bodies and colliders as ECS components, created in a world,
+  with `cy::scene::LocalTransform` written back — had no implementation for four milestones.
+  `samples/04-character` did that work longhand in its own host, which is why M4's gate flagged the
+  absence. This is the one row whose `milestone` field moves, from M4 to M8.a, and it moves as a
+  **correction** of the kind M5.5's gate made to `editor-ui-ux`.
+* `asset-import-pipeline` was Working with no `asset.import` command, so `tools/import` was reachable
+  from a command line and from nothing else.
+* `gameplay-framework` was Seed with `hosting: NoRuntime` where pressing play should have been.
+
+A milestone that advances no tier is not a milestone that delivered little. It built `src/physics/`,
+`src/gameplay/play/`, two importers, the engine's own `.cyworld` reader and writer, and a play
+session that restores a document byte for byte. It is what happens when the job is to make three
+existing records honest.
+
+### What a person can actually do now, and what the picture does not show
+
+**A person can create a box and a sphere in an empty world from the editor, place the sphere three
+metres above the box with the move gizmo, add a rigid body and a collider to each, press play, watch
+the sphere fall and land on the box, stop, and undo back to an empty world — in the editor's document
+and in the engine's world at the same time.** That is what M8.a was asked for and it happens, in one
+run, in `samples/08a-authoring`. The gate reproduced it independently: the sphere rests at 729.9 mm
+against a contact height of 750 mm, identically over six sessions, and the run is green.
+
+**But the mesh a created primitive references reaches no renderer.** `cy::render::MeshRenderer` is a
+declared name in `src/scene/src/node_template.cpp`'s catalogue with no reflected type behind it, so a
+`MeshRenderer` component round-trips through `.cyworld` and is read by nothing that draws.
+`samples/05b-editor-window/runtime` presents every node through M3's fixed scene slots. The two
+authored entities **do** appear in the editor's viewport, in the engine's own rendered frame — which
+was not true at M7 and is the seam this milestone closed — but the sphere is drawn as a box, because
+the shape the importer generated never reaches the renderer. That is `editor-viewport-and-gizmos`'
+and the renderer's work, and it is why this milestone claims no `rendering-*` row.
+
+### A node has no name
+
+`cy_editor_documents` carries none: the third field of a `.cyworld`'s `node` line is its LAYER, and
+`cy_editor_viewmodels::hierarchy::label_of` labels a node by the first component it carries that has
+fields. The milestone's own screenshot shows the box and the sphere as two outliner rows **both
+reading `Transform`**. `scene.create-primitive`'s description says its `name` argument names "the
+source asset, the generated mesh sub-asset and the node"; it names the first two. No criterion can
+check it, because naming a node is a concept the document model does not have.
+
+### Neither headless editor surface can author a placed scene on its own
+
+`cy_editor_app::run_script` makes every argument a `Value::Text` and the registry validates kinds, so
+a `.cyscript` cannot supply a vec3, a float, an int or a bool — `scene.translate amount=0,3,0` is
+refused and so is `scene.add-body mass=2`. The `author` agent scope parses typed arguments but grants
+`game/` and no irreversible mutation, so `scene.create-primitive` (which writes `assets/primitives/`)
+and `file.save` are both refused to it. The closing artefact performs both refusals rather than
+describing them, and drives the editor as an agent writing under `game/`. Neither is a defect in what
+M8.a built; together they decide how anything automated has to drive this editor.
+
+### The unit-test budget, and the case that was over it
+
+M8.a's gate found `unit.gameplay_spawn` failing **three runs in six** inside `just test-unit` and
+seven runs in eight standalone — 1.25 to 2.02 ms of CPU against a 1.000 ms budget — which made
+`just test-all`, and therefore `m0:test` and `m1:four-profiles`, a coin toss. The case spawned
+sixty-four instances of one name, and `SceneTree::create_node` scans siblings to make a name unique,
+so the cost is O(N²). The instrument was right and the case was in the wrong suite, which is what
+`tests/harness/src/budget.cpp` prints in the failure itself. The contract stayed in `unit` at eight
+instances (0.10 ms, 10 runs in 10 green) and the cost moved to `integration.gameplay_play` at two
+hundred. This is the third milestone in a row at which that instrument has decided where a case
+belongs, and the second at which a gate has had to move one.
+
+### How the ledger was run, and the one criterion it failed
+
+`just roadmap-milestone m8a` evaluates **184 declarations, 80 of 264 deduplicated, so 184 distinct
+checks run once each** — 165 inherited from M0 through M7 and 19 new here. It was run end to end with
+`CY_BUILD_DIR=build/gate` after all four profiles had been configured and built **from empty**, and
+it reported:
+
+```
+run 1, before the two test-tier repairs below:
+M8A is not closed: 1 of 182 evaluated criteria failed.
+  m1:four-profiles   all four profiles build clean and just test-all is green in each
+  not evaluated here: m0:three-platforms          — one operating system on this host
+  not evaluated here: m5:editor-three-platforms   — the same
+
+run 2, end to end again with the repairs in:
+M8A is not closed: 2 of 182 evaluated criteria failed.
+  m1:four-profiles     the same Debug failure, and the same seven suites
+  m5:editor-profiles   ONE torn frame in the Shipping profile, once — see below
+```
+
+The second failure is worth its own paragraph because it is a race and not a budget.
+`cy-editor-viewport-transport`'s `the_editor_reads_whole_frames_while_the_runtime_writes_the_others`
+reported `the editor read an image the runtime had moved on to — 1 torn, 0 holding a NEWER frame than
+the one claimed` in the **Shipping** profile, inside a run that was building and testing four editor
+configurations back to back. It did not reproduce: **fourteen further runs — six on an idle machine
+and eight under twenty-four spinner threads — all passed**, and it had passed in the profile-by-
+profile run an hour earlier. `git status --porcelain editor/crates/cy-editor-viewport-transport/` is
+empty on this tree, so it is M5.5's transport and not this milestone's. It is recorded rather than
+dismissed because it is exactly the shape of the fault M5.5's own gate found in Jolt's job bridge:
+one run in forty, only under load, in a discipline that is supposed to make tearing impossible. A
+one-in-fifteen torn frame across a process boundary is either a real hole in the ring's publication
+order or a test that can observe a benign intermediate state, and nobody has established which.
+
+**All nineteen of M8.a's own criteria are green**, including the artefact three ways — the CTest
+entry, the contributor's recipe, and the negative control that passes only when the artefact fails.
+
+**`m1:four-profiles` fails in the Debug configuration and in no other**, on sixteen unit cases across
+seven suites that exceed the taxonomy's 1 ms of per-case CPU. Every one of them is in a directory
+this milestone does not touch: `git status --porcelain src/rendering/ tests/ src/servers/render/` is
+empty on the closing tree, and the three expensive `editor_window_runtime` cases are verbatim at
+`HEAD`. The worst are `material_frontends: a graph and a text definition are one material` at 1.73
+ms, `an emphasised handle is lifted, never recoloured` at 2.09 ms and `material_ir: a malformed
+module is refused rather than half-read` at 1.86 ms. Standalone in Debug, `unit.material_compiler`
+and `unit.render_shadows` fail three runs in three; the other five fail only inside `just test-unit`,
+where fifty-seven suites run at once.
+
+That last sentence is the part worth carrying forward. M7's gate wrote that this instrument
+*"measures the CPU's clock rate"*; it also measures **how many suites the tree has**, because CPU
+time per case rises with contention. A milestone that adds a unit suite therefore pushes every
+existing unit suite's measurement up, which is how a tier can tip over without anybody editing a line
+of the code that fails. M7's gate recorded the same criterion red at its own close and called its
+repair *"necessary and not sufficient"*; it is now three milestones old, it is nobody's, and it needs
+either a taxonomy that scales the unit budget by configuration — a change against `testing-and-quality`
+— or those seven suites moved up a tier. **Neither is M8.a's to decide at a closing gate, and making
+the number green by widening a budget is the move this project has been burned by repeatedly.**
+
+**M8.a removed the two contributors it had added**, both found by this gate rather than by the
+implementing work:
+
+| Suite | What was wrong | What was done |
+|---|---|---|
+| `unit.gameplay_spawn` | `a batch is one call and every instance lands` spawned sixty-four instances of one name, an O(N²) naming cost: 1.25–2.02 ms of CPU against 1.000 ms on seven standalone runs in eight, and **three failures in six runs of `just test-unit` in the dev profile**, which made `just test-all` and therefore `m0:test` a coin toss | the contract stayed in `unit` at eight instances (0.096 ms; ten runs in ten green) and the cost moved to `integration.gameplay_play` at two hundred |
+| `unit.physics_bridge` | passed at −O2 and failed in Debug at 1.119 ms, with four neighbours between 0.51 and 0.74 — a suite in the wrong tier rather than a case over a line: every case builds an ECS world, a scene tree and a physics server, which is the argument `gameplay_play` is already `integration` for | the whole suite moved to `integration`, and `m8a:physics-bridge` moved with it. The old criterion was re-run first and exits **8**, "No tests were found" — a `-R` that selects nothing fails here, so the M6 class of green-over-nothing cannot recur through this path |
+
+### The gate did not flip, and gates.toml says so
+
+`milestone-m8a` is left at `joins-on-close` and `.github/workflows/ci.yml`'s `milestone` job still
+names `m7`. Setting the gate green with `m1:four-profiles` red would put a second permanent merge
+gate into the state M4's gate was written up for — green in `gates.toml`, red when run — and
+`milestone-m7` is already in it, because its ledger declares the same criterion. The two honest
+courses are the ones `gates.toml`'s own footer names: fix the gate, or record an override with its
+reason, its approver, the change and an expiry. An override needs an approver, and that is a person's
+decision.
+
+Nothing is lost by waiting: `just roadmap-test` fails a milestone whose change is archived while its
+gate is still `joins-on-close`, so the flip cannot be forgotten, and `just ci-check` fails whichever
+of the gate and the CI job is moved without the other — both directions verified at this gate.
+
+### The out-of-band write audit has one caller, and it is its own test
+
+`cy_editor_documents::Audit` counts mutations that did not go through a transaction and reports the
+document and the count. Nothing in the editor runs it: `grep -rn 'Audit::of'` outside `audit.rs`
+returns one hit, in `transactions_are_the_only_write_path.rs`. That is the same shape as M7's
+`MemoryAttributionScope` — a mechanism with no producer — and it matters less here only because the
+guarantee is enforced at compile time rather than by the audit: `DocumentContent::apply` demands a
+`WriteToken`, `WriteToken::issue` is `pub(crate)`, there is no `content_mut` and no `node_mut`. The
+gate wrote a probe that attempts all three from outside the crate and it fails to compile with
+`E0624: associated function 'issue' is private` and two `E0599`s. The guard is real; the audit is
+the part with no producer.
 
 ## Where M7's tiers are thin
 

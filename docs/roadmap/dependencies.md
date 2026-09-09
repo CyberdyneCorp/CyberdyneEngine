@@ -186,6 +186,18 @@ each other for the same budget.
 infrastructure that abilities, AI, animation, VFX and sequences all lower through. Discovering that
 the IR cannot express a consumer's semantics is cheap with one consumer and expensive with seven.
 
+**Two Complete cells moved out of M8.a at its closing gate, and neither move breaks a rule above.**
+`serialization-and-prefabs` completes at M8.b rather than M8.a: its remaining requirement is "Apply
+and extract", an editor operation over a data model that has supported it since M2, and it sits with
+`live-editing` and `editor-viewport-and-gizmos`, which complete in the same milestone. The M8.a graph
+above shows it feeding `gameplay-framework`'s play mode, and that edge is satisfied at Working, not
+at Complete. `editor-documents-and-transactions` completes at M11 rather than M8.a: its remaining
+requirement is "Source control integration", a provider interface with Git, Perforce and a null
+implementation, which no milestone between here and 1.0 schedules and which every other `editor-*`
+row's Complete cell already waits for. Both edges out of them in the M8.a subgraph are Seed-level
+prerequisites of a Working target, so the rule the graphs encode — Working needs Seed, Complete needs
+Working — is unaffected, and `just roadmap-test` checks that rather than this paragraph.
+
 ---
 
 ## Shipping — M9 to M11

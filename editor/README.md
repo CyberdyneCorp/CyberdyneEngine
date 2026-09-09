@@ -226,3 +226,97 @@ with no window, and `samples/05b-editor-window` is the same sequence through syn
 **A load is not an edit.** Opening a world applies its content through a transaction — that is the
 only write path there is — and then forks the document, which is what leaves it clean with an empty
 history. Undo may not take a world away.
+
+## Creating a primitive, and the one thing the editor does *not* do (M8.a task 2.1)
+
+`scene.create-primitive` makes a box, sphere, cylinder, plane or capsule in the open world. What it
+writes is a **source asset**: `assets/primitives/<Name>.cyprim`, six lines of text naming the shape
+and its parameters. The geometry is `tools/import/`'s — a `.cyprim` is imported like a `.gltf`, by
+the same registry, under the same derivation key, into the same cache — so there is no mesh
+generator in this workspace and nowhere here to put one. `design.md` §2 of
+`implement-m8a-authorable` is the argument: a created box is "a mesh instance whose mesh the engine
+generated rather than imported", and every later system must be unable to tell the difference.
+
+Three consequences worth knowing:
+
+* **One transaction per primitive.** Undo removes the entity; redo restores it with the same
+  identity. The `.cyprim` stays on disk, exactly as an imported `.fbx` does when its placement is
+  undone.
+* **`create_mesh_instance` is the only constructor.** An import that lands a mesh in the world calls
+  the same function with a different path, which is how "nothing downstream can tell them apart" is
+  guaranteed rather than checked. `crates/cy-editor-services/tests/`
+  `primitives_are_ordinary_mesh_instances.rs` asserts it over components, the gizmo's binding, the
+  mesh reference and the saved file.
+* **Parameters are edited by editing the asset.** `asset.write-primitive` rewrites a `.cyprim`; the
+  engine re-generates its mesh under a new key and every entity drawing it follows. A parameter the
+  shape does not take is refused rather than ignored, on both sides of the boundary.
+
+The mesh reference lives on a `MeshRenderer` component with a `mesh` field, found by name in the
+document's schema and declared there when the world does not already carry it — the same
+by-name relationship `TransformBinding` has, and the engine's own name for the component
+(`src/scene/src/node_template.cpp` declares `cy::render::MeshRenderer` and no build registers it
+yet). Until a renderer does, the reference is authoring data that round-trips through `.cyworld`.
+
+## Importing an asset from inside the editor (M8.a tasks 3.1 and 3.5)
+
+`asset.import` cooks a source file the project already holds — a glTF, an FBX, an **OBJ with its
+`.mtl`**, or a texture — and places what it produced in the open world as an entity. Before it, the
+importer was reachable only from a command line, so content was cooked outside the editor and, more
+to the point, **an agent could not import at all**: the agent interface is a projection of the
+command registry, so a capability that is not a command is not a tool. `--list-commands` and the MCP
+tool listing both carry it now, with its parameters and its effect class.
+
+* **The importer runs as a subprocess.** `tools/import/` is layer 7 and nothing links layer 7 —
+  `thirdparty-dependencies` requires that a shipped runtime carry no glTF or FBX parser, and the
+  layer is what makes that true rather than intended. So the editor runs `cy_import_cli`, exactly as
+  `ProjectService` runs `cy_swift_module.py`. It is found through `CY_IMPORT_CLI` first, then by
+  walking up from the project for `build/<profile>/tools/import/cy_import_cli`.
+* **`--json`, not prose.** The command reads a machine-readable report: which importer ran, the
+  identity the source holds, what the cache did, and every sub-asset with the identity bound to it.
+  An agent that had to parse a paragraph to find the mesh is an agent that will get it wrong.
+* **The entity is built by `create_mesh_instance`**, the same function `scene.create-primitive`
+  calls. Undo removes the entity; the cooked assets and their sidecars stay, because they belong to
+  the file rather than to the world.
+* **A format's absent steps are stated, not warned about.** An OBJ carries no rig, no animation and
+  no scene graph, so it reaches steps 1-6 and 9 of the import sequence. The result names 7, 8 and 10
+  and counts none of them as a warning: `asset-import-pipeline` is explicit that a step a format
+  cannot express "is not a warning about the file and SHALL NOT be reported as one".
+* **A refusal names what this build can import**, read from the importer itself, so a project's own
+  importer appears in that list the day it is registered.
+
+`crates/cy-editor-services/tests/importing_from_inside_the_editor.rs` drives all of it through the
+registry against a recording double; `assets.rs`' own unit tests parse the exact bytes a real
+`cy_import_cli --json` run produced, which is what pins the two halves of the boundary together.
+
+## Adding a body, and pressing play (M8.a tasks 4.3, 5.1 and 5.2)
+
+`scene.add-body` puts a physics body and its collider on an entity, as **one** transaction. The two
+go together on purpose: `cy::physics::validate` refuses a dynamic body with no collider — it has no
+volume, therefore no derived mass — so writing them separately would leave a world that cannot
+simulate for exactly one undo step. `shape=none` is the escape hatch and `scene.add-collider` is the
+other half of it; `scene.remove-body` takes the body away and records the values it had, so undo
+restores the body that was there rather than a default one.
+
+The component names are the engine's own with the namespace dropped — `RigidBody`, `StaticBody`,
+`KinematicBody`, `Collider` — and **they are a contract across the process boundary**, because
+physics' components are registered in the ECS by name with no reflected type behind them:
+`cy::scene::serialization::resolve_against` carries them rather than resolving them, and
+`src/gameplay/play/src/session.cpp` reads them back out of the saved `.cyworld`'s own type section by
+name. The spellings are held in both languages' tests, the way `.cyprim`'s golden string is.
+
+**`play.enter` now reaches the runtime.** Until M8.a it set `PlayState` on every viewport and told
+the engine nothing: the badge said PLAYING and the world did not move, which is design.md §4's
+"today it reports `hosting: NoRuntime`". `Message::Play` carries the state as a **word** —
+`editing`, `playing`, `paused` — so a fourth state added on one side is refused by name rather than
+falling through a match to the closest number, and `Message::Playing` answers with the state
+actually in force plus a line a person reads.
+
+The badge is still switched first and unconditionally. An editor with no engine attached is a
+first-class mode, so pressing play there is not an error — but it must not claim to be simulating
+either, and the summary and a notification both say which of the two happened.
+
+`crates/cy-editor-services/tests/pressing_play_reaches_the_runtime.rs` drives the whole path over a
+real socket; `crates/cy-editor-services/tests/a_body_is_a_transaction.rs` holds the transaction and
+the golden names. What is on the far end is `cy::gameplay::PlaySession`, and what it guarantees —
+**stop restores the authored document byte for byte, verified rather than asserted** — is
+`src/gameplay/play/README.md`.

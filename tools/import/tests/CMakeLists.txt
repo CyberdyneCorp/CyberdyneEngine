@@ -85,6 +85,24 @@ function(cy_import_declare_tests)
         SOURCES "${tests_dir}/test_unwrap.cpp"
         DEPENDENCIES cy::import)
 
+    # `import_primitive` is integration for the reasons above and one more: its last case writes a
+    # project to a scratch directory and cooks it three times, to prove a generated mesh is cached
+    # and invalidated by the one key every other source uses. M8.a task 2.1.
+    cy_add_test(
+        NAME import_primitive
+        KIND integration
+        SOURCES "${tests_dir}/test_primitive.cpp"
+        DEPENDENCIES cy::import cy::core-assets)
+
+    # `import_obj` is integration for the reasons above: a quad is welded, tangent-generated and run
+    # through three optimisers, and the determinism case imports the same file twice to compare
+    # every byte. M8.a tasks 3.2, 3.3 and 3.4.
+    cy_add_test(
+        NAME import_obj
+        KIND integration
+        SOURCES "${tests_dir}/test_obj.cpp"
+        DEPENDENCIES cy::import cy::core-assets)
+
     cy_add_test(
         NAME import_pipeline
         KIND integration

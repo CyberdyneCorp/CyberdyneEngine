@@ -20,6 +20,7 @@ use cy_editor_documents::selection::Selection;
 use cy_editor_sdk::HostingMode;
 use cy_editor_viewport::play::PlayState;
 
+use crate::assets::AssetImportService;
 use crate::documents::DocumentService;
 use crate::manipulate;
 use crate::mirror::{RuntimeMirror, engine_identity};
@@ -56,6 +57,12 @@ pub struct Editor {
     pub viewports: ViewportService,
     /// The project around the documents: its source tree, its build, and what has been built.
     pub project: ProjectService,
+    /// The project's importers, run out of process. M8.a task 3.1.
+    ///
+    /// A service like the others rather than something `asset.import` reaches for privately, for
+    /// the reason every other one is here: which importer ran, what it produced and what the cache
+    /// said are things a panel shows and an agent asks about.
+    pub imports: AssetImportService,
     /// Who the editor believes is acting. Attribution, not authorisation.
     actor: Actor,
     /// The directories the invocation in progress may touch, and the scope that says so.
@@ -97,6 +104,7 @@ impl Editor {
             runtime: RuntimeSession::none(),
             mirror: RuntimeMirror::new(),
             viewports: ViewportService::new(),
+            imports: AssetImportService::new(project.root()),
             project,
             actor,
             permitted: unrestricted(),
@@ -118,7 +126,19 @@ impl Editor {
         if project.is_declared() {
             self.documents.rooted_at(project.root());
         }
+        self.imports.rooted_at(project.root());
         self.project = project;
+        self
+    }
+
+    /// Import through something else — a test's recording double, or another way of reaching the
+    /// importers.
+    ///
+    /// After [`Editor::with_project`] and not before: pointing the editor at a project finds that
+    /// project's own importer, which would replace whatever was set here.
+    #[must_use]
+    pub fn with_importer(mut self, imports: AssetImportService) -> Self {
+        self.imports = imports;
         self
     }
 
@@ -287,6 +307,10 @@ impl CommandContext for Editor {
         Some(self)
     }
 
+    fn assets(&mut self) -> Option<&mut dyn cy_editor_commands::AssetHost> {
+        Some(&mut self.imports)
+    }
+
     fn open_document(&mut self, asset: &str) -> Result<DocumentId> {
         Editor::open_document(self, asset)
     }
@@ -394,8 +418,30 @@ impl cy_editor_commands::ProjectHost for Editor {
         for viewport in self.viewports.all_mut().iter_mut() {
             viewport.play = wanted;
         }
+
+        // AND THE RUNTIME, WHICH IS WHAT M8.a ADDS. Until now this function set a badge and told
+        // the engine nothing: pressing play changed a word in the corner of the viewport and
+        // simulated nothing, which is design.md §4's "today it reports `hosting: NoRuntime`".
+        //
+        // The badge is still set FIRST and unconditionally, and the failure to reach a runtime is
+        // reported rather than raised. An editor with no engine attached is a first-class mode
+        // (`crate::runtime`'s header argues it at length) and a designer switching to play in one
+        // is doing an ordinary thing; what must not happen is the editor claiming that something is
+        // simulating when nothing is. So the sentence says which of the two happened.
+        let hosted = match self.runtime.play(state) {
+            Ok(request) => format!(" — asked the runtime (request {})", request.as_u64()),
+            Err(problem) => {
+                self.notifications.post(Notification::info(format!(
+                    "Play: {}. The viewport says {}.",
+                    problem,
+                    wanted.badge()
+                )));
+                " — no runtime is attached, so nothing is simulating".to_string()
+            }
+        };
+
         Ok(format!(
-            "{} — {}",
+            "{} — {}{hosted}",
             wanted.badge(),
             wanted
                 .persistence(cy_editor_viewport::play::Persistence::default())

@@ -693,6 +693,7 @@ pub fn write_to(document: &Document, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cy_editor_core::ids::DocumentId;
     use cy_editor_viewport::gizmo::TransformBinding;
 
     /// The manifest the engine emits for its own components, in miniature. The committed one lives
@@ -845,6 +846,62 @@ mod tests {
         let mut document = Document::new("worlds/city.cyworld");
         assert!(load(broken, &mut document, Actor::human("designer")).is_err());
         assert_eq!(document.content().node_count(), 0);
+    }
+
+    /// **THE SEAM, PINNED FROM THIS SIDE.** M8.a task 1.1.
+    ///
+    /// `cy::scene::serialization::read_world` derives a node's identity rather than being told it:
+    /// the document identity is an FNV-1a-128 of the asset path, a node's is the same hash of that
+    /// and its ordinal, and a world's node at file position `p` is the ordinal `p + 1` because this
+    /// module's [`load`] creates them in file order. The engine's `test_worldfile.cpp` asserts the
+    /// same four numbers, so a change to either derivation breaks a test on both sides rather than
+    /// silently giving the runtime a world whose objects the editor cannot name.
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "the narrowing is what the protocol carries; see `engine_identity`"
+    )]
+    fn the_engine_derives_the_same_identities() {
+        let document = DocumentId::of_asset("worlds/city.cyworld");
+        assert_eq!(
+            document.as_u128(),
+            0xab40_8f05_37b6_c99a_90fd_e4ab_baa2_06e8
+        );
+        let low = |ordinal| NodeId::in_document(document, ordinal).as_u128() as u64;
+        assert_eq!(low(1), 0x539e_e13c_1a82_e51f);
+        assert_eq!(low(2), 0x8fda_e6b9_cff7_097c);
+        assert_eq!(low(3), 0xd11c_3a3a_937a_fd5d);
+        assert_eq!(low(4), 0x0d58_3fb8_48ef_21ba);
+    }
+
+    /// And the correspondence itself: the node written at position `p` is the ordinal `p + 1`.
+    ///
+    /// Not a convention this test states — a property of [`load`], which allocates ordinals in file
+    /// order from a counter that starts at one. If that ever stops being true, the runtime's world
+    /// silently stops agreeing with the editor's, so it is asserted rather than commented.
+    #[test]
+    fn a_nodes_position_in_the_file_is_its_ordinal_less_one() {
+        let document = loaded(&SAMPLE);
+        let nodes: Vec<NodeId> = document.content().roots().to_vec();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0], NodeId::in_document(document.id(), 1));
+
+        let three = concat!(
+            "cyworld 1\n",
+            "type 1 runtime \"Transform\"\n",
+            "  field 1 vec3 \"translation\" \"Where it is.\"\n",
+            "node 0 - \"default\"\n",
+            "node 1 - \"default\"\n",
+            "node 2 1 \"default\"\n",
+        );
+        let document = loaded(three);
+        let id = |ordinal| NodeId::in_document(document.id(), ordinal);
+        assert_eq!(document.content().roots(), &[id(1), id(2)]);
+        assert_eq!(
+            document.content().node(id(2)).unwrap().children,
+            vec![id(3)],
+            "the third node named the second as its parent, by position"
+        );
     }
 
     /// A world with one node, used by several tests above.

@@ -270,6 +270,107 @@ private:
     Array<char> dependency_names_;
 };
 
+/// The ten steps `asset-import-pipeline` fixes for a model import, as a set. M8.a task 3.3.
+///
+/// --- WHY A FORMAT'S ABSENT STEPS ARE DECLARED HERE RATHER THAN WARNED ABOUT ---------------------
+///
+/// "A format that cannot express a step SHALL skip it and say so in the import report. A step
+/// skipped for that reason **is not a warning about the file** and SHALL NOT be reported as one."
+///
+/// An OBJ carries no rig, no animation and no scene graph. That is what OBJ *is*, not a defect in
+/// somebody's export, and an importer that raised three warnings per file would train every project
+/// to ignore its warnings. So the absent steps are a property of the IMPORTER, declared once in its
+/// `ImporterInfo`, and the report names them per row.
+///
+/// Declaring them on the importer rather than reporting them per import earns two things a
+/// diagnostic cannot. First, a cache HIT reports the same absent steps as a miss — diagnostics are
+/// deliberately not bundled (`pipeline.h`), so a per-import diagnostic would vanish on the second
+/// run of an unchanged project and the report would change without the content changing. Second,
+/// `--list-importers` can answer "what does this build's OBJ importer do" before any file exists.
+enum class ModelImportStep : u8 {
+    /// Parse and convert to engine coordinate conventions.
+    Parse = 0,
+    /// Build meshes: index and vertex buffers, split by material, welded.
+    Meshes = 1,
+    /// Generate missing normals, tangents and UV2.
+    GenerateMissing = 2,
+    /// Optimise for the vertex cache, for overdraw and for fetch.
+    Optimise = 3,
+    /// Generate the level-of-detail chain.
+    Lods = 4,
+    /// Generate collision, per options and the node naming convention.
+    Collision = 5,
+    /// Import skeletons and derive bone levels of detail.
+    Skeletons = 6,
+    /// Import animations, compressed and optionally retargeted.
+    Animations = 7,
+    /// Import materials, mapped onto the standard material.
+    Materials = 8,
+    /// Produce a prefab representing the hierarchy.
+    Prefab = 9,
+};
+
+/// How many steps the sequence has. The specification fixes ten and numbers them from one.
+inline constexpr usize kModelImportStepCount = 10;
+
+/// A set of steps, one bit per `ModelImportStep`.
+///
+/// Zero means **the sequence does not apply** — a texture or an audio importer is not a model
+/// importer and has no steps to have skipped, which is a different statement from "reached none of
+/// them" and the report says so.
+using ModelImportStepSet = u16;
+
+/// Every step in the sequence. A set equal to this reached all ten and has nothing to report.
+inline constexpr ModelImportStepSet kAllModelStepsMask =
+    static_cast<ModelImportStepSet>((1U << kModelImportStepCount) - 1U);
+
+/// The bit one step occupies.
+[[nodiscard]] constexpr ModelImportStepSet step_bit(ModelImportStep step) noexcept {
+    return static_cast<ModelImportStepSet>(1U << static_cast<u32>(step));
+}
+
+/// Whether a set holds a step.
+[[nodiscard]] constexpr bool reaches(ModelImportStepSet set, ModelImportStep step) noexcept {
+    return (set & step_bit(step)) != 0;
+}
+
+/// The step's number in the specification's sequence, which counts from one.
+[[nodiscard]] constexpr u32 model_import_step_number(ModelImportStep step) noexcept {
+    return static_cast<u32>(step) + 1U;
+}
+
+/// What the step is, in the specification's own words. Never null.
+[[nodiscard]] const char* model_import_step_name(ModelImportStep step) noexcept;
+
+/// The steps a model importer that produces a hierarchy reaches: 1-6, 9 and 10.
+///
+/// Steps 7 and 8 — skeletons and animations — are absent from every model importer in this build,
+/// for the reason `gltf.h` gives at length: `animation-and-skinning` reaches Working at M8 and
+/// there is nothing to import a rig INTO before it. The constant is here rather than repeated in
+/// two importers so that the day one of them grows a skeleton the other's claim does not silently
+/// grow with it.
+inline constexpr ModelImportStepSet kHierarchyModelSteps = static_cast<ModelImportStepSet>(
+    step_bit(ModelImportStep::Parse) | step_bit(ModelImportStep::Meshes) |
+    step_bit(ModelImportStep::GenerateMissing) | step_bit(ModelImportStep::Optimise) |
+    step_bit(ModelImportStep::Lods) | step_bit(ModelImportStep::Collision) |
+    step_bit(ModelImportStep::Materials) | step_bit(ModelImportStep::Prefab));
+
+/// The steps a flat model format reaches: 1-6 and 9. `kHierarchyModelSteps` without the prefab.
+///
+/// `asset-import-pipeline`: an OBJ "carries no rig, no animation and no scene graph, so it
+/// exercises only steps 1 to 6 and 9 of the sequence below and SHALL report the steps it did not
+/// reach rather than appearing to have performed them."
+inline constexpr ModelImportStepSet kFlatModelSteps =
+    static_cast<ModelImportStepSet>(kHierarchyModelSteps & ~step_bit(ModelImportStep::Prefab));
+
+/// Write the steps a set does NOT hold, as "7 (import skeletons), 8 (import animations)".
+///
+/// Writes at most `capacity` bytes including the terminator and reports how many it wrote, not
+/// counting the terminator. An empty set writes nothing and reports zero, because "the sequence
+/// does not apply" is the caller's to phrase.
+[[nodiscard]] usize format_absent_model_steps(ModelImportStepSet set, char* out,
+                                              usize capacity) noexcept;
+
 /// What an importer says about itself.
 struct ImporterInfo {
     /// A stable lower-case identifier: "gltf", "texture", "font". It is part of every derivation
@@ -284,6 +385,12 @@ struct ImporterInfo {
     Span<const assets::AssetKind> produces;
     /// What it is, in a sentence, for a listing a person or a machine caller reads.
     std::string_view description;
+    /// Which of the ten model-import steps this importer reaches. M8.a task 3.3.
+    ///
+    /// Zero — the default — means the sequence does not apply, which is the honest answer for a
+    /// texture, an audio or a font importer. A model importer states the set, and the report names
+    /// what is missing from it without calling any of it a warning.
+    ModelImportStepSet steps = 0;
 };
 
 /// Something that turns source bytes into cooked sub-assets.

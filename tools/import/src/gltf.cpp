@@ -752,6 +752,10 @@ ImporterInfo GltfImporter::info() const noexcept {
         "Imports a glTF 2.0 file — .gltf or .glb — into cooked meshes with levels of detail, "
         "materials, collision proxies from a naming convention, and the node hierarchy the cook "
         "step turns into a prefab.";
+    // The eight of the ten model-import steps this build reaches. 7 and 8 — skeletons and
+    // animations — are absent for the reason gltf.h states at length, and the report NAMES them
+    // rather than warning about them. M8.a task 3.3.
+    info.steps = kHierarchyModelSteps;
     return info;
 }
 

@@ -730,6 +730,60 @@ satisfied by a fixture.
 editor's document and the engine's scene meet, because M7 left them associated in first-seen order
 by a file whose own header calls itself a stand-in.
 
+**What M8.a actually reached, which is not what it planned.** The table above is the plan M8.a was
+written against; the record is [status.yaml](roadmap/status.yaml), and where the two differ the
+record wins. The proposal named **two** capabilities reaching Complete here. Neither did, and each
+**C** cell has moved:
+
+- `serialization-and-prefabs` — the engine now reads and writes `.cyworld`, the file's own type
+  section is the schema a transaction addresses, a type this build has never heard of survives a
+  round trip byte for byte, and `cy::scene::serialization::apply_transaction` decodes all twelve of
+  the editor's operation variants. That is the requirement M6 could not close, and it is not the
+  capability. **"Apply and extract" still has no implementation** — pushing an instance's overrides
+  back onto its prefab, and lifting a subtree into a new prefab asset — and
+  `src/scene/serialization/README.md` has said so since M2 and still says so. Two of the twelve
+  operation variants M8.a taught the engine to decode are `InstantiatePrefab` and
+  `SetPrefabOverride`, and the engine **counts them as ignored**: the reader refuses to guess their
+  length, which is correct, and then does nothing with them. The **C** cell moves to M8.b, beside
+  `live-editing` and `editor-viewport-and-gizmos`, which is where the remaining prefab work belongs.
+- `editor-documents-and-transactions` — a created primitive, an imported mesh and an added body are
+  each exactly one transaction; undo returns the world to empty in the document *and* in the
+  engine's world, which the closing artefact checks from both ends; and writing around the
+  transaction path is a **compile error** rather than something audited — the gate wrote a probe
+  that forges a `WriteToken`, reaches for `content_mut` and reaches for `node_mut` from outside the
+  crate, and all three are refused by the compiler. What is missing is not a detail of that
+  machinery. **"Source control integration" has no implementation at all**: the requirement
+  asks for a provider interface — status, history, diff, check out, revert, submit, lock — with Git,
+  Perforce and a null provider behind it, and there is no such trait, no provider, and no null
+  implementation anywhere under `editor/`. A capability cannot be Complete with one of its twelve
+  requirements unstarted. The **C** cell moves to **M11**, where every other `editor-*` row
+  completes.
+
+Both demotions are the practice M5, M6 and M7's gates set: a tier is what the code supports, and the
+plan is corrected rather than the record relaxed. **M8.a therefore advances no capability tier at
+all.** The other three rows it names — `physics`, `asset-import-pipeline` and `gameplay-framework` —
+were already recorded at the tiers it was asked to reach. What the milestone did to those three is
+make their records true: `asset-import-pipeline` was Working with no way to import from inside the
+editor, `gameplay-framework` was Seed with `hosting: NoRuntime` where pressing play should be, and
+`physics` was Working with **no `src/physics/` in the tree at all**, so nothing turned its components
+into bodies for four milestones.
+
+Only `physics` moves its `milestone` field, from M4 to M8.a, and that is a **correction rather than
+an advance**: the capability's "Physics components" requirement had no implementation when M4
+recorded the row, so *"the requirements a real project depends on are satisfied"* was not true of it.
+It is the same correction M5.5's gate made when it moved `editor-ui-ux`'s Working out of M5. The
+other two rows keep the milestone that last advanced their tier, because that is what the field
+means, and inflating it would make the record say something it cannot support.
+
+*The closing gate's own findings — how the ledger was run, what it failed on, and what is thinner
+than a tier suggests — are in*
+[Where M8.a's tiers are thin](roadmap/capability-matrix.md#where-m8as-tiers-are-thin). *The one a
+reader of this page should carry forward: the mesh a created primitive references reaches no
+renderer. `cy::render::MeshRenderer` is a name in the scene's component catalogue with no reflected
+type behind it, so the artefact's own photograph shows the authored sphere and box drawn as two
+identical unit boxes through M3's fixed slots. Authoring is real; what draws it is not yet the
+renderer M7 built.*
+
 ---
 
 ## M8.b — Systems
@@ -756,6 +810,7 @@ by a file whose own header calls itself a stand-in.
 | `audio` | C | Steam Audio, acoustic geometry, importance tiers, voice virtualisation, effects, interactive audio |
 | `ml-inference` | S | Model assets, tensors and sessions, the backend abstraction, **the determinism boundary** |
 | `camera-system` | W | Rig graphs compiled to programs, blending, framing, aim, shake, volumes, cuts |
+| `serialization-and-prefabs` | C | **Apply and extract** — pushing an instance's overrides back onto its prefab, and lifting a subtree into a new prefab asset — which is the one requirement between this capability and Complete. Inherited from M8.a's closing gate; it belongs here because it is the same editor-over-the-data-model work as `live-editing` and `editor-viewport-and-gizmos`, both of which complete in this milestone |
 
 **Closing artefact**: `samples/08-vertical-slice` — a playable game: a level, characters that
 animate and think, abilities with effects, a cinematic, a heads-up interface, effects, sound, and a

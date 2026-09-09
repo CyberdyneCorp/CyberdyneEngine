@@ -148,6 +148,51 @@ std::vector<u8> quad_buffer(float height) {
     return bytes;
 }
 
+/// An OBJ of one quad with a companion `.mtl`, as an exporter writes one.
+std::string obj_quad() {
+    return "mtllib quad.mtl\n"
+           "o Panel\n"
+           "v 0 0 0\n"
+           "v 1 0 0\n"
+           "v 1 1 0\n"
+           "v 0 1 0\n"
+           "usemtl Oak\n"
+           "f 1 2 3\n"
+           "f 1 3 4\n";
+}
+
+std::string obj_material() {
+    return "newmtl Oak\nKd 0.8 0.4 0.2\nNs 60\n";
+}
+
+/// The smallest ASCII FBX 7.4 that carries one quad. Enough for a cache case; `test_fbx.cpp` is
+/// where the FBX importer's own behaviour is asserted.
+std::string fbx_quad() {
+    return "; FBX 7.4.0 project file\n"
+           "FBXHeaderExtension:  {\n"
+           "\tFBXHeaderVersion: 1003\n"
+           "\tFBXVersion: 7400\n"
+           "}\n"
+           "Objects:  {\n"
+           "\tGeometry: 1000, \"Geometry::quad\", \"Mesh\" {\n"
+           "\t\tVertices: *12 {\n"
+           "\t\t\ta: 0,0,0,1,0,0,1,1,0,0,1,0\n"
+           "\t\t}\n"
+           "\t\tPolygonVertexIndex: *6 {\n"
+           "\t\t\ta: 0,1,-3,0,2,-4\n"
+           "\t\t}\n"
+           "\t\tGeometryVersion: 124\n"
+           "\t}\n"
+           "\tModel: 2000, \"Model::Panel\", \"Mesh\" {\n"
+           "\t\tVersion: 232\n"
+           "\t}\n"
+           "}\n"
+           "Connections:  {\n"
+           "\tC: \"OO\",2000,0\n"
+           "\tC: \"OO\",1000,2000\n"
+           "}\n";
+}
+
 struct Harness {
     TempDir directory;
     std::string project;
@@ -374,6 +419,74 @@ CY_TEST_CASE("pipeline: a changed dependency invalidates the entry that read it"
         CY_CHECK(std::string_view(stale.value().cache_reason).find("panel.bin") !=
                  std::string_view::npos);
     }
+}
+
+CY_TEST_CASE("key: the three model formats share one cache and never serve each other's bytes") {
+    // M8.a task 3.4, and the regression for M6's measured defect: two importer binaries pointed at
+    // ONE cache reported 1 hit and 0 miss, because `import_derivation_key` could not see its own
+    // compiler. M7 repaired the function. Adding a third format is exactly the moment a second key
+    // or a second cache gets introduced by accident, so this case cooks a glTF, an FBX and an OBJ
+    // through one `DerivedCache` and asserts every property that would break if one had.
+    Harness harness("one_cache");
+    write_text(harness.project + "/models/quad.gltf", gltf_with_external_buffer("quad.bin"));
+    write_file(harness.project + "/models/quad.bin", quad_buffer(1.0f));
+    write_text(harness.project + "/models/quad.fbx", fbx_quad());
+    write_text(harness.project + "/models/quad.obj", obj_quad());
+    write_text(harness.project + "/models/quad.mtl", obj_material());
+
+    const cy::assets::VirtualPath sources[] = {Harness::path("models/quad.gltf"),
+                                               Harness::path("models/quad.fbx"),
+                                               Harness::path("models/quad.obj")};
+
+    ImportPipeline cold(harness.registry, harness.cache);
+    harness.configure(cold);
+    ImportSettings settings;
+    std::vector<cy::AssetId> identities;
+    for (const cy::assets::VirtualPath& source : sources) {
+        auto outcome = cold.import_file(source, settings);
+        CY_REQUIRE(outcome.has_value());
+        CY_CHECK(outcome.value().succeeded());
+        // Three misses. One of these being a HIT is the M6 defect exactly: one cache with a key
+        // that cannot tell two producers apart serves the wrong artefact and reports success.
+        CY_CHECK(outcome.value().cache == cy::assets::CacheOutcome::Miss);
+        identities.push_back(outcome.value().id);
+    }
+    CY_CHECK(cold.report().cache_hits() == 0);
+    CY_CHECK(cold.report().cache_misses() == 3);
+
+    // Three sources, three identities, and no two of them the same.
+    CY_REQUIRE(identities.size() == 3);
+    CY_CHECK(!(identities[0] == identities[1]));
+    CY_CHECK(!(identities[0] == identities[2]));
+    CY_CHECK(!(identities[1] == identities[2]));
+
+    // The second run over the SAME cache is three hits, and each row still names its own importer —
+    // a cross-served entry would show the wrong one.
+    ImportPipeline warm(harness.registry, harness.cache);
+    harness.configure(warm);
+    for (usize index = 0; index < 3; ++index) {
+        auto outcome = warm.import_file(sources[index], settings);
+        CY_REQUIRE(outcome.has_value());
+        CY_CHECK(outcome.value().cache == cy::assets::CacheOutcome::Hit);
+        CY_CHECK(outcome.value().id == identities[index]);
+        CY_CHECK(outcome.value().minted_ids == 0);
+    }
+    CY_CHECK(warm.report().cache_hits() == 3);
+    CY_CHECK(warm.report().cache_misses() == 0);
+
+    const std::string importers[] = {"gltf", "fbx", "obj"};
+    for (usize index = 0; index < 3; ++index) {
+        CY_CHECK(std::string_view(warm.report().rows()[index].importer) == importers[index]);
+    }
+
+    // And the report names what OBJ could not reach, in its own section, without a warning.
+    CY_CHECK(warm.report().has_absent_steps());
+    CY_CHECK(warm.report().total_warnings() == 0);
+    std::vector<char> text(static_cast<std::size_t>(16) * 1024, '\0');
+    (void)warm.report().format(text.data(), text.size());
+    const std::string_view rendered(text.data());
+    CY_CHECK(rendered.find("steps not reached") != std::string_view::npos);
+    CY_CHECK(rendered.find("obj: ") != std::string_view::npos);
 }
 
 CY_TEST_CASE("pipeline: a source nothing claims is reported rather than ignored") {

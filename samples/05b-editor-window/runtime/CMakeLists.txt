@@ -21,6 +21,14 @@
 #                               the viewport transport — which until this artefact was reachable
 #                               from its own tests and from nothing else.
 #   cy::runtime-editor-bridge   the editor's control socket.
+#   cy::gameplay-play           M8.a's play session: the authored world simulated and restored
+#                               exactly. `cy::physics-reference` is linked beside it because a
+#                               session needs a solver and the reference backend is the one that
+#                               exists in every configuration; Jolt joins it behind CY_PHYSICS,
+#                               which is the same arrangement samples/04-character uses and for the
+#                               same reason — `physics` requires that swapping the backend change no
+#                               gameplay, so a runtime that could only run against one of them
+#                               would be evidence of nothing.
 #   cy::rhi-vulkan              the device. Named rather than defaulted — see main.cpp for why a
 #                               fall-back to the null backend would be worse than a refusal.
 #
@@ -43,15 +51,28 @@ cy_add_module(
     SOURCES
         main.cpp
         overlay.cpp
-        session.cpp
+        pick_wire.cpp
+        world_view.cpp
     PRIVATE_DEPENDENCIES
         cy::sample-first-light
+        cy::scene-serialization
+        cy::scene
         cy::backends-viewport
         cy::servers-render
         cy::runtime-editor-bridge
+        cy::gameplay-play
+        cy::physics-reference
         cy::rhi
         cy::rhi-null
         cy::rhi-vulkan)
+
+# Jolt, and the macro that tells main.cpp it is there. The two lines go together: `CY_PHYSICS` is a
+# CMake option and not a compile definition, so linking the backend without defining the macro would
+# give a runtime that HAS Jolt and whose `#if` cannot see it. samples/04-character does the same.
+if(CY_PHYSICS)
+    target_link_libraries(cy_editor_window_runtime PRIVATE cy::physics-jolt)
+    target_compile_definitions(cy_editor_window_runtime PRIVATE CY_PHYSICS=1)
+endif()
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

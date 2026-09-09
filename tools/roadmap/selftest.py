@@ -37,6 +37,7 @@ Run directly, or through `just roadmap-test`.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -193,7 +194,7 @@ def test_record_rules(root: Path) -> None:
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
-                    "m6": 26, "m7": 32}
+                    "m6": 26, "m7": 32, "m8a": 26}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -889,6 +890,162 @@ def _area(root: Path, name: str) -> Path:
     return area
 
 
+# --- The defect M6 shipped four of, made impossible ------------------------------------------------
+
+
+#: The characters that break when they reach a `just` recipe's `*args`. NOT `$`: a `"$p"` in a
+#: criterion is expanded by the shell that runs the criterion, so `just` never sees the dollar — five
+#: ledgers pass a profile that way and they are correct. These are the ones that survive the
+#: criterion's own shell as literal argv and are then re-spliced, unquoted, into another one.
+RISKY_IN_JUST_ARGS = "()|;&<>*?[]`"
+
+#: Tokens that end one command and begin the next, so that only what a `just` invocation actually
+#: passes is examined. Deliberately crude: this is a lint over committed data, not a shell.
+_ENDS_A_COMMAND = frozenset({"&&", "||", ";", "|", "do", "done", "then", "else", "fi", "(", ")"})
+
+
+def just_arguments(run: str) -> list[tuple[str, str]]:
+    """Every argument every `just` invocation in `run` passes, as (recipe, argument).
+
+    `shlex.split` over the WHOLE string rather than over pieces of it, and that is the bug this
+    function was written with and had to be corrected for: splitting on `|` first tore
+    `-R "world_(activation|streaming)"` in half and the check then found nothing wrong with either
+    piece — a negative fixture that failed to fail, which is the same class of defect as the one
+    being checked for.
+    """
+    import re
+    import shlex
+
+    try:
+        tokens = shlex.split(run)
+    except ValueError:
+        return []  # an unbalanced quote; the loader will have refused this criterion anyway
+    redirection = re.compile(r"^\d*[<>]")
+    found: list[tuple[str, str]] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index] != "just" or index + 1 >= len(tokens):
+            index += 1
+            continue
+        recipe = tokens[index + 1]
+        index += 2
+        while index < len(tokens):
+            token = tokens[index]
+            if (token in _ENDS_A_COMMAND or token.endswith(";")
+                    or redirection.match(token) is not None):
+                break
+            found.append((recipe, token))
+            index += 1
+    return found
+
+
+def test_just_arguments(root: Path) -> None:
+    """No criterion passes a shell metacharacter through a `just` recipe's `*args`.
+
+    THE DEFECT THIS MAKES IMPOSSIBLE IS THE ONE M6 SHIPPED FOUR OF, and it survived a stamp, a green
+    tick, an exit code, two PERMANENT gates and a CI job. Four criteria in m6.toml were written
+
+        just test-integration -R "world_(activation|streaming)"
+
+    and `just`'s `*args` is a string interpolated TEXTUALLY into `bash -c`, so the parentheses
+    reached bash unquoted. Every one of them reported `FAILED exit 2` in 0.0 s having run no test —
+    and because three of them also sat in `.github/workflows/ci.yml`, three of that milestone's
+    suites were covered by a command that had never executed anything.
+
+    M7's ledger recorded the underlying defect in `just/test.just` as still live, and it still is:
+    `test-unit`, `test-integration`, `test-smoke`, `test-render` and `_ctest` all pass `{{args}}`
+    and `${rest}` through unquoted word splitting. Until that is fixed the discipline is "no
+    metacharacter in an argument a recipe forwards", and a discipline nothing checks is a discipline
+    that lasts one milestone. This is the check.
+
+    It is deliberately a lint over the criterion's own text rather than a run of it: a criterion that
+    executes nothing STILL FAILS, so a run cannot tell the two apart — that is precisely how M6's
+    four hid. Only reading what was written can.
+    """
+    del root
+    offenders = []
+    for identifier in criteria_module.available():
+        for criterion in criteria_module.load(identifier).criteria:
+            for recipe, argument in just_arguments(criterion.run):
+                bad = [letter for letter in RISKY_IN_JUST_ARGS if letter in argument]
+                if bad:
+                    offenders.append(
+                        f"{identifier}:{criterion.id}: `just {recipe} … {argument}` carries "
+                        f"{''.join(bad)}")
+    check("no ledger passes a shell metacharacter through a just recipe's arguments",
+          not offenders, "; ".join(offenders))
+
+    # THE NEGATIVE FIXTURE, because a check that cannot fail is a check that has stopped working —
+    # which is what M6's four criteria were. This is m6.toml's own dead criterion, restored.
+    revived = 'just test-integration -R "world_(activation|streaming)"'
+    check("and the check catches M6's own dead criterion, spelled exactly as it shipped",
+          any(letter in argument
+              for _, argument in just_arguments(revived)
+              for letter in RISKY_IN_JUST_ARGS),
+          f"{just_arguments(revived)} was not flagged")
+    check("while the profile loop five ledgers use is not flagged, because the shell expands it",
+          not [letter
+               for _, argument in just_arguments(
+                   'for p in debug dev; do just build-editor-check --profile "$p" || exit 1; done')
+               for letter in RISKY_IN_JUST_ARGS if letter in argument],
+          "a correct criterion was flagged")
+
+
+# --- The Reqs column, which nothing checked until M8.a's gate found it stale ------------------------
+
+
+#: Where the requirement count in the matrix's `Reqs` column can be read from.
+REQUIREMENT_HEADING = "\n### Requirement:"
+
+_MATRIX_ROW = re.compile(r"\|\s*\[`([a-z0-9-]+)`\]\([^)]*\)\s*\|\s*(\d+)\s*\|")
+
+
+def matrix_requirement_counts(matrix: Path) -> list[tuple[str, int]]:
+    """Every `| [`capability`](…) | N |` row of the capability matrix, as (capability, N)."""
+    return [(row.group(1), int(row.group(2)))
+            for row in _MATRIX_ROW.finditer(matrix.read_text(encoding="utf-8"))]
+
+
+def test_matrix_requirement_counts(root: Path) -> None:
+    """The matrix's `Reqs` column against the specification each row links to.
+
+    FOUND STALE AT M8.a's CLOSING GATE, and found by counting rather than by reading:
+    `delivery-roadmap`'s cell said 15 where its specification had 21. Six requirements had been added
+    to it by `split-m8-authorable-and-systems` — the change that created M8.a — and the column that
+    is supposed to say how large each capability is was never updated, because nothing read it.
+
+    The column is not decoration. `capability-matrix.md` calls it "a rough indicator of size" and the
+    Milestone load table above it is the argument for how a milestone's scope was decided; a row that
+    understates its own size by a third is an argument made from a wrong number.
+
+    THIS CHECK GOES RED WHEN A CHANGE THAT ADDS REQUIREMENTS IS ARCHIVED, which is the point: an
+    archive syncs `openspec/changes/<id>/specs/**` into `openspec/specs/**` and the counts move. The
+    failure names every row and both numbers, so the repair is arithmetic rather than an
+    investigation.
+    """
+    del root
+    stale = []
+    for capability, claimed in matrix_requirement_counts(plan_module.MATRIX):
+        spec = record_module.DEFAULT_SPECS / capability / "spec.md"
+        if not spec.exists():
+            stale.append(f"{capability}: the matrix links a specification that is not there")
+            continue
+        actual = spec.read_text(encoding="utf-8").count(REQUIREMENT_HEADING)
+        if actual != claimed:
+            stale.append(f"{capability}: the matrix says {claimed}, the specification has {actual}")
+    check("the matrix's Reqs column matches the specification each row links to",
+          not stale,
+          "; ".join(stale) + "  — update docs/roadmap/capability-matrix.md's Reqs cell for each")
+
+    # THE NEGATIVE FIXTURE. A count that is read out of the same file it is compared against would
+    # pass over anything, which is the failure mode this whole file exists to make impossible.
+    counted = dict(matrix_requirement_counts(plan_module.MATRIX))
+    check("and the count really is read from the matrix rather than from the specification",
+          counted.get("serialization-and-prefabs") == 23 and len(counted) > 60,
+          f"parsed {len(counted)} row(s); serialization-and-prefabs = "
+          f"{counted.get('serialization-and-prefabs')}")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="cy-roadmap-selftest-") as directory:
         root = Path(directory)
@@ -903,6 +1060,8 @@ def main() -> int:
         test_gates(_area(root, "gates"))
         test_plan_documents(_area(root, "plan"))
         test_plan_checks_can_fail(_area(root, "plan-negative"))
+        test_just_arguments(_area(root, "just-arguments"))
+        test_matrix_requirement_counts(_area(root, "reqs-column"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")
     return 1 if _failures else 0

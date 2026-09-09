@@ -38,11 +38,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod assets;
 pub mod context;
 pub mod metadata;
 pub mod registry;
 pub mod scope;
 
+pub use assets::{AssetHost, AssetImportOutcome, AssetImportRequest, ImportedSubAsset};
 pub use context::{
     CommandContext, Manipulation, ManipulationKind, Outcome, ProjectHost, ViewportControls,
 };

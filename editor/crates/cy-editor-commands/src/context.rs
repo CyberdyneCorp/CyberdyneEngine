@@ -115,6 +115,20 @@ pub trait CommandContext {
         None
     }
 
+    /// The project's importers, for a command that has to cook a source asset. M8.a task 3.1.
+    ///
+    /// **Why this is not on [`ProjectHost`].** Importing is not a source edit and not a build: it
+    /// reads a file the project already holds, runs an importer over it, and writes cooked bytes and
+    /// two sidecars — none of which is a transaction and none of which `ProjectHost`'s five source
+    /// methods can express. Bolting it on would give that trait a second subject, and a test double
+    /// for a source edit would then have to implement an importer to compile.
+    ///
+    /// `None` for a host with no importer — a test double, or an editor with no project — so a
+    /// command refuses with a remedy rather than panicking.
+    fn assets(&mut self) -> Option<&mut dyn crate::assets::AssetHost> {
+        None
+    }
+
     /// Open the document that stands for an asset, returning the one already open when there is
     /// one.
     ///
