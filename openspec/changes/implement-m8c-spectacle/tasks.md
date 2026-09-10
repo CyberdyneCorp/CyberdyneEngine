@@ -77,6 +77,19 @@ rediscovered.
 ## 4. Inference — `ml-inference` → S
 
 - [ ] 4.1 Model assets, tensors and sessions, the backend abstraction
+- [ ] 4.1b **ONNX Runtime as the reference backend, and it runs a real model.** The specification has
+      named it the portable default since it was written; what it has never had is an
+      implementation, and an abstraction with no backend is a capability nothing exercises. It is
+      the portable default because it is the only one of the four that runs on every target the
+      engine ships to, and because its format is the interchange Core ML, DirectML and TensorRT
+      import from
+- [ ] 4.1c Gate it on `CY_ML_ONNXRUNTIME`, declare it in `deps/manifest.toml` and `THIRD_PARTY.md`
+      with a licence identifier and a justification, and **build and pass the suites with the option
+      OFF as well as ON**. M8.b's gate found `CY_UI` defaulting off while gating nothing, and M8.b's
+      spike found an option that could not be configured at all — this milestone checks both
+      directions for every option it adds
+- [ ] 4.1d A committed model asset small enough to live in the repository, loaded and run with a
+      checked result. `ml-inference` at Seed means the backend runs, not that the interface compiles
 - [ ] 4.2 The determinism boundary (section 1 is where it is proven)
 - [ ] 4.3 Scheduling and a declared per-frame budget; an unavailable async result yields rather than
       stalls
