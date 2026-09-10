@@ -114,7 +114,21 @@ rediscovered.
 - [ ] 5.2 The cut drives cameras through the camera stack and writes no camera transform
 - [ ] 5.3 The slice's determinism act is re-run with both new systems live and reaches the same
       digest it reaches without them
-- [ ] 5.4 Refresh the committed screenshot
+- [ ] 5.4 **Refresh the committed screenshot, and make it the first one that is CAPTURED rather than
+      drawn.** Section 1b gives the slice real record callbacks, so its frame becomes the engine's own
+      output instead of a diagram of it. Commit it to `docs/design/images/`
+- [ ] 5.5 **Capture the milestone's systems where they are visible, not only where they are
+      counted.** This project went six milestones with one screenshot and has been paying for it in
+      every conversation since: a subsystem verified in isolation photographs badly, and a reader who
+      cannot see a capability cannot judge it. At minimum, and each committed under
+      `docs/design/images/`:
+      a **particle effect mid-simulation** with its budget on screen; the **cut running**, with the
+      camera stack's blend visible rather than asserted; and a **before/after pair of the same frame**
+      with the shader layer supplying callbacks and without, because that difference is the whole of
+      section 1b and a number does not show it
+- [ ] 5.6 Every committed image is the engine's own output. **A diagram is allowed and SHALL be
+      labelled as one** — M8.b's artefact took its silhouettes from the sample's own table rather
+      than the mesh handle the frame resolved, and would have drawn a defect correctly
 
 ## 6. Records and gates
 
