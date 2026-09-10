@@ -35,6 +35,8 @@ whole table.
 | [miniaudio](https://github.com/mackron/miniaudio) | 0.11.24 | MIT-0 | `CY_AUDIO` is on | a shipped game |
 | [ufbx](https://github.com/ufbx/ufbx) | 0.20.0 | MIT | always | the editor and the cooker only |
 | [xatlas](https://github.com/jpcy/xatlas) | 2022.07.26 | MIT | always | the editor and the cooker only |
+| [recast](https://github.com/recastnavigation/recastnavigation) | 1.6.0 | Zlib | `CY_NAVIGATION` is on | a shipped game |
+| [steam_audio](https://github.com/ValveSoftware/steam-audio) | 4.8.1 | Apache-2.0 | `CY_AUDIO_STEAM_AUDIO` is on | a shipped game |
 
 ## Host prerequisites, which are not linked and not shipped
 
@@ -210,6 +212,30 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: always
 - **Linked into**: the editor and the cooker only
 - **Why integrated rather than built**: Chart segmentation, parameterisation and packing for lightmap UVs, which `asset-import-pipeline` requires with a texel density, chart padding and a distortion limit. It is the library `thirdparty-dependencies` names, and the alternative is a research project. Upstream cuts no releases, so `tag` records the branch and the abbreviated commit the 40-character pin below belongs to.
+
+### recast 1.6.0
+
+- **Upstream**: https://github.com/recastnavigation/recastnavigation
+- **Pinned at**: `6dc1667f580357e8a2154c28b7867bea7e8ad3a7` (`v1.6.0`)
+- **Licence**: Zlib
+- **Licence text**: [`License.txt`](https://github.com/recastnavigation/recastnavigation/blob/6dc1667f580357e8a2154c28b7867bea7e8ad3a7/License.txt), and
+  `License.txt` at the root of the fetched source in any configured build tree
+- **Behind**: cy::navigation::build_tile in src/navigation/, implemented by src/navigation/src/build_recast.cpp, which is the only translation unit that names an rc symbol
+- **Included when**: `CY_NAVIGATION` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Voxelising source geometry and extracting walkable convex regions — the one navigation step `ai-system` names as not differentiating, and `navigation` specifies procedurally in Recast's own parameters: cell size and height, agent radius, height, climb and slope, region minimum and merge sizes, edge length and error, detail sample distance and error. It is the reference implementation of that algorithm and the alternative is a marching-squares research project. Detour is excluded by source_subdir; the runtime mesh, the queries, the hierarchy, flow fields, avoidance and crowds are engine code.
+
+### steam_audio 4.8.1
+
+- **Upstream**: https://github.com/ValveSoftware/steam-audio
+- **Pinned at**: `0da18255cca520771f363ee01f100572b39a308e` (`v4.8.1`)
+- **Licence**: Apache-2.0
+- **Licence text**: [`LICENSE.md`](https://github.com/ValveSoftware/steam-audio/blob/0da18255cca520771f363ee01f100572b39a308e/LICENSE.md), and
+  `LICENSE.md` at the root of the fetched source in any configured build tree
+- **Behind**: cy::audio::AcousticsBackend in src/audio/include/cy/audio/acoustics.h, implemented by src/audio/src/acoustics.cpp, which is the only translation unit that may include phonon.h
+- **Included when**: `CY_AUDIO_STEAM_AUDIO` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: HRTF binaural rendering, ambisonic encoding and decoding, geometry-aware occlusion with material-dependent transmission, real-time reflections and sound propagation — the acoustic simulation `audio` names it for, and the one part of the audio stack that is a research field rather than an engineering task. The engine's own panning, attenuation, filter-based occlusion and reverb sends remain the fallback, so a build without it is a complete game.
 
 ### clang 18.1.8
 

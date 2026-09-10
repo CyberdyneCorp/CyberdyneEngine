@@ -20,7 +20,10 @@
 #include <cy/graph/lower_script.h>
 #include <cy/test/test.h>
 
+#include <array>
 #include <cmath>
+#include <cstring>
+#include <new>
 #include <utility>
 
 using namespace cy;
@@ -103,9 +106,10 @@ public:
     bool satisfied = false;
 };
 
-/// `entry -> set_field(health, 2 + 3) -> wait("landed") -> emit_event("done", 2 + 3)`.
-[[nodiscard]] Expected<Graph, Error> script_graph() noexcept {
-    Graph graph(allocator(), Name::intern("shout"));
+/// `entry -> set_field(health, 2 + 3) -> wait("landed") -> emit_event("done", 2 + 3)`, written into
+/// a graph the caller owns — so a case that needs the graph on an allocator of its own can have
+/// one.
+[[nodiscard]] bool fill_script_graph(Graph& graph) noexcept {
     const auto add = [&graph](NodeKey key, const char* type) noexcept {
         return graph.add_node(key, Name::intern(type)).has_value();
     };
@@ -125,7 +129,12 @@ public:
     good = good && wire(1, "then", 5, "in") && wire(4, "value", 5, "value");
     good = good && wire(5, "then", 6, "in") && wire(6, "then", 7, "in");
     good = good && wire(4, "value", 7, "arg0");
-    if (!good) {
+    return good;
+}
+
+[[nodiscard]] Expected<Graph, Error> script_graph() noexcept {
+    Graph graph(allocator(), Name::intern("shout"));
+    if (!fill_script_graph(graph)) {
         return make_unexpected(Error{ErrorCode::Internal, "the script fixture refused", 0});
     }
     return graph;
@@ -212,6 +221,94 @@ public:
     u32 calls = 0;
     u32 resolved = 0;
 };
+
+// --- Two execution backends, and the requirement that they agree --------------------------------
+
+/// `entry -> loop(while true) { emit_command("spin") }`. A back edge, a real branch and a
+/// terminator that is not a return: the shapes the native back end resolves ahead of time.
+[[nodiscard]] Expected<Graph, Error> loop_graph() noexcept {
+    Graph graph(allocator(), Name::intern("spin"));
+    const auto ok = [](const auto& result) noexcept { return result.has_value(); };
+    bool good = ok(graph.add_node(1, Name::intern("script.entry"))) &&
+                ok(graph.add_node(2, Name::intern("script.const_bool"))) &&
+                ok(graph.add_node(3, Name::intern("script.loop"))) &&
+                ok(graph.add_node(4, Name::intern("script.emit_command")));
+    good = good && ok(graph.set_property(2, Name::intern("value"), integer(1)));
+    good = good && ok(graph.set_property(4, Name::intern("command"), text("spin")));
+    good = good && ok(graph.connect(1, Name::intern("then"), 3, Name::intern("in")));
+    good = good && ok(graph.connect(2, Name::intern("value"), 3, Name::intern("condition")));
+    good = good && ok(graph.connect(3, Name::intern("body"), 4, Name::intern("in")));
+    good = good && ok(graph.connect(4, Name::intern("then"), 3, Name::intern("in")));
+    if (!good) {
+        return fail(ErrorCode::Internal, "the loop fixture could not be built");
+    }
+    return graph;
+}
+
+/// Every externally visible result one run had. Comparing outcomes alone would pass a back end
+/// that emitted the right events in the wrong order, or wrote the wrong value into the world.
+struct RunRecord {
+    script::RunOutcome outcome = script::RunOutcome::Finished;
+    u32 calls = 0;
+    u32 events = 0;
+    u32 commands = 0;
+    u32 writes = 0;
+    f32 written = 0.0F;
+    f32 event_argument = 0.0F;
+    Name last_event;
+    Name last_field;
+    bool suspended = false;
+    u32 persisted = 0;
+    u64 registers = 0;
+};
+
+[[nodiscard]] u64 mix(u64 seed, u64 value) noexcept {
+    return (seed ^ value) * 1099511628211ULL;
+}
+
+[[nodiscard]] u64 register_digest(const script::ScriptState& state) noexcept {
+    u64 digest = 14695981039346656037ULL;
+    for (const script::Value& value : state.registers()) {
+        u32 bits = 0;
+        const f32 component = value.x;
+        std::memcpy(&bits, &component, sizeof(bits));
+        digest = mix(mix(mix(digest, static_cast<u64>(value.integer)), bits), value.handle);
+    }
+    return digest;
+}
+
+[[nodiscard]] RunRecord record_of(script::RunOutcome outcome, const RecordingHost& host,
+                                  const script::ScriptState& state) noexcept {
+    RunRecord record;
+    record.outcome = outcome;
+    record.calls = host.calls;
+    record.events = host.events;
+    record.commands = host.commands;
+    record.writes = host.writes;
+    record.written = host.written;
+    record.event_argument = host.event_argument;
+    record.last_event = host.last_event;
+    record.last_field = host.last_field;
+    record.suspended = state.suspended();
+    record.persisted = state.persisted().size();
+    record.registers = register_digest(state);
+    return record;
+}
+
+void check_records_agree(const RunRecord& bytecode, const RunRecord& native) {
+    CY_CHECK_EQ(bytecode.outcome, native.outcome);
+    CY_CHECK_EQ(bytecode.calls, native.calls);
+    CY_CHECK_EQ(bytecode.events, native.events);
+    CY_CHECK_EQ(bytecode.commands, native.commands);
+    CY_CHECK_EQ(bytecode.writes, native.writes);
+    CY_CHECK_EQ(bytecode.written, native.written);
+    CY_CHECK_EQ(bytecode.event_argument, native.event_argument);
+    CY_CHECK_EQ(bytecode.last_event, native.last_event);
+    CY_CHECK_EQ(bytecode.last_field, native.last_field);
+    CY_CHECK_EQ(bytecode.suspended, native.suspended);
+    CY_CHECK_EQ(bytecode.persisted, native.persisted);
+    CY_CHECK_EQ(bytecode.registers, native.registers);
+}
 
 }  // namespace
 
@@ -783,4 +880,228 @@ CY_TEST_CASE("graph_lowering: eight thousand instances over three shared program
     // The shared programs outlive every instance and are byte-for-byte what they were.
     CY_CHECK_EQ(program.value().digest(), script_digest);
     CY_CHECK_EQ(agents.value().digest(), agent_digest);
+}
+
+CY_TEST_CASE("graph_script: the bytecode and native back ends agree, effect for effect") {
+    // `visual-scripting`: "a graph SHALL produce identical results on either backend, which SHALL
+    // be verified" and "a divergence SHALL be a defect". This is that verification, and it compares
+    // the whole observable result — the outcome, every external effect the host saw, the
+    // suspension state, the persisted slot count and a digest over the register file — because two
+    // back ends that agree only on the outcome have not been checked.
+    NodeRegistry registry(allocator());
+    CY_REQUIRE(script::register_script_nodes(registry).has_value());
+    auto graph = script_graph();
+    CY_REQUIRE(graph.has_value());
+    graph.value().resolve(registry);
+    DiagnosticSink sink(allocator());
+    const script::ScriptCompileOptions options;
+    auto program = script::compile_script(graph.value(), registry, options, sink);
+    CY_REQUIRE(program.has_value());
+
+    auto native = script::compile_native(program.value(), allocator());
+    CY_REQUIRE(native.has_value());
+    // ONE INTERMEDIATE REPRESENTATION, TWO BACK ENDS: the cook key names the IR, not the back end.
+    CY_CHECK_EQ(native.value().digest(), program.value().digest());
+    CY_CHECK_EQ(native.value().steps().size(), program.value().code().size());
+    CY_CHECK_EQ(native.value().block_starts().size(), program.value().blocks().size());
+
+    // Run one: to the suspension.
+    script::ScriptState interpreted(allocator(), program.value());
+    script::ScriptState compiled(allocator(), program.value());
+    RecordingHost interpreted_host;
+    RecordingHost compiled_host;
+    auto first = script::execute(program.value(), interpreted, interpreted_host, 256);
+    auto second = script::execute_native(native.value(), compiled, compiled_host, 256);
+    CY_REQUIRE(first.has_value());
+    CY_REQUIRE(second.has_value());
+    CY_CHECK_EQ(first.value(), script::RunOutcome::Suspended);
+    check_records_agree(record_of(first.value(), interpreted_host, interpreted),
+                        record_of(second.value(), compiled_host, compiled));
+
+    // Run two: resumed, through the emission and to the end.
+    interpreted_host.satisfied = true;
+    compiled_host.satisfied = true;
+    auto third = script::execute(program.value(), interpreted, interpreted_host, 256);
+    auto fourth = script::execute_native(native.value(), compiled, compiled_host, 256);
+    CY_REQUIRE(third.has_value());
+    CY_REQUIRE(fourth.has_value());
+    CY_CHECK_EQ(third.value(), script::RunOutcome::Finished);
+    check_records_agree(record_of(third.value(), interpreted_host, interpreted),
+                        record_of(fourth.value(), compiled_host, compiled));
+}
+
+CY_TEST_CASE("graph_script: an instance suspended on one back end resumes on the other") {
+    // What makes the choice a BUILD CONFIGURATION rather than a fork: `ScriptState` is the same
+    // object on both paths, so an instance saved by a development build running bytecode is
+    // resumable by a shipping build running native. That is why a `Suspend` step carries its resume
+    // point in the bytecode back end's terms as well as its own.
+    NodeRegistry registry(allocator());
+    CY_REQUIRE(script::register_script_nodes(registry).has_value());
+    auto graph = script_graph();
+    CY_REQUIRE(graph.has_value());
+    graph.value().resolve(registry);
+    DiagnosticSink sink(allocator());
+    const script::ScriptCompileOptions options;
+    auto program = script::compile_script(graph.value(), registry, options, sink);
+    CY_REQUIRE(program.has_value());
+    auto native = script::compile_native(program.value(), allocator());
+    CY_REQUIRE(native.has_value());
+
+    // Suspended by the bytecode back end, resumed by the native one.
+    script::ScriptState crossing(allocator(), program.value());
+    RecordingHost host;
+    auto suspended = script::execute(program.value(), crossing, host, 256);
+    CY_REQUIRE(suspended.has_value());
+    CY_CHECK_EQ(suspended.value(), script::RunOutcome::Suspended);
+    host.satisfied = true;
+    auto resumed = script::execute_native(native.value(), crossing, host, 256);
+    CY_REQUIRE(resumed.has_value());
+    CY_CHECK_EQ(resumed.value(), script::RunOutcome::Finished);
+    CY_CHECK_EQ(host.events, 1U);
+    CY_CHECK_EQ(host.event_argument, 5.0F);
+
+    // And the other way round: suspended by the native back end, resumed by the bytecode one.
+    script::ScriptState back(allocator(), program.value());
+    RecordingHost other;
+    auto native_suspend = script::execute_native(native.value(), back, other, 256);
+    CY_REQUIRE(native_suspend.has_value());
+    CY_CHECK_EQ(native_suspend.value(), script::RunOutcome::Suspended);
+    other.satisfied = true;
+    auto bytecode_resume = script::execute(program.value(), back, other, 256);
+    CY_REQUIRE(bytecode_resume.has_value());
+    CY_CHECK_EQ(bytecode_resume.value(), script::RunOutcome::Finished);
+    CY_CHECK_EQ(other.events, 1U);
+}
+
+CY_TEST_CASE("graph_script: the native back end stops a runaway at the same instruction count") {
+    // A back edge on both paths. The budget is counted in the same unit on either back end, which
+    // is what lets a scheduler's budget mean one thing across a build configuration change.
+    NodeRegistry registry(allocator());
+    CY_REQUIRE(script::register_script_nodes(registry).has_value());
+    auto graph = loop_graph();
+    CY_REQUIRE(graph.has_value());
+    graph.value().resolve(registry);
+    DiagnosticSink sink(allocator());
+    const script::ScriptCompileOptions options;
+    auto program = script::compile_script(graph.value(), registry, options, sink);
+    CY_REQUIRE(program.has_value());
+    auto native = script::compile_native(program.value(), allocator());
+    CY_REQUIRE(native.has_value());
+
+    script::ScriptState interpreted(allocator(), program.value());
+    script::ScriptState compiled(allocator(), program.value());
+    RecordingHost interpreted_host;
+    RecordingHost compiled_host;
+    auto first = script::execute(program.value(), interpreted, interpreted_host, 64);
+    auto second = script::execute_native(native.value(), compiled, compiled_host, 64);
+    CY_REQUIRE(first.has_value());
+    CY_REQUIRE(second.has_value());
+    CY_CHECK_EQ(first.value(), script::RunOutcome::BudgetExhausted);
+    CY_CHECK_GT(interpreted_host.commands, 0U);
+    check_records_agree(record_of(first.value(), interpreted_host, interpreted),
+                        record_of(second.value(), compiled_host, compiled));
+}
+
+// --- Regression: a program digest may not close over a constant's padding
+// -------------------------
+//
+// FOUND BY samples/08-vertical-slice, WHICH COMPILED ONE AUTHORED GRAPH THREE TIMES AND GOT THREE
+// DIGESTS. `finish_digest` hashed each constant as raw bytes, and `script::Value` is thirty-two
+// bytes of which four — between `z` and `handle` — are written by no member initialiser. So the
+// digest closed over whatever memory the constant happened to land on: it moved between processes,
+// and it did not reproduce under `--profile release` at all, which is what an indeterminate value
+// looks like rather than what a logic error looks like.
+//
+// IT IS NOT COSMETIC. A `ScriptProgram`'s digest is a cook key and the back-end selection key
+// `visual-scripting` requires to be stable, so an unstable one invalidates cooked data on every
+// build and can select a different back end for the same program.
+
+namespace {
+
+/// The program digest, recomputed from the program's own published contents FIELD BY FIELD.
+///
+/// This deliberately restates `finish_digest`'s algorithm rather than calling it. That is what
+/// makes the case a regression test instead of a tautology: the defect was one term of that sum
+/// reading an object where it should read fields, and only a second, independent computation of
+/// the same number can see the difference. It also makes the digest FORMAT a two-file edit, which
+/// is proportionate for a number that is a cook key.
+[[nodiscard]] u64 digest_from_the_fields(const script::ScriptProgram& program) noexcept {
+    u64 digest = hash_u64(kHashSeed, program.code().size());
+    for (const script::Instruction& instruction : program.code()) {
+        digest = hash_u64(digest, static_cast<u64>(instruction.op));
+        digest = hash_u64(digest, static_cast<u64>(instruction.kind));
+        digest = hash_u64(digest, (static_cast<u64>(instruction.dst) << 32U) |
+                                      (static_cast<u64>(instruction.a) << 16U) | instruction.b);
+        digest =
+            hash_u64(digest, (static_cast<u64>(instruction.immediate) << 32U) | instruction.target);
+    }
+    for (const script::Value& constant : program.constants()) {
+        digest = script::hash_constant(digest, constant);
+    }
+    for (const script::ExternalRef& external : program.externals()) {
+        digest = hash_text(digest, external.name.text());
+    }
+    return digest;
+}
+
+/// Whether any constant in the program has a non-zero byte where `Value`'s padding is — which is
+/// what makes the comparison above discriminating rather than lucky. Measured on this tree it is
+/// always true: the four bytes hold a fragment of a spilled stack address, so they vary with
+/// address-space layout and therefore between processes and not within one.
+[[nodiscard]] bool any_constant_has_dirty_padding(const script::ScriptProgram& program) noexcept {
+    constexpr usize kPaddingOffset = 20;
+    constexpr usize kPaddingBytes = 4;
+    for (const script::Value& constant : program.constants()) {
+        std::array<unsigned char, sizeof(script::Value)> raw{};
+        std::memcpy(raw.data(), &constant, raw.size());
+        for (usize index = kPaddingOffset; index < kPaddingOffset + kPaddingBytes; ++index) {
+            if (raw[index] != 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+CY_TEST_CASE("graph_script: a program digest does not close over a constant's padding") {
+    // FOUND BY samples/08-vertical-slice: one authored graph compiled three times gave three
+    // digests, and the artefact's determinism act recorded it as a gap. `script::Value` is
+    // thirty-two bytes of which four — between `z` and `handle` — are written by no member
+    // initialiser, and `finish_digest` hashed the object. A `ScriptProgram`'s digest is a cook key
+    // and the back-end selection key `visual-scripting` requires to be stable, so this is a defect
+    // rather than a cosmetic difference.
+
+    // The unit of it. Two values whose five fields agree and whose padding does not: a hash that
+    // can tell them apart is a hash reading memory nobody wrote.
+    alignas(script::Value) std::array<unsigned char, sizeof(script::Value)> zeroed{};
+    alignas(script::Value) std::array<unsigned char, sizeof(script::Value)> poisoned{};
+    zeroed.fill(0x00);
+    poisoned.fill(0xAB);
+    auto* quiet = new (static_cast<void*>(zeroed.data())) script::Value{};
+    auto* loud = new (static_cast<void*>(poisoned.data())) script::Value{};
+    quiet->x = 5.0F;
+    loud->x = 5.0F;
+    quiet->handle = 7;
+    loud->handle = 7;
+    CY_CHECK_EQ(script::hash_constant(kHashSeed, *quiet), script::hash_constant(kHashSeed, *loud));
+    // And it is reading the fields rather than answering the seed.
+    loud->z = 1.0F;
+    CY_CHECK_NE(script::hash_constant(kHashSeed, *quiet), script::hash_constant(kHashSeed, *loud));
+
+    // And the whole of it, over a real compilation: the program's own digest against the same sum
+    // computed field by field. A `finish_digest` that went back to hashing the object would differ
+    // here on this tree every time, because the padding is never zero.
+    NodeRegistry registry(allocator());
+    CY_REQUIRE(script::register_script_nodes(registry).has_value());
+    auto graph = script_graph();
+    CY_REQUIRE(graph.has_value());
+    graph.value().resolve(registry);
+    DiagnosticSink sink(allocator());
+    const script::ScriptCompileOptions options;
+    auto program = script::compile_script(graph.value(), registry, options, sink);
+    CY_REQUIRE(program.has_value());
+    CY_CHECK(any_constant_has_dirty_padding(program.value()));
+    CY_CHECK_EQ(program.value().digest(), digest_from_the_fields(program.value()));
 }

@@ -40,6 +40,17 @@ cy_add_module(
         src/command.cpp
         src/context.cpp
         src/control.cpp
+        src/diagnostics.cpp
+        src/events.cpp
+        src/features.cpp
+        src/fragments.cpp
+        src/indexes.cpp
+        src/interaction.cpp
+        src/ownership.cpp
+        src/rules.cpp
+        src/tags.cpp
+        src/teams.cpp
+        src/time.cpp
         src/validation.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
@@ -49,6 +60,14 @@ cy_add_module(
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
+
+# abilities/ — CyberAbilities, M8.b section 4. A SEPARATE TARGET because
+# `gameplay-abilities-and-effects` opens with "A project that does not use abilities SHALL link none
+# of this capability's code and SHALL carry none of its data", and a target nothing links is the
+# only form in which that is structurally true. It depends on cy::gameplay and cy::graph; the list
+# above is unchanged, so tests/test_bypass.cpp's argument about what is NOT reachable from here
+# still holds. See abilities/CMakeLists.txt.
+add_subdirectory(abilities)
 
 # play/ — spawning and the play session, M8.a section 5. A SEPARATE TARGET on purpose: it needs
 # cy::scene, cy::scene-serialization and cy::physics-bridge, and putting those on THIS target's

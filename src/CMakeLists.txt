@@ -28,6 +28,12 @@ add_subdirectory(backends)
 # consumes it.
 add_subdirectory(servers)
 
+# text/ is the Unicode layer above CyberText and M8.b section 9.4: the bidirectional algorithm, line
+# breaking, Arabic joining, the shaping cache and localisation — the three algorithms
+# src/servers/text/'s `TextCapabilities` declares the minimal backend cannot do. Layer 2, a peer of
+# src/servers/text/ rather than something above it, and it depends on cy::core alone.
+add_subdirectory(text)
+
 # save/ is layer 2 and arrives at M6 (section 6). It is read after servers/ because it sits at the
 # same layer, and before scene/ and everything above, all of which may consume it: the persistence
 # overlay is the model world partition maintains and a save encodes. It depends on layer 0 alone —
@@ -45,6 +51,27 @@ add_subdirectory(rendering)
 # server would be a compiler that cannot run in a cook. Read after rendering/ and before the
 # consumers that lower through it.
 add_subdirectory(graph)
+
+# animation/ is CyberAnimation and M8.b section 5: skeletons and bone level of detail, clips and
+# their codec, the runtime of the compiled pose program, root motion, the constraint framework,
+# retargeting, the GPU pose world and pose sharing. Layer 4, read after graph/ because it consumes
+# `cy::graph::pose`'s compiled program and before runtime/. Behind CY_ANIMATION, which the
+# specification requires the runtime to be removable by — `-D CY_ANIMATION=OFF` excludes this
+# directory and nothing else changes, because nothing below layer 4 names it.
+if(CY_ANIMATION)
+    add_subdirectory(animation)
+endif()
+
+# navigation/ and ai/ are M8.b section 6. Both declare LAYER scene (4) for the reason graph/ above
+# and world/ below both give. navigation/ is read first because ai/ depends on it — `ai-system`
+# requires agents to "drive movement through the navigation system rather than implementing their
+# own pathfinding", and cmake/features.cmake encodes the same edge as CY_AI|CY_NAVIGATION. Both are
+# read after graph/, because a compiled behaviour program is `cy::graph::behaviour`'s and the AI
+# runtime is what executes it.
+add_subdirectory(navigation)
+if(CY_AI)
+    add_subdirectory(ai)
+endif()
 
 # physics/ is the physics ECS bridge and M8.a section 4: it registers the components
 # src/servers/physics/ declares the layouts for, creates bodies from them, drives `PhysicsStepper`
@@ -65,6 +92,32 @@ add_subdirectory(world)
 # loop that drives them. Its dependency list is short on purpose and the omission is the point —
 # see src/gameplay/CMakeLists.txt, and design.md §3.
 add_subdirectory(gameplay)
+
+# camera/ is CyberCamera and M8.b section 7: rigs compiled to programs by cy::graph::camera, the
+# stack that blends them, the batched collision and occlusion dispatch, cuts, render views, the
+# listener anchor and the streaming source. Layer 4, the rung graph/, gameplay/ and world/ chose.
+# Read after graph/ and world/, which it consumes, and before runtime/, which drives its frame.
+# ui/ is CyberUI and M8.b section 9: the element store, the retained tree, layout, `.cyss`, input
+# routing, the layer stack, flattening and the accessibility audit. Layer 4, and it deliberately
+# does NOT depend on cy::ecs — `ui-system` requires UI elements not to be entities, and the link
+# graph is what keeps that true.
+# audio/ is CyberAudio's acoustics half and M8.b section 10: the acoustics backend behind which
+# Steam Audio sits, its geometry extraction, the asynchronous simulation, the importance tiers and
+# voice virtualisation, the effect chain and interactive music. Layer 4, above src/servers/audio/,
+# because acoustic geometry and importance scoring both need a world and layer 2 may not name one.
+add_subdirectory(audio)
+
+# Behind CY_UI, which `ui-system` requires the system to be removable by: "The system SHALL be
+# removable at build time via CY_UI". `-D CY_UI=OFF` excludes this directory and nothing else
+# changes, because nothing below layer 4 names it and the only other thing that does is
+# samples/08-vertical-slice, which declines to declare itself — the same arrangement CY_ANIMATION
+# and CY_AI have above. Until M8.b's closing gate the option gated nothing at all and defaulted off,
+# which is the shape the spike found in CY_RENDERER_VULKAN.
+if(CY_UI)
+    add_subdirectory(ui)
+endif()
+
+add_subdirectory(camera)
 
 add_subdirectory(runtime)
 

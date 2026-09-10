@@ -35,6 +35,7 @@ function(cy_render_extract_declare_tests)
         NAME render_extract
         KIND unit
         SOURCES
+            "${cy_extract_tests_dir}/test_asset_binding.cpp"
             "${cy_extract_tests_dir}/test_extract.cpp"
             "${cy_extract_tests_dir}/test_reflection.cpp"
             "${cy_extract_tests_dir}/test_state_schema.cpp"

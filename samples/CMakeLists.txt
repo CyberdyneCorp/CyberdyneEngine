@@ -79,3 +79,15 @@ add_subdirectory(07-fidelity)
 # one. Its CMakeLists.txt argues the shape and declares nothing where python3, cargo or just is
 # absent.
 add_subdirectory(08a-authoring)
+# M8.b's artefact is an EIGHTH shape, and it is the shape of the milestone: one program that is a
+# GAME. samples/08-vertical-slice/cy_sample_vertical-slice builds a level, spawns characters that
+# animate and think, gives them abilities with effects, puts a heads-up interface and a 2D menu over
+# them, scores the sound, and assembles the frame out of the renderer's own parts — every one of
+# those the engine's real module, in one tick, in one order. slice.py runs it in four acts, checks
+# every claim it printed, and draws the picture from the frame's own draw list.
+#
+# It is also the line that answers M7's closing gate. Eight rendering modules were "linked by
+# nothing but their own test binaries"; M8.b's section 11 gave them one assembly, and this directory
+# is the first thing outside a test binary that links it. The same is true of cy::animation,
+# cy::ai, cy::navigation, cy::ui, cy::audio-acoustics, cy::camera and cy::rendering-2d.
+add_subdirectory(08-vertical-slice)

@@ -48,6 +48,7 @@ cy_add_module(
         src/lower_camera.cpp
         src/lower_pose.cpp
         src/lower_script.cpp
+        src/lower_script_native.cpp
         src/merge.cpp
         src/passes.cpp
         src/text.cpp

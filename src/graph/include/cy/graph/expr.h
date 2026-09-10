@@ -111,6 +111,17 @@ struct Immediate {
     }
 };
 
+// AN IMMEDIATE IS HASHED AS RAW BYTES IN THREE PLACES — `Builder::hash_of` here, `hash_literal` in
+// cybergraph.cpp and the rig digest in lower_camera.cpp — and that is only sound while the layout
+// is flat. Five four-byte members pack to twenty bytes with nothing between them; a member that
+// forced eight-byte alignment would introduce padding no initialiser writes, and every content
+// hash, every cook key and every merge decision would then close over indeterminate memory. That
+// is not hypothetical: `script::Value` in lower_script.h did exactly this, and it took a vertical
+// slice compiling one graph three times to find it. Add a member and either keep the layout flat or
+// hash the fields, as `script::hash_constant` does.
+static_assert(sizeof(Immediate) == (4 * sizeof(f32)) + sizeof(u32),
+              "Immediate has grown padding; see the note above this assertion");
+
 /// Whether two structurally identical instances of an operation may become one value.
 ///
 /// The three classes are the three the material IR's `BuilderPolicy` distinguishes, and they are

@@ -100,6 +100,14 @@ inline constexpr unsigned long long kStallMultiplier = 100;
 /// The budget is scaled by the CY_TEST_BUDGET_SCALE environment variable, and defaults to a relaxed
 /// scale under a sanitizer, where a five- to twenty-fold slowdown is the tool working correctly
 /// rather than the test regressing. CY_TEST_BUDGET_SCALE=0 disables both checks.
+///
+/// AND BY A FIXED ALLOWANCE IN THE Debug CONFIGURATION, which is the half M8.a's repair did not
+/// reach. The calibration loop is scalar integer arithmetic that `-O0` slows by two per cent, while
+/// it slows the container- and abstraction-heavy code the suites run by one and a half to six times
+/// — so the budget was silently a different budget in Debug, and the symptom was a changing handful
+/// of suites failing each run while every one of them passed alone. `budget.cpp` carries the
+/// per-suite measurement and the constant. The tier's real number is enforced unchanged in the
+/// three configurations compiled the way a shipped game is, and `four-profiles` runs all four.
 class BudgetGuard {
 public:
     BudgetGuard(const char* name, unsigned long long budget_ns, const char* file, int line);

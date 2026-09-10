@@ -1077,7 +1077,7 @@ void finish_digest(ScriptProgram& program) noexcept {
             hash_u64(digest, (static_cast<u64>(instruction.immediate) << 32U) | instruction.target);
     }
     for (const Value& constant : program.constants()) {
-        digest = hash_bytes(digest, &constant, sizeof(constant));
+        digest = hash_constant(digest, constant);
     }
     for (const ExternalRef& external : program.externals()) {
         digest = hash_text(digest, external.name.text());

@@ -357,3 +357,87 @@ CY_TEST_CASE("the virtual texture's feedback resolve runs in the assembled frame
     CY_CHECK_LT(report.virtual_texture_bytes_read, 128ULL * 128ULL * 4ULL);
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
+
+CY_TEST_CASE("an assembly under load is destroyed while the device is still busy") {
+    // TEARDOWN UNDER LOAD, and it is a device case rather than a null-backend one because the whole
+    // question is a device's: `FrameAssembly` owns two sets of GPU resources — the cull dispatch's
+    // buffers and the virtual texture's feedback ring — and its destructor releases both. A frame
+    // submitted a moment earlier is still executing when that happens, and nothing in the caller's
+    // sequence says otherwise: `execute` returns when the work is SUBMITTED, not when it is done.
+    //
+    // So this runs sixteen frames of the heaviest configuration the suite has — the device cull
+    // dispatch and the feedback resolve in every one of them — and then destroys the assembly with
+    // no `wait_idle` of its own, inside the device frame the last submit belongs to. What it
+    // asserts is that the device is still usable afterwards: a SECOND assembly is built on the same
+    // device and renders a frame, and validation counted nothing across either.
+    DeviceFixture fixture;
+    if (!fixture.has_gpu()) {
+        fixture.report_skip();
+        return;
+    }
+
+    const cy::render::vt::VirtualTextureDesc desc = terrain_desc();
+    cy::render::vt::VirtualTextureSystem system(allocator());
+    cy::render::vt::TileCacheDesc cache;
+    cache.format = desc.format_class();
+    cache.tile_size = desc.tile_size;
+    cache.border = desc.border;
+    cache.bytes_per_tile = desc.bytes_per_tile;
+    cache.tile_capacity = 64;
+    CY_REQUIRE(system.configure_cache(cache).has_value());
+    CY_REQUIRE(system.register_texture(desc).has_value());
+    CY_REQUIRE(system.make_mip_tail_resident(desc.id).has_value());
+
+    SpatialIndex index(allocator());
+    CY_REQUIRE(fill(index).has_value());
+    const cy::render::LightDescription lights[] = {sun(1), point_light(Vec3{0, 0, -6}, 2)};
+    const LodTable lods;
+    AssemblyView view = make_view({lights, 2});
+    view.lod_chains = {lods.chains, 1};
+    view.mesh_lods = {lods.levels, 1};
+    view.page_table = system.page_table(desc.id);
+
+    vt::FeedbackSettings settings;
+    settings.grid_width = 128;
+    settings.grid_height = 128;
+    settings.density = 1;
+    settings.request_capacity = 512;
+
+    u32 executed = 0;
+    {
+        FrameAssembly assembly(allocator());
+        CY_REQUIRE(assembly.initialize(make_description(true)).has_value());
+        CY_REQUIRE(assembly.attach_device(fixture.device()).has_value());
+        CY_REQUIRE(assembly.attach_virtual_texture(desc, settings).has_value());
+
+        for (u32 frame = 0; frame < 16; ++frame) {
+            RenderGraph graph(allocator());
+            AssemblyReport report;
+            CY_REQUIRE(assembly.assemble(index, view, FrameSinks{}, graph, report).has_value());
+            CY_REQUIRE(fixture.device().begin_frame().has_value());
+            GraphExecutor executor(allocator(), fixture.device());
+            CY_REQUIRE(assembly.execute(executor, graph, report).has_value());
+            CY_REQUIRE(fixture.device().end_frame().has_value());
+            executed += report.executed ? 1U : 0U;
+        }
+        // and here the assembly is destroyed, with the sixteenth frame's submission outstanding.
+    }
+    CY_CHECK_EQ(executed, 16U);
+
+    // The device outlived it, and still renders. A teardown that had corrupted the queue or freed a
+    // resource the driver was reading shows here rather than in whatever ran next.
+    FrameAssembly second(allocator());
+    CY_REQUIRE(second.initialize(make_description(true)).has_value());
+    CY_REQUIRE(second.attach_device(fixture.device()).has_value());
+
+    RenderGraph graph(allocator());
+    AssemblyReport report;
+    CY_REQUIRE(second.assemble(index, view, FrameSinks{}, graph, report).has_value());
+    CY_REQUIRE(fixture.device().begin_frame().has_value());
+    GraphExecutor executor(allocator(), fixture.device());
+    CY_REQUIRE(second.execute(executor, graph, report).has_value());
+    CY_REQUIRE(fixture.device().end_frame().has_value());
+    CY_CHECK(report.executed);
+    CY_CHECK_EQ(report.draws, 8U);
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}

@@ -37,18 +37,41 @@ BlendShapeDelta delta(u32 vertex, f32 x) {
 
 }  // namespace
 
-CY_TEST_CASE("skinning: the GPU pose world is refused, naming the milestone that owns it") {
-    // `rendering-geometry-and-resources` requires bone matrices to come from the GPU pose world,
-    // which is `animation-and-skinning` at M8. Accepting the value quietly would let a second pose
-    // upload accumulate consumers before the shared one exists, and undoing that at M8 would be a
-    // migration rather than an edit. This case is the record that the gap is declared.
+CY_TEST_CASE(
+    "skinning: the GPU pose world is accepted, and the two ways of naming it wrongly are "
+    "not") {
+    // THIS CASE WAS THE REFUSAL. `rendering-geometry-and-resources` requires bone matrices to come
+    // from the GPU pose world, which is `animation-and-skinning`'s; at M6 there was none, and
+    // `validate()` refused the value naming M8 so that a second pose upload could not accumulate
+    // consumers in the meantime. M8.b built the world — `cy::animation::PoseWorld` — so the
+    // refusal is gone and what is asserted here is what a caller can still get wrong.
     SkinningDescriptor descriptor = full_skin(100, 8);
     CY_CHECK(descriptor.validate().has_value());
 
     descriptor.source = PoseSource::GpuPoseWorld;
-    const cy::Status refused = descriptor.validate();
-    CY_REQUIRE(!refused.has_value());
-    CY_CHECK(refused.error().code == cy::ErrorCode::NotImplemented);
+    descriptor.pose_offset = 1024;
+    CY_CHECK(descriptor.validate().has_value());
+
+    // A baked instance has no skeleton in the world: it is a pose texture, and it skins nothing.
+    SkinningDescriptor baked = descriptor;
+    baked.tier = AnimationTier::Baked;
+    baked.retained_bones = 0;
+    const cy::Status refused_baked = baked.validate();
+    CY_REQUIRE(!refused_baked.has_value());
+    CY_CHECK(refused_baked.error().code == cy::ErrorCode::InvalidArgument);
+
+    // An offset into the shared world on a descriptor that says it uploads its own pose would read
+    // another instance's bones.
+    SkinningDescriptor confused = descriptor;
+    confused.source = PoseSource::UploadedPerSkin;
+    const cy::Status refused_offset = confused.validate();
+    CY_REQUIRE(!refused_offset.has_value());
+    CY_CHECK(refused_offset.error().code == cy::ErrorCode::InvalidArgument);
+
+    // And a range that wraps the address space.
+    SkinningDescriptor wrapping = descriptor;
+    wrapping.pose_offset = 0xFFFFFFFFU - 2;
+    CY_CHECK(!wrapping.validate().has_value());
 }
 
 CY_TEST_CASE("skinning: a descriptor the compute pass cannot execute is refused, naming why") {

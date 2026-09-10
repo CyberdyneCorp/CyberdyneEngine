@@ -1,0 +1,623 @@
+# M8.b — Systems: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m8b-systems/tasks.md and the M8.b row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a recipe
+# that exits zero, a command that exits zero, a benchmark within a threshold, or a committed artefact
+# that is regenerated and compared — so an intention that cannot be run is a note at the bottom of
+# this file, not a criterion.
+#
+# --- THIS LEDGER DECLARES ONLY M8.b's OWN CRITERIA, AND THERE IS NO `m8a-green` -------------------
+#
+# The ledger has been flat since M5 and `just roadmap-test` fails a ledger that invokes another one.
+# `just roadmap-milestone m8b` evaluates the permanent set directly — the criteria of every milestone
+# whose `class = "milestone"` gate carries `state = "green"` and which sits BELOW M8.b on the ladder,
+# merged and deduplicated, each distinct check run exactly once — and then the criteria in this file.
+# `criteria.build_plan` is the rule and tools/roadmap/README.md states it.
+#
+# A criterion here whose `run` string is identical to one an earlier ledger declared COLLAPSES into
+# it and is reported under the earlier label — `m0:format` rather than `m8b:format`. The static gates
+# are declared anyway, as every ledger since M3 has, because a ledger that does not name the checks
+# its milestone had to satisfy is a ledger nobody can read. `four-profiles` below is deliberately
+# spelled with the identical string eight earlier ledgers used, for the same reason.
+#
+# --- EVERY COMMAND IN THIS FILE WAS RUN, EXACTLY AS WRITTEN ---------------------------------------
+#
+# M6's closing gate found FOUR criteria in m6.toml that had never executed anything: they were
+# written as `just test-integration -R "world_(activation|streaming)"`, `just`'s `*args` is a string
+# interpolated textually into `bash -c`, and the parentheses reached bash unquoted. Each reported
+# `FAILED exit 2` in 0.0 s having run no test. M7's and M8.a's ledgers both recorded that the defect
+# in `just/test.just` was still live; it still is, and this file works around it the same way.
+#
+# So: no argument passed THROUGH a `just` recipe in this file contains a shell metacharacter. Every
+# `-R` pattern is one plain word or a `^…$` anchor with no alternation, suites are joined with `&&`
+# at the criterion's own level rather than with an alternation inside a recipe's arguments, and every
+# command below was executed on this machine and its output pasted into the closing report. Each was
+# also checked to have SELECTED something — `N/N Test #NNN … Passed`, with N greater than zero,
+# rather than a green run over nothing. THAT CHECK IS THE WHOLE OF WHY THIS PARAGRAPH EXISTS, and it
+# is the one M6 skipped.
+#
+# AND IT CAUGHT M7's OTHER TRAP TWICE WHILE THIS FILE WAS BEING WRITTEN. `-R text` also selects
+# `unit.virtual_texturing`, because "virtual_texturing" contains "text"; `-R ui` also selects
+# `unit.build_graph`, because "build" contains "ui". Both are exactly the defect M7's gate recorded
+# when `--tests text` swept up `render.virtual_texturing_gpu`. The fix here is the suite's own
+# prefix — `-R unit.text`, `-R unit.ui` — which is still one plain word to the shell and no longer
+# a substring of somebody else's suite. Every pattern below was listed with `ctest -N` and its
+# selection READ, not counted.
+#
+# --- WHY SO MANY CRITERIA NAME `milestone-m8b` AS THEIR CI JOB ------------------------------------
+#
+# The same arithmetic M7's and M8.a's ledgers recorded. M8.b declares ONE new gate — `milestone-m8b`,
+# at `joins-on-close` — and points its own suites at it rather than inventing thirty more permanent
+# gates whose jobs belong to `.github/workflows/ci.yml`, which is task 13.4's file and not this
+# change's section 13. Until that gate flips to green the criteria below whose `ci_job` is
+# `milestone-m8b` are run by `just roadmap-milestone m8b` and by nothing in continuous integration;
+# the moment it flips they join the permanent set entire. Where an existing permanent gate's own
+# `runs` list demonstrably covers a criterion it is named instead, and eight of them are.
+#
+# --- WHAT M8.b ADDS TO THE PERMANENT SET, AND WHAT IT COSTS ---------------------------------------
+#
+# THIRTY-NINE own criteria beyond the static gates — forty-seven in all — which is the largest
+# single addition any milestone has made, and the reason is the milestone's own shape: eleven
+# capabilities to Working and three to Complete, over nine directories that did not exist when it
+# opened. **Exactly one carries `requires = "gpu"`** — `render.assembly`, the frame put on a real
+# device — and it is reported NOT EVALUATED rather than passed on a machine without one. Everything
+# else M8.b claims can be judged on a machine with no graphics device and no display, including the
+# closing artefact: the slice
+# assembles a frame and records no pass, and its picture is a committed file rather than a criterion
+# that takes one.
+#
+# --- THE ARTEFACT, AND WHY IT IS FOUR CRITERIA RATHER THAN ONE ------------------------------------
+#
+# `samples/08-vertical-slice` is one program and one driver, and the four ways of reaching it answer
+# different questions — the split m6.toml, m7.toml and m8a.toml each made.
+#
+#   slice-artefact    the CTest entry, so `just test-all` runs it and `build-and-test` covers it on
+#                     every pull request. No display, no device.
+#   slice-recipe      the same run through the workflow a contributor types, which builds the engine
+#                     first — so it fails when the recipe rots, which the CTest entry cannot see.
+#                     It also runs the scale act at the criterion's own figure of 8,000 agents,
+#                     which the CTest entry deliberately does not.
+#   slice-control     THE NEGATIVE CONTROL. `--interpret-control` puts a per-entity virtual `tick()`
+#                     in the loop; the audit must FIND it and the program must exit non-zero. The
+#                     criterion passes only when that run FAILS. Task 12.4 asks that a recorded gap
+#                     exit non-zero; this is that, demonstrated on every ledger run.
+#   screenshot-slice  the committed picture, which is what makes the milestone evaluable by LOOKING.
+
+schema = 1
+id = "m8b"
+name = "Systems"
+artefact = "samples/08-vertical-slice — a playable game assembled out of this milestone's systems: a 48 m arena whose navigation mesh Recast builds from its own collision triangles, two teams of characters that sense through a scheduled perception pass, think through a compiled behaviour program, steer through the crowd solver, animate through a compiled pose program with root motion integrated on the deterministic half, and cast a compiled ability that applies effects and emits cues; a heads-up interface that lays out, flattens, batches and passes its own accessibility audit; a 2D menu through the sprite batcher; sound scored into importance tiers with the music transitioning on a bar; and a frame assembled out of the renderer's own eight modules in which every draw resolves to a slot the material table holds — 8,000 agents at 10.0 ms a tick, costing 1.26 us each against 1.10 us at 2,000 — a factor of 1.14 for four times the population — identical over two processes, and leading with a median that three consecutive runs put at 690.5, 686.5 and 697.5 us while their worst ticks were 1062, 986 and 557"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "`just roadmap-milestone m8b` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 13.3 — docs/roadmap/status.yaml, docs/roadmap/capability-matrix.md, docs/ROADMAP.md and docs/roadmap/dependencies.md are the closing change's. `roadmap-tiers` below checks the record, `roadmap-record` checks that the record and openspec/specs/ agree, and `plan-consistency` checks that the four plan documents agree with each other. AT THE TIME THIS FILE WAS WRITTEN `roadmap-tiers` FAILS, and it is meant to — the same forcing function M8.a's ledger declared and for the same reason: the record still carries `visual-scripting`, `gameplay-abilities-and-effects`, `animation-and-skinning`, `ui-system` and `rendering-2d` at none, and `gameplay-framework`, `camera-system`, `audio` and `text-and-fonts` below their exit tiers, while M8.b's row of ROADMAP.md exits all of them higher. `ai-system` and `navigation` are already at working and already name this change, which is what the rest of the column has to look like.",
+    "tasks 13.4 — moving ci.yml's `milestone` job to `m8b` is checked by `workflows` below (`just ci-check`), which goes red the moment `milestone-m8b` is green above the newest ledger any workflow evaluates. It is a check, but it is the closing change's edit to make and not this file's.",
+    "tasks 13.5 — opening the M8.c change is `m8c-open` below, which asks only that the change exists. AT THE TIME THIS FILE WAS WRITTEN IT FAILS, and it is meant to, exactly as `roadmap-tiers` does: openspec/changes/ holds `implement-m8b-systems` and `split-m8b-defer-spectacle`, and no `implement-m8c-*` yet. `split-m8b-defer-spectacle` is the change that DEFERRED the work to M8.c; it is not the change that DOES it, and a glob that matched it would go green over a rung nobody has opened. THE NEXT RUNG IS M8.c AND NOT M9: `split-m8-authorable-and-systems` put VFX, cinematics and inference there after this milestone's spike found it larger than its plan assumed, and `record.MILESTONES` already carries `m8c` between `m8b` and `m9`. A ledger that asked for `m9` here would be asking the ladder to skip a rung it has already declared.",
+    "tasks 14.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "THE COMPILED SCRIPT AND ABILITY PROGRAM DIGESTS WERE NOT REPRODUCIBLE ACROSS PROCESSES, the artefact recorded it as a gap rather than describing it, and the closing gate CLOSED it — which is the sequence this ledger is for. `finish_digest` in src/graph/src/lower_script.cpp hashed each constant with `hash_bytes(&constant, sizeof(constant))`; `cy::graph::script::Value` is 32 bytes of which four are padding between `z` and `handle` that no member initialiser touches, so the digest closed over indeterminate bytes and three runs of one graph gave three digests. A byte dump at the gate found a fragment of a spilled stack address in exactly those four, which is why it moved between processes and not within one, and why `smoke.vertical_slice` was green at `--profile release` and red at `--profile dev` on the same tree. This is a cook key and the back-end selection key `visual-scripting` requires to be stable, so it reached past the artefact. The fix hashes the five fields through `script::hash_constant`; `src/graph/tests/test_lowering.cpp` compares the program's own digest against the same sum recomputed field by field and was proved to go red when the old line is restored; and `expr.h` gained a `static_assert` on `sizeof(Immediate)` beside the three places that still hash a struct as bytes.",
+    "THREE PERFORMANCE FINDINGS IN MODULES THE ARTEFACT ONLY USES, each measured and each named in samples/08-vertical-slice/README.md: `Crowd::rebuild_grid` is O(agents x occupied cells) because its cell lookup rescans the cell table from the start (72 ms a tick against 9 ms, at 8,000 agents, on cell size alone); `PerceptionScheduler`'s broad phase has no spatial index although its header describes one, so its cost is (due observers x targets x queries built); and `ThinkReport::starved` counts an agent promoted out of a coarse tier, because starvation is measured against the CURRENT tier's interval using a `last_think_tick` earned under the previous one. None is fixed here — each belongs to a module this artefact does not own — and the artefact is configured so that none of them is what its budgets measure.",
+    "THE ARTEFACT'S BUDGETS ARE SHAPE BOUNDS AND NOT MACHINE NUMBERS, declared in `Budgets` in samples/08-vertical-slice/slice.h and printed by the program so the driver compares a measurement against the source rather than against a number copied into a script. Every absolute figure is set well above what the reference machine measures, because a bound tight enough to be a measurement of the host fails on a loaded build agent and teaches everyone to ignore it. What actually catches a regression is the linearity factor beside them — the cost per agent at four times the population, which a quadratic cannot hold and a slow machine does not affect.",
+]
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes with the eleven capabilities this milestone advances to Working and the three it completes"
+source = "tasks 13.3"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained src/graph/, src/animation/, src/ai/, src/navigation/, src/ui/, src/text/, src/audio/, src/camera/, src/rendering/2d/, src/rendering/assembly/, src/gameplay/abilities/ and a sample"
+source = "tasks 14.2"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over nine new directories and the artefact — including the cognitive-complexity limits this project holds systems code to, which eleven functions in src/ai/ and src/navigation/ were split to satisfy"
+source = "tasks 14.2"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the engine's layer order holds with nine new directories in the tree — cy::graph at layer scene depending on nothing above cy::core, cy::animation depending on cy::graph and NOT on cy::ecs or cy::scene, cy::text at layer servers depending on cy::core alone, and cy::rendering-assembly reaching every rendering module and none of them reaching it"
+source = "tasks 14.2, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate is run by a job in .github/workflows/, and no job reimplements a recipe. This is also the check that fails if ci.yml's `milestone` job was not moved to the newest closed milestone when its gate went green — task 13.4's forcing function"
+source = "tasks 13.4, delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which matters here because M8.b added Recast, the first new third-party dependency since M4, with its licence identifier and its justification"
+source = "tasks 14.2, 10.1"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 13.3, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the tier plan obeys its own dependency rules, and the four plan documents agree with each other — both checked by a tool rather than by reading, which is how both of M6's were found. It also runs the ledger self-test, which is what fails when this file declares fewer criteria than its floor"
+source = "tasks 13.1, 13.3, delivery-roadmap (Forbidden roadmap patterns)"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+# --- Section 2: CyberGraph, the expression core, and a lowering each ------------------------------
+#
+# THE SPIKE REFUTED THE PLAN'S PREMISE AND THESE TWO SUITES ARE WHAT IT BUILT INSTEAD. One IR cannot
+# serve seven consumers — five escape hatches against a budget of two — so what exists is three
+# layers: a shared authoring layer every consumer adopts, a shared pure-expression SSA core
+# generalised from the material IR by four named extensions, and a lowering per consumer to the form
+# its own specification names. `unit.cybergraph` is the first layer and
+# `integration.graph_compiler` is the other two, INCLUDING THE ANCHOR: given the material op table
+# and type lattice as a domain, the core reproduces the tree's own reference material at IR digest
+# f48f3faf395e52fd, post-pipeline digest 178a3630921e0506 and program digest 7f74500626ea001a.
+# src/rendering/material/ was not modified and its cook keys are intact.
+
+[[criterion]]
+id = "cybergraph"
+describe = "the shared authoring layer: nodes, typed pins, typed connections, stable identity, layout separated from semantics so moving a node recompiles nothing and never conflicts in a merge, the canonical textual form where write(read(x)) is byte-identical, subgraphs, semantic diff and three-way merge, versioning and migration, opaque preservation of nodes whose plugin is missing, node- and pin-precise diagnostics, capability sets, and a determinism audit whose third answer is INCOMPLETE"
+source = "tasks 2.1, visual-scripting"
+kind = "recipe"
+run = "just test-unit -R cybergraph"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "graph-compiler"
+describe = "the expression core and the four lowerings, all compiling and none interpreting: the anchor reproducing the material compiler's three reference digests from the generalised core, CyberGraph IR for scripting and abilities with two execution back ends that agree effect for effect, an animation IR with poses as values, a flat AI instruction stream over a register machine, and a camera rig program on the shared core"
+source = "tasks 2.2, 2.3, 2.4, 2.5, design.md section 1"
+kind = "recipe"
+run = "just test-integration -R graph_compiler"
+ci_job = "milestone-m8b"
+
+# --- Section 3 and 4: the gameplay framework and abilities ----------------------------------------
+
+[[criterion]]
+id = "gameplay-core"
+describe = "rules and phases, session fragments, participants and teams, ownership and control and authority, capabilities and tags, time domains, interaction, features and indexes — with the two distinctions the first tests caught: `allow(kInvalidTag, to)` is THE INITIAL STATE and `allow_from_any(to)` is the wildcard, and the Real time domain refuses a pause rather than ignoring it"
+source = "tasks 3.1, 3.2, 3.3, gameplay-framework"
+kind = "recipe"
+run = "just test-unit -R gameplay_core"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "gameplay-spawn"
+describe = "spawning and the play session, on M8.a's PlaySession"
+source = "tasks 3.3, gameplay-framework"
+kind = "recipe"
+run = "just test-unit -R gameplay_spawn"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "gameplay-play"
+describe = "the play session against a real world: bodies built from an authored scene, ticked, and stopped"
+source = "tasks 3.3"
+kind = "recipe"
+run = "just test-integration -R gameplay_play"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "gameplay-scale"
+describe = "`gameplay-framework`'s stated performance contract — a hundred thousand active entities — over the indexes, the tag store, the ownership registry and the interaction grid. Every per-entity table is hashed rather than scanned, which is what took the hundred-thousand-entity index case from 2.65 s to 0.07 s; a scan per assignment is quadratic in that number and this suite is what says so"
+source = "tasks 3.3, gameplay-framework"
+kind = "recipe"
+run = "just test-integration -R gameplay_scale"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "ability-core"
+describe = "attributes and modifiers in the engine-specified order with stable tie-breaks, all seven stacking policies, effects and their periods, costs validated-reserved-committed as a transaction, cooldowns as READY-TICK values rather than counting floats, targeting, and the activation pipeline in the specification's own order — resolve, check state and tags, check COST, check COOLDOWN, resolve the target, apply prediction and authority, commit, apply effects, emit cues"
+source = "tasks 4.1, 4.2, 4.3, gameplay-abilities-and-effects"
+kind = "recipe"
+run = "just test-unit -R ability_core"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "ability-scale"
+describe = "a hundred concurrent effects inside their budget AND the linearity case beside it — four times the effects for at most eight times the cost plus a microsecond, which is the case that actually catches a quadratic. `EffectSystem::apply` skips the existing-instance search for Stack and for Instant because neither can merge with anything; restoring it makes a bulk application quadratic and this suite says so"
+source = "tasks 4.2, 12.2, gameplay-abilities-and-effects"
+kind = "recipe"
+run = "just test-integration -R ability_scale"
+ci_job = "milestone-m8b"
+
+# --- Section 5: animation --------------------------------------------------------------------------
+
+[[criterion]]
+id = "animation"
+describe = "skeletons and bone LOD, clips and error-bounded compression with its achieved ratio and worst-case error reported, the compiled pose program, layers and masks where a mask BIT and a mask WEIGHT are two different things, IK, retargeting, the pose cache and the GPU pose world"
+source = "tasks 5.1, 5.2, 5.3, animation-and-skinning"
+kind = "recipe"
+run = "just test-unit -R animation"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "animation-runtime"
+describe = "batched evaluation over a crowd, and the determinism contract that decides where root motion lives: a Baked instance whose pose is never evaluated travels the same distance as a Full one, and ten ticks of 0.1 s match sixty of 1/60 s. Root motion is integrated in advance() and not in evaluate(), because evaluate() is what a tier may skip and a pose cache may satisfy"
+source = "tasks 5.2, 5.3, 12.3, animation-and-skinning"
+kind = "recipe"
+run = "just test-integration -R animation_runtime"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "animation-teardown"
+describe = "teardown under load: instances, batches and pose worlds released while a batch is mid-flight"
+source = "tasks 5.2, testing-and-quality"
+kind = "recipe"
+run = "just test-integration -R animation_teardown"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "skinning-pose-world"
+describe = "`rendering-geometry-and-resources`' Skinning requirement, which SkinningDescriptor::validate() refused for two milestones and whose suite asserted the refusal. The criterion is not that a test exists but that the refusal is GONE and the world it was waiting for answers: a descriptor built from PoseWorld::matrix_offset() validates, and the two ways of naming the world wrongly are still refused — a check that only grepped for the absence of NotImplemented would go green on a deleted check"
+source = "tasks 5.4, rendering-geometry-and-resources"
+kind = "recipe"
+run = "just test-unit -R render_geometry"
+ci_job = "milestone-m8b"
+
+# --- Section 6: AI and navigation ---------------------------------------------------------------------
+
+[[criterion]]
+id = "navigation"
+describe = "the navigation mesh, its queries and its off-mesh links — including the regression for find_nearest, which used its extents only to reject whole TILES and then returned the closest polygon in a surviving tile however far away it was, so a query over a hole reported ground"
+source = "tasks 6.1, 6.2, navigation"
+kind = "recipe"
+run = "just test-unit -R navigation"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "navigation-build"
+describe = "the same contract asserted over Recast AND over the engine-owned rasteriser IN ONE BUILD, because a difference that only appears in the configuration nobody builds is a difference nobody finds. NavBuildBackend is a parameter and not an #if. It is also where the area-convention trap is caught: Recast's RC_NULL_AREA is 0 and kAreaGround is 0, and getting the swap wrong produces a mesh whose every walkable polygon is marked unwalkable"
+source = "tasks 6.1, 10.1, navigation"
+kind = "recipe"
+run = "just test-integration -R navigation_build"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "navigation-crowd"
+describe = "avoidance and crowds at the scale `navigation` names, with the head-on degenerate case a deterministic simulation cannot leave to floating-point noise: two agents on one line with equal radii and opposite velocities present a scoring function exactly symmetric about that line, and each perceives its neighbour displaced along the perpendicular of the vector TO it, which points opposite ways for the two of them"
+source = "tasks 6.2, navigation"
+kind = "recipe"
+run = "just test-integration -R navigation_crowd"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "navigation-fields"
+describe = "flow fields, hierarchical paths and streaming: a plan over more than two regions terminates, which it did not before this milestone's A* skipped an already-closed node, and an off-mesh link that costs less than the straight line forces re-expansion because the Euclidean heuristic is then inadmissible"
+source = "tasks 6.1, 6.2, navigation"
+kind = "recipe"
+run = "just test-integration -R navigation_fields"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "ai-runtime"
+describe = "agents as entities, the unified graph with tree, utility and GOAP semantics, compiled behaviour programs over a register machine, batched perception, knowledge, environment queries, smart objects and AI LOD — with `kInvalidSlot IS ZERO` asserted first, because an ECS chunk is zero-initialised and a high sentinel would make every freshly created agent look like the holder of execution slot 0"
+source = "tasks 6.3, 6.4, ai-system"
+kind = "recipe"
+run = "just test-integration -R ai_runtime"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "ai-scale"
+describe = "eight thousand agents inside the tier's budget, measured in CPU time rather than wall clock and asserted with STRUCTURAL invariants — neighbour tests per tick, instructions per tick — because a wall-clock worst-tick ratio on a host mid-way through a fourteen-job build measures the host"
+source = "tasks 6.4, 12.2, ai-system"
+kind = "recipe"
+run = "just test-integration -R ai_scale"
+ci_job = "milestone-m8b"
+
+# --- Section 7: cameras -------------------------------------------------------------------------------
+
+[[criterion]]
+id = "camera-system"
+describe = "framing and composition constraints, camera volumes, the strategy camera, the director camera, aim assistance, shake and cuts — the list src/servers/camera/README.md left for M8 by name"
+source = "tasks 7.3, camera-system"
+kind = "recipe"
+run = "just test-unit -R camera_system"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "camera-world"
+describe = "screen and world projection, target resolution and rebasing across a partition boundary"
+source = "tasks 7.3, camera-system"
+kind = "recipe"
+run = "just test-unit -R camera_world"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "camera-authoring"
+describe = "a rig authored in CyberGraph and compiled to a rig program, including the round trip through the canonical text form — which orders nodes by key while a live graph holds them in insertion order, so a consumer must match by identity rather than by index"
+source = "tasks 7.3, 2.1, camera-system"
+kind = "recipe"
+run = "just test-integration -R camera_authoring"
+ci_job = "milestone-m8b"
+
+# --- Section 9: the interface, text and 2D --------------------------------------------------------------
+
+[[criterion]]
+id = "ui"
+describe = "dedicated element storage and the retained tree, layout and scaling, .cyss and style resolution, data binding, input routing and the layer stack, flattening to primitives, the interface's own frame budget and its degradation, and the accessibility audit"
+source = "tasks 9.1, 9.2, 9.3, ui-system"
+kind = "recipe"
+run = "just test-unit -R unit.ui"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "ui-scale"
+describe = "the interface at the size a real document reaches, and the frame budget held. The unit tier's 1 ms budget caught two real defects here rather than two arbitrary ones: a per-effect delay-line allocation in the audio chain, and a batcher that packed its sort key once per COMPARISON rather than once per draw — 1.73 ms to 0.20 ms for five thousand sprites"
+source = "tasks 9.1, 9.3, ui-system"
+kind = "recipe"
+run = "just test-integration -R ui_scale"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "text"
+describe = "shaping, BiDi, line breaking, justification, itemisation, Arabic joining, the shaping cache and localisation — `text-and-fonts` to Complete. The pattern selects both unit.text and unit.text_unicode, which is intended: the layout objects and the Unicode algorithms under them are one capability"
+source = "tasks 9.4, text-and-fonts"
+kind = "recipe"
+run = "just test-unit -R unit.text"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "rendering-2d"
+describe = "sprites and the sort key as one integer, batching with its break reasons, tilemaps and terrain, 2D lights and shadows, and the screen-space signed distance field — which is the function `vfx-system` wraps as a data interface at M8.c"
+source = "tasks 9.5, rendering-2d"
+kind = "command"
+run = "just test-unit -R rendering_2d && just test-integration -R rendering_2d_scale"
+ci_job = "milestone-m8b"
+
+# --- Section 10: audio ------------------------------------------------------------------------------
+
+[[criterion]]
+id = "audio-acoustics"
+describe = "Steam Audio behind the engine's own interface with a fallback that answers when it is absent, acoustic geometry extraction and its cache, importance tiers with hysteresis, voice virtualisation and resumption, the effect chain, and interactive music transitioning on a beat, a bar or a marker — `audio` to Complete"
+source = "tasks 10.1, 10.2, audio"
+kind = "recipe"
+run = "just test-unit -R audio_acoustics"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "audio-mixer"
+describe = "the mixer and the graph beneath the acoustics, which M4 seeded and this milestone completes around"
+source = "tasks 10.2, audio"
+kind = "command"
+run = "just test-unit -R audio_graph && just test-integration -R audio_mixer"
+ci_job = "milestone-m8b"
+
+# --- Section 11: the debts this milestone inherited -------------------------------------------------
+
+[[criterion]]
+id = "prefab-apply-extract"
+describe = "`serialization-and-prefabs` to Complete: pushing an instance's overrides back onto its prefab, and lifting a subtree into a new prefab asset. Unimplemented since M2 over a data model that has supported it since M2, and moved here by M8.a's closing gate"
+source = "tasks 11.1, serialization-and-prefabs"
+kind = "recipe"
+run = "just test-unit -R scene_serialization"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "render-assembly"
+describe = "THE RENDERER ASSEMBLED. Eight modules under src/rendering/ were linked by nothing but their own test binaries and nothing in the tree built a frame out of them; this is the suite over the module that does — extract, spatial index, culling, clusters, shadows, sky, the material table, the draw list, the post chain and the render graph, in one order, with every draw's material slot compared against the table it indexes"
+source = "tasks 11.2, design.md section 3"
+kind = "recipe"
+run = "just test-integration -R render_assembly"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "render-assembly-device"
+describe = "the same frame on a real device, which is the half a hosted runner cannot judge"
+source = "tasks 11.2"
+kind = "recipe"
+run = "just test-render -R assembly"
+requires = "gpu"
+reason = "it puts an assembled frame on a graphics device; on a machine without one it is reported NOT EVALUATED rather than passed, which is what delivery-roadmap requires"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "mesh-renderer-reflected"
+describe = "`cy::render::MeshRenderer` has a reflected type, so an authored mesh reference survives a .cyworld and resolves onto a real component — the first half of the reason M8.a's photograph showed an authored sphere as a box. The scene suite is where the reflected component and its resolution are asserted; the artefact is where the SECOND half is, because a reflected component that no pass turns into a handle still draws nothing"
+source = "tasks 11.3"
+kind = "recipe"
+run = "just test-unit -R unit.scene"
+ci_job = "milestone-m8b"
+
+# --- Section 12: the artefact -------------------------------------------------------------------------
+
+[[criterion]]
+id = "slice-artefact"
+describe = "the closing artefact as a CTest entry, so `just test-all` runs it and `build-and-test` covers it on every pull request: the game plays, five authored graphs compile and none is interpreted, every authored asset reference resolves to a renderer handle, every draw resolves to a material slot, the interface passes its own accessibility audit, the same options produce the same simulation in two processes, and a planted per-entity virtual tick is found. No display and no graphics device"
+source = "tasks 12.1, 12.3, 12.4"
+kind = "recipe"
+run = "just test-smoke -R vertical_slice"
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "slice-recipe"
+describe = "the same artefact through the workflow a contributor types, which builds the engine first — so it fails when the recipe rots, which the CTest entry cannot see. It runs the scale act at the exit criterion's own figure: 8,000 agents and a hundred concurrent effects against the budgets `Budgets` in slice.h declares, and the cost per agent at four times the population against the declared linearity factor, which is the half that catches a quadratic on any machine"
+source = "tasks 12.1, 12.2, 12.4"
+kind = "recipe"
+run = "just run-vertical-slice"
+timeout_s = 7200
+ci_job = "milestone-m8b"
+
+# THIS CRITERION WAS INVERTED AND THE CLOSING GATE FOUND IT BY RUNNING IT. It read
+#
+#     if just run-vertical-slice --only control; then echo '...not a control'; exit 1; fi
+#
+# — asserting that the DRIVER exits non-zero. It does not, and it should not: `--only control` runs
+# act 4, whose job is to run the sample with `--interpret-control` and require THAT to fail. The
+# inversion already lives inside slice.py, at `run_sample(..., expect_failure=True)`, so the wrapper
+# inverted it a second time and the criterion was red on a tree where the negative control worked
+# perfectly. It had never been run as written; the artefact's own report shows act 4 passing and
+# this line untried.
+#
+# WHAT IT ASSERTS NOW, AND WHY BOTH HALVES ARE NEEDED. The run must SUCCEED — the planted
+# per-entity virtual tick was found and the sample exited non-zero because of it — AND the named
+# step must appear in the output. Without the second half, deleting `act_control` from slice.py
+# would leave `--only control` reporting zero steps and exiting zero, and this criterion would go
+# green over a control that no longer exists. That is the exact shape of M6's four criteria that
+# never ran.
+[[criterion]]
+id = "slice-control"
+describe = "THE NEGATIVE CONTROL, demonstrated on every ledger run rather than asserted once. `--interpret-control` adds a per-entity object with a virtual tick() and calls it in the loop; the interpretation audit must FIND it by name and the sample must return non-zero because of it. Act 4 of the driver is what requires that failure, so this criterion requires the ACT to pass and requires its named step to be in the output — a control that was deleted would report zero steps and exit zero, and that must not read as green"
+source = "tasks 12.1, 12.4, ROADMAP M8.b (no graph is interpreted at runtime)"
+kind = "command"
+run = "set -o pipefail; out=$(just run-vertical-slice --only control 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the negative control act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'an interpreted consumer is FOUND and the run fails because of it' || { echo 'the negative control act ran and did not report its step: it has been removed or renamed'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m8b"
+
+[[criterion]]
+id = "screenshot-slice"
+describe = "the artefact's own picture is committed under docs/design/images/, so the milestone can be evaluated by LOOKING: the level, two teams of characters, the heads-up interface and the 2D menu, every shape drawn from the frame's own sorted draw list and coloured by the material slot the reference resolved to. `just run-vertical-slice --shot <path>` is what refreshes it"
+source = "tasks 12.5"
+kind = "path"
+path = "docs/design/images/vertical-slice-m8b.png"
+ci_job = "milestone-m8b"
+
+# --- Section 13: the record and the next rung ---------------------------------------------------------
+
+# TASK 13.2 AND 13.5. THE DOUBLE-STAR GLOB IS THE POINT, and m6.toml's own comment says why: a change
+# lives at `openspec/changes/<name>/` while it is open and at `openspec/changes/archive/<date>-<name>/`
+# once it closes, so a pattern that only matched an open change would turn red on the day the next
+# milestone closed — which is the one day this criterion should be most satisfied. `**` matches both
+# depths.
+#
+# THE RUNG IS M8.c AND NOT M9. `split-m8-authorable-and-systems` deferred VFX, cinematics and
+# inference to M8.c after this milestone's spike found it larger than its plan assumed, and
+# `record.MILESTONES` already carries `m8c` between `m8b` and `m9`. Asking for `m9` here would ask
+# the ladder to skip a rung it has already declared.
+[[criterion]]
+id = "m8c-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M8.c, which extends THIS slice with particles and a cinematic rather than building a second one, because a second slice would prove those systems work beside a copy of the game rather than inside it"
+source = "tasks 13.5, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m8c*/proposal.md"
+ci_job = "milestone-m8b"
+
+# THE TIER FLOOR. It fails until task 13.3 updates docs/roadmap/status.yaml, and it is meant to:
+# M8.a's ledger declared the identical forcing function and said so in its own notes. `ai-system` and
+# `navigation` already carry `working` against this change; the other twelve rows are what the
+# closing change has to write.
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M8.b's exit tiers, each naming the change that advanced it"
+source = "tasks 13.3, implement-m8b-systems/proposal.md, ROADMAP M8.b"
+kind = "tiers"
+ci_job = "milestone-m8b"
+
+[criterion.expect_tiers]
+gameplay-framework = "working"
+gameplay-abilities-and-effects = "working"
+visual-scripting = "working"
+animation-and-skinning = "working"
+ai-system = "working"
+navigation = "working"
+ui-system = "working"
+rendering-2d = "working"
+camera-system = "working"
+serialization-and-prefabs = "complete"
+
+# TEXT-AND-FONTS IS WORKING HERE AND NOT COMPLETE, AND THE CLOSING GATE READ THE SPECIFICATION
+# AGAINST THE TREE RATHER THAN AGAINST THE MODULE'S SUMMARY. `text-and-fonts` requires, in normative
+# text: "The engine integrates **HarfBuzz** (shaping), **ICU** (Unicode algorithms), and
+# **FreeType** (rasterisation)"; "The engine SHALL load: TrueType and OpenType (`.ttf`, `.otf`,
+# `.ttc`), WOFF and WOFF2, bitmap"; "Text SHALL be shaped through HarfBuzz"; plus variable-font
+# axes, OpenType feature selection and colour glyphs. None of those three libraries is in
+# deps/manifest.toml — that file defers all three by name and says the cost out loud — the only
+# font the engine can load is `ImageGridFont`, a bitmap grid, and `TextCapabilities` still declares
+# `complex_shaping`, `variable_fonts` and `colour_glyphs` false at the server.
+#
+# WHAT M8.b ACTUALLY BUILT, AND IT IS REAL: src/text/, which is the bidirectional algorithm, line
+# breaking including a Thai dictionary, Arabic joining, itemisation, the shaping cache and
+# localisation, engine-owned and over `cy::core` alone, with 39 unit cases. That raises the
+# ALGORITHMS from a capability query that said `false` to code that answers — which is Working, and
+# is exactly what src/text/README.md claims for itself in its own first line. It does not put a
+# `.ttf` in the engine. The Complete cell moves to M11, where three third-party integrations belong.
+text-and-fonts = "working"
+
+# AUDIO IS WORKING HERE AND NOT COMPLETE, AND THE CLOSING GATE MEASURED WHY. `audio` names Steam
+# Audio in a requirement — "The engine SHALL support **Steam Audio** as an `AcousticsBackend`" — and
+# two things are true of it on this tree: `SteamAudioBackend::simulate` returns
+# `ErrorCode::NotImplemented` rather than simulating, and `-D CY_AUDIO_STEAM_AUDIO=ON` cannot be
+# CONFIGURED at all. The gate ran it:
+#
+#   CMake Error at _deps/steam_audio-src/core/CMakeLists.txt:235 (find_package):
+#     Could not find a package configuration file provided by "PFFFT"
+#
+# — upstream expects PFFFT, IPP and FFTS as pre-installed packages that deps/manifest.toml does not
+# provide. That is the same shape as this milestone's own spike finding: an option declared,
+# defaulted off, and never once built. src/audio/README.md says "the honest place to find out is the
+# milestone's gate rather than a claim in this file", and this is the finding out.
+#
+# EVERYTHING ELSE IN `audio` IS DELIVERED and is what Working records: acoustic geometry and its
+# cache, the asynchronous simulation, importance tiers, voice virtualisation, the effect chain and
+# interactive music, over 27 unit cases, with `FallbackAcoustics` answering every query in every
+# build. The Complete cell moves to M8.c, which is where a spatial-acoustics dependency belongs.
+audio = "working"
+
+# --- Every profile ------------------------------------------------------------------------------
+
+# THE IDENTICAL COMMAND M1, M2, M3, M4, M5, M5.5, M6, M7 AND M8.a DECLARE, written out rather than
+# varied so that the plan COLLAPSES all ten into one run of it, reported as `m1:four-profiles`. That
+# is the whole point of the flat ledger and the reason this string must not be "improved" here.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including the artefact and the twenty-eight suites this milestone's nine new directories brought. CY_ANIMATION, CY_NAVIGATION and CY_AI default ON, as `delivery-roadmap` requires of a capability at Working, and each also builds with its option OFF"
+source = "tasks 14.2"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# THE OPTIONS THIS MILESTONE ADDED, EACH BUILT WITH ITS FEATURE OFF. Hard rule: a delivered feature
+# is on by default AND must build with its option off, and M8.b's own spike found
+# `-DCY_RENDERER_VULKAN=OFF` could not be configured at all — an option declared, defaulted on, and
+# never once built without. Three new options default ON in this milestone and this is the check
+# that they are still removable.
+#
+# CY_UI JOINED THIS LIST AT THE CLOSING GATE, and how it got there is the whole argument for the
+# criterion. `ui-system` reached Working over six modules, forty-five unit cases, a scale suite and
+# an accessibility audit — with `CY_UI` still at OFF, the default it was given when src/ui/ did not
+# exist, and gating NOTHING: there was no `if(CY_UI)` and no `#if defined(CY_UI)` anywhere in the
+# tree, so `-D CY_UI=OFF` and the default build produced identical output. An option that removes
+# nothing satisfies "SHALL be removable at build time via CY_UI" by never being tested either way.
+# `delivery-roadmap` lists exactly this as a shape that SHALL be checked rather than re-discovered,
+# and it was re-discovered.
+#
+# CY_NAVIGATION IS SWITCHED OFF TOGETHER WITH CY_AI, AND THAT IS THE DECLARED DEPENDENCY RATHER THAN
+# A WORKAROUND. `cmake/features.cmake`'s CY_FEATURE_REQUIRES_ALL carries `CY_AI|CY_NAVIGATION`,
+# because `ai-system` requires agents to "drive movement through the navigation system rather than
+# implementing their own pathfinding". `-D CY_NAVIGATION=OFF` alone is REFUSED at configure time
+# with the two ways out named — which is the behaviour that rule wants, and it is what this
+# criterion found the first time it was run.
+[[criterion]]
+id = "feature-options-off"
+describe = "the whole tree configures and builds with each of this milestone's new feature options switched off — CY_ANIMATION alone, CY_AI alone, CY_UI alone, and CY_NAVIGATION together with the CY_AI that depends on it. A capability that cannot be removed at build time is not behind an option, whatever cmake/features.cmake says; and samples/08-vertical-slice declares nothing at all in the configurations where its subjects are absent, rather than turning a removable feature into a configure error naming the artefact"
+source = "tasks 5.x, 6.x, 9.x, delivery-roadmap, testing-and-quality"
+kind = "command"
+run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-animation}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_ANIMATION=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ai}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_AI=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ui}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_UI=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-navigation}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_NAVIGATION=OFF -D CY_AI=OFF"
+timeout_s = 14400
+ci_job = "milestone-m8b"

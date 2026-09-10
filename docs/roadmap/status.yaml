@@ -212,21 +212,21 @@ capabilities:
     milestone: M5
     change: implement-m5-authorable
   serialization-and-prefabs:
-    tier: working
-    milestone: M2
-    change: implement-m2-world
+    tier: complete
+    milestone: M8B
+    change: implement-m8b-systems
   gameplay-framework:
-    tier: seed
-    milestone: M4
-    change: implement-m4-playable
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   gameplay-abilities-and-effects:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   visual-scripting:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   sequencing-and-cinematics:
     tier: none
     milestone: null
@@ -236,9 +236,9 @@ capabilities:
     milestone: M4
     change: implement-m4-playable
   camera-system:
-    tier: seed
-    milestone: M4
-    change: implement-m4-playable
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   simulation-and-determinism:
     tier: seed
     milestone: M2
@@ -364,9 +364,9 @@ capabilities:
     milestone: M3
     change: implement-m3-first-light
   rendering-2d:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   vfx-system:
     tier: none
     milestone: null
@@ -376,33 +376,33 @@ capabilities:
     milestone: M8A
     change: implement-m8a-authorable
   animation-and-skinning:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   ai-system:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   navigation:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   ml-inference:
     tier: none
     milestone: null
     change: null
   audio:
-    tier: seed
-    milestone: M4
-    change: implement-m4-playable
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   text-and-fonts:
-    tier: seed
-    milestone: M5
-    change: implement-m5-authorable
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   ui-system:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   asset-import-pipeline:
     tier: working
     milestone: M5

@@ -393,6 +393,27 @@ function(cy__configure_blake3)
     set(BLAKE3_USE_TBB OFF CACHE BOOL "" FORCE)       # the engine's own job system parallelises this
 endfunction()
 
+function(cy__configure_recast)
+    # ONLY THE GENERATOR IS BUILT. `source_subdir` in the manifest points FetchContent at upstream's
+    # `Recast/` subproject, so `Detour/`, `DetourCrowd/`, `DetourTileCache/`, `DebugUtils/`, the
+    # SDL-based demo and the test suite are never added — which is what makes deps/manifest.toml's
+    # "Detour is excluded by source_subdir" a build fact rather than a promise. It is also why the
+    # root project's own options (RECASTNAVIGATION_DEMO, _TESTS, _EXAMPLES) are not set here: the
+    # file that reads them is not part of this build.
+    #
+    # WHAT THIS FUNCTION IS FOR. `Recast/CMakeLists.txt` reads five variables the root project sets
+    # before it descends — two version numbers and three GNUInstallDirs paths — and with the root
+    # skipped they would be empty, which turns its `install(TARGETS ...)` into a configure error
+    # naming an empty ARCHIVE DESTINATION. Supplying them is not editing upstream's build; it is
+    # giving that build the context it was written to run in. The install rules themselves are
+    # inert: the engine never installs a dependency's targets.
+    set(SOVERSION 1 CACHE INTERNAL "")
+    set(LIB_VERSION "1.6.0" CACHE INTERNAL "")
+    set(CMAKE_INSTALL_BINDIR "bin" CACHE INTERNAL "")
+    set(CMAKE_INSTALL_LIBDIR "lib" CACHE INTERNAL "")
+    set(CMAKE_INSTALL_INCLUDEDIR "include" CACHE INTERNAL "")
+endfunction()
+
 # --- Dependencies that ship no CMake project ------------------------------------------------------
 #
 # `asset-import-pipeline`'s two source-format libraries — ufbx and xatlas — are each one translation

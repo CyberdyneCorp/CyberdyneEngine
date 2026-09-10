@@ -81,9 +81,9 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |     | W |     |  | **C** |  | M10 |
 | [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | 9 |  |  |  |  |  |  |  |  |  |     |     | S |  |  | **C** | M11 |
-| [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |     | **C** |     |  |  |  | M8.b |
+| [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |     | W | **C** |  |  |  | M8.c |
 | **6 — Content and tooling** | | | | | | | |  | | | | | | | |
-| [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |     | **C** |     |  |  |  | M8.b |
+| [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ui-system`](../../openspec/specs/ui-system/spec.md) | 25 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 15 |  |  |  |  |  | W |  |       |  | W | **C** |     |  |  |  | M8.b |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | 18 |  |  |  |  |  | S | W |  |  |  |   |     |  |  | **C** | M11 |
@@ -141,11 +141,11 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M6** · Scale | 6 | 0 | — |
 | **M7** · Fidelity | 13 | 3 | `rendering-materials-and-shading`, `residency`, `virtual-texturing` |
 | **M8.a** · Authorable | 5 | 0 | — |
-| **M8.b** · Systems | 25 | 15 | `asset-import-pipeline`, `audio`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting`, `text-and-fonts` |
-| **M8.c** · Spectacle | 3 | 0 | — |
+| **M8.b** · Systems | 25 | 13 | `asset-import-pipeline`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting` |
+| **M8.c** · Spectacle | 4 | 1 | `audio` |
 | **M9** · Integrity | 12 | 10 | `camera-system`, `core-jobs-and-concurrency`, `diagnostics-profiling-and-crash`, `ecs-core`, `gameplay-abilities-and-effects`, `gameplay-framework`, `physics`, `save-and-persistence`, `sequencing-and-cinematics`, `simulation-and-determinism` |
 | **M10** · Worlds | 10 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
-| **M11** · Reach | 39 | 39 | everything remaining |
+| **M11** · Reach | 40 | 40 | everything remaining |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not

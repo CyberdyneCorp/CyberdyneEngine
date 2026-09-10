@@ -188,9 +188,17 @@ against an ad-hoc cook has to be rebuilt against the real one.
 are three storages under one policy. Written independently they become three policies that fight
 each other for the same budget.
 
-**The material compiler precedes the other graph consumers.** Its IR is the shared graph
-infrastructure that abilities, AI, animation, VFX and sequences all lower through. Discovering that
-the IR cannot express a consumer's semantics is cheap with one consumer and expensive with seven.
+**The material compiler precedes the other graph consumers — and NOT because they lower through
+its IR, which M8.b's spike measured and refuted.** This paragraph used to say they did. What the
+spike found is that the material IR is a hash-consed pure-expression DAG whose identity is a content
+hash, so it has no back edges, cannot express a write, re-sorts commutative operands, deletes a
+value nothing reads, and evaluates both arms of a select — **five of the seven consumers needed an
+escape hatch against a budget of two**, and `visual-scripting`'s own "No universal representation"
+requirement had already forbidden the idea by name. The ordering still holds, for a weaker and truer
+reason: the material compiler is the tree's first worked example of graph → IR → optimisation →
+program, and what M8.b generalised out of it is a shared pure-expression SSA core plus a lowering
+per consumer. Discovering that one IR cannot express a consumer's semantics is cheap with one
+consumer and expensive with seven, which is exactly what the spike bought.
 
 **Two Complete cells moved out of M8.a at its closing gate, and neither move breaks a rule above.**
 `serialization-and-prefabs` completes at M8.b rather than M8.a: its remaining requirement is "Apply

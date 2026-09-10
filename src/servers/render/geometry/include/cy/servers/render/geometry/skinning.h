@@ -9,28 +9,30 @@
 // "computed from bone transforms and per-bone bounds, not from the bind pose".
 //
 // ================================================================================================
-// THE ONE REQUIREMENT THIS MODULE DOES NOT MEET, STATED RATHER THAN QUIETLY MET
+// THE ONE REQUIREMENT THIS MODULE DID NOT MEET, AND THE MILESTONE THAT CLOSED IT
 // ================================================================================================
 //
 // "Bone matrices SHALL be read from the **GPU pose world** (see `animation-and-skinning`), the
 // shared GPU-side pose representation, rather than from a buffer uploaded independently per
 // consumer."
 //
-// `animation-and-skinning` reaches Working at M8. There is no GPU pose world at M6, so this module
-// cannot read one, and it must not invent a second: inventing one is precisely the failure the
-// requirement exists to prevent — "WHEN skinning, motion vector generation, and VFX attachment all
-// need bone transforms THEN all SHALL read the GPU pose world rather than each maintaining its own
-// upload".
+// At M6 there was no pose world, so this module could not read one — and it must not invent a
+// second, because inventing one is precisely the failure the requirement exists to prevent. What
+// was written instead was the SEAM: `PoseSource` is where a pose comes from,
+// `PoseSource::GpuPoseWorld` was declared and refused by `validate()` naming M8, and
+// `SkinningDescriptor::pose_offset` was the offset into a world that did not exist yet.
 //
-// What is here instead is the SEAM, and it is named so that M8 fills it rather than works around
-// it. `PoseSource` is where a pose comes from; `PoseSource::GpuPoseWorld` is declared and
-// `SkinningDescriptor::pose_offset` is the offset into it. Until M8, `PoseSource::UploadedPerSkin`
-// is the only value a caller may use, and `validate()` REFUSES `GpuPoseWorld` naming the milestone.
-// A build that quietly accepted it would let a second pose upload accumulate consumers, and undoing
-// that at M8 would be a migration rather than an edit.
+// **M8.b built it.** `cy::animation::PoseWorld` (src/animation/include/cy/animation/pose_world.h)
+// is the shared representation: current and previous bone matrices per instance, instances added
+// and removed without a rebuild, and a dirty range for the renderer to transfer.
+// `PoseWorld::matrix_offset(handle)` is what `pose_offset` holds, and `validate()` accepts the
+// source. What it still refuses is a descriptor that cannot mean anything — a BAKED instance
+// claiming a place in the world it has no skeleton in, and a per-skin upload carrying an offset
+// that belongs to the shared world.
 //
-// The capability matrix's own rule — a capability may not reach Complete before its prerequisites
-// reach Working — is what this note is evidence for. M6 task 10.8 asks the gate to resolve it.
+// The seam did its job: nothing had to be migrated, because no second upload path ever accumulated
+// a consumer. src/animation/tests/test_pose_world.cpp builds a descriptor from a real pose world's
+// offset and validates it, so the join is asserted rather than assumed on both sides.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -62,13 +64,15 @@ enum class SkinningMethod : u8 {
     DualQuaternion = 1,
 };
 
-/// Where the bone matrices come from. See the header comment: only one value is usable at M6.
+/// Where the bone matrices come from. See the header comment for how the second value arrived.
 enum class PoseSource : u8 {
-    /// A buffer this skin uploads for itself. The M6 path, and the one the GPU pose world replaces.
+    /// A buffer this skin uploads for itself. The M6 path, kept for a skin whose pose is not in the
+    /// shared world — a preview, a tool, a test — and the reason `pose_offset` must be zero for it.
     UploadedPerSkin = 0,
-    /// `animation-and-skinning`'s shared GPU-side pose representation. Declared at M6 and REFUSED
-    /// by
-    /// `validate()` until that capability reaches Working at M8.
+    /// `cy::animation::PoseWorld`, the shared GPU-side pose representation. Declared at M6, refused
+    /// until the world existed, and accepted since M8.b. `pose_offset` is
+    /// `PoseWorld::matrix_offset(handle)`, which moves each time the instance publishes because the
+    /// world is double buffered.
     GpuPoseWorld = 1,
 };
 

@@ -45,11 +45,49 @@ in one place, rather than a capability every system quietly has.
 
 | Header | Task | What it owns |
 |---|---|---|
-| `context.h` | 4.4.1 | The four lifetimes, scoped services, participants, and `GameplayContext`. |
-| `control.h` | 4.4.2 | Control sources, channels, many-to-many bindings, entity groups. |
-| `command.h` | 4.4.3 | Command declarations, per-producer buffers, the deterministic commit, the log. |
-| `validation.h` | 4.4.4 | `ValidationResult` and its tagged reasons with the data behind them. |
-| `random.h` | 4.4.5 | Named gameplay streams over `core-determinism`'s seeded streams. |
+| `context.h` | M4 4.4.1 | The four lifetimes, scoped services, participants, and `GameplayContext`. |
+| `control.h` | M4 4.4.2 | Control sources, channels, many-to-many bindings, entity groups. |
+| `command.h` | M4 4.4.3 | Command declarations, per-producer buffers, the deterministic commit, the log. |
+| `validation.h` | M4 4.4.4 | `ValidationResult` and its tagged reasons with the data behind them. |
+| `random.h` | M4 4.4.5 | Named gameplay streams over `core-determinism`'s seeded streams. |
+| `tags.h` | M8.b 3.2 | Hierarchical gameplay tags, tag sets, and the tooling that reports a tag doing an archetype's job. |
+| `teams.h` | M8.b 3.1 | Teams, the relationship matrix, and affiliations beyond teams. |
+| `ownership.h` | M8.b 3.2 | Ownership, declared inheritance, and network authority — the two of the three that are one value per entity. |
+| `fragments.h` | M8.b 3.1 | Session and player state fragments, and the four answers derived from one declaration. |
+| `rules.h` | M8.b 3.1, 3.2 | Composable rule pieces, the rules asset, and phases as gameplay tags. |
+| `time.h` | M8.b 3.3 | Time domains with their own scale and pause, and per-domain tick-exact timers. |
+| `events.h` | M8.b 3.3 | Typed events, declared delivery, tagged message channels, and the three relevance flags. |
+| `interaction.h` | M8.b 3.3 | Interactables, their options, the batched spatial query, and `select()` producing a command. |
+| `features.h` | M8.b 3.3 | Gameplay features, their contributions, their states, and dependency-ordered activation. |
+| `indexes.h` | M8.b 3.3 | The derived indexes — by owner, team, affiliation and tag — and the digest that proves they are a cache. |
+| `diagnostics.h` | M8.b 3.2 | The entity report, the command timeline, and the rule debugger. |
+
+`abilities/` is `gameplay-abilities-and-effects`, a **separate target**: a project that does not use
+abilities links none of it. See `abilities/README.md`.
+
+## What M8.b measured rather than asserted
+
+Four of the framework's requirements are about cost, and each is now a number a test reads rather
+than a claim a comment makes:
+
+* **"Advancing a tick SHALL cost work proportional to the timers actually due."** `TimerWheel`
+  buckets by due tick and keeps the occupied ticks in a min-heap; `last_examined()` reports what an
+  advance touched. `gameplay_scale` schedules fifty thousand and asserts that a tick with nothing
+  due examines nothing.
+* **"Answering 'what does this participant own' SHALL NOT require scanning every entity."**
+  `GameplayIndexes::entities_scanned()` counts what a lookup touched, and the hundred-thousand-entity
+  case asserts a hundred.
+* **"Queries SHALL be batched against spatial structures."** `InteractionQueryReport` reports cells
+  visited and candidates tested; a query over a thousand interactables tests fewer than twenty.
+* **"Rebuilding them from the world SHALL produce the same result."** `GameplayIndexes::digest()` is
+  a canonical value identity, so the requirement is one equality rather than a comparison nobody
+  makes.
+
+Every per-entity table here — tags, teams, affiliations, ownership, the indexes — is hashed by
+entity rather than scanned. That is not a micro-optimisation: `gameplay-framework`'s performance
+contract is a hundred thousand active gameplay entities, and a scan per assignment makes populating
+a world quadratic in it. The teardown case in `gameplay_scale` builds twenty thousand and would take
+minutes rather than a second if any of them regressed to a walk.
 
 ## Three decisions worth knowing
 
@@ -79,25 +117,26 @@ None of those is reachable from this module's dependency list, so the dedicated 
 rendering code because there is none to link, and every case in `tests/` runs with no world, no
 device and no display.
 
-## What is thinner than the tasks claim
+## What is still thinner than the specification
 
-M4 delivers `gameplay-framework` at **Seed**, and section 4.4 names six of its requirements. What
-the other requirements would add, and what is genuinely absent:
+M8.b takes `gameplay-framework` to **Working**. What remains genuinely absent, stated so that the
+next milestone does not have to rediscover it:
 
-* **Teams and affiliations.** `Participant::team` is an integer and there is no relationship matrix,
-  so "ally", "neutral" and "hostile" are not expressible yet. The requirement is explicit that
-  relationships must not be inferred from identifier inequality; nothing here infers them, because
-  nothing here reads them.
-* **Gameplay tags.** The session's phase is a `Name`, standing in for the hierarchical tag the full
-  requirement asks for. The shape is the one a tag registry slots into without a change at the call
-  sites, but `Unit.Robot` matching `Unit.Robot.Harvester` does not work yet.
 * **Capabilities are a derived index, not components.** `CommandStream::set_capabilities()` keeps an
   entity-to-mask table so that this module is testable with no world. Rebuilding it from ECS
   components is a later change with no call-site consequences.
-* **Events, spawning, time domains, indexes, features, rules assets, session-state fragments** — all
-  unstarted. They are `gameplay-framework` requirements outside section 4.4.
+* **`GameSession::phase()` is still a `Name`.** `PhaseController` is the hierarchical-tag phase the
+  requirement asks for and it is what a session should drive, but the `Name` field M4 added to
+  `GameSession` is still there and nothing has migrated to the controller yet. Removing it is a
+  change to M4's own type and its callers, and it is not this section's.
+* **Behaviours do not compile to systems yet.** "Behaviour ergonomics compile to systems" is
+  `visual-scripting`'s lowering plus a generator over it; the seam is preserved — commands, events,
+  tags, rules and validation are all reflected schemas — but nothing here generates a system.
+* **The indexes are maintained by their caller.** `GameplayIndexes` is incremental and correct, but
+  a host calls `on_owner_changed` where it changes the owner; nothing observes ECS structural
+  changes and maintains it automatically. That observation is `ecs-core`'s to provide.
 * **The command stream is single-threaded in practice.** The *structure* is the one the requirement
   asks for — per-producer buffers, no central lock, a deterministic merge — but nothing yet records
   from several threads, so the claim is architectural rather than measured.
-* **No benchmark.** The performance contracts (100 000 entities, 100 000 commands per second) are
-  unmeasured.
+* **No benchmark.** The performance contracts are asserted by the `gameplay_scale` suite at the
+  scales stated above; they are not in `benchmarks/` and so are not tracked against a baseline.

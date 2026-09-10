@@ -29,6 +29,19 @@ set(CY_PROFILE_release_CONFIG Shipping)
 set(CY_BUILD_CONFIGURATIONS Debug Development Profile Shipping
     CACHE INTERNAL "The build configurations, one per profile")
 
+# CY_UNOPTIMISED IS DEFINED IN Debug AND NOWHERE ELSE, and it exists for one narrow purpose: a test
+# that asserts an ABSOLUTE performance figure is asserting something about a build the optimiser has
+# been through. Nothing before M8.b needed it, because `tests/harness/` normalises its per-case
+# budgets against a reference workload measured in the same process — but that workload is scalar
+# integer arithmetic, which `-O0` slows by about a fifth while it slows container- and
+# abstraction-heavy engine code by two to three times. M8.b's closing gate measured the gap:
+# `integration.navigation_crowd`'s solver costs 5.07 us/agent/tick in Development and 12.35 in
+# Debug, against a threshold of 8 that the calibration moved to 9.6. A budget stated in microseconds
+# is a claim about a shipped game; this macro is how a case says so instead of failing in a
+# configuration the claim was never about. It is NOT a licence to skip a test — the structural
+# assertions beside such a figure hold in every configuration, because they are counts rather than
+# times.
+#
 # Configurations in which CY_DEVELOPMENT is defined: assertions, diagnostics, hot reload and debug
 # visualisation are gated on it, and it is absent from Profile and Shipping binaries.
 set(CY_DEVELOPMENT_CONFIGURATIONS Debug Development
@@ -123,7 +136,7 @@ endmacro()
 
 function(cy_apply_build_configurations)
     if(MSVC)
-        cy_set_configuration_flags(Debug       "/Od /Zi /DCY_DEVELOPMENT" "/DEBUG /INCREMENTAL:NO")
+        cy_set_configuration_flags(Debug       "/Od /Zi /DCY_DEVELOPMENT /DCY_UNOPTIMISED" "/DEBUG /INCREMENTAL:NO")
         cy_set_configuration_flags(Development "/O2 /Zi /DCY_DEVELOPMENT" "/DEBUG /INCREMENTAL:NO")
         cy_set_configuration_flags(Profile     "/O2 /Zi /DNDEBUG"         "/DEBUG /INCREMENTAL:NO")
         cy_set_configuration_flags(Shipping    "/O2 /DNDEBUG"             "")
@@ -132,7 +145,7 @@ function(cy_apply_build_configurations)
         # the debug runtime by omission.
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL" PARENT_SCOPE)
     else()
-        cy_set_configuration_flags(Debug       "-O0 -g -DCY_DEVELOPMENT" "")
+        cy_set_configuration_flags(Debug       "-O0 -g -DCY_DEVELOPMENT -DCY_UNOPTIMISED" "")
         cy_set_configuration_flags(Development "-O2 -g -DCY_DEVELOPMENT" "")
         cy_set_configuration_flags(Profile     "-O2 -g -DNDEBUG"         "")
         cy_set_configuration_flags(Shipping    "-O3 -DNDEBUG"            "")

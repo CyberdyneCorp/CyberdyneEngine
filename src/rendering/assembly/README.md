@@ -58,8 +58,8 @@ the same mistake in the other direction.
 
 | Suite | Kind | What it proves |
 |---|---|---|
-| `integration.render_assembly` | integration | one frame produces a number from each of the eight; an authored `MeshRenderer` becomes a draw naming its mesh; the frame executes on the null backend |
-| `render.assembly` | render | the same frame on Vulkan with validation and synchronisation validation on; the cull dispatch and the virtual-texture resolve run inside the frame's own graph |
+| `integration.render_assembly` | integration | one frame produces a number from each of the eight; every draw's material slot is checked against the material table and a draw past its end is counted; an authored `MeshRenderer` becomes a draw naming its mesh; the frame executes on the null backend |
+| `render.assembly` | render | the same frame on Vulkan with validation and synchronisation validation on; the cull dispatch and the virtual-texture resolve run inside the frame's own graph; sixteen loaded frames and then a teardown with the device still busy |
 
 The integration suite is `integration` and not `unit` deliberately: every case builds a world, a
 scene tree and a device, and the taxonomy names all three as what does not belong in `unit`.

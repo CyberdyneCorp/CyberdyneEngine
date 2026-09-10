@@ -989,15 +989,19 @@ jobs:
   # commit; `just ci-check` fails until it does, which is the same forcing function `just
   # roadmap-test` already applies to the flip itself. gates.toml says so beside that gate.
   #
-  # IT DID NOT MOVE TO `m8a` AT M8.a's CLOSING GATE, and gates.toml says why beside `milestone-m8a`:
-  # that gate is still `joins-on-close` because the one criterion its ledger failed — `m1:four-
-  # profiles`, sixteen unit cases over the per-case CPU budget in the Debug configuration, every one
-  # of them in a directory M8.a does not touch — has been red since M7 and is nobody's yet. The two
-  # edits move together or not at all: `tools/ci/check_workflows.py` fails when a green milestone
-  # gate sits above the newest ledger any workflow evaluates, and the gate verified both directions
-  # of that. When `milestone-m8a` goes green, `m7` below becomes `m8a` in the same commit, and this
-  # job gains nineteen criteria none of which carries `requires = "gpu"` or `requires = "display"`
-  # — so unlike M7's four, every one of them is judged on this hosted runner.
+  # IT DID NOT MOVE TO `m8a` AT M8.a's OWN CLOSING GATE — that gate declined to flip a gate it could
+  # not run green, over `m1:four-profiles` — and it moved afterwards, once the per-case budget was
+  # normalised against a reference workload and Debug went from sixteen failures to 57/57.
+  #
+  # IT SAYS `m8b` NOW, AND THAT EDIT LANDED IN THE SAME CHANGE THAT SET `milestone-m8b` GREEN in
+  # tools/roadmap/gates.toml. The two move together or not at all: `tools/ci/check_workflows.py`
+  # fails when a green milestone gate sits above the newest ledger any workflow evaluates, and
+  # `just roadmap-test` fails when an archived milestone's gate is still `joins-on-close`. What this
+  # job gains is M8.b's thirty-five new criteria on top of M8.a's — the largest single addition any
+  # milestone has made — of which exactly one, `m8b:render-assembly-device`, carries
+  # `requires = "gpu"` and will be reported NOT EVALUATED here. Everything else, the closing
+  # artefact included, is judged on this hosted runner: the slice assembles a frame without a
+  # device and its picture is a committed file rather than a criterion that takes one.
   #
   # WHAT IT COSTS, PLAINLY, AND WHAT THAT COSTS IN TURN. This is the most expensive job in the file:
   # M5.5's ledger is 112 criteria and contains `four-profiles`, a build and a full test of all four
@@ -1040,7 +1044,7 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m8a --ci
+        run: just roadmap-milestone m8b --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

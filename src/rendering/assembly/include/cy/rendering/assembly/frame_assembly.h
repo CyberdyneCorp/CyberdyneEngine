@@ -80,9 +80,12 @@
 // "linked by nothing but its own tests" — they link each other. Adding them to this module before a
 // consumer needs them would be the same mistake in the other direction.
 //
-// `src/rendering/material/` IS linked and IS used — the assembly owns a `MaterialTable` and
-// resolves a draw's material through it — and is NOT modified. It is M7's closed work; one
-// extension would invalidate its cook keys.
+// `src/rendering/material/` IS linked and IS used — the assembly owns a `MaterialTable`, CHECKS
+// every draw's slot against it (`AssemblyReport::draws_without_material`) and reports the one byte
+// interval the frame has to upload — and is NOT modified. It is M7's closed work; one extension
+// would invalidate its cook keys. The check is the join the gate's sentence was about: "the
+// material compiler fills a GPU material table nothing draws with" is false only once something
+// compares the two, and a report of the table's capacity alone would not have.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/core/base/expected.h>
@@ -215,7 +218,17 @@ struct AssemblyReport {
     u32 shadow_pages_requested = 0;
     u32 shadow_pages_resident = 0;
     bool sky_rebuilt = false;
+    /// The GPU material table: how many slots it holds, and how many are allocated.
     u32 material_slots = 0;
+    u32 material_slots_live = 0;
+    /// Draws whose material index is past the end of the table. Those shade with slot zero on the
+    /// device, so this is the number that makes "the material compiler fills a table nothing draws
+    /// with" a measurement rather than a claim. Counted, not refused — see `check_materials`.
+    u32 draws_without_material = 0;
+    /// The one byte interval of the material table that changed and has to be uploaded before this
+    /// frame shades. Zero size means nothing changed.
+    u32 material_upload_offset = 0;
+    u32 material_upload_size = 0;
     u64 temporal_frame = 0;
     bool temporal_invalidated = false;
     /// The post chain, in order, and why it is that long.
@@ -336,6 +349,7 @@ private:
     [[nodiscard]] Status run_device_cull(const SpatialIndex& index, const AssemblyView& view,
                                          AssemblyReport& out) noexcept;
     [[nodiscard]] Status build_draws(const FrameSinks& sinks, AssemblyReport& out) noexcept;
+    [[nodiscard]] Status check_materials(AssemblyReport& out) noexcept;
     [[nodiscard]] Status build_lights(const AssemblyView& view, AssemblyReport& out) noexcept;
     [[nodiscard]] Status request_shadow_pages(const AssemblyView& view,
                                               AssemblyReport& out) noexcept;

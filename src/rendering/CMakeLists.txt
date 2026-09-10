@@ -16,6 +16,12 @@ add_subdirectory(graph)
 # what keeps extraction on the simulation thread honest.
 add_subdirectory(scene)
 
+# 2d/ is Cyberdyne's 2D pipeline and M8.b task 9.5: primitives, the sort key, batching, tilemaps, 2D
+# lights and shadows, the screen-space distance field and `Camera2D`. It is the CPU half — no device,
+# no command buffer — so its whole suite runs on a machine with no display, which is the same
+# division culling/ draws between deciding what is visible and drawing it.
+add_subdirectory(2d)
+
 # The material model: the BRDF the shaders implement, the GPU material table, the standard
 # material, the fallbacks, and validation. Read after graph/ only because these two do not depend on
 # each other — the frame's passes, which arrive later in this directory, consume both.

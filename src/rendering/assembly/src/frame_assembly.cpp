@@ -319,6 +319,40 @@ Status FrameAssembly::build_draws(const FrameSinks& sinks, AssemblyReport& out) 
 
     out.draws = static_cast<u32>(draws_.items.size());
     out.batches = static_cast<u32>(draws_.batches.size());
+    return check_materials(out);
+}
+
+/// Every draw's material index, against the table it indexes.
+///
+/// THIS IS THE JOIN M7's GATE WAS ABOUT, and it is the one that reads worst if it is missing: "the
+/// material compiler fills a GPU material table nothing draws with". A draw carries a slot index
+/// and the table is `cy::rendering-material`'s; a frame that never compared the two would link the
+/// module, report its capacity, and still be drawing with whatever number the surface query
+/// happened to produce.
+///
+/// It COUNTS rather than refuses. A draw whose slot is past the table's end shades with slot zero
+/// on the device — the buffer's length is what the descriptor says — and that is a frame with the
+/// wrong material on one object, not a frame that must not be rendered. `AssemblyReport` carries
+/// the number so it is visible; the alternative, dropping the draw, would make an object disappear
+/// for a shading mistake.
+Status FrameAssembly::check_materials(AssemblyReport& out) noexcept {
+    out.material_slots = materials_.capacity();
+    out.material_slots_live = materials_.live();
+    out.draws_without_material = 0;
+    // `GpuDrawInstance::material` and not `DrawItem`: the sort key packs a material's identity for
+    // ORDERING and the record carries the slot the shader indexes, and it is the second of the two
+    // a draw actually shades with.
+    for (const GpuDrawInstance& record : draws_.instances) {
+        if (record.material >= materials_.capacity()) {
+            out.draws_without_material += 1;
+        }
+    }
+    // What the caller has to transfer before this frame shades: one interval, because
+    // `MaterialTable::dirty_range` is one interval by design and "changed materials SHALL be
+    // collected during Prepare and uploaded in one transfer".
+    out.material_upload_offset = 0;
+    out.material_upload_size = 0;
+    (void)materials_.dirty_range(out.material_upload_offset, out.material_upload_size);
     return ok();
 }
 
@@ -505,8 +539,6 @@ Status FrameAssembly::assemble(const SpatialIndex& index, const AssemblyView& vi
     if (Status updated = update_sky(view, out); !updated) {
         return updated;
     }
-    out.material_slots = materials_.capacity();
-
     return declare_frame(view, features, sinks, graph, out);
 }
 

@@ -266,8 +266,14 @@ CY_TEST_CASE("one frame reads a number out of every one of the eight modules") {
     CY_CHECK_GT(assembly.sky_irradiance().y, 0.0F);
     // cy::rendering-temporal — one frame advanced, and jitter applied in one place.
     CY_CHECK_EQ(report.temporal_frame, 1U);
-    // cy::rendering-material — the table the draws index.
+    // cy::rendering-material — the table the draws index, AND the comparison between the two. The
+    // gate's sentence was "the material compiler fills a GPU material table nothing draws with";
+    // `material_slots` alone would only prove the table exists. `draws_without_material` is the
+    // join: every draw's slot was checked against the table's length. The default surface query
+    // gives each instance its own slot, and there are fewer instances than the table's 32.
     CY_CHECK_EQ(report.material_slots, 32U);
+    CY_CHECK_EQ(report.draws_without_material, 0U);
+    CY_CHECK_EQ(report.material_slots_live, 0U);
     // And the frame itself: a temporal stage in the chain is what puts the prepass into
     // `DepthNormalVelocity` and allocates a velocity target. That is post/ deciding forward/'s
     // structure, which is the join this module exists to make.
@@ -455,4 +461,46 @@ CY_TEST_CASE("the assembled frame compiles and executes on a device") {
 
     CY_REQUIRE(device.value()->wait_idle().has_value());
     cy::rhi::destroy_device(allocator(), device.value());
+}
+
+CY_TEST_CASE("a draw whose material is past the end of the table is counted, not hidden") {
+    // The other side of the join, and the reason it is a counter rather than a refusal: a draw with
+    // an out-of-range slot shades with slot zero on the device — the descriptor's length is what
+    // decides — so it is a frame with one object wrongly shaded, not a frame that must not render.
+    // A frame that never compared the two would report the same numbers either way, which is
+    // exactly the state M7's gate found.
+    FrameAssembly assembly(allocator());
+    AssemblyDescription description = make_description();
+    description.material_capacity = 4;
+    CY_REQUIRE(assembly.initialize(description).has_value());
+
+    SpatialIndex index(allocator());
+    for (u32 which = 0; which < 6; ++which) {
+        SpatialEntry entry;
+        entry.bounds = cy::Aabb::from_center_extents(
+            Vec3{0.0F, 0.0F, -5.0F - static_cast<f32>(which)}, Vec3{0.5F, 0.5F, 0.5F});
+        entry.stable_id = 500U + which;
+        entry.radius = 0.9F;
+        CY_REQUIRE(index.insert(entry).has_value());
+    }
+
+    // The default surface query gives instance i material slot i, so the two beyond the table's
+    // four are the two the count must find.
+    RenderGraph graph(allocator());
+    AssemblyReport report;
+    CY_REQUIRE(assembly.assemble(index, make_view({}), FrameSinks{}, graph, report).has_value());
+    CY_CHECK_EQ(report.draws, 6U);
+    CY_CHECK_EQ(report.material_slots, 4U);
+    CY_CHECK_EQ(report.draws_without_material, 2U);
+
+    // And a table with slots allocated in it reports them, so `material_slots_live` is the render
+    // server's number and not the description's.
+    CY_REQUIRE(assembly.materials().allocate().has_value());
+    CY_REQUIRE(assembly.materials().allocate().has_value());
+    RenderGraph second(allocator());
+    AssemblyReport again;
+    CY_REQUIRE(assembly.assemble(index, make_view({}), FrameSinks{}, second, again).has_value());
+    CY_CHECK_EQ(again.material_slots_live, 2U);
+    // Two slots were written, so the frame has a material upload interval to transfer.
+    CY_CHECK_GT(again.material_upload_size, 0U);
 }

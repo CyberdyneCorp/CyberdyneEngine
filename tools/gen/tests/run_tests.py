@@ -262,8 +262,21 @@ cy_add_module(NAME cy_fixture LAYER core SOURCES ${sources})
 
 
 def test_missing_feature_dependency_fails(workspace: Path) -> None:
-    """The specification's own example: CY_AI requires CY_NAVIGATION."""
-    output = configure_fails(fixture({}, languages="NONE"), ["-DCY_AI=ON"], workspace)
+    """The specification's own example: CY_AI requires CY_NAVIGATION.
+
+    `-DCY_NAVIGATION=OFF` IS THE POINT OF THIS TEST AND NOT AN INCIDENTAL FLAG — the same lesson
+    `test_optional_backend_requires_its_subsystem` below records about CY_AUDIO. Until M8.b this
+    case passed nothing but `-DCY_AI=ON` and relied on CY_NAVIGATION defaulting off, so what it
+    actually asserted was the default rather than the rule. M8.b turned both options on —
+    correctly, because it delivers navigation and the AI runtime, and `delivery-roadmap` fails a
+    capability at Working whose CY_* option defaults off — and this case went red inside
+    `just generate-test`, which is one of the three commands of the permanent `generated-code`
+    gate. A test of a validation rule must state every input the rule reads; a default is not an
+    input it may borrow.
+    """
+    output = configure_fails(
+        fixture({}, languages="NONE"), ["-DCY_AI=ON", "-DCY_NAVIGATION=OFF"], workspace
+    )
     check_in("CY_NAVIGATION", output, "the diagnostic must name the required option")
     check_in("-DCY_NAVIGATION=ON", output, "the diagnostic must give the correction")
 

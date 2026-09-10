@@ -120,6 +120,30 @@ constexpr double kDefaultScale = 1.0;
 /// it is the only number here that is allowed to be arbitrary — everything else is a ratio to it.
 constexpr double kNominalReferenceNs = 900000.0;
 
+/// WHAT THE REFERENCE WORKLOAD DOES NOT SEE: THE OPTIMISER. The loop above is scalar integer
+/// arithmetic in registers, and `-O0` slows it by about a fiftieth — the message a case prints in
+/// the Debug configuration says "against a budget of 1.022 ms", so the calibration moved by two per
+/// cent. It slows the code the suites actually run by a great deal more, because that code is
+/// containers, spans, small functions and `Expected<>`, none of which `-O0` inlines. M8.b's closing
+/// gate measured the ratio per suite, summing every case's own CPU time in both configurations:
+///
+///     unit.ecs           6.2x        unit.navigation    4.1x
+///     unit.camera_world  2.3x        unit.audio_acoustics 1.5x
+///
+/// So the budget has been a different budget in Debug since M4 — the header above says an
+/// unoptimised build should move it and it did not — and the symptom is a unit tier where a
+/// changing handful of suites fails each run while every one of them passes alone. M8.a's gate
+/// found sixteen such cases and called its own repair "necessary and not sufficient"; this is the
+/// half it did not reach.
+///
+/// FOUR, AND WHY IT IS NOT MEASURED PER RUN. A second calibration loop written to be
+/// optimiser-sensitive would be a benchmark of the optimiser, and its result would move with the
+/// compiler rather than with the tests. Four covers every ratio above but the worst, is a constant
+/// a reader can check against the table, and leaves the check live: a Debug case doing four times
+/// its intended work still fails, and the tier's real number — one millisecond — is enforced in the
+/// three configurations that are compiled the way a shipped game is. `four-profiles` runs all four.
+constexpr double kUnoptimisedAllowance = 4.0;
+
 /// The median of three, because the calibration is itself a measurement and the thing it is
 /// measuring is variance.
 [[nodiscard]] double measured_scale() {
@@ -144,7 +168,12 @@ constexpr double kNominalReferenceNs = 900000.0;
     // one the suite was written against — tightening a budget nobody asked to tighten is how a
     // check starts failing for being run somewhere good.
     const double ratio = median / kNominalReferenceNs;
-    return ratio < 1.0 ? 1.0 : ratio;
+    const double machine = ratio < 1.0 ? 1.0 : ratio;
+#if defined(CY_UNOPTIMISED)
+    return machine * kUnoptimisedAllowance;
+#else
+    return machine;
+#endif
 }
 
 double resolve_scale() {

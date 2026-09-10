@@ -9,13 +9,15 @@
 # lifetime with a per-category memory ledger, mip streaming, ring-buffered dynamic geometry, and the
 # diagnostics that make all of it visible.
 #
-# ONE REQUIREMENT IS NOT MET, AND IT IS REPORTED RATHER THAN QUIETLY SATISFIED. Skinning must read
-# bone matrices from the GPU pose world, which belongs to `animation-and-skinning` at M8. There is no
-# pose world at M6 and this module must not invent a second one — inventing one is exactly the
-# failure that requirement exists to prevent. `skinning.h` declares the seam, `PoseSource` names it,
-# and `SkinningDescriptor::validate()` REFUSES `PoseSource::GpuPoseWorld` naming the milestone. See
-# the header's own comment, and M6 task 10.8, which asks the milestone gate to decide whether the
-# requirement is scoped or the tier is moved.
+# ONE REQUIREMENT WAS NOT MET AT M6, AND M8.b CLOSED IT. Skinning must read bone matrices from the
+# GPU pose world, which belongs to `animation-and-skinning`. There was no pose world at M6, and this
+# module must not invent a second one — inventing one is exactly the failure that requirement exists
+# to prevent — so `skinning.h` declared the SEAM instead: `PoseSource` names it, and
+# `SkinningDescriptor::validate()` refused `PoseSource::GpuPoseWorld` naming the milestone that owed
+# it. M8.b section 5 built `cy::animation::PoseWorld`; the refusal is gone, the source is accepted,
+# and src/animation/tests/test_pose_world.cpp asserts the join from the other side. See the header's
+# own comment. This module gained no dependency in the process: it still names no world, no device
+# and no buffer.
 #
 # NO DEVICE, NO BUFFER, NO UPLOAD. Layer 2 may not name one. Everything here is a description a
 # module above turns into GPU work: a `SkinningDescriptor` says what a compute pass must do and

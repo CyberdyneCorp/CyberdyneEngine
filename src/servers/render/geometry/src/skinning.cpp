@@ -5,13 +5,22 @@
 namespace cy::render::geometry {
 
 Status SkinningDescriptor::validate() const noexcept {
-    if (source == PoseSource::GpuPoseWorld) {
-        // See the header comment. Accepting this quietly would let a second pose upload accumulate
-        // consumers before the shared one exists, and undoing that would be a migration.
-        return fail(
-            ErrorCode::NotImplemented,
-            "the GPU pose world belongs to animation-and-skinning, which reaches Working at "
-            "M8; until then a skin uploads its own pose and says so");
+    // THE GPU POSE WORLD EXISTS AS OF M8.b. This is where `validate()` refused it, naming the
+    // milestone that owed it; `cy::animation::PoseWorld` is that world,
+    // `PoseWorld::matrix_offset()` is what `pose_offset` now holds, and the two rules below are
+    // what a caller can still get wrong. See the header's own note.
+    if (source == PoseSource::GpuPoseWorld && tier == AnimationTier::Baked) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a baked instance has no skeleton in the pose world; it uses a pose texture or "
+                    "vertex animation and skins nothing");
+    }
+    if (source == PoseSource::UploadedPerSkin && pose_offset != 0) {
+        // A per-skin upload holds one pose and it begins at the buffer's start. A non-zero offset
+        // here is a descriptor that was built against the shared world and had its source left
+        // behind, which would read another instance's bones.
+        return fail(ErrorCode::InvalidArgument,
+                    "a skin that uploads its own pose begins at offset zero; a non-zero offset "
+                    "belongs to the GPU pose world, and the source says otherwise");
     }
     if (vertex_count == 0) {
         return fail(ErrorCode::InvalidArgument, "a skin with no vertices skins nothing");
@@ -38,6 +47,11 @@ Status SkinningDescriptor::validate() const noexcept {
         return fail(ErrorCode::InvalidArgument,
                     "this level of detail addresses more joints than the animation tier retains; "
                     "select a level whose influences reference only retained joints");
+    }
+    if (source == PoseSource::GpuPoseWorld && pose_offset > (0xFFFFFFFFU - bone_count)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "this skin's range in the GPU pose world wraps past the end of the address "
+                    "space");
     }
     return ok();
 }

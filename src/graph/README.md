@@ -23,6 +23,12 @@ So this module is three separable layers, and the middle one is smaller than the
 | The expression core | `expr.h`, `passes.h`, `emit.h` | A hash-consed pure-expression SSA DAG whose identity is a content hash — `src/rendering/material/`'s IR generalised by an open type lattice, an open operation table, declared roots and a declared phase boundary. **Only the consumers whose values are pure expressions use it.** |
 | One lowering per consumer | `lower_script.h`, `lower_pose.h`, `lower_behaviour.h`, `lower_camera.h` | The form each consumer's own specification names. All compiling; none interpreting. |
 
+`lower_script.h` carries **both execution backends** `visual-scripting` requires from one
+intermediate representation — the bytecode register machine in `lower_script.cpp` and the
+ahead-of-time-resolved native path in `lower_script_native.cpp`. They share `ScriptState`, so an
+instance suspended under one resumes under the other, and `integration.graph_compiler` checks that
+they agree effect for effect rather than only on the outcome.
+
 ## Which consumer uses which, and why
 
 | Consumer | Lowers to | Why not the expression core |
@@ -60,6 +66,28 @@ computed from those very enumerator values. The core resolves it with `pinned_id
 included, hashes its operations by name. Dropping the pin is what a real port of the material
 compiler would do, and it invalidates that module's cook keys once, exactly as the extension said it
 would.
+
+## A digest may only close over bytes something wrote
+
+`ScriptProgram::digest()` is a cook key and the back-end selection key `visual-scripting` requires
+to be stable, and for most of M8.b it was neither: `finish_digest` hashed each constant with
+`hash_bytes(&constant, sizeof(constant))`, and `script::Value` is thirty-two bytes of which four —
+between `z` and `handle` — are written by no member initialiser. A byte dump found a fragment of a
+spilled stack address sitting in them, so the same authored graph compiled to a different digest in
+every process, and to none at all reproducibly under `--profile release`.
+`samples/08-vertical-slice` found it by compiling one graph three times; M8.b's closing gate fixed
+it.
+
+The rule the fix leaves behind, because it is not specific to this struct:
+
+- **`script::hash_constant` hashes the five fields.** Nothing here may hash a `Value` as an object.
+- **`Immediate` is still hashed as raw bytes in three places** — `Builder::hash_of`,
+  `hash_literal` and the rig digest — and that is sound only while its layout is flat. `expr.h`
+  carries a `static_assert` on `sizeof(Immediate)` beside a note saying so, so a member that
+  introduces padding is a compile error rather than a cook cache that serves the wrong artefact.
+- **`test_lowering.cpp` holds the property** by comparing the program's own digest against the same
+  sum recomputed field by field, having first asserted that the padding really is dirty. Restoring
+  the old line was run, and the case goes red.
 
 ## What must not be retrofitted
 

@@ -803,9 +803,9 @@ renderer M7 built.*
 | `ai-system` | W | Agents as entities, the unified graph with tree/utility/GOAP semantics, compiled behaviour programs, batched perception, knowledge, environment queries, smart objects, AI LOD |
 | `navigation` | W | Navmesh over Recast, runtime updates, streaming, A* and funnel, hierarchical paths, flow fields, off-mesh links, avoidance, crowds |
 | `ui-system` | W | Dedicated element storage, the retained tree, documents, declarative authoring, layout, `.cyss`, data binding, input routing, the layer stack, the widget set, GPU-driven rendering, accessibility |
-| `text-and-fonts` | C | Shaping, BiDi, line breaking, layout objects, localisation |
+| `text-and-fonts` | W | BiDi, line breaking, Arabic joining, itemisation, the shaping cache, localisation. **Working, not Complete** — see below |
 | `rendering-2d` | W | Sprites, ordering, batching, tilemaps, 2D lights and shadows, the screen-space SDF |
-| `audio` | C | Steam Audio, acoustic geometry, importance tiers, voice virtualisation, effects, interactive audio |
+| `audio` | W | Acoustic geometry, importance tiers, voice virtualisation, effects, interactive audio. **Working, not Complete** — see below |
 | `camera-system` | W | Rig graphs compiled to programs, blending, framing, aim, shake, volumes, cuts |
 | `serialization-and-prefabs` | C | **Apply and extract** — pushing an instance's overrides back onto its prefab, and lifting a subtree into a new prefab asset — which is the one requirement between this capability and Complete. Inherited from M8.a's closing gate; it belongs here because it is the same editor-over-the-data-model work as `live-editing` and `editor-viewport-and-gizmos`, both of which complete in this milestone |
 
@@ -838,6 +838,60 @@ generalised core's criterion is reproducing its reference digests instead.
 *Reject on sight any later proposal to reach for one IR again because several compilers looks like
 duplication. It was measured, not argued.*
 
+**`audio` closes at Working and its Complete cell moved to M8.c, and the closing gate measured why
+rather than reading it.** `audio` names Steam Audio in a requirement — "The engine SHALL support
+**Steam Audio** as an `AcousticsBackend`" — and two things are true of it on the tree this milestone
+closes: `SteamAudioBackend::simulate` returns `ErrorCode::NotImplemented` rather than simulating, and
+`-D CY_AUDIO_STEAM_AUDIO=ON` **cannot be configured at all** —
+
+```
+CMake Error at _deps/steam_audio-src/core/CMakeLists.txt:235 (find_package):
+  Could not find a package configuration file provided by "PFFFT"
+```
+
+— because upstream expects PFFFT, IPP and FFTS as pre-installed packages that `deps/manifest.toml`
+does not provide. That is this milestone's own spike finding wearing a different name: an option
+declared, defaulted off, and never once built. Everything else in `audio` is delivered and is what
+Working records — acoustic geometry and its cache, the asynchronous simulation, importance tiers,
+voice virtualisation, the effect chain and interactive music, over twenty-seven unit cases, with
+`FallbackAcoustics` answering every query in every build, which is what "content SHALL NOT depend on
+Steam Audio being present" asks for. The Complete cell moves to M8.c because spatial acoustics is
+the same kind of work as particles and cuts: what makes a game feel finished once it already plays.
+
+**`text-and-fonts` closes at Working too, and its Complete cell moved to M11.** M8.b built
+`src/text/` — the bidirectional algorithm, line breaking with a Thai dictionary, Arabic joining,
+itemisation, the shaping cache and localisation, engine-owned over `cy::core` alone, with
+thirty-nine unit cases — and that is a real advance: three `TextCapabilities` flags that read
+`false` at M5 are now algorithms that answer. It is not the specification's Complete.
+`text-and-fonts` requires in normative text that the engine integrate **HarfBuzz**, **ICU** and
+**FreeType**, that it "SHALL load: TrueType and OpenType (`.ttf`, `.otf`, `.ttc`), WOFF and WOFF2,
+bitmap", and that "Text SHALL be shaped through HarfBuzz", with variable-font axes, OpenType
+feature selection and colour glyphs beside it. None of those three libraries is in
+`deps/manifest.toml` — which defers all three by name and states the cost, "the text server lays
+out Latin and refuses Arabic" — and the only font the engine can load is `ImageGridFont`, a bitmap
+grid. The Complete cell moves to M11, where three third-party integrations belong; the engine can
+lay out Hebrew, Arabic and Thai and cannot yet load the font to draw them with.
+
+**AND A LARGER RECORD FINDING THE GATE DID NOT RESOLVE, RECORDED HERE RATHER THAN LEFT.**
+`docs/roadmap/capability-matrix.md` schedules **thirteen** capabilities to reach Complete at M8.b.
+This milestone planned three of them — `serialization-and-prefabs`, which closes Complete, and the
+`audio` and `text-and-fonts` cells that have now moved — and the other twelve —`asset-import-pipeline`, `core-assets-and-io`,
+`core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`,
+`material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`,
+`rendering-geometry-and-resources`, `shader-system` and `swift-scripting` — have **no task in
+`implement-m8b-systems`, no criterion in `tools/roadmap/milestones/m8b.toml`, and no entry in its
+`expect_tiers`**. They are all recorded at Working or Seed and none was audited here. Most of them
+arrived in this column when M6's gate moved five Complete cells "to M8" and M8 was later split, so
+the column says M8.b because M8.b is where M8 ended up rather than because anyone planned it. Two
+of them, `live-editing` and `editor-viewport-and-gizmos`, are also named as completing here by this
+section's own prose above while appearing in no work-table row — the same drift, one document
+further along. **Deciding the real destination of those twelve is a planning act with twelve
+separate arguments in it, and this gate did not have the evidence to make it**; what it can say is
+that `just roadmap-test` passes over the disagreement today, so the plan-consistency check compares
+a milestone's work table against the matrix and does NOT compare the matrix's Complete cells against
+that milestone's ledger. That missing comparison is the check this finding should become, per
+`delivery-roadmap`'s "every audit finding SHALL be converted into an automated check".
+
 ---
 
 ## M8.c — Spectacle
@@ -861,6 +915,7 @@ recorded as "`ai-system`, optionally".
 | `vfx-system` | W | The graph compiler and IR, GPU-first simulation, derived attribute layout, the unified world and scheduler, data interfaces, GPU scene integration, GPU events, budget scalability |
 | `sequencing-and-cinematics` | W | Compiled timelines, exact time, bindings, tracks and authority, batched dispatch, arbitration, capture and restore, seek and skip, preload plans |
 | `ml-inference` | S | Model assets, tensors and sessions, the backend abstraction, **the determinism boundary** |
+| `audio` | C | **Steam Audio, actually built.** Inherited from M8.b's closing gate, which found the backend returning `NotImplemented` and the dependency unable to configure. Spatial acoustics belongs beside particles and cuts: it is what makes a game feel finished once it already plays |
 
 **Closing artefact**: `samples/08-vertical-slice`, extended — the same playable game with particles
 and a cinematic. Extended rather than replaced, because a second slice would prove these systems work
@@ -869,6 +924,8 @@ beside a copy of the game rather than inside it.
 **Exit criteria**
 
 - Particles and a sequence run inside the existing slice, holding its frame budget
+- `-D CY_AUDIO_STEAM_AUDIO=ON` configures, builds and simulates, and the slice's sound goes through
+  it — the option M8.b declared and could not build
 - A sequence drives cameras through the camera stack and does not write camera transforms
 - **The determinism firewall holds: VFX and inference cannot write gameplay state, proven by a
   test.** Moved here with its subjects — a criterion whose subject was deferred is a criterion its

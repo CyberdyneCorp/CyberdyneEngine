@@ -873,6 +873,84 @@ milestone = "m8a"
 state = "green"
 
 
+# --- The gate M8.b — Systems adds ------------------------------------------------------------------
+#
+# Task 13.1. `milestone-m8b` at `joins-on-close`: the criteria in tools/roadmap/milestones/m8b.toml
+# are run by `just roadmap-milestone m8b` and by nothing in continuous integration until the change
+# that closes this milestone sets `state = "green"` below, at which point they join the permanent set
+# entire and no later milestone may break them.
+#
+# WHY THE FLIP IS NOT OPTIONAL AND NOT SILENT. `selftest.test_milestone_ladder` reads
+# openspec/changes/archive/ and fails when a milestone whose change is archived still has a gate at
+# `joins-on-close`, so archiving `implement-m8b-systems` without flipping the line below turns
+# `roadmap-test` red, in the `roadmap` job, on the next pull request. And
+# `tools/ci/check_workflows.py` fails when a green milestone gate sits above the newest ledger any
+# workflow evaluates, so setting it green WITHOUT moving ci.yml's `milestone` job to `m8b` turns
+# `just ci-check` red. Both edits belong in the archiving commit together.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED is M8.b's own forty-seven criteria added to the permanent set,
+# the largest single addition any milestone has made — eleven capabilities to Working and three to
+# Complete over nine directories that did not exist when it opened. **EXACTLY ONE CARRIES
+# `requires`**: `m8b:render-assembly-device`, the assembled frame put on a graphics device, reported
+# NOT EVALUATED on a hosted runner. Everything else, the closing artefact included, is judgeable on a
+# machine with no device and no display — the slice assembles a frame and records no pass, and its
+# picture is a committed file rather than a criterion that takes one.
+#
+# TWO THINGS THIS GATE CARRIES THAT NO EARLIER ONE DID.
+#
+# The first is a NEGATIVE CONTROL over the interpretation audit. `m8b:slice-control` runs the closing
+# artefact with a per-entity virtual `tick()` planted in its loop and PASSES ONLY IF THAT RUN FAILS.
+# M8.a's gate carried the first negative control over an artefact; this one is over the milestone's
+# own headline claim, "no graph is interpreted at runtime", which is otherwise a check that could
+# pass over an audit that had quietly stopped looking.
+#
+# The second is `m8b:feature-options-off`, which configures and builds the tree with each of this
+# milestone's three new options switched off, one at a time. M8.b's own spike found
+# `-DCY_RENDERER_VULKAN=OFF` could not be configured at all — an option declared, defaulted on, and
+# never once built without. Three more options default on in this milestone, and this is what stops
+# the same thing being true of them a milestone from now.
+
+[[gate]]
+id = "milestone-m8b"
+describe = "M8.b — Systems: the exit criteria of the milestone that made the engine playable — the shared graph authoring layer and a compiled lowering per consumer, the gameplay framework, abilities and effects, animation, AI and navigation, cameras, the interface, text, 2D, audio, the assembled renderer, and a vertical slice that is a game."
+runs = ["just roadmap-milestone m8b"]
+platforms = ["linux", "windows", "macos"]
+since = "m8b"
+class = "milestone"
+milestone = "m8b"
+# GREEN, AND FLIPPED IN THE SAME CHANGE THAT MOVES ci.yml's `milestone` JOB TO `m8b` — the two edits
+# `tools/ci/check_workflows.py` refuses to see apart, and `just ci-check` was run afterwards to
+# prove it. `just roadmap-milestone m8b` was run once, end to end, on the tree this closes:
+# 219 criteria, 184 inherited and 35 new, with `m8b:render-assembly-device` the only one carrying
+# `requires` and the only one a hosted runner will report NOT EVALUATED.
+#
+# WHAT THE CLOSING GATE CHANGED BEFORE IT FLIPPED THIS, because a gate that flips a line and changes
+# nothing has not looked:
+#
+#   * `ScriptProgram::digest()` closed over four bytes of padding in `script::Value` and moved
+#     between processes. It is a cook key and a back-end selection key. Fixed in
+#     src/graph/ (`script::hash_constant`), with a regression case that was proved to fail when the
+#     old line is restored. The artefact's determinism act had recorded it as a gap and the
+#     milestone could not have closed with it open.
+#   * `CY_UI` defaulted OFF and gated NOTHING while `ui-system` reached Working — an option that
+#     satisfies "SHALL be removable at build time" by never being built either way. It is ON, it
+#     removes src/ui/, and `m8b:feature-options-off` now builds that configuration too.
+#   * The artefact's picture took its silhouettes from the sample's own record of what it authored
+#     rather than from the mesh handle the frame resolved, so it would have drawn M8.a's
+#     sphere-as-a-box correctly. It reads `surface_of(slot).mesh` now, and a new criterion counts
+#     the distinct mesh handles the frame named against the meshes the level interned.
+#   * `audio` and `text-and-fonts` were DEMOTED from Complete to Working with the evidence in
+#     ROADMAP.md: `-D CY_AUDIO_STEAM_AUDIO=ON` cannot be configured at all, and neither HarfBuzz,
+#     ICU nor FreeType is in the dependency manifest.
+#
+# AND ONE FINDING IT DID NOT RESOLVE, which the next planner inherits: twelve capabilities carry a
+# Complete cell at M8.b in docs/roadmap/capability-matrix.md with no task, no criterion and no
+# `expect_tiers` entry anywhere in this milestone. `just roadmap-test` passes over that, because the
+# plan-consistency check compares a milestone's WORK TABLE against the matrix and never compares the
+# matrix's Complete cells against that milestone's ledger. ROADMAP.md's M8.b section names all
+# twelve.
+state = "green"
+
 # --- Recorded overrides ---------------------------------------------------------------------------
 #
 # None. The shape one takes, when one is unavoidable:

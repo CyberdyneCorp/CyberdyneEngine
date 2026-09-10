@@ -291,3 +291,37 @@ run-authoring *args:
     echo "==> run         authoring  profile=${profile}"
     python3 samples/08a-authoring/authoring.py --profile "${profile}" --binaries \
         --build-dir "${build_dir}" --work "${build_dir}/authoring" ${rest}
+
+# M8.b's ARTEFACT, AND WHY IT IS NOT `just run-sample vertical-slice`.
+#
+# `run-sample` finds a sample's binary and runs it, and samples/08-vertical-slice DOES declare one —
+# `just run-sample vertical-slice --agents 512` plays the game and prints what it did. What that
+# cannot do is JUDGE it: the milestone's claims are that eight thousand agents and a hundred
+# concurrent effects hold declared budgets, that the same options produce the same simulation in two
+# processes, and that a per-entity virtual tick is FOUND when one is planted. Each of those is
+# several runs of the program compared against each other, which is what `slice.py` does in four
+# acts. Its CMakeLists.txt argues the split.
+#
+# It builds only the engine: there is no editor and no second process in this artefact, and no
+# display and no graphics device either — the frame is assembled and no pass is recorded, which is
+# what makes the whole of it judgeable on a hosted runner.
+#
+# `--shot <path>` is what refreshes docs/design/images/vertical-slice-m8b.png. `--only <act>` runs
+# one act, and `--scale-agents <n>` moves the population the scale act measures; the exit criterion's
+# figure is 8000 and that is the default.
+
+# Run the M8.b artefact: a playable game, measured. Usage: just run-vertical-slice [--profile <p>] [--agents <n>] [--ticks <n>] [--scale-agents <n>] [--only <act>] [--shot <path>]
+run-vertical-slice *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    echo "==> run         vertical-slice  profile=${profile}"
+    python3 samples/08-vertical-slice/slice.py --profile "${profile}" \
+        --sample "${build_dir}/samples/08-vertical-slice/cy_sample_vertical-slice" \
+        --build-dir "${build_dir}" --work "${build_dir}/vertical-slice" ${rest}

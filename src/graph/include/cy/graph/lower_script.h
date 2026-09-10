@@ -44,6 +44,8 @@
 #include <cy/core/memory/array.h>
 #include <cy/graph/cybergraph.h>
 
+#include <bit>
+
 namespace cy::graph::script {
 
 /// A register. The program is typed statically, so a register's kind is a property of the
@@ -80,7 +82,13 @@ enum class ValueKind : u8 {
 
 [[nodiscard]] const char* value_kind_name(ValueKind kind) noexcept;
 
-/// One register's storage. Sixteen bytes, no allocation, no type tag: the program is typed.
+/// One register's storage. No allocation, no type tag: the program is typed.
+///
+/// IT IS NOT A FLAT SIXTEEN BYTES AND THAT MATTERS TO EXACTLY ONE CALLER. `i64` forces eight-byte
+/// alignment, so the layout is `integer` at 0, `x`/`y`/`z` at 8/12/16, **four bytes of padding at
+/// 20**, and `handle` at 24 — thirty-two bytes, of which four are never written by any member
+/// initialiser. Hash it with `hash_constant` below and never with `hash_bytes(&value,
+/// sizeof(value))`; see that function for what the difference cost.
 struct Value {
     i64 integer = 0;
     f32 x = 0.0F;
@@ -100,6 +108,24 @@ struct Value {
     }
     [[nodiscard]] static Value from_bool(bool value) noexcept { return from_int(value ? 1 : 0); }
 };
+
+/// Fold one constant into a program digest, FIELD BY FIELD AND NEVER AS AN OBJECT.
+///
+/// A `ScriptProgram`'s digest is a cook key and the back-end selection key `visual-scripting`
+/// requires to be stable, so it may only close over values a member initialiser wrote. `Value`
+/// carries four bytes of padding between `z` and `handle` that nothing writes, and hashing the
+/// object closed over them: `samples/08-vertical-slice` compiled one authored graph three times and
+/// got three digests, and the same run reproduced under `--profile release` and not under
+/// `--profile dev`, which is what an indeterminate value looks like rather than what a logic error
+/// looks like. `src/graph/tests/test_lowering.cpp` poisons the padding and requires the digest not
+/// to move.
+[[nodiscard]] inline u64 hash_constant(u64 seed, const Value& value) noexcept {
+    u64 hash = hash_u64(seed, static_cast<u64>(value.integer));
+    hash = hash_u64(hash, std::bit_cast<u32>(value.x));
+    hash = hash_u64(hash, std::bit_cast<u32>(value.y));
+    hash = hash_u64(hash, std::bit_cast<u32>(value.z));
+    return hash_u64(hash, value.handle);
+}
 
 enum class ScriptOp : u16 {
     /// `dst = constants[immediate]`.
@@ -310,6 +336,116 @@ enum class RunOutcome : u8 {
 [[nodiscard]] Expected<RunOutcome, Error> execute(const ScriptProgram& program, ScriptState& state,
                                                   ScriptHost& host,
                                                   u32 instruction_budget = 4096) noexcept;
+
+// --- The native back end ------------------------------------------------------------------------
+//
+// `visual-scripting` requires TWO execution backends from ONE intermediate representation:
+//
+//   Bytecode  "fast iteration, hot reload, stepping, sandboxed mod execution, portability"
+//   Native    "shipping performance, compiled ahead of time"
+//
+// and "a graph SHALL produce identical results on either backend, which SHALL be verified".
+// `execute()` above is the bytecode back end: it reads `Instruction::op` and dispatches on it, once
+// per instruction, for every instance, forever. That dispatch is the whole cost the second back end
+// exists to remove, and removing it is what "compiled ahead of time" means here — not a second
+// language and not a second semantics.
+//
+// WHAT compile_native() DOES AHEAD OF TIME, ONCE, PER PROGRAM:
+//
+//   1. RESOLVES THE HANDLER. Every opcode becomes a function pointer chosen at compile time, so the
+//      run-time walk performs no switch and reads no `op` field. `ScriptOp` already carries the
+//      operand type — `AddFloat` and `AddInt` are separate opcodes — so one handler per opcode is
+//      a complete resolution rather than a first stage of one.
+//   2. LINEARISES THE BLOCKS. Basic blocks become one flat step array, so running an instruction
+//      does not first index a block and then index within it.
+//   3. RESOLVES EVERY BRANCH TARGET TO A STEP INDEX. A jump is an assignment, not a lookup.
+//
+// WHAT IT DELIBERATELY DOES NOT CHANGE. `ScriptState` is the same object on both paths — the same
+// registers, the same persisted slots, and the same `resume_block`, which is why a `Suspend` step
+// carries BOTH its resume step (for this back end) and its resume BLOCK (for the state). An
+// instance suspended under one back end resumes correctly under the other, which is what makes
+// "selection per graph and per build configuration" a selection rather than a fork. `digest()` is
+// the source program's digest for the same reason: the two back ends are one IR, and a cook key
+// names the IR.
+//
+// AND IT IS NOT AN INTERPRETER, EITHER. There is still no graph, no per-instance machine and no
+// name lookup at run time; `NativeProgram` is immutable and shared exactly as `ScriptProgram` is.
+
+struct NativeStep;
+
+/// Everything a native handler may touch. One per `execute_native` call, on its stack.
+struct NativeFrame {
+    const ScriptProgram* program = nullptr;
+    ScriptState* state = nullptr;
+    ScriptHost* host = nullptr;
+    Span<Value> registers;
+    /// The step that runs next. Set by a terminator; otherwise the walk advances by one.
+    u32 next = 0;
+    RunOutcome outcome = RunOutcome::Finished;
+    /// A terminator that ends this call — a return, or a suspension that did not clear.
+    bool stop = false;
+    bool failed = false;
+    Error error;
+};
+
+/// A handler resolved at compile time. Chosen once by `compile_native`, called many times.
+using NativeHandler = void (*)(const NativeStep&, NativeFrame&) noexcept;
+
+/// One step of the native path: a resolved handler and its decoded operands. No opcode.
+struct NativeStep {
+    NativeHandler run = nullptr;
+    Reg dst = kNoRegister;
+    Reg a = kNoRegister;
+    Reg b = kNoRegister;
+    u32 immediate = 0;
+    /// A STEP index, resolved ahead of time. `kNoStep` on a step that does not branch.
+    u32 target = 0;
+    /// A `Suspend`'s resume point in the BYTECODE back end's terms, so an instance's state stays
+    /// backend-independent. `kNoBlock` on every other step.
+    BlockId resume_block = kNoBlock;
+};
+
+inline constexpr u32 kNoStep = 0xFFFFFFFFU;
+
+/// A program compiled for the native back end. IMMUTABLE, SHARED BY EVERY INSTANCE.
+///
+/// It borrows the `ScriptProgram` it was compiled from — the constants, externals and suspend
+/// points are read from there rather than copied — so that program must outlive it. That is the
+/// same lifetime an instance's `ScriptState` already has.
+class NativeProgram {
+public:
+    explicit NativeProgram(Allocator& allocator) noexcept;
+
+    NativeProgram(const NativeProgram&) = delete;
+    NativeProgram& operator=(const NativeProgram&) = delete;
+    NativeProgram(NativeProgram&&) noexcept = default;
+    NativeProgram& operator=(NativeProgram&&) noexcept = default;
+
+    [[nodiscard]] const ScriptProgram& source() const noexcept { return *source_; }
+    [[nodiscard]] Span<const NativeStep> steps() const noexcept { return steps_.span(); }
+    /// Block -> the step it begins at. How a suspension recorded in `ScriptState` is resumed here.
+    [[nodiscard]] Span<const u32> block_starts() const noexcept { return starts_.span(); }
+    [[nodiscard]] u32 entry_step() const noexcept;
+    /// THE SOURCE PROGRAM'S DIGEST. Two back ends, one intermediate representation, one cook key.
+    [[nodiscard]] u64 digest() const noexcept;
+
+private:
+    friend Expected<NativeProgram, Error> compile_native(const ScriptProgram& program,
+                                                         Allocator& allocator) noexcept;
+
+    const ScriptProgram* source_ = nullptr;
+    Array<NativeStep> steps_;
+    Array<u32> starts_;
+};
+
+/// Compile a shared program for the native back end. Cook time, once per program.
+[[nodiscard]] Expected<NativeProgram, Error> compile_native(const ScriptProgram& program,
+                                                            Allocator& allocator) noexcept;
+
+/// Run one instance on the native back end. Same state, same host, same outcome as `execute`.
+[[nodiscard]] Expected<RunOutcome, Error> execute_native(const NativeProgram& program,
+                                                         ScriptState& state, ScriptHost& host,
+                                                         u32 instruction_budget = 4096) noexcept;
 
 // --- Compilation ------------------------------------------------------------------------------
 

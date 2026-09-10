@@ -21,18 +21,21 @@ set_property(GLOBAL PROPERTY CY_GAMEPLAY_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
 function(cy_gameplay_declare_tests)
     get_property(cy_gameplay_tests_dir GLOBAL PROPERTY CY_GAMEPLAY_TESTS_DIR)
 
-    get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
-                           DEFINITION CY_TEST_BUDGET_unit)
-    get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
-                           DEFINITION CY_TEST_TIMEOUT_unit)
-    if(NOT budget OR NOT timeout)
-        message(FATAL_ERROR
-            "src/gameplay/tests: the 'unit' entry of the test taxonomy could not be read from "
-            "tests/CMakeLists.txt. If the budget variables were renamed, this lookup and the "
-            "deferral around it should go away — declare the suites from tests/unit/ instead.")
-    endif()
-    set(CY_TEST_BUDGET_unit "${budget}")
-    set(CY_TEST_TIMEOUT_unit "${timeout}")
+    foreach(kind unit integration)
+        get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_BUDGET_${kind})
+        get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                               DEFINITION CY_TEST_TIMEOUT_${kind})
+        if(NOT budget OR NOT timeout)
+            message(FATAL_ERROR
+                "src/gameplay/tests: the '${kind}' entry of the test taxonomy could not be read "
+                "from tests/CMakeLists.txt. If the budget variables were renamed, this lookup and "
+                "the deferral around it should go away — declare the suites from tests/unit/ "
+                "instead.")
+        endif()
+        set(CY_TEST_BUDGET_${kind} "${budget}")
+        set(CY_TEST_TIMEOUT_${kind} "${timeout}")
+    endforeach()
 
     cy_add_test(
         NAME gameplay_core
@@ -42,8 +45,21 @@ function(cy_gameplay_declare_tests)
             "${cy_gameplay_tests_dir}/test_commands.cpp"
             "${cy_gameplay_tests_dir}/test_context.cpp"
             "${cy_gameplay_tests_dir}/test_control.cpp"
+            "${cy_gameplay_tests_dir}/test_framework_core.cpp"
+            "${cy_gameplay_tests_dir}/test_framework_queries.cpp"
+            "${cy_gameplay_tests_dir}/test_framework_runtime.cpp"
             "${cy_gameplay_tests_dir}/test_random.cpp"
             "${cy_gameplay_tests_dir}/test_validation.cpp"
+        DEPENDENCIES cy::gameplay)
+
+    # gameplay_scale is `integration` and not `unit` for the reason its own header states: both
+    # cases build a large structure — fifty thousand timers, a hundred thousand indexed entities —
+    # and a millisecond budget would be met by trimming the population until the property stopped
+    # being about scale. The remedy is the one M8.a's gate applied to batch spawning.
+    cy_add_test(
+        NAME gameplay_scale
+        KIND integration
+        SOURCES "${cy_gameplay_tests_dir}/test_framework_scale.cpp"
         DEPENDENCIES cy::gameplay)
 endfunction()
 

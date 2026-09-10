@@ -113,10 +113,50 @@ set(CY_FEATURE_OPTIONS
     # compilation at 20 jobs — an order of magnitude less than CY_SHADER_SLANG, and it has no
     # submodules.
     "CY_PHYSICS|ON|Physics: the Jolt backend behind cy::physics::PhysicsServer (M4). The interface, the character controller and the reference backend are always built — this gates Jolt and its fetch"
-    "CY_NAVIGATION|OFF|Navigation meshes, path queries and NavigationServer (M8)"
-    "CY_AI|OFF|Behaviour graphs, perception and the AI runtime (M8)"
+    # DELIVERED AT M8.b, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS and
+    # CY_AUDIO were given at M4 and CY_ANIMATION is given below. `delivery-roadmap` fails a
+    # capability at Working whose CY_* option defaults off, and `navigation` reaches Working here.
+    #
+    # WHAT IT GATES, PRECISELY: Recast and its fetch, and the one translation unit that names a
+    # Recast symbol (src/navigation/src/build_recast.cpp). The navigation mesh, its tiles and their
+    # cross-tile adjacency, A* and the funnel, the region hierarchy, flow fields, off-mesh links,
+    # local avoidance, the crowd and the navigation components are ENGINE CODE and are always built
+    # — `ai-system` puts the integration boundary at navmesh generation and nowhere else, and an
+    # interface that exists in some configurations has a suite that runs in some configurations.
+    #
+    # `-D CY_NAVIGATION=OFF` therefore still builds cy::navigation, still runs every navigation
+    # suite, and fetches nothing: `cy::navigation::build_tile()` falls back to the engine-owned
+    # rasteriser, `recast_available()` answers false, and the suite asserts the SAME contract over
+    # both back ends. src/navigation/include/cy/navigation/build.h states the fidelity difference.
+    #
+    # WHAT IT COSTS: Recast is about 4 MB of source and a few seconds of compilation, with no
+    # submodules. Its demo, its tests and Detour are all turned off — see cmake/dependencies.cmake.
+    "CY_NAVIGATION|ON|Navigation: Recast's voxelising navmesh generator behind cy::navigation::build_tile (M8.b). The mesh, the queries, the funnel, the hierarchy, flow fields, avoidance and crowds are always built — this gates Recast and its fetch"
+    # DELIVERED AT M8.b, AND THEREFORE ON BY DEFAULT — rule 3 again. Unlike the row above, this one
+    # gates a whole module, because `ai-system` asks for exactly that: "The system SHALL be
+    # removable at build time via CY_AI", and its scenario is "WHEN CY_AI is disabled THEN the AI
+    # runtime SHALL be excluded, and NAVIGATION SHALL REMAIN FULLY FUNCTIONAL for non-AI users".
+    #
+    # WHAT IT GATES, PRECISELY: src/ai/ and its suites. The behaviour graph's COMPILER is
+    # `cy::graph`'s behaviour lowering and belongs to `visual-scripting`, so it is not behind this
+    # option — the same line CY_ANIMATION draws below between a runtime and a compiler.
+    "CY_AI|ON|The AI runtime: agents as entities, batched perception, the knowledge store, environment queries, smart objects, AI LOD and the deterministic think scheduler (M8.b). The behaviour graph COMPILER is cy::graph's and is always built"
     "CY_ML|OFF|Machine-learning inference nodes (M8)"
-    "CY_ANIMATION|OFF|Skeletal animation, blending and the animation graph (M8)"
+    # DELIVERED AT M8.b, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS and
+    # CY_AUDIO were given at M4. src/animation/ is the animation runtime: skeletons and bone level
+    # of detail, clips and their codec, the compiled pose program's runtime, root motion, the
+    # constraint framework, retargeting, the GPU pose world and pose sharing. Left at OFF the whole
+    # module would be out of the default build and its three suites would run for whoever remembered
+    # the flag rather than for CI.
+    #
+    # WHAT IT GATES, PRECISELY: src/animation/ and nothing else. The animation COMPILER is
+    # `cy::graph`'s pose lowering and belongs to `visual-scripting`, so it is not behind this option
+    # — an interface that exists in some configurations has a suite that runs in some
+    # configurations. `-D CY_ANIMATION=OFF` therefore removes the runtime, leaves the compiler and
+    # every other suite building and green, and is what `animation-and-skinning`'s "Animation
+    # disabled" scenario asks for: "the animation runtime SHALL be excluded, and static meshes SHALL
+    # render unaffected".
+    "CY_ANIMATION|ON|Skeletal animation: skeletons and bone LOD, clips, pose evaluation, root motion, IK, retargeting and the GPU pose world (M8.b). The animation graph COMPILER is cy::graph's and is always built"
     # DELIVERED AT M4, AND THEREFORE ON BY DEFAULT — rule 3, the same reading the physics option
     # above and CY_RENDERER_VULKAN below were given. src/backends/audio-miniaudio/ is a real device
     # backend over a pinned miniaudio and `integration.audio_miniaudio` drives it; left at OFF the
@@ -136,7 +176,27 @@ set(CY_FEATURE_OPTIONS
     # seconds of compilation. It is the cheapest dependency in the manifest.
     "CY_AUDIO|ON|Audio: the miniaudio device backend behind cy::audio::AudioBackend (M4). The AudioServer, the bus graph, spatialisation and the null backend are always built — this gates miniaudio and its fetch"
     "CY_AUDIO_STEAM_AUDIO|OFF|Steam Audio spatial acoustics inside CY_AUDIO (M8)"
-    "CY_UI|OFF|The retained-mode UI runtime (M8)"
+    # DELIVERED AT M8.b, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS, CY_AUDIO,
+    # CY_RENDERER_VULKAN, CY_ANIMATION, CY_NAVIGATION and CY_AI were given, and the last one this
+    # milestone had left at OFF. `delivery-roadmap` lists "a delivered capability whose build option
+    # defaults off" as a shape that SHALL be checked rather than re-discovered, and M8.b's closing
+    # gate re-discovered it: `ui-system` reached Working over six modules, forty-five unit cases, a
+    # scale suite and an accessibility audit, with `CY_UI` still at the default it was given when
+    # src/ui/ did not exist.
+    #
+    # AND IT GATED NOTHING, WHICH WAS THE WORSE HALF. `ui-system` requires "The system SHALL be
+    # removable at build time via CY_UI", and until this line moved there was no `if(CY_UI)` and no
+    # `#if defined(CY_UI)` anywhere in the tree: the option was declared, defaulted off, removed
+    # nothing, and was never once built either way. That is the shape M8.b's own spike found in
+    # CY_RENDERER_VULKAN, and it is now what `m8b:feature-options-off` builds.
+    #
+    # WHAT IT GATES, PRECISELY: src/ui/ — the element store, layout, `.cyss`, input routing, the
+    # layer stack, flattening and the accessibility audit — and the two suites over them. The line
+    # is drawn where CY_ANIMATION draws it rather than where CY_AUDIO does, because there is no
+    # library behind CyberUI to exclude: the whole of it is engine code, so "removable" can only
+    # mean the module. `samples/08-vertical-slice` declines to declare itself when it is off, the
+    # way it already does for CY_ANIMATION and CY_AI.
+    "CY_UI|ON|CyberUI: the element store, the retained tree, layout, `.cyss`, data binding, input routing, the layer stack, flattening and the accessibility audit (M8.b)"
     "CY_VFX|OFF|The VFX runtime, its compiler and its renderers (M8)"
     # DELIVERED AT M7, AND THEREFORE ON BY DEFAULT — rule 3 again, and the same reading
     # CY_RENDERER_VULKAN, CY_PHYSICS and CY_AUDIO were given. `delivery-roadmap` fails a capability

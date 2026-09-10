@@ -44,6 +44,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         ${cy_rendering_scene_generated_sources}
+        src/asset_binding.cpp
         src/components.cpp
         src/extract.cpp
         src/node_templates.cpp
