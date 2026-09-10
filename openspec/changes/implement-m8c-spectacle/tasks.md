@@ -21,6 +21,32 @@ retrofitted after two systems already write through it is a rewrite.
       cannot fail when the firewall is removed is not this criterion — mutate the firewall and
       prove the test goes red
 
+## 1b. The shader and pipeline layer — the wall M8.b's gate named and did not schedule
+
+**M8.b assembled a frame out of the renderer's own modules and stopped one layer short.**
+`FrameAssembly` hands each pass's record callback to its caller, and the vertical slice supplies
+none — which is why the slice's picture is DRAWN rather than captured, and why the milestone's own
+report says a person could build all of M8.b and still not *see* it without writing their own
+renderer.
+
+This is scheduled here rather than assumed because a particle system is the first consumer that
+cannot proceed without it: task 5.1 puts particles inside the existing slice holding its frame
+budget, and there is nothing for them to be recorded into. M8.b's gate called this its day-one wall.
+A tier claimed with no task beneath it is the slip that cost the M5.5 insertion and was caught again
+at M7 — this is the same shape, found before rather than after.
+
+- [ ] 1b.1 A shader and pipeline layer above `FrameAssembly`: pipeline state objects, bindings, and
+      the record callbacks each pass declares. The seams exist — `FrameSinks::passes` and
+      `SceneIndex` — and the layer above them does not
+- [ ] 1b.2 The vertical slice supplies real record callbacks, so its frame is CAPTURED rather than
+      drawn. Its committed screenshot is then the engine's own output
+- [ ] 1b.3 `material-compiler` emits Slang that something compiles, closing M7's recorded gap: the
+      bundle carries the IR, the generated source, the cost report and the cook key, and nothing
+      invokes the compiler. **Report rather than fake** if the shader standard library the generated
+      source imports (`cy.material`, `CyMaterialContext`, `CySurface`) still does not exist
+- [ ] 1b.4 A particle renderer is the first consumer, and it proves the layer by using it rather
+      than by a test written beside it
+
 ## 2. VFX — `vfx-system` → W
 
 CyberGraph is the authoring layer. The IR is its own: a particle kernel is not an expression DAG,
