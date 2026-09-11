@@ -36,12 +36,12 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |       |  | W | **C** |     |  |  |  | M8.b |
 | [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 34 |  |  |  |  | S |  |  |  |  | S | W |     | | **C** |  | M10 |
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
+| [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 22 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |     |     | W |  |  | **C** | M11 |
 | [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | 23 |  |  |  |  | W |  |  |  |  |     | **C** |     |  |  |  | M8.b |
 | [`camera-system`](../../openspec/specs/camera-system/spec.md) | 28 |  |  |  |  | S |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | 20 |  |  | S |  | W |  |  |  |  |  |   |     | W |  | **C** | M11 |
-| [`replay-and-rollback`](../../openspec/specs/replay-and-rollback/spec.md) | 19 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
+| [`replay-and-rollback`](../../openspec/specs/replay-and-rollback/spec.md) | 21 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
 | [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | 20 |  |  |  |  |  |  |  | W |  |  |   |     | | **C** |  | M10 |
 | [`world-partition-and-streaming`](../../openspec/specs/world-partition-and-streaming/spec.md) | 32 |  |  |  |  |  |  |  | W |  |  |   |     |  | **C** |  | M10 |
 | [`environment-fields`](../../openspec/specs/environment-fields/spec.md) | 12 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
@@ -74,7 +74,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |       |  |     | **C** |     |  |  |  | M8.b |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 24 |  |  |  |  |  |  |  |  |  |     |     | S |  | W | **C** | M11 |
+| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |     |     | S |  | W | **C** | M11 |
 | **5 — Simulation** | | | | | | | |  | | | | | | | |
 | [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |   |     |  |  | **C** | M11 |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
@@ -97,14 +97,14 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | 11 | S | W |  |  |  | **C** |  |  |  |  |   |     |  |  |  | M5 |
 | [`build-and-packaging`](../../openspec/specs/build-and-packaging/spec.md) | 19 |  |  |  |  |  |  |  | W |  |  |   |     |  |  | **C** | M11 |
 | **7 — Systems and process** | | | | | | | |  | | | | | | | |
-| [`networking-and-replication`](../../openspec/specs/networking-and-replication/spec.md) | 25 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
+| [`networking-and-replication`](../../openspec/specs/networking-and-replication/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
 | [`xr-support`](../../openspec/specs/xr-support/spec.md) | 8 |  |  |  | ◇ |  |  |  |  |  |  |   |     |  |  |  | deferred |
 | [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | 13 | S |  |  |  | W |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | 15 | S |  |  |  |  | W |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | 12 | S |  |  | W |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`diagnostics-profiling-and-crash`](../../openspec/specs/diagnostics-profiling-and-crash/spec.md) | 18 | S |  |  |  |  | W |  |  |  |  |   |     | W | **C** |  | M10 |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | 9 | S |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md) | 21 | W |  |  |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
+| [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md) | 22 | W |  |  |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 
 ---
 

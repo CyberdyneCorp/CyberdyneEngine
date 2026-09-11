@@ -21,6 +21,6 @@ built against a scope it no longer has is the thing this change exists to preven
 - [x] 3.1 `implement-m8b-systems` re-planned: section 1 marked done with the spike's finding, section
       2 rewritten as the three layers the spike prescribed with its anchor digests, sections 8 and 10
       reduced, and the artefact's two words removed
-- [ ] 3.2 Open the M8.c change. Deliberately left for M8.b's closing gate, which opens the next rung
+- [x] 3.2 Open the M8.c change. Deliberately left for M8.b's closing gate, which opens the next rung
       as its own task — opening it here would mean two changes claiming the same rung, and the M8
       split already had to reconcile exactly that
