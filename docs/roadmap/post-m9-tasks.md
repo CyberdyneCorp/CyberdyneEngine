@@ -1,5 +1,9 @@
 # After M9's gate closes — three things, none of them milestone work
 
+> **UPDATE 2026-09-11, after M9 closed.** Item 1 is DONE and the cause was not what this note
+> guessed. M9's own gate found half of it and the other half is fixed below; item 3 is still open;
+> item 2 was done on the day this note was written. See "What item 1 actually was" at the end.
+
 Authorised by the user 2026-09-11. All three are machinery around the work rather than the work, and
 none belongs inside a milestone's scope. Do them between M9 closing and M10 launching.
 
@@ -124,3 +128,48 @@ per the rule M8.c's camera-cut panel already follows.
 **Order:** 1 first — it is the only one that changes how long every future milestone takes. Then 3,
 which is cheap and makes the engine legible to someone who has not read a ledger. Then 2, which is
 now urgent again only when the disk climbs.
+
+---
+
+## What item 1 actually was
+
+This note guessed "concurrency groups cancelling in-progress runs" from the two cancellations it
+could see. That guess was right about the mechanism and wrong about the scale, and there was a second
+cause underneath it.
+
+**M9's gate found the first cause: every Linux job died at CONFIGURE.**
+`Couldn't find dependency package for XCURSOR`, because the workflow installed four X11 packages
+where `README.md`'s own list names eight. Fixed by the gate, with a check that fails when the two
+lists drift.
+
+**The second cause is the one this note guessed, and it is worse than two cancellations.**
+`gh run list` over the repository's whole history:
+
+```
+65 cancelled · 0 success · 0 failure · 1 in progress     (66 runs, M0 to M9)
+median run survived 115 minutes; the longest reached 14h31 before a push killed it
+```
+
+Not one run has ever reached a verdict. Three settings, each individually reasonable, combined badly:
+the workflow runs on every push to `main`; one concurrency group covers all of `main`; and
+`cancel-in-progress: true`. That last is ordinary good advice — it stops stale runs piling up on a
+branch — and it is wrong for a workflow that takes hours on a trunk pushed to many times a day. This
+project pushes to `main` constantly *by design*, because milestone workflows commit their agents'
+work mid-flight.
+
+**Fixed:** `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`. Pull requests keep
+cancelling, which is what the advice is for; `main` now finishes.
+
+**And it is now checked.** `tools/ci/check_workflows.py` fails on a bare
+`cancel-in-progress: true` in a workflow that runs on push, and the check was proved by reverting the
+fix and watching it fire.
+
+**The consequence, which is the reason this mattered:** `delivery-roadmap` makes "continuous
+integration has actually executed" a precondition for a milestone's audit ever being reduced. One
+setting is why every gate from M0 to M9 ran in full, by hand, for six to twelve hours each.
+
+**What is NOT fixed, deliberately.** M9's gate recorded three further CI failures and declined to fix
+them blind, which was right — none is reproducible on this machine: `setup-swift`'s
+`Version "6.0" is not available` on both Windows legs, `mapfile: command not found` on macOS
+(bash 3.2), and rustfmt refusing the generated `mod.rs` on Windows. **The first green run will say
+which of these are real**, and that run is now possible for the first time.

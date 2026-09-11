@@ -84,9 +84,32 @@ on:
 permissions:
   contents: read
 
+# WHY `cancel-in-progress` IS FALSE ON main AND TRUE EVERYWHERE ELSE.
+#
+# It was true for both, which is the ordinary advice and was wrong here in a way nothing reported.
+# Measured 2026-09-11 with `gh run list`: SIXTY-FIVE of sixty-six runs in this repository's entire
+# history — M0's first commit to M9's close — ended `cancelled`. Not one `success`, and not one
+# honest `failure` either, because no run ever lived long enough to reach a verdict. The median run
+# survived 115 minutes; the longest reached 14 hours 31 before a push killed it.
+#
+# The cause is the interaction of three settings that are each individually reasonable. This
+# workflow runs on every push to main; one group covers all of main; and a new run cancels the
+# running one. `cancel-in-progress: true` is right when runs are short and pushes are frequent —
+# it stops a queue of stale runs piling up on a busy branch. Here the runs are HOURS long (four
+# profiles from empty, the sanitizers, a milestone ledger) and this project pushes to main many
+# times a day, because milestone workflows commit their agents' work mid-flight on purpose. So
+# every run was killed by the next commit before it could finish.
+#
+# The cost was not just a red badge. `delivery-roadmap` makes "continuous integration has actually
+# executed" a precondition for a milestone's audit ever being reduced, so this setting is why every
+# gate from M0 to M9 ran in full, by hand, for six to twelve hours each.
+#
+# On main, a run now finishes. Superseded runs cost a runner and answer a question about a commit
+# that is genuinely in the history. On a pull request the original advice still holds, so branches
+# keep cancelling.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   # The engine's default working profile. Every recipe takes --profile; CI states it once here so

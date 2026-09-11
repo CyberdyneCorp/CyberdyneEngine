@@ -610,6 +610,50 @@ def selftest(root: pathlib.Path) -> int:
     return 0
 
 
+def long_run_cancellation(root: pathlib.Path,
+                          workflows: list[pathlib.Path]) -> list[str]:
+    """A workflow that runs for hours on `main` must not cancel its own in-progress runs.
+
+    MEASURED, NOT REASONED. On 2026-09-11 `gh run list` reported SIXTY-FIVE of sixty-six runs in
+    this repository's history ending `cancelled` — no `success`, and no honest `failure` either,
+    because no run lived long enough to reach a verdict. The median survived 115 minutes and the
+    longest reached 14 hours 31 before the next push killed it.
+
+    `cancel-in-progress: true` is ordinary good practice and is right for a pull request: it stops
+    stale runs piling up on a branch somebody is pushing to repeatedly. It is wrong for a long
+    workflow on a trunk that is pushed to many times a day, which is exactly this project — milestone
+    workflows commit their agents' work mid-flight on purpose.
+
+    The cost was not a red badge. `delivery-roadmap` makes "continuous integration has actually
+    executed" a precondition for a milestone's audit ever shrinking, so this one setting is why every
+    gate from M0 to M9 ran in full, by hand, for six to twelve hours each.
+
+    The rule: if a workflow triggers on a push to a branch, its `cancel-in-progress` must not be the
+    bare literal `true`. An expression that distinguishes the trunk from a branch is what this looks
+    like when it is right, and an explicit `false` is also fine.
+    """
+    problems: list[str] = []
+    for path in workflows:
+        text = path.read_text(encoding="utf-8")
+        if not re.search(r"^on:\s*$", text, re.M):
+            continue
+        # Only workflows that actually run on a push to a branch can be cancelled by the next push.
+        if not re.search(r"^\s*push:\s*$", text, re.M):
+            continue
+        match = re.search(r"^\s*cancel-in-progress:\s*(.+?)\s*$", text, re.M)
+        if match is None:
+            continue
+        value = match.group(1)
+        if value == "true":
+            problems.append(
+                f"{path.relative_to(root)}: `cancel-in-progress: true` on a workflow that runs on "
+                "push. A run that takes hours is then killed by the next commit, and this "
+                "repository's first sixty-five runs all died that way without ever reaching a "
+                "verdict. Make it an expression that spares the trunk, or false."
+            )
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -654,8 +698,9 @@ def main() -> int:
     uncovered = gate_coverage(root, workflows)
     drift = pin_drift(root, workflows)
     system = system_dependencies(root, workflows)
+    cancellation = long_run_cancellation(root, workflows)
 
-    if violations or uncovered or drift or system:
+    if violations or uncovered or drift or system or cancellation:
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
@@ -666,12 +711,16 @@ def main() -> int:
         for gap in system:
             print(f"  {gap}\n      README.md's list is the one a developer is told to run.",
                   file=sys.stderr)
+        for gap in cancellation:
+            print(f"  {gap}\n      measured: 65 of this repository's first 66 runs were "
+                  "cancelled, none ever succeeded.", file=sys.stderr)
         return 1
 
     print(
         f"check-workflows: clean — {len(workflows)} workflow(s), {total} command(s), "
         "every one a recipe or a tool install, every permanent gate run, every closed "
-        "milestone's criteria evaluated, and every Linux job given the documented system libraries"
+        "milestone's criteria evaluated, every Linux job given the documented system "
+        "libraries, and no long workflow cancelling its own runs on the trunk"
     )
     return 0
 
