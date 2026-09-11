@@ -271,7 +271,29 @@ set(CY_FEATURE_OPTIONS
     # SPIR-V, so the option adds no dependency and no compile time — it decides whether a frame
     # takes the virtual geometry path.
     "CY_VIRTUAL_GEOMETRY|ON|Virtual geometry: the renderer's virtualised geometry path (M7). The cooker, the asset reader and the fallback are always built — this gates the frame's use of the cluster hierarchy"
-    "CY_NETWORKING|OFF|Replication, transport and the network runtime (M9)"
+    # DELIVERED AT M9, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS and
+    # CY_AUDIO were given at M4, CY_NAVIGATION, CY_AI and CY_ANIMATION at M8.b, CY_UI at M8.b's
+    # closing gate and CY_VFX at M8.c. `delivery-roadmap` fails a capability at Working whose CY_*
+    # option defaults off, and `networking-and-replication` reaches Working here over
+    # src/networking/.
+    #
+    # THIS IS THE ROW M8.b's GATE FOUND IN CY_UI AND M8.c's GATE WROTE INTO M9 AS A DELTA
+    # REQUIREMENT. Until this milestone the option was declared, defaulted OFF and gated NOTHING —
+    # there was no `if(CY_NETWORKING)` and no `#if defined(CY_NETWORKING)` anywhere in the tree, so
+    # the option and its absence produced byte-identical output. An option that removes nothing is
+    # not an option; it is a line in a table.
+    #
+    # WHAT IT GATES, PRECISELY: src/networking/ — the module, its tool and its three suites — and
+    # nothing else. It fetches NOTHING and links nothing third-party: the reliability layer is the
+    # engine's own (src/networking/src/reliability.cpp) and the UDP backend is POSIX sockets, so
+    # there is no transport library in deps/manifest.toml and no entry in THIRD_PARTY.md to add.
+    #
+    # `-D CY_NETWORKING=OFF` removes the transport and NOT the record. `src/replay/`'s
+    # `ReplicationInputCursor` is deliberately outside this option — `replay-and-rollback` forbids a
+    # second representation of participant intent, and a replication layer that could not see the
+    # session's record would grow one. Both directions are built and tested, which is the half that
+    # had never been done for CY_UI.
+    "CY_NETWORKING|ON|CyberNet: the three network modes and their prerequisites, the authority model and its handover, the transports and the reliability layer they share, compiled replication schemas, baselines and deltas, RPCs, interest management, the priority scheduler and its bandwidth budget, prediction and reconciliation, lag compensation, and the dedicated server (M9). It fetches nothing"
     "CY_XR|OFF|Extended-reality sessions, tracking and stereo rendering (deferred by decision — M11 carries the prerequisites)"
     "CY_PROFILING|OFF|Tracy as a backend of the engine's own trace (M0 seam, M2 wiring, delivered)"
     # DELIVERED AT M3, AND THEREFORE ON WHEREVER IT CAN BE. src/backends/shader/slang/ is a real

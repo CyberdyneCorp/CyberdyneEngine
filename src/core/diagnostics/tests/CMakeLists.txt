@@ -14,7 +14,8 @@
 # `testing-and-quality` means by the word. The unit budget is a millisecond and none of these would
 # honestly fit it.
 
-set(cy_diagnostics_tests test_trace test_privacy test_loss test_log test_bridge)
+set(cy_diagnostics_tests test_trace test_privacy test_source_privacy test_loss test_log
+                         test_bridge test_capture test_reproduction)
 
 foreach(cy_test IN LISTS cy_diagnostics_tests)
     cy_add_module(
@@ -44,6 +45,28 @@ add_test(NAME diagnostics.crash
             --probe $<TARGET_FILE:cy_diag_crash_probe>)
 set_tests_properties(diagnostics.crash PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" TIMEOUT 120 LABELS integration)
+
+# The class, not the instance. M0's gate found `__FILE__` reaching the trace's NAME table and
+# repaired it with `-fmacro-prefix-map`; a flag repairs the instance, and this lint is what stops the
+# shape coming back anywhere in the tree. It scans src/, samples/ and tools/ rather than this module,
+# because the forbidden call is available to every subsystem that includes field.h.
+#
+# --self-test runs it over a snippet that contains the shape and fails if it is not found, so the
+# gate cannot pass by having stopped working.
+add_test(NAME diagnostics.source_location_lint_self_test
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/../lint/lint_source_locations.py" --self-test)
+# `integration`, not `unit`: it starts a Python interpreter, and the unit tier is sub-millisecond
+# with no I/O. A process spawn in the fast set is a budget nobody meant to spend.
+set_tests_properties(diagnostics.source_location_lint_self_test PROPERTIES
+    TIMEOUT 60 LABELS integration)
+
+add_test(NAME diagnostics.source_location_lint
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/../lint/lint_source_locations.py"
+            "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/samples" "${CMAKE_SOURCE_DIR}/tools")
+set_tests_properties(diagnostics.source_location_lint PROPERTIES
+    TIMEOUT 120 LABELS integration)
 
 # The compile-time half of the privacy invariant: three declarations that must not compile.
 add_test(NAME diagnostics.field_macro

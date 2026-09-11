@@ -61,7 +61,7 @@ bool log_should_emit(CategoryId category, LogLevel level) noexcept {
     return true;
 }
 
-void log_emit(CategoryId category, LogLevel level, NameId message, NameId site,
+void log_emit(CategoryId category, LogLevel level, NameId message, LocationId site,
               const FieldValue* fields, u32 field_count) noexcept {
     trace_emit(EventKind::Log, channel_for(level), message, category, static_cast<u64>(level), site,
                fields, field_count);

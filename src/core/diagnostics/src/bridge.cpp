@@ -1,8 +1,10 @@
 #include <cy/core/diagnostics/bridge.h>
 
 #include <cy/core/diagnostics/breadcrumb.h>
+#include <cy/core/diagnostics/capture.h>
 #include <cy/core/diagnostics/crash.h>
 #include <cy/core/diagnostics/log.h>
+#include <cy/core/diagnostics/source.h>
 #include <cy/core/diagnostics/trace.h>
 
 #include <cy/core/base/assert.h>
@@ -43,9 +45,20 @@ void on_assertion_failure(const ::cy::AssertionFailure& failure, void* /*user*/)
         field_text(assert_message(), failure.message, text_length(failure.message)),
         field_u64(assert_line(), failure.line),
     };
-    log_emit(assert_category(), LogLevel::Fatal, assertion_failed(), register_name(failure.file),
-             fields, 3);
+    // `failure.file` is `__FILE__` from whatever translation unit asserted — which may be a plugin
+    // or a third-party unit compiled without this engine's flags, so it may be an absolute path
+    // naming someone's home directory. It goes into the CLASSIFIED location table, where the writer
+    // sanitises and redacts it; registering it as a NAME is the shape the specification forbids and
+    // the shape M0's gate found here.
+    log_emit(assert_category(), LogLevel::Fatal, assertion_failed(),
+             register_source_location(failure.file, failure.line), fields, 3);
     trace_flush();
+
+    // "Capture SHALL be triggerable automatically by declared conditions — ... an assertion". This
+    // writes the window around the failure BEFORE the crash report, because the process is about to
+    // abort and the rolling buffer's post-trigger window will never arrive. With no rolling buffer
+    // open it is a load and a return.
+    capture_on_assertion();
 
     // A failed assertion is a fault the engine detected itself, and it deserves the same artefact a
     // signal produces. Written only when a crash handler is installed, because that is what
@@ -81,7 +94,7 @@ void on_diagnostic(::cy::DiagnosticSeverity severity, const char* category, cons
         return;
     }
     const FieldValue fields[] = {field_text(diagnostic_message(), message, text_length(message))};
-    log_emit(id, level, register_name("diagnostic"), kInvalidName, fields, 1);
+    log_emit(id, level, register_name("diagnostic"), kInvalidLocation, fields, 1);
 }
 
 }  // namespace

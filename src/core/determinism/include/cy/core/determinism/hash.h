@@ -112,6 +112,18 @@ struct Divergence {
     /// an entity present in one run and absent in the other, say. Distinguished from a value
     /// mismatch because the two have completely different causes.
     bool shape_mismatch = false;
+
+    /// The child that had no peer, when there was one. **`simulation-and-determinism` requires the
+    /// report to name the entity** — "WHEN two worlds hold the same component values on entities
+    /// with different identifiers THEN their hashes SHALL differ, and the divergence report SHALL
+    /// name the entity" — and the path above cannot, because the deepest node the two trees have in
+    /// common is the *parent* of the entity that is missing. So the missing child is reported
+    /// beside the path rather than inside it. `missing_level` is `World` and `missing_id` zero when
+    /// the shape mismatch was a differing child *count* rather than a specific absence.
+    HashLevel missing_level = HashLevel::World;
+    u64 missing_id = 0;
+    const char* missing_name = "";
+    bool missing_identified = false;
 };
 
 /// A hierarchical hash, built by a walk and compared against another.

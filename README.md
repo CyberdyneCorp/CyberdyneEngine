@@ -396,13 +396,22 @@ sudo apt install -y build-essential clang cmake ninja-build git just pkg-config 
 
 # System libraries SDL3 builds against (windowing, input, audio, IME)
 sudo apt install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
-                    libxfixes-dev libxss-dev libxkbcommon-dev \
+                    libxfixes-dev libxkbcommon-dev \
                     libwayland-dev wayland-protocols libdecor-0-dev \
                     libudev-dev libasound2-dev libpulse-dev libibus-1.0-dev
 ```
 
 `libudev-dev` is not optional in practice — it is what gives SDL3 gamepad hot-plug on Linux, which
 [`core-platform-abstraction`](openspec/specs/core-platform-abstraction/spec.md) requires.
+
+**The six `libx*-dev` packages are the ones a missing header turns into a configure error rather
+than a missing feature**, and `.github/workflows/ci.yml` installs exactly them —
+`tools/ci/check_workflows.py` fails when the two lists drift, which is how M9's closing gate found
+that they had been apart since M0 and that no continuous-integration run had ever gone green.
+`libxss-dev` was in this list and is not needed: `cmake/dependencies.cmake` forces
+`SDL_X11_XSCRNSAVER` off — "an X11 extension left on is a -dev package every Linux contributor must
+have installed for a feature no code uses" — and says in the same comment that it rejoins this list
+on the day an idle-inhibition policy lands.
 
 | | Minimum | Why |
 |---|---|---|

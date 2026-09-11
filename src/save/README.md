@@ -49,6 +49,35 @@ real `SIGKILL` against a real directory.
 | `storage.h` | The backend interface, and the one promise every backend makes: `write` is atomic per key. |
 | `archive.h` | Generations, the five-phase commit, the journal, compaction and retention. |
 | `service.h` | The bounded capture on the calling thread, and the write on the async thread. |
+| `checkpoint.h` | In-memory checkpoints, the memory budget, and the epoch a restore advances. |
+
+## Checkpoints are not `SaveKind::Checkpoint` (M9)
+
+`save-and-persistence` asks for two different things with one word. `SaveKind::Checkpoint` in
+`service.h` is a **full generation written to storage** — the right answer to "the player quit and
+came back". `checkpoint.h` is the other one: *"a save optimised for rapid in-session restoration,
+retaining what is required to restore session, world, and participant state without restarting the
+application"* — the right answer to "the player died". That path must not touch the filesystem while
+the state is still in memory, and it must leave the session running, so a checkpoint here is a
+retained overlay plus the moment it was taken at, and a restore is a merge.
+
+**The epoch increment is the load-bearing part.** *"Checkpoint restore SHALL increment the simulation
+epoch, so temporal caches and histories treat themselves as stale."* `CheckpointStore::restore()`
+takes an `EpochCounter&` and there is no overload that does not, because a restore that left the
+epoch alone would move the tick backwards inside one timeline and every stamped cache, handle,
+history and log would believe itself current. `tests/test_checkpoint.cpp` stamps a cache before the
+restore and requires `determinism::is_stale()` to say so afterwards — and deleting the `advance()`
+line is the only mutation that check notices, which is the point of it.
+
+**The budget is a refusal.** *"Checkpoints MAY be retained in memory as well as on storage, subject
+to the memory budget."* A store over its slots or its bytes evicts the oldest; an evicted checkpoint
+keeps its history entry and loses its state, so `restore()` answers `Unavailable` for one that was
+evicted and `NotFound` for one that never existed — two different answers because a caller that
+retries is right in one case and wrong in the other. One checkpoint larger than the whole budget is
+refused at TAKE time rather than retained over budget or dropped silently.
+
+Bytes are measured the way the container would encode them (`measure_overlay_bytes()`), not
+estimated: a budget compared against a guess is not a budget.
 
 ## What is not finished, and is written down rather than implied
 
@@ -63,6 +92,11 @@ real `SIGKILL` against a real directory.
 * **Plugin ownership is declared per save, not per record.** The manifest carries the plugin
   inventory and a load names the missing one; attributing an individual record to its owning module
   needs the module registry that arrives with `project-and-plugins`.
+* **Checkpoints are memory-only.** `CheckpointStore` retains and restores; writing a checkpoint
+  through to the archive as well is `SaveService`'s existing path and the two are not yet joined, so
+  "retained in memory **as well as** on storage" is half-built. A restore therefore cannot fall back
+  to storage when the memory copy has been evicted — it reports `Unavailable`, which is honest and
+  is not the whole requirement.
 * **Encryption is absent, deliberately.** `save-and-persistence` requires that encryption never be
   presented as integrity and that no bespoke cryptography be written. Chunks carry BLAKE3 content
   hashes and the manifest carries theirs; confidentiality is an authenticated-encryption pass over

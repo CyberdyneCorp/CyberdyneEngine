@@ -5,7 +5,8 @@ declared here, and the reason it is in M0 rather than M4 is that a diagnostic fi
 classification** cannot be added retroactively — it would be an audit of every field ever written,
 performed by someone who did not write them.
 
-**Governed by**: `diagnostics-profiling-and-crash`. Decisions: `design.md` §2. Tasks: 3.5.1–3.5.9.
+**Governed by**: `diagnostics-profiling-and-crash`. Decisions: `design.md` §2. Tasks: 3.5.1–3.5.9,
+and M9 task 5.3.
 
 ## The invariant
 
@@ -23,6 +24,70 @@ CY_TRACE_FIELD(user_path,   string, cy::Privacy::Sensitive)
 - An id that was never registered carries no classification, so the writer redacts it and counts it.
 
 `tests/test_field_macro.py` compiles four declarations and requires exactly one of them to succeed.
+
+### A source location is classified data, not a name (M9)
+
+M0 registered `__FILE__ ":" __LINE__` in the NAME table and `AssertionFailure::file` beside it. A
+name is interned unredacted into the metadata table, so that put the build machine's directory
+layout — including the account name it sits under — structurally beyond the writer's reach. M0's
+gate found it and repaired it with `-fmacro-prefix-map` in `cmake/compilers.cmake`.
+
+The specification now forbids the shape by name and says what the flag is worth: *"Compiler flags
+that strip source prefixes are a **mitigation and not the mechanism**: they do not exist on every
+toolchain."* MSVC has no equivalent, and a plugin compiled with its own flags hands this runtime an
+absolute path whatever the engine was built with.
+
+So a location is an entry in its own table (`source.h`), a record carries a `LocationId` in `b`, and
+the writer does two separable things when it resolves the table into `META`:
+
+* **Sanitisation** — a path under the declared source root loses that prefix; a path that is still
+  absolute keeps only its final component. This depends on no compiler, no debug information and no
+  filesystem. It is counted as `LossReason::SourcePathSanitised`.
+* **Classification** — the sanitised remainder is `Privacy::Developer`, so an artefact written under
+  a tighter ceiling carries the id and the line and no path at all. It is counted as a redaction.
+
+Both halves are checked and both were proved failable by mutation:
+`tests/test_source_privacy.cpp` (the artefact contains no absolute path, and does contain the file's
+name, so the check is not vacuous), and `lint/lint_source_locations.py`, which scans `src/`,
+`samples/` and `tools/` for the forbidden call and goes red on M0's exact line. The lint has a
+`--self-test` that fails if it stops finding the shape it exists to find.
+
+![The rolling buffer, and what the writer does to a source location](../../../docs/design/images/m9-rolling-capture-and-redaction.png)
+
+*Left panel is a diagram. Right panel is engine output — `tools/trace/trace_inspect.py` over a
+capture this module wrote, and a crash artefact — pasted verbatim.*
+
+### The rolling buffer, and what triggers a capture (M9)
+
+`capture.h` is the "always-on rolling diagnostic buffer" the specification asks for, and the sentence
+it is built around is *"a profiler SHALL NOT be required to be attached beforehand for a hitch to be
+diagnosable"*. The trace's producers and rings are untouched: the buffer is a CONSUMER, subscribed
+through `TraceConfig::observer`, copying each drained record into a fixed arena and discarding the
+past continuously. `rolling_open()` opens the one trace with **no path**, so the always-on state
+writes no file at all.
+
+A trigger stops the discarding for `post_trigger_ns` and then writes the held window through an
+ordinary `TraceWriter` — so an automatic capture and a manual one are the same format, read by the
+same reader. The declared conditions are a frame, tick or GPU budget (`rolling_note_frame()` and its
+siblings, which also pump `rolling_poll()`), a failed assertion (through the bridge), and a health
+condition transitioning to Critical.
+
+Two kinds of loss, counted separately because they mean different things: `records_aged_out` is the
+buffer working, and `records_overwritten` is the arena too small for the configured window.
+
+### Health, and what the crash artefact carries
+
+`health.h` aggregates the conditions the specification lists into one place readable in every build
+type — and readable from a signal handler, which is why it is a fixed array of relaxed atomics with
+no lock. The crash report now carries `[health]` (what was wrong, at what level, for how long) and
+`[reproduction]` (the artefact that replays the window, and its **fidelity**), and states the
+absence of a reproduction rather than omitting the section.
+
+`reproduction.h` writes the artefact that ties a replay slice, a capture and a crash report
+together. It is a MANIFEST and not a container: this module is layer 0 and `replay-and-rollback` is
+layer 4, so it names the slice rather than holding it. It **refuses** to write an artefact with no
+slice, and one claiming less than exact fidelity with no reason — an artefact that implies a fidelity
+it does not have sends a reader looking for a cause it already knew about.
 
 **Redaction is the writer's**, not the producer's. A producer says what a value *is* by declaring its
 field; the writer decides what may be written by comparing that declaration against the artefact's
@@ -43,6 +108,10 @@ into any artefact. `ExportPolicy` can be tightened and cannot be widened.
 | `crash.h` | the crash artefact and the handler that writes it |
 | `bridge.h` | the two seams `src/core/base/` declares, filled in by this module |
 | `format.h` | the capture's wire format, shared with `tools/trace/trace_inspect.py` |
+| `source.h` | source locations, as classified redactable data rather than as names |
+| `health.h` | the health model: what is wrong, at what level, and since when |
+| `capture.h` | the always-on rolling buffer, and the capture a declared condition triggers |
+| `reproduction.h` | the artefact that links a crash to a replay slice, and states its fidelity |
 
 The emission path, in order: one relaxed load of "is a trace open", one thread-local pointer, one
 monotonic clock read, one bounds check in the producer's own ring, and a `memcpy` of a record it

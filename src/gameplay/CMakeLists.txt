@@ -30,7 +30,12 @@
 # HEADLESS IS A REQUIREMENT, NOT A CONFIGURATION. `gameplay-framework`: "fully functional with no
 # renderer, no audio, no interface, and no GPU ... a gameplay system that requires a camera,
 # viewport, material, or audio device SHALL be a defect." None of those is reachable from this
-# dependency list, so the dedicated server links no rendering code because there is none to link.
+# dependency list — and that sentence used to be the whole of the enforcement, which is to say
+# there was none. `cmake/headless.cmake` now walks the TRANSITIVE link closure at configure time and
+# refuses the build when one becomes reachable, because a requirement guarded by a comment holds
+# only until the next person in a hurry.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/headless.cmake")
+
 cy_add_module(
     NAME cy_gameplay
     LAYER scene
@@ -44,6 +49,7 @@ cy_add_module(
         src/diagnostics.cpp
         src/events.cpp
         src/features.cpp
+        src/firewall_arming.cpp
         src/fragments.cpp
         src/indexes.cpp
         src/interaction.cpp
@@ -57,6 +63,21 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
                         cy::core-values cy::ecs
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
+
+# M9 task 2.2. See src/core/determinism/CMakeLists.txt for the argument, and
+# src/core/determinism/cmake/determinism_profile.cmake for what deleting this line does to the
+# configure. Gameplay is covered because the command stream's ordering and the validation that
+# precedes it are authoritative simulation: a contracted multiply-add inside a rule is a rule that
+# accepts a command on one machine and rejects it on another.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(cy_gameplay PRIVATE -ffp-contract=off)
+elseif(MSVC)
+    target_compile_options(cy_gameplay PRIVATE /fp:precise)
+endif()
+
+cy_declare_determinism_profile(cy_gameplay
+    PROFILE SamePlatform
+    REASON "the command stream and its validation are authoritative; CrossPlatform would need deterministic math types, which this tree does not have")
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
@@ -76,3 +97,18 @@ add_subdirectory(abilities)
 # whole argument is about what is not reachable from here. It depends on cy::gameplay rather than
 # the other way round, so the list above is unchanged. See play/CMakeLists.txt.
 add_subdirectory(play)
+
+# The headless check, deferred to the end of the top-level directory: a target's transitive link
+# closure is only complete once every module in the tree has been declared, so running it here in
+# directory order would check a closure that is not yet the closure.
+#
+# `cy_gameplay_play` is checked as well as `cy_gameplay`: it is the target a dedicated server links
+# to spawn and run a session, so it is the one the requirement's "the dedicated server SHALL link no
+# rendering code" is actually about. `cy_gameplay_abilities` too — abilities are simulation.
+function(cy_gameplay_check_headless)
+    cy_require_headless(cy_gameplay)
+    cy_require_headless(cy_gameplay_abilities)
+    cy_require_headless(cy_gameplay_play)
+endfunction()
+
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gameplay_check_headless)

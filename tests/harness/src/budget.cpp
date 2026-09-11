@@ -8,6 +8,7 @@
 #include <cy/test/test.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,11 @@
 // it has always had, named rather than silently different.
 #else
 #    include <ctime>
+#endif
+
+#if defined(__linux__)
+#    include <fcntl.h>
+#    include <unistd.h>
 #endif
 
 namespace cy::test {
@@ -199,6 +205,109 @@ double budget_scale() {
     return scale;
 }
 
+// --- The third clock: time this thread was RUNNABLE and not running ------------------------------
+//
+// M9 TASK 7.5b. The stall ceiling below is a WALL-CLOCK assertion, and M8.c's closing gate found
+// what that costs: three wall-clock-bound suites each failed once across three full ledger runs
+// under the ledger's own sustained load, and each passed three to five times in isolation on an
+// idle machine. A gate that is red one run in three teaches people to re-run it.
+//
+// `testing-and-quality` already says what the answer is: "Budget enforcement SHALL therefore allow
+// a stated tolerance for machine variance, and a case that exceeds its budget only under load SHALL
+// be reported as a case to reclassify rather than failing the build outright."
+//
+// The CPU half honours that already — CPU time does not grow when a neighbour spins. The STALL half
+// did not, and could not be made to by a tolerance: a case descheduled by forty spinning compilers
+// and a case sleeping on a lock look identical in wall clock. THEY ARE NOT IDENTICAL IN
+// /proc/thread-self/schedstat, whose second field is the nanoseconds this thread spent on a
+// runqueue **wanting a core and not getting one**. Blocking does not accumulate there; preemption
+// does, to the nanosecond — a 50 ms window on a saturated machine measured 50.1 ms wall, 24.2 ms
+// CPU and 27.0 ms of runqueue wait, and the same window on an idle one measured 50.1, 50.1 and 0.
+//
+// So the ceiling is applied to wall clock MINUS contention, which is the time the case could have
+// been running and was not. A sleep is still caught; a busy machine is reported and not failed.
+std::uint64_t contended_now_ns() {
+#if defined(__linux__)
+    // One descriptor per thread, `pread` from offset zero: /proc regenerates the contents on each
+    // read. Measured at 0.67 us per read, so the two reads a case costs are 0.13 % of the unit
+    // tier's budget — small enough that the instrument does not move what it measures.
+    static thread_local int descriptor =
+        ::open("/proc/thread-self/schedstat", O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) {
+        return 0;
+    }
+    char buffer[96];
+    const ::ssize_t got = ::pread(descriptor, buffer, sizeof(buffer) - 1, 0);
+    if (got <= 0) {
+        return 0;
+    }
+    buffer[static_cast<std::size_t>(got)] = '\0';
+    // "run_time wait_time timeslices", three integers. `strtoull` rather than `sscanf` because the
+    // latter cannot report a conversion failure, and a field this reads as zero would silently
+    // excuse every stall rather than none.
+    char* after_running = nullptr;
+    const unsigned long long running = std::strtoull(buffer, &after_running, 10);
+    if (after_running == buffer) {
+        return 0;
+    }
+    (void)running;
+    char* after_waiting = nullptr;
+    const unsigned long long waiting = std::strtoull(after_running, &after_waiting, 10);
+    if (after_waiting == after_running) {
+        return 0;
+    }
+    return static_cast<std::uint64_t>(waiting);
+#else
+    return 0;
+#endif
+}
+
+/// How many cases this binary excused as contended. A counter rather than a flag, so a suite that
+/// is contended every run is visible as a number rather than as one line lost in the output.
+std::atomic<std::uint64_t> contended_cases_{0};
+
+/// THE DECISION, AS A PURE FUNCTION OF THREE NUMBERS, so that it can be tested without a machine
+/// in a particular state. The empirical half — that runqueue wait actually moves under load and
+/// does not move while blocking — is asserted separately, in `tests/integration/` and
+/// `tests/unit/harness/` respectively; this is the arithmetic those two measurements feed.
+///
+/// THE WALL CLOCK IS OVER THE CEILING in both of the interesting cases, and they are different
+/// things: a case that WAITED — a sleep, a blocking read, a lock, a thread it joined — and a case
+/// that was simply not given a core while forty other processes wanted one. Only the first is a
+/// property of the test. Subtract the time the case spent runnable-and-not-running and what is left
+/// is the time it could have been working.
+StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long contended_ns,
+                           unsigned long long ceiling_ns) noexcept {
+    if (ceiling_ns == 0 || wall_ns <= ceiling_ns) {
+        return StallVerdict::Fine;
+    }
+    const unsigned long long attributable = wall_ns > contended_ns ? wall_ns - contended_ns : 0;
+    return attributable <= ceiling_ns ? StallVerdict::Contended : StallVerdict::Stalled;
+}
+
+unsigned long long contended_ns() noexcept {
+    return contended_now_ns();
+}
+
+bool budget_measures_contention() noexcept {
+#if defined(__linux__)
+    // Not "this is Linux": CONFIG_SCHEDSTATS can be off, and /proc can be absent in a container.
+    // The harness states which instrument it has rather than assuming one, as it does for the CPU
+    // clock, so a test asserting about contention asserts about something that exists.
+    static const bool available = []() noexcept {
+        const int descriptor = ::open("/proc/thread-self/schedstat", O_RDONLY | O_CLOEXEC);
+        if (descriptor < 0) {
+            return false;
+        }
+        ::close(descriptor);
+        return true;
+    }();
+    return available;
+#else
+    return false;
+#endif
+}
+
 bool budget_measures_cpu_time() noexcept {
     return kHaveCpuClock;
 }
@@ -237,6 +346,7 @@ BudgetGuard::BudgetGuard(const char* name, unsigned long long budget_ns, const c
       file_(file),
       line_(line),
       budget_ns_(scaled_budget(budget_ns)),
+      started_contended_ns_(contended_now_ns()),
       started_cpu_ns_(cpu_now_ns()),
       started_wall_ns_(steady_now_ns()) {}
 
@@ -244,8 +354,9 @@ BudgetGuard::~BudgetGuard() {
     if (budget_ns_ == 0) {
         return;
     }
-    const std::uint64_t cpu_ns = cpu_now_ns() - started_cpu_ns_;
     const std::uint64_t wall_ns = steady_now_ns() - started_wall_ns_;
+    const std::uint64_t cpu_ns = cpu_now_ns() - started_cpu_ns_;
+    const std::uint64_t contended = contended_now_ns() - started_contended_ns_;
 
     char message[640];
     if (cpu_ns > budget_ns_) {
@@ -265,19 +376,45 @@ BudgetGuard::~BudgetGuard() {
     }
 
     const unsigned long long ceiling = stall_ceiling(budget_ns_);
-    if (!kHaveCpuClock || wall_ns <= ceiling) {
+    const StallVerdict verdict =
+        kHaveCpuClock ? stall_verdict(wall_ns, contended, ceiling) : StallVerdict::Fine;
+    if (verdict == StallVerdict::Fine) {
         return;
     }
+
+    if (verdict == StallVerdict::Contended) {
+        ++contended_cases_;
+        // REPORTED, NOT FAILED, and `testing-and-quality` asks for exactly that: "a case that
+        // exceeds its budget only under load SHALL be reported as a case to reclassify rather than
+        // failing the build outright". stderr rather than a check failure, so that `ctest
+        // --output-on-failure` shows it beside a real failure and a green run stays green.
+        std::fprintf(stderr,
+                     "cy::test: contended: '%s' held the suite for %.3f ms of wall clock against a "
+                     "ceiling of %.3f ms, of which %.3f ms was spent waiting for a core on a busy "
+                     "machine and %.3f ms was CPU. Reported rather than failed: the machine was "
+                     "loaded, not the case. Run it on an idle machine to see its own figure.\n",
+                     name_, static_cast<double>(wall_ns) / 1e6, static_cast<double>(ceiling) / 1e6,
+                     static_cast<double>(contended) / 1e6, static_cast<double>(cpu_ns) / 1e6);
+        return;
+    }
+
     std::snprintf(
         message, sizeof(message),
         "stalled: '%s' held the suite for %.3f ms of wall clock (%llu ns) while spending %.3f ms "
-        "of CPU, against a ceiling of %.3f ms — %llux its budget. A case within its budget that "
-        "takes this long is waiting rather than working: a sleep, a blocking read, a lock, or a "
-        "thread it joined. `testing-and-quality` places any of those in tests/integration/ or "
-        "above. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
+        "of CPU and %.3f ms waiting for a core, against a ceiling of %.3f ms — %llux its budget. A "
+        "case within its budget that takes this long is waiting rather than working: a sleep, a "
+        "blocking read, a lock, or a thread it joined. `testing-and-quality` places any of those "
+        "in "
+        "tests/integration/ or above. Contention is already subtracted, so this is the case's own "
+        "time. Set CY_TEST_BUDGET_SCALE to relax both limits for one run.",
         name_, static_cast<double>(wall_ns) / 1e6, static_cast<unsigned long long>(wall_ns),
-        static_cast<double>(cpu_ns) / 1e6, static_cast<double>(ceiling) / 1e6, kStallMultiplier);
+        static_cast<double>(cpu_ns) / 1e6, static_cast<double>(contended) / 1e6,
+        static_cast<double>(ceiling) / 1e6, kStallMultiplier);
     DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
+}
+
+unsigned long long contended_cases() noexcept {
+    return contended_cases_;
 }
 
 }  // namespace cy::test

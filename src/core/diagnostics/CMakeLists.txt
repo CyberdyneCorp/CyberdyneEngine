@@ -27,10 +27,14 @@ cy_add_module(
     SOURCES
         src/breadcrumb.cpp
         src/bridge.cpp
+        src/capture.cpp
         src/crash_report.cpp
+        src/health.cpp
         src/log.cpp
         src/names.cpp
         src/registry.cpp
+        src/reproduction.cpp
+        src/source.cpp
         src/trace.cpp
         src/tracy_sink.cpp
         src/writer.cpp
@@ -40,6 +44,13 @@ cy_add_module(
     PRIVATE_DEFINITIONS
         CY_DIAG_ENGINE_VERSION="${PROJECT_VERSION}"
         CY_DIAG_BUILD_CONFIGURATION="$<CONFIG>"
+        # The tree this build was configured from. `sanitise_source_path()` strips it so a location
+        # is reported relative to the repository, and an absolute path that belongs to no root loses
+        # everything but its final component whatever the compiler did. `-fmacro-prefix-map` in
+        # cmake/compilers.cmake remains, and remains a MITIGATION: it is absent on MSVC and absent
+        # from every translation unit a plugin compiles for itself, and the specification says the
+        # mechanism may not depend on it.
+        CY_DIAG_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
     PUBLIC_DEPENDENCIES cy::core-base
     PRIVATE_DEPENDENCIES ${cy_diagnostics_dependencies})
 

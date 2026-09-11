@@ -4,6 +4,7 @@
 #include "platform_bits.h"
 
 #include <cy/core/diagnostics/log.h>
+#include <cy/core/diagnostics/source.h>
 
 #include <chrono>
 #include <cstring>
@@ -241,9 +242,18 @@ void TraceWriter::report_to_console(const RecordHeader& header, const RecordBody
         return;
     }
     const char* message = lookup_name(header.name);
-    const char* site = lookup_name(static_cast<NameId>(body.b));
-    std::fprintf(stderr, "%-7s %s %s", log_level_name(level), (message != nullptr) ? message : "?",
-                 (site != nullptr) ? site : "");
+    // The console is presentation, and presentation is subject to the same rule: the path is
+    // sanitised before it is printed, so a developer watching standard error sees what the artefact
+    // would carry rather than something the artefact is not allowed to hold.
+    char site[kMaxSourcePathBytes] = {};
+    u32 site_line = 0;
+    SourceLocation location{};
+    if (lookup_source_location(static_cast<LocationId>(body.b), location)) {
+        (void)sanitise_source_path(location.file, site, sizeof(site), nullptr);
+        site_line = location.line;
+    }
+    std::fprintf(stderr, "%-7s %s %s:%u", log_level_name(level),
+                 (message != nullptr) ? message : "?", site, site_line);
     for (u32 index = 0; index < field_count; ++index) {
         FieldInfo info{};
         if (!lookup_field(fields[index].field, info)) {
@@ -302,6 +312,41 @@ void TraceWriter::write_metadata_chunk() noexcept {
         append_bytes(payload, &type, 1);
         append_bytes(payload, &privacy, 1);
         append_string(payload, info.name);
+    }
+
+    // The source-location table. It is written here, under the artefact's policy, because that is
+    // the only place both rules can be applied: the path is sanitised so no absolute path from a
+    // build machine reaches any artefact whatever compiled the translation unit, and the sanitised
+    // remainder is then subject to the declared ceiling like every other classified value. An entry
+    // the policy removes keeps its id and its line and loses its path, so the gap is visible.
+    const u32 locations = source_location_count();
+    location_redactions_ = 0;
+    location_sanitisations_ = 0;
+    append_u32(payload, locations);
+    for (u32 id = 1; id <= locations; ++id) {
+        SourceLocation location{};
+        (void)lookup_source_location(id, location);
+        append_u32(payload, id);
+        append_u32(payload, location.line);
+        const u8 privacy = static_cast<u8>(location.privacy);
+        append_bytes(payload, &privacy, 1);
+
+        char sanitised[kMaxSourcePathBytes];
+        u32 length = 0;
+        const PathForm form =
+            sanitise_source_path(location.file, sanitised, sizeof(sanitised), &length);
+        if (form == PathForm::Basename) {
+            ++location_sanitisations_;
+        }
+        const bool admitted = policy_.allows(location.privacy);
+        if (!admitted) {
+            ++location_redactions_;
+        }
+        const u8 removed = admitted ? 0u : 1u;
+        append_bytes(payload, &removed, 1);
+        const u16 pad = 0;
+        append_bytes(payload, &pad, sizeof(pad));
+        append_string(payload, admitted ? sanitised : "");
     }
 
     const char* identity[][2] = {
@@ -369,6 +414,16 @@ Expected<TraceStats, cy::Error> TraceWriter::close() noexcept {
         return fail(ErrorCode::Unavailable, "the trace is not open");
     }
     write_metadata_chunk();
+    // A location the policy removed is a redaction like any other, and it is added here rather than
+    // inside the metadata writer because that writer also runs at open, where counting it would
+    // count it twice.
+    stats_.redacted_fields += location_redactions_;
+    // A path the writer had to reduce is a DIFFERENT event from one the policy removed: the first
+    // says the toolchain handed the process an absolute path, the second says the artefact was not
+    // allowed to carry it. Conflating them would hide how often the mechanism is doing the work a
+    // prefix-mapping compiler would otherwise have done.
+    record_loss(0, Channel::Critical, format::LossReason::SourcePathSanitised,
+                location_sanitisations_);
     // What the policy removed, and what the fixed-capacity tables refused, recorded in the artefact
     // rather than only in the process that wrote it.
     record_loss(0, Channel::Critical, format::LossReason::PolicyRedaction, stats_.redacted_fields);

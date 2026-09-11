@@ -10,6 +10,49 @@
 # upload — is `uses:` steps and job configuration, which wrap the recipes rather than replacing
 # them.
 #
+# --------------------------------------------------------------------------------------------------
+# M9's CLOSING GATE: THIS FILE HAD NEVER PRODUCED A GREEN RUN, AND THE REASON WAS FOUR APT PACKAGES.
+#
+# `gh run list` over the whole life of the repository — sixty-three runs, M0's first commit to M8.c's
+# last — returns `cancelled` or `queued` for every single one, and NOT ONE successful run. The most
+# recent push run is the record: three jobs green (`spec validation`, `editor linux`,
+# `roadmap-status`), ten red, twelve cancelled when the next push superseded them, and `milestone —
+# the closed milestones' exit criteria` has never started at all.
+#
+# Every Linux job died at the same line, at CONFIGURE, before compiling anything:
+#
+#     CMake Error at build/dev/_deps/sdl3-src/cmake/macros.cmake:433 (message):
+#       Couldn't find dependency package for XCURSOR.  Please install the needed packages
+#       or configure with -DSDL_X11_XCURSOR=OFF
+#
+# The step above installed `libx11-dev libxext-dev libwayland-dev libxkbcommon-dev`. README.md's own
+# "System libraries SDL3 builds against" list — the one a human is told to run on a fresh clone —
+# names `libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev` beside them, and cmake/dependencies.cmake
+# explains exactly why those four and no more: "What stays on is what DisplayServer needs — Xcursor,
+# Xrandr for screen enumeration, Xfixes and XInput2 for input", with XScrnSaver and XTest forced OFF.
+# So the workflow asked for a subset of the documented dependency set and SDL3 refused to configure,
+# on every Linux leg, on every run, since M0.
+#
+# THE CONSEQUENCE IS NOT THE PACKAGES. `delivery-roadmap` permits M9's audit to be reduced only if
+# "continuous integration has actually executed, so that cross-platform and cross-configuration
+# claims are verified by something other than an agent's reasoning". It has not executed, so M9's
+# gate ran the audit IN FULL and says so. Every criterion in this repository carrying `where = "ci"`
+# — M3's `three-platforms`, M5.5's `editor-three-platforms`, M9's `lockstep-cross-platform` — defers
+# its question to this file, and this file has never answered one.
+#
+# WHAT IS FIXED HERE AND WHAT IS NOT. The package list is fixed, and `tools/ci/check_workflows.py`
+# now fails when it drifts from README.md's documented list again. THREE OTHER FAILURES ARE RECORDED
+# AND NOT FIXED, because this host cannot run either operating system and a blind edit to a leg
+# nobody can execute is how this list got wrong in the first place:
+#   * `build windows-x86_64` / `windows-arm64`: swift-actions/setup-swift@v2 reports
+#     `Version "6.0" is not available` on the Windows images, while the Linux and macOS legs accept
+#     the same input.
+#   * `editor macos`: `mapfile: command not found` — the macOS image's bash is 3.2 and the recipe
+#     uses a bash 4 builtin.
+#   * `editor windows`: `rustfmt refused the generated src/generated/mod.rs`.
+# Each is a one-line finding with a named cause and none of them is verifiable from this machine.
+# --------------------------------------------------------------------------------------------------
+#
 # The gate set is declared once, as data, in tools/roadmap/gates.toml — `just roadmap-gates` prints
 # it. The jobs below are that list arranged into jobs: build, test, sanitizers and throughput,
 # quality, spec validation, generated-code currency, identity and reflection, the non-default
@@ -133,7 +176,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
@@ -191,7 +234,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - name: Install the generator
         if: runner.os == 'macOS'
         run: brew install ninja
@@ -241,7 +284,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # ThreadSanitizer first: it is the one the specification names, and running it before the
       # slower combined pass means a race is reported early rather than after two builds.
       - name: Data races over the job suite (TSan)
@@ -301,7 +344,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # Each sanitizer gets its own tree, which the recipe arranges; TSan cannot be combined with
       # ASan, so this is three builds rather than two. They are separate steps so that a failure
       # names the tool that found it in the step list rather than only in the log.
@@ -336,7 +379,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -397,7 +440,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -450,7 +493,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # swiftly writes its environment line to ~/.profile, which only login shells read — which is
       # why bindings/swift/tools/cy_swift_module.py sources it explicitly on every invocation rather
       # than trusting PATH. `just env-doctor` diagnoses the same case for a developer.
@@ -580,7 +623,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -634,7 +677,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - uses: actions/cache@v4
         with:
           path: build/dev
@@ -711,7 +754,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - name: The toolchain the editor declares
         run: just build-editor-toolchain
       - uses: actions/cache@v4
@@ -775,7 +818,7 @@ jobs:
       - name: Install the window-system headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # THE THIRD JOB THAT INSTALLS SWIFT, AND THE REASON IS THE LINT GATE'S INPUT.
       # `just quality-lint` runs clang-tidy against compile_commands.json, and without a Swift
       # toolchain samples/04-character/ and bindings/swift/ never declare their targets — so four
@@ -834,7 +877,7 @@ jobs:
       - name: Install the generator and the window-system headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # The reflection generator parses annotated C++ with a real frontend, so this job — the one
       # that asserts generated output is current and reproducible — is the one that must have it.
       # Without these two packages `just generate-check` fails naming them, which is the generator
@@ -887,7 +930,7 @@ jobs:
       - name: Install the generator and the window-system headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - name: Install the reflection generator's frontend
         run: |
           sudo apt-get install -y libclang1-18
@@ -934,7 +977,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       # THE SECOND JOB THAT INSTALLS SWIFT, AND M4'S GATE IS WHY. Without a toolchain,
       # bindings/swift/ and samples/04-character/ do not register their suites at all — so this job
       # was reporting three profiles green with the milestone's own artefact absent from the tree,
@@ -993,7 +1036,11 @@ jobs:
   # not run green, over `m1:four-profiles` — and it moved afterwards, once the per-case budget was
   # normalised against a reference workload and Debug went from sixteen failures to 57/57.
   #
-  # IT SAYS `m8b` NOW, AND THAT EDIT LANDED IN THE SAME CHANGE THAT SET `milestone-m8b` GREEN in
+  # IT SAYS `m9` NOW, AND THAT EDIT LANDED IN THE SAME CHANGE THAT SET `milestone-m9` GREEN in
+  # tools/roadmap/gates.toml (task 7.4), which is why the paragraph below still says `m8b`: it is the
+  # record of the edit that established the rule, and the rule has been applied at every milestone
+  # since. M9 adds forty-nine criteria of which one, `lockstep-cross-platform`, carries
+  # `where = "ci"` — and THIS IS THE JOB IT DEFERS TO, which had never run once when M9's gate looked.
   # tools/roadmap/gates.toml. The two move together or not at all: `tools/ci/check_workflows.py`
   # fails when a green milestone gate sits above the newest ledger any workflow evaluates, and
   # `just roadmap-test` fails when an archived milestone's gate is still `joins-on-close`. What this
@@ -1035,7 +1082,7 @@ jobs:
       - name: Install the generator and the window-system headers SDL3 builds against
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: '6.0'
@@ -1044,7 +1091,7 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m8c --ci
+        run: just roadmap-milestone m9 --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

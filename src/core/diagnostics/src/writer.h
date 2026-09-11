@@ -91,6 +91,10 @@ private:
     std::vector<u8> scratch_;
     std::vector<format::FieldRecord> kept_;
     u32 current_thread_ = 0;
+    /// Set by write_metadata_chunk(), consumed by close(). Locations whose path the policy removed,
+    /// and locations whose path was absolute and had to be reduced to its final component.
+    u64 location_redactions_ = 0;
+    u64 location_sanitisations_ = 0;
     u64 chunk_first_timestamp_ = 0;
     u64 chunk_last_timestamp_ = 0;
     bool write_failed_ = false;

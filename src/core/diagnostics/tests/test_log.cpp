@@ -91,13 +91,14 @@ int main() {
     CY_CHECK_EQ(rejections_for_peer_17, 2u, "the query runs over typed fields");
 
     // A log is a record on the same timeline: the severity is the record's own payload, and the
-    // source location resolves through the same name table an event name does.
+    // source location resolves through the LOCATION table — its own, classified, sanitised table,
+    // never the name table. See src/core/diagnostics/source.h and test_source_privacy.cpp.
     bool level_and_site = false;
     for (const auto& record : capture.records) {
         if (static_cast<EventKind>(record.kind) == EventKind::Log &&
             capture.name_of(record.name) == "peer.lost") {
             level_and_site = record.a == static_cast<u64>(LogLevel::Error) &&
-                             capture.name_of(static_cast<u32>(record.b)).find("test_log.cpp") !=
+                             capture.location_of(static_cast<u32>(record.b)).find("test_log.cpp") !=
                                  std::string::npos;
         }
     }

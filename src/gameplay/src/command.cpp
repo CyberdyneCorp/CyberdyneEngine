@@ -240,6 +240,18 @@ void CommandStream::commit(const GameplayContext& context, u64 tick) noexcept {
                 continue;
             }
             (void)log_.append(command);
+
+            // THE SEAM, AND IT IS HERE RATHER THAN ANYWHERE ELSE. One call per committed command,
+            // immediately after the in-memory log takes it, so the two cannot disagree about what
+            // was recorded or in what order. Not before validation — a rejected command is not part
+            // of the record, and a replay that re-ran rejected commands would depend on the
+            // rejection reproducing identically, which is a second determinism obligation for no
+            // benefit. Not after the loop — the merge order is the record's order, and a second
+            // pass would be a second place that order is decided.
+            if (sink_.fn != nullptr) {
+                sink_.fn(sink_.user, command);
+            }
+            ++records_emitted_;
         }
         buffer.clear();
     }

@@ -7,11 +7,15 @@ design.md §5 says what Seed means, and it is worth restating before anything be
 
 > Seed here means *the shape is right and the hooks exist*, not that anything is validated.
 
-**Nothing in this module validates anything.** The determinism profiles, the validator, the chaos
-scheduler, the divergence capture and the determinism lint are M9's, and none of them is here. What
-is here is the vocabulary everything from M3 to M8 will be written against, which is why it lands
-before there is anything to validate: a classification retrofitted onto components that already
-exist is a classification nobody applies.
+**At M2 nothing in this module validated anything**, and that was the point: what landed first was
+the vocabulary everything from M3 to M8 would be written against, because a classification
+retrofitted onto components that already exist is a classification nobody applies.
+
+**M9 added the half that validates.** `profile.h` is the contract and the refusal, `fp_policy.h` is
+the floating-point policy the milestone's spike measured, `codec.h` is the generated codecs,
+`validator.h` is the divergence localiser and the chaos harness, and `lint/determinism_lint.py` is
+the static half. The four claims below are M2's and still hold; §5 onwards is M9's and says what the
+new files promise and — as carefully — what they do not.
 
 | File | Task | What it owns |
 |---|---|---|
@@ -21,9 +25,15 @@ exist is a classification nobody applies.
 | `random.h` | 4.2.4 | `StreamId`, `RandomStream`, `RandomSource`, `SampleCursor` |
 | `classification.h` | 4.2.5 | `SimulationClass`, `Classified<>`, the firewall, `ExternalResult` |
 | `state_schema.h` | 4.2.5/6 | `StateSchema` — what participates in the hash, **declared** |
-| `hash.h` | 4.2.6 | `StateHashTree`, `Divergence`, `HashSchedule` |
+| `hash.h` | 4.2.6, M9 2.5 | `StateHashTree`, `Divergence`, `HashSchedule`. M9 added `Divergence::missing_*`: a shape mismatch now names the child that has no peer, which the path cannot, because the deepest node the two trees share is that child's *parent*. |
 | `provider.h` | 4.2.6 | `StateProvider`, `StateProviderRegistry` |
 | `ordering.h` | 4.2.7 | `Ordering`, `select_best`, `sort_by_key` |
+| `profile.h` | M9 2.1/2.2 | `DeterminismProfile`, `BuildConfiguration`, the configuration-time refusal, `NonFiniteGuard` |
+| `fp_policy.h` | M9 2.3 | The measured `<cmath>` table, `is_permitted_under`, `ulp_distance`, and twelve replacements |
+| `codec.h` | M9 2.4 | `StateCodec` — one compiled plan per subject per purpose |
+| `validator.h` | M9 2.5 | `TickHashComparison`, `localise`, `chaos_conditions`, `validate_scenario` |
+| `cmake/determinism_profile.cmake` | M9 2.2 | `cy_declare_determinism_profile()` — the configure-time refusal |
+| `lint/determinism_lint.py` | M9 2.6 | The determinism lint: five source rules and the build half |
 
 The walk that binds the hash to an `ecs::World` is **not here** — layer 0 cannot name an entity. It
 is `src/runtime/state_hash.h`, at layer 5.
@@ -148,3 +158,148 @@ the shape M9 will want.
   declaration a query carries so the scheduler and the validator can read it; enforcing it is the
   chaos scheduler's and the lint's. What `select_best` does enforce is that there is no overload
   without a tie-break.
+
+---
+
+## M9: the half that validates
+
+### 5. A determinism profile is a build-configuration contract, not only a source contract
+
+This is M9's spike finding and it is the reason `profile.h` has a `BuildConfiguration` in it.
+`openspec/changes/implement-m9-integrity/design.md` §1.2, measured over forty builds:
+
+* The engine's own primitives agree bit-for-bit between clang 18 and GCC 13 at `-O0`, `-O1`, `-O2`
+  and `-O3 -flto` — in eighteen of the spike's twenty configurations.
+* The two that disagree are `-march=native` with contraction left at the compiler's default. 13 of
+  16 workloads move, the two compilers disagree with *each other* in 8 of them, and **231 of 267
+  values move in the `state_hash` workload** — the number a lockstep session compares.
+* They agree today only because the engine targets baseline x86-64, which has no fused multiply-add
+  for the default setting to use. `src/core/math/tests/CMakeLists.txt` already anticipates
+  `-march=x86-64-v3` in as many words.
+
+So two builds of identical source, differing only in `-march` and a contraction flag, produce
+different state hashes. The refusal is therefore in two places, at two moments:
+
+| Moment | Mechanism | What it refuses |
+|---|---|---|
+| CMake configure | `cy_declare_determinism_profile()` | a covered module compiled without `-ffp-contract=off`, or with fast-math |
+| Session configuration | `DeterminismConfiguration::require()` | a subsystem that guarantees less than the session needs, a build whose flags make the profile unachievable, and `CrossPlatform`/`Lockstep` outright |
+
+**The function does not add the flag for you.** It requires the module to have added it and fails if
+it has not, because a function that quietly fixed the flag would be a check that can never fail.
+Deleting `target_compile_options(cy_gameplay PRIVATE -ffp-contract=off)` and reconfiguring:
+
+```
+$ cmake -S . -B build/command-log
+CMake Error at src/core/determinism/cmake/determinism_profile.cmake (message):
+  Determinism profile refused at configuration.
+
+    Module    : cy_gameplay
+    Declares  : SamePlatform — the command stream and its validation are authoritative;
+                CrossPlatform would need deterministic math types, which this tree does not have
+    Guarantee : floating-point contraction off
+    Missing   : -ffp-contract=off on this target's COMPILE_OPTIONS
+    M9's spike measured two builds of identical source, differing only in -march and this
+    flag, producing different state hashes: 231 of 267 values moved in the state_hash
+    workload. See openspec/changes/implement-m9-integrity/design.md section 1.2.
+Call Stack (most recent call first):
+  src/core/determinism/cmake/determinism_profile.cmake:109 (cy_determinism_verify_profiles)
+  CMakeLists.txt:DEFERRED
+
+-- Configuring incomplete, errors occurred!    (exit 1)
+```
+
+### 6. `CrossPlatform` is refused, and that is the honest answer rather than a gap
+
+`simulation-and-determinism` requires the `CrossPlatform` and `Lockstep` profiles to use
+**deterministic math types** — fixed-point scalars and polynomial approximations — "provided as an
+optional module". **This tree has no such module.** `require()` therefore refuses both profiles
+outright with `ProfileRefusal::DeterministicMathMissing`, and `test_profile.cpp` asserts it, so the
+day somebody adds a flag that makes the refusal go away, a test goes red and asks why.
+
+`docs/roadmap/status.yaml` must not record `simulation-and-determinism` as claiming
+cross-architecture determinism until a run has compared two architectures. **Nothing in this tree
+has done so**: this host has one architecture and one operating system, and the second exists only
+in the CI matrix.
+
+### 7. Thirteen `<cmath>` functions are forbidden, and twelve have a replacement
+
+The spike measured thirty-eight functions three ways. Three groups came out of it and `fp_policy.h`
+is that table:
+
+* **Exact by IEEE-754**: `sqrt fabs floor ceil trunc round nearbyint fma fmod remainder copysign`.
+  Permitted under every profile.
+* **Correctly rounded in glibc 2.39 on x86-64**: `exp exp2 log log2 sin cos tan atan tanh erf pow`.
+  Zero error against a wider-precision reference on every sample point — which is a statement about
+  *this libm*, so they are permitted under `SamePlatform` and refused under `CrossPlatform`.
+* **Not correctly rounded here, and the compiler changes their value when it folds them**:
+  `acos acosh asin asinh atan2 atanh cbrt cosh expm1 log10 log1p sinh tgamma`. Forbidden above
+  `ReplayStable`.
+
+`cy::determinism::fp` ships twelve of the thirteen, each built **only** from the first two groups.
+That buys one property: whether the compiler evaluates the expression itself or leaves it to run
+time, it is evaluating operations that have a unique right answer on this platform — so `fp::acos(k)`
+is the same value at `-O0` and `-O3`, which `std::acos(k)` measurably is not. `tgamma` has no
+replacement on purpose: it is forbidden because it was measured wrong, not because a simulation
+needs it, and shipping a Lanczos approximation nobody calls would be code with no caller to keep it
+honest.
+
+**It is not a cross-platform claim.** A different libm may round `exp` differently and every
+function here would move with it.
+
+### 8. The lint has two jobs, and the second one is the spike's finding
+
+`lint/determinism_lint.py`. The source half is the five rules the requirement names — wall-clock
+reads, ambient generators, unordered iteration used as a decision order, presentation reads, and
+floating-point operations the profile disallows. The build half asserts that every module declaring
+a profile was **compiled** with contraction off, reading `determinism-profiles.txt` (written by the
+CMake function) and `compile_commands.json` (written by CMake). Neither is a list the script
+maintains, so neither can drift away from what was built.
+
+**Coverage is a number, not a sentence.** `--report-coverage` prints how many of the built targets
+declare a profile. The denominator moves as the tree grows, which is the point — it is a reading
+taken on every run rather than a figure anyone maintains. At the time of writing:
+
+```
+determinism-lint: 5 of 401 built targets declare a determinism profile; 44 translation units examined.
+determinism-lint: covered targets: cy_core_determinism, cy_gameplay, cy_replay,
+                  cy_test_integration_determinism_scale, cy_test_unit_determinism
+determinism-lint: NOT a finding — an undeclared module has claimed nothing, so there is nothing for
+                  it to fail. The ratio is the gap, and it is a number rather than a sentence.
+determinism-lint: no findings over 44 translation units in 5 covered targets.
+```
+
+An undeclared module is deliberately **not** a finding: it has claimed nothing, so it cannot fail a
+claim. What it is, is uncovered — and the ratio says so on every run. Extending the coverage means
+adding `-ffp-contract=off` and a declaration to modules this phase does not own (`src/physics/`,
+`src/animation/`, `src/navigation/`, `src/ecs/`), which is a change those directories' owners make.
+
+**Both halves are proved able to fail.** `--selftest` writes one fixture per rule and fails if the
+rule did not fire, plus a clean fixture that must stay silent and an exemption that must apply to its
+own rule and to no other; it is registered as `integration.determinism_lint_selftest`. The build
+half was run against a flag nothing carries:
+
+```
+$ python3 src/core/determinism/lint/determinism_lint.py --root . --build build/command-log \
+      --contraction-flag='-ffp-contract=on'
+src/replay/src/record.cpp:0: [contraction] target 'cy_replay' declares determinism profile
+    SamePlatform but was compiled without -ffp-contract=on
+... 44 finding(s), severity error.   (exit 1)
+```
+
+Exemptions are **per rule and per file**, three of them, each naming the file whose *subject* is the
+rule it breaks. A whole-file exemption is how a lint grows an unexamined corner; the selftest
+asserts that an exemption for one rule does not silence another.
+
+### 9. What the M9 files still do not do
+
+* **The chaos harness does not schedule anything.** `ExecutionConditions` is a *description* a
+  scenario is obliged to honour, and `validate_scenario()` refuses a set that varies none of the
+  four dimensions — because a pass over identical conditions proves the scenario is a function, not
+  that it is order-independent. Wiring it to `cy::jobs`' deterministic mode is the runtime's.
+* **`localise()` names a field, not a system.** Attributing a write to a *system* needs a per-write
+  attribution the ECS does not record, and inventing one here would be a second mechanism beside the
+  firewall.
+* **`StateCodec` is a compiled plan, not emitted code.** The requirement is that the hot path
+  consults no metadata, and `test_codec.cpp` checks exactly that by destroying the schema before
+  using the codec.

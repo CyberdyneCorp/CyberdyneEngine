@@ -1026,6 +1026,42 @@ milestone = "m8c"
 state = "green"
 
 
+# --- The gate M9 — Integrity adds -----------------------------------------------------------------
+#
+# Task 7.1. ONE new gate, and the criteria M9 declares point their `ci_job` at it rather than
+# inventing forty more permanent gates whose jobs belong to `.github/workflows/ci.yml` — the same
+# arithmetic M7's, M8.a's, M8.b's and M8.c's ledgers recorded.
+#
+# `state = "green"`, AND IT WAS `"joins-on-close"` UNTIL THE CLOSING GATE RAN. `tools/ci/check_workflows.py`
+# refuses to see the two edits apart: the moment this line says `green`, `just ci-check` goes red
+# until ci.yml's `milestone` job moves to `m9`. Those two edits belong to the same change, that
+# change is task 7.4's, and both were made once `just roadmap-milestone m9` had been run end to end
+# on the tree it closes. Flipping it first would have shipped a red gate with no matching workflow,
+# which is the sibling of the forbidden pattern this file's own header names.
+#
+# AND ONE THING THE CLOSING GATE FOUND WHILE MAKING THAT EDIT, recorded here because this is the
+# file that says what the permanent set is: the `milestone` job in ci.yml — the one that runs this
+# gate — HAS NEVER EXECUTED. Sixty-three runs since M0, not one of them green, every Linux leg dead
+# at an SDL3 configure that wanted four apt packages the workflow never installed. The packages are
+# fixed in the same change; the fact that a green gate here has been evaluated by nothing but a
+# developer's machine for nine milestones is recorded in ci.yml's own header and in M9's report.
+#
+# WHAT IT EVALUATES. `just roadmap-milestone m9` runs the permanent set once — every green
+# milestone gate's criteria, merged and deduplicated — and then M9's own forty-seven, three of which
+# are DECLARED GAPS that run, fail, print the rung that must close them, and do not hold this gate
+# red. `tools/roadmap/milestones/m9.toml` argues each one.
+
+[[gate]]
+id = "milestone-m9"
+describe = "M9 — Integrity: the exit criteria of the milestone that made the engine's state defensible — determinism profiles refused at CONFIGURATION rather than diagnosed later, one command log read five ways, the side-effect ledger that stops a rollback playing the explosion twice, three network modes over a reliability layer both transports share, and a four-player session under real packet loss that is recorded, replayed bit-exactly, diverged on purpose and narrowed to one field on one entity."
+runs = ["just roadmap-milestone m9"]
+platforms = ["linux", "windows", "macos"]
+since = "m9"
+class = "milestone"
+milestone = "m9"
+state = "green"
+
+
 # --- Recorded overrides ---------------------------------------------------------------------------
 #
 # None. The shape one takes, when one is unavoidable:

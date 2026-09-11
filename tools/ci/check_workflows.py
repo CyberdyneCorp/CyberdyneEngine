@@ -353,6 +353,76 @@ def pin_drift(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
     return problems
 
 
+# The documented Linux dependency set, and the check M9's closing gate had to write.
+#
+# SIXTY-THREE CI RUNS, NOT ONE OF THEM GREEN, AND THE CAUSE WAS FOUR PACKAGES. Every Linux job in
+# ci.yml died at CONFIGURE — "Couldn't find dependency package for XCURSOR" — because the workflow
+# installed `libx11-dev libxext-dev libwayland-dev libxkbcommon-dev` while README.md's own "System
+# libraries SDL3 builds against" list, the one a human runs on a fresh clone, also names
+# `libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev`. `cmake/dependencies.cmake` says which X11
+# extensions the engine keeps on and why; SDL3 refuses to configure when one of them has no header.
+#
+# So the invariant is: THE RUNNER GETS WHAT THE DEVELOPER IS TOLD TO INSTALL. Compared over the X11
+# packages only, which are the ones SDL3 turns into a hard configure failure — an audio or IME
+# package that is missing degrades a feature, an X11 one stops the build.
+README_APT = re.compile(r"^sudo apt(?:-get)? install -y (?P<packages>.+?)$", re.MULTILINE)
+X11_PACKAGE = re.compile(r"^libx[a-z0-9.-]*-dev$")
+# The one paragraph of README.md this compares against. Named by its own comment rather than by
+# position, so that inserting a section above it does not silently change what is checked — and so
+# that the Swift toolchain's apt line, which also installs a `libx*-dev` (libxml2-dev, which has
+# nothing to do with X11), is not mistaken for it.
+README_SECTION = "# System libraries SDL3 builds against"
+
+
+def _packages(text: str) -> set[str]:
+    """Every package named by an apt install line, continuations included."""
+    found: set[str] = set()
+    for line in text.replace("\\\n", " ").splitlines():
+        match = README_APT.match(line.strip())
+        if match:
+            found.update(match.group("packages").split())
+    return found
+
+
+def documented_dependencies(root: pathlib.Path) -> set[str]:
+    """The X11 development packages README.md tells a Linux developer to install."""
+    readme = root / "README.md"
+    if not readme.exists():
+        return set()
+    text = readme.read_text(encoding="utf-8")
+    _, marker, rest = text.partition(README_SECTION)
+    if not marker:
+        return set()
+    section = rest.split("```", 1)[0]
+    return {p for p in _packages(section) if X11_PACKAGE.match(p)}
+
+
+def system_dependencies(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
+    """Every Linux job installs the documented X11 set, or the difference is named here."""
+    documented = documented_dependencies(root)
+    if not documented:
+        return ["README.md documents no X11 development packages, so the workflows cannot be "
+                "checked against it"]
+
+    problems = []
+    for path in workflows:
+        for command in commands_in(path):
+            if "apt-get install" not in command.text and "apt install" not in command.text:
+                continue
+            installed = _packages(command.text)
+            if not any(X11_PACKAGE.match(package) for package in installed):
+                continue  # a step installing something else entirely, such as libclang
+            missing = sorted(documented - installed)
+            if missing:
+                problems.append(
+                    f"{path.name}:{command.line} installs {len(installed)} package(s) and omits "
+                    f"{', '.join(missing)}, which README.md names as a system library SDL3 builds "
+                    "against. Every Linux job failed at the SDL3 configure for exactly this reason "
+                    "from M0 to M9"
+                )
+    return problems
+
+
 # --- The check's own negative fixtures -------------------------------------------------------------
 #
 # A gate that has never been seen to fire is a gate nobody should trust. Each case below is a
@@ -444,6 +514,43 @@ def selftest(root: pathlib.Path) -> int:
             print(f"fail accepted workflow was rejected: {found}", file=sys.stderr)
         else:
             print("ok   accepted: a job that installs the pinned tooling before the gate")
+
+        # --- M9's OWN NEGATIVE FIXTURE ------------------------------------------------------------
+        #
+        # THE DEFECT, RESTORED: a Linux step that installs a subset of the documented X11 set. That
+        # was this repository's actual state from M0 to M9 — sixty-three continuous-integration
+        # runs, not one green, every Linux leg dead at an SDL3 configure asking for XCURSOR.
+        documented = sorted(documented_dependencies(root))
+        if len(documented) < 2:
+            failed += 1
+            print("fail README.md documents fewer than two X11 packages to check against",
+                  file=sys.stderr)
+        else:
+            scratch.write_text(
+                "jobs:\n  case:\n    steps:\n"
+                f"      - run: sudo apt-get install -y ninja-build {documented[0]}\n",
+                encoding="utf-8",
+            )
+            found = system_dependencies(root, [scratch])
+            if any("README.md names as a system library" in problem for problem in found):
+                print(f"ok   rejected: a Linux job installing 1 of {len(documented)} documented "
+                      "X11 packages")
+            else:
+                failed += 1
+                print(f"fail a short package list was accepted: {found or ['nothing']}",
+                      file=sys.stderr)
+
+            scratch.write_text(
+                "jobs:\n  case:\n    steps:\n"
+                f"      - run: sudo apt-get install -y ninja-build {' '.join(documented)}\n",
+                encoding="utf-8",
+            )
+            found = system_dependencies(root, [scratch])
+            if found:
+                failed += 1
+                print(f"fail the documented list itself was rejected: {found}", file=sys.stderr)
+            else:
+                print("ok   accepted: a Linux job installing every documented X11 package")
 
         # --- M6 TASK 10.9's OWN NEGATIVE FIXTURE -------------------------------------------------
         #
@@ -546,8 +653,9 @@ def main() -> int:
 
     uncovered = gate_coverage(root, workflows)
     drift = pin_drift(root, workflows)
+    system = system_dependencies(root, workflows)
 
-    if violations or uncovered or drift:
+    if violations or uncovered or drift or system:
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
@@ -555,12 +663,15 @@ def main() -> int:
             print(f"  {gap}\n      `just roadmap-gates` prints the declared set.", file=sys.stderr)
         for gap in drift:
             print(f"  {gap}\n      the pin is `llvm_pin_version` in the justfile.", file=sys.stderr)
+        for gap in system:
+            print(f"  {gap}\n      README.md's list is the one a developer is told to run.",
+                  file=sys.stderr)
         return 1
 
     print(
         f"check-workflows: clean — {len(workflows)} workflow(s), {total} command(s), "
-        "every one a recipe or a tool install, every permanent gate run and every closed "
-        "milestone's criteria evaluated"
+        "every one a recipe or a tool install, every permanent gate run, every closed "
+        "milestone's criteria evaluated, and every Linux job given the documented system libraries"
     )
     return 0
 

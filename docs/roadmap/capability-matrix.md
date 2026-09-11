@@ -27,22 +27,22 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`core-type-system`](../../openspec/specs/core-type-system/spec.md) | 13 |  | W |  |  |  | **C** |  |  |  |  |   |     |  |  |  | M5 |
 | [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |       |       |     | **C** |     |  |  |  | M8.b |
 | [`core-math`](../../openspec/specs/core-math/spec.md) | 10 |  | W |  | **C** |  |  |  |  |  |  |   |     |  |  |  | M3 |
-| [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |   |     | **C** |  |  | M9 |
+| [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |       |       |     | **C** |     |  |  |  | M8.b |
 | [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | **2 — World model** | | | | | | | |  | | | | | | | |
-| [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |   |     | **C** |  |  | M9 |
+| [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`scene-graph-and-nodes`](../../openspec/specs/scene-graph-and-nodes/spec.md) | 10 |  |  | W |  |  | **C** |  |  |  |  |   |     |  |  |  | M5 |
 | [`serialization-and-prefabs`](../../openspec/specs/serialization-and-prefabs/spec.md) | 23 |  |  | W |  |  |  |  |       |  | W | **C** |     |  |  |  | M8.b |
-| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 34 |  |  |  |  | S |  |  |  |  | S | W |     | **C** |  |  | M9 |
-| [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |     | **C** |  |  | M9 |
+| [`gameplay-framework`](../../openspec/specs/gameplay-framework/spec.md) | 34 |  |  |  |  | S |  |  |  |  | S | W |     | | **C** |  | M10 |
+| [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |     |     | W | **C** |  |  | M9 |
+| [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |     |     | W |  |  | **C** | M11 |
 | [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | 23 |  |  |  |  | W |  |  |  |  |     | **C** |     |  |  |  | M8.b |
-| [`camera-system`](../../openspec/specs/camera-system/spec.md) | 28 |  |  |  |  | S |  |  |  |  |     | W |     | **C** |  |  | M9 |
-| [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | 20 |  |  | S |  | W |  |  |  |  |  |   |     | **C** |  |  | M9 |
+| [`camera-system`](../../openspec/specs/camera-system/spec.md) | 28 |  |  |  |  | S |  |  |  |  |     | W |     |  |  | **C** | M11 |
+| [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | 20 |  |  | S |  | W |  |  |  |  |  |   |     | W |  | **C** | M11 |
 | [`replay-and-rollback`](../../openspec/specs/replay-and-rollback/spec.md) | 19 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
-| [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | 20 |  |  |  |  |  |  |  | W |  |  |   |     | **C** |  |  | M9 |
+| [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | 20 |  |  |  |  |  |  |  | W |  |  |   |     | | **C** |  | M10 |
 | [`world-partition-and-streaming`](../../openspec/specs/world-partition-and-streaming/spec.md) | 32 |  |  |  |  |  |  |  | W |  |  |   |     |  | **C** |  | M10 |
 | [`environment-fields`](../../openspec/specs/environment-fields/spec.md) | 12 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
 | [`procedural-content-generation`](../../openspec/specs/procedural-content-generation/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
@@ -76,7 +76,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 24 |  |  |  |  |  |  |  |  |  |     |     | S |  | W | **C** | M11 |
 | **5 — Simulation** | | | | | | | |  | | | | | | | |
-| [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |   |     | **C** |  |  | M9 |
+| [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |   |     |  |  | **C** | M11 |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |     | W |     |  | **C** |  | M10 |
@@ -102,7 +102,7 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | 13 | S |  |  |  | W |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | 15 | S |  |  |  |  | W |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | 12 | S |  |  | W |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
-| [`diagnostics-profiling-and-crash`](../../openspec/specs/diagnostics-profiling-and-crash/spec.md) | 18 | S |  |  |  |  | W |  |  |  |  |   |     | **C** |  |  | M9 |
+| [`diagnostics-profiling-and-crash`](../../openspec/specs/diagnostics-profiling-and-crash/spec.md) | 18 | S |  |  |  |  | W |  |  |  |  |   |     | W | **C** |  | M10 |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | 9 | S |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`delivery-roadmap`](../../openspec/specs/delivery-roadmap/spec.md) | 21 | W |  |  |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 
@@ -143,9 +143,9 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M8.a** · Authorable | 5 | 0 | — |
 | **M8.b** · Systems | 25 | 13 | `asset-import-pipeline`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting` |
 | **M8.c** · Spectacle | 3 | 0 | — |
-| **M9** · Integrity | 12 | 10 | `camera-system`, `core-jobs-and-concurrency`, `diagnostics-profiling-and-crash`, `ecs-core`, `gameplay-abilities-and-effects`, `gameplay-framework`, `physics`, `save-and-persistence`, `sequencing-and-cinematics`, `simulation-and-determinism` |
-| **M10** · Worlds | 11 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
-| **M11** · Reach | 41 | 41 | everything remaining |
+| **M9** · Integrity | 4 | 0 | — |
+| **M10** · Worlds | 14 | 6 | `diagnostics-profiling-and-crash`, `gameplay-framework`, `navigation`, `rendering-global-illumination`, `save-and-persistence`, `world-partition-and-streaming` |
+| **M11** · Reach | 48 | 48 | everything remaining |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not
@@ -188,40 +188,50 @@ A change that implements or advances a capability updates `status.yaml` in the s
 capability added, renamed or removed without a corresponding record entry is drift, and drift is a
 build failure rather than a discovery.
 
-As of M7 fifty-seven capabilities have left `—`, and seven have reached Complete. **Every entry
-below was read out of `just roadmap-status` at M7's gate rather than carried forward from the
-previous edition of this list.**
+<!-- BEGIN generated by `just roadmap-status` — do not edit between these markers -->
 
-- **Complete (7)**: `core-math`, `core-type-system`, `native-abi`,
-  `rendering-materials-and-shading`, `residency`, `scene-graph-and-nodes`, `virtual-texturing`.
-- **Working (37)**: `asset-import-pipeline`, `build-and-packaging`, `core-assets-and-io`,
-  `core-jobs-and-concurrency`, `core-memory-and-containers`, `core-platform-abstraction`,
-  `delivery-roadmap`, `denoising`, `ecs-core`, `editor-agent-interface`,
+As of M9 69 capabilities have left `—`, and 8 have reached Complete.
+
+- **Complete (8)**: `core-math`, `core-type-system`, `native-abi`,
+  `rendering-materials-and-shading`, `residency`, `scene-graph-and-nodes`,
+  `serialization-and-prefabs`, `virtual-texturing`.
+- **Working (52)**: `ai-system`, `animation-and-skinning`, `asset-import-pipeline`, `audio`,
+  `build-and-packaging`, `camera-system`, `core-assets-and-io`, `core-jobs-and-concurrency`,
+  `core-memory-and-containers`, `core-platform-abstraction`, `delivery-roadmap`, `denoising`,
+  `diagnostics-profiling-and-crash`, `ecs-core`, `editor-agent-interface`,
   `editor-documents-and-transactions`, `editor-rust-application`, `editor-ui-ux`,
   `editor-viewport-and-gizmos`, `editor-visual-language`, `engine-architecture`,
-  `input-and-actions`, `material-compiler`, `physics`, `project-and-plugins`,
-  `ray-tracing-infrastructure`, `rendering-architecture`, `rendering-culling-and-lod`,
-  `rendering-forward-clustered`,
-  `rendering-geometry-and-resources`, `rendering-global-illumination`,
-  `rendering-lighting-and-shadows`, `rendering-post-processing`, `rhi-and-render-graph`,
-  `save-and-persistence`, `serialization-and-prefabs`, `shader-system`, `swift-scripting`,
-  `temporal-rendering`, `virtual-geometry`, `virtual-shadows`, `world-partition-and-streaming`.
-- **Seed (13)**: `atmosphere-sky-and-clouds`, `audio`, `build-system-and-platforms`,
-  `camera-system`, `developer-workflow-and-just`, `diagnostics-profiling-and-crash`,
-  `editor-architecture`, `gameplay-framework`, `live-editing`, `simulation-and-determinism`,
-  `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
+  `gameplay-abilities-and-effects`, `gameplay-framework`, `input-and-actions`, `material-compiler`,
+  `navigation`, `networking-and-replication`, `physics`, `project-and-plugins`,
+  `ray-tracing-infrastructure`, `rendering-2d`, `rendering-architecture`,
+  `rendering-culling-and-lod`, `rendering-forward-clustered`, `rendering-geometry-and-resources`,
+  `rendering-global-illumination`, `rendering-lighting-and-shadows`, `rendering-post-processing`,
+  `replay-and-rollback`, `rhi-and-render-graph`, `save-and-persistence`,
+  `sequencing-and-cinematics`, `shader-system`, `simulation-and-determinism`, `swift-scripting`,
+  `temporal-rendering`, `text-and-fonts`, `ui-system`, `virtual-geometry`, `virtual-shadows`,
+  `visual-scripting`, `world-partition-and-streaming`.
+- **Seed (9)**: `atmosphere-sky-and-clouds`, `build-system-and-platforms`,
+  `developer-workflow-and-just`, `editor-architecture`, `live-editing`, `ml-inference`,
+  `testing-and-quality`, `thirdparty-dependencies`, `vfx-system`.
 
-**THE THREE LISTS ABOVE WERE LAST READ OUT OF `just roadmap-status` AT M7's GATE AND HAVE NOT BEEN
-REFRESHED SINCE, WHICH M8.c's RECORD PASS FOUND BY RUNNING IT.** They are two milestones stale:
-M8.b moved `visual-scripting`, `gameplay-abilities-and-effects`, `animation-and-skinning`,
-`ai-system`, `navigation`, `ui-system`, `rendering-2d`, `camera-system`, `audio` and
-`text-and-fonts` to Working and `serialization-and-prefabs` to Complete, and none of that is in the
-lists. Refreshing them is a paste of the recipe's own output and is deliberately NOT done here,
-because the lists are prose and `status.yaml` is the record — `just roadmap-status` is what a reader
-should run, and a hand-maintained second copy of its answer is the drift this file's own paragraph
-above warns about. **The honest fix is to generate these three lines**, which is a change to
-`tools/roadmap/record.py` rather than an edit to this file, and it is recorded here as a finding
-rather than performed under a milestone that did not plan it.
+<!-- END generated -->
+
+**THE THREE LISTS ABOVE ARE GENERATED, AND THAT IS M9 TASK 7.6.** They were hand-maintained from M0
+to M8.c and were last retyped at M7's gate; M8.c's record pass found them three milestones stale by
+running `just roadmap-status` and reading — M8.b had moved eleven capabilities and M8.c three, and
+none of it was in them — recorded the finding, and could not perform the fix inside its own scope.
+The fix it named is the one that is now in place: `tools/roadmap/record.py` renders the three lines
+from `status.yaml`, `just roadmap-status` **fails** when the block between the markers above does not
+match the record, and `just roadmap-status --write-lists` rewrites it. A list a person retypes goes
+stale silently; a list a recipe renders is either current or a failing gate.
+
+**M9 advanced four and completed none**: `replay-and-rollback` and `networking-and-replication`
+from nothing to **Working**, `simulation-and-determinism` from Seed to **Working**, and
+`diagnostics-profiling-and-crash` from Seed to **Working**, each naming `implement-m9-integrity`.
+**Four of its six planned rows did not reach Complete**, and each is a running, failing,
+rung-bearing criterion in `tools/roadmap/milestones/m9.toml` rather than a sentence — see
+[where M9's tiers are thin](#where-m9s-tiers-are-thin). The three lists above are therefore now
+**three** milestones stale, and the fix is still the one M8.c recorded: generate them.
 
 **M8.c advanced three and completed none**: `sequencing-and-cinematics` to Working and
 `vfx-system` and `ml-inference` to Seed, each naming `implement-m8c-spectacle`. **Two of its four
@@ -354,6 +364,98 @@ Three cells were filled: `editor-ui-ux`'s **W** moved out of M5 into M5.5 and it
 **W** at M5.5; and `editor-agent-interface` reaches **W** at M5.5 rather than at M8, which is the
 one place the plan changed rather than being corrected — the proposal argues that the agent loop is
 most valuable *while* the engine is being built.
+
+## Where M9's tiers are thin
+
+The M9 row of [the roadmap](../ROADMAP.md#m9--integrity) named **six** capabilities, four of them
+reaching Complete, and the M9 column of this matrix carried **ten** cells of which **seven said
+Complete**, because six more rows had had their Complete cell parked there since the plan was first
+drawn. **What M9 actually did is two Workings from nothing, two advances to Working, and no
+Completes at all.** Four of the rows the work table marked Complete are recorded at Working, each a
+*named, running, failing* criterion in `tools/roadmap/milestones/m9.toml` rather than a sentence;
+and the six parked cells — rows this milestone never proposed, never touched and never audited —
+were moved to M11 by the closing gate rather than left in a column that would otherwise record a
+completion that did not happen.
+
+- **`simulation-and-determinism` → Working, not Complete, and the closing gate demoted it.** A great
+  deal landed: determinism profiles that are refused *at configuration* rather than diagnosed later —
+  `cy_declare_determinism_profile()` reads a target's compile options and fails the configure when
+  they cannot meet what it declares — deterministic parallelism, stable iteration, the
+  floating-point policy with the thirteen `<cmath>` functions M9's spike measured as not correctly
+  rounded in this libm, generated state codecs, hierarchical hashing, the validator that turns two
+  hashes and a log into one field on one entity, and the lint that finds the code which could not
+  meet the profile. The one guarantee nothing here can evaluate — cross-architecture lockstep — is
+  **refused** by `DeterminismConfiguration::require()` rather than granted, and
+  `m9:lockstep-cross-platform` is a **declared gap that runs and fails**, closing at M11. It carried
+  `where = "ci"` until the closing gate read it, and that would have reported it green the first time
+  continuous integration ran the ledger: `--ci` lifts the `where` and the command underneath was a
+  single-leg suite byte-identical to `replay-log`'s. **Two of the twenty requirements are unmet with
+  no recorded exemption, and Complete means every one of them:**
+  - "Floating-point policy" obliges the engine to provide **deterministic math types as an optional
+    module** — fixed-point scalars, vectors, angles and transcendental approximations. There is no
+    such module, and `profile.h` says so in its own comment: *"There is no such module in this tree
+    yet"*. Two of the five profiles in the specification's own table — `CrossPlatform` and
+    `Lockstep` — therefore cannot be granted by this engine at all.
+  - "Simulation performance and testing" obliges a **strategy-scale determinism benchmark** — eight
+    participants, 100 000 units, 5 000 agent groups, sixty ticks a second for minutes, under 1, 8
+    and 16 workers — and calls it "the reference, not a small synthetic case". Nothing of the kind
+    exists; `benchmarks/baseline.json` holds six entries and every one is `ecs/*` or `harness/*`,
+    which is the same evidence that demotes `gameplay-framework` below. A row demoted for an absent
+    benchmark and a row completed over the same absence cannot both be right. **And the part of that
+    requirement the tree does test, it tests in a model**: `integration.determinism_scale` is
+    single-threaded, and `ExecutionConditions::worker_count` is a number that seeds a permutation
+    rather than a job system that is started. Nothing here runs the same simulation under 1, 8 and
+    16 real workers and compares the hashes, which is what both this specification and
+    `testing-and-quality` ask for.
+
+  Its Complete cell moves to **M11**, with the deterministic math module, because the guarantee that
+  module turns on cannot be measured on one architecture.
+
+- **`replay-and-rollback` → Working**, from nothing. One command log written once by
+  `CommandStream`'s seam and read five ways; external results; snapshot kinds and checkpoints;
+  playback, seeking and presentation tracks; the rollback loop with the side-effect ledger as the
+  one door an effect comes through; lockstep and resynchronisation; and a bounded crash replay
+  buffer that flushes into an artefact which re-simulates to the hash it carries.
+
+- **`networking-and-replication` → Working**, from nothing — and `design.md` §4 predicted this was
+  the row a reduced milestone would have to demote. It did not need one. `CY_NETWORKING` defaults ON
+  with `src/networking/` behind it and the tree builds and passes with it OFF, which is the shape
+  M8.b's gate found in `CY_UI` and M9 opened by repairing.
+
+- **`diagnostics-profiling-and-crash` → Working, not Complete.** Rolling capture, the crash
+  artefact, source-location privacy and reproduction artefacts landed. Two requirements did not.
+  **Breadcrumbs are armed and have no callers**: `grep -rn CY_BREADCRUMB src/` outside
+  `src/core/diagnostics/` returns nothing, so an artefact written today reports `0 of 64` — the same
+  shape as the determinism firewall M9 had to arm. And a *produced* artefact still carries the build
+  machine's absolute paths, because `backtrace_symbols_fd()` writes each frame's module path as the
+  loader resolved it; the specification asks for that to be **a gate rather than a review**, and
+  `m9:crash-artefact-paths` is now that gate, failing. Both close at M10.
+
+- **`save-and-persistence` stays at Working.** Integrity, the storage backends and checkpoints are
+  there. **Confidentiality is a vetted-AEAD dependency decision rather than a coding task** and
+  conflict resolution is unstarted, so the row does not move and its Complete cell moves to M10.
+
+- **`gameplay-framework` stays at Working.** Network integration, the save and replay contracts and
+  headless operation landed — `cy_require_headless()` fails the configure if a rendering, audio or
+  interface module enters `cy_gameplay`'s link closure, which is a link-graph fact rather than a
+  convention. But the specification's performance table "SHALL be benchmarked rather than asserted"
+  and **nothing benchmarks it**: `benchmarks/baseline.json` holds six entries and all six are
+  `ecs/*` or `harness/*`. `m9:gameplay-benchmarks` says so on every ledger run. The Complete cell
+  moves to M10.
+
+**And six Complete cells in the M9 column belonged to rows this milestone did not touch** —
+`camera-system`, `core-jobs-and-concurrency`, `ecs-core`, `gameplay-abilities-and-effects`,
+`physics` and `sequencing-and-cinematics`. None is claimed by [the status record](status.yaml); all
+six are recorded at Working, three of them since M2 or earlier. **The closing gate moved them to
+M11** rather than close a milestone whose own column claimed six completions nothing had examined,
+and it added the check that would have found them: `m9:record-matches-plan` compares the M9 column
+with the status record, capability by capability, which no existing check did —
+`plan-consistency` compares the plan documents *with each other*, and they agreed. The same
+comparison over the four milestones already closed reports **nineteen cells, thirteen of them
+Complete**, and is declared as the gap `m9:record-matches-plan-history`, closing at M10: M8.b's
+column alone claims twelve Completes — `rendering-architecture`, `shader-system`,
+`material-compiler`, `core-memory-and-containers` among them — that the record holds at Working.
+Auditing those rows belongs to a milestone that can examine them, not to the gate that found them.
 
 ## Where M8.a's tiers are thin
 

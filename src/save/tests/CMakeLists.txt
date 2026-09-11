@@ -51,6 +51,7 @@ function(cy_save_declare_tests)
         NAME save
         KIND unit
         SOURCES
+            "${tests_dir}/test_checkpoint.cpp"
             "${tests_dir}/test_container.cpp"
             "${tests_dir}/test_overlay.cpp"
             "${tests_dir}/test_traits.cpp"

@@ -98,8 +98,21 @@ inline constexpr u32 kMaxTextBytesPerRecord = 512;
 
 using TraceId = u64;
 
+/// Handed every record the consumer drains, on the consumer's thread, before the writer sees it —
+/// so it observes what the producer wrote, NOT what the policy admitted. Redaction is the writer's
+/// and an observer that is going to write an artefact must go through a writer of its own to get
+/// it.
+///
+/// This is the seam `capture.h` uses to keep a rolling window in memory. It is a single function
+/// pointer rather than a list because a second observer would be a second policy about what the
+/// consumer costs, and the consumer is the thread that must not fall behind.
+using RecordObserver = void (*)(void* user, u32 thread_index, const u8* record, u32 size) noexcept;
+
 struct TraceConfig {
-    /// Where the artefact is written. Required.
+    /// Where the artefact is written. Required UNLESS `observer` is set: a rolling buffer holds the
+    /// window in memory and writes a file only when something triggers a capture, and a trace that
+    /// wrote 77 MB a minute to disk for the whole of a session would not be "always on at low
+    /// cost".
     const char* path = nullptr;
     /// Per-thread ring size. Rounded up to a power of two; the loss policy is expressed as fill
     /// fractions of it.
@@ -115,6 +128,9 @@ struct TraceConfig {
     LogLevel console_level = LogLevel::Off;
     /// Recorded in the artefact's metadata so a capture identifies the build that wrote it.
     const char* build_identity = nullptr;
+    /// See RecordObserver. Null is the ordinary case: the consumer drains straight into the writer.
+    RecordObserver observer = nullptr;
+    void* observer_user = nullptr;
 };
 
 struct TraceStats {

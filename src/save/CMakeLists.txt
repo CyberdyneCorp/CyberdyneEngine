@@ -39,6 +39,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/archive.cpp
+        src/checkpoint.cpp
         src/container.cpp
         src/identity.cpp
         src/overlay.cpp
@@ -46,7 +47,8 @@ cy_add_module(
         src/storage.cpp
         src/traits.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-assets cy::core-jobs cy::core-serialize cy::core-values)
+    PUBLIC_DEPENDENCIES cy::core-assets cy::core-determinism cy::core-jobs cy::core-serialize
+                        cy::core-values)
 
 # A suite lands with the first real source. The EXISTS guard is what lets this line be written now:
 # it is the one line an agent adding tests/ does not then have to remember to add here.

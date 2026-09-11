@@ -44,6 +44,15 @@ struct ReadRecord {
     std::vector<ReadField> fields;
 };
 
+/// One source location, as the artefact carries it. Its own table rather than an entry in `names`,
+/// because a location is classified data the writer sanitises and may remove.
+struct LocationMeta {
+    std::string file;
+    cy::diag::u32 line = 0;
+    cy::diag::u8 privacy = 0;
+    bool removed = false;
+};
+
 struct LossEntry {
     cy::diag::u32 thread = 0;
     cy::diag::u8 channel = 0;
@@ -57,11 +66,23 @@ struct Capture {
     std::map<cy::diag::u32, std::string> names;
     std::map<cy::diag::u32, std::string> categories;
     std::map<cy::diag::u32, FieldMeta> fields;
+    std::map<cy::diag::u32, LocationMeta> locations;
     std::map<std::string, std::string> identity;
     std::vector<ReadRecord> records;
     std::vector<LossEntry> losses;
     std::vector<cy::diag::u8> bytes;
     cy::diag::u32 chunk_count = 0;
+
+    /// "file:line" for a location id, or "" when the id is unknown, and "<redacted>:line" when the
+    /// policy removed the path.
+    [[nodiscard]] std::string location_of(cy::diag::u32 id) const {
+        const auto found = locations.find(id);
+        if (found == locations.end()) {
+            return {};
+        }
+        const std::string file = found->second.removed ? "<redacted>" : found->second.file;
+        return file + ":" + std::to_string(found->second.line);
+    }
 
     [[nodiscard]] const std::string& name_of(cy::diag::u32 id) const {
         static const std::string empty;
@@ -137,6 +158,17 @@ inline void read_metadata(Capture& capture, const cy::diag::u8* payload, std::si
         meta.privacy = cursor.read<cy::diag::u8>();
         meta.name = cursor.read_string();
         capture.fields[id] = meta;
+    }
+    const auto location_count = cursor.read<cy::diag::u32>();
+    for (cy::diag::u32 index = 0; index < location_count; ++index) {
+        const auto id = cursor.read<cy::diag::u32>();
+        LocationMeta meta;
+        meta.line = cursor.read<cy::diag::u32>();
+        meta.privacy = cursor.read<cy::diag::u8>();
+        meta.removed = cursor.read<cy::diag::u8>() != 0;
+        (void)cursor.read<cy::diag::u16>();  // padding
+        meta.file = cursor.read_string();
+        capture.locations[id] = meta;
     }
     const auto identity_count = cursor.read<cy::diag::u32>();
     for (cy::diag::u32 index = 0; index < identity_count; ++index) {

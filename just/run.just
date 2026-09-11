@@ -325,3 +325,40 @@ run-vertical-slice *args:
     python3 samples/08-vertical-slice/slice.py --profile "${profile}" \
         --sample "${build_dir}/samples/08-vertical-slice/cy_sample_vertical-slice" \
         --build-dir "${build_dir}" --work "${build_dir}/vertical-slice" ${rest}
+
+# M9's ARTEFACT, AND WHY IT IS NOT `just run-sample multiplayer`.
+#
+# The same split M8.b's recipe above argues. `just run-sample multiplayer --ticks 120` plays the
+# session and prints what happened; what it cannot do is JUDGE it. The milestone's claims are that
+# four clients converge on the host's state hash after rolling back under real packet loss, that the
+# recorded log replays to the identical digest, that an injected divergence is narrowed to one field
+# on one entity, and that a crash artefact re-simulates to the hash it carries — each of those is a
+# comparison between several things the program printed, which is what `multiplayer.py` does in five
+# acts. Its CMakeLists.txt argues the shape.
+#
+# It builds only the engine: no editor, no second process, no display and no graphics device. There
+# is no renderer anywhere in this artefact's link closure, which is what makes the whole of it
+# judgeable on a hosted runner.
+#
+# `--shots <dir>` is what refreshes docs/design/images/m9-multiplayer-session.png and
+# m9-divergence-narrowed.png. `--only <act>` runs one act, and `--ticks <n>` moves the length of the
+# session — 180 is the figure the committed pictures and the ledger are drawn from.
+#
+# With `-D CY_NETWORKING=OFF` the sample is not declared and this recipe reports an absent binary
+# rather than a defect, exactly as `just run-vertical-slice` does without CY_ANIMATION.
+
+# Run the M9 artefact: four players, packet loss, and a replay that is bit-exact. Usage: just run-multiplayer [--profile <p>] [--ticks <n>] [--seed <n>] [--only <act>] [--shots <dir>]
+run-multiplayer *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    echo "==> run         multiplayer  profile=${profile}"
+    python3 samples/09-multiplayer/multiplayer.py --profile "${profile}" \
+        --sample "${build_dir}/samples/09-multiplayer/cy_sample_multiplayer" \
+        --build-dir "${build_dir}" --work "${build_dir}/multiplayer" ${rest}

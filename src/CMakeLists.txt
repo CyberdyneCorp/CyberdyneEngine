@@ -93,6 +93,17 @@ add_subdirectory(world)
 # see src/gameplay/CMakeLists.txt, and design.md §3.
 add_subdirectory(gameplay)
 
+# replay/ is CyberReplay and M9 section 1: THE ONE RECORD and its five readers — playback, rollback
+# re-simulation, replication's input path, the crash replay buffer and the divergence validator —
+# plus external results, the four snapshot kinds and the side-effect ledger. Layer 4, the rung
+# gameplay/ chose, and read after gameplay/ because a record carries a `gameplay::Command`.
+#
+# NOT behind an option. `replay-and-rollback` gives no removal switch, and there is a reason beyond
+# the specification's silence: the record is what `CY_NETWORKING` switches a transport on and off
+# *around*. A replication layer that could not see this module would declare a record of its own,
+# which is the one thing the capability forbids in as many words.
+add_subdirectory(replay)
+
 # ml/ is CyberML and M8.c section 4: tensors, model assets, sessions, the backend abstraction, the
 # per-frame budget and the determinism boundary. LAYER servers (2) — it depends on cy::core and
 # cy::ecs and nothing above, which is what lets a session be created from a server, from a scene
@@ -164,6 +175,24 @@ add_subdirectory(sequencing)
 # built and tested, which is what M8.b's gate found had never been done for CY_UI.
 if(CY_VFX)
     add_subdirectory(vfx)
+endif()
+
+# networking/ is CyberNet and M9 section 4: the three network modes and their prerequisites, the
+# authority model and its handover, the transports and the one reliability layer they share, the
+# compiled replication schemas, baselines and deltas, spawning and RPCs, interest management, the
+# priority scheduler and its bandwidth budget, prediction and reconciliation, lag compensation, and
+# the dedicated server. Layer 4, the rung gameplay/, world/, graph/, camera/ and replay/ chose.
+# Read after replay/, whose ONE record its input buffer and its replication cursor both hold.
+#
+# BEHIND CY_NETWORKING, WHICH UNTIL THIS MILESTONE GATED NOTHING. The option has been declared in
+# cmake/features.cmake since M0 with no `if(CY_NETWORKING)` and no `#if defined` anywhere in the
+# tree, so the option and its absence produced identical output — the shape M8.b's closing gate
+# found in CY_UI and M8.c had to repair. `-D CY_NETWORKING=OFF` now excludes this directory and its
+# suites and nothing else changes, because nothing below layer 4 names this module and
+# `src/replay/`'s `ReplicationInputCursor` is deliberately NOT behind the option: it removes the
+# transport, not the record. Both directions are built and tested.
+if(CY_NETWORKING)
+    add_subdirectory(networking)
 endif()
 
 add_subdirectory(runtime)

@@ -1049,6 +1049,64 @@ replayed bit-exactly; a deliberately injected divergence narrowed to one field o
 **Risk spike**: cross-platform floating-point determinism. It either holds under the declared
 profile or the profile's definition changes — and that is cheaper to learn at the head of M9.
 
+**What M9 closed on, and the four cells it did not reach.** The work table above is the plan; this
+paragraph is the record, written the way M5's, M6's, M7's, M8.a's and M8.c's gates wrote theirs —
+the plan is corrected rather than the record relaxed. **M9 completes nothing.**
+`replay-and-rollback` and `networking-and-replication` reach **Working** from nothing, and
+`design.md` §4's predicted demotion — networking — did not need one. `simulation-and-determinism`
+advances Seed → **Working**: profiles declared and refused at *configuration*, deterministic
+parallelism, stable iteration, the floating-point policy with the thirteen `<cmath>` functions the
+spike measured, the generated codecs, hierarchical hashing, the validator and the lint all landed,
+and the one guarantee this project cannot evaluate — cross-architecture lockstep — is *refused* by
+`DeterminismConfiguration::require()` rather than claimed. Its criterion is a **declared gap that
+runs and fails**, closing at M11: it carried `where = "ci"` until the closing gate read it, and that
+would have reported it green the first time continuous integration ran the ledger, because `--ci`
+lifts the `where` and the command underneath was a single-leg suite with no second architecture in
+it.
+
+Four rows the table marks Complete stay at Working, each because a named requirement is unmet and
+each recorded as a running, failing, rung-bearing criterion in `tools/roadmap/milestones/m9.toml`
+rather than as a sentence:
+
+- **`simulation-and-determinism`** stays at Working, and **its closing gate demoted it** — the one
+  demotion no implementing agent proposed, found by reading the specification requirement by
+  requirement. Two of its twenty are unmet with no recorded exemption. "Floating-point policy"
+  obliges the engine to provide **deterministic math types as an optional module** — fixed-point
+  scalars, vectors, angles and transcendental approximations — and there is no such module;
+  `profile.h` says so in its own comment, and two of the five profiles in the specification's own
+  table therefore cannot be granted by this engine. "Simulation performance and testing" obliges a
+  **strategy-scale determinism benchmark** — eight participants, 100 000 units, 5 000 agent groups,
+  minutes of simulation under 1, 8 and 16 workers — and names it "the reference, not a small
+  synthetic case"; nothing of the kind exists, which is the same evidence that demotes
+  `gameplay-framework` below, and the part of it the tree does test it tests in a model:
+  `integration.determinism_scale` is single-threaded and its `worker_count` seeds a permutation
+  rather than starting a job system. Its Complete cell moves to M11 with the deterministic math module,
+  because the guarantee that module turns on cannot be measured on one architecture.
+- **`diagnostics-profiling-and-crash`** advances Seed → Working. Rolling capture, crash artefacts,
+  source-location privacy and reproduction artefacts landed; **breadcrumbs are armed and have no
+  callers outside their own module**, so a crash artefact reports `0 of 64`, and a *produced*
+  artefact still carries the build machine's absolute paths through `backtrace_symbols_fd()`. Its
+  Complete cell moves to M10.
+- **`save-and-persistence`** stays at Working. Integrity, storage backends and checkpoints landed;
+  **confidentiality is a vetted-AEAD dependency decision rather than a coding task**, and conflict
+  resolution is unstarted. Its Complete cell moves to M10.
+- **`gameplay-framework`** stays at Working. Network integration, the save and replay contracts and
+  headless operation landed — `cy_require_headless()` fails the configure if a rendering, audio or
+  interface module enters the closure — but the specification's **performance table is required to
+  be benchmarked and is benchmarked nowhere**: `benchmarks/baseline.json` holds six entries and all
+  six are `ecs/*` or `harness/*`. Its Complete cell moves to M10.
+
+M9's own load is therefore **four cells and no Completes**.
+[The capability matrix](roadmap/capability-matrix.md) carries the three moved cells in M10's column
+and `simulation-and-determinism`'s in M11's — and **six more Complete cells that sat in the M9
+column for rows this milestone never proposed, never touched and never audited**
+(`camera-system`, `core-jobs-and-concurrency`, `ecs-core`, `gameplay-abilities-and-effects`,
+`physics`, `sequencing-and-cinematics`) were moved to M11 by the closing gate rather than left
+claiming a completion that did not happen. No existing check compared a milestone's column with the
+status record; `m9:record-matches-plan` is that comparison, and `m9:record-matches-plan-history` is
+the declared gap it opened over four earlier milestones whose columns claim nineteen cells the
+record does not support.
+
 ---
 
 ## M10 — Worlds

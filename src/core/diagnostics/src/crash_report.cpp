@@ -18,6 +18,8 @@
 
 #include <cy/core/diagnostics/breadcrumb.h>
 #include <cy/core/diagnostics/field.h>
+#include <cy/core/diagnostics/health.h>
+#include <cy/core/diagnostics/reproduction.h>
 #include <cy/core/diagnostics/trace.h>
 
 #include <atomic>
@@ -130,6 +132,46 @@ void write_breadcrumbs(SafeStream& out) noexcept {
     }
 }
 
+/// The health state the process died in. `health_active()` reads a fixed array of relaxed atomics
+/// and takes no lock, which is the only reason this section can exist in a damaged process at all.
+void write_health(SafeStream& out, u64 now_ns) noexcept {
+    HealthCondition conditions[kHealthConditionCount];
+    HealthSeverity severities[kHealthConditionCount];
+    u64 since[kHealthConditionCount];
+    const u32 count = health_active(conditions, severities, since, kHealthConditionCount);
+    out.text("\n[health] ");
+    out.number(count);
+    out.text(" active\n");
+    for (u32 index = 0; index < count; ++index) {
+        out.text("  ");
+        out.text(health_condition_name(conditions[index]));
+        out.text(" ");
+        out.text(health_severity_name(severities[index]));
+        // "Since when" as an age rather than an absolute stamp: the reader has no other clock.
+        out.text(" for_ns=");
+        out.number((now_ns > since[index]) ? (now_ns - since[index]) : 0);
+        out.text("\n");
+    }
+}
+
+/// The link, never the artefact. A crash may have no reproduction, so the absence is stated rather
+/// than left to be inferred from a missing section.
+void write_reproduction_link(SafeStream& out) noexcept {
+    const ReproductionLink link = reproduction_link();
+    out.text("\n[reproduction]\n");
+    if (!link.present) {
+        out.text("  <none registered for this session>\n");
+        return;
+    }
+    out.line("  artefact", link.path);
+    out.line("  fidelity", fidelity_name(link.fidelity));
+    out.text("  first_tick: ");
+    out.number(link.first_tick);
+    out.text("\n  last_tick: ");
+    out.number(link.last_tick);
+    out.text("\n");
+}
+
 void write_identity(SafeStream& out, const CrashState& crash) noexcept {
     out.text("cyberdyne-crash-report 1\n");
     out.line("engine_version", crash.engine_version);
@@ -193,7 +235,11 @@ u64 write_crash_report_to_fd(i32 handle, const CrashSignal& signal) noexcept {
     const CrashState& crash = state();
     write_identity(out, crash);
     write_fault(out, signal);
+    // Health before breadcrumbs: "what was wrong" frames "what it was doing". Both are read from
+    // fixed storage with no lock, which is what lets either of them be here.
+    write_health(out, monotonic_now_ns());
     write_breadcrumbs(out);
+    write_reproduction_link(out);
     out.text("\n[backtrace]\n");
     const u32 frames = platform_write_backtrace(out.handle());
     if (frames == 0) {

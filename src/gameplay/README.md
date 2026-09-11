@@ -62,9 +62,51 @@ in one place, rather than a capability every system quietly has.
 | `indexes.h` | M8.b 3.3 | The derived indexes — by owner, team, affiliation and tag — and the digest that proves they are a cache. |
 | `diagnostics.h` | M8.b 3.2 | The entity report, the command timeline, and the rule debugger. |
 | `cook_firewall.h` | M8.c 1.3 | The **cook-time** half of the determinism firewall: a non-pinned model behind an authoritative AI node fails the cook. |
+| `firewall_arming.h` | M9 1.4b | `arm_write_firewall()` — the startup call that tells the **runtime** firewall which components are authoritative, and the report that says how much of the world it ends up guarding. |
 
 `abilities/` is `gameplay-abilities-and-effects`, a **separate target**: a project that does not use
 abilities links none of it. See `abilities/README.md`.
+
+## M9: the log seam, and arming the firewall
+
+**`CommandStream` grew a seam and nothing else changed.** `RecordSink` is a function pointer called
+once per *committed* command, from inside the merge loop, immediately after the in-memory
+`CommandLog` takes it — so the two cannot disagree about what was recorded or in what order. It is
+not consulted, it cannot reject, and it is not part of the merge key. `cy::replay::LogRecord` is
+what the other side makes of it, and `src/replay/README.md` explains why there is exactly one such
+record type for five readers.
+
+Three numbers rather than three readings, in `tests/test_log_seam.cpp`: `records_emitted()`,
+`committed_count()` and the sink's own count must agree; the sink's sequence is compared element by
+element against `committed(i)`; and two runs differing only in provenance produce the same order with
+different provenance intact.
+
+**Proved by mutation**, because a check that cannot fail is not a check. A second `sink_.fn(...)`
+added beside the first in `CommandStream::commit()`:
+
+```
+$ ctest --test-dir build/command-log -R '^unit\.gameplay_core$' --output-on-failure
+unit.gameplay_core ...............***Failed
+TEST CASE:  gameplay: the log seam sees every committed command exactly once, in merge order
+  test_log_seam.cpp:122: ERROR: CHECK_EQ( recorder.count, 6U )   values: CHECK_EQ( 12, 6 )
+  test_log_seam.cpp:130: ERROR: CHECK_EQ( recorded.sequence, committed.sequence )
+    values: CHECK_EQ( 0, 1 )
+  test_log_seam.cpp:137: ERROR: CHECK_EQ( from_seam.dx, from_stream.dx )
+    values: CHECK_EQ( 0, 1 )
+```
+
+**`arm_write_firewall()` closes M8.c's own finding.** Its gate recorded that the runtime firewall in
+`<cy/ecs/firewall.h>` is armed and guards nothing — `guarded_count()` is zero until something calls
+`declare()` or `declare_from_reflection()`, and the only callers in the tree were test files. The
+gap was never in the firewall; it was that nobody called it at startup, because until M9 nothing in
+the engine knew which components are authoritative in the sense that matters.
+
+What this phase owes is the mechanism and a report whose numbers cannot be read as better than they
+are: `guarded` is printed **beside** `underived`, because "armed: yes / guarded: 0" is precisely the
+state the gate found and it has to be visible at a glance. What it does not owe — and does not claim
+— is the check itself: task 1.4b asks for a startup report "asserted by an artefact, not by a unit
+test with three components in it", and that artefact is `samples/09-multiplayer`.
+`tests/test_firewall_arming.cpp` says so in its own header.
 
 ## The determinism firewall, and why the command origin is NOT where it is enforced
 

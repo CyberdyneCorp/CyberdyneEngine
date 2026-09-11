@@ -14,6 +14,7 @@ cy_add_test(
     NAME    harness
     KIND    integration
     SOURCES
+        test_budget_contention.cpp
         test_temp_dir.cpp
         test_wrapper_seam.cpp
     # The seam test reads the test tree it is checking. The path is compiled in rather than

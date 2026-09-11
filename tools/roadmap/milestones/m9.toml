@@ -1,0 +1,1003 @@
+# M9 — Integrity: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m9-integrity/tasks.md and the M9 row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a recipe
+# that exits zero, a command that exits zero, a benchmark within a threshold, or a committed artefact
+# that is regenerated and compared — so an intention that cannot be run is a note at the bottom of
+# this file, not a criterion.
+#
+# --- THIS LEDGER DECLARES ONLY M9's OWN CRITERIA, AND THERE IS NO `m8c-green` --------------------
+#
+# The ledger has been flat since M5 and `just roadmap-test` fails a ledger that invokes another one.
+# `just roadmap-milestone m9` evaluates the permanent set directly — the criteria of every milestone
+# whose `class = "milestone"` gate carries `state = "green"` and which sits BELOW M9 on the ladder,
+# merged and deduplicated, each distinct check run exactly once — and then the criteria in this file.
+# `criteria.build_plan` is the rule and tools/roadmap/README.md states it.
+#
+# A criterion here whose `run` string is identical to one an earlier ledger declared COLLAPSES into
+# it and is reported under the earlier label — `m0:format` rather than `m9:format`. The static gates
+# are declared anyway, as every ledger since M3 has, because a ledger that does not name the checks
+# its milestone had to satisfy is a ledger nobody can read. `four-profiles` below is deliberately
+# spelled with the identical string ten earlier ledgers used, for the same reason.
+#
+# --- EVERY COMMAND IN THIS FILE WAS RUN, EXACTLY AS WRITTEN --------------------------------------
+#
+# Thirteen gates have run and eighteen of twenty-two findings were in the CHECKING rather than in the
+# engine. M6 shipped four criteria that never executed anything; M8.b shipped one that was INVERTED;
+# M8.c shipped one whose suite contained no reference to the thing it described — deleting the
+# enforcement point left it passing 44 of 44. So, as every ledger since M8.b has required, and with
+# one addition this milestone makes:
+#
+#   * no argument passed THROUGH a `just` recipe contains a shell metacharacter, because `just`'s
+#     `*args` is interpolated textually into `bash -c` and an unquoted parenthesis reaches bash;
+#   * every `-R` pattern is a `^…$` anchor or one plain word, and every one of them was listed with
+#     `ctest -N` and its SELECTION READ rather than counted;
+#   * every criterion was executed on this machine and its output pasted into the closing report;
+#   * **and every criterion this milestone adds was MUTATED** — the thing it guards was broken and
+#     the criterion was watched go red. A check that cannot fail is not a check, and that sentence
+#     is this milestone's whole subject.
+#
+# --- THE THREE CRITERIA THAT ARE THE MILESTONE ---------------------------------------------------
+#
+#   multiplayer-session     four players, real packet loss, and four clients that roll back and
+#                           converge on the host's state hash without playing an effect twice.
+#   multiplayer-replay      the recorded log replayed to the IDENTICAL `RecordLog::hash` and the
+#                           identical state hash at every tick — a digest, not a tolerance.
+#   multiplayer-divergence  a divergence injected on purpose and narrowed to one field of one
+#                           component on one entity, with the window that reproduces it.
+#
+# Each of the three requires the artefact's named step to be IN the output as well as requiring the
+# act to pass, for `m8c:slice-control`'s reason: an act deleted from `multiplayer.py` would report
+# nothing and exit zero, and that must not read as green.
+#
+# --- ONE CRITERION IS NOT EVALUATED HERE, AND THAT IS THE HONEST ANSWER --------------------------
+#
+# `lockstep-cross-platform` carries `where = "ci"` with a reason. This host has ONE ARCHITECTURE and
+# ONE OPERATING SYSTEM; the spike's §1.4 says so and `tools/roadmap/criteria.py` has the mechanism —
+# `unmet_requirement()` reports NOT EVALUATED rather than passing it. It is declared rather than
+# omitted because the question is real and the CI matrix is where it can be asked.
+#
+# --- AND THREE GAPS ARE DECLARED RATHER THAN HIDDEN ----------------------------------------------
+#
+# `known_gap` is M8.c's mechanism and it is used here for what it is for: a criterion that RUNS, that
+# FAILS, that PRINTS its failure with the rung that must close it, and that does not hold a permanent
+# merge gate red forever. A declared gap that starts PASSING fails the ledger, so none of the three
+# can outlive itself. Each was found by an implementing agent auditing its own row rather than by the
+# gate, and each is why `diagnostics-profiling-and-crash` and `gameplay-framework` do NOT reach
+# Complete at this milestone — see `roadmap-tiers` below.
+
+schema = 1
+id = "m9"
+name = "Integrity"
+artefact = "samples/09-multiplayer — a four-player session over a simulated adverse network, recorded and read four more ways. At 180 ticks on one seeded substrate: 3,346 datagrams offered and 276 destroyed, 73 duplicated, and 95 player inputs that never arrived by the host's deadline and were substituted; 271 rollbacks over 1,530 re-simulated ticks across four clients, every one of which converged on the host's state hash with every tick of the session ultimately simulated from authoritative input; 936 effects offered through the one door RollbackEngine::offer, 630 suppressed by the side-effect ledger, 306 played and 0 played twice; a 990-record log replayed into a fresh world to the IDENTICAL RecordLog::hash and the identical state hash at every tick, and again after seeking to the checkpoint at tick 80; a divergence injected at tick 123 and narrowed to entity 4294967298, component Health(202), field shield(2), with the window — last agreeing tick 122, the checkpoint at tick 120, four commands and the session seed — that reproduces it; and a 720-record crash replay buffer covering ticks 49 to 179, written, read back and re-simulated to the hash the artefact itself carries. The determinism firewall M8.c left armed and guarding nothing is armed here over a real registry and reports 4 of 4 components guarded with 0 underived"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "`just roadmap-milestone m9` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 7.4 — moving ci.yml's `milestone` job to `m9` is checked by `workflows` below (`just ci-check`), which goes red the moment `milestone-m9` is green above the newest ledger any workflow evaluates. It is the closing change's edit to make and not this file's.",
+    "tasks 7.5 — opening the M10 change is `m10-open` below, which asks only that the change exists. AT THE TIME THIS FILE WAS WRITTEN IT FAILS, and it is meant to, exactly as m8c.toml's `m9-open` did: openspec/changes/ holds `implement-m9-integrity` and no `implement-m10-*`. The next rung IS M10 — `record.MILESTONES` carries m10 after m9 and no further split has been declared.",
+    "tasks 8.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "THE ARTEFACT'S FIGURES ARE EXACT RATHER THAN APPROXIMATE, and that is a property of the subject rather than of the machine: the condition simulator draws every drop, duplicate, delay and reorder from a seeded `determinism::RandomStream` indexed by the datagram ordinal, so two runs at one seed destroy the same datagrams. `multiplayer-control` below is the criterion that requires it, by running the session twice and comparing every figure. No number in `artefact` above is a timing.",
+    "WHY THERE IS NO CRITERION FOR THE FIVE READERS READING ONE RECORD TYPE. There is one — `replay-one-record` — and it is a C++ test rather than a grep, because `src/replay/record.h` makes it a compile-time property: `ReadsTheOneRecord` is static_asserted over every reader, so a reader that grew its own record does not link. The suite is what proves the concept still has teeth.",
+    "THE DIAGNOSTICS AND GAMEPLAY ROWS DID NOT REACH COMPLETE, and the three `known_gap` criteria below are why rather than a substitute for saying so: breadcrumbs are armed and have no callers outside their own module, a produced crash artefact still contains the build machine's absolute paths, and `gameplay-framework`'s performance table is specified to be benchmarked and is not benchmarked at all. Each is a small, nameable piece of work, which is exactly what a declared gap is for.",
+]
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set this milestone advances — the two capabilities it takes from nothing to Working, and the two it advances to Working from Seed. It completes none: see `roadmap-tiers`"
+source = "tasks 7.3"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained src/replay/, src/networking/, the determinism profile and its lint, and the four-player artefact"
+source = "tasks 8.1"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over two new directories and a sample that is five machines — including the cognitive-complexity limits this project holds systems code to"
+source = "tasks 8.1"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the engine's layer order holds with src/replay/ and src/networking/ in the tree, both at layer scene: cy::replay above cy::gameplay and cy::ecs, and cy::networking above cy::replay — so 'replication is a READER of the one command log' is a link-graph fact rather than a claim"
+source = "tasks 8.1, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree. It is what makes task 7.4 checkable: the moment `milestone-m9` goes green above the newest ledger any workflow evaluates, this goes red"
+source = "tasks 7.4, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which matters here because M9 added NO dependency at all: the reliability layer is the engine's own and the UDP backend is POSIX sockets"
+source = "tasks 8.1, thirdparty-dependencies"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it"
+source = "tasks 7.3"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the drift detection still fires, the ledger is flat, every ledger under milestones/ has a floor recorded, and a declared gap that started passing fails"
+source = "tasks 7.1, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+# --- Section 2: determinism becomes a contract ----------------------------------------------------
+
+[[criterion]]
+id = "determinism-core"
+describe = "the determinism unit suite: profiles and their guarantees, the floating-point policy's twelve replacements and the thirteen `<cmath>` functions section 0's spike forbids, the generated state codecs, hierarchical hashing, **THE VALIDATOR** — two state hashes and a log in, one field on one entity out — and `BuildConfiguration::from_build()` reporting what the BUILD did rather than what the source hoped. One suite rather than five criteria over it, because `criteria.fingerprint` collapses declarations that run the same command and a ledger that lists one check five times is a ledger that reads as five checks"
+source = "tasks 2.1, 2.3, 2.4, ROADMAP M9"
+kind = "recipe"
+run = "just test-unit -R ^unit.determinism$"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "determinism-scale"
+describe = "CHAOS SCHEDULING AND THE LENGTHS THE SPECIFICATION NAMES: an ordering dependency that a permuted reduction exposes and a stable key survives, plus the clock over four hours of ticks. SAID EXACTLY, because a criterion that claims more than its suite runs is what the last three gates kept finding: this suite is SINGLE-THREADED and models a scheduler through `ExecutionConditions::order_seed` rather than starting one. Nothing in this tree runs the same simulation under 1, 8 and 16 real workers and compares the hashes — `simulation-and-determinism`'s strategy-scale benchmark is unwritten, which is one of the two requirements that keep that capability at Working"
+source = "tasks 2.3"
+kind = "recipe"
+run = "just test-integration -R determinism_scale"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "determinism-lint"
+describe = "THE DETERMINISM LINT, over every target a profile covers: the static half that finds the code which could not meet the profile, plus §1.2's second job — asserting that every covered module was compiled with floating-point contraction off"
+source = "tasks 2.6, design.md §1.2"
+kind = "recipe"
+run = "just test-integration -R ^integration.determinism_lint$"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "determinism-lint-selftest"
+describe = "AND THE LINT'S OWN NEGATIVE CONTROL, which is why the line above means anything: one fixture per rule, and the selftest fails if the rule did not fire. Delete a rule from `scan_source()` and this goes red — without it, deleting a rule would make the criterion above greener"
+source = "tasks 2.6, delivery-roadmap"
+kind = "recipe"
+run = "just test-integration -R determinism_lint_selftest"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "state-hash-coverage"
+describe = "the state hash covers what the simulation actually holds: a subject that is hashed by nothing is reported rather than silently excluded, which is what makes a root hash comparison a claim about the world rather than about the subset somebody remembered to declare"
+source = "tasks 2.4, simulation-and-determinism"
+kind = "recipe"
+run = "just test-integration -R state_hash_coverage"
+ci_job = "milestone-m9"
+
+# ================================================================================================
+# THE EXIT CRITERION THAT IS A CONFIGURE-TIME REFUSAL, AND WHY IT IS A FIXTURE RATHER THAN A TEST
+# ================================================================================================
+#
+# `docs/ROADMAP.md`: "A session declaring a determinism profile a subsystem cannot meet is REJECTED
+# AT CONFIGURATION, not discovered later." A test binary cannot check that: by the time a test runs,
+# the configure has already succeeded. So this criterion configures three throwaway projects that
+# include `src/core/determinism/cmake/determinism_profile.cmake` and declare a profile over a target
+# whose compile options cannot meet it, and requires the first two to FAIL and the third to SUCCEED.
+#
+# THE THIRD CASE IS THE ONE THAT MAKES IT A CHECK. A criterion that only required failures would
+# pass on a function that refused everything, including every module in the engine — which is a
+# refusal mechanism nobody could ship. Removing either `message(FATAL_ERROR ...)` from
+# `cy_determinism_verify_profiles()` turns this red on the matching case; removing the whole
+# function turns it red on both.
+[[criterion]]
+id = "profile-refused-at-configuration"
+describe = "A SESSION DECLARING A PROFILE ITS BUILD CANNOT MEET IS REFUSED WHEN IT IS CONFIGURED. Three fixtures over the real `cy_declare_determinism_profile()`: a target with no contraction flag is refused naming the module and the guarantee, a target with `-ffast-math` is refused naming the option, and a target with the flag configures cleanly — because a refusal that refused everything would not be one"
+source = "tasks 2.2, ROADMAP M9 (rejected at configuration, not discovered later)"
+kind = "command"
+run = '''
+set -e
+root="$PWD"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+cat > "$work/CMakeLists.txt" <<'FIXTURE'
+cmake_minimum_required(VERSION 3.24)
+project(cy_determinism_refusal CXX)
+include("${CY_REFUSAL_ROOT}/src/core/determinism/cmake/determinism_profile.cmake")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/unit.cpp" "int cy_refusal_unit() { return 0; }\n")
+add_library(cy_refusal STATIC "${CMAKE_CURRENT_BINARY_DIR}/unit.cpp")
+target_compile_options(cy_refusal PRIVATE ${CY_REFUSAL_OPTIONS})
+cy_declare_determinism_profile(cy_refusal PROFILE SamePlatform
+    REASON "a fixture that declares a profile its compile options cannot meet")
+FIXTURE
+configure_case() {
+    cmake -S "$work" -B "$work/$1" -G Ninja -D CY_REFUSAL_ROOT="$root" \
+          -D CY_REFUSAL_OPTIONS="$2" > "$work/$1.log" 2>&1
+}
+if configure_case no-flag ""; then
+    echo "the configure SUCCEEDED with no contraction flag: the refusal is gone"; exit 1
+fi
+grep -q "Determinism profile refused at configuration" "$work/no-flag.log"
+grep -q "floating-point contraction off" "$work/no-flag.log"
+if configure_case fast-math "-ffp-contract=off;-ffast-math"; then
+    echo "the configure SUCCEEDED with -ffast-math: the refusal is gone"; exit 1
+fi
+grep -q "fast-math transformations disallowed" "$work/fast-math.log"
+if ! configure_case clean "-ffp-contract=off"; then
+    echo "the configure FAILED with the flag present: the refusal refuses everything"
+    cat "$work/clean.log"; exit 1
+fi
+echo "refused: no flag, and -ffast-math. Configured: the flag present."
+'''
+timeout_s = 900
+ci_job = "milestone-m9"
+
+# --- Section 1 and 3: one command log, read five ways ---------------------------------------------
+
+[[criterion]]
+id = "replay-core"
+describe = "the record itself and the readers over it: one 192-byte `LogRecord` encoded field by field little-endian, with `record_hash()` excluding provenance and source so that a replay's digest matches the session it reproduces; the side-effect ledger's own arithmetic; the divergence cursor; and LOCKSTEP with its late-arrival policies, desync verdict and resynchronisation — including the decision that a deadline is an `ExternalResult` record rather than a sixth record kind, because whether a packet arrived by a deadline is by definition something the simulation did not compute"
+source = "tasks 1.1, 1.5"
+kind = "recipe"
+run = "just test-unit -R replay_core"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "replay-one-record"
+describe = "**THE FIVE READERS READ ONE RECORD TYPE.** `design.md` §2's named failure is replay growing a log, replication growing a second and the crash buffer growing a third until a replay of a networked session is a different program from the session. `unit.replay_core` holds the compile-time half — `ReadsTheOneRecord` is static_asserted over every reader, so a reader with its own record does not link — and this is the half a static_assert cannot give: exactly ONE record type id is declared anywhere in the tree. A second module that declared its own would compile perfectly"
+source = "tasks 1.5, design.md §2"
+kind = "command"
+run = "set -eo pipefail; found=$(grep -rn 'kRecordTypeId' src/ samples/ tools/ --include='*.h' --include='*.cpp' | grep 'constexpr' || true); n=$(printf '%s' \"$found\" | grep -c . || true); echo \"$n declaration(s) of a record type id across src/, samples/ and tools/\"; printf '%s\\n' \"$found\"; printf '%s' \"$found\" | grep -q '^src/replay/'; test \"$n\" -eq 1"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "replay-log"
+describe = "the append-only, tick-monotonic log with its chunk index; external results; the compatibility manifest and `classify()` distinguishing Reproducible from Compatible from Incompatible, with Corrupt never inferred from a mismatch"
+source = "tasks 1.1, 1.2"
+kind = "recipe"
+run = "just test-integration -R replay_log"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "replay-snapshot"
+describe = "snapshot kinds and checkpoints generalising `cy::ecs::Snapshot` rather than replacing it, the bounded rollback window, and a request older than the window REPORTED as requiring resynchronisation rather than triggering an unbounded replay"
+source = "tasks 1.3"
+kind = "recipe"
+run = "just test-integration -R replay_snapshot"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "rollback-no-duplicate-effects"
+describe = "**THE DUPLICATE-EFFECT PROOF, AT THE LOOP.** `test_ledger.cpp` proves the ledger suppresses a duplicate key; this suite proves the ROLLBACK LOOP consults it, which is what the exit criterion is about — a loop that re-simulated without ever calling `offer()` would pass every case in the ledger's own file. Replacing the body of `RollbackEngine::offer()` with `return EffectVerdict::Realise;` turns it red naming the number of explosions"
+source = "tasks 3.2, ROADMAP M9 (proven by a duplicate-effect test)"
+kind = "recipe"
+run = "just test-integration -R replay_session"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "gameplay-log-seam"
+describe = "`CommandStream`'s log seam: every command recorded once, in order, with its provenance — and NOTHING about provenance affecting validation, ordering or execution, which `gameplay-framework` forbids and M8.c's firewall decision depends on"
+source = "tasks 1.1"
+kind = "recipe"
+run = "just test-unit -R gameplay_core"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "firewall-armed"
+describe = "ARMING THE FIREWALL M8.c LEFT GUARDING NOTHING (task 1.4b): `arm_write_firewall()` derives authority from what components declare, refuses a by-hand declaration with no reason and one naming a component that is not registered, and reports `guarded` BESIDE `underived` — because a firewall that guards a tenth of the world and one that guards all of it read identically otherwise"
+source = "tasks 1.4b"
+kind = "recipe"
+run = "just test-integration -R gameplay_firewall"
+ci_job = "milestone-m9"
+
+# --- Section 4: networking ------------------------------------------------------------------------
+
+[[criterion]]
+id = "networking-core"
+describe = "the three network modes and what each requires, the authority model and its handover, the compiled replication schemas and their bit encoders, interest management and the priority scheduler — all of it integer arithmetic, because a priority decided in floating point is one two builds can order differently"
+source = "tasks 4.2, 4.3, 4.4"
+kind = "recipe"
+run = "just test-unit -R networking_core"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "networking-session"
+describe = "the reliability layer both transports share — sequencing, acknowledgement, retransmission, duplicate rejection and ordered delivery — driven over the in-process substrate under real latency, jitter, loss, duplication and reordering, with baselines promoted on acknowledgement rather than on send"
+source = "tasks 4.2, 4.3, 4.5"
+kind = "recipe"
+run = "just test-integration -R networking_session"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "networking-udp"
+describe = "and the same reliability layer over a real POSIX socket, because a transport abstraction with one implementation is a class rather than an abstraction"
+source = "tasks 4.2"
+kind = "recipe"
+run = "just test-integration -R networking_udp"
+ci_job = "milestone-m9"
+
+# TASK 4.1, AND IT IS THE ONE THIS MILESTONE OPENED WITH. `CY_NETWORKING` was declared, defaulted
+# OFF and gated NOTHING — no `if(CY_NETWORKING)` and no `#if defined` anywhere in the tree, which is
+# `CY_UI`'s shape and what M8.b's gate found. Both directions are checked, because an option tested
+# in neither is exactly what was wrong with it.
+[[criterion]]
+id = "networking-defaults-on"
+describe = "`CY_NETWORKING` DEFAULTS ON AND GATES SOMETHING. A configure with no `-D` at all must produce `CY_NETWORKING:BOOL=ON` in the cache AND declare the targets behind it — the module and the artefact — because an option whose default nobody checked is how it came to gate nothing for a whole milestone"
+source = "tasks 4.1, delivery-roadmap"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:+${CY_BUILD_DIR}/net-default}"
+d="${d:-build/m9-net-default}"
+rm -rf "$d"
+CY_BUILD_DIR="$d" just build-engine --profile dev > /dev/null
+grep -q "^CY_NETWORKING:BOOL=ON$" "$d/CMakeCache.txt" || {
+    echo "a default configure left CY_NETWORKING off:"; grep "^CY_NETWORKING" "$d/CMakeCache.txt"; exit 1; }
+test -d "$d/src/networking" || { echo "CY_NETWORKING is ON and src/networking/ declared no targets"; exit 1; }
+test -d "$d/samples/09-multiplayer" || { echo "CY_NETWORKING is ON and the artefact was not declared"; exit 1; }
+echo "CY_NETWORKING:BOOL=ON by default, with src/networking/ and samples/09-multiplayer declared behind it"
+'''
+timeout_s = 14400
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "networking-option-off"
+describe = "and the tree builds and passes with `-D CY_NETWORKING=OFF`, which removes the TRANSPORT and not the RECORD: `ReplicationInputCursor` stays in src/replay/ and outside the option, so a log is still read five ways in a build with no network in it"
+source = "tasks 4.1, delivery-roadmap"
+kind = "command"
+run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-networking}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_NETWORKING=OFF; CY_BUILD_DIR=\"$d\" just test-integration --profile dev -R replay_session"
+timeout_s = 14400
+ci_job = "milestone-m9"
+
+# THE EXIT CRITERION'S OWN WORD IS "MEASURED", AND IT IS A CURVE RATHER THAN A POPULATION.
+# `cy_net_bandwidth_curve` runs the real `InterestSet` and the real `PriorityScheduler` at eight
+# populations and prints CSV; this criterion requires the budget to hold at EVERY row and the
+# entities examined to scale with the peer's cells rather than with the world. Asserting a budget at
+# one population would satisfy neither half of the sentence.
+[[criterion]]
+id = "bandwidth-curve"
+describe = "BANDWIDTH STAYS WITHIN BUDGET AS ENTITY COUNT SCALES, measured as a curve: the real interest set and the real scheduler at eight populations from 100 to 20,000. Three properties, each read off the rows rather than asserted at one population — the peak bytes never exceed the declared budget; interest management excludes part of the world at every population; and the SELECTED set saturates while the world grows two hundredfold, with the remainder deferred rather than dropped"
+source = "tasks 4.4, ROADMAP M9 (measured, not assumed)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+csv="$(mktemp)"
+trap 'rm -f "$csv"' EXIT
+"$d/src/networking/tools/cy_net_bandwidth_curve" > "$csv"
+cat "$csv"
+python3 - "$csv" <<'CHECK'
+import csv, sys
+rows = list(csv.DictReader(open(sys.argv[1], newline="")))
+if len(rows) < 4:
+    sys.exit(f"the curve has {len(rows)} point(s): that is a population, not a curve")
+over = [r for r in rows if int(r["peak_bytes"]) > int(r["bytes_budget"])]
+if over:
+    sys.exit(f"the budget is exceeded at {len(over)} population(s): {over[0]}")
+everything = [r for r in rows if int(r["candidates"]) >= int(r["population"])]
+if everything:
+    sys.exit(f"interest management excluded nothing at {len(everything)} population(s): "
+             f"{everything[0]}")
+first, last = rows[0], rows[-1]
+world = int(last["population"]) / max(1, int(first["population"]))
+selected = int(last["peak_selected"]) / max(1, int(first["peak_selected"]))
+if selected * 4 >= world:
+    sys.exit(f"the selected set grew {selected:.1f}x while the world grew {world:.1f}x: "
+             "the budget is not bounding anything")
+if int(last["deferred_total"]) == 0:
+    sys.exit("nothing was deferred at the largest population, so the budget never bit")
+print(f"{len(rows)} populations; the budget held at every one "
+      f"({last['peak_bytes']} of {last['bytes_budget']} bytes at {last['population']} entities); "
+      f"the world grew {world:.0f}x and the selected set {selected:.1f}x, "
+      f"with {last['deferred_total']} deferrals")
+CHECK
+'''
+timeout_s = 7200
+ci_job = "milestone-m9"
+
+# --- Section 6: the artefact ----------------------------------------------------------------------
+#
+# SIX CRITERIA OVER ONE ARTEFACT, and each of the four acts requires its own named step to be in the
+# output as well as requiring the act to pass — `m8c:slice-control`'s rule, for its reason: an act
+# deleted from `multiplayer.py` would report nothing and exit zero.
+
+[[criterion]]
+id = "multiplayer-artefact"
+describe = "THE CTEST ENTRY: the whole artefact on a shorter session, needing no display and no graphics device because there is no renderer anywhere in its link closure"
+source = "tasks 6.1 to 6.4"
+kind = "recipe"
+run = "just test-integration -R multiplayer_session"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "multiplayer-recipe"
+describe = "and the same artefact through the workflow a contributor types, at the length the committed pictures are drawn from"
+source = "tasks 6.1 to 6.5, delivery-roadmap (its named artefact SHALL run from a single recipe)"
+kind = "recipe"
+run = "just run-multiplayer"
+timeout_s = 3600
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "multiplayer-session"
+describe = "**A FOUR-PLAYER SESSION WITH ROLLBACK UNDER PACKET LOSS.** The loss is injected and counted, the host substitutes for the inputs that never arrived, all four clients roll back, and every one of them converges on the host's state hash with no effect played twice. The act must pass AND its named step must be in the output"
+source = "tasks 6.1, ROADMAP M9"
+kind = "command"
+run = "set -o pipefail; out=$(just run-multiplayer --only session 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the session act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'all four clients converge on the host.s state hash' || { echo 'the convergence step is not in the output: it has been removed or renamed'; exit 1; }; echo \"$out\" | grep -q 'no explosion is played twice for the same entity at the same tick' || { echo 'the duplicate-effect step is not in the output'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "multiplayer-replay"
+describe = "**A REPLAY THAT REPRODUCES IT BIT-EXACTLY.** The same `RecordLog::hash` and the same state hash at every tick — a digest, not a tolerance — and the same again after seeking to a checkpoint and fast-forwarding from it"
+source = "tasks 6.2, ROADMAP M9 (reproduces the final state hash exactly, including after seeking)"
+kind = "command"
+run = "set -o pipefail; out=$(just run-multiplayer --only replay 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the replay act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'the replayed log is the recorded log, digest for digest' || { echo 'the bit-exact step is not in the output: it has been removed or renamed'; exit 1; }; echo \"$out\" | grep -q 'and the same hash again after seeking to a checkpoint' || { echo 'the seek step is not in the output'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "multiplayer-divergence"
+describe = "**AN INJECTED DIVERGENCE NARROWED TO A FIELD.** Not 'these two runs diverge' but 'this run diverged at tick 123, on entity 4294967298, in Health.shield' — with the window that reproduces it. The act asserts the RIGHT field as well as a field: a localiser that named the first thing it found would satisfy 'it named one'"
+source = "tasks 6.3, ROADMAP M9 (localised to a field by the validator, with the artefact to reproduce it)"
+kind = "command"
+run = "set -o pipefail; out=$(just run-multiplayer --only divergence 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the divergence act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'it is narrowed to one field of one component on one entity' || { echo 'the narrowing step is not in the output: it has been removed or renamed'; exit 1; }; echo \"$out\" | grep -q 'and the window that reproduces it' || { echo 'the reproduction window step is not in the output'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "multiplayer-crash"
+describe = "A CRASH PRODUCES AN ARTEFACT THAT REPRODUCES THE CRASH FROM THE REPLAY BUFFER: the bounded ring flushed, written, read back, and re-simulated to the hash the artefact itself carries. Not 'the file parsed' — the final seconds of the session happened again"
+source = "tasks 6.4, 3.4, ROADMAP M9"
+kind = "command"
+run = "set -o pipefail; out=$(just run-multiplayer --only crash 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the crash act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'the crash artefact re-simulates to the hash it carries' || { echo 'the reproduction step is not in the output: it has been removed or renamed'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m9"
+
+# THE FOUR PROFILES HAVE TO AGREE ABOUT THE SESSION, AND THAT IS THE ARTEFACT'S HALF OF §1.2.
+#
+# The spike's finding is that a determinism profile is a BUILD-CONFIGURATION contract rather than
+# only a source contract: two builds of identical source differing in a compile flag produce
+# different state hashes. `determinism-lint` checks that from the build's side, over every covered
+# module. This checks it from the artefact's side, over a program that plays a session: Debug at
+# `-O0` with `CY_UNOPTIMISED` and Development at `-O2` must produce BYTE-IDENTICAL output — every
+# count, every state hash and every log digest — from one seed.
+#
+# It is also the check M8.c's gate would have wanted: its artefact was red in Debug and nobody had
+# looked. Every figure this milestone reports is a count rather than a timing precisely so that the
+# four profiles have to agree about it.
+[[criterion]]
+id = "multiplayer-profiles-agree"
+describe = "THE SAME SESSION, BUILT TWO WAYS, PRODUCES THE SAME BYTES. Debug at -O0 with CY_UNOPTIMISED and Development at -O2, one seed, and a `diff` over the program's whole output — 125 figures including every state hash, the recorded and replayed `RecordLog::hash`, the narrowed divergence's two field hashes and the crash artefact's reproduced hash. A build-configuration difference that moved a last bit would move the root hash, which is what §1.2 of the design measured and what this refuses to let regress"
+source = "tasks 6.1, 8.1, design.md §1.2"
+kind = "command"
+run = '''
+set -e
+base="${CY_BUILD_DIR:-build}"
+for p in debug dev; do
+    CY_BUILD_DIR="$base/agree-$p" just build-engine --profile "$p" > /dev/null
+done
+out="$(mktemp -d)"
+trap 'rm -rf "$out"' EXIT
+for p in debug dev; do
+    "$base/agree-$p/samples/09-multiplayer/cy_sample_multiplayer" --ticks 120 --seed 152092927 \
+        > "$out/$p.txt"
+done
+if ! diff "$out/debug.txt" "$out/dev.txt"; then
+    echo "Debug and Development disagree about the session"; exit 1
+fi
+echo "Debug (-O0, CY_UNOPTIMISED) and Development (-O2) agree on all $(grep -c ' = ' "$out/dev.txt") figures, every hash included"
+'''
+timeout_s = 14400
+ci_job = "milestone-m9"
+
+# THE NEGATIVE CONTROLS, AND THEY ARE WHAT MAKE THE THREE ABOVE MEASUREMENTS. A lossy session whose
+# loss cannot be shown to be doing anything proves nothing, and a lossy session that is not
+# reproducible is one nobody can act on — which would be a strange thing for THIS milestone to ship.
+[[criterion]]
+id = "multiplayer-control"
+describe = "THE CONTROLS: the same session on a PERFECT network destroys nothing and substitutes nothing — so the adverse conditions are doing the work the session act says they are — and the same session run twice at one seed produces byte-identical output, every figure and every hash"
+source = "tasks 6.1, design.md §1.6 (a check that cannot fail is not a check)"
+kind = "command"
+run = "set -o pipefail; out=$(just run-multiplayer --only control 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the control act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'a perfect network destroys nothing and the host substitutes nothing' || { echo 'the loss control is not in the output: it has been removed or renamed'; exit 1; }; echo \"$out\" | grep -q 'two runs at one seed lose the same datagrams and reach the same hashes' || { echo 'the seed control is not in the output'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m9"
+
+# --- The committed pictures -----------------------------------------------------------------------
+#
+# RULE 14, AND EACH ONE SAYS WHICH KIND IT IS ON ITS OWN FACE. M8.c's gate found that a picture which
+# does not say whether it is engine output or a drawing gets read as whichever of the two is more
+# flattering. `m9-bandwidth-curve.png` is ENGINE OUTPUT — every point is a number the scheduler
+# produced. The other five are DIAGRAMS and are labelled as such, because this milestone's subjects
+# are a record, a reconciliation and a divergence, none of which has a photograph.
+
+# TASK 7.5b, FIRST HALF: A COMMITTED PICTURE THAT WENT STALE WOULD STILL PASS A `kind = "path"`.
+#
+# M8.c's closing gate found it and could not fix it inside its own scope: the six criteria below
+# check that a FILE EXISTS. `delivery-roadmap` allows "a committed artefact that is regenerated and
+# compared", and M8.c's gate reported what making that real needs — a fixed parameter set and a
+# tolerance. Both exist here, and the measurement came out better than the tolerance:
+#
+#   THE THREE ENGINE-OUTPUT FIGURES REGENERATE BYTE-IDENTICALLY, FROM A DEBUG BUILD AT -O0 AGAINST
+#   PICTURES DRAWN BY A DEVELOPMENT BUILD AT -O2. Every number behind them is an integer — the
+#   scheduler's byte counts, the rollback depths, the substituted inputs, the field a divergence
+#   narrowed to — which is the property `multiplayer-profiles-agree` asserts for the session and
+#   which the pictures inherit.
+#
+# THE FIXED PARAMETER SET is `multiplayer.py`'s own defaults, `--ticks 180 --seed 0x0910C0FF`, and
+# `cy_net_bandwidth_curve`'s eight populations, which take no arguments at all. THE TOLERANCE is
+# stated and is a fallback rather than the assertion: bytes first, and if a future matplotlib writes
+# the same picture differently, a pixel comparison with a mean absolute difference of at most 1/255
+# and at most one pixel in a thousand differing at all. A changed curve moves far more than that; a
+# re-encoded PNG moves far less.
+#
+# WHAT THIS DOES NOT COVER, SAID PLAINLY. Three of the six pictures are not regenerable here and stay
+# `kind = "path"`: `m9-determinism-spike-matrix.png` is drawn by a spike that lives outside this
+# repository, and `m9-one-record-five-readers.png` and `m9-replay-rollback-divergence.png` are
+# DIAGRAMS with no program behind them. A diagram is checked by reading it, and saying so is better
+# than a check that pretends otherwise.
+[[criterion]]
+id = "figures-regenerated"
+describe = "THE THREE ENGINE-OUTPUT FIGURES ARE REGENERATED AND COMPARED, not merely present: the four-player session, the narrowed divergence and the bandwidth curve are redrawn from a fresh run at the artefact's own fixed parameters and compared against the committed files. A picture that went stale — a run whose numbers moved, a figure nobody redrew — fails here, which is what a path criterion cannot do"
+source = "tasks 7.5b, 6.5, delivery-roadmap"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/shots"
+# The artefact's own defaults are the fixed parameter set: --ticks 180 --seed 0x0910C0FF.
+python3 samples/09-multiplayer/multiplayer.py --build-dir "$d" --work "$work/run" --shots "$work/shots" > "$work/artefact.log" || { tail -30 "$work/artefact.log"; exit 1; }
+"$d/src/networking/tools/cy_net_bandwidth_curve" > "$work/curve.csv"
+python3 src/networking/tools/curve.py "$work/curve.csv" "$work/shots/m9-bandwidth-curve.png" > /dev/null
+python3 - "$work/shots" <<'CHECK'
+import hashlib, pathlib, sys
+
+FIGURES = ("m9-multiplayer-session.png", "m9-divergence-narrowed.png", "m9-bandwidth-curve.png")
+MEAN_TOLERANCE = 1.0 / 255.0     # a re-encoding moves nothing; a changed curve moves whole regions
+PIXEL_FRACTION = 0.001
+
+fresh = pathlib.Path(sys.argv[1])
+committed = pathlib.Path("docs/design/images")
+stale = []
+for name in FIGURES:
+    a, b = committed / name, fresh / name
+    if not b.is_file():
+        stale.append(f"{name}: the run drew no such figure")
+        continue
+    digest = (hashlib.sha256(a.read_bytes()).hexdigest(),
+              hashlib.sha256(b.read_bytes()).hexdigest())
+    if digest[0] == digest[1]:
+        print(f"  {name}: byte-identical to the regenerated figure ({digest[0][:16]})")
+        continue
+    try:
+        import matplotlib.image as image
+        import numpy
+    except ImportError:
+        stale.append(f"{name}: the bytes differ and no pixel comparison is available")
+        continue
+    one, two = image.imread(a), image.imread(b)
+    if one.shape != two.shape:
+        stale.append(f"{name}: regenerated at {two.shape} against a committed {one.shape}")
+        continue
+    difference = numpy.abs(one.astype("float64") - two.astype("float64"))
+    mean = float(difference.mean())
+    moved = float((difference.max(axis=2) > MEAN_TOLERANCE).mean())
+    if mean <= MEAN_TOLERANCE and moved <= PIXEL_FRACTION:
+        print(f"  {name}: within tolerance (mean {mean:.5f}, {moved * 100:.3f}% of pixels moved)")
+    else:
+        stale.append(f"{name}: mean difference {mean:.5f} over {moved * 100:.2f}% of pixels — the committed picture is not this run's")
+if stale:
+    print(f"{len(stale)} committed figure(s) are not what the engine draws today:")
+    for line in stale:
+        print(f"  {line}")
+    sys.exit(1)
+print(f"{len(FIGURES)} committed figure(s) regenerated and compared; none is stale")
+CHECK
+'''
+timeout_s = 7200
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "screenshot-multiplayer-session"
+describe = "THE ARTEFACT'S PICTURE: where the four players are, how far back each client had to go tick by tick, and every input the host had to substitute — drawn from the run's own trace, and it says so"
+source = "tasks 6.5"
+kind = "path"
+path = "docs/design/images/m9-multiplayer-session.png"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "screenshot-divergence"
+describe = "the narrowing, drawn as the descent it actually is: state hash tree, archetype, entity, field — with the two hashes and the window that reproduces them"
+source = "tasks 6.3, 6.5"
+kind = "path"
+path = "docs/design/images/m9-divergence-narrowed.png"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "screenshot-bandwidth-curve"
+describe = "the bandwidth curve, which is ENGINE OUTPUT rather than a diagram: every point is a number `cy_net_bandwidth_curve` produced in the run whose CSV drew it"
+source = "tasks 4.4, 6.5"
+kind = "path"
+path = "docs/design/images/m9-bandwidth-curve.png"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "screenshot-determinism-spike"
+describe = "the spike's agreement matrix: sixteen workloads over twenty build configurations, and the two columns that break the green"
+source = "tasks 0.4, design.md §1"
+kind = "path"
+path = "docs/design/images/m9-determinism-spike-matrix.png"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "screenshot-one-record"
+describe = "one command log and the five readers that are not allowed to fork it — `design.md` §2's argument as a picture"
+source = "tasks 1.5, design.md §2"
+kind = "path"
+path = "docs/design/images/m9-one-record-five-readers.png"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "screenshot-replay-rollback"
+describe = "the rollback window, the side-effect ledger and the divergence narrowing, as the module that implements them draws them"
+source = "tasks 3.1, 3.2, 6.5"
+kind = "path"
+path = "docs/design/images/m9-replay-rollback-divergence.png"
+ci_job = "milestone-m9"
+
+# --- What this milestone knows it did not finish --------------------------------------------------
+#
+# THREE DECLARED GAPS. Each RUNS on every evaluation, each PRINTS its failure with the rung that must
+# close it, and a declared gap that starts PASSING fails the ledger — so none of them can outlive
+# itself. They are declared rather than deleted for `m8c:steam-audio-configures`' reason: a milestone
+# that quietly dropped a requirement is repeating exactly what these gates keep finding.
+
+# THE SEVENTH PICTURE, WHICH THE CLOSING GATE FOUND COMMITTED AND UNCHECKED. Six criteria above
+# named six images; `src/core/diagnostics/README.md` embeds a seventh. A committed file that no
+# criterion names is a file whose deletion nothing notices.
+[[criterion]]
+id = "screenshot-rolling-capture"
+describe = "the rolling capture and the writer's redaction, half diagram and half engine output, and the README that embeds it says which half is which — `tools/trace/trace_inspect.py` over a capture this module wrote, pasted verbatim beside a drawing of the ring"
+source = "tasks 5.3, 6.5"
+kind = "path"
+path = "docs/design/images/m9-rolling-capture-and-redaction.png"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "breadcrumbs-adopted"
+describe = "BREADCRUMBS ARE ARMED AND GUARD NOTHING, which is the same shape as the firewall M9 had to arm. `diagnostics-profiling-and-crash` requires breadcrumbs at coarse phase boundaries — tick, stage, asset activation, level transition, save — and per-pass markers in the render graph. `grep -rn CY_BREADCRUMB src/` outside src/core/diagnostics/ returns NOTHING, so a crash artefact written today says `[breadcrumbs] 0 of 64`"
+source = "tasks 5.3, diagnostics-profiling-and-crash"
+kind = "command"
+run = "set -o pipefail; callers=$(grep -rl 'CY_BREADCRUMB' src/ --include='*.cpp' --include='*.h' 2>/dev/null | grep -v '^src/core/diagnostics/' | wc -l); echo \"$callers caller(s) of CY_BREADCRUMB outside src/core/diagnostics/\"; test \"$callers\" -gt 0"
+known_gap = "the breadcrumb ring has no callers outside its own module, so a crash artefact reports zero breadcrumbs. Four of the five boundaries the specification names are in directories this milestone's other phases owned, and adopting it is a small, nameable piece of work rather than a design question"
+known_gap_closes = "m10"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "crash-artefact-paths"
+describe = "A PRODUCED CRASH ARTEFACT STILL CONTAINS THE BUILD MACHINE'S ABSOLUTE PATHS. `diagnostics-profiling-and-crash` is unambiguous — 'WHEN any produced trace, log or crash artefact is inspected for strings THEN it SHALL contain no absolute path from the build machine, and the check SHALL be a gate rather than a review'. This IS that gate: it runs the real crash probe and greps what it wrote. Source locations were closed at this milestone; module paths were not, because `backtrace_symbols_fd()` writes each frame's absolute module path straight to the descriptor"
+source = "tasks 5.3, diagnostics-profiling-and-crash"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# BY ABSOLUTE PATH, DELIBERATELY, and this is the whole difference between a gate and a
+# coincidence. `backtrace_symbols_fd()` prints each frame's module as the loader resolved it, so a
+# probe invoked as `build/dev/.../cy_diag_crash_probe` writes a RELATIVE path and the grep below
+# finds nothing — which is how this check first reported green over an artefact that carries the
+# account name the moment anybody runs an installed binary, a CI runner or a double-clicked game.
+case "$d" in /*) probe="$d/src/core/diagnostics/tests/cy_diag_crash_probe" ;;
+             *) probe="$PWD/$d/src/core/diagnostics/tests/cy_diag_crash_probe" ;;
+esac
+test -x "$probe"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+report="$("$probe" "$work" segv 2>/dev/null | head -1)" || true
+test -n "$report" && test -f "$report"
+found=$(grep -c -E '(/home/|/Users/|[A-Za-z]:\\)' "$report" || true)
+echo "$report: $found line(s) carrying an absolute build-machine path"
+grep -m 3 -o -E '(/home|/Users)/[A-Za-z0-9_.-]+' "$report" || true
+test "$found" -eq 0
+'''
+known_gap = "the [backtrace] section is written by backtrace_symbols_fd(), which emits each frame's absolute module path; the artefact's own header declares it potentially-personal. The repair is a module table captured at install time via dl_iterate_phdr with the fault path writing addresses plus a basename, which changes the format `just diagnose-crash --symbolicate` parses"
+known_gap_closes = "m10"
+timeout_s = 7200
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "record-matches-plan-history"
+describe = "FOUR CLOSED MILESTONES' COLUMNS CLAIM NINETEEN CELLS THE STATUS RECORD DOES NOT SUPPORT, THIRTEEN OF THEM COMPLETE. The same comparison `record-matches-plan` makes for M9, made for every milestone whose gate is already green: M8.b's column alone claims twelve Completes — `rendering-architecture`, `shader-system`, `material-compiler`, `core-memory-and-containers` and eight more — and the record holds every one of them at Working. M9 repaired its own column by moving six cells to M11; it did not audit four earlier milestones, and claiming them silently would be the very thing this criterion exists to catch"
+source = "tasks 7.6, 8.4, delivery-roadmap"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import plan, record
+
+gates = tomllib.load(open("tools/roadmap/gates.toml", "rb"))["gate"]
+closed = {g["milestone"] for g in gates if g.get("class") == "milestone" and g["state"] == "green"}
+matrix = plan.read_matrix()
+recorded = {e.capability: e for e in record.load()}
+short = []
+for rung in matrix.milestones:
+    if rung not in closed:
+        continue
+    for capability, columns in sorted(matrix.cells.items()):
+        planned = columns.get(rung)
+        if planned is None:
+            continue
+        have = recorded.get(capability)
+        tier = have.tier if have else "none"
+        if have is None or plan.tier_rank(tier) < plan.tier_rank(planned):
+            short.append((rung, capability, planned, tier))
+by_rung = {}
+for rung, capability, planned, tier in short:
+    by_rung.setdefault(rung, []).append(f"{capability} ({planned} planned, {tier} recorded)")
+print(f"{len(short)} cell(s) over {len(by_rung)} closed milestone(s) exceed the status record")
+for rung, entries in sorted(by_rung.items()):
+    print(f"  {rung.upper()}: " + "; ".join(entries))
+sys.exit(1 if short else 0)
+CHECK
+'''
+known_gap = "four milestones closed with Complete cells in their own columns that the status record does not support, and no check compared the two until M9's gate wrote one. M9 repaired its own column; auditing M3's, M4's, M5's and M8.b's is a record correction against `delivery-roadmap` — the same shape as the two M8.c's gate handed forward — and it is work for a milestone that can examine those rows rather than for the gate that found them"
+known_gap_closes = "m10"
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "gameplay-benchmarks"
+describe = "`gameplay-framework`'s PERFORMANCE TABLE IS SPECIFIED TO BE BENCHMARKED AND IS NOT BENCHMARKED AT ALL. The specification's table — 100k active entities, 1M resident, 10k batch spawn, 100k commands a second, indexed queries, integer tag tests, no virtual dispatch — 'SHALL be benchmarked rather than asserted', and the framework's own cost 'SHALL be a reported fraction of simulation frame time'. `benchmarks/baseline.json` holds six entries and every one of them is `ecs/*` or `harness/*`"
+source = "tasks 5.1, gameplay-framework"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import json, sys
+recorded = json.load(open("benchmarks/baseline.json"))["benchmarks"]
+ids = sorted(recorded)
+gameplay = [name for name in ids if name.startswith("gameplay/")]
+print(f"{len(gameplay)} gameplay benchmark(s) of {len(ids)} in benchmarks/baseline.json: {ids}")
+sys.exit(0 if gameplay else 1)
+CHECK
+'''
+known_gap = "the gameplay framework's performance contracts are asserted in a specification and measured nowhere. This blocker is independent of sections 3 and 4 landing, which is why `gameplay-framework` does not reach Complete at this milestone"
+known_gap_closes = "m10"
+ci_job = "milestone-m9"
+
+# --- What this machine cannot answer --------------------------------------------------------------
+#
+# ONE ARCHITECTURE, ONE OPERATING SYSTEM. `design.md` §1.4 states it, and it also states what to do
+# when the honest mechanism is not buildable inside the milestone: "the honest record is a
+# **`known_gap` with a rung that must close it**, never a criterion quietly reported green."
+#
+# THIS CRITERION WAS `where = "ci"` UNTIL THE CLOSING GATE READ IT, AND THAT WAS THE M8.c DEFECT
+# EXACTLY. `where = "ci"` reports NOT EVALUATED on this host — correct — but ci.yml runs the ledger
+# with `--ci`, which makes `unmet_requirement()` return nothing and RUNS the command. The command was
+# `just test-integration -R replay_log`: a single-leg suite, byte-identical to `replay-log`'s own
+# command four sections above, which `criteria.fingerprint` therefore deduplicates into it. So the
+# criterion described as "lockstep holds across two platforms" would have gone GREEN in continuous
+# integration the first time that job ran, satisfied by a suite with no second architecture in it —
+# a criterion whose suite contains no reference to the thing it describes, which is the finding M8.c
+# closed on and the reason this gate re-reads every criterion it inherits.
+#
+# WHAT REPLACES IT RUNS EVERYWHERE AND FAILS EVERYWHERE, and it fails on the true statement: nothing
+# in this repository compares a state hash between two architectures. The legs run independently, so
+# the shape that would close it is an upload-then-compare job — one leg publishes
+# `LockstepSession::publish_hash`'s digest as an artefact, a following job downloads both and
+# compares — and the check below looks for exactly that job. It closes at M11, which is the rung
+# that owns the platform matrix ("Metal and D3D12 backends, a native platform backend, mobile
+# targets"), not at M10, whose subject is worlds.
+#
+# AND THE SINGLE-LEG SUITE IS NOT LOST: `replay-log` runs it, under its own name, describing what it
+# actually asserts.
+[[criterion]]
+id = "lockstep-cross-platform"
+describe = "LOCKSTEP HOLDS ACROSS TWO PLATFORMS FOR THE CrossPlatform PROFILE — AND NOTHING IN THIS TREE HAS COMPARED A STATE HASH BETWEEN TWO ARCHITECTURES, so this runs, fails, and names the rung. `DeterminismConfiguration::require(DeterminismProfile::Lockstep)` refuses in this tree with DeterministicMathMissing rather than granting what nothing measured, and `docs/roadmap/status.yaml` does not record `simulation-and-determinism` as claiming cross-architecture determinism. The check looks for the only shape that could close it: a continuous-integration job that downloads one leg's published hash and compares it with another's"
+source = "tasks 0.3, 3.3, ROADMAP M9, design.md §1.4"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import pathlib, re, sys
+
+workflows = sorted(pathlib.Path(".github/workflows").glob("*.y*ml"))
+comparing = []
+for path in workflows:
+    text = path.read_text(encoding="utf-8")
+    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
+        name = block.strip().split(":", 1)[0].strip()
+        lowered = block.lower()
+        if "lockstep" not in lowered:
+            continue
+        if "download-artifact" not in lowered:
+            continue
+        comparing.append(f"{path.name}:{name}")
+print(f"{len(workflows)} workflow(s) examined; "
+      f"{len(comparing)} job(s) compare a lockstep hash between legs: {comparing or 'none'}")
+if not comparing:
+    print("  no job publishes one architecture's state hash and compares it with another's, so the")
+    print("  CrossPlatform guarantee is unmeasured rather than met. The six-leg matrix in ci.yml")
+    print("  includes linux-arm64, macos-arm64 and windows-arm64: the legs exist and the comparison")
+    print("  between them does not.")
+sys.exit(0 if comparing else 1)
+CHECK
+'''
+known_gap = "this host has one architecture and one operating system, and no continuous-integration job compares a state hash between two of them. The legs exist — ci.yml's build and test matrices are six, including linux-arm64, macos-arm64 and windows-arm64 — but they run independently, so closing this needs an upload-then-compare job that M9 did not build. It is declared rather than reported NOT EVALUATED because `where = \"ci\"` would have made it PASS in continuous integration, satisfied by a single-leg suite, which is the defect this practice exists to catch"
+known_gap_closes = "m11"
+ci_job = "milestone-m9"
+
+# --- Section 7: the record and the next rung ------------------------------------------------------
+
+# THE DOUBLE-STAR GLOB IS THE POINT, and m6.toml's own comment says why: a change lives at
+# `openspec/changes/<name>/` while it is open and at `openspec/changes/archive/<date>-<name>/` once
+# it closes, so a pattern that only matched an open change would turn red on the day the next
+# milestone closed — which is the one day this criterion should be most satisfied. `**` matches both
+# depths.
+[[criterion]]
+id = "m10-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M10, Worlds: environment as one substrate with one producer per field, which `record.MILESTONES` already carries after m9 and against which no further split has been declared"
+source = "tasks 7.5, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m10*/proposal.md"
+ci_job = "milestone-m9"
+
+# THE TIER FLOOR, AND THREE CELLS THIS MILESTONE PLANNED AND DID NOT REACH.
+#
+# The M9 row of docs/ROADMAP.md planned SIX Complete cells, which would have been the largest load
+# any milestone in this plan carries. `design.md` §4 said at proposal time that three of the six were
+# contingent, and named the row it expected to demote. What the implementing agents found, auditing
+# their own rows rather than waiting for the gate, is a different three:
+#
+#   simulation-and-determinism  working   NOT Complete, and THE CLOSING GATE DEMOTED IT — the
+#                                         seventh consecutive gate to demote a cell, and the one
+#                                         demotion no implementing agent proposed. Profiles declared
+#                                         and refused at configuration, deterministic parallelism,
+#                                         stable iteration, the floating-point policy with its
+#                                         thirteen forbidden functions, generated codecs,
+#                                         hierarchical hashing, the validator and the lint all
+#                                         landed, and Seed -> Working is a real advance. Two
+#                                         requirements of the twenty are unmet with no recorded
+#                                         exemption, and Complete means every one of them:
+#                                           * "Floating-point policy" obliges the engine to provide
+#                                             deterministic math types as an optional module —
+#                                             fixed-point scalars, vectors, angles and
+#                                             transcendental approximations. There is no such
+#                                             module, and `profile.h` says so in its own comment:
+#                                             "There is no such module in this tree yet". Two of the
+#                                             five profiles in the specification's own table cannot
+#                                             be granted by this engine.
+#                                           * "Simulation performance and testing" obliges a
+#                                             strategy-scale determinism benchmark — eight
+#                                             participants, 100 000 units, 5 000 agent groups, run
+#                                             for minutes under 1, 8 and 16 workers — and names it
+#                                             "the reference, not a small synthetic case". Nothing
+#                                             of the kind exists; `benchmarks/baseline.json` holds
+#                                             six entries and every one is `ecs/*` or `harness/*`,
+#                                             which is the same evidence that demotes
+#                                             `gameplay-framework` two rows below. A row demoted for
+#                                             an absent benchmark and a row completed over the same
+#                                             absence cannot both be right.
+#                                         Its Complete cell moves to M11, with the deterministic
+#                                         math module, because the guarantee that module turns on
+#                                         cannot be measured on one architecture.
+#   replay-and-rollback         working   REACHED, from nothing.
+#   networking-and-replication  working   REACHED, from nothing — and `design.md` §4's predicted
+#                                         demotion was this row, which did not need it.
+#   diagnostics-profiling-and-crash working NOT Complete. Rolling capture, crash artefacts and
+#                                         reproduction artefacts landed; breadcrumbs have no callers
+#                                         and a produced artefact still carries absolute paths. Two
+#                                         declared gaps above, both closing at M10.
+#   save-and-persistence        working   NOT Complete, and unchanged: confidentiality is a
+#                                         vetted-AEAD dependency decision rather than a coding task,
+#                                         and conflict resolution is unstarted.
+#   gameplay-framework          working   NOT Complete, and unchanged: the performance table is
+#                                         specified to be benchmarked and is benchmarked nowhere.
+#
+# FOUR demotions recorded rather than four cells claimed thin, and the fourth was found at the gate
+# by reading the specification requirement by requirement rather than by reading the summary. That is
+# the practice M5's gate started and M6's, M7's, M8.a's and M8.c's continued, and it is the reason
+# this ledger is worth reading at all.
+# THE CHECK THAT WOULD HAVE FOUND THE SIX, and it is here because this gate found them by reading.
+#
+# The M9 column of `docs/roadmap/capability-matrix.md` carried TEN cells and SEVEN of them said
+# Complete. Six of those seven belong to rows this milestone never proposed, never touched and never
+# audited — `camera-system`, `core-jobs-and-concurrency`, `ecs-core`,
+# `gameplay-abilities-and-effects`, `physics` and `sequencing-and-cinematics` — parked in this column
+# since the plan was first drawn. Every existing check passed over them: `plan-consistency` compares
+# the plan documents WITH EACH OTHER, and they agreed; `roadmap-record` compares the record with
+# `openspec/specs/`; `roadmap-tiers` compares the record with the six rows this ledger names. Nothing
+# compared THE COLUMN WITH THE RECORD, so a milestone could close with its own column claiming seven
+# completions and the record holding one, and no gate would say a word.
+#
+# This is that comparison, and it is not milestone-specific in shape: every capability with a cell in
+# the M9 column must be RECORDED at that tier or above in `docs/roadmap/status.yaml`. The six cells
+# were moved to M11 rather than claimed, which is what made this pass.
+[[criterion]]
+id = "record-matches-plan"
+describe = "every tier the M9 COLUMN of the capability matrix claims is a tier the status record supports — the comparison no existing check made, which is how six Complete cells sat in this milestone's column for rows it never examined"
+source = "tasks 8.4, delivery-roadmap"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import sys
+sys.path.insert(0, "tools/roadmap")
+import plan, record
+
+matrix = plan.read_matrix()
+recorded = {e.capability: e for e in record.load()}
+short = []
+cells = 0
+for capability, columns in sorted(matrix.cells.items()):
+    planned = columns.get("m9")
+    if planned is None:
+        continue
+    cells += 1
+    have = recorded.get(capability)
+    tier = have.tier if have else "none"
+    if have is None or plan.tier_rank(tier) < plan.tier_rank(planned):
+        short.append(f"  {capability}: the M9 column plans {planned} and the record holds {tier}"
+                     + (f" from {have.milestone}" if have and have.milestone else ""))
+print(f"the M9 column carries {cells} cell(s); {len(short)} of them exceed the status record")
+for line in short:
+    print(line)
+sys.exit(1 if short else 0)
+CHECK
+'''
+ci_job = "milestone-m9"
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this milestone's exit tiers — two capabilities from nothing to Working and two advanced to Working, with the FOUR rows the plan marked Complete and the evidence does not support recorded at Working and argued above. M9 completes nothing, and the ledger says so rather than the plan keeping the cells"
+source = "tasks 7.3, ROADMAP M9, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m9"
+
+[criterion.expect_tiers]
+simulation-and-determinism = "working"
+replay-and-rollback = "working"
+networking-and-replication = "working"
+diagnostics-profiling-and-crash = "working"
+save-and-persistence = "working"
+gameplay-framework = "working"
+
+# --- The whole tree, in every profile -------------------------------------------------------------
+#
+# THE IDENTICAL STRING TEN EARLIER LEDGERS USED. `criteria.fingerprint` collapses declarations that
+# do the same work, so declaring it here COLLAPSES all of them into one run of it, reported as
+# `m1:four-profiles`. That is the whole point of the flat ledger and the reason this string must not
+# be "improved" here.
+#
+# IT MATTERS MORE AT THIS MILESTONE THAN AT ANY EARLIER ONE. M8.c's artefact was red in Debug and
+# nobody had looked — a budget measured in `dev` against a path six times slower at `-O0`. Every
+# figure this milestone reports is a count rather than a timing, precisely so that the four profiles
+# have to agree about it: `cmake/profiles.cmake` compiles Debug at `-O0`, Development and Profile at
+# `-O2` and Shipping at `-O3` with interprocedural optimisation, and the spike measured all four
+# bit-identical on every one of the engine's own primitives.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including src/replay/, src/networking/ and the four-player artefact. CY_NETWORKING defaults ON, as `delivery-roadmap` requires of a capability at Working, and `networking-option-off` above is the other direction"
+source = "tasks 8.1"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"

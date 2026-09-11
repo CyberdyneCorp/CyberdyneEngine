@@ -91,3 +91,15 @@ add_subdirectory(08a-authoring)
 # is the first thing outside a test binary that links it. The same is true of cy::animation,
 # cy::ai, cy::navigation, cy::ui, cy::audio-acoustics, cy::camera and cy::rendering-2d.
 add_subdirectory(08-vertical-slice)
+# M9's artefact is a NINTH shape, and it is the shape of the milestone: one program that is FIVE
+# machines. samples/09-multiplayer/cy_sample_multiplayer runs four clients and a host on one seeded,
+# lossy datagram substrate — the clients predict, the host substitutes for inputs that never arrived,
+# and the clients roll back when they learn they were wrong — then reads the host's one command log
+# three more ways: replayed bit-exactly into a fresh world, diverged on purpose and narrowed to a
+# field, and flushed out of the crash replay buffer into an artefact that re-simulates to its own
+# hash. multiplayer.py judges every claim and paints the two pictures from the program's own trace.
+#
+# It declares nothing at all with `-D CY_NETWORKING=OFF`, for the reason samples/08-vertical-slice
+# declares nothing without CY_ANIMATION: an option that removes a subsystem must not turn into a
+# configure error naming the artefact. Its CMakeLists.txt argues the shape.
+add_subdirectory(09-multiplayer)

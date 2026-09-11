@@ -65,6 +65,20 @@ class FieldMeta:
 
 
 @dataclass
+class LocationMeta:
+    """One source location, as the artefact carries it: already sanitised, possibly removed."""
+    file: str
+    line: int
+    privacy: int
+    removed: bool
+
+    def render(self) -> str:
+        if self.removed:
+            return f"<redacted>:{self.line}"
+        return f"{self.file}:{self.line}" if self.file else f"?:{self.line}"
+
+
+@dataclass
 class Record:
     kind: int
     channel: int
@@ -131,6 +145,9 @@ class Capture:
         self.names: dict[int, str] = {}
         self.categories: dict[int, str] = {}
         self.fields: dict[int, FieldMeta] = {}
+        # A log record's source location. Its own table, because a location is classified data the
+        # writer sanitises and redacts — never a name. See src/core/diagnostics/source.h.
+        self.locations: dict[int, LocationMeta] = {}
         self.identity: dict[str, str] = {}
         self.chunks: list[Chunk] = []
         self.losses: list[tuple[int, int, int, int]] = []
@@ -207,6 +224,13 @@ class Capture:
                 privacy = reader.u8()
                 self.fields[identifier] = FieldMeta(reader.text(), type_index, privacy)
             for _ in range(reader.u32()):
+                identifier = reader.u32()
+                line = reader.u32()
+                privacy = reader.u8()
+                removed = reader.u8() != 0
+                reader.u16()  # padding, so the text starts aligned in a hex dump
+                self.locations[identifier] = LocationMeta(reader.text(), line, privacy, removed)
+            for _ in range(reader.u32()):
                 key = reader.text()
                 self.identity[key] = reader.text()
         for chunk in self.chunks:
@@ -247,6 +271,11 @@ class Capture:
                 offset += size
 
 
+def location_or(capture: "Capture", identifier: int) -> str:
+    meta = capture.locations.get(identifier)
+    return meta.render() if meta is not None else ""
+
+
 def format_field(capture: Capture, entry: tuple[int, int, int, bytes]) -> str:
     identifier, flags, bits, text = entry
     meta = capture.fields.get(identifier)
@@ -271,8 +300,10 @@ def print_summary(capture: Capture) -> None:
     print(f"  classifications up to {enum_name(PRIVACY_NAMES, header['max_classification'])}")
     for key, value in capture.identity.items():
         print(f"  {key:<15} {value}")
+    removed = sum(1 for meta in capture.locations.values() if meta.removed)
     print(f"  tables          {len(capture.names)} names, {len(capture.categories)} categories, "
-          f"{len(capture.fields)} fields")
+          f"{len(capture.fields)} fields, {len(capture.locations)} source locations"
+          + (f" ({removed} redacted)" if removed else ""))
     counts: dict[bytes, int] = {}
     for chunk in capture.chunks:
         counts[chunk.tag] = counts.get(chunk.tag, 0) + 1
@@ -335,7 +366,7 @@ def print_events(capture: Capture, limit: int, kind_filter: str | None) -> None:
         detail = ""
         if record.kind == 20:  # log
             detail = (f" level={enum_name(LOG_LEVELS, record.a)} "
-                      f"at={name_or(capture.names, record.b, '')}")
+                      f"at={location_or(capture, record.b)}")
         elif record.kind == 21:  # loss
             detail = f" channel={enum_name(CHANNEL_NAMES, record.a)} dropped={record.b}"
         elif record.a or record.b:
@@ -351,6 +382,10 @@ def to_json(capture: Capture) -> str:
         "header": capture.header,
         "identity": capture.identity,
         "names": capture.names,
+        "locations": {str(k): {"file": v.file, "line": v.line,
+                               "privacy": enum_name(PRIVACY_NAMES, v.privacy),
+                               "removed": v.removed}
+                      for k, v in capture.locations.items()},
         "categories": capture.categories,
         "fields": {str(k): {"name": v.name, "type": enum_name(FIELD_TYPES, v.type),
                             "privacy": enum_name(PRIVACY_NAMES, v.privacy)}

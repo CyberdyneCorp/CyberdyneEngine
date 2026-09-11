@@ -98,3 +98,74 @@ CY_TEST_CASE("harness: the suite's budget is the one the taxonomy gives its kind
     CY_CHECK_EQ(CY_TEST_BUDGET_NS, 1000000ULL);
     CY_CHECK_GT(cy::test::kStallMultiplier, 1ULL);
 }
+
+// --- M9 TASK 7.5b: the stall ceiling, and the clock that tells waiting from preemption -----------
+
+CY_TEST_CASE("harness: the instrument says whether it can tell contention from blocking") {
+    // The same shape as the case above about the CPU clock, and for the same reason: the stall
+    // ceiling subtracts contention only where contention is measurable, so a test asserting about
+    // that subtraction has to assert that the instrument exists first.
+#if defined(__linux__)
+    CY_CHECK(cy::test::budget_measures_contention());
+    // Cumulative and monotonic: the guard takes a difference across the case, and a clock that ran
+    // backwards would excuse a stall that never happened.
+    const unsigned long long first = cy::test::contended_ns();
+    const unsigned long long second = cy::test::contended_ns();
+    CY_CHECK_GE(second, first);
+#else
+    CY_CHECK_FALSE(cy::test::budget_measures_contention());
+    CY_CHECK_EQ(cy::test::contended_ns(), 0ULL);
+#endif
+}
+
+CY_TEST_CASE("harness: a case that BLOCKS accumulates no contention, so a sleep is still a stall") {
+    // THE NEGATIVE CONTROL FOR THE EXCUSE, and the reason the subtraction is sound rather than
+    // convenient. If sleeping accumulated runqueue wait, the guard would subtract a sleep's own
+    // duration and the stall ceiling would stop catching the thing it exists to catch.
+    //
+    // Two milliseconds of sleep: the file's sanctioned exemption, for the same reason as the first
+    // case. What is asserted is that the WAIT clock barely moves across it while the wall clock
+    // moves by the whole sleep — so wall-minus-contention is still about the sleep's length, and a
+    // case that sleeps past its ceiling still fails.
+    const unsigned long long contended_before = cy::test::contended_ns();
+    const auto started = std::chrono::steady_clock::now();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const unsigned long long contended = cy::test::contended_ns() - contended_before;
+
+    const auto slept_ns =
+        static_cast<unsigned long long>(std::chrono::nanoseconds(elapsed).count());
+    CY_CHECK_GE(slept_ns, 1'500'000ULL);
+    if (cy::test::budget_measures_contention()) {
+        // A tenth of the sleep is generous: what is being ruled out is contention accounting for
+        // the sleep, which would be all of it. On an idle machine this difference is zero.
+        CY_CHECK_LT(contended, slept_ns / 10);
+    }
+}
+
+CY_TEST_CASE("harness: the stall verdict separates a busy machine from a waiting case") {
+    using cy::test::stall_verdict;
+    using cy::test::StallVerdict;
+
+    constexpr unsigned long long kCeiling = 100'000'000ULL;  // 100 ms: a unit budget times 100
+
+    // Inside the ceiling: nothing to decide, whatever the contention was.
+    CY_CHECK(stall_verdict(kCeiling - 1, 0, kCeiling) == StallVerdict::Fine);
+    CY_CHECK(stall_verdict(kCeiling, kCeiling, kCeiling) == StallVerdict::Fine);
+    // No ceiling — a budget of zero switches the check off — is not a stall.
+    CY_CHECK(stall_verdict(10 * kCeiling, 0, 0) == StallVerdict::Fine);
+
+    // THE FLAKE: 150 ms of wall clock of which 130 ms was spent wanting a core. Twenty milliseconds
+    // is the case's own, which is inside the ceiling, so the machine was slow and the case was not.
+    CY_CHECK(stall_verdict(150'000'000ULL, 130'000'000ULL, kCeiling) == StallVerdict::Contended);
+
+    // THE DEFECT THE CEILING EXISTS FOR: 150 ms of wall clock and no contention at all, which is
+    // what a sleep, a blocking read or a join looks like. Still a stall.
+    CY_CHECK(stall_verdict(150'000'000ULL, 0, kCeiling) == StallVerdict::Stalled);
+    // And contention that does not account for the excess does not excuse it either.
+    CY_CHECK(stall_verdict(300'000'000ULL, 100'000'000ULL, kCeiling) == StallVerdict::Stalled);
+
+    // A clock that ran backwards, or a contention figure larger than the window, saturates at zero
+    // rather than wrapping to something enormous.
+    CY_CHECK(stall_verdict(150'000'000ULL, 400'000'000ULL, kCeiling) == StallVerdict::Contended);
+}

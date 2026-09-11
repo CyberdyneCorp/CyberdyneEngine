@@ -121,6 +121,7 @@ private:
     const char* file_;
     int line_;
     unsigned long long budget_ns_;
+    unsigned long long started_contended_ns_;
     unsigned long long started_cpu_ns_;
     unsigned long long started_wall_ns_;
 };
@@ -134,6 +135,43 @@ double budget_scale();
 /// falls back to wall clock and the stall ceiling is not applied. Exposed so that a test of the
 /// harness states which instrument it is asserting about instead of assuming one.
 bool budget_measures_cpu_time() noexcept;
+
+/// Nanoseconds this thread has spent RUNNABLE AND NOT RUNNING, cumulative, or zero where the
+/// platform does not report it.
+///
+/// M9 TASK 7.5b. The stall ceiling is a wall-clock assertion and wall clock is the machine's
+/// property as much as the test's — which is the defect the CPU budget already fixed once, left in
+/// the one check that cannot use a CPU clock. A case cannot tell, from wall clock alone, whether it
+/// waited or was preempted. This clock can: Linux's per-thread `schedstat` counts runqueue wait,
+/// which preemption grows and blocking does not. The guard subtracts it before applying the
+/// ceiling, so a busy machine is REPORTED and a sleeping case still FAILS.
+unsigned long long contended_ns() noexcept;
+
+/// True where `contended_ns()` measures something. False elsewhere, and then the stall ceiling
+/// behaves exactly as it did before — named rather than silently different.
+bool budget_measures_contention() noexcept;
+
+/// What the wall-clock half of the budget concluded about one case.
+enum class StallVerdict {
+    /// Inside the ceiling, or no ceiling at all.
+    Fine,
+    /// Over the ceiling, and the time over it was spent waiting for a core on a busy machine.
+    /// Reported and not failed: `testing-and-quality` asks for "a case that exceeds its budget only
+    /// under load" to be reported as a case to reclassify rather than failing the build.
+    Contended,
+    /// Over the ceiling on the case's own account: a sleep, a blocking read, a lock, a join.
+    Stalled,
+};
+
+/// The stall decision, as a pure function of three numbers. Exposed so that the arithmetic is
+/// testable without arranging for a machine to be busy: the two empirical claims underneath it —
+/// that runqueue wait grows under preemption and does not grow while blocking — are asserted
+/// separately, and this is what they feed.
+StallVerdict stall_verdict(unsigned long long wall_ns, unsigned long long contended_ns,
+                           unsigned long long ceiling_ns) noexcept;
+
+/// How many cases this binary excused because the machine, rather than the case, was slow.
+unsigned long long contended_cases() noexcept;
 
 }  // namespace cy::test
 

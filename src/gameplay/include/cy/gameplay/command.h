@@ -262,6 +262,48 @@ public:
     [[nodiscard]] CommandLog& log() noexcept { return log_; }
     [[nodiscard]] const CommandLog& log() const noexcept { return log_; }
 
+    // --- The log seam. M9 task 1.1. -------------------------------------------------------------
+    //
+    // `CommandLog` above is the in-memory tail of the record: it grows for as long as the session
+    // runs and it is gone when the process is. **The seam is how the record leaves this module.**
+    // Every committed command is handed to it exactly once, in commit order, with its provenance
+    // intact, and `cy::replay::LogRecord` is what the other side makes of it — one record type,
+    // read by playback, by rollback, by replication, by the crash buffer and by the validator
+    // (`src/replay/record.h`, and `replay-and-rollback`'s "A second representation of participant
+    // intent SHALL NOT exist").
+    //
+    // A FUNCTION POINTER RATHER THAN AN INTERFACE, AND THAT IS THE LAYERING. `src/replay/` is at
+    // layer 4 beside this module and `src/networking/` is above it; a virtual base declared here
+    // would be this module's type, and every consumer would inherit from gameplay in order to be
+    // told about a command. The seam carries no type of anyone's.
+    //
+    // PROVENANCE TRAVELS AND DECIDES NOTHING. The sink is called after validation and after the
+    // command has been committed, from inside the merge loop, so it sees exactly the commands the
+    // simulation consumed in exactly the order it consumed them. It is not consulted, it cannot
+    // reject, and it is not part of the merge key — `gameplay-framework`: "Provenance SHALL NOT
+    // affect validation, ordering, or execution", which M8.c's firewall decision depends on and
+    // which `tests/test_log_seam.cpp` asserts by committing two commands that differ only in
+    // provenance and comparing what the sink was told.
+    struct RecordSink {
+        using Fn = void (*)(void* user, const Command& command) noexcept;
+        Fn fn = nullptr;
+        void* user = nullptr;
+
+        [[nodiscard]] bool bound() const noexcept { return fn != nullptr; }
+    };
+
+    /// Bind the seam. One sink, not a list: two sinks would be two records, which is the thing
+    /// `replay-and-rollback` forbids. A consumer that needs to fan out does so on its own side,
+    /// where it can say why.
+    void set_record_sink(RecordSink sink) noexcept { sink_ = sink; }
+    [[nodiscard]] const RecordSink& record_sink() const noexcept { return sink_; }
+
+    /// How many commands have been handed to the seam since the stream was created. Equal to the
+    /// number appended to `log()` for as long as neither is cleared, and reported separately so
+    /// that "the sink was called once per command" is a number a test can compare rather than a
+    /// property a reviewer has to believe.
+    [[nodiscard]] u64 records_emitted() const noexcept { return records_emitted_; }
+
     struct Rejection {
         Command command;
         ValidationResult result;
@@ -300,6 +342,8 @@ private:
     Array<Rule> rules_;
     Array<CapabilityEntry> capabilities_;
     CommandLog log_;
+    RecordSink sink_;
+    u64 records_emitted_ = 0;
 };
 
 }  // namespace cy::gameplay

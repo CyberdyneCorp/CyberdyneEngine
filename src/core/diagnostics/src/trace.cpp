@@ -187,8 +187,18 @@ void append_synthetic(TraceWriter& writer, EventKind kind, NameId name, Category
 
 void drain_slot(System& sys, ThreadSlot* slot) noexcept {
     sys.writer.begin_thread_chunk(slot->index);
-    slot->ring.drain(
-        [&sys](const u8* record, u32 size) { sys.writer.append_record(record, size); });
+    // The observer sees the record the producer wrote; the writer sees what the policy admits. Two
+    // consumers of one drain rather than two drains, so a rolling buffer costs the consumer a call
+    // and the producer nothing at all.
+    const RecordObserver observer = sys.config.observer;
+    void* const observer_user = sys.config.observer_user;
+    const u32 thread_index = slot->index;
+    slot->ring.drain([&sys, observer, observer_user, thread_index](const u8* record, u32 size) {
+        if (observer != nullptr) {
+            observer(observer_user, thread_index, record, size);
+        }
+        sys.writer.append_record(record, size);
+    });
     for (u32 channel = 0; channel < kChannelCount; ++channel) {
         const u64 dropped = slot->ring.take_drops(channel);
         if (dropped != 0) {
@@ -214,7 +224,9 @@ void drain_slot(System& sys, ThreadSlot* slot) noexcept {
 /// trace_flush(), so each ring still has exactly one consumer at a time.
 void drain_all(System& sys) noexcept {
     const std::lock_guard<std::mutex> guard(sys.consumer_mutex);
-    if (!sys.writer.is_open()) {
+    // An observer with no artefact is a legitimate trace: that is what an always-on rolling buffer
+    // is, and it is the configuration a shipping build runs.
+    if (!sys.writer.is_open() && sys.config.observer == nullptr) {
         return;
     }
     std::vector<ThreadSlot*> slots;
@@ -269,8 +281,10 @@ Expected<TraceId, cy::Error> trace_open(const TraceConfig& config) noexcept {
     if (sys.open.load(std::memory_order_acquire)) {
         return fail(ErrorCode::AlreadyExists, "a trace is already open");
     }
-    if (config.path == nullptr || config.path[0] == '\0') {
-        return fail(ErrorCode::InvalidArgument, "TraceConfig::path is required");
+    const bool writes_an_artefact = config.path != nullptr && config.path[0] != '\0';
+    if (!writes_an_artefact && config.observer == nullptr) {
+        return fail(ErrorCode::InvalidArgument,
+                    "TraceConfig::path is required unless an observer consumes the records");
     }
 
     sys.config = config;
@@ -280,9 +294,11 @@ Expected<TraceId, cy::Error> trace_open(const TraceConfig& config) noexcept {
     sys.trace_category = register_category("trace");
 
     const TraceId id = monotonic_now_ns() ^ (static_cast<u64>(registry_stats().names) << 48);
-    Expected<TraceId, cy::Error> opened = sys.writer.open(config, id);
-    if (!opened) {
-        return opened;
+    if (writes_an_artefact) {
+        Expected<TraceId, cy::Error> opened = sys.writer.open(config, id);
+        if (!opened) {
+            return opened;
+        }
     }
     sys.id = id;
     sys.events_emitted.store(0, std::memory_order_relaxed);
@@ -337,11 +353,19 @@ Expected<TraceStats, cy::Error> trace_close() noexcept {
         const std::lock_guard<std::mutex> slot_guard(sys.slots_mutex);
         threads = static_cast<u32>(sys.slots.size());
     }
-    Expected<TraceStats, cy::Error> closed = sys.writer.close();
-    if (!closed) {
-        return closed;
+    TraceStats stats{};
+    if (sys.writer.is_open()) {
+        Expected<TraceStats, cy::Error> closed = sys.writer.close();
+        if (!closed) {
+            return closed;
+        }
+        stats = closed.value();
+    } else {
+        // An observer-only trace wrote no artefact, so there is nothing to close and the counts are
+        // the ones the transport kept.
+        stats = sys.writer.stats();
+        stats.trace_id = sys.id;
     }
-    TraceStats stats = closed.value();
     stats.events_emitted = emitted;
     stats.threads = threads;
     return stats;

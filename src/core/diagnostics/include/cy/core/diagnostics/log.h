@@ -9,9 +9,16 @@
 // A log is an EventKind::Log record: `a` is the level, `b` is the source-location identifier. One
 // timeline, one clock, one artefact — a streaming stall, a task stall and the log line that
 // describes them are read together because they were recorded through one transport.
+//
+// THE SOURCE LOCATION IS A `LocationId`, NOT A `NameId`. M0 registered `__FILE__ ":" __LINE__` in
+// the name table, which put a build-machine path structurally beyond the writer's redaction, and
+// `diagnostics-profiling-and-crash` now forbids that shape by name. See source.h: a location is an
+// entry in a classified table the writer sanitises and redacts, and the emission path still carries
+// one `u32` and formats nothing.
 
 #include <cy/core/diagnostics/field.h>
 #include <cy/core/diagnostics/prelude.h>
+#include <cy/core/diagnostics/source.h>
 #include <cy/core/diagnostics/trace.h>
 
 namespace cy::diag {
@@ -25,7 +32,7 @@ void set_log_level(LogLevel level) noexcept;
 void set_category_level(CategoryId category, LogLevel level) noexcept;
 bool log_should_emit(CategoryId category, LogLevel level) noexcept;
 
-void log_emit(CategoryId category, LogLevel level, NameId message, NameId site,
+void log_emit(CategoryId category, LogLevel level, NameId message, LocationId site,
               const FieldValue* fields, u32 field_count) noexcept;
 
 const char* log_level_name(LogLevel level) noexcept;
@@ -35,7 +42,7 @@ namespace detail {
 /// Collect a call's fields into one array without a heap allocation and without a zero-length array
 /// when there are none. The trailing default element is never passed on.
 template <class... Fields>
-inline void log_dispatch(CategoryId category, LogLevel level, NameId message, NameId site,
+inline void log_dispatch(CategoryId category, LogLevel level, NameId message, LocationId site,
                          const Fields&... fields) noexcept {
     const FieldValue values[] = {fields..., FieldValue{}};
     log_emit(category, level, message, site, values, static_cast<u32>(sizeof...(Fields)));
@@ -68,8 +75,9 @@ inline void instant_dispatch(NameId name, CategoryId category, Channel channel,
     do {                                                                                          \
         if (::cy::diag::log_should_emit((category), (level))) {                                   \
             static const ::cy::diag::NameId cy_log_message_ = ::cy::diag::register_name(message); \
-            static const ::cy::diag::NameId cy_log_site_ =                                        \
-                ::cy::diag::register_name(__FILE__ ":" CY_DIAG_STRINGIFY(__LINE__));              \
+            static const ::cy::diag::LocationId cy_log_site_ =                                    \
+                ::cy::diag::register_source_location(__FILE__,                                    \
+                                                     static_cast<::cy::diag::u32>(__LINE__));     \
             ::cy::diag::detail::log_dispatch((category), (level), cy_log_message_,                \
                                              cy_log_site_ __VA_OPT__(, ) __VA_ARGS__);            \
         }                                                                                         \

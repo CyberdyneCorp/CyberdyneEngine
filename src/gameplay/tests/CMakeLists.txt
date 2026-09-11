@@ -48,6 +48,7 @@ function(cy_gameplay_declare_tests)
             "${cy_gameplay_tests_dir}/test_framework_core.cpp"
             "${cy_gameplay_tests_dir}/test_framework_queries.cpp"
             "${cy_gameplay_tests_dir}/test_framework_runtime.cpp"
+            "${cy_gameplay_tests_dir}/test_log_seam.cpp"
             "${cy_gameplay_tests_dir}/test_random.cpp"
             "${cy_gameplay_tests_dir}/test_validation.cpp"
         DEPENDENCIES cy::gameplay)
@@ -62,7 +63,9 @@ function(cy_gameplay_declare_tests)
     cy_add_test(
         NAME gameplay_firewall
         KIND integration
-        SOURCES "${cy_gameplay_tests_dir}/test_firewall.cpp"
+        SOURCES
+            "${cy_gameplay_tests_dir}/test_firewall.cpp"
+            "${cy_gameplay_tests_dir}/test_firewall_arming.cpp"
         DEPENDENCIES cy::gameplay cy::ecs cy::runtime cy::core-determinism cy::core-reflect
                      cy::core-diagnostics)
 

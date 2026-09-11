@@ -110,6 +110,11 @@ enum class LossReason : u8 {
     UnclassifiedField = 2,  // the field id carried no registered classification, so it was redacted
     RegistryFull = 3,       // the metadata table is fixed-capacity and was full at registration
     PolicyRedaction = 4,    // the field's classification is above the artefact's declared ceiling
+    /// A source path was absolute, so only its final component reached the artefact. Counted rather
+    /// than silently rewritten: "no absolute path from the build machine" is a claim this number
+    /// makes checkable, and a capture written on a toolchain with no prefix-mapping says how often
+    /// the writer had to do the work the compiler did not.
+    SourcePathSanitised = 5,
 };
 
 }  // namespace cy::diag::format

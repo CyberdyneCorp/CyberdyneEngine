@@ -240,13 +240,13 @@ capabilities:
     milestone: M8B
     change: implement-m8b-systems
   simulation-and-determinism:
-    tier: seed
-    milestone: M2
-    change: implement-m2-world
+    tier: working
+    milestone: M9
+    change: implement-m9-integrity
   replay-and-rollback:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M9
+    change: implement-m9-integrity
   save-and-persistence:
     tier: working
     milestone: M6
@@ -448,9 +448,9 @@ capabilities:
     milestone: M6
     change: implement-m6-scale
   networking-and-replication:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M9
+    change: implement-m9-integrity
   xr-support:
     tier: none
     milestone: null
@@ -468,9 +468,9 @@ capabilities:
     milestone: M0
     change: implement-m0-ground
   diagnostics-profiling-and-crash:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
+    tier: working
+    milestone: M9
+    change: implement-m9-integrity
   thirdparty-dependencies:
     tier: seed
     milestone: M0

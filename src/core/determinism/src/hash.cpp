@@ -224,7 +224,14 @@ void StateHashTree::compare(const StateHashTree& left, const StateHashTree& righ
             const HashNode& candidate = left.nodes_[index];
             const HashNode* peer = right.find_child(*b, candidate.level, candidate.id);
             if (peer == nullptr) {
+                // The child the right-hand tree does not have. Recorded beside the path, because
+                // the path can only name nodes the two trees share and the report has to name this
+                // one — see `Divergence::missing_level`.
                 out.shape_mismatch = true;
+                out.missing_level = candidate.level;
+                out.missing_id = candidate.id;
+                out.missing_name = candidate.name;
+                out.missing_identified = true;
                 return;
             }
             if (peer->hash != candidate.hash) {

@@ -53,8 +53,29 @@ def command_status(arguments: argparse.Namespace) -> int:
     if drift:
         _print_drift(drift, arguments.record)
         return FAILED_EXIT
+
+    # M9 TASK 7.6. The matrix's three lists are RENDERED FROM THIS RECORD, and this is where the
+    # render is checked. They were hand-maintained until M9 and were three milestones stale by the
+    # time M8.c's gate read them; a list a person retypes is a list that goes stale silently.
+    matrix = arguments.record.parent / "capability-matrix.md"
+    if arguments.write_lists:
+        changed = record_module.write_lists(matrix, entries)
+        print(f"lists: {record_module.display(matrix)} "
+              f"{'rewritten from the record' if changed else 'was already current'}")
+    else:
+        expected = record_module.lists_drift(matrix, entries)
+        if expected is not None:
+            print(f"roadmap-status: {record_module.display(matrix)}'s generated lists do not match "
+                  "the record.", file=sys.stderr)
+            print("  Regenerate them with `just roadmap-status --write-lists`. What the record "
+                  "says:\n", file=sys.stderr)
+            for line in expected.splitlines():
+                print(f"    {line}", file=sys.stderr)
+            return FAILED_EXIT
+
     print(f"record: {record_module.display(arguments.record)} — in step with "
-          f"{record_module.display(arguments.specs)}/ ({len(capabilities)} capabilities)")
+          f"{record_module.display(arguments.specs)}/ ({len(capabilities)} capabilities), "
+          f"and {record_module.display(matrix)}'s lists are rendered from it")
     return OK_EXIT
 
 
@@ -400,6 +421,8 @@ def _parser() -> argparse.ArgumentParser:
     status = subcommands.add_parser("status", help="per-capability implementation status")
     status.add_argument("--all", action="store_true", help="list capabilities that are not started")
     status.add_argument("--json", action="store_true", help="machine-readable output")
+    status.add_argument("--write-lists", action="store_true",
+                        help="rewrite the capability matrix's generated lists from the record")
     status.add_argument("--record", type=Path, default=record_module.DEFAULT_RECORD,
                         help="the status record to read (default: docs/roadmap/status.yaml)")
     status.add_argument("--specs", type=Path, default=record_module.DEFAULT_SPECS,
