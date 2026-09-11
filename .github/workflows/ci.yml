@@ -1129,3 +1129,9 @@ jobs:
       # would report every capability green and gate nothing.
       - name: The drift detection still fires
         run: just roadmap-test
+      # docs/roadmap/open-debts.md is generated from the ledgers, the status record and the archive,
+      # and this is what stops it going stale. A list of unfinished work is worthless the moment it
+      # stops being current, and the moment it stops being current is the moment a milestone closes
+      # — declaring a gap, closing one, or demoting a row. All three change what this document says.
+      - name: The open-debts document matches its sources
+        run: just roadmap-debts --check

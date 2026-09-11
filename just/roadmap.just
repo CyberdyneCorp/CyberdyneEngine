@@ -12,6 +12,10 @@
 roadmap-status *args:
     @cd "{{root}}" && python3 tools/roadmap/roadmap.py status {{args}}
 
+# Regenerate docs/roadmap/open-debts.md from the ledgers, the record and the archive. --check verifies.
+roadmap-debts *args:
+    @cd "{{root}}" && python3 tools/roadmap/debts.py {{args}}
+
 # Run a milestone's full exit criteria. Usage: just roadmap-milestone <id> [--list] [--ci]
 roadmap-milestone *args:
     #!/usr/bin/env bash
