@@ -167,6 +167,8 @@ flowchart TB
     end
     VS --> SEQ
     VS --> VFX
+    CAM --> SEQ
+    RARCH --> VFX
 
     SER2["serialization-and-prefabs · M2"] --> BP
     IMP2["asset-import-pipeline · M5"] --> BP
@@ -180,6 +182,16 @@ flowchart TB
     classDef inv fill:#3b1f1f,stroke:#f87171,stroke-width:2px,color:#fee2e2
     class RES,MC,VS,SAVE inv
 ```
+
+**`camera-system` precedes `sequencing-and-cinematics` and `rendering-architecture` precedes
+`vfx-system`, and M8.c measured both rather than assuming them.** A cut drives cameras THROUGH the
+camera stack — `sequencing-and-cinematics` requires that a sequence not write camera transforms, so
+the stack, its blends and `CameraServer::cut()` all have to exist before a timeline can select a
+shot; `src/sequencing/camera/` is one file and it is a consumer of `src/servers/camera/`, never the
+other way round. And a particle system has nowhere to draw until something records the frame: M8.c
+had to build the shader and pipeline layer above `FrameAssembly` (`src/rendering/pipeline/`) before
+`src/rendering/particles/` had a pass to attach to, because `FrameAssembly` hands each pass's record
+callback to its caller and, up to M8.b, every caller in the tree supplied none.
 
 **The build graph precedes streaming** because cooked cells are derivations; a streaming system built
 against an ad-hoc cook has to be rebuilt against the real one.

@@ -22,10 +22,12 @@ set(CY_SHADER_STDLIB_MODULES
     cy/color.slang
     cy/fullscreen.slang
     cy/globals.slang
+    cy/frame.slang
     cy/light.slang
     cy/material.slang
     cy/noise.slang
     cy/packing.slang
+    cy/particle.slang
     cy/sampling.slang
     cy/shadow.slang
     cy/tonemap.slang

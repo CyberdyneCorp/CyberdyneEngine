@@ -3,6 +3,9 @@
 
 #include "internals.h"
 
+#include "capture.h"
+#include "spectacle.h"
+
 #include <cy/core/determinism/commit.h>
 #include <cy/graph/audit.h>
 
@@ -64,10 +67,42 @@ Slice::Slice(Allocator& allocator) noexcept
     : allocator_(&allocator), characters_(allocator), shot_(allocator) {}
 
 Slice::~Slice() {
+    // The capture holds a graphics device and the presentation holds the scene index it photographs
+    // through, so the capture goes first. Rule 4 of this milestone's brief is about exactly this
+    // order: a teardown that releases a device while something still points into it is the failure
+    // that only shows up under load.
+    delete capture_;
+    delete spectacle_;
     delete presentation_;
     delete kit_;
     delete brain_;
     delete level_;
+}
+
+u32 Slice::mesh_asset_count() const noexcept {
+    return level_ == nullptr ? 0U : static_cast<u32>(level_->meshes.size());
+}
+
+Aabb Slice::mesh_asset_bounds(u32 asset) const noexcept {
+    if (level_ == nullptr || asset >= level_->meshes.size()) {
+        return Aabb::empty();
+    }
+    return level_->meshes[asset].bounds;
+}
+
+const SpectacleReport& Slice::spectacle_report() const noexcept {
+    // A default-constructed report when the half is switched off, which is what makes
+    // `--no-spectacle` a control rather than a different program: every number the driver reads is
+    // still there and every one of them is zero.
+    static const SpectacleReport kNone;
+    return spectacle_ == nullptr ? kNone : spectacle_->report();
+}
+
+const char* Slice::capture_unavailable_reason() const noexcept {
+    if (capture_ == nullptr) {
+        return "no capture was asked for";
+    }
+    return capture_->unavailable_reason();
 }
 
 Status Slice::build(const Options& options) noexcept {
@@ -114,7 +149,39 @@ Status Slice::build(const Options& options) noexcept {
     report_.meshes_unresolved = bound.unresolved_meshes;
     report_.materials_bound = bound.materials_bound;
     report_.mesh_assets = static_cast<u32>(level_->meshes.size());
-    return presentation_->build(options_, report_);
+    if (Status presented = presentation_->build(options_, report_); !presented) {
+        return presented;
+    }
+
+    // --- M8.c. Both halves are optional and both report their absence rather than hiding it.
+    if (options_.spectacle) {
+        spectacle_ = new (std::nothrow) Spectacle(*allocator_);
+        if (spectacle_ == nullptr) {
+            return cy::fail(cy::ErrorCode::OutOfMemory, "the spectacle did not allocate");
+        }
+        // The ring is sized above the population the fight produces, so `PublishReport::dropped` is
+        // a finding rather than the ring being small.
+        if (Status built = spectacle_->build(options_.cut_start_tick, 8192U); !built) {
+            return built;
+        }
+    }
+    if (options_.capture_prefix != nullptr) {
+        capture_ = new (std::nothrow) FrameCapture(*allocator_);
+        if (capture_ == nullptr) {
+            return cy::fail(cy::ErrorCode::OutOfMemory, "the capture did not allocate");
+        }
+        if (Status opened =
+                capture_->open(presentation_->viewport_width(), presentation_->viewport_height());
+            !opened) {
+            return opened;
+        }
+        if (capture_->available()) {
+            if (Status described = capture_->describe(*this, *presentation_); !described) {
+                return described;
+            }
+        }
+    }
+    return cy::ok();
 }
 
 // --- The level

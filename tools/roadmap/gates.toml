@@ -951,6 +951,81 @@ milestone = "m8b"
 # twelve.
 state = "green"
 
+# --- The gate M8.c — Spectacle adds -----------------------------------------------------------------
+#
+# Task 6.1. `milestone-m8c` at `joins-on-close`: the criteria in tools/roadmap/milestones/m8c.toml
+# join the permanent set the day this milestone closes, and until then they are what
+# `just roadmap-milestone m8c` runs.
+#
+# TWO CHECKS ALREADY WATCH THE LINE BELOW, so it cannot be forgotten in either direction.
+# `tools/roadmap/plan.py` reads openspec/changes/archive/ and fails when a milestone whose change is
+# archived still has a gate at `joins-on-close`, so archiving `implement-m8c-spectacle` without
+# flipping this turns `roadmap-test` red in the `roadmap` job. And `tools/ci/check_workflows.py`
+# fails when a green milestone gate sits above the newest ledger any workflow evaluates, so setting
+# it green WITHOUT moving ci.yml's `milestone` job to `m8c` turns `just ci-check` red. Both edits
+# belong in the archiving commit together.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED is M8.c's own forty-five criteria added to the permanent set.
+# **FIVE OF THEM CARRY `requires = "gpu"`**, where M8.b carried one — and that is the milestone's
+# shape rather than an accident: M8.c is the first milestone whose subject is what a frame LOOKS
+# like. Each of the five has a companion that needs neither a device nor a display, so nothing this
+# milestone claims is judgeable only with a GPU:
+#
+#   m8c:pipeline-device   beside m8c:pipeline-layer
+#   m8c:vfx-device        beside m8c:vfx-runtime
+#   m8c:slice-capture     beside m8c:slice-artefact
+#
+# THREE THINGS THIS GATE CARRIES THAT NO EARLIER ONE DID.
+#
+# The first is A CRITERION THAT ARRIVED WITH ITS SUBJECTS. M8.b's ledger carried "VFX and inference
+# cannot write gameplay state, proven by a test" with NEITHER SUBJECT IN THE TREE — a criterion its
+# milestone satisfied vacuously — and `split-m8b-defer-spectacle` moved it here with the two systems
+# it names. `m8c:firewall-gameplay` is that test in both directions and as a negative control, and
+# `m8c:slice-determinism` is the same claim from the artefact's side: the slice's determinism act,
+# re-run with particles and a cinematic live, folding the identical digest.
+#
+# The second is A PAIR OF PICTURES RATHER THAN A NUMBER. `m8c:screenshot-slice` and
+# `m8c:screenshot-slice-control` are the same frame recorded with the shader layer's callbacks and
+# with an empty `FrameSinks`, and the difference between them is the whole of section 1b. M8.b's
+# gate found that the artefact's picture took its silhouettes from the sample's own table and would
+# have drawn a defect correctly; the answer is not a better drawing, it is a photograph.
+#
+# The third is A CRITERION THIS MILESTONE EXPECTS TO FAIL AND DECLARED ANYWAY.
+# `m8c:steam-audio-configures` runs `-D CY_AUDIO_STEAM_AUDIO=ON`, which M8.b's closing gate found
+# could not be configured at all. Declaring it is what keeps `audio`'s Complete cell honest: the
+# alternative is a milestone that quietly drops a criterion it did not meet, which is the shape this
+# ledger exists to prevent.
+#
+# AND THE CLOSING GATE HAD TO BUILD SOMETHING BEFORE IT COULD FLIP THIS LINE GREEN, because those
+# two facts were in direct conflict: `just roadmap-milestone` returned non-zero for ANY failure, so
+# a green `milestone-m8c` plus ci.yml running that recipe is a job that can never pass — the sibling
+# of the forbidden pattern this file's own header names, "a milestone gate disabled rather than
+# fixed or explicitly superseded". Deleting the criterion hides the gap; an override is per-gate and
+# would hide two hundred and fifty green checks to excuse one. The answer is `known_gap` in
+# tools/roadmap/criteria.py: the criterion still RUNS and its failure is still PRINTED with the rung
+# that must close it (M11, where `audio`'s Complete cell now sits), and it does not hold this gate
+# red. A declared gap that starts PASSING fails the ledger, so the marker cannot outlive the gap.
+# tools/roadmap/README.md documents it and `just roadmap-test` covers both directions.
+
+[[gate]]
+id = "milestone-m8c"
+describe = "M8.c — Spectacle: the exit criteria of the milestone that made the engine's own frame visible — the determinism firewall at the ECS write path, the shader and pipeline layer above FrameAssembly, CyberVFX with its own IR and a shared simulation world, compiled timelines driving cameras through the stack, CyberML's session and its cook-time determinism boundary, and a vertical slice whose picture is photographed rather than drawn."
+runs = ["just roadmap-milestone m8c"]
+platforms = ["linux", "windows", "macos"]
+since = "m8c"
+class = "milestone"
+milestone = "m8c"
+# GREEN, AND FLIPPED IN THE SAME CHANGE THAT MOVES ci.yml's `milestone` JOB TO `m8c` — the two
+# edits `tools/ci/check_workflows.py` refuses to see apart, and the closing gate proved that by
+# making this edit alone first and watching `just ci-check` go red:
+#
+#   check-workflows: the workflows and the recipes disagree
+#     1 closed milestone gate(s) — 'milestone-m8c' — are green and no workflow evaluates them.
+#
+# `just roadmap-milestone m8c` was run once, end to end, on the tree this closes.
+state = "green"
+
+
 # --- Recorded overrides ---------------------------------------------------------------------------
 #
 # None. The shape one takes, when one is unavoidable:

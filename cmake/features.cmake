@@ -141,7 +141,40 @@ set(CY_FEATURE_OPTIONS
     # `cy::graph`'s behaviour lowering and belongs to `visual-scripting`, so it is not behind this
     # option — the same line CY_ANIMATION draws below between a runtime and a compiler.
     "CY_AI|ON|The AI runtime: agents as entities, batched perception, the knowledge store, environment queries, smart objects, AI LOD and the deterministic think scheduler (M8.b). The behaviour graph COMPILER is cy::graph's and is always built"
-    "CY_ML|OFF|Machine-learning inference nodes (M8)"
+    # DELIVERED AT M8.c, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS and
+    # CY_AUDIO were given at M4, CY_NAVIGATION, CY_AI and CY_ANIMATION at M8.b, and CY_UI at M8.b's
+    # closing gate. `ml-inference` reaches Seed at M8.c over src/ml/: the tensor and session API, the
+    # model asset and its container, the backend abstraction and its selection rule, the per-frame
+    # budget, and the determinism boundary. Left at OFF, every one of those and all four suites would
+    # be out of the default build — which is precisely the shape M8.b's gate found in CY_UI.
+    #
+    # WHAT IT GATES, PRECISELY: src/ml/ and its suites, and nothing else. It fetches NOTHING. The
+    # inference RUNTIME is behind CY_ML_ONNXRUNTIME below, so a default build compiles CyberML,
+    # runs its suites, registers no backend, and `InferenceSession::create` fails with `Unavailable`
+    # naming the configure line — which is `ml-inference`'s own "no backend available" scenario and
+    # `thirdparty-dependencies`' "WHEN the engine is built with CY_ML disabled THEN no inference
+    # runtime SHALL be fetched, built, or linked" satisfied a fortiori.
+    #
+    # `-D CY_ML=OFF` removes src/ml/ entirely. Nothing below layer 4 names it and src/ai/ does not
+    # depend on it — `ai-system`'s "AI without ML" scenario is a link-graph fact here rather than a
+    # promise — so the exclusion costs nothing but CyberML itself.
+    "CY_ML|ON|CyberML: tensors, model assets, sessions, the backend abstraction, the per-frame budget and the determinism boundary (M8.c). The inference RUNTIME is behind CY_ML_ONNXRUNTIME and this option fetches nothing"
+    # THE REFERENCE BACKEND, AND IT DEFAULTS OFF FOR A COST REASON RATHER THAN A DOUBT.
+    #
+    # `ml-inference` names ONNX Runtime "the portable default" and `thirdparty-dependencies` carries
+    # it in the intended set. What it costs is the reason this line is OFF and CY_NAVIGATION's is
+    # ON: a shallow clone of onnxruntime is about 750 MB of working tree, its CMake fetches a
+    # further dozen archives of its own (abseil, protobuf, onnx, flatbuffers, re2, nsync, eigen),
+    # and a from-empty build of it is measured at 2m37s wall on 24 cores. Recast, by comparison, is
+    # 4 MB and a few seconds. `thirdparty-dependencies`' "bounded cost" criterion is what decides
+    # this, and imposing four minutes and a gigabyte on every default configure is not bounded.
+    #
+    # WHAT IT GATES, PRECISELY: the onnxruntime fetch, and the ONE translation unit that names an
+    # ONNX Runtime type (src/ml/src/onnxruntime_backend.cpp, inside `#if defined(CY_ML_ONNXRUNTIME)`
+    # and nowhere else — tools/layercheck/layercheck.py makes that a build gate). Everything else in
+    # src/ml/ is built either way, and `integration.ml_onnxruntime` declares itself only when this
+    # option is on rather than registering a suite that skips.
+    "CY_ML_ONNXRUNTIME|OFF|The ONNX Runtime inference backend inside CY_ML (M8.c). Gates the onnxruntime fetch and the one translation unit that names its types"
     # DELIVERED AT M8.b, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS and
     # CY_AUDIO were given at M4. src/animation/ is the animation runtime: skeletons and bone level
     # of detail, clips and their codec, the compiled pose program's runtime, root motion, the
@@ -197,7 +230,26 @@ set(CY_FEATURE_OPTIONS
     # mean the module. `samples/08-vertical-slice` declines to declare itself when it is off, the
     # way it already does for CY_ANIMATION and CY_AI.
     "CY_UI|ON|CyberUI: the element store, the retained tree, layout, `.cyss`, data binding, input routing, the layer stack, flattening and the accessibility audit (M8.b)"
-    "CY_VFX|OFF|The VFX runtime, its compiler and its renderers (M8)"
+    # DELIVERED AT M8.c, AND THEREFORE ON BY DEFAULT — rule 3, the same reading CY_PHYSICS and
+    # CY_AUDIO were given at M4, CY_NAVIGATION, CY_AI and CY_ANIMATION at M8.b, and CY_UI at M8.b's
+    # closing gate. `delivery-roadmap` fails a capability at Working whose CY_* option defaults off,
+    # and `vfx-system` reaches Working here over src/vfx/: the asset model, the graph compiler and
+    # VFX's own IR, the compiler-derived attribute layout, the unified simulation world and its
+    # global scheduler, data interfaces, the event channels and the bounded readback, and the
+    # importance-class budget controller.
+    #
+    # WHAT IT GATES, PRECISELY: src/vfx/ — both targets — and its two suites. It fetches NOTHING and
+    # links nothing third-party, because `vfx-system`'s first requirement forbids one: "No
+    # third-party VFX runtime SHALL be integrated."
+    #
+    # `-D CY_VFX=OFF` removes the module and leaves the renderer untouched, which is what the
+    # specification asks for in as many words: "The system SHALL be removable at build time via
+    # CY_VFX WITHOUT AFFECTING THE REST OF THE RENDERER." `src/rendering/particles/` is NOT behind
+    # this option — it is the renderer's sprite compositing and the seam VFX publishes into, and an
+    # interface that exists in some configurations has a suite that runs in some configurations.
+    # That is the line CY_PHYSICS draws between Jolt and `PhysicsServer`, drawn here between the
+    # simulation and the thing that draws its output.
+    "CY_VFX|ON|CyberVFX: the asset model, the graph compiler and its own IR, the derived attribute layout, the unified simulation world and scheduler, data interfaces, GPU events with a bounded readback, and the importance-class budget controller (M8.c). It fetches nothing"
     # DELIVERED AT M7, AND THEREFORE ON BY DEFAULT — rule 3 again, and the same reading
     # CY_RENDERER_VULKAN, CY_PHYSICS and CY_AUDIO were given. `delivery-roadmap` fails a capability
     # at Working whose CY_* option defaults off, and the reason is the history: M3 shipped a Vulkan
@@ -274,6 +326,10 @@ set(CY_FEATURE_OPTIONS
 set(CY_FEATURE_REQUIRES_ALL
     "CY_AI|CY_NAVIGATION"
     "CY_AUDIO_STEAM_AUDIO|CY_AUDIO"
+    # The same shape as the line above it: a backend inside a subsystem, so the subsystem has to be
+    # there for the backend to be inside. `-D CY_ML_ONNXRUNTIME=ON -D CY_ML=OFF` would declare a
+    # dependency for a module that is not built and link it to nothing.
+    "CY_ML_ONNXRUNTIME|CY_ML"
     CACHE INTERNAL "Feature dependencies: FEATURE|every option it requires")
 
 # Each row is FEATURE|CANDIDATE... — at least one of the named options must be on. CY_VIRTUAL_GEOMETRY

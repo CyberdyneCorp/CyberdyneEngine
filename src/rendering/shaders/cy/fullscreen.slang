@@ -19,8 +19,16 @@ public struct FullscreenVertex
     public float2 uv : TEXCOORD0;
 };
 
+/// `SV_VulkanVertexID` rather than `SV_VertexID`, and the difference is a DEVICE FEATURE.
+///
+/// Slang lowers `SV_VertexID` to `gl_VertexIndex - gl_BaseVertex`, to match Direct3D's semantics —
+/// which declares the SPIR-V `DrawParameters` capability, which a Vulkan device only accepts with
+/// `VkPhysicalDeviceVulkan11Features::shaderDrawParameters` enabled. `src/backends/rhi/vulkan/` does
+/// not request that feature, so a pipeline built from such a module is refused by validation.
+/// `SV_VulkanVertexID` is the raw `VertexIndex`, which is what a draw with no vertex buffer and no
+/// base vertex means anyway. Recorded here because the alternative fix is in the backend.
 [shader("vertex")]
-public FullscreenVertex fullscreenVertex(uint vertexId: SV_VertexID)
+public FullscreenVertex fullscreenVertex(uint vertexId: SV_VulkanVertexID)
 {
     FullscreenVertex output;
     output.uv = float2((vertexId << 1) & 2, vertexId & 2);

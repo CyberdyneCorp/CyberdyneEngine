@@ -270,20 +270,42 @@ def _criterion_document(entry: criteria_module.PlanEntry, result) -> dict:
         "command": criterion.command,
         "where": criterion.where,
         "ci_job": criterion.ci_job,
+        "known_gap": criterion.known_gap,
+        "known_gap_closes": criterion.known_gap_closes,
         "status": result.status if result else None,
         "detail": result.detail if result else "",
     }
 
 
 def _summarise(plan: criteria_module.Plan, results, as_json: bool) -> int:
+    """The verdict, and the three buckets a result can land in rather than two.
+
+    A DECLARED GAP IS NOT A PASS AND IS NOT A FAILURE OF THE GATE, and M8.c's closing gate is why
+    this function has a third bucket. `m8c:steam-audio-configures` is a criterion its milestone
+    declared while expecting it to fail, on purpose, so the gap would keep saying so rather than
+    vanish from the plan. `milestone-m8c` becomes a permanent merge gate the day it goes green and
+    ci.yml runs this recipe, so with two buckets that gate could never be green again — the sibling
+    of the forbidden pattern "a milestone gate disabled rather than fixed or explicitly superseded".
+
+    So a criterion carrying `known_gap` is run like any other, printed like any other, and reported
+    under its own heading with the rung that must close it. It does not set the exit code.
+
+    **The direction that keeps this honest is the other one.** A declared gap that PASSES fails the
+    ledger, because a marker that outlived its gap is the next thing nobody notices."""
     paired = tuple(zip(plan.entries, results))
-    failed = [pair for pair in paired if pair[1].status == criteria_module.FAILED]
     skipped = [pair for pair in paired if pair[1].status == criteria_module.NOT_EVALUATED]
-    passed = len(paired) - len(failed) - len(skipped)
+    gaps = [pair for pair in paired
+            if pair[0].criterion.is_declared_gap and pair[1].status == criteria_module.FAILED]
+    closed_gaps = [pair for pair in paired
+                   if pair[0].criterion.is_declared_gap and pair[1].status == criteria_module.OK]
+    failed = [pair for pair in paired
+              if pair[1].status == criteria_module.FAILED and not pair[0].criterion.is_declared_gap]
+    passed = len(paired) - len(failed) - len(skipped) - len(gaps) - len(closed_gaps)
+    blocking = bool(failed) or bool(closed_gaps)
 
     if as_json:
         print(json.dumps(_milestone_document(plan, results), indent=2))
-        return FAILED_EXIT if failed else OK_EXIT
+        return FAILED_EXIT if blocking else OK_EXIT
 
     identifier = plan.milestone.id.upper()
     if failed:
@@ -292,13 +314,24 @@ def _summarise(plan: criteria_module.Plan, results, as_json: bool) -> int:
         for entry, result in failed:
             print(f"  {entry.label:<24} {result.criterion.describe}  "
                   f"[{result.criterion.source}]")
+    elif closed_gaps:
+        print(f"{identifier}: {passed} criteria pass, and a DECLARED GAP NOW PASSES.")
     else:
-        print(f"{identifier}: {passed} criteria pass.")
+        evaluated = len(paired) - len(skipped)
+        print(f"{identifier}: {passed} of {evaluated} evaluated criteria pass"
+              + (f", and {len(gaps)} declared gap(s) still fail." if gaps else "."))
+    for entry, result in closed_gaps:
+        print(f"  THE GAP IS CLOSED, DELETE THE DECLARATION: {entry.label} now passes, and it is "
+              f"declared `known_gap` until {result.criterion.known_gap_closes.upper()}. "
+              f"Remove `known_gap` and `known_gap_closes` from its ledger entry.")
+    for entry, result in gaps:
+        print(f"  declared gap, still open: {entry.label} — {result.criterion.known_gap} "
+              f"[must close by {result.criterion.known_gap_closes.upper()}]")
     for entry, result in skipped:
         print(f"  not evaluated here: {entry.label} — {result.detail}")
     for note in plan.milestone.notes:
         print(f"  note: {note}")
-    return FAILED_EXIT if failed else OK_EXIT
+    return FAILED_EXIT if blocking else OK_EXIT
 
 
 # --- gates ----------------------------------------------------------------------------------------

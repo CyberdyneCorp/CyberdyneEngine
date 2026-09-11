@@ -64,6 +64,9 @@
 #include <cy/scene/tree.h>
 #include <cy/servers/render/snapshot.h>
 
+#include "capture_report.h"
+#include "spectacle.h"
+
 namespace cy::ai {
 class AiRuntime;
 class PerceptionScheduler;
@@ -133,6 +136,20 @@ struct Options {
     /// find. THE NEGATIVE CONTROL: the run must then report a gap and exit non-zero.
     bool interpret_control = false;
     u64 seed = 0x5EEDBEEFULL;
+
+    // --- M8.c.
+    /// Particles and the cut. OFF IS THE CONTROL TASK 5.3 IS ABOUT: the determinism act runs the
+    /// same options with and without it and requires the identical digest, which is what "VFX and a
+    /// sequence cannot reach gameplay state" looks like from the artefact's side.
+    bool spectacle = true;
+    /// The tick the cinematic starts on. It runs 90 frames at the simulation's own rate, cutting
+    /// from the wide shot to the long lens at frame 36 over half a second.
+    u32 cut_start_tick = 30;
+    /// Where the captured frames are written, without an extension. Null captures nothing and needs
+    /// no graphics device, which is what keeps the artefact judgeable on a machine with neither.
+    const char* capture_prefix = nullptr;
+    /// The tick the capture is taken on. Zero means the last one.
+    u32 capture_tick = 0;
 };
 
 /// One character, as the slice stores it. Packed arrays rather than an object per character: every
@@ -164,10 +181,19 @@ struct TickCosts {
     f64 effects_us = 0.0;
     f64 interface_us = 0.0;
     f64 frame_us = 0.0;
+    /// M8.c: the particle world's step and the cinematic's advance, measured SEPARATELY from the
+    /// simulation above so that "the slice holds the frame budget it already declares" can be
+    /// checked as a sum rather than asserted as a feeling. `slice.py` requires
+    /// `simulation + spectacle` to fit inside `Budgets::kSimulationUs` — the number M8.b declared,
+    /// unchanged by this milestone.
+    f64 particles_us = 0.0;
+    f64 cinematic_us = 0.0;
+
+    [[nodiscard]] f64 spectacle_us() const noexcept { return particles_us + cinematic_us; }
 
     [[nodiscard]] f64 total_us() const noexcept {
         return think_us + sense_us + navigate_us + animate_us + abilities_us + effects_us +
-               interface_us + frame_us;
+               interface_us + frame_us + spectacle_us();
     }
 };
 
@@ -292,6 +318,12 @@ struct Report {
     f64 interface_us_median = 0.0;
     f64 frame_us_median = 0.0;
 
+    // M8.c's two new phases, measured the way every other phase is.
+    f64 particles_us_median = 0.0;
+    f64 cinematic_us_median = 0.0;
+    f64 spectacle_us_median = 0.0;
+    f64 spectacle_us_worst = 0.0;
+
     /// The determinism digest: everything the simulation decided, folded in tick order.
     u64 state_digest = 0;
     /// The same digest recomputed by a second, independently built slice in this process.
@@ -314,6 +346,17 @@ struct Report {
 /// agent and teaches everyone to ignore it. What actually catches a regression is
 /// `kLinearityFactor` beside them: the per-agent cost at four times the population, which a
 /// quadratic cannot hold and a slow machine does not affect.
+/// The factor by which an absolute microsecond budget is relaxed in the **Debug** configuration,
+/// and it is `tests/harness/src/budget.cpp`'s own constant rather than a second opinion: four, for
+/// the reasons written there and in `cmake/profiles.cmake` beside `CY_UNOPTIMISED`. One in every
+/// other configuration, so the numbers below mean exactly what they say wherever a shipped game is
+/// compiled.
+#if defined(CY_UNOPTIMISED)
+inline constexpr f64 kUnoptimisedAllowance = 4.0;
+#else
+inline constexpr f64 kUnoptimisedAllowance = 1.0;
+#endif
+
 struct Budgets {
     /// One simulation tick at the scale figure — think, sense, navigate, animate, act. Measured
     /// 10.2 ms at 8,000 agents in a development build on the reference machine.
@@ -330,6 +373,30 @@ struct Budgets {
     static constexpr u32 kScaleAgents = 8000;
     /// The population it is compared against, a quarter of it.
     static constexpr u32 kBaselineAgents = 2000;
+
+    /// M8.c'S TWO NEW SYSTEMS, AND THEY DO NOT RAISE ANYTHING. `kSimulationUs` above is M8.b's
+    /// number and this milestone did not touch it; what task 5.1 asks is that particles and a cut
+    /// fit INSIDE it, so `slice.py` checks `simulation + spectacle` against `kSimulationUs` and
+    /// this figure is the sub-allocation the two share. The VFX budget controller is told 1.5 ms
+    /// of it, so that "cost is bounded by configuration" is a dial somebody turned.
+    ///
+    /// **AND IT IS FOUR TIMES LARGER IN THE UNOPTIMISED CONFIGURATION, WHICH IS A FINDING OF M8.c'S
+    /// CLOSING GATE RATHER THAN A NUMBER CHOSEN TO FIT.** As first written this was a flat 4 ms,
+    /// measured at 1.57 ms in Development — and `smoke.vertical_slice` FAILED in Debug, at
+    /// 5.96 ms, because the CPU particle path is container- and abstraction-heavy code that `-O0`
+    /// slows by three to four times. Nobody had run the artefact outside `dev` and `release`; the
+    /// `four-profiles` criterion is what found it. Every other bound in this struct survived by the
+    /// headroom the paragraph above asks for, and this one did not, which is exactly what that
+    /// paragraph is about.
+    ///
+    /// The allowance is `cy::sample::slice::kUnoptimisedAllowance` above, which is **the same
+    /// constant and the same argument `tests/harness/src/budget.cpp` already uses** for every test
+    /// budget in this repository, and `cmake/profiles.cmake` states the doctrine: "a budget stated
+    /// in microseconds is a claim about a shipped game; this macro is how a case says so instead of
+    /// failing in a configuration the claim was never about." The check stays live in every
+    /// configuration — a Debug run doing four times its intended work still fails — and the real
+    /// number is enforced in the three configurations compiled the way a shipped game is.
+    static constexpr f64 kSpectacleUs = 4000.0 * kUnoptimisedAllowance;
 };
 
 /// A shape the artefact's picture draws: one visible instance, projected by the engine's own
@@ -347,6 +414,10 @@ struct ShotShape {
 
 /// The presentation half: the interface, the menu, the sound and the frame.
 class Presentation;
+/// M8.c's half: the particles and the cut. See spectacle.h.
+class Spectacle;
+/// M8.c's camera: the frame recorded on a device and read back. See capture.h.
+class FrameCapture;
 
 /// The game.
 class Slice {
@@ -375,6 +446,21 @@ public:
     [[nodiscard]] u64 digest() const noexcept { return digest_; }
     [[nodiscard]] const Options& options() const noexcept { return options_; }
     [[nodiscard]] Allocator& allocator() const noexcept { return *allocator_; }
+
+    /// The distinct mesh assets the level interned, and one's local bounds. What the capture
+    /// builds a box out of, so that a silhouette in the photograph is the MESH's rather than the
+    /// sample's record of what it authored.
+    [[nodiscard]] u32 mesh_asset_count() const noexcept;
+    [[nodiscard]] Aabb mesh_asset_bounds(u32 asset) const noexcept;
+
+    /// M8.c: what the particles and the cut did, and what the capture recorded.
+    [[nodiscard]] const SpectacleReport& spectacle_report() const noexcept;
+    [[nodiscard]] const CaptureReport& capture_report() const noexcept { return capture_report_; }
+    [[nodiscard]] const CaptureReport& control_capture_report() const noexcept {
+        return control_report_;
+    }
+    /// Why no frame was photographed, when none was. Never null.
+    [[nodiscard]] const char* capture_unavailable_reason() const noexcept;
 
     /// The shapes the picture draws, filled by the last `tick()` that assembled a frame.
     [[nodiscard]] Span<const ShotShape> shot_shapes() const noexcept;
@@ -417,10 +503,20 @@ private:
     bool in_loop_ = false;
     u32 compilations_in_loop_ = 0;
 
+    [[nodiscard]] Status shoot(u32 tick) noexcept;
+    /// M8.c: one committed activation's effect, and one frame of the effect world and the cut.
+    [[nodiscard]] Status play_cue(u32 character) noexcept;
+    [[nodiscard]] Status advance_spectacle(const Vec3& subject, struct ViewState& view,
+                                           TickCosts& costs) noexcept;
+
     Level* level_ = nullptr;
     Brain* brain_ = nullptr;
     Kit* kit_ = nullptr;
     Presentation* presentation_ = nullptr;
+    Spectacle* spectacle_ = nullptr;
+    FrameCapture* capture_ = nullptr;
+    CaptureReport capture_report_;
+    CaptureReport control_report_;
     Characters characters_;
     Array<ShotShape> shot_;
 };

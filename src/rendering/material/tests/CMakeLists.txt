@@ -46,7 +46,7 @@ set_property(GLOBAL PROPERTY CY_MATERIAL_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
 function(cy_material_declare_tests)
     get_property(cy_material_tests_dir GLOBAL PROPERTY CY_MATERIAL_TESTS_DIR)
 
-    foreach(kind IN ITEMS unit integration)
+    foreach(kind IN ITEMS unit integration smoke)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -104,6 +104,32 @@ function(cy_material_declare_tests)
         KIND integration
         SOURCES "${cy_material_tests_dir}/test_ibl.cpp"
         DEPENDENCIES cy::rendering-material)
+
+    # M8.c task 1b.3: A MATERIAL THE COMPILER EMITTED, ACTUALLY COMPILED. Smoke and not unit, for
+    # the reason `smoke.shader_slang` is: creating a Slang global session loads its core module and
+    # costs about a second before anything is compiled at all. Declared only when CY_SHADER_SLANG is
+    # on, because that is the only configuration in which the front end exists — `shader-system`
+    # requires a shipping build to contain no Slang compiler, and the target is excluded from the
+    # link rather than stubbed out.
+    #
+    # CY_SHADER_STAGE_DIR is compiled in because the suite MOUNTS the engine's staged Slang tree
+    # through cy::assets::VirtualFileSystem, exactly as a tool or the sample does, and reaches
+    # `cy.material` by the same virtual path a shipped build will.
+    if(CY_SHADER_SLANG)
+        # The mount's root is the PARENT of the staged tree, so the staged tree itself is reachable
+        # at the virtual path `shaders/` — which is the path an `import cy.material` resolves under
+        # and the one a shipped build uses. Mounting the staged directory itself would put
+        # `cy/material.slang` at the mount root and every import would miss by one level.
+        get_filename_component(cy_shader_stage_parent "${CY_SHADER_STAGE_DIR}" DIRECTORY)
+        cy_add_test(
+            NAME material_slang
+            KIND smoke
+            SOURCES "${cy_material_tests_dir}/test_slang_program.cpp"
+            DEPENDENCIES cy::rendering-material cy::rendering-material-slang cy::shader
+                         cy::shader-slang cy::core-assets
+            DEFINITIONS CY_SHADER_STAGE_PARENT="${cy_shader_stage_parent}")
+        add_dependencies(cy_test_smoke_material_slang cy_shaders_stage)
+    endif()
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_material_declare_tests)

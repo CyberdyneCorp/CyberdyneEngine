@@ -55,6 +55,7 @@ function(cy_ecs_declare_tests)
             "${cy_ecs_tests_dir}/test_archetypes.cpp"
             "${cy_ecs_tests_dir}/test_components.cpp"
             "${cy_ecs_tests_dir}/test_deferral.cpp"
+            "${cy_ecs_tests_dir}/test_firewall.cpp"
             "${cy_ecs_tests_dir}/test_entities.cpp"
             "${cy_ecs_tests_dir}/test_queries.cpp"
             "${cy_ecs_tests_dir}/test_relationships.cpp"

@@ -26,6 +26,26 @@ const char* command_op_name(CommandOp op) noexcept {
     return "unknown";
 }
 
+namespace {
+
+/// Which firewall door a deferred command is. See `CommandBuffer::record`.
+[[nodiscard]] WritePath deferred_path_of(CommandOp op) noexcept {
+    switch (op) {
+        case CommandOp::CreateEntity:
+        case CommandOp::DestroyEntity:
+            return WritePath::EntityLifetime;
+        case CommandOp::AddChild:
+            return WritePath::Relationship;
+        case CommandOp::AddComponent:
+        case CommandOp::RemoveComponent:
+        case CommandOp::SetComponent:
+            break;
+    }
+    return WritePath::DeferredRecord;
+}
+
+}  // namespace
+
 CommandBuffer::CommandBuffer(World& world, u32 system_order, u32 thread_index) noexcept
     : world_(&world),
       system_order_(system_order),
@@ -39,6 +59,20 @@ CommandBuffer::~CommandBuffer() {
 }
 
 Status CommandBuffer::record(const Command& command, const void* payload, u32 size) noexcept {
+    // THE DEFERRED DOOR OF THE DETERMINISM FIREWALL, CHECKED AT RECORD TIME AND NOT AT FLUSH TIME.
+    // `apply()` runs at a stage boundary under whatever origin the flushing thread carries — the
+    // simulation's — so a check there would see a VFX-driven structural change wearing the
+    // simulation's origin and admit it. Recording is the moment the VFX code path is on the stack,
+    // so recording is where the question can be answered. See firewall.h.
+    //
+    // The op decides which path is reported, because a deferred create is still a create: mapping
+    // every record onto `DeferredRecord` would let a VFX-driven `CommandBuffer::create()` through
+    // (it names no component, and the unguarded-component test would admit it), and the flush would
+    // then perform it wearing the simulation's origin.
+    const WritePath path = deferred_path_of(command.op);
+    if (Status admitted = world_->admit_write(path, command.component, command.entity); !admitted) {
+        return admitted;
+    }
     Command stored = command;
     if (size != 0 && payload != nullptr) {
         stored.payload_offset = static_cast<u32>(payloads_.size());

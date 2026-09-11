@@ -39,6 +39,7 @@
 #include <cy/ecs/buffer.h>
 #include <cy/ecs/component.h>
 #include <cy/ecs/entity.h>
+#include <cy/ecs/firewall.h>
 #include <cy/ecs/relationships.h>
 #include <cy/ecs/resource.h>
 #include <cy/ecs/sparse_store.h>
@@ -95,6 +96,24 @@ public:
     [[nodiscard]] Allocator& allocator() const noexcept { return *allocator_; }
     [[nodiscard]] ComponentRegistry& components() noexcept { return components_; }
     [[nodiscard]] const ComponentRegistry& components() const noexcept { return components_; }
+
+    /// **The determinism firewall's enforcement point** (firewall.h). Every door through which this
+    /// world's component storage becomes writable consults it, so a VFX-driven or non-pinned
+    /// inference code path cannot change authoritative state through any of them. Declare what a
+    /// component is here; the firewall is armed and guards nothing until something does.
+    [[nodiscard]] WriteFirewall& firewall() noexcept { return firewall_; }
+    [[nodiscard]] const WriteFirewall& firewall() const noexcept { return firewall_; }
+
+    /// The one place a write asks the firewall whether it may proceed. Every door firewall.h
+    /// enumerates calls exactly this, which is what makes "every authoritative write passes through
+    /// one point" a fact about this file rather than a claim about a convention.
+    ///
+    /// Public because a subsystem that grows a write path of its own — a VFX attribute store, a
+    /// replicated-value cache — must be able to route it through the same door rather than
+    /// re-deriving the rule. Returns `ErrorCode::PermissionDenied` when the write is refused, and
+    /// the refusal is already recorded and reported by the time it returns.
+    [[nodiscard]] Status admit_write(WritePath path, ComponentTypeId component,
+                                     Entity entity) noexcept;
     /// The world's resources. Named, typed singletons that participate in the scheduler's conflict
     /// detection exactly as components do — see resource.h.
     [[nodiscard]] ResourceRegistry& resources() noexcept { return resources_; }
@@ -418,6 +437,7 @@ private:
     Allocator* allocator_;
     WorldConfig config_;
     ComponentRegistry components_;
+    WriteFirewall firewall_;
     ResourceRegistry resources_;
     EntityTable entities_;
     ArchetypeTable archetypes_;

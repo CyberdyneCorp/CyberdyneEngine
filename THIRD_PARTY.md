@@ -37,6 +37,8 @@ whole table.
 | [xatlas](https://github.com/jpcy/xatlas) | 2022.07.26 | MIT | always | the editor and the cooker only |
 | [recast](https://github.com/recastnavigation/recastnavigation) | 1.6.0 | Zlib | `CY_NAVIGATION` is on | a shipped game |
 | [steam_audio](https://github.com/ValveSoftware/steam-audio) | 4.8.1 | Apache-2.0 | `CY_AUDIO_STEAM_AUDIO` is on | a shipped game |
+| [eigen](https://gitlab.com/libeigen/eigen) | 3.4.90 | MPL-2.0 | `CY_ML_ONNXRUNTIME` is on | a shipped game |
+| [onnxruntime](https://github.com/microsoft/onnxruntime) | 1.20.1 | MIT | `CY_ML_ONNXRUNTIME` is on | a shipped game |
 
 ## Host prerequisites, which are not linked and not shipped
 
@@ -236,6 +238,30 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Included when**: `CY_AUDIO_STEAM_AUDIO` is on
 - **Linked into**: a shipped game
 - **Why integrated rather than built**: HRTF binaural rendering, ambisonic encoding and decoding, geometry-aware occlusion with material-dependent transmission, real-time reflections and sound propagation — the acoustic simulation `audio` names it for, and the one part of the audio stack that is a research field rather than an engineering task. The engine's own panning, attenuation, filter-based occlusion and reverb sends remain the fallback, so a build without it is a complete game.
+
+### eigen 3.4.90
+
+- **Upstream**: https://gitlab.com/libeigen/eigen
+- **Pinned at**: `e7248b26a1ed53fa030c5c459f7ea095dfd276ac` (`3.4-e7248b2`)
+- **Licence**: MPL-2.0
+- **Licence text**: [`COPYING.MPL2`](https://gitlab.com/libeigen/eigen/blob/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/COPYING.MPL2), and
+  `COPYING.MPL2` at the root of the fetched source in any configured build tree
+- **Behind**: none of the engine's own: it is ONNX Runtime's linear-algebra library, reached only from inside src/ml/src/onnxruntime_backend.cpp's dependency, and no engine header names an Eigen type
+- **Included when**: `CY_ML_ONNXRUNTIME` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: ONNX Runtime's CPU kernels are written against Eigen and its thread pool is Eigen's. It is declared here rather than left to upstream's own fetch because upstream fetches it as a gitlab.com archive that answers 403 from this network, and because a library linked into a shipped game must appear in the licence report. The engine names no Eigen type and would not adopt it on its own.
+
+### onnxruntime 1.20.1
+
+- **Upstream**: https://github.com/microsoft/onnxruntime
+- **Pinned at**: `5c1b7ccbff7e5141c1da7a9d963d660e5741c319` (`v1.20.1`)
+- **Licence**: MIT
+- **Licence text**: [`LICENSE`](https://github.com/microsoft/onnxruntime/blob/5c1b7ccbff7e5141c1da7a9d963d660e5741c319/LICENSE), and
+  `LICENSE` at the root of the fetched source in any configured build tree
+- **Behind**: cy::ml::InferenceBackend in src/ml/include/cy/ml/backend.h, implemented by src/ml/src/onnxruntime_backend.cpp, which is the only translation unit that may include an onnxruntime header
+- **Included when**: `CY_ML_ONNXRUNTIME` is on
+- **Linked into**: a shipped game
+- **Why integrated rather than built**: Running a trained model: operator coverage across ONNX's opset, graph optimisation, and CPU kernels tuned per instruction set. `ml-inference` states outright that the engine SHALL NOT implement a neural runtime — 'operator coverage and per-device optimisation represent enormous investment with no differentiating benefit' — and names this one the portable default because it runs on every target the engine ships to and because its format is the interchange Core ML, DirectML and TensorRT import from. The asset model, the tensor and session API, the scheduling, the budget and the determinism boundary are engine code and are built with the option off.
 
 ### clang 18.1.8
 

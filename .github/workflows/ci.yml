@@ -1044,7 +1044,7 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m8b --ci
+        run: just roadmap-milestone m8c --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

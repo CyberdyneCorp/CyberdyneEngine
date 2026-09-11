@@ -40,6 +40,61 @@ been fetched or built on this machine, and the backend behind the option **retur
 Audio and its own third-party tree; whether that configures and builds is unknown, and the honest
 place to find out is the milestone's gate rather than a claim in this file.
 
+## M8.c, task 4b: what the gate found, what was measured, and what is still open
+
+M8.b's closing gate demoted `audio` from Complete because `-D CY_AUDIO_STEAM_AUDIO=ON` could not be
+configured. M8.c ran the experiment. Three things came out of it, and only one of them is what the
+gate was looking for.
+
+### 1. The option gated a fetch and nothing else, and that is now fixed
+
+`src/audio/src/acoustics.cpp` did **not** include `<cy_features.h>`, and `cmake/features.cmake` does
+not turn a `CY_*` option into a compile definition — it writes `#define CY_AUDIO_STEAM_AUDIO 1` into
+that generated header. So on the tree M8.b closed on, a build with the option ON would have linked
+`cy::dep::steam_audio` into `cy_audio` while **every `#if defined(CY_AUDIO_STEAM_AUDIO)` in that
+file evaluated false**: `SteamAudioBackend` was not compiled, `steam_audio_compiled_in()` answered
+`false` in a build that had just built Steam Audio, and `create_steam_audio` returned `Unavailable`
+naming the flag the caller had already passed.
+
+It was invisible because the option had never configured successfully, so the two directions were
+never compared. The include is now there, and `unit.audio_acoustics`'s parity case asserts
+`steam_audio_compiled_in()` against this build's own `CY_AUDIO_STEAM_AUDIO` rather than trusting
+either — the regression test for a defect that has no symptom other than silence.
+
+### 2. Steam Audio 4.8.1 **can** be built here, and the recipe is written down
+
+`libphonon.so` was produced out of tree during M8.c. It needs four upstream-required dependencies
+(pffft, zlib, libmysofa, flatbuffers-with-`flatc`), one patch (`-fabi-version=6`, which breaks GCC
+13's `<future>` and is rejected outright by clang 18), and two build-flag workarounds. **The full
+measured recipe, with the exact commits, the reduced two-line repro for the compiler flag, and what
+integrating it would cost this manifest, is in `deps/manifest.toml` beside the entry.** M8.b's
+report named PFFFT, IPP and FFTS; IPP and FFTS are optional and turn off cleanly, and PFFFT is one
+of four.
+
+### 3. What is still open, stated as a gap rather than a plan
+
+`SteamAudioBackend::simulate` **still returns `NotImplemented`**, and integrating the four
+dependencies into `deps/manifest.toml` is **not done**.
+
+**And the gap has a red gate attached to it, which nobody has been reading.**
+`tools/deps/test_gating.py` derives its "everything on" configuration from every optional entry's
+gating feature, so `CY_AUDIO_STEAM_AUDIO=ON` has been in that set since M8.b declared Steam Audio —
+and the ON half of that test has been failing since, at
+`steam_audio-src/core/CMakeLists.txt:235 (find_package)`, which is `find_package(PFFFT REQUIRED)`.
+The OFF half passes. Measured at M8.c: 53 checks pass, then the ON configure fails. Writing the simulation against headers this
+build cannot compile would be exactly the "fake" this milestone's rules forbid; the honest order is
+the dependency change first, then the implementation, then a parity case that runs both backends.
+The first of those three is a reviewed dependency decision with five arguments in it and it did not
+belong in a session that had one shared CMake file to touch safely.
+
+**What that costs a game today: still nothing**, and that is the requirement rather than a
+consolation. `unit.audio_acoustics`'s parity case now writes down the contract content may depend
+on — every query answered in order, a unit arrival direction, every coefficient in [0, 1], a
+positive reverb time, an undersized result span refused rather than half-filled — and asserts it
+over whichever backends the build has. A caller written against that contract behaves identically in
+both builds, which is what "Content SHALL NOT depend on Steam Audio being present" means when it is
+checked instead of stated.
+
 **What that costs a game: nothing.** `audio` requires exactly that — "Content SHALL NOT depend on
 Steam Audio being present: it SHALL improve audio quality, never enable or gate gameplay" —
 `FallbackAcoustics` answers every query in every build, and `steam_audio_compiled_in()` and

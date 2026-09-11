@@ -48,6 +48,11 @@ struct ViewState {
     Vec3 target{0.0F, 0.0F, 0.0F};
     f32 focal_length = 35.0F;
     Vec3 sun{0.3F, 0.8F, 0.4F};
+    /// M8.c: the vertical field of view, in radians. It was a constant inside `update_frame` until
+    /// the cut arrived — a cinematic shot changes LENS, and `cy::camera`'s stack blends the two
+    /// rigs' lenses, so the frame has to be told rather than assuming. The default is the number
+    /// that constant held, so a run with no cut assembles exactly the frame M8.b's did.
+    f32 vertical_fov = 1.0471975512F;
 };
 
 class Presentation {
@@ -85,6 +90,12 @@ public:
     [[nodiscard]] const cy::rendering::assembly::SceneIndex& scene_index() const noexcept {
         return *index_;
     }
+    /// The lights the frame was assembled with, and the view it was assembled for. Read by the
+    /// capture, so that the photograph is of THIS frame rather than of a second description of it.
+    [[nodiscard]] Span<const cy::render::LightDescription> lights() const noexcept {
+        return lights_.span();
+    }
+    [[nodiscard]] const ViewState& last_view() const noexcept { return last_view_; }
 
     /// The interface's own flattened primitives and the menu's own batched instances, for the
     /// picture. Both are the modules' outputs rather than a second description of them.
@@ -143,6 +154,7 @@ private:
     Array<u64> drawn_;
     cy::Mat4 view_matrix_ = cy::Mat4::identity();
     cy::Mat4 projection_ = cy::Mat4::identity();
+    ViewState last_view_;
     bool frame_ready_ = false;
 };
 

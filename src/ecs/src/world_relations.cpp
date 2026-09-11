@@ -49,6 +49,12 @@ Status World::detach_from_parent(Entity child) noexcept {
 }
 
 Status World::set_parent(Entity child, Entity parent) noexcept {
+    // A `Parent` edge is hashed (state_schema.h), so re-parenting is an authoritative write and the
+    // firewall's relationship path refuses it for a restricted origin whatever the components are.
+    if (Status admitted = admit_write(WritePath::Relationship, parent_component_, child);
+        !admitted) {
+        return admitted;
+    }
     if (!is_alive(child)) {
         return fail(ErrorCode::NotFound, "set_parent() on an entity that is not alive");
     }

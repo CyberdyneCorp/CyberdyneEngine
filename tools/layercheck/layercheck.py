@@ -141,9 +141,27 @@ GPU_API_ROOTS = ("src/backends/",)
 # interface it sits beneath — the third is in the diagnostic because "why" is what a reader needs.
 JOLT = ("Jolt", "src/backends/physics-jolt/", "cy::physics::PhysicsServer")
 MINIAUDIO = ("miniaudio", "src/backends/audio-miniaudio/", "cy::audio::AudioBackend")
+# M8.c. Two more libraries whose isolation was a PUBLIC/PRIVATE link property and nothing else.
+#
+# ONNX Runtime arrives with `ml-inference`, which states the rule as a scenario rather than as
+# prose — "WHEN engine or game code is compiled THEN no inference runtime type SHALL appear outside
+# its backend module" — so it is a gate here rather than a review comment. The module is one
+# translation unit, which is the same arrangement Jolt and miniaudio have.
+#
+# Steam Audio was already isolated by `audio`'s own requirement and had no row: `phonon.h` could
+# have been included anywhere in the tree and nothing would have said so. M8.c is the milestone that
+# builds `CY_AUDIO_STEAM_AUDIO` for the first time, so it is the milestone that owes the check.
+ONNXRUNTIME = ("ONNX Runtime", "src/ml/src/", "cy::ml::InferenceBackend")
+PHONON = ("Steam Audio", "src/audio/src/", "cy::audio::AcousticsBackend")
 
 THIRD_PARTY_DIRECTORIES = {"Jolt": JOLT}
-THIRD_PARTY_FILES = {"Jolt.h": JOLT, "miniaudio.h": MINIAUDIO}
+THIRD_PARTY_FILES = {
+    "Jolt.h": JOLT,
+    "miniaudio.h": MINIAUDIO,
+    "onnxruntime_c_api.h": ONNXRUNTIME,
+    "onnxruntime_cxx_api.h": ONNXRUNTIME,
+    "phonon.h": PHONON,
+}
 
 # --- The barrier rule (task 2.2.4) ------------------------------------------------------------------
 #

@@ -52,6 +52,20 @@ function(cy_gameplay_declare_tests)
             "${cy_gameplay_tests_dir}/test_validation.cpp"
         DEPENDENCIES cy::gameplay)
 
+    # gameplay_firewall is the determinism firewall's own suite, M8.c task 1.4. `integration`
+    # because every case builds a world and three of them run two hundred ticks and hash the result
+    # — the unit tier's millisecond is not what a world costs. It links cy::runtime for
+    # `hash_world`: the criterion is that a re-simulation reaches the IDENTICAL state digest, and
+    # the only honest way to say that is with the digest the engine itself computes rather than a
+    # number this suite invented. That link is why it is a separate target from gameplay_core,
+    # whose test_bypass.cpp asserts on what is NOT on its include path.
+    cy_add_test(
+        NAME gameplay_firewall
+        KIND integration
+        SOURCES "${cy_gameplay_tests_dir}/test_firewall.cpp"
+        DEPENDENCIES cy::gameplay cy::ecs cy::runtime cy::core-determinism cy::core-reflect
+                     cy::core-diagnostics)
+
     # gameplay_scale is `integration` and not `unit` for the reason its own header states: both
     # cases build a large structure — fifty thousand timers, a hundred thousand indexed entities —
     # and a millisecond budget would be met by trimming the population until the property stopped

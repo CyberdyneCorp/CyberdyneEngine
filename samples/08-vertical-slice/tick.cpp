@@ -8,7 +8,9 @@
 #include <cy/core/determinism/commit.h>
 #include <cy/graph/audit.h>
 
+#include "capture.h"
 #include "presentation.h"
+#include "spectacle.h"
 
 #include <type_traits>
 
@@ -226,6 +228,16 @@ Status Slice::animate(TickCosts& costs) noexcept {
 // --- Act
 // -------------------------------------------------------------------------------------------
 
+/// One committed activation's effect, at the caster. A function rather than two copies of a null
+/// check because the rule — an effect per committed activation — has two call sites and a rule with
+/// two spellings is two rules.
+Status Slice::play_cue(u32 character) noexcept {
+    if (spectacle_ == nullptr || character >= characters_.size()) {
+        return cy::ok();
+    }
+    return spectacle_->on_cue(characters_.positions[character]);
+}
+
 Status Slice::act(TickCosts& costs) noexcept {
     Kit& kit = *kit_;
     const f64 started = cpu_micros();
@@ -255,6 +267,13 @@ Status Slice::act(TickCosts& costs) noexcept {
         }
         if (activation.committed) {
             ++report_.activations_committed;
+            // THE VFX SEAM M8.b's README NAMED, USED. `ActivationPipeline` emits a cue per
+            // committed activation and M8.b counted them; M8.c plays an effect at the caster
+            // instead. Nothing about the activation changes: the cue is still emitted, still
+            // suppressed by (activation, cue, simulation point), and still folded below.
+            if (Status played = play_cue(index); !played) {
+                return played;
+            }
         } else {
             ++report_.activations_refused;
         }
@@ -286,6 +305,14 @@ Status Slice::act(TickCosts& costs) noexcept {
         }
         if (repeated.committed) {
             ++report_.activations_committed;
+            // AND THIS ONE GETS AN EFFECT TOO, for the same reason the rotation above does: the
+            // rule is "an effect per committed activation" and a second rule for a second call site
+            // would be two rules. It matters at the scale act's population, where it is the ONLY
+            // activation that commits — see the finding in README.md about the target being half
+            // an arena away at 8,000 agents.
+            if (Status played = play_cue(index); !played) {
+                return played;
+            }
         } else {
             ++report_.activations_refused;
         }
@@ -362,6 +389,31 @@ Status Slice::publish() noexcept {
 
 // --- One tick ------------------------------------------------------------------------------------
 
+/// The effect world and the cinematic, and the view they hand back. `view` goes in carrying the
+/// camera the compiled gameplay rig produced and comes out carrying the camera the STACK produced
+/// on the frames the cut is driving — see spectacle.h for why that is the whole of task 5.2.
+Status Slice::advance_spectacle(const Vec3& subject, ViewState& view, TickCosts& costs) noexcept {
+    if (spectacle_ == nullptr) {
+        return cy::ok();
+    }
+    CameraPose gameplay;
+    gameplay.eye = view.eye;
+    gameplay.target = view.target;
+    gameplay.vertical_fov = view.vertical_fov;
+    CameraPose chosen;
+    if (Status advanced =
+            spectacle_->step(static_cast<u32>(tick_), kDeltaTime, subject, gameplay, chosen);
+        !advanced) {
+        return advanced;
+    }
+    costs.particles_us = spectacle_->particles_us();
+    costs.cinematic_us = spectacle_->cinematic_us();
+    view.eye = chosen.eye;
+    view.target = chosen.target;
+    view.vertical_fov = chosen.vertical_fov;
+    return spectacle_->publish(view.eye);
+}
+
 Status Slice::tick(TickCosts& costs) noexcept {
     if (Status thought = think(costs); !thought) {
         return thought;
@@ -422,6 +474,17 @@ Status Slice::tick(TickCosts& costs) noexcept {
                  brain_->rig_output.position[2] + centroid.z + back};
         view.target = centroid;
         view.focal_length = brain_->rig_output.focal_length;
+
+        // THE CUT TAKES THE CAMERA, AND IT TAKES IT THROUGH THE CAMERA STACK. `Spectacle::step`
+        // advances the effect world, advances the cinematic and — while the cinematic is live —
+        // returns the pose `cy::camera::CameraServer::evaluate_stack()` produced. It assigns no
+        // camera transform anywhere; what it hands back is what the stack blended out of the two
+        // shot rigs the sequence selected. On every other frame it returns `gameplay` unchanged,
+        // which is the compiled `cy::graph::camera` rig M8.b built.
+        if (Status advanced = advance_spectacle(centroid, view, costs); !advanced) {
+            return advanced;
+        }
+
         if (Status framed = presentation_->update_frame(*level_->buffer.readable(), view, report_,
                                                         costs.frame_us);
             !framed) {
@@ -429,6 +492,9 @@ Status Slice::tick(TickCosts& costs) noexcept {
         }
         if (Status drawn_shapes = build_shot(); !drawn_shapes) {
             return drawn_shapes;
+        }
+        if (Status photographed = shoot(static_cast<u32>(tick_)); !photographed) {
+            return photographed;
         }
     }
 
@@ -462,6 +528,9 @@ Status Slice::run() noexcept {
     Array<f64> effects(*allocator_);
     Array<f64> interface_cost(*allocator_);
     Array<f64> frame(*allocator_);
+    Array<f64> particles(*allocator_);
+    Array<f64> cinematic(*allocator_);
+    Array<f64> spectacle(*allocator_);
     // The first tenth is warm-up: a cold cache and a first-frame shadow cache are properties of
     // starting rather than of running, and a median over them measures the start.
     const u32 warm_up = options_.ticks / 10U;
@@ -485,34 +554,38 @@ Status Slice::run() noexcept {
             in_loop_ = false;
             return pushed;
         }
-        const f64 phases[5] = {costs.think_us, costs.sense_us, costs.navigate_us, costs.animate_us,
-                               costs.abilities_us};
-        Array<f64>* into[5] = {&think_cost, &sense_cost, &navigate_cost, &animate_cost,
-                               &abilities_cost};
-        for (u32 phase = 0; phase < 5U; ++phase) {
-            if (Status pushed = into[phase]->push_back(phases[phase]); !pushed) {
+        // ONE TABLE FOR EVERY PER-TICK SAMPLE, and it is one because M8.c's three new phases were
+        // first appended as a second loop beside the first and a third block beside four singles:
+        // the function measured 27 on this project's cognitive-complexity scale, almost all of it
+        // the same four lines of `push_back`-and-check written nine times. Adding a phase is now a
+        // row.
+        const f64 samples[9] = {
+            costs.think_us,
+            costs.sense_us,
+            costs.navigate_us,
+            costs.animate_us,
+            costs.abilities_us,
+            characters_.size() == 0U ? 0.0 : total / static_cast<f64>(characters_.size()),
+            costs.effects_us,
+            costs.interface_us,
+            costs.frame_us};
+        Array<f64>* into[9] = {&think_cost,   &sense_cost,     &navigate_cost,
+                               &animate_cost, &abilities_cost, &per_agent,
+                               &effects,      &interface_cost, &frame};
+        const f64 spectacle_samples[3] = {costs.particles_us, costs.cinematic_us,
+                                          costs.spectacle_us()};
+        Array<f64>* spectacle_into[3] = {&particles, &cinematic, &spectacle};
+        for (u32 phase = 0; phase < 12U; ++phase) {
+            Array<f64>& column = phase < 9U ? *into[phase] : *spectacle_into[phase - 9U];
+            const f64 value = phase < 9U ? samples[phase] : spectacle_samples[phase - 9U];
+            if (Status pushed = column.push_back(value); !pushed) {
                 in_loop_ = false;
                 return pushed;
             }
         }
-        if (Status pushed = per_agent.push_back(
-                characters_.size() == 0U ? 0.0 : total / static_cast<f64>(characters_.size()));
-            !pushed) {
-            in_loop_ = false;
-            return pushed;
-        }
-        if (Status pushed = effects.push_back(costs.effects_us); !pushed) {
-            in_loop_ = false;
-            return pushed;
-        }
-        if (Status pushed = interface_cost.push_back(costs.interface_us); !pushed) {
-            in_loop_ = false;
-            return pushed;
-        }
-        if (Status pushed = frame.push_back(costs.frame_us); !pushed) {
-            in_loop_ = false;
-            return pushed;
-        }
+        report_.spectacle_us_worst = costs.spectacle_us() > report_.spectacle_us_worst
+                                         ? costs.spectacle_us()
+                                         : report_.spectacle_us_worst;
     }
     in_loop_ = false;
     compilations_in_loop_ = compilations_ - before;
@@ -528,6 +601,9 @@ Status Slice::run() noexcept {
     report_.effects_us_median = median_of(effects);
     report_.interface_us_median = median_of(interface_cost);
     report_.frame_us_median = median_of(frame);
+    report_.particles_us_median = median_of(particles);
+    report_.cinematic_us_median = median_of(cinematic);
+    report_.spectacle_us_median = median_of(spectacle);
     report_.state_digest = digest_;
     return cy::ok();
 }

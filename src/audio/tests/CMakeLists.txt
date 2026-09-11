@@ -3,6 +3,11 @@
 # ONE SUITE, AND IT IS UNIT. No device is opened and no callback runs: the geometry cache is driven
 # by a test extractor, the tier assignment is arithmetic over an array, the effect chain processes a
 # block of samples the test wrote, and the transitions are arithmetic on a sample count.
+#
+# test_backend_parity.cpp joins it at M8.c (task 4b.3): the contract content may depend on, asserted
+# over whichever acoustics backends this build has, and the regression test for the defect that made
+# `CY_AUDIO_STEAM_AUDIO=ON` compile none of the code it claimed to gate. It is unit for the same
+# reason as the rest: eight queries through one virtual call.
 
 set_property(GLOBAL PROPERTY CY_AUDIO_ACOUSTICS_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -26,6 +31,7 @@ function(cy_audio_acoustics_declare_tests)
         KIND unit
         SOURCES
             "${tests_dir}/test_acoustics.cpp"
+            "${tests_dir}/test_backend_parity.cpp"
             "${tests_dir}/test_tiers.cpp"
             "${tests_dir}/test_effects.cpp"
             "${tests_dir}/test_interactive.cpp"

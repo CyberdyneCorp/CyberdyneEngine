@@ -37,7 +37,12 @@ void usage() {
         "  --no-render          skip the assembled frame, leaving the simulation half\n"
         "  --replay             build a SECOND slice with the same options and compare digests\n"
         "  --interpret-control  add a per-entity virtual tick, so the audit has something to find\n"
-        "  --shot-data <path>   write the frame's own draw list, projected, for the picture\n");
+        "  --shot-data <path>   write the frame's own draw list, projected, for the picture\n"
+        "  --no-spectacle       run without the particles and the cut. THE CONTROL FOR TASK 5.3\n"
+        "  --cut-tick <n>       the tick the cinematic starts on (default 30)\n"
+        "  --capture <prefix>   RECORD the frame on a graphics device and write <prefix>.png,\n"
+        "                       <prefix>-no-callbacks.png and <prefix>-cut.png\n"
+        "  --capture-tick <n>   the tick the capture is taken on (default: the last)\n");
 }
 
 [[nodiscard]] bool number(const char* text, cy::u64& out) {
@@ -48,6 +53,70 @@ void usage() {
     }
     out = static_cast<cy::u64>(value);
     return true;
+}
+
+/// M8.c's two systems and the camera, printed the same way everything else is.
+void print_spectacle(const cy::sample::slice::SpectacleReport& spectacle) {
+    std::printf("effects_played = %u\n", spectacle.effects_played);
+    std::printf("effects_refused = %u\n", spectacle.effects_refused);
+    std::printf("vfx_live_particles = %u\n", spectacle.vfx_live_particles);
+    std::printf("vfx_peak_particles = %u\n", spectacle.vfx_peak_particles);
+    std::printf("vfx_critical = %u\n", spectacle.vfx_by_importance[0]);
+    std::printf("vfx_important = %u\n", spectacle.vfx_by_importance[1]);
+    std::printf("vfx_ambient = %u\n", spectacle.vfx_by_importance[2]);
+    std::printf("vfx_decorative = %u\n", spectacle.vfx_by_importance[3]);
+    std::printf("vfx_spawned = %u\n", spectacle.vfx_spawned);
+    std::printf("vfx_killed = %u\n", spectacle.vfx_killed);
+    std::printf("vfx_substeps = %u\n", spectacle.vfx_substeps);
+    std::printf("vfx_dispatches_unmerged = %u\n", spectacle.vfx_dispatches_unmerged);
+    std::printf("vfx_dispatches_merged = %u\n", spectacle.vfx_dispatches_merged);
+    std::printf("vfx_gpu_emitters = %u\n", spectacle.vfx_gpu_emitters);
+    std::printf("vfx_cpu_emitters = %u\n", spectacle.vfx_cpu_emitters);
+    std::printf("vfx_cpu_fallbacks = %u\n", spectacle.vfx_cpu_fallbacks);
+    std::printf("vfx_published = %u\n", spectacle.vfx_published);
+    std::printf("vfx_dropped = %u\n", spectacle.vfx_dropped);
+    std::printf("vfx_pool_used_bytes = %llu\n",
+                static_cast<unsigned long long>(spectacle.vfx_pool_used_bytes));
+    std::printf("vfx_pool_total_bytes = %llu\n",
+                static_cast<unsigned long long>(spectacle.vfx_pool_total_bytes));
+
+    std::printf("cut_ran = %d\n", spectacle.cut_ran ? 1 : 0);
+    std::printf("cut_frames = %u\n", spectacle.cut_frames);
+    std::printf("cut_blend_frames = %u\n", spectacle.cut_blend_frames);
+    std::printf("cut_segments = %u\n", spectacle.cut_segments);
+    std::printf("cut_channels = %u\n", spectacle.cut_channels);
+    std::printf("cut_pushed = %u\n", spectacle.cut_pushed);
+    std::printf("cut_released = %u\n", spectacle.cut_released);
+    std::printf("cut_cuts = %u\n", spectacle.cut_cuts);
+    std::printf("cut_anticipated_cuts = %u\n", spectacle.cut_anticipated_cuts);
+    std::printf("cut_unresolved_rigs = %u\n", spectacle.cut_unresolved_rigs);
+    // THE TWO ZEROES TASK 5.2 IS ABOUT. A sequence that wrote a camera transform would have to
+    // write it as a property or force a pose, and neither of these would still be zero.
+    std::printf("cut_camera_property_writes = %u\n", spectacle.cut_camera_property_writes);
+    std::printf("cut_pose_overrides = %u\n", spectacle.cut_pose_overrides);
+    std::printf("cut_blend_wide = %.4f\n", static_cast<double>(spectacle.cut_blend_wide));
+    std::printf("cut_blend_tight = %.4f\n", static_cast<double>(spectacle.cut_blend_tight));
+    std::printf("cut_blend_fov = %.4f\n", static_cast<double>(spectacle.cut_blend_fov));
+    std::printf("cut_wide_fov = %.4f\n", static_cast<double>(spectacle.cut_wide_fov));
+    std::printf("cut_tight_fov = %.4f\n", static_cast<double>(spectacle.cut_tight_fov));
+}
+
+void print_capture(const char* prefix, const cy::sample::slice::CaptureReport& capture) {
+    std::printf("%s_device = %d\n", prefix, capture.device ? 1 : 0);
+    std::printf("%s_captured = %d\n", prefix, capture.captured ? 1 : 0);
+    std::printf("%s_passes = %u\n", prefix, capture.passes);
+    std::printf("%s_prepass_draws = %u\n", prefix, capture.prepass_draws);
+    std::printf("%s_opaque_draws = %u\n", prefix, capture.opaque_draws);
+    std::printf("%s_transparent_draws = %u\n", prefix, capture.transparent_draws);
+    std::printf("%s_skipped_draws = %u\n", prefix, capture.skipped_draws);
+    std::printf("%s_extensions_run = %u\n", prefix, capture.extensions_run);
+    std::printf("%s_particles_drawn = %u\n", prefix, capture.particles_drawn);
+    std::printf("%s_particles_dropped = %u\n", prefix, capture.particles_dropped);
+    std::printf("%s_uploaded_bytes = %llu\n", prefix,
+                static_cast<unsigned long long>(capture.uploaded_bytes));
+    std::printf("%s_validation_errors = %u\n", prefix, capture.validation_errors);
+    std::printf("%s_lit_texels = %u\n", prefix, capture.lit_texels);
+    std::printf("%s_differing_texels = %u\n", prefix, capture.differing_texels);
 }
 
 void print_report(const Report& report, const InterpretationAudit& audit) {
@@ -133,6 +202,10 @@ void print_report(const Report& report, const InterpretationAudit& audit) {
     std::printf("effects_us_median = %.4f\n", report.effects_us_median);
     std::printf("interface_us_median = %.3f\n", report.interface_us_median);
     std::printf("frame_us_median = %.3f\n", report.frame_us_median);
+    std::printf("particles_us_median = %.4f\n", report.particles_us_median);
+    std::printf("cinematic_us_median = %.4f\n", report.cinematic_us_median);
+    std::printf("spectacle_us_median = %.4f\n", report.spectacle_us_median);
+    std::printf("spectacle_us_worst = %.4f\n", report.spectacle_us_worst);
 
     std::printf("state_digest = %016llx\n", static_cast<unsigned long long>(report.state_digest));
     std::printf("replay_digest = %016llx\n", static_cast<unsigned long long>(report.replay_digest));
@@ -145,6 +218,7 @@ void print_report(const Report& report, const InterpretationAudit& audit) {
     std::printf("budget_linearity = %.1f\n", cy::sample::slice::Budgets::kLinearityFactor);
     std::printf("scale_agents = %u\n", cy::sample::slice::Budgets::kScaleAgents);
     std::printf("baseline_agents = %u\n", cy::sample::slice::Budgets::kBaselineAgents);
+    std::printf("budget_spectacle_us = %.1f\n", cy::sample::slice::Budgets::kSpectacleUs);
 
     std::printf("audit_passed = %d\n", audit.passed() ? 1 : 0);
     std::printf("audit_graphs = %u\n", audit.graphs_audited);
@@ -197,6 +271,14 @@ int main(int argc, char** argv) {
             options.interpret_control = true;
         } else if (std::strcmp(argument, "--shot-data") == 0 && (index + 1) < argc) {
             shot_data = argv[++index];
+        } else if (std::strcmp(argument, "--no-spectacle") == 0) {
+            options.spectacle = false;
+        } else if (std::strcmp(argument, "--cut-tick") == 0 && value(parsed)) {
+            options.cut_start_tick = static_cast<cy::u32>(parsed);
+        } else if (std::strcmp(argument, "--capture") == 0 && (index + 1) < argc) {
+            options.capture_prefix = argv[++index];
+        } else if (std::strcmp(argument, "--capture-tick") == 0 && value(parsed)) {
+            options.capture_tick = static_cast<cy::u32>(parsed);
         } else {
             usage();
             return kUsage;
@@ -248,6 +330,16 @@ int main(int argc, char** argv) {
         return kFailed;
     }
     print_report(slice.report(), audit);
+    std::printf("spectacle = %d\n", options.spectacle ? 1 : 0);
+    print_spectacle(slice.spectacle_report());
+    print_capture("capture", slice.capture_report());
+    print_capture("control", slice.control_capture_report());
+    if (options.capture_prefix != nullptr && !slice.capture_report().device) {
+        // A REPORTED GAP, and the program says so and fails. A capture asked for and not taken must
+        // not read as a capture taken.
+        std::fprintf(stderr, "no frame was captured: %s\n", slice.capture_unavailable_reason());
+        return kFailed;
+    }
 
     // Derived, never chosen. A run that found an interpreted consumer, or whose replay disagreed,
     // is a run that failed.

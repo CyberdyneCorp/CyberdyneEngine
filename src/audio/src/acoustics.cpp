@@ -3,6 +3,29 @@
 
 #include <cy/audio/acoustics.h>
 
+// ================================================================================================
+// THE OPTION REACHES THIS FILE THROUGH THIS HEADER, AND UNTIL M8.c IT DID NOT REACH IT AT ALL
+// ================================================================================================
+//
+// cmake/features.cmake does NOT turn a CY_* option into a compile definition. It writes
+// `#define CY_AUDIO_STEAM_AUDIO 1` into the generated <cy_features.h>, and a translation unit that
+// does not include that header sees every `#if defined(CY_...)` as false whatever the option says.
+//
+// This file did not include it. So on the tree M8.b closed on, `-D CY_AUDIO_STEAM_AUDIO=ON` linked
+// `cy::dep::steam_audio` into `cy_audio` (src/audio/CMakeLists.txt does read the option) while
+// EVERY `#if` below evaluated false: the `SteamAudioBackend` class was not compiled,
+// `steam_audio_compiled_in()` returned false in a build that had just fetched and built Steam
+// Audio, and `create_steam_audio` returned `Unavailable` naming the flag the caller had already
+// passed. The option gated a fetch and nothing else — the same shape M8.b's gate found in `CY_UI`,
+// one layer further down and correspondingly harder to see.
+//
+// It was invisible because the option had never been configured successfully (M8.b's gate found
+// upstream's own dependencies missing, before any of this code was reached), so nothing ever
+// compared the two directions. M8.c task 4b is where they are compared; `unit.audio_acoustics`'s
+// parity case now asserts that `steam_audio_compiled_in()` agrees with this build's option rather
+// than trusting either.
+#include <cy_features.h>
+
 #include <algorithm>
 #include <cmath>
 

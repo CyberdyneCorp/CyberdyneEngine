@@ -1,0 +1,570 @@
+# M8.c — Spectacle: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m8c-spectacle/tasks.md and the M8.c row of
+# docs/ROADMAP.md; every criterion below names which. `delivery-roadmap` requires each to be a recipe
+# that exits zero, a command that exits zero, a benchmark within a threshold, or a committed artefact
+# that is regenerated and compared — so an intention that cannot be run is a note at the bottom of
+# this file, not a criterion.
+#
+# --- THIS LEDGER DECLARES ONLY M8.c's OWN CRITERIA, AND THERE IS NO `m8b-green` -------------------
+#
+# The ledger has been flat since M5 and `just roadmap-test` fails a ledger that invokes another one.
+# `just roadmap-milestone m8c` evaluates the permanent set directly — the criteria of every milestone
+# whose `class = "milestone"` gate carries `state = "green"` and which sits BELOW M8.c on the ladder,
+# merged and deduplicated, each distinct check run exactly once — and then the criteria in this file.
+# `criteria.build_plan` is the rule and tools/roadmap/README.md states it.
+#
+# A criterion here whose `run` string is identical to one an earlier ledger declared COLLAPSES into
+# it and is reported under the earlier label — `m0:format` rather than `m8c:format`. The static gates
+# are declared anyway, as every ledger since M3 has, because a ledger that does not name the checks
+# its milestone had to satisfy is a ledger nobody can read. `four-profiles` below is deliberately
+# spelled with the identical string nine earlier ledgers used, for the same reason.
+#
+# --- EVERY COMMAND IN THIS FILE WAS RUN, EXACTLY AS WRITTEN ---------------------------------------
+#
+# M6's closing gate found four criteria in m6.toml that had never executed anything, and M8.b's found
+# one in m8b.toml that was INVERTED and had never been run as written — it asserted that the driver
+# exits non-zero when what it wanted was that the ACT passes. So, as m8b.toml already required:
+#
+#   * no argument passed THROUGH a `just` recipe contains a shell metacharacter, because `just`'s
+#     `*args` is interpolated textually into `bash -c` and an unquoted parenthesis reaches bash;
+#   * every `-R` pattern is a `^…$` anchor or one plain word, and every one of them was listed with
+#     `ctest -N` and its SELECTION READ rather than counted. `-R vfx` alone selects `unit.vfx_values`
+#     and `integration.vfx_compiler` as well as `integration.vfx`, and `-R ml` selects
+#     `unit.material` — both are the substring trap M7 and M8.b each recorded, and both are anchored
+#     below;
+#   * every criterion was executed on this machine and its output pasted into the closing report.
+#
+# --- WHY SO MANY CRITERIA NAME `milestone-m8c` AS THEIR CI JOB ------------------------------------
+#
+# The same arithmetic M7's, M8.a's and M8.b's ledgers recorded. M8.c declares ONE new gate —
+# `milestone-m8c`, at `joins-on-close` — and points its own suites at it rather than inventing thirty
+# more permanent gates whose jobs belong to `.github/workflows/ci.yml`. Until that gate flips to
+# green the criteria below whose `ci_job` is `milestone-m8c` are run by `just roadmap-milestone m8c`
+# and by nothing in continuous integration; the moment it flips they join the permanent set entire.
+#
+# --- WHAT THIS MILESTONE CARRIES THAT NO EARLIER ONE DID ------------------------------------------
+#
+# FIVE CRITERIA THAT NEED A GRAPHICS DEVICE, where M8.b carried one. That is the milestone's shape
+# rather than an accident: M8.c is the first one whose subject is what a frame LOOKS like, and its
+# section 1b exists because M8.b's gate found that a person could build all of M8.b and still not
+# SEE it. Each of the five is reported NOT EVALUATED on a machine without a device rather than
+# passed, and each has a companion that needs neither a device nor a display — `render.pipeline`
+# beside `integration.render_pipeline`, `render.vfx` beside `integration.vfx`, `m8c:slice-capture`
+# beside `m8c:slice-artefact` — so nothing this milestone claims is judgeable ONLY with a GPU.
+#
+# AND THE ARTEFACT IS SIX CRITERIA RATHER THAN FOUR.
+#
+#   slice-artefact     the CTest entry: the game plays, with particles and a cut in it. No display,
+#                      no device.
+#   slice-recipe       the same run through the workflow a contributor types, at the exit criterion's
+#                      own 8,000 agents.
+#   slice-control      THE NEGATIVE CONTROL M8.b built, unchanged and still required: a planted
+#                      per-entity virtual tick is found and the run fails because of it.
+#   slice-determinism  M8.c's OWN control, and it is task 5.3: the same options with the particles
+#                      and the cut live and with `--no-spectacle`, requiring the identical digest.
+#   slice-capture      the frame RECORDED on a device, and the same frame recorded with an empty
+#                      `FrameSinks` beside it. The difference between those two is the whole of
+#                      section 1b, measured in texels.
+#   screenshot-*       the committed pictures, which is what makes the milestone evaluable by
+#                      LOOKING — task 5.5's whole argument.
+
+schema = 1
+id = "m8c"
+name = "Spectacle"
+artefact = "samples/08-vertical-slice, EXTENDED — the same playable game with particles thrown by its own activation cues and a two-shot cinematic cut over its own fight. At 192 agents over 120 ticks: 309 effects played from committed activations, 4,135 live particles at the peak and none dropped for want of ring capacity, 360 merged dispatches against 19,044 unmerged — a factor of 52.9 from grouping emitters that share a compiled kernel — and 16,336 emitter-steps reported on the CPU path as DECLARED fallbacks rather than as a silence; a compiled timeline driving 90 frames of camera through cy::camera's stack, 29 of them with both shots contributing, at a blended lens of 0.444 rad strictly between the two rigs' own 0.42 and 1.15, with 0 arbitrated writes addressed at SubsystemId::Camera and 0 pose overrides; the two new phases costing 1.53 ms a tick against a declared 4 ms and 1.89 ms of simulation and spectacle together against the 25 ms M8.b declared and M8.c did not raise; the identical state digest with the two systems live and with --no-spectacle; and a frame RECORDED on Vulkan with validation on — five stages, 225 depth-prepass and 225 opaque draws, 4,635 sprite instances through the particle renderer's extension, 0 validation errors, 1,050,738 lit texels against 0 for the identical frame recorded through an empty FrameSinks, and 1,118,812 texels of difference between them"
+
+# Non-binding, because none can be settled by running something. `delivery-roadmap` requires a
+# criterion that cannot be evaluated by a machine to be restated as a check or moved here.
+notes = [
+    "`just roadmap-milestone m8c` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 6.4 — moving ci.yml's `milestone` job to `m8c` is checked by `workflows` below (`just ci-check`), which goes red the moment `milestone-m8c` is green above the newest ledger any workflow evaluates. It is the closing change's edit to make and not this file's.",
+    "tasks 6.5 — opening the M9 change is `m9-open` below, which asks only that the change exists. AT THE TIME THIS FILE WAS WRITTEN IT FAILS, and it is meant to, exactly as m8b.toml's `m8c-open` and `roadmap-tiers` did: openspec/changes/ holds `implement-m8c-spectacle` and no `implement-m9-*`. The next rung IS M9 — `record.MILESTONES` carries m9 after m8c and there is no further split declared.",
+    "tasks 7.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "THE SLICE'S BUDGETS ARE SHAPE BOUNDS AND NOT MACHINE NUMBERS, declared in `Budgets` in samples/08-vertical-slice/slice.h and printed by the program so the driver compares a measurement against the source rather than against a number copied into a script. M8.c DID NOT RAISE `kSimulationUs`: task 5.1 asks that particles and a cut fit INSIDE the budget the slice already declared, so `slice.py` checks the sum of the simulation and the two new phases against M8.b's own figure. `kSpectacleUs` beside it is the sub-allocation the two new systems share, and the VFX budget controller is told 1.5 ms of it so that 'cost is bounded by configuration' is a dial somebody turned.",
+    "A FINDING IN A MODULE THE ARTEFACT ONLY USES, measured while the capture was written and reported rather than fixed: `SceneIndex::apply` leaves `SpatialEntry::gpu_slot` at zero — its own header says so and offers 'a caller that does own a GPU scene writes gpu_slot into the index itself' — but `SpatialIndex` exposes no way to set it after `insert`. Every draw of a `SceneIndex` frame therefore carries `instance_slot == 0`, which is invisible on a frame that is only ASSEMBLED and puts every prop of the level on top of the first one on a frame that is RECORDED. samples/08-vertical-slice/capture.cpp works around it by rebuilding the entries with `gpu_slot` set to the publisher's own spatial slot, and says so at the site. The fix belongs in src/rendering/culling/ or src/rendering/assembly/.",
+    "`audio` DOES NOT REACH COMPLETE AT THIS MILESTONE ON THE EVIDENCE THIS LEDGER COLLECTED, and `steam-audio-configures` below is the forcing function that says so out loud: `-D CY_AUDIO_STEAM_AUDIO=ON` still does not configure and `SteamAudioBackend::simulate` still returns `ErrorCode::NotImplemented`. It is declared as a criterion rather than moved into these notes precisely because it CAN be run and does fail; a milestone that quietly dropped it would be repeating what M8.b's gate caught.",
+]
+
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes with the two capabilities this milestone advances to Working, the one it takes to Seed, and the vfx-system delta that names where the determinism firewall is ENFORCED rather than only where it is required"
+source = "tasks 6.3"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained src/vfx/, src/sequencing/, src/ml/, src/rendering/pipeline/, src/rendering/particles/, the ECS write firewall and four files in the artefact"
+source = "tasks 7.2"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over five new directories and the artefact's new capture and spectacle halves — including the cognitive-complexity limits this project holds systems code to"
+source = "tasks 7.2"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the engine's layer order holds with five new directories in the tree — cy::sequencing at layer scene depending on cy::core ALONE, which is what makes 'a sequence orchestrates and owns nothing' a link-graph fact rather than a claim; cy::ml at layer servers so a session can be created from a server, a scene system or a cook, with cy::ml-cook at layer scene because it names cy::gameplay; and cy::rendering-pipeline above cy::rendering-assembly with nothing in the assembly reaching back"
+source = "tasks 7.2, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "every permanent gate is run by a job in .github/workflows/, and no job reimplements a recipe. This is also the check that fails if ci.yml's `milestone` job was not moved to the newest closed milestone when its gate went green — task 6.4's forcing function"
+source = "tasks 6.4, delivery-roadmap, testing-and-quality (Quality gates for merge)"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which matters here because M8.c added ONNX Runtime and Eigen, and Eigen's MPL-2.0 is the one entry in this manifest that is not a clean fit for `thirdparty-dependencies`' permissive rule and is recorded in full rather than rounded off"
+source = "tasks 7.2, 4.1c"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree"
+source = "tasks 6.3, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the tier plan obeys its own dependency rules, and the four plan documents agree with each other — both checked by a tool rather than by reading. It also runs the ledger self-test, which is what fails when this file declares fewer criteria than its floor"
+source = "tasks 6.1, 6.3, delivery-roadmap (Forbidden roadmap patterns)"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+# --- Section 1: the determinism firewall ----------------------------------------------------------
+#
+# THE CRITERION THAT ARRIVED WITH ITS SUBJECTS. M8.b carried "VFX and inference cannot write gameplay
+# state, proven by a test" with NEITHER SUBJECT IN THE TREE, which is a criterion its milestone
+# satisfies vacuously. Both subjects exist now and the enforcement point is decided: the ECS WRITE
+# PATH, not the command origin — because a command is the simulation's INPUT rather than its write,
+# because `gameplay-framework` forbids provenance affecting validation or ordering, and because
+# `vfx-system` states the diagnostic over COMPONENTS.
+
+[[criterion]]
+id = "firewall-ecs"
+describe = "the write firewall at the ECS write path: an origin scope that nests and restores what it replaced, component authority raised but never lowered and derived from reflection with what could not be derived REPORTED rather than hidden, and every door — create, destroy, instantiate, remove, set_shared, set_sparse, remove_sparse, set_parent, the command buffer at RECORD time, the query chunk's mutable span and Snapshot::restore — refusing a write whose origin may not make it, and the disarm switch letting the same write land. THE GATE FOUND THIS CRITERION UNABLE TO FAIL AND FIXED IT: `unit.ecs` named the firewall in none of its fourteen sources, and passed with `WriteFirewall::admit` mutated to return true unconditionally. src/ecs/tests/test_firewall.cpp is the eleven cases that now go red under that mutation — 8 of 54 cases and 34 of 1,048 assertions. The thread-locality half is deliberately NOT here: this tier starts no thread, and `m8c:firewall-gameplay` covers it with eight"
+source = "tasks 1.1, 1.2, 7.4, vfx-system delta"
+kind = "recipe"
+run = "just test-unit -R ^unit.ecs$"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "firewall-gameplay"
+describe = "THE TEST IN BOTH DIRECTIONS AND AS A NEGATIVE CONTROL: a VFX readback and a non-pinned inference result each attempt a gameplay write and are each refused by name, a permitted origin writes the same component and is not, and a re-simulation reaches the identical state digest regardless of what either did"
+source = "tasks 1.2, 1.4"
+kind = "recipe"
+run = "just test-integration -R gameplay_firewall"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "firewall-cook"
+describe = "a non-pinned model feeding an authoritative AI node is refused AT COOK TIME, which is what `ml-inference`'s 'Multiplayer desync is prevented at cook time' asks for — a runtime diagnostic is not that requirement. The gate compares two digests computed by ONE function used on both sides, because two functions that agree today are two that can drift"
+source = "tasks 1.3, 4.2, ml-inference"
+kind = "recipe"
+run = "just test-unit -R ml_cook"
+ci_job = "milestone-m8c"
+
+# --- Section 1b: the shader and pipeline layer ----------------------------------------------------
+#
+# THE WALL M8.b's GATE NAMED AND DID NOT SCHEDULE. `FrameAssembly` hands each pass's record callback
+# to its caller and every caller in the tree supplied none, so the engine had a frame nothing drew
+# into. Two suites over one scene: what was DECIDED, with no device, and what was DRAWN, on one.
+
+[[criterion]]
+id = "pipeline-layer"
+describe = "the layer above FrameAssembly: pipeline state objects for the depth prepass, the opaque and transparent stages and the tonemap resolve, per-frame bindings sized from the cluster grid, and the five record callbacks each of the frame's stages declared and never received. What was DECIDED — how many stages carry a callback, how many ran, how many draws each recorded, how many bytes the Prepare transfer moved — all answerable with no graphics device"
+source = "tasks 1b.1, 1b.2"
+kind = "recipe"
+run = "just test-integration -R render_pipeline"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "pipeline-device"
+describe = "the same scene DRAWN, on Vulkan with validation and synchronisation validation on, the output image copied back off the device and compared against the identical frame recorded through an empty FrameSinks. Five defects were found this way that no structural test could see — a dropped directional light, a descriptor set left unbound by an empty transparent layer, a mismatched push-constant range, a capture pass the graph culled because it declared a read and no write, and a physically-lit scene photographed as a white rectangle at zero exposure"
+source = "tasks 1b.1, 1b.2, 1b.4"
+kind = "recipe"
+run = "just test-render -R pipeline"
+requires = "gpu"
+reason = "it records the frame on a graphics device and reads the image back; on a machine without one it is reported NOT EVALUATED rather than passed, and `m8c:pipeline-layer` above covers the same code path with no device"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "material-slang"
+describe = "`material-compiler` emits Slang that something COMPILES, closing M7's recorded gap that the bundle carried the IR, the generated source, the cost report and the cook key while nothing invoked the compiler"
+source = "tasks 1b.3"
+kind = "recipe"
+run = "just test-smoke -R material_slang"
+ci_job = "milestone-m8c"
+
+# --- Section 2: VFX -------------------------------------------------------------------------------
+#
+# `-R vfx` ALONE SELECTS THREE SUITES, and which three is not obvious: `unit.vfx_values`,
+# `integration.vfx_compiler` and `integration.vfx`. That is the substring trap M7's gate recorded
+# when `--tests text` swept up `render.virtual_texturing_gpu` and M8.b's recorded twice more. Every
+# pattern here is anchored and its selection was listed with `ctest -N`.
+
+[[criterion]]
+id = "vfx-values"
+describe = "the value half of CyberVFX with no world in it: the asset model, the compiler-derived attribute layout with its precision selection, the budget controller's levers and the event router's bounds"
+source = "tasks 2.1, 2.2"
+kind = "recipe"
+run = "just test-unit -R vfx_values"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "vfx-compiler"
+describe = "graph compilation to VFX's OWN IR — a kernel is an ordered write list whose values are pure expressions, which is the shape M8.b's spike predicts because the shared expression core has no Store — with attribute liveness eliding a write nothing reads, kernel fusion of Initialise into Update over the newly spawned, and two structurally identical emitters producing identical kernel digests so the scheduler has something to merge"
+source = "tasks 2.1, 2.2, design.md section 1"
+kind = "recipe"
+run = "just test-integration -R vfx_compiler"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "vfx-runtime"
+describe = "the unified simulation world and its global scheduler: one shared particle pool with per-importance reservations so a decorative effect cannot starve a critical one, merged indirect dispatches over emitters sharing a kernel, decoupled simulation frequency with interpolation suppressed across a discontinuity, data interfaces, GPU-to-GPU events with a bounded CPU readback, and cost bounded by configuration measured at four times the population"
+source = "tasks 2.3, 2.4, 2.5, 2.6"
+kind = "recipe"
+run = "just test-integration -R ^integration.vfx$"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "vfx-device"
+describe = "the simulation DRAWN: the same cooked effect stepped, published through publish_sprites and handed to the particle renderer inside a real frame on a Vulkan device, with the budget controller's reduction visible in the picture rather than only in a counter"
+source = "tasks 2.3, 2.6, 5.5"
+kind = "recipe"
+run = "just test-render -R vfx"
+requires = "gpu"
+reason = "it draws simulated particles on a graphics device and reads the image back; `m8c:vfx-runtime` above asserts the same simulation with no device"
+ci_job = "milestone-m8c"
+
+# --- Section 3: sequences -------------------------------------------------------------------------
+
+[[criterion]]
+id = "sequencing-core"
+describe = "compiled timelines and exact time: a sequence is NOT a node graph and adopts CyberGraph for nothing, because a timeline cannot lower through a hash-consed pure-expression core that re-sorts commutative operands when an authored track order is exactly what must not be re-sorted. Time is an integer, one accumulator run forward and back returns to the same tick with a zero residual, and ChannelType::Transform is DECLARED AND REFUSED with the diagnostic naming the function that authors it as position, rotation and scale instead"
+source = "tasks 3.1, 3.2, 3.3"
+kind = "recipe"
+run = "just test-unit -R sequencing"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "sequencing-playback"
+describe = "playback: cost scales with what is ACTIVE rather than with what exists, seek and scrub, skipping that APPLIES what it skips, batched subsystem dispatch, arbitration between sequences by priority, weight and exclusive group, capture and restore, and preload plans"
+source = "tasks 3.1, 3.2, 3.5, 3.6"
+kind = "recipe"
+run = "just test-integration -R sequencing_playback"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "sequencing-camera"
+describe = "a sequence drives cameras THROUGH THE CAMERA STACK and does not write camera transforms: a shot selects a rig, the bridge pushes it as a stack contribution, and an anticipated cut becomes CameraServer::cut(..., true, lead) which the camera's own StreamingSource carries to residency as cut_pending"
+source = "tasks 3.3, 3.5, 5.2, camera-system"
+kind = "recipe"
+run = "just test-integration -R sequencing_camera"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "sequencing-commands"
+describe = "A SEQUENCE IS A COMMAND PRODUCER, which is `gameplay-framework`'s requirement that 'the simulation SHALL NOT be able to distinguish' a sequence-issued command from any other — and the reason a sequence does not write a camera transform. Provenance is recorded and does not affect validation, ordering or execution"
+source = "tasks 3.4, gameplay-framework"
+kind = "recipe"
+run = "just test-integration -R sequencing_commands"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "sequence-cut"
+describe = "the cinematic as its own artefact: an authored two-shot sequence compiled, played, arbitrated and applied to a real cy::camera::CameraServer, printing THE CAMERA THE STACK PRODUCED — the blended pose, the blended lens and the view-projection the renderer's own Projection::matrix() built — every frame"
+source = "tasks 3.5, 5.5"
+kind = "recipe"
+run = "just test-smoke -R sequence_cut"
+ci_job = "milestone-m8c"
+
+# --- Section 4: inference -------------------------------------------------------------------------
+#
+# `-R ml` ALONE SELECTS `unit.material`, `unit.material_compiler` and `integration.material_lowering`
+# — "material" contains "m" and "l" is not the trap, `ml_cook` and `ml_runtime` are matched by
+# `ml`, and so is nothing else, but `^unit.ml$` is what selects the core suite ALONE. Listed with
+# `ctest -N` and read.
+
+[[criterion]]
+id = "ml-core"
+describe = "model assets, tensors and sessions, and the backend abstraction with the CHOICE REPORTED rather than made silently: a SelectionReport carries the outcome, what was chosen and what was rejected unvalidated"
+source = "tasks 4.1"
+kind = "recipe"
+run = "just test-unit -R ^unit.ml$"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "ml-runtime"
+describe = "scheduling and a declared per-frame budget, with an unavailable async result YIELDING rather than stalling: dispatch never runs a model, pump is the only call that spends time, and the answer a caller reads carries whether it is fresh and how many frames stale"
+source = "tasks 4.3"
+kind = "recipe"
+run = "just test-integration -R ml_runtime"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "ml-onnxruntime"
+describe = "ONNX RUNTIME AS THE REFERENCE BACKEND, AND IT RUNS A REAL MODEL. The specification has named it the portable default since it was written and it has never had an implementation; an abstraction with no backend is a capability nothing exercises. Built with the option ON — which is the direction a default-OFF option is never tested in — and running the committed model asset with a checked result"
+source = "tasks 4.1b, 4.1c, 4.1d"
+kind = "command"
+run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/ml-onnxruntime}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_ML_ONNXRUNTIME=ON; CY_BUILD_DIR=\"$d\" just test-integration --profile dev -R ml_onnxruntime"
+timeout_s = 14400
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "ml-option-off"
+describe = "and the same tree with `-D CY_ML=OFF`, which removes src/ml/ entirely. M8.b's gate found CY_UI defaulting OFF while gating NOTHING — an option whose presence and absence produced identical output because neither had been compared — so this milestone checks both directions for every option it adds"
+source = "tasks 4.1c, delivery-roadmap"
+kind = "command"
+run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-ml}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_ML=OFF; CY_BUILD_DIR=\"$d\" just test-unit --profile dev -R ^unit.ecs$"
+timeout_s = 14400
+ci_job = "milestone-m8c"
+
+# --- Section 4b: the audio debt -------------------------------------------------------------------
+#
+# INHERITED FROM M8.b's CLOSING GATE, WHICH RAN `-D CY_AUDIO_STEAM_AUDIO=ON` FOR THE FIRST TIME AND
+# FOUND IT COULD NOT BE CONFIGURED. Declared as a criterion rather than described in the notes for
+# exactly the reason `roadmap-tiers` was in m8b.toml: it CAN be run, and a milestone that quietly
+# dropped a criterion it did not meet is the shape this ledger exists to prevent.
+
+[[criterion]]
+id = "audio-parity"
+describe = "the fallback keeps answering every query with the option off, and the two paths agree on everything `audio` says content may depend on — which is what 'content SHALL NOT depend on Steam Audio being present' asks for"
+source = "tasks 4b.3, audio"
+kind = "recipe"
+run = "just test-unit -R audio_acoustics"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "steam-audio-configures"
+describe = "`-D CY_AUDIO_STEAM_AUDIO=ON` CONFIGURES AND BUILDS. It did not at M8.b's closing gate — upstream's CMake calls find_package for PFFFT, IPP and FFTS and deps/manifest.toml provides none of them — and that is an option declared, defaulted off, and never once built. This criterion is the forcing function that keeps saying so until it is true"
+source = "tasks 4b.1, 4b.2, audio, ROADMAP M8.c"
+kind = "command"
+run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/steam-audio}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_AUDIO_STEAM_AUDIO=ON"
+timeout_s = 14400
+ci_job = "milestone-m8c"
+# DECLARED, RUN ON EVERY EVALUATION, AND STILL FAILING — and the closing gate had to build the
+# mechanism that makes those three things compatible. This criterion was written to fail on purpose;
+# `milestone-m8c` becomes a permanent merge gate the day it goes green and ci.yml runs
+# `just roadmap-milestone m8c`, so with only "pass" and "fail" that job could never be green again,
+# which is the sibling of the forbidden pattern "a milestone gate disabled rather than fixed or
+# explicitly superseded". `known_gap` is the third answer: the criterion still runs, its failure is
+# still printed under its own heading with the rung that must close it, and it does not hold the
+# gate red. The direction that keeps it honest is the other one — the ledger FAILS if a declared gap
+# starts passing, because a marker that outlived its gap is the next thing nobody notices.
+known_gap = "Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned compilers, and a build-time tool this manifest has no field for — and moved `audio`'s Complete cell to M11 rather than claim the tier. FallbackAcoustics answers every query in every build, which is what `audio`'s \"content SHALL NOT depend on Steam Audio being present\" asks for"
+known_gap_closes = "m11"
+
+# --- Section 5: the artefact ----------------------------------------------------------------------
+
+[[criterion]]
+id = "slice-artefact"
+describe = "the closing artefact as a CTest entry, so `just test-all` runs it and `build-and-test` covers it on every pull request: the game plays WITH PARTICLES AND A CUT IN IT — effects played from the activation pipeline's own cues, the scheduler's merged dispatches against its unmerged ones, the CPU fallback reported as a number, a compiled timeline blending two shots through the camera stack, and zero camera transforms written — and everything M8.b's artefact already claimed. No display and no graphics device"
+source = "tasks 5.1, 5.2, 5.3"
+kind = "recipe"
+run = "just test-smoke -R vertical_slice"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "slice-recipe"
+describe = "the same artefact through the workflow a contributor types, which builds the engine first — so it fails when the recipe rots, which the CTest entry cannot see. It runs the scale act at the exit criterion's own figure of 8,000 agents, and it is where 'holding the frame budget it already declares' is measured: the simulation and the two new phases TOGETHER against the budget M8.b declared and M8.c did not raise"
+source = "tasks 5.1, 5.3"
+kind = "recipe"
+run = "just run-vertical-slice"
+timeout_s = 7200
+ci_job = "milestone-m8c"
+
+# THE NEGATIVE CONTROL M8.b BUILT, and its `run` string is IDENTICAL to m8b.toml's on purpose so the
+# plan collapses the two into one run of it, reported as `m8b:slice-control`. It is declared here
+# because M8.c extends the program that control runs against, and a ledger that did not name it
+# would read as a milestone that stopped checking.
+[[criterion]]
+id = "slice-control"
+describe = "THE NEGATIVE CONTROL, demonstrated on every ledger run rather than asserted once. `--interpret-control` adds a per-entity object with a virtual tick() and calls it in the loop; the interpretation audit must FIND it by name and the sample must return non-zero because of it. Act 4 of the driver is what requires that failure, so this criterion requires the ACT to pass and requires its named step to be in the output — a control that was deleted would report zero steps and exit zero, and that must not read as green"
+source = "tasks 5.1, ROADMAP M8.b (no graph is interpreted at runtime)"
+kind = "command"
+run = "set -o pipefail; out=$(just run-vertical-slice --only control 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the negative control act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'an interpreted consumer is FOUND and the run fails because of it' || { echo 'the negative control act ran and did not report its step: it has been removed or renamed'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m8c"
+
+# M8.c's OWN CONTROL, AND IT IS TASK 5.3. The determinism act now runs the slice twice with the same
+# options — once with the particles and the cut live and once with `--no-spectacle` — and requires
+# the IDENTICAL digest. As with `slice-control`, both halves are needed: the act must pass AND its
+# named step must appear, because an act deleted from slice.py would report nothing and exit zero.
+[[criterion]]
+id = "slice-determinism"
+describe = "the determinism act re-run with both new systems live reaches the SAME digest it reaches without them, which is the firewall's proof from the artefact's side. A particle system that wrote a health value, or a sequence that wrote a component instead of issuing a command, would move it — and the ECS write firewall would refuse the write before it could. Proved to fail by folding a VFX counter into the digest"
+source = "tasks 5.3, 1.4"
+kind = "command"
+run = "set -o pipefail; out=$(just run-vertical-slice --only replay 2>&1); status=$?; echo \"$out\"; if [ $status -ne 0 ]; then echo 'the determinism act did not pass'; exit 1; fi; echo \"$out\" | grep -q 'the digest is the same with the particles and the cut live and without them' || { echo 'the spectacle determinism control is not in the output: it has been removed or renamed'; exit 1; }"
+timeout_s = 3600
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "slice-capture"
+describe = "THE SLICE'S FRAME IS CAPTURED RATHER THAN DRAWN, which M8.b's own report said a person could build all of M8.b without ever seeing. The pipeline layer's five callbacks and the particle renderer's extension record the frame on Vulkan with validation on; the identical frame is recorded through an EMPTY FrameSinks beside it; both are read back and the difference between them is counted in texels. Zero validation errors, and a control that lights no texel at all"
+source = "tasks 1b.2, 5.4, 5.5"
+kind = "command"
+run = "set -e; just run-vertical-slice --only capture --capture build/m8c-capture/vertical-slice-m8c"
+requires = "gpu"
+reason = "it records the slice's frame on a graphics device and reads the image back; every other act of the artefact is judgeable with neither a device nor a display, and `m8c:slice-artefact` runs those"
+timeout_s = 7200
+ci_job = "milestone-m8c"
+
+# --- The committed pictures -----------------------------------------------------------------------
+#
+# TASK 5.5's WHOLE ARGUMENT: this project went six milestones with one screenshot and has been paying
+# for it in every conversation since. A subsystem verified in isolation photographs badly, and a
+# reader who cannot see a capability cannot judge it. Every file below is the ENGINE'S OWN OUTPUT,
+# read back off a graphics device — none of them is a drawing of what a frame decided.
+
+[[criterion]]
+id = "screenshot-slice"
+describe = "THE ARTEFACT'S REFRESHED SCREENSHOT, and the first one in this project's history that is CAPTURED rather than drawn: the slice's own frame, recorded through the pipeline layer's callbacks on a device, with its particles drawn by the particle renderer's extension and its budget on screen as sprite instances the same renderer drew"
+source = "tasks 5.4, 5.5, 5.6"
+kind = "path"
+path = "docs/design/images/vertical-slice-m8c.png"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "screenshot-slice-control"
+describe = "THE SAME FRAME WITH NO RECORD CALLBACKS — assembled, compiled, barriered and executed through an empty FrameSinks, which is what every caller in this tree supplied before M8.c. The pair is the whole of section 1b, and a number does not show it"
+source = "tasks 5.5, 5.6"
+kind = "path"
+path = "docs/design/images/vertical-slice-m8c-no-callbacks.png"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "screenshot-slice-cut"
+describe = "the cut running inside the slice, photographed MID-BLEND rather than at either end: both shots contributing to the camera stack at once, through a lens strictly between the two rigs' own"
+source = "tasks 5.5, 5.6"
+kind = "path"
+path = "docs/design/images/vertical-slice-m8c-cut.png"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "screenshot-vfx"
+describe = "a particle effect mid-simulation, simulated by SimulationWorld and drawn on a device"
+source = "tasks 2.3, 5.5"
+kind = "path"
+path = "docs/design/images/vfx-simulation.png"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "screenshot-vfx-budget"
+describe = "THE BUDGET CONTROLLER, SHOWN RATHER THAN COUNTED: the same effect at its authored quality and after the controller has reduced it under a synthetic overload — the same frame, the same camera, the same seed, one number changed. Two runs of one code path, so there is no tolerance to tune and nothing to regenerate"
+source = "tasks 2.6, 5.5"
+kind = "path"
+path = "docs/design/images/vfx-budget-degraded.png"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "screenshot-pipeline"
+describe = "the pipeline layer's own before-and-after pair, over the lit scene both of its suites render: the frame this layer records, and the identical frame with an empty FrameSinks"
+source = "tasks 1b.1, 1b.2, 5.5"
+kind = "path"
+path = "docs/design/images/pipeline-frame-m8c-recorded.png"
+ci_job = "milestone-m8c"
+
+[[criterion]]
+id = "screenshot-sequence-cut"
+describe = "the cinematic's own capture, drawn from the camera the engine produced: the blended pose, the blended lens and the view-projection the renderer's own Projection::matrix() built, with the scene points it projects LABELLED as the artefact's own"
+source = "tasks 3.5, 5.5, 5.6"
+kind = "path"
+path = "docs/design/images/m8c-sequence-cut.png"
+ci_job = "milestone-m8c"
+
+# --- Section 6: the record and the next rung ------------------------------------------------------
+
+# THE DOUBLE-STAR GLOB IS THE POINT, and m6.toml's own comment says why: a change lives at
+# `openspec/changes/<name>/` while it is open and at `openspec/changes/archive/<date>-<name>/` once
+# it closes, so a pattern that only matched an open change would turn red on the day the next
+# milestone closed — which is the one day this criterion should be most satisfied. `**` matches both
+# depths.
+[[criterion]]
+id = "m9-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M9, Integrity: one command log read five ways, which `record.MILESTONES` already carries after m8c and which no further split has been declared against"
+source = "tasks 6.5, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m9*/proposal.md"
+ci_job = "milestone-m8c"
+
+# THE TIER FLOOR, AND TWO CELLS THIS MILESTONE PLANNED AND DID NOT REACH.
+#
+# `audio` is deliberately NOT in this table at `complete`: `steam-audio-configures` above is what
+# would have to pass first, and it does not.
+#
+# AND `vfx-system` IS AT `seed`, NOT `working`, BECAUSE THE CLOSING GATE MOVED IT. What M8.c built
+# is the asset model, the IR, the graph compiler, the derived attribute layout, the shared
+# simulation world, the global scheduler, the budget controller, the bounded readback and the
+# determinism firewall's producer side — everything the four suites above assert. What it did not
+# build is the GPU compute dispatch: `device_dispatch_available()` answers false and every emitter
+# falls back to the CPU, reporting `FallbackReason::DeviceDispatchUnimplemented` every frame. That
+# is honest and it is not the requirement — `vfx-system`'s Purpose says "GPU simulation is the
+# **default**, not an advanced mode" over a system "targeting millions of particles", which
+# pre-empts Working's "optional and advanced requirements may be outstanding" for this one
+# requirement by name. Seed's own definition — "behaviour may be minimal, single-threaded,
+# unoptimised, or restricted to one backend" — is this module exactly. The `W` cell is at M10 in
+# docs/roadmap/capability-matrix.md and the argument is in the M8.c section of docs/ROADMAP.md.
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the record carries M8.c's exit tiers, each naming the change that advanced it — `sequencing-and-cinematics` at Working, `vfx-system` and `ml-inference` at Seed. Two planned cells are absent on purpose and both are argued rather than dropped: `audio` at Complete, which `steam-audio-configures` below keeps failing about, and `vfx-system` at Working, which the closing gate moved to M10"
+source = "tasks 6.3, implement-m8c-spectacle/proposal.md, ROADMAP M8.c"
+kind = "tiers"
+ci_job = "milestone-m8c"
+
+[criterion.expect_tiers]
+vfx-system = "seed"
+sequencing-and-cinematics = "working"
+ml-inference = "seed"
+
+# --- Every profile --------------------------------------------------------------------------------
+
+# THE IDENTICAL COMMAND M1 THROUGH M8.b DECLARE, written out rather than varied so that the plan
+# COLLAPSES all of them into one run of it, reported as `m1:four-profiles`. That is the whole point
+# of the flat ledger and the reason this string must not be "improved" here.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including the artefact and the suites this milestone's five new directories brought. CY_VFX and CY_ML default ON, as `delivery-roadmap` requires of a capability at Working and at Seed, and each also builds with its option OFF"
+source = "tasks 7.2"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# THE OPTIONS THIS MILESTONE ADDED, EACH BUILT WITH ITS FEATURE OFF. `-D CY_VFX=OFF` must remove
+# src/vfx/ and leave the renderer untouched, which is `vfx-system`'s own "The system SHALL be
+# removable at build time via CY_VFX WITHOUT AFFECTING THE REST OF THE RENDERER" — so
+# src/rendering/particles/ is deliberately NOT behind it and this configuration proves it still
+# builds. `-D CY_ML_ONNXRUNTIME=ON` is checked by `ml-onnxruntime` above, which is the other
+# direction of the same rule.
+[[criterion]]
+id = "feature-options-off"
+describe = "the whole tree configures and builds with each of this milestone's new feature options switched off — CY_VFX alone, and CY_RENDERER_VULKAN together with the CY_VIRTUAL_GEOMETRY that cmake/features.cmake requires with it. A capability that cannot be removed at build time is not behind an option, whatever cmake/features.cmake says; and samples/08-vertical-slice declares nothing at all in the configurations where its subjects are absent, rather than turning a removable feature into a configure error naming the artefact"
+source = "tasks 2.x, 7.2, delivery-roadmap, testing-and-quality"
+kind = "command"
+run = "set -e; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-vfx}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_VFX=OFF; d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/off-vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile dev -D CY_RENDERER_VULKAN=OFF -D CY_VIRTUAL_GEOMETRY=OFF"
+timeout_s = 14400
+ci_job = "milestone-m8c"

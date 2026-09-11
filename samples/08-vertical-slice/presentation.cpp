@@ -86,7 +86,14 @@ GraphemeMeasurer& measurer() noexcept {
 [[nodiscard]] cy::render::LightDescription sun(u64 id) noexcept {
     cy::render::LightDescription light;
     light.kind = cy::render::LightKind::Directional;
+    // THE DIRECTION IS THE TRANSFORM'S FORWARD, AND AN IDENTITY ROTATION MEANS (0, 0, -1) — a sun
+    // that travels straight down the view axis and leaves every horizontal surface unlit. It was
+    // identity until M8.c photographed the frame and the arena floor came back black; the assembled
+    // frame reported five lights either way, which is exactly the class of defect a picture finds
+    // and a counter cannot. This one comes from above and over the camera's left shoulder.
     light.transform = Transform::identity();
+    light.transform.rotation = cy::Quat::look_rotation(cy::normalize(Vec3{-0.30F, -0.85F, -0.45F}),
+                                                       Vec3{0.0F, 1.0F, 0.0F});
     light.intensity = 90000.0F;
     light.stable_id = id;
     return light;
@@ -556,8 +563,12 @@ Status Presentation::update_frame(const cy::render::RenderSnapshot& snapshot, co
         return stepped;
     }
 
+    last_view_ = view;
     const f32 aspect = static_cast<f32>(width_) / static_cast<f32>(height_);
-    const f32 fov = 1.0471975512F;
+    // THE LENS COMES FROM THE VIEW NOW. It was a constant here until M8.c; a cinematic shot changes
+    // lens by selecting a different rig and the camera stack blends the two, so a frame that kept
+    // its own constant would photograph the blend with the wrong field of view.
+    const f32 fov = view.vertical_fov;
     projection_ = cy::perspective_reversed_z(fov, aspect, 0.1F, 400.0F);
     view_matrix_ = cy::look_at(view.eye, view.target, Vec3{0.0F, 1.0F, 0.0F});
 

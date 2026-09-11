@@ -62,6 +62,32 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-values
                         cy::servers-render)
 
+# --- The step that makes a generated material COMPILE. M8.c task 1b.3 --------------------------
+#
+# M7 recorded the gap and it was still open on the tree M8.b closed: the bundle carries the IR, the
+# generated source, the cost report and the cook key, and NOTHING invokes the compiler. Handing the
+# emitted Slang to slangc against src/rendering/shaders/ failed on the first identifier — the
+# closure vocabulary did not exist, and a generated program declares none of the material's own
+# parameters, attributes or texture slots.
+#
+# A SECOND TARGET RATHER THAN A SOURCE IN THE FIRST, and the reason is a cook key. `docs/ROADMAP.md`
+# records that "`src/rendering/material/` is not modified — it is M7's closed work and one extension
+# invalidates its cook keys": `cy_rendering_material`'s source list above is untouched, `emit.cpp`
+# is untouched, and every byte the emitter produces is unchanged. The prelude is written AROUND that
+# output and never into it.
+#
+# It depends on cy::shader (layer 3) because THIS is where the engine invokes the compiler, which is
+# the sentence M7's gate said was false. cy::rendering-material does NOT depend on it, so nothing
+# that only wants the IR pays for the shader pipeline.
+cy_add_module(
+    NAME cy_rendering_material_slang
+    LAYER rendering
+    ALIAS cy::rendering-material-slang
+    TYPE STATIC
+    SOURCES src/slang_program.cpp
+    PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::rendering-material)
+
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()

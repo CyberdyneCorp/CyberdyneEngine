@@ -40,6 +40,7 @@ cy_add_module(
         src/command.cpp
         src/context.cpp
         src/control.cpp
+        src/cook_firewall.cpp
         src/diagnostics.cpp
         src/events.cpp
         src/features.cpp

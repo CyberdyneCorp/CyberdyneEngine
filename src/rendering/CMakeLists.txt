@@ -128,3 +128,14 @@ add_subdirectory(post)
 #
 # It depends on every one of the eight and calls each of them, so it must be read after all of them.
 add_subdirectory(assembly)
+
+# THE LAYER ABOVE THE FRAME. M8.c task 1b.1, and the wall M8.b's closing gate named: `FrameAssembly`
+# hands each pass's record callback to its caller and every caller in the tree supplied none, so the
+# engine had a frame that nothing drew into. This module is the pipeline state, the bindings and the
+# callbacks — the first place in the tree where a pipeline the engine created is bound to a pass the
+# engine declared. Last, because it consumes assembly/ and everything assembly/ consumes.
+add_subdirectory(pipeline)
+
+# The first consumer of that layer, and the proof of it: a particle renderer that reaches the frame
+# through `PassExtension` rather than through a second frame of its own. M8.c task 1b.4.
+add_subdirectory(particles)

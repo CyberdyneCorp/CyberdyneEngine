@@ -228,9 +228,9 @@ capabilities:
     milestone: M8B
     change: implement-m8b-systems
   sequencing-and-cinematics:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M8C
+    change: implement-m8c-spectacle
   input-and-actions:
     tier: working
     milestone: M4
@@ -368,9 +368,9 @@ capabilities:
     milestone: M8B
     change: implement-m8b-systems
   vfx-system:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M8C
+    change: implement-m8c-spectacle
   physics:
     tier: working
     milestone: M8A
@@ -388,9 +388,9 @@ capabilities:
     milestone: M8B
     change: implement-m8b-systems
   ml-inference:
-    tier: none
-    milestone: null
-    change: null
+    tier: seed
+    milestone: M8C
+    change: implement-m8c-spectacle
   audio:
     tier: working
     milestone: M8B

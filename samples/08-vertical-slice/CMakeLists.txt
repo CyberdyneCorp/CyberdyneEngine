@@ -47,12 +47,36 @@
 # `smoke.vertical_slice`, and `just run-vertical-slice` reports an absent binary rather than a
 # defect. The milestone's ledger runs the artefact in the default configuration, where both are ON.
 
-if(NOT CY_ANIMATION OR NOT CY_AI OR NOT CY_UI)
-    message(STATUS "samples/08-vertical-slice: CY_ANIMATION, CY_AI or CY_UI is off, so the vertical "
-                   "slice — which is a game that animates, thinks and puts an interface over both — "
-                   "is not declared.")
+if(NOT CY_ANIMATION OR NOT CY_AI OR NOT CY_UI OR NOT CY_VFX)
+    message(STATUS "samples/08-vertical-slice: CY_ANIMATION, CY_AI, CY_UI or CY_VFX is off, so the "
+                   "vertical slice — a game that animates, thinks, puts an interface over both and "
+                   "throws sparks while it does — is not declared.")
     return()
 endif()
+
+# ================================================================================================
+# WHAT M8.c ADDS, AND WHERE EACH PIECE COMES FROM
+# ================================================================================================
+#
+#   spectacle.cpp   the particles and the cut, attached at the two seams M8.b's README recorded:
+#                   `ActivationPipeline::cues()` and the camera. It writes no gameplay state and no
+#                   camera transform, which is tasks 5.2 and 5.3.
+#   capture.cpp     the frame RECORDED on a graphics device rather than assembled and dropped —
+#                   `cy::rendering-pipeline`'s record callbacks, `cy::rendering-particles`'
+#                   extension, and the PNG the milestone commits. Compiled always; it reports an
+#                   absent device rather than failing, so the artefact still runs on a machine with
+#                   no GPU.
+#   tests/render/golden.cpp   THE ENGINE'S OWN PNG ENCODER, the one tests/render/ and
+#                   src/rendering/pipeline/tests/ already write their captures with. A second
+#                   encoder here would mean two writers and one reader for the committed images.
+#
+# AND THE EFFECT IS `src/vfx/tests/effects.cpp`, COMPILED IN RATHER THAN COPIED. That file authors
+# the spark plume with CyberGraph and cooks it through `compile_system`; `integration.vfx_compiler`
+# asserts what it compiles to, `integration.vfx` what it simulates to and `render.vfx` what it draws
+# as. Writing a second plume in this directory would be a fourth description of one effect drifting
+# from the other three inside a milestone — the argument tests/render/README.md makes about golden
+# scenes. What the artefact adds is the one thing those three suites cannot say: that it survives
+# being played from a gameplay cue, inside a running game, at the population a fight produces.
 
 cy_add_module(
     NAME cy_sample_vertical-slice
@@ -65,6 +89,10 @@ cy_add_module(
         tick.cpp
         shot.cpp
         presentation.cpp
+        spectacle.cpp
+        capture.cpp
+        "${CMAKE_SOURCE_DIR}/src/vfx/tests/effects.cpp"
+        "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
         cy::graph
         cy::gameplay
@@ -78,9 +106,28 @@ cy_add_module(
         cy::camera
         cy::rendering-2d
         cy::rendering-assembly
+        cy::rendering-particles
+        cy::rendering-pipeline
         cy::rendering-scene
         cy::scene
+        cy::sequencing
+        cy::sequencing-camera
+        cy::servers-camera
+        cy::vfx
+        cy::rhi
         cy::ecs)
+
+target_include_directories(cy_sample_vertical-slice
+                           PRIVATE "${CMAKE_SOURCE_DIR}/src/vfx/tests"
+                                   "${CMAKE_SOURCE_DIR}/tests/render")
+
+# THE VULKAN BACKEND IS A LINK-TIME CHOICE AND NOT A COMPILE-TIME ONE. `capture.cpp` asks
+# `cy::rhi` for a device and reports what it got; with `-D CY_RENDERER_VULKAN=OFF` there is no
+# device to get and `--capture` says so and exits non-zero, which is a reported gap rather than a
+# configure error naming the artefact. See samples/03-first-light for the same arrangement.
+if(CY_RENDERER_VULKAN)
+    target_link_libraries(cy_sample_vertical-slice PRIVATE cy::rhi-vulkan)
+endif()
 
 if(NOT CY_BUILD_TESTS)
     return()

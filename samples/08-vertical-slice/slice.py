@@ -25,19 +25,34 @@ extreme value as the figure the run leads with.
   4. CONTROL the negative control. `--interpret-control` puts a per-entity virtual `tick()` in the
              loop; the audit must FIND it and the program must exit non-zero. The criterion passes
              only when that run FAILS — a check that cannot fail is not a check.
+  5. CAPTURE M8.c's, and it needs a graphics device, so it runs only when `--capture` names a
+             prefix. The frame is RECORDED — the pipeline layer's five callbacks and the particle
+             renderer's extension — executed on Vulkan with validation on, and read back as a PNG,
+             together with the identical frame recorded with an EMPTY `FrameSinks`. The difference
+             between those two images is the whole of M8.c section 1b, and it is measured in texels
+             rather than described.
 
---- WHY THE PICTURE IS DRAWN AND NOT CAPTURED ----------------------------------------------------
+--- WHAT M8.c ADDED TO ACTS 1 AND 3 --------------------------------------------------------------
 
-`FrameAssembly` hands a pass's record callback to its CALLER — "it does not own the shaders or the
-pipelines" — and this sample supplies none, so there is no swapchain to photograph. What is drawn
-below is the frame's own answer: every shape is one item of the SORTED DRAW LIST the assembly
-produced, its bounds are the spatial index's, its silhouette is the mesh its `MeshRenderer`
-reference actually resolved to, and its corners were projected by `projection * view` in C++ before
-this script saw them. The interface is `cy::ui`'s own flattened primitives and the menu is
-`cy::rendering2d`'s own batched instances. Nothing here re-derives what is on screen; it reads it.
+Act 1 gained the particles and the cut: effects played from the activation pipeline's own cues, the
+scheduler's merged dispatches against its unmerged ones, the CPU fallback reported as a number
+rather than a silence, and a cinematic that drives cameras through `cy::camera`'s stack and writes
+NO camera transform — a measured zero, not a promise.
 
-That is the difference from M8.a's photograph, and it is the milestone's: M8.a drew an authored
-sphere as a unit box because the reference reached no renderer.
+Act 3 gained the control that makes task 5.3 mean something: the same options run WITH the two new
+systems and with `--no-spectacle`, requiring the identical state digest. A particle system or a
+sequence that reached gameplay state would move it, and the ECS write firewall would refuse the
+write before it could.
+
+--- WHY ONE PICTURE IS DRAWN AND THE OTHERS ARE CAPTURED -----------------------------------------
+
+The picture `--shot` writes is A DIAGRAM and its banner says so: every shape in it is one item of
+the frame's SORTED DRAW LIST, its bounds are the spatial index's, its silhouette is the mesh its
+`MeshRenderer` reference resolved to, and its corners were projected by `projection * view` in C++
+before this script saw them — but this script paints it, so it is a drawing of the frame's answer
+rather than the frame.
+
+`--capture` is the other kind and is what M8.c commits. Those images come off a graphics device.
 """
 
 from __future__ import annotations
@@ -231,6 +246,101 @@ def act_play(report: Report, binary: Path, agents: int, ticks: int, shot_data: P
           f"{whole(values, 'frame_draws')} draws, against {whole(values, 'mesh_assets')} mesh "
           "assets — read back out of the scene index, not out of the sample's own table")
 
+    # M8.c: THE PARTICLES, played from the activation pipeline's own cues. This is the seam
+    # M8.b's README named and left open, used rather than described.
+    check(report, "particles are played by the game's own activation cues",
+          whole(values, "effects_played") > 0 and whole(values, "vfx_peak_particles") > 0
+          and whole(values, "vfx_spawned") > 0 and whole(values, "vfx_killed") > 0,
+          f"{whole(values, 'effects_played')} effects played from committed activations "
+          f"({whole(values, 'effects_refused')} refused at the world's instance ceiling), "
+          f"{whole(values, 'vfx_peak_particles')} live particles at the peak, "
+          f"{whole(values, 'vfx_spawned')} spawned and {whole(values, 'vfx_killed')} killed over "
+          f"the run, {whole(values, 'vfx_substeps')} simulation sub-steps")
+    # THE SCHEDULER'S OWN REQUIREMENT, as the two numbers `vfx-system` asks for by name: "400
+    # instances of the same explosion effect SHALL be simulated by a small number of merged
+    # dispatches, not 400 separate ones".
+    merged = whole(values, "vfx_dispatches_merged")
+    unmerged = whole(values, "vfx_dispatches_unmerged")
+    check(report, "the global scheduler merges dispatches over many copies of one effect",
+          merged > 0 and merged < unmerged,
+          f"{merged} merged dispatches against {unmerged} unmerged over the run — a factor of "
+          f"{(unmerged / merged) if merged else 0:.1f}, from grouping emitters that share a "
+          "compiled kernel and a compatible layout")
+    # A FALLBACK IS A NUMBER, NEVER A SILENCE. `vfx-system` requires the CPU path to declare
+    # itself; this is where a reader of the artefact finds out which path ran.
+    check(report, "the simulation path each emitter took is reported rather than assumed",
+          whole(values, "vfx_gpu_emitters") + whole(values, "vfx_cpu_emitters") > 0,
+          f"{whole(values, 'vfx_gpu_emitters')} emitter-steps on the GPU path, "
+          f"{whole(values, 'vfx_cpu_emitters')} on the CPU path, of which "
+          f"{whole(values, 'vfx_cpu_fallbacks')} were declared FALLBACKS — the number "
+          "`vfx-system` requires instead of a silent degradation")
+    check(report, "every live particle reaches the renderer's ring",
+          whole(values, "vfx_published") > 0 and whole(values, "vfx_dropped") == 0,
+          f"{whole(values, 'vfx_published')} records published camera-relative through "
+          f"publish_sprites, {whole(values, 'vfx_dropped')} dropped for want of ring capacity, "
+          f"{whole(values, 'vfx_pool_used_bytes')} of "
+          f"{whole(values, 'vfx_pool_total_bytes')} pool bytes in use")
+
+    # M8.c: THE CUT. Two shots, a blend, and the zero that task 5.2 is about.
+    check(report, "a compiled sequence runs inside the game and cuts between two shots",
+          whole(values, "cut_ran") == 1 and whole(values, "cut_frames") > 0
+          and whole(values, "cut_cuts") > 0,
+          f"{whole(values, 'cut_segments')} segments and "
+          f"{whole(values, 'cut_channels')} channels compiled; "
+          f"{whole(values, 'cut_frames')} frames driven; "
+          f"{whole(values, 'cut_pushed')} contributions pushed and "
+          f"{whole(values, 'cut_released')} released; "
+          f"{whole(values, 'cut_cuts')} cut(s), "
+          f"{whole(values, 'cut_anticipated_cuts')} of them announced ahead of themselves so the "
+          "camera's streaming source can prefetch")
+    # THE BLEND IS VISIBLE RATHER THAN ASSERTED, and the lens is what says so: the two shots
+    # declare different ones, so a blend that did nothing would read as one of the two ends.
+    wide_fov = number(values, "cut_wide_fov")
+    tight_fov = number(values, "cut_tight_fov")
+    blend_fov = number(values, "cut_blend_fov")
+    check(report, "the camera stack BLENDS the two shots rather than switching between them",
+          whole(values, "cut_blend_frames") > 0
+          and number(values, "cut_blend_wide") > 0.01
+          and number(values, "cut_blend_tight") > 0.01
+          and tight_fov < blend_fov < wide_fov,
+          f"{whole(values, 'cut_blend_frames')} frames with both shots contributing; at the most "
+          f"balanced of them the wide shot weighs {number(values, 'cut_blend_wide'):.2f} and the "
+          f"long lens {number(values, 'cut_blend_tight'):.2f}, and the lens the stack produced is "
+          f"{blend_fov:.3f} rad — strictly between the two rigs' own {tight_fov:.2f} and "
+          f"{wide_fov:.2f}, which a switch could not be")
+    # TASK 5.2's ZERO. `sequencing-and-cinematics` requires that a sequence not write camera
+    # transforms; the sequence selects RIGS and the camera server blends the poses they produce.
+    # Both counters would move the moment something wrote one.
+    check(report, "the cut writes no camera transform",
+          whole(values, "cut_camera_property_writes") == 0
+          and whole(values, "cut_pose_overrides") == 0
+          and whole(values, "cut_unresolved_rigs") == 0,
+          # THE NUMBERS RATHER THAN THE WORD "zero", and this line was written the other way
+          # first: a mutation that made the counter count the LIGHT track's writes instead of the
+          # camera's turned the check red while its message still read "0 arbitrated writes",
+          # because the zeros were literals. A failing check that reports the value it wanted is
+          # the shape of a check nobody can debug.
+          f"{whole(values, 'cut_camera_property_writes')} arbitrated writes addressed at "
+          f"SubsystemId::Camera and {whole(values, 'cut_pose_overrides')} pose overrides over "
+          f"{whole(values, 'cut_frames')} frames — the sequence selected rigs, CameraStackBridge "
+          "pushed them, and cy::camera::CameraServer::evaluate_stack blended the poses its own "
+          f"rigs produced. {whole(values, 'cut_unresolved_rigs')} rigs went unresolved")
+
+    # AND THE COST. Task 5.1 asks for particles and a cut inside the slice HOLDING THE FRAME BUDGET
+    # IT ALREADY DECLARES — so the check is the sum against M8.b's own number, unchanged by this
+    # milestone, rather than a new budget written to fit what was measured.
+    spectacle = number(values, "spectacle_us_median")
+    simulation = number(values, "simulation_us_median")
+    check(report, "the particles and the cut fit inside the budget the slice already declared",
+          spectacle <= number(values, "budget_spectacle_us")
+          and simulation + spectacle <= number(values, "budget_simulation_us"),
+          f"{spectacle:.1f} us a tick — particles "
+          f"{number(values, 'particles_us_median'):.1f} us, cinematic "
+          f"{number(values, 'cinematic_us_median'):.1f} us — against a declared "
+          f"{number(values, 'budget_spectacle_us'):.0f} us, and "
+          f"{simulation + spectacle:.0f} us of simulation and spectacle together against the "
+          f"{number(values, 'budget_simulation_us'):.0f} us M8.b declared and M8.c did not raise")
+
     # THE AUDIT. `docs/ROADMAP.md`: "No graph is interpreted at runtime — an audit finds no
     # per-entity virtual tick in any graph consumer."
     check(report, "no graph is interpreted at runtime",
@@ -332,6 +442,27 @@ def act_replay(report: Report, binary: Path, agents: int, ticks: int) -> None:
           "digest that moves again is a cook key and a back-end selection key that moves with it")
 
 
+    # M8.c TASK 5.3, AND IT IS THE FIREWALL'S PROOF FROM THE ARTEFACT'S SIDE. The same options, run
+    # once with the particles and the cut live and once with `--no-spectacle`, must fold the
+    # IDENTICAL digest. A particle system that wrote a health value, or a sequence that wrote a
+    # component instead of issuing a command, would move it — and `cy/ecs/firewall.h`'s
+    # `WriteOrigin::Vfx` scope would refuse the write before it got that far.
+    #
+    # This check can fail, and the way to prove it is to fold anything the spectacle touches into
+    # the digest: `fold(spectacle_->report().vfx_live_particles)` in `Slice::fold_tick` turns it red
+    # immediately, which is what was done while it was written.
+    without = run_sample(
+        binary, ["--agents", str(agents), "--ticks", str(ticks), "--no-spectacle"])
+    check(report, "the digest is the same with the particles and the cut live and without them",
+          without["state_digest"] == within["state_digest"]
+          and whole(without, "effects_played") == 0 and whole(within, "effects_played") > 0,
+          f"{within['state_digest']} with {whole(within, 'effects_played')} effects played and a "
+          f"cinematic driving the camera; {without['state_digest']} with neither. VFX writes only "
+          "its own pool and its own event router, and a sequence is a command producer — neither "
+          "can reach a component, and the ECS write firewall is what makes that a refusal rather "
+          "than a convention")
+
+
 # --- Act 4: the negative control ----------------------------------------------------------------------
 
 
@@ -351,6 +482,64 @@ def act_control(report: Report, binary: Path, agents: int, ticks: int) -> None:
           f"{found} polymorphic per-entity state type(s) named: "
           f"{values.get('audit_offender', 'none')}. The run exited non-zero, which is what makes "
           "act 1's clean audit a measurement rather than a formality")
+
+
+# --- Act 5: the frame, captured -------------------------------------------------------------------
+
+
+def act_capture(report: Report, binary: Path, agents: int, ticks: int, prefix: Path) -> None:
+    """M8.c tasks 5.4, 5.5 and 5.6. Needs a graphics device; the caller decides whether to run it."""
+    print("\n--- act 5: the frame, captured ---")
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    values = run_sample(
+        binary,
+        ["--agents", str(agents), "--ticks", str(ticks), "--capture", str(prefix)],
+    )
+
+    check(report, "the frame is RECORDED on a graphics device, not merely assembled",
+          whole(values, "capture_device") == 1 and whole(values, "capture_captured") == 1
+          and whole(values, "capture_passes") > 0 and whole(values, "capture_opaque_draws") > 0,
+          f"{whole(values, 'capture_passes')} stages recorded — "
+          f"{whole(values, 'capture_prepass_draws')} depth-prepass draws, "
+          f"{whole(values, 'capture_opaque_draws')} opaque, "
+          f"{whole(values, 'capture_transparent_draws')} transparent, "
+          f"{whole(values, 'capture_skipped_draws')} skipped for want of geometry, "
+          f"{whole(values, 'capture_uploaded_bytes')} bytes moved by the Prepare transfer")
+    check(report, "the particle renderer draws the game's own effects inside that frame",
+          whole(values, "capture_extensions_run") > 0
+          and whole(values, "capture_particles_drawn") > 0
+          and whole(values, "capture_particles_dropped") == 0,
+          f"{whole(values, 'capture_extensions_run')} pass extension(s) ran and drew "
+          f"{whole(values, 'capture_particles_drawn')} sprite instances in the transparent stage — "
+          "the effect's own particles plus the readout, through one 32-byte record type")
+    # VALIDATION IS A NUMBER HERE. The pipeline layer's own suite found three distinct validation
+    # defects that no structural test could see; a capture that ran clean is worth saying so.
+    check(report, "the recorded frame produces no Vulkan validation error",
+          whole(values, "capture_validation_errors") == 0,
+          "0 errors from the validation layers over both captures, with validation enabled")
+
+    # TASK 5.5's BEFORE-AND-AFTER PAIR, AS A MEASUREMENT. The control frame is the identical
+    # assemble-compile-barrier-execute with an EMPTY `FrameSinks` — what every caller in this tree
+    # supplied before M8.c — so the difference between the two images is the record callbacks and
+    # nothing else.
+    lit = whole(values, "capture_lit_texels")
+    control_lit = whole(values, "control_lit_texels")
+    differing = whole(values, "capture_differing_texels")
+    check(report, "the record callbacks are the whole difference between two identical frames",
+          whole(values, "control_device") == 1 and whole(values, "control_passes") == 0
+          and control_lit == 0 and lit > 0 and differing > 0,
+          f"the recorded frame lights {lit} texels and the same frame with no callbacks lights "
+          f"{control_lit}; {differing} texels differ by more than one 8-bit step. The control ran "
+          f"{whole(values, 'control_passes')} record callbacks and "
+          f"{whole(values, 'control_opaque_draws')} draws")
+
+    for suffix in ("", "-no-callbacks", "-cut"):
+        image = prefix.parent / f"{prefix.name}{suffix}.png"
+        check(report, f"{image.name} came off the device",
+              image.is_file() and image.stat().st_size > 0,
+              f"{image.stat().st_size if image.is_file() else 0} bytes at {image}")
+        if image.is_file():
+            report.shot(image)
 
 
 # --- The committed picture --------------------------------------------------------------------------
@@ -486,7 +675,12 @@ def render_shot(report: Report, shot: dict, values: dict, headline: Statistic, p
     draw = ImageDraw.Draw(image)
     draw.rectangle([0, 0, width, banner], fill=INK["panel"])
     draw.text((24, 14), "CyberEngine", font=_monospace(15), fill=INK["primary"])
-    draw.text((152, 15), "M8.b — samples/08-vertical-slice", font=font, fill=INK["secondary"])
+    # LABELLED A DIAGRAM, which is what M8.c task 5.6 requires of an image that is not the engine's
+    # own output. Every shape below is the frame's own answer — the sorted draw list, the spatial
+    # index's bounds, the mesh handle the reference resolved to — but this script paints it, so it
+    # is a drawing OF the frame rather than the frame. `--capture` writes the photographs.
+    draw.text((152, 15), "M8.c — samples/08-vertical-slice · DIAGRAM: the frame's draw list, "
+                         "projected", font=font, fill=INK["secondary"])
     draw.text((width - 320, 15), str(headline), font=font, fill=INK["live"])
 
     lines = [
@@ -505,6 +699,15 @@ def render_shot(report: Report, shot: dict, values: dict, headline: Statistic, p
         f"audit {values['audit_graphs']} graphs clean and complete · "
         f"{values['audit_state_types']} per-entity state types, none polymorphic · "
         f"{values['audit_compilations_during_loop']} compilations inside the loop",
+        f"vfx {values.get('effects_played', '0')} effects from activation cues · "
+        f"{values.get('vfx_peak_particles', '0')} particles at the peak · "
+        f"{values.get('vfx_dispatches_merged', '0')} merged dispatches of "
+        f"{values.get('vfx_dispatches_unmerged', '0')} · "
+        f"{values.get('vfx_cpu_fallbacks', '0')} declared CPU fallbacks",
+        f"cut {values.get('cut_frames', '0')} frames · "
+        f"{values.get('cut_blend_frames', '0')} mid-blend · "
+        f"{values.get('cut_camera_property_writes', '0')} camera transforms written · "
+        f"{values.get('cut_pose_overrides', '0')} pose overrides",
     ]
     y = banner + height + 8
     for text in lines:
@@ -564,7 +767,11 @@ def main() -> int:
                         help="the population the scale act runs; the criterion's figure is 8000")
     parser.add_argument("--scale-ticks", type=int, default=60)
     parser.add_argument("--shot", help="write the run's picture here")
-    parser.add_argument("--only", choices=("play", "scale", "replay", "control"),
+    parser.add_argument("--capture",
+                        help="M8.c act 5: RECORD the frame on a graphics device and write "
+                             "<prefix>.png, <prefix>-no-callbacks.png and <prefix>-cut.png. "
+                             "Needs Vulkan; the act does not run without this flag")
+    parser.add_argument("--only", choices=("play", "scale", "replay", "control", "capture"),
                         help="run one act")
     arguments = parser.parse_args()
 
@@ -591,6 +798,15 @@ def main() -> int:
             act_replay(report, binary, arguments.agents, arguments.ticks)
         if wanted in (None, "control"):
             act_control(report, binary, min(arguments.agents, 64), 10)
+        # ACT 5 IS OPT-IN BECAUSE IT NEEDS A GRAPHICS DEVICE. Every other act is judgeable on a
+        # machine with neither a device nor a display, which is what keeps `smoke.vertical_slice`
+        # runnable on a hosted runner; the ledger criterion that runs this one carries
+        # `requires = "gpu"` and is reported NOT EVALUATED where there is none.
+        if arguments.capture and wanted in (None, "capture"):
+            act_capture(report, binary, arguments.agents, arguments.ticks,
+                        Path(arguments.capture))
+        elif wanted == "capture":
+            raise Absent("act 5 needs --capture <prefix> and a Vulkan device")
 
         if values:
             # THE HEADLINE IS A MEDIAN AND THE HARNESS REFUSES ANYTHING ELSE. The figure this run

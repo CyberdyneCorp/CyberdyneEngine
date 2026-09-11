@@ -61,9 +61,42 @@ in one place, rather than a capability every system quietly has.
 | `features.h` | M8.b 3.3 | Gameplay features, their contributions, their states, and dependency-ordered activation. |
 | `indexes.h` | M8.b 3.3 | The derived indexes — by owner, team, affiliation and tag — and the digest that proves they are a cache. |
 | `diagnostics.h` | M8.b 3.2 | The entity report, the command timeline, and the rule debugger. |
+| `cook_firewall.h` | M8.c 1.3 | The **cook-time** half of the determinism firewall: a non-pinned model behind an authoritative AI node fails the cook. |
 
 `abilities/` is `gameplay-abilities-and-effects`, a **separate target**: a project that does not use
 abilities links none of it. See `abilities/README.md`.
+
+## The determinism firewall, and why the command origin is NOT where it is enforced
+
+M8.c section 1 required one enforcement point to be named for `vfx-system`'s and `ml-inference`'s
+shared rule, and this module's command origin was one of the two candidates. **It was not chosen,
+and the reason is a requirement this module already carries**: `gameplay-framework` says
+"Provenance SHALL NOT affect validation, ordering, or execution" and
+`sequencing-and-cinematics` requires that the simulation cannot distinguish a sequence-issued
+command from any other. A check that rejected a VFX-originated *command* would be exactly a
+provenance that affects validation. Beyond that, a command is the simulation's input rather than its
+write: a VFX readback that reaches into the world and pokes a health value never submits one, so a
+firewall here would catch only the producers that were already well behaved.
+
+**The enforcement point is the ECS write path** — `<cy/ecs/firewall.h>`, `World::admit_write`, six
+doors. `CommandStream` is untouched by it, which is the point: a sequence-issued command is still
+indistinguishable, because the firewall never looks at a command.
+
+**What this module does own is the cook-time half.** `ml-inference` requires that "a non-pinned
+model feeding an authoritative node SHALL be rejected at cook time", and is explicit that this is a
+different obligation from the runtime one: the desync it prevents is between two machines whose
+*content* disagrees, and content is decided when it is cooked. `cook_firewall.h` is that gate — a
+pure function over model-pinning and node-binding declarations, with no dependency on any inference
+type, so a cook built with `CY_ML` off still refuses a package a build with it on would refuse. It
+lives here because "authoritative" is a gameplay word in this engine and a gate inside the module it
+gates would be a producer checking itself.
+
+**What is not done, stated rather than implied**: no cook driver calls it yet, because there is no
+`src/inference/`, no model asset and no AI graph node to feed it — those are M8.c section 4's, and
+section 1 runs first so the gate exists before the first model does. The call site is
+`tools/cook/`'s `run()`, which already fails a run on a returned error.
+
+The suite for both halves is `tests/test_firewall.cpp`.
 
 ## What M8.b measured rather than asserted
 

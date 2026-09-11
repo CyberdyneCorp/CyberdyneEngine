@@ -78,6 +78,38 @@ least able to judge it.
 
 Exit status: `0` every criterion this host evaluated passed, `1` one failed, `2` the data is wrong.
 
+## A gap a milestone ships knowingly
+
+A criterion may carry two more fields, and they go together:
+
+```toml
+known_gap = "what is missing, and why the milestone shipped without it"
+known_gap_closes = "m11"      # the rung that must close it
+```
+
+**Why this exists, and it was found rather than designed.** M8.c declared
+`m8c:steam-audio-configures` *expecting it to fail* — deliberately, so the gap would keep saying so
+on every run instead of quietly disappearing from the plan. That is the right instinct and it is
+what `delivery-roadmap` asks for. But `just roadmap-milestone` returns non-zero for any failure,
+`milestone-m8c` becomes a **permanent merge gate** the day it goes green, and `ci.yml` runs that
+recipe — so flipping the gate would have shipped a continuous-integration job that can never pass.
+That is the sibling of the forbidden pattern *"a milestone gate disabled rather than fixed or
+explicitly superseded"*, and neither available answer was right: deleting the criterion hides the
+gap, and an **override** is per-gate and would have hidden two hundred and fifty green checks to
+excuse one.
+
+So a declared gap is a third bucket, not a second kind of pass:
+
+* it **runs** on every evaluation, like any other criterion;
+* its failure is **printed**, under its own heading, with the rung that must close it;
+* it does **not** set the exit code.
+
+**And the direction that keeps it from rotting is the other one.** A declared gap that starts
+PASSING fails the ledger, with `THE GAP IS CLOSED, DELETE THE DECLARATION`. A marker that outlived
+its gap is exactly the thing nobody would notice, so the tooling notices. `just roadmap-test` covers
+both directions, plus the three ways the declaration itself can be malformed: a gap with no rung, a
+rung with no gap, and a rung that is not a milestone.
+
 ## Gates, and overrides
 
 `gates.toml` is the permanent set `testing-and-quality` requires: the three-platform build and test,

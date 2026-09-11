@@ -38,6 +38,7 @@ cy_add_module(
         src/component.cpp
         src/diagnostics.cpp
         src/entity.cpp
+        src/firewall.cpp
         src/query.cpp
         src/resource.cpp
         src/snapshot.cpp

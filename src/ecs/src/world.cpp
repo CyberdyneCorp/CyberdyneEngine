@@ -77,6 +77,15 @@ Status World::initialize() noexcept {
     return ok();
 }
 
+Status World::admit_write(WritePath path, ComponentTypeId component, Entity entity) noexcept {
+    if (firewall_.admit(path, component, entity, components_)) {
+        return ok();
+    }
+    return fail(ErrorCode::PermissionDenied,
+                "the determinism firewall refused this write: see the ecs.firewall.refused record "
+                "for the writer, the component and the path");
+}
+
 Status World::admit_structural_change() noexcept {
     if (iterating()) {
         // Counted in every configuration. An assertion here would be compiled out of Profile and
@@ -117,6 +126,10 @@ Expected<ComponentMask, Error> World::mask_of(Span<const ComponentTypeId> compon
 }
 
 Expected<Entity, Error> World::create(Span<const ComponentTypeId> components) noexcept {
+    if (Status admitted = admit_write(WritePath::EntityLifetime, kInvalidComponent, kNoEntity);
+        !admitted) {
+        return make_unexpected(admitted.error());
+    }
     if (Status admitted = admit_structural_change(); !admitted) {
         return make_unexpected(admitted.error());
     }
@@ -156,6 +169,10 @@ Status World::place(Entity entity, Archetype& archetype) noexcept {
 
 Status World::create_many(u32 count, Span<const ComponentTypeId> components,
                           Array<Entity>& out) noexcept {
+    if (Status admitted = admit_write(WritePath::EntityLifetime, kInvalidComponent, kNoEntity);
+        !admitted) {
+        return admitted;
+    }
     if (Status admitted = admit_structural_change(); !admitted) {
         return admitted;
     }
@@ -253,6 +270,10 @@ Status World::destroy_one(Entity entity) noexcept {
 }
 
 Status World::destroy(Entity entity, DestroyPolicy policy) noexcept {
+    if (Status admitted = admit_write(WritePath::EntityLifetime, kInvalidComponent, entity);
+        !admitted) {
+        return admitted;
+    }
     if (Status admitted = admit_structural_change(); !admitted) {
         return admitted;
     }
@@ -335,6 +356,12 @@ const void* World::get(Entity entity, ComponentTypeId component) const noexcept 
 }
 
 void* World::get_mut(Entity entity, ComponentTypeId component) noexcept {
+    // The firewall first, and before the liveness test: a refused write is a refused write whether
+    // or not the entity it named happens to exist, and refusing only for live entities would make
+    // the diagnostic depend on the state of the world rather than on the code path.
+    if (Status admitted = admit_write(WritePath::GetMut, component, entity); !admitted) {
+        return nullptr;
+    }
     const EntityLocation* location = entities_.location(entity);
     if (location == nullptr) {
         return nullptr;
@@ -417,6 +444,9 @@ Status World::add(Entity entity, ComponentTypeId component, const void* value) n
         return fail(ErrorCode::InvalidArgument,
                     "a shared component carries a value; add it with set_shared()");
     }
+    if (Status admitted = admit_write(WritePath::Structural, component, entity); !admitted) {
+        return admitted;
+    }
     if (Status admitted = admit_structural_change(); !admitted) {
         return admitted;
     }
@@ -455,6 +485,9 @@ Status World::remove(Entity entity, ComponentTypeId component) noexcept {
     }
     if (components_.info(component).kind == ComponentKind::Sparse) {
         return remove_sparse(entity, component);
+    }
+    if (Status admitted = admit_write(WritePath::Structural, component, entity); !admitted) {
+        return admitted;
     }
     if (Status admitted = admit_structural_change(); !admitted) {
         return admitted;
@@ -547,6 +580,9 @@ Status World::set_shared(Entity entity, ComponentTypeId component, u32 value) no
     if (shared_value(component, value) == nullptr) {
         return fail(ErrorCode::NotFound, "that shared value has not been interned");
     }
+    if (Status admitted = admit_write(WritePath::Structural, component, entity); !admitted) {
+        return admitted;
+    }
     if (Status admitted = admit_structural_change(); !admitted) {
         return admitted;
     }
@@ -621,6 +657,9 @@ Status World::set_sparse(Entity entity, ComponentTypeId component, const void* v
         components_.info(component).kind != ComponentKind::Sparse) {
         return fail(ErrorCode::InvalidArgument, "that component is not a sparse component");
     }
+    if (Status admitted = admit_write(WritePath::SparseWrite, component, entity); !admitted) {
+        return admitted;
+    }
     if (!is_alive(entity)) {
         return fail(ErrorCode::NotFound, "this entity is not alive");
     }
@@ -657,6 +696,9 @@ const void* World::get_sparse(Entity entity, ComponentTypeId component) const no
 }
 
 Status World::remove_sparse(Entity entity, ComponentTypeId component) noexcept {
+    if (Status admitted = admit_write(WritePath::SparseRemove, component, entity); !admitted) {
+        return admitted;
+    }
     SparseStore* store = sparse_store(component);
     if (store == nullptr) {
         return fail(ErrorCode::NotFound, "that sparse component has no entries");
@@ -685,6 +727,10 @@ void World::copy_block_columns(Archetype& archetype, const ArchetypeBlock& block
 }
 
 Status World::instantiate(const ArchetypeBlock& block, Array<Entity>& out) noexcept {
+    if (Status admitted = admit_write(WritePath::EntityLifetime, kInvalidComponent, kNoEntity);
+        !admitted) {
+        return admitted;
+    }
     if (Status admitted = admit_structural_change(); !admitted) {
         return admitted;
     }

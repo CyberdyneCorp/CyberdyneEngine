@@ -36,6 +36,8 @@ Run directly, or through `just roadmap-test`.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import re
 import subprocess
@@ -194,7 +196,7 @@ def test_record_rules(root: Path) -> None:
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
-                    "m6": 26, "m7": 32, "m8a": 26, "m8b": 40}
+                    "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -1046,12 +1048,88 @@ def test_matrix_requirement_counts(root: Path) -> None:
           f"{counted.get('serialization-and-prefabs')}")
 
 
+def test_declared_gaps(root: Path) -> None:
+    """A gap a milestone ships knowingly: declared, dated, still run — and it cannot rot.
+
+    M8.c's closing gate built this, because `m8c:steam-audio-configures` was written to FAIL on
+    purpose and `milestone-m8c` becomes a permanent merge gate the day it goes green. With only
+    "pass" and "fail", flipping that gate would have shipped a continuous-integration job that can
+    never pass — the sibling of the forbidden pattern "a milestone gate disabled rather than fixed
+    or explicitly superseded". The cases below check BOTH directions, because the one that matters
+    in a year is the second: a declared gap that starts passing must fail the ledger, or the marker
+    outlives the gap and nobody notices.
+    """
+    head = 'schema = 1\nid = "m0"\nname = "Ground"\n'
+    body = ('[[criterion]]\nid = "x"\ndescribe = "d"\nsource = "s"\nkind = "recipe"\n'
+            'run = "just quality-layers"\nci_job = "layering"\n')
+
+    expect_error(
+        "a known_gap with no rung that must close it is rejected", criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "gap-no-rung", head + body + 'known_gap = "not built yet"\n')))
+    expect_error(
+        "a rung with no gap behind it is rejected", criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "gap-no-text", head + body + 'known_gap_closes = "m9"\n')))
+    expect_error(
+        "a known_gap_closes that is not a milestone is rejected, naming the ones that are",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "gap-bad-rung",
+            head + body + 'known_gap = "g"\nknown_gap_closes = "m99"\n')))
+
+    declared = criteria_module.load("m0", milestone_file(
+        root, "gap-ok", head + body + 'known_gap = "g"\nknown_gap_closes = "m9"\n'))
+    check("a declared gap loads and knows which rung must close it",
+          declared.criteria[0].is_declared_gap and declared.criteria[0].known_gap_closes == "m9")
+    plain = criteria_module.load("m0", milestone_file(root, "gap-none", head + body))
+    check("an ordinary criterion is not a declared gap", not plain.criteria[0].is_declared_gap)
+
+    # --- The verdict, which is where the mechanism earns its place.
+    gap = criteria_module.Criterion(
+        id="gap", describe="the gap", source="s", kind="recipe", run="just quality-layers",
+        ci_job="milestone-m0", known_gap="not built yet", known_gap_closes="m9")
+    ordinary = criteria_module.Criterion(
+        id="plain", describe="an ordinary check", source="s", kind="recipe",
+        run="just quality-specs", ci_job="specs")
+    milestone = criteria_module.Milestone(id="m0", name="Ground", artefact="a", notes=(),
+                                          criteria=(gap, ordinary))
+    entries = (criteria_module.PlanEntry(criterion=gap, declared_by=("m0",), permanent=False),
+               criteria_module.PlanEntry(criterion=ordinary, declared_by=("m0",), permanent=False))
+    plan = criteria_module.Plan(milestone=milestone, entries=entries,
+                                ledgers=("m0",), declarations=len(entries))
+
+    def verdict(gap_status: str, other_status: str) -> tuple[int, str]:
+        results = (criteria_module.Result(gap, gap_status, "", 0.0, ""),
+                   criteria_module.Result(ordinary, other_status, "", 0.0, ""))
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = roadmap_module._summarise(plan, results, as_json=False)
+        return code, buffer.getvalue()
+
+    code, output = verdict(criteria_module.FAILED, criteria_module.OK)
+    check("a declared gap that still fails does NOT make the milestone's gate red",
+          code == 0, f"exit {code}")
+    check("and it is printed anyway, with the rung that must close it",
+          "declared gap, still open" in output and "M9" in output, output)
+
+    code, output = verdict(criteria_module.OK, criteria_module.OK)
+    check("A DECLARED GAP THAT PASSES FAILS THE LEDGER — the marker outlived the gap",
+          code != 0, f"exit {code}")
+    check("and the message says what to do about it",
+          "DELETE THE DECLARATION" in output, output)
+
+    code, _ = verdict(criteria_module.FAILED, criteria_module.FAILED)
+    check("an ordinary failure beside a declared gap still fails the milestone", code != 0)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="cy-roadmap-selftest-") as directory:
         root = Path(directory)
         test_drift(_area(root, "drift"))
         test_record_rules(_area(root, "record"))
         test_criteria(_area(root, "criteria"))
+        test_declared_gaps(_area(root, "declared-gaps"))
         test_exit_tiers(_area(root, "tiers"))
         test_milestone_ladder(_area(root, "ladder"))
         test_flat_ledger(_area(root, "flat"))

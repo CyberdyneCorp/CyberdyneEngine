@@ -73,6 +73,24 @@ duplication. It was measured, not argued.*
 `vfx-system` and `sequencing-and-cinematics` to **Working**; `ml-inference` to **Seed**; `audio` to
 **Complete**, inherited.
 
+> **WHAT THE MILESTONE ACTUALLY REACHED, recorded here rather than left to a reader to discover.**
+> This section is the plan the change was written against and is kept as one; `docs/roadmap/status.yaml`
+> is the record and where the two differ the record wins. Its closing gate moved two of these four
+> cells:
+>
+> * **`vfx-system` reaches Seed, not Working**, and its `W` cell moved to M10. The graph compiler,
+>   the IR, the derived attribute layout, the shared simulation world, the global scheduler, the
+>   budget controller and the firewall's producer side are all built and tested; **the GPU compute
+>   dispatch is not**, so every emitter falls back to the CPU and reports that it did. This
+>   specification's Purpose says "GPU simulation is the **default**, not an advanced mode", which is
+>   what makes it a tier question rather than an outstanding advanced requirement.
+> * **`audio` does not reach Complete**, and its `C` cell moved to M11.
+>   `-D CY_AUDIO_STEAM_AUDIO=ON` still does not configure and `SteamAudioBackend::simulate` still
+>   returns `ErrorCode::NotImplemented`; `tools/roadmap/milestones/m8c.toml` declares
+>   `steam-audio-configures` as a criterion that fails today so the gap keeps saying so.
+>
+> The argument for each is in the M8.c section of `docs/ROADMAP.md`.
+
 The full column is `docs/roadmap/capability-matrix.md`; the M8.c row of `docs/ROADMAP.md` is the
 scope statement this proposal implements.
 

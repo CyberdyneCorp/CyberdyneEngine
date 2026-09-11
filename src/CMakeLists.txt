@@ -93,6 +93,27 @@ add_subdirectory(world)
 # see src/gameplay/CMakeLists.txt, and design.md §3.
 add_subdirectory(gameplay)
 
+# ml/ is CyberML and M8.c section 4: tensors, model assets, sessions, the backend abstraction, the
+# per-frame budget and the determinism boundary. LAYER servers (2) — it depends on cy::core and
+# cy::ecs and nothing above, which is what lets a session be created from a server, from a scene
+# system or from a cook. It is nevertheless read HERE, after gameplay/, rather than beside save/ at
+# its own layer: its second target, cy::ml-cook, declares LAYER scene and depends on cy::gameplay,
+# and this file's own rule is that "a target's dependencies are always already declared when it is".
+# cy::ml itself is depended on by nothing, so reading it late costs nothing.
+#
+# cy::ml-cook is a separate target because `<cy/gameplay/cook_firewall.h>` is at layer 4 and a
+# layer-2 module may not name it — see src/ml/CMakeLists.txt.
+#
+# Behind CY_ML, which `ml-inference` requires CyberML to be removable by: "CyberML SHALL be
+# removable at build time via CY_ML, and the engine SHALL be fully functional without it." The
+# option fetches nothing — the inference RUNTIME is behind CY_ML_ONNXRUNTIME — and nothing below
+# layer 4 names this directory, so `-D CY_ML=OFF` excludes it and nothing else changes. src/ai/
+# does not depend on it, which is `ml-inference`'s "AI without ML" scenario as a link-graph fact.
+if(CY_ML)
+    add_subdirectory(ml)
+endif()
+
+
 # camera/ is CyberCamera and M8.b section 7: rigs compiled to programs by cy::graph::camera, the
 # stack that blends them, the batched collision and occlusion dispatch, cuts, render views, the
 # listener anchor and the streaming source. Layer 4, the rung graph/, gameplay/ and world/ chose.
@@ -118,6 +139,32 @@ if(CY_UI)
 endif()
 
 add_subdirectory(camera)
+
+# sequencing/ is CyberSequence and M8.c section 3: exact time, the authored model, the compiler and
+# its interval and event indexes, the compiled program, evaluation into per-subsystem batches,
+# arbitration, capture and restore, seeking, skipping and the preload plan — plus two bridges, one
+# to the camera stack and one to the gameplay command stream. Layer 4, the rung graph/, gameplay/,
+# world/ and camera/ chose. Read after camera/ and gameplay/, which its two bridges consume, and
+# before runtime/. The core target depends on cy::core alone, which is what makes "a sequence
+# orchestrates and owns nothing" a property of the link graph.
+add_subdirectory(sequencing)
+
+# vfx/ is CyberVFX and M8.c section 2: the asset model, the graph compiler and VFX's own IR, the
+# compiler-derived attribute layout, GPU-first simulation with a DECLARED CPU fallback, the unified
+# simulation world and its global scheduler, data interfaces, GPU events with the bounded readback
+# path, and the importance-class budget controller. Layer 4, the rung graph/, world/, gameplay/ and
+# camera/ all chose. Read after graph/ — it lowers through CyberGraph — and after rendering/, whose
+# `cy::rendering-particles` is the thirty-two-byte seam the simulation publishes into.
+#
+# Behind CY_VFX, which `vfx-system` requires the system to be removable by: "The system SHALL be
+# removable at build time via CY_VFX without affecting the rest of the renderer." `-D CY_VFX=OFF`
+# excludes this directory and its suites and nothing else changes, because nothing below layer 4
+# names either target and the only other consumer is samples/08-vertical-slice, which declines to
+# declare itself — the arrangement CY_ANIMATION, CY_AI and CY_UI already have. Both directions are
+# built and tested, which is what M8.b's gate found had never been done for CY_UI.
+if(CY_VFX)
+    add_subdirectory(vfx)
+endif()
 
 add_subdirectory(runtime)
 

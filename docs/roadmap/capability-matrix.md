@@ -74,14 +74,14 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |       |  |     | **C** |     |  |  |  | M8.b |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 24 |  |  |  |  |  |  |  |  |  |     |     | W |  |  | **C** | M11 |
+| [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 24 |  |  |  |  |  |  |  |  |  |     |     | S |  | W | **C** | M11 |
 | **5 — Simulation** | | | | | | | |  | | | | | | | |
 | [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |   |     | **C** |  |  | M9 |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |     | W |     |  | **C** |  | M10 |
 | [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | 9 |  |  |  |  |  |  |  |  |  |     |     | S |  |  | **C** | M11 |
-| [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |     | W | **C** |  |  |  | M8.c |
+| [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | **6 — Content and tooling** | | | | | | | |  | | | | | | | |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ui-system`](../../openspec/specs/ui-system/spec.md) | 25 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
@@ -142,10 +142,10 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M7** · Fidelity | 13 | 3 | `rendering-materials-and-shading`, `residency`, `virtual-texturing` |
 | **M8.a** · Authorable | 5 | 0 | — |
 | **M8.b** · Systems | 25 | 13 | `asset-import-pipeline`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting` |
-| **M8.c** · Spectacle | 4 | 1 | `audio` |
+| **M8.c** · Spectacle | 3 | 0 | — |
 | **M9** · Integrity | 12 | 10 | `camera-system`, `core-jobs-and-concurrency`, `diagnostics-profiling-and-crash`, `ecs-core`, `gameplay-abilities-and-effects`, `gameplay-framework`, `physics`, `save-and-persistence`, `sequencing-and-cinematics`, `simulation-and-determinism` |
-| **M10** · Worlds | 10 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
-| **M11** · Reach | 40 | 40 | everything remaining |
+| **M10** · Worlds | 11 | 3 | `navigation`, `rendering-global-illumination`, `world-partition-and-streaming` |
+| **M11** · Reach | 41 | 41 | everything remaining |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not
@@ -210,6 +210,38 @@ previous edition of this list.**
   `camera-system`, `developer-workflow-and-just`, `diagnostics-profiling-and-crash`,
   `editor-architecture`, `gameplay-framework`, `live-editing`, `simulation-and-determinism`,
   `testing-and-quality`, `text-and-fonts`, `thirdparty-dependencies`.
+
+**THE THREE LISTS ABOVE WERE LAST READ OUT OF `just roadmap-status` AT M7's GATE AND HAVE NOT BEEN
+REFRESHED SINCE, WHICH M8.c's RECORD PASS FOUND BY RUNNING IT.** They are two milestones stale:
+M8.b moved `visual-scripting`, `gameplay-abilities-and-effects`, `animation-and-skinning`,
+`ai-system`, `navigation`, `ui-system`, `rendering-2d`, `camera-system`, `audio` and
+`text-and-fonts` to Working and `serialization-and-prefabs` to Complete, and none of that is in the
+lists. Refreshing them is a paste of the recipe's own output and is deliberately NOT done here,
+because the lists are prose and `status.yaml` is the record — `just roadmap-status` is what a reader
+should run, and a hand-maintained second copy of its answer is the drift this file's own paragraph
+above warns about. **The honest fix is to generate these three lines**, which is a change to
+`tools/roadmap/record.py` rather than an edit to this file, and it is recorded here as a finding
+rather than performed under a milestone that did not plan it.
+
+**M8.c advanced three and completed none**: `sequencing-and-cinematics` to Working and
+`vfx-system` and `ml-inference` to Seed, each naming `implement-m8c-spectacle`. **Two of its four
+planned rows did not happen, and both were moved by its closing gate rather than claimed.**
+
+**`vfx-system` was planned at Working and reaches Seed; its `W` cell has moved to M10.** The
+milestone built the asset model, the IR, the graph compiler, the derived attribute layout, the
+shared simulation world, the global scheduler, the budget controller and the determinism firewall's
+producer side — but not the GPU compute dispatch, and `vfx-system`'s own Purpose says "GPU
+simulation is the **default**, not an advanced mode" over a system "targeting millions of
+particles". Every emitter falls back to the CPU and says so. The M8.c section of `docs/ROADMAP.md`
+carries the argument in full; Seed's definition — "behaviour may be minimal, single-threaded,
+unoptimised, or restricted to one backend" — is this module exactly.
+
+**And `audio` to Complete did not happen either; its `C` cell has moved to M11** — the milestone measured
+exactly what Steam Audio costs to integrate, found it to be four new dependencies, a compiler patch
+and a build-time tool, and recorded that in `deps/manifest.toml` and in `docs/ROADMAP.md`'s M8.c
+section rather than claiming the tier. That is the same destination and the same argument
+`text-and-fonts` got at M8.b's gate: a third-party integration is not a milestone's worth of engine
+work, and M11 is where three of them already live.
 
 The remaining 19 have not started. **M8.a advanced no tier, and the lists above are unchanged by
 it** — which is the whole of what its closing gate found about the record. It planned two rows

@@ -385,6 +385,59 @@ justification = "Voxelising source geometry and extracting walkable convex regio
 # behind `#if defined(CY_AUDIO_STEAM_AUDIO)`. THE FETCH AND THE BUILD OF UPSTREAM HAVE NOT BEEN RUN
 # on this machine, and the backend behind the option returns `NotImplemented` rather than pretending
 # to simulate. src/audio/README.md records that gap as the milestone's, not as a defect.
+#
+# --- M8.c, TASK 4b.1: WHAT IT ACTUALLY TAKES TO MAKE THIS ENTRY BUILD ----------------------------
+#
+# M8.b's gate reported that `-D CY_AUDIO_STEAM_AUDIO=ON` "cannot be configured at all" and named
+# PFFFT, IPP and FFTS. M8.c ran the experiment rather than repeating the sentence, and the answer is
+# different from the report and more specific. **Steam Audio 4.8.1 CAN be built on this machine.**
+# It was: `libphonon.so` was produced, out of tree, in the M8.c working scratch. What it costs is
+# recorded here because `thirdparty-dependencies` requires a dependency decision to be justified,
+# and because the next person to try must not start from the first error again.
+#
+# WHAT IS REQUIRED, from upstream's own core/build/dependencies.json rather than from a guess:
+#
+#   pffft        required   https://github.com/marton78/pffft    e0bf595c98ded55cc457a371c1b29c8cab552628
+#   zlib         required   https://github.com/madler/zlib       51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf
+#   mysofa       required   https://github.com/hoene/libmysofa   (SOFA HRTF reading; needs zlib)
+#   flatbuffers  required   https://github.com/google/flatbuffers 6df40a2471737b27271bdd9b900ab5f3aec746c7
+#                and it is a TOOL as well as a library: `flatc` runs at build time.
+#
+# IPP, FFTS, Embree, ISPC, Radeon Rays and TrueAudio Next are all OPTIONAL and turn off cleanly with
+# -DSTEAMAUDIO_ENABLE_{IPP,FFTS,EMBREE,RADEONRAYS,TRUEAUDIONEXT}=OFF. M8.b's report named two of
+# those three as blockers; they are not, and PFFFT is only the FIRST of four.
+#
+# THREE THINGS UPSTREAM DOES THAT THIS TOOLCHAIN DOES NOT ACCEPT, each measured:
+#
+#   1. `core/CMakeLists.txt:166` runs `add_compile_options(-fabi-version=6)` on every Linux build.
+#      With GCC 13 that flag makes libstdc++'s <future> fail to compile — reduced to a two-line
+#      program, `g++ -std=gnu++14 -fabi-version=6 -c '#include <future>'` exits 1 — and clang 18
+#      rejects the flag outright ("unknown argument: '-fabi-version=6'"). BOTH pinned compilers are
+#      blocked by one line. Deleting it builds. That is a PATCH, and `thirdparty-dependencies`
+#      permits one with a recorded rationale: "A dependency SHALL be vendored only when it requires
+#      engine-specific patches, and each patch SHALL be recorded as a file with a description."
+#   2. Valve's Find modules look in `${CMAKE_HOME_DIRECTORY}/deps/<name>/...` — a layout their own
+#      bootstrap script populates. Under add_subdirectory that expands to THIS REPOSITORY's deps/
+#      directory, so the four libraries would have to be staged into the source tree or the cache
+#      variables (PFFFT_LIBRARY, PFFFT_INCLUDE_DIR, MySOFA_*, ZLIB_*, FlatBuffers_EXECUTABLE)
+#      pre-set to build-tree paths before add_subdirectory, with add_dependencies() to order them.
+#   3. flatbuffers at Valve's pin does not compile with GCC 13 either: a false-positive
+#      `-Werror=stringop-overflow` in src/reflection.cpp. `-DCMAKE_CXX_FLAGS=-Wno-stringop-overflow`
+#      builds it. libmysofa and zlib must be built with -fPIC or the phonon link fails with
+#      "relocation R_X86_64_PC32 against symbol `stdin' can not be used when making a shared object".
+#
+# WHAT WAS PROVEN, EXACTLY: with those four staged and that one patch, `cmake -S core -B bld` reports
+# `Found PFFFT / ZLIB / MySOFA / FlatBuffers`, 129 of 129 objects compile, and libphonon.so links.
+# The whole of it — four dependencies from empty plus Steam Audio — is a few minutes of build.
+#
+# WHAT IS THEREFORE NOT DONE, AND WHY IT IS RECORDED RATHER THAN HALF-BUILT. Integrating it means
+# FOUR new [[dependency]] entries, one of which is a build-time TOOL that this file has no field for
+# (`flatc` is neither a library the build links nor a host prerequisite already on the machine — it
+# is built and then run), a patch file, and cache-variable plumbing in cmake/dependencies.cmake that
+# every other dependency in this tree would then share a configure with. That is a dependency change
+# with five arguments in it, and M8.c's inference agent had one file of cmake/dependencies.cmake to
+# touch safely while three other agents were building. It is written down instead, in full, so the
+# change that makes it is a morning's work against a known answer rather than a rediscovery.
 
 [[dependency]]
 name = "steam_audio"
@@ -402,3 +455,105 @@ source_subdir = "core"
 interface = "cy::audio::AcousticsBackend in src/audio/include/cy/audio/acoustics.h, implemented by src/audio/src/acoustics.cpp, which is the only translation unit that may include phonon.h"
 scope = "runtime"
 justification = "HRTF binaural rendering, ambisonic encoding and decoding, geometry-aware occlusion with material-dependent transmission, real-time reflections and sound propagation — the acoustic simulation `audio` names it for, and the one part of the audio stack that is a research field rather than an engineering task. The engine's own panning, attenuation, filter-based occlusion and reverb sends remain the fallback, so a build without it is a complete game."
+
+# --- M8.c: EIGEN, AND WHY A TRANSITIVE DEPENDENCY IS IN THIS FILE ---------------------------------
+#
+# Eigen is ONNX Runtime's dependency, not the engine's. It is declared here anyway, for two reasons
+# that both come from `thirdparty-dependencies`:
+#
+#   * "The manifest SHALL be the source of truth for the build, the licence report, and the security
+#     audit." A library linked into a shipped game and absent from THIRD_PARTY.md is a licence report
+#     that is wrong. ONNX Runtime fetches a dozen of its own; this is the one the engine has to name
+#     because the engine is what supplies it.
+#   * A DEPENDENCY THAT CANNOT BE FETCHED IS NOT PINNED. Upstream fetches Eigen as a zip from
+#     gitlab.com, and gitlab.com answers that URL with **HTTP 403** from this network — bot
+#     protection, not a rate limit; it is reproducible with `curl -I`. `git ls-remote` against the
+#     same repository works. So the engine fetches Eigen by commit, the way it fetches everything
+#     else, and hands ONNX Runtime the directory through `onnxruntime_USE_PREINSTALLED_EIGEN`.
+#     The commit is the one upstream's own cmake/deps.txt pins its archive at, so this is the same
+#     Eigen, acquired by a protocol that works.
+#
+# THE LICENCE IS THE ONE THING HERE THAT IS NOT A CLEAN FIT, and it is recorded rather than rounded
+# off. Eigen is **MPL-2.0**, which is file-level copyleft. `thirdparty-dependencies` requires
+# permissive licences and rejects "GPL, LGPL for static linking" by name; MPL-2.0 is neither of
+# those, and its obligation is to publish modifications to Eigen's own files — which this project
+# does not make. ONNX Runtime compiles it with `EIGEN_MPL2_ONLY`, which excludes the parts under
+# other licences. A reviewer who disagrees should reject `CY_ML_ONNXRUNTIME` rather than this entry:
+# the dependency arrives with the backend and cannot be separated from it.
+#
+# `source_subdir` names a directory Eigen does not have, which is how this entry is fetched WITHOUT
+# being added as a subproject: FetchContent skips add_subdirectory when the chosen subdirectory has
+# no CMakeLists.txt. Eigen is headers, and building its install rules and its test suite inside this
+# tree would be cost with no purpose.
+
+[[dependency]]
+name = "eigen"
+version = "3.4.90"
+tag = "3.4-e7248b2"
+commit = "e7248b26a1ed53fa030c5c459f7ea095dfd276ac"
+repository = "https://gitlab.com/libeigen/eigen"
+licence = "MPL-2.0"
+licence_file = "COPYING.MPL2"
+optional = true
+feature = "CY_ML_ONNXRUNTIME"
+system_package = false
+cmake_target = "cy_eigen_headers"
+source_subdir = "cy-not-a-subproject"
+interface = "none of the engine's own: it is ONNX Runtime's linear-algebra library, reached only from inside src/ml/src/onnxruntime_backend.cpp's dependency, and no engine header names an Eigen type"
+scope = "runtime"
+justification = "ONNX Runtime's CPU kernels are written against Eigen and its thread pool is Eigen's. It is declared here rather than left to upstream's own fetch because upstream fetches it as a gitlab.com archive that answers 403 from this network, and because a library linked into a shipped game must appear in the licence report. The engine names no Eigen type and would not adopt it on its own."
+
+# --- M8.c: THE REFERENCE INFERENCE BACKEND -------------------------------------------------------
+#
+# `ml-inference` names ONNX Runtime "the portable default" in a requirement — "with the engine
+# shipping backends for: **ONNX Runtime** (portable default), **Core ML**, **DirectML**, and
+# **TensorRT**, each optional and capability-gated" — and `thirdparty-dependencies` carries it in
+# the intended set with the reason: "Portable inference with broad operator coverage; a neural
+# runtime is years of work for no differentiating benefit."
+#
+# WHAT IT COSTS, MEASURED ON THIS MACHINE RATHER THAN ESTIMATED. This is the expensive entry in this
+# file and the number belongs beside it:
+#
+#   * a shallow clone of the tag is 746 MB of working tree,
+#   * its own CMake fetches a further dozen archives (abseil, protobuf, onnx, flatbuffers, re2,
+#     nsync, eigen, cpuinfo, mp11, safeint, date, gsl) — it is the only dependency here with a
+#     dependency manifest of its own,
+#   * and a from-empty Release build of the shared library measured **2m37s wall, 48m37s CPU** at 24
+#     jobs, producing a 19.7 MB libonnxruntime.so. That figure is the LIBRARY ALONE, built out of
+#     tree with clang on an otherwise idle machine; in this repository's own tree it is one target
+#     among several thousand and it competes with them.
+#
+# That is why `CY_ML_ONNXRUNTIME` defaults OFF while `CY_ML` defaults ON: the dependency policy's
+# "bounded cost" criterion is a real gate, and four minutes and a gigabyte on every default
+# configure is not bounded. cmake/features.cmake states the same decision from the option's side.
+# `-D CY_ML_ONNXRUNTIME=OFF` (the default) fetches nothing, and
+# `cy::ml::create_onnxruntime_backend` returns `Unavailable` naming the configure line.
+#
+# THE ISOLATION IS STRUCTURAL, not a promise. src/ml/src/onnxruntime_backend.cpp is the ONE
+# translation unit that may include `onnxruntime_c_api.h`, it does so inside
+# `#if defined(CY_ML_ONNXRUNTIME)`, `cy::dep::onnxruntime` is a PRIVATE dependency of `cy_ml` so its
+# include directories are not inherited, and tools/layercheck/layercheck.py carries the rule as a
+# build gate beside Jolt's and miniaudio's.
+#
+# THE C API, NOT THE C++ ONE. The engine compiles with -fno-exceptions; `Ort::` reports failures by
+# throwing. The backend uses `OrtApi` and converts every `OrtStatus*` into a `cy::Error`.
+#
+# `source_subdir` is `cmake`, which is where upstream keeps its CMake project — the repository root
+# has no CMakeLists.txt.
+
+[[dependency]]
+name = "onnxruntime"
+version = "1.20.1"
+tag = "v1.20.1"
+commit = "5c1b7ccbff7e5141c1da7a9d963d660e5741c319"
+repository = "https://github.com/microsoft/onnxruntime"
+licence = "MIT"
+licence_file = "LICENSE"
+optional = true
+feature = "CY_ML_ONNXRUNTIME"
+system_package = false
+cmake_target = "onnxruntime"
+source_subdir = "cmake"
+interface = "cy::ml::InferenceBackend in src/ml/include/cy/ml/backend.h, implemented by src/ml/src/onnxruntime_backend.cpp, which is the only translation unit that may include an onnxruntime header"
+scope = "runtime"
+justification = "Running a trained model: operator coverage across ONNX's opset, graph optimisation, and CPU kernels tuned per instruction set. `ml-inference` states outright that the engine SHALL NOT implement a neural runtime — 'operator coverage and per-device optimisation represent enormous investment with no differentiating benefit' — and names this one the portable default because it runs on every target the engine ships to and because its format is the interchange Core ML, DirectML and TensorRT import from. The asset model, the tensor and session API, the scheduling, the budget and the determinism boundary are engine code and are built with the option off."

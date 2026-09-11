@@ -453,6 +453,130 @@ function(cy__provide_xatlas source_dir)
 endfunction()
 
 # Everything that has to happen after the dependency's targets exist.
+# --- ONNX Runtime (M8.c) --------------------------------------------------------------------------
+#
+# The engine wants one thing from this dependency: a shared library that loads an ONNX model and
+# runs it on the CPU. Everything else upstream builds by default is a test binary, a language
+# binding, or an execution provider for hardware this build does not target.
+#
+# TWO THINGS HERE ARE NOT OBVIOUS AND BOTH WERE MEASURED RATHER THAN GUESSED.
+#
+# 1. FETCHCONTENT_TRY_FIND_PACKAGE_MODE. ONNX Runtime's own dependency helper calls find_package()
+#    before fetching, so a system copy of re2 or abseil is preferred when one is installed. On a
+#    machine with Anaconda on PATH that finds `${HOME}/anaconda3/lib/cmake/absl`, whose exported
+#    target set does not match what re2's config package expects, and the configure fails inside
+#    somebody else's find_dependency() with "Targets not yet defined: absl::tracing_internal". The
+#    fix is CMake's own control for exactly this, set for the duration of the fetch: NEVER means a
+#    declared dependency is fetched rather than substituted. It changes nothing for the other
+#    entries in this file, none of which relies on that substitution — CY_SYSTEM_<NAME> uses an
+#    explicit find_package(CONFIG REQUIRED) and is unaffected.
+#
+# 2. EXCEPTIONS AND RTTI. ONNX Runtime uses both, the engine compiles with -fno-exceptions and
+#    -fno-rtti as a directory property, and the top-level CMakeLists.txt says a third-party
+#    subdirectory that needs them "clears them for its own scope in cmake/dependencies.cmake". That
+#    is cy__slang_allow_exceptions() above, which is not Slang-specific despite its name: it walks a
+#    directory's targets and their subdirectories and appends -fexceptions -frtti to each.
+# Eigen is fetched but not added as a subproject — see deps/manifest.toml, which explains both the
+# licence position and why the engine acquires it at all. All this has to do is publish a target
+# with its include directory on it, so the `cy::dep::eigen` shim and the manifest's target check
+# have something to point at.
+function(cy__provide_eigen source_dir)
+    if(NOT TARGET cy_eigen_headers)
+        add_library(cy_eigen_headers INTERFACE)
+        target_include_directories(cy_eigen_headers SYSTEM INTERFACE "${source_dir}")
+    endif()
+endfunction()
+
+function(cy__configure_onnxruntime)
+    set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER CACHE STRING "" FORCE)
+    # AND THE OTHER HALF OF THE SAME PROBLEM, which cost a fifteen-minute build to find. CMake's
+    # USER PACKAGE REGISTRY (~/.cmake/packages/<Name>/) is consulted by find_package() before any
+    # prefix path, and a developer who has ever built Eigen through vcpkg has an entry in it. ONNX
+    # Runtime's dependency helper calls find_package() directly — not through FetchContent — so
+    # FETCHCONTENT_TRY_FIND_PACKAGE_MODE does not cover it, and the configure silently picked up
+    # `~/vcpkg/buildtrees/eigen3` (Eigen 5.0.1) in place of the Eigen 3.4 upstream pins. The build
+    # then failed inside somebody else's header on `std::hardware_destructive_interference_size`.
+    #
+    # A dependency that resolves differently depending on what else the developer has ever built is
+    # not pinned, whatever the manifest says. Turning the registry off makes this configure read the
+    # same on every machine. Nothing in this repository publishes to or reads from that registry —
+    # CY_SYSTEM_<NAME> uses an explicit find_package(CONFIG REQUIRED) against a prefix path and is
+    # unaffected.
+    set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF CACHE BOOL "" FORCE)
+    set(CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY OFF CACHE BOOL "" FORCE)
+    set(onnxruntime_BUILD_SHARED_LIB ON CACHE BOOL "" FORCE)
+    set(onnxruntime_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)   # ~2000 files of somebody else's tests
+    set(onnxruntime_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(onnxruntime_USE_FULL_PROTOBUF OFF CACHE BOOL "" FORCE)  # protobuf-lite is enough to load a model
+    set(onnxruntime_BUILD_WEBASSEMBLY OFF CACHE BOOL "" FORCE)
+    set(onnxruntime_ENABLE_PYTHON OFF CACHE BOOL "" FORCE)
+    set(onnxruntime_BUILD_JAVA OFF CACHE BOOL "" FORCE)
+    set(onnxruntime_BUILD_NODEJS OFF CACHE BOOL "" FORCE)
+    set(onnxruntime_BUILD_OBJC OFF CACHE BOOL "" FORCE)
+
+    # EIGEN IS SUPPLIED RATHER THAN FETCHED BY UPSTREAM, and this is the third thing here that was
+    # measured rather than guessed: upstream downloads Eigen as a zip from gitlab.com, and gitlab.com
+    # answers that URL with HTTP 403 from this network. `git ls-remote` against the same repository
+    # works, so deps/manifest.toml carries Eigen at the commit upstream's own deps.txt pins its
+    # archive at, and it is populated HERE — before ONNX Runtime's CMake is read — so that
+    # `eigen_SOURCE_PATH` can be handed to it.
+    #
+    # FetchContent_MakeAvailable is idempotent, so the acquisition loop below calling it again for
+    # the same entry costs nothing.
+    if(CY_ML_ONNXRUNTIME)
+        FetchContent_MakeAvailable(eigen)
+        set(onnxruntime_USE_PREINSTALLED_EIGEN ON CACHE BOOL "" FORCE)
+        set(eigen_SOURCE_PATH "${eigen_SOURCE_DIR}" CACHE PATH "" FORCE)
+        message(STATUS "dependency onnxruntime: using the manifest's Eigen at ${eigen_SOURCE_DIR}")
+    endif()
+endfunction()
+
+# THE ENGINE HIDES EVERY SYMBOL BY DEFAULT, AND A SHARED LIBRARY WITH NO EXPORTS IS NOT A LIBRARY.
+#
+# The top-level CMakeLists.txt sets `CMAKE_CXX_VISIBILITY_PRESET hidden` and
+# `CMAKE_VISIBILITY_INLINES_HIDDEN ON` as directory variables, which every target created below them
+# inherits as a property — including a FetchContent dependency's. ONNX Runtime's C API is exported
+# through a version script and ordinary default visibility, so under `-fvisibility=hidden` it built a
+# 724 MB `libonnxruntime.so` that exports NOTHING: `nm -D --defined-only` finds no `OrtGetApiBase`,
+# and the link of the first consumer fails with an undefined reference to it.
+#
+# That is the same class of problem as -fno-exceptions above and takes the same shape of fix: the
+# engine's language and linkage contract is the ENGINE's, and a third-party subdirectory that cannot
+# hold it is restored to the compiler's defaults for its own scope. Target properties are read at
+# generate time, so setting them here — after the targets exist — is enough.
+function(cy__default_visibility directory)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(type ${target} TYPE)
+        if(type STREQUAL "INTERFACE_LIBRARY" OR type STREQUAL "UTILITY")
+            continue()
+        endif()
+        set_target_properties(${target} PROPERTIES
+            C_VISIBILITY_PRESET default
+            CXX_VISIBILITY_PRESET default
+            VISIBILITY_INLINES_HIDDEN OFF)
+    endforeach()
+    get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        cy__default_visibility("${child}")
+    endforeach()
+endfunction()
+
+function(cy__finalise_onnxruntime target)
+    if(NOT MSVC AND onnxruntime_SOURCE_DIR)
+        cy__slang_allow_exceptions("${onnxruntime_SOURCE_DIR}/cmake")
+        cy__default_visibility("${onnxruntime_SOURCE_DIR}/cmake")
+    endif()
+    # Upstream's `onnxruntime` target publishes its public headers only under an INSTALL_INTERFACE,
+    # so an in-tree consumer inherits no include directory at all. The wrapper adds the one
+    # directory the C API lives in — SYSTEM, so a warning in somebody else's header is not this
+    # project's -Werror failure.
+    if(onnxruntime_SOURCE_DIR)
+        target_include_directories(${target} SYSTEM INTERFACE
+            "${onnxruntime_SOURCE_DIR}/include/onnxruntime/core/session")
+    endif()
+endfunction()
+
 function(cy__finalise_doctest target)
     # doctest's REQUIRE family reports a failure by throwing. With -fno-exceptions in force it must
     # abort instead, which is what this configuration selects; without it, REQUIRE would silently
@@ -493,13 +617,22 @@ foreach(_cy_id IN LISTS CY_DEPENDENCIES)
         set(CY_DEP_${_cy_id}_cmake_target "${CY_DEP_${_cy_id}_system_target}")
         message(STATUS "dependency ${_cy_id}: system copy, target ${CY_DEP_${_cy_id}_cmake_target}")
     else()
+        # A shallow fetch of an arbitrary commit needs a server that allows it — git's
+        # `uploadpack.allowReachableSHA1InWant`. GitHub does, and it is the difference between a few
+        # megabytes and several hundred for SDL and zstd.
+        #
+        # GITLAB DOES NOT, and M8.c is where that stopped being a footnote. The Eigen entry is
+        # pinned at a commit on gitlab.com and a shallow fetch of it fails with "Failed to checkout
+        # tag", which reads like a bad pin rather than a server policy. The host decides, so the
+        # host is what this reads, rather than a list of names somebody has to remember to extend.
+        set(_cy_shallow TRUE)
+        if(NOT CY_DEP_${_cy_id}_repository MATCHES "^https://github\\.com/")
+            set(_cy_shallow FALSE)
+        endif()
         FetchContent_Declare(${_cy_id}
             GIT_REPOSITORY "${CY_DEP_${_cy_id}_repository}"
             GIT_TAG "${CY_DEP_${_cy_id}_commit}"
-            # A shallow fetch of an arbitrary commit needs a server that allows it. GitHub does,
-            # and it is the difference between a few megabytes and several hundred for SDL and
-            # zstd. A mirror that refuses will fail the fetch loudly; the fix is GIT_SHALLOW FALSE.
-            GIT_SHALLOW TRUE
+            GIT_SHALLOW ${_cy_shallow}
             GIT_PROGRESS TRUE
             SOURCE_SUBDIR "${CY_DEP_${_cy_id}_source_subdir}"
             EXCLUDE_FROM_ALL

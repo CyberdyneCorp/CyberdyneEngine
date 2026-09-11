@@ -52,7 +52,7 @@ DEFAULT_TIMEOUT_S = 1800
 
 CRITERION_KEYS = frozenset(
     {"id", "describe", "source", "kind", "run", "path", "expect_tiers", "where", "ci_job",
-     "requires", "reason", "timeout_s"}
+     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes"}
 )
 MILESTONE_KEYS = frozenset({"schema", "id", "name", "artefact", "notes", "criterion"})
 
@@ -77,6 +77,17 @@ class Criterion:
     requires: str = ""
     reason: str = ""
     timeout_s: int = DEFAULT_TIMEOUT_S
+    #: A gap this milestone shipped KNOWINGLY, in the criterion's own words. The criterion still
+    #: runs on every ledger evaluation and its failure is still printed; what it does not do is make
+    #: the milestone's permanent gate red forever. See `is_declared_gap` and `_summarise`.
+    known_gap: str = ""
+    #: The milestone that must close it. Required with `known_gap`, must be a rung ABOVE the one
+    #: declaring it, and it is what makes a gap a deadline rather than a shrug.
+    known_gap_closes: str = ""
+
+    @property
+    def is_declared_gap(self) -> bool:
+        return bool(self.known_gap)
 
     @property
     def command(self) -> str:
@@ -188,6 +199,44 @@ def _check_scope(table: dict, where: str) -> None:
     # A criterion this machine cannot evaluate has to say why, or the report reads as a silent cap.
     if (table.get("where") == "ci" or table.get("requires")) and not table.get("reason"):
         raise CriteriaError(f"{where}: a criterion not evaluated everywhere needs a 'reason'")
+    _check_known_gap(table, where)
+
+
+def _check_known_gap(table: dict, where: str) -> None:
+    """A gap a milestone ships knowingly is declared, dated, and still run.
+
+    THE PROBLEM THIS SOLVES, AND IT WAS FOUND BY M8.c's CLOSING GATE RATHER THAN PREDICTED.
+    `m8c:steam-audio-configures` is a criterion M8.c declared **expecting it to fail**, deliberately,
+    so that the gap would keep saying so instead of quietly disappearing from the plan — which is
+    the right instinct and is what `delivery-roadmap` asks for. But `_summarise` returns a non-zero
+    exit for any failure, `milestone-m8c` is a permanent merge gate the moment it goes green, and
+    ci.yml runs `just roadmap-milestone m8c`. Flipping that gate green would therefore have shipped
+    a continuous-integration job that can never pass, which is the sibling of the forbidden pattern
+    "a milestone gate disabled rather than fixed or explicitly superseded".
+
+    The answer is not to delete the criterion and not to override the whole gate — an override is
+    per-gate and would hide two hundred and fifty green checks to excuse one. It is to let a
+    criterion say, in data, "this milestone shipped without me, here is why, and here is the rung
+    that must close it". The criterion still RUNS every time and its failure is still PRINTED; what
+    changes is only whether one declared gap makes a gate red forever.
+
+    AND THE MECHANISM CANNOT ROT, because the interesting direction is the other one: a declared gap
+    that PASSES is a ledger failure, reported as "the gap is closed; delete the declaration". A
+    marker that outlived its gap would otherwise be the next thing nobody notices.
+    """
+    gap = str(table.get("known_gap", "")).strip()
+    closes = str(table.get("known_gap_closes", "")).strip().lower()
+    if not gap and not closes:
+        return
+    if not gap:
+        raise CriteriaError(f"{where}: 'known_gap_closes' without 'known_gap' says a deadline with "
+                            "nothing behind it")
+    if not closes:
+        raise CriteriaError(f"{where}: 'known_gap' needs 'known_gap_closes' — a gap with no rung "
+                            "that must close it is a shrug, not a plan")
+    if closes not in MILESTONES:
+        raise CriteriaError(f"{where}: 'known_gap_closes' is {closes!r}, which is not a milestone; "
+                            f"they are {', '.join(MILESTONES)}")
 
 
 # --- The flat, deduplicated plan ------------------------------------------------------------------

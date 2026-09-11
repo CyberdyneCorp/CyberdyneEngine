@@ -127,8 +127,17 @@ public:
 
     /// A column for writing. Stamps the chunk's version for this component at the world's current
     /// version, so a downstream change filter fires for the whole chunk.
+    ///
+    /// **The bulk door of the determinism firewall** (firewall.h). A restricted origin asking for a
+    /// guarded component's column gets an EMPTY span rather than a short one: an empty span walks
+    /// zero rows, so a body written as `for (T& value : chunk.write<T>(id))` writes nothing, which
+    /// is what refusal has to mean when the caller's next statement is a loop rather than a check.
     template <class T>
     [[nodiscard]] Span<T> write(ComponentTypeId component) noexcept {
+        if (Status admitted = world_->admit_write(WritePath::QueryWrite, component, kNoEntity);
+            !admitted) {
+            return Span<T>{};
+        }
         const i32 column = archetype_->column_of(component);
         if (column < 0) {
             return Span<T>{};

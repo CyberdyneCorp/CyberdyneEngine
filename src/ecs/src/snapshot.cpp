@@ -202,6 +202,15 @@ Status Snapshot::restore(World& world) const noexcept {
     if (world.iterating()) {
         return fail(ErrorCode::Unavailable, "a restore is a structural change");
     }
+    // The determinism firewall's wholesale door. A restore replaces every row in the world, so it
+    // is the largest authoritative write there is; `Snapshot` is a friend of `World` and writes
+    // archetype rows directly, which is exactly why the check has to be spelled here rather than
+    // inherited from a public entry point. See <cy/ecs/firewall.h>.
+    if (Status admitted =
+            world.admit_write(WritePath::EntityLifetime, kInvalidComponent, kNoEntity);
+        !admitted) {
+        return admitted;
+    }
     const ComponentRegistry& registry = world.components();
 
     // Every archetype is emptied, including ones created after the capture: they are part of the

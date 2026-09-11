@@ -934,6 +934,83 @@ beside a copy of the game rather than inside it.
 **Risk spike**: none new. Both graph consumers lower through the layer M8.b built, and the spike that
 sized that layer already accounted for them.
 
+**`vfx-system` REACHES SEED HERE, NOT WORKING, AND THE CLOSING GATE MOVED THE CELL AFTER READING
+THE MODULE'S OWN README.** What M8.c built is large and is genuinely the shape `vfx-system` asks
+for: the asset model, graph compilation to VFX's own IR (an ordered write list whose values are pure
+expressions — the form M8.b's spike predicts, because the shared expression core has no Store), the
+compiler-derived attribute layout with its precision selection, the unified simulation world and the
+global scheduler that merged 720 dispatches where 42,258 unmerged ones would have been, data
+interfaces, the bounded readback with its `WriteScope`, importance classes whose reduction is
+visible in a photograph rather than in a counter, and the sprite and mesh publication paths. Four
+suites, five mutations each proven red, and the vertical slice plays 477 effects and 4,346 live
+particles a frame inside the budget M8.b declared.
+
+**What does not exist is the GPU compute dispatch, and the specification's own Purpose is what makes
+that decisive**: *"GPU simulation is the **default**, not an advanced mode"*, over a system
+*"targeting millions of particles"*. `decide_path` returns `ExecutionPath::Gpu` for every emitter
+that could have it and `device_dispatch_available()` answers false, so all 36,880 emitter-steps of
+the slice ran on the CPU — reported honestly, every frame, as
+`FallbackReason::DeviceDispatchUnimplemented`, which is far better than a silence, and still not the
+requirement. The slice's own numbers put that path at 1.57 ms a tick against a peak population of
+4,346 — **0.36 µs per live particle per tick measured at the peak, so a lower bound on the average**
+— and a million particles is therefore at least a third of a second a frame: three orders of
+magnitude from the target the capability is defined by, on the machine the capability was built on. Beside it, `Async compute` is a requirement with nothing to schedule,
+six of the eight `Renderers` kinds are absent, `Collision`'s response half is absent, and there is
+no GPU sort.
+
+The tier ladder's own words decide it. **Working** is *"the requirements a real project depends on
+are satisfied … optional and advanced requirements may be outstanding"* — and this specification
+pre-emptively refuses that escape for this requirement, in the Purpose, by name. **Seed** is *"the
+interfaces, the data model, and the invariants exist … behaviour may be minimal, single-threaded,
+unoptimised, or restricted to one backend"*, which is this module exactly. **The W cell moves to
+M10**, where the renderer's remaining GPU compute work already lives, and the gap this milestone
+leaves is one file and one function rather than a redesign: everything above
+`device_dispatch_available()` already reads it.
+
+**AND THE CONSEQUENCE, STATED RATHER THAN LEFT FOR SOMEBODY TO FIND.** `delivery-roadmap`'s own
+milestone table gives M8's artefact as *"a playable vertical-slice game exercising every
+gameplay-facing capability at Working"*, and with this cell at Seed that sentence is no longer
+literally true of the M8 series: eleven gameplay-facing capabilities are at Working and the twelfth
+is at Seed, in the slice, drawing particles, on the CPU. **That is an argument for correcting the
+sentence, not for claiming the tier** — a milestone criterion satisfied by moving a record is the
+failure mode this ladder's whole apparatus exists to catch, and it is the second time in three gates
+that a planned cell had to move rather than be met. Correcting `delivery-roadmap`'s M8 row is an
+OpenSpec change against that capability and is recorded here as work M9 inherits rather than
+performed by a gate that did not plan it. The **M8.c work table above still says W because it
+is the plan the milestone was written against**; the record is `docs/roadmap/status.yaml` and this
+paragraph is the correction — the same convention M5's section uses.
+
+**AND ONE MORE THING THE MILESTONE HAD TO BUILD BEFORE IT COULD BUILD ANYTHING ELSE: A SHADER AND
+PIPELINE LAYER.** M8.b's own closing report said a person could build all of M8.b and still not
+*see* it without writing their own renderer — `FrameAssembly` hands each pass's record callback to
+its caller and every caller in the tree supplied none, so the engine had a frame nothing drew into.
+A particle renderer is the first consumer that cannot proceed without one, so the layer was
+scheduled here rather than assumed: `src/rendering/pipeline/` is the pipeline state objects, the
+per-frame bindings and the five record callbacks each of the frame's stages already declared, and
+`src/rendering/particles/` is the first thing to reach the frame through its extension seam. It is
+also why this milestone's closing artefact is the first one in this project's history whose picture
+is **photographed rather than drawn**.
+
+**`audio` DOES NOT REACH COMPLETE HERE, AND ITS CELL MOVES TO M11 — for the same reason
+`text-and-fonts`' did at M8.b's gate, and with a great deal more evidence than the gate that moved
+it in.** M8.c ran the experiment rather than repeating M8.b's sentence, and the answer is different
+from the report and more specific. **Steam Audio 4.8.1 can be built on this machine** — `libphonon.so`
+was produced out of tree — and what it costs is now written out in full in `deps/manifest.toml`:
+upstream's own `dependencies.json` requires **PFFFT, zlib, libmysofa and flatbuffers**, of which
+flatbuffers is a build-time *tool* this manifest has no field for; IPP and FFTS, which M8.b's gate
+named as blockers, are optional and turn off cleanly; `core/CMakeLists.txt` runs
+`-fabi-version=6` on every Linux build, which breaks libstdc++'s `<future>` under GCC 13 and is
+rejected outright by clang 18, so **both pinned compilers are blocked by one line** and removing it
+is a recorded patch; and Valve's Find modules look inside this repository's own `deps/` directory
+under `add_subdirectory`. That is a dependency change with five arguments in it — four new manifest
+entries, a patch file and cache-variable plumbing every other dependency would then share a
+configure with — and it is the same shape as the three text libraries: a third-party integration
+rather than a milestone's worth of engine work. `SteamAudioBackend::simulate` still returns
+`ErrorCode::NotImplemented`, and `tools/roadmap/milestones/m8c.toml` declares
+`steam-audio-configures` as a criterion **that fails today**, deliberately, so that the gap keeps
+saying so instead of quietly disappearing from the plan. Everything else in `audio` is what Working
+already records, with `FallbackAcoustics` answering every query in every build.
+
 ---
 
 # Shipping
@@ -991,6 +1068,7 @@ profile or the profile's definition changes — and that is cheaper to learn at 
 | `weather-and-wind` | W | Climate and weather cells, environment sampling, the wind field, precipitation, wetness and snow, storms, presets and transitions, ecosystem state, **the firewall** |
 | `atmosphere-sky-and-clouds` | W | The physical atmosphere and its tables, aerial perspective, celestial bodies, volumetric clouds and their shadows, planetary scale |
 | `procedural-content-generation` | W | Typed datasets, compiled graphs, execution domains, deterministic derivation, **stable generated identity**, regions and spatial invalidation, caching, output adapters, provenance, persistence of generated content |
+| `vfx-system` | W | **The GPU compute dispatch M8.c did not build**: particle state resident in GPU buffers, indirect dispatch driven by GPU-maintained counts, async compute where the device exposes a queue, the GPU sort behind `BudgetLevers::sorted`, and the renderer kinds beyond `Sprite` and `Mesh`. M8.c took the capability to Seed — the asset model, the IR, the compiler, the shared simulation world, the scheduler, the budget controller and the determinism firewall's producer side — and its closing gate moved this cell here rather than claim Working over an absent default path |
 
 **Closing artefact**: `samples/10-world` — an open world: procedurally populated terrain with rivers
 and an ocean, foliage responding to a wind field driven by weather, wetness and snow accumulating,

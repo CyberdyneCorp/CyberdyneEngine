@@ -5,14 +5,23 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: M0 through M8.a are closed. [M8.b — Systems](docs/ROADMAP.md) is next.**
-> The editor **opens**: a window, docked panels, a hierarchy, an inspector generated from
-> reflection, a command palette over the same registry a script drives, and a viewport that
-> composites the runtime's own GPU image with no copy through the CPU. Everything it changes is a
-> transaction, and an agent can drive all of it over the Model Context Protocol — the same commands,
-> the same transactions, a narrower scope. What it still cannot show is a *world*: the process on
-> the other end of the viewport transport is a fixture, and the engine's renderer has not been
-> attached to it yet.
+> **Status: M0 through M8.c are closed. [M9 — Integrity](docs/ROADMAP.md) is next.**
+> **The engine now draws its own game, and this is a photograph of it rather than a drawing of
+> what it decided.** M8.b made a vertical slice that *plays* — 8,000 agents thinking, sensing,
+> navigating, animating and firing abilities inside one deterministic budget — and stopped one
+> layer short of anything that could record a frame. M8.c built that layer: pipeline state objects,
+> per-frame bindings and the five record callbacks `FrameAssembly` had been handing to a caller
+> that supplied none. On top of it are particles thrown by the game's own activation cues and a
+> two-shot cinematic that drives cameras through the camera stack and writes no camera transform,
+> both inside the frame budget the slice already declared.
+>
+> ![The vertical slice, recorded on Vulkan](docs/design/images/vertical-slice-m8c.png)
+>
+> *`samples/08-vertical-slice`, read back off a Vulkan device with validation on: five stages, 225
+> depth-prepass and 225 opaque draws, the particle renderer's sprite instances in the transparent
+> stage, and 0 validation errors. The same frame recorded through an empty `FrameSinks` lights zero
+> texels, which is what every caller in the tree produced before this milestone.*
+>
 > [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,680 scenarios**
 > that define what is being built and why, and are the contract the implementation must satisfy.
 > Start at [the specification index](openspec/specs/README.md), then

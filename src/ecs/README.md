@@ -48,6 +48,83 @@ placeholder id immediately and is applied at the stage's flush point in
 | `relationships.h` | `Parent` and `Children`, maintained by the world. |
 | `snapshot.h` | In-memory snapshots, and the world byte stream. |
 | `diagnostics.h` | The counters, on the M0 trace. |
+| `firewall.h` | **The determinism firewall's enforcement point.** Read it before adding a write path. |
+
+## The determinism firewall is enforced here (M8.c section 1)
+
+`vfx-system` and `ml-inference` each forbid their own subsystem from writing authoritative gameplay
+state, and **neither specification says where that is enforced**. M8.c required one enforcement
+point to be named and built, and the two candidates M8.b left were `gameplay-framework`'s command
+origin and this module's write path. **The write path is the answer**, for three reasons stated in
+full at the top of `firewall.h` and in one line each here:
+
+1. A command is the simulation's *input*, not its write. The failure the rule is about — a VFX
+   readback reaching into the world and poking a health value — never touches a `CommandStream`.
+2. `gameplay-framework` forbids the check the other candidate would need: "Provenance SHALL NOT
+   affect validation, ordering, or execution", and `sequencing-and-cinematics` requires that the
+   simulation cannot distinguish a sequence-issued command from any other. Enforcing here leaves
+   both intact, because the firewall never looks at a command.
+3. `vfx-system` states the diagnostic in terms of *components*: "attempts to write replicated or
+   physics-owned components from VFX-driven code paths". A component is an ECS concept.
+
+**Every door into this world's storage consults `World::admit_write`**, and `firewall.h`
+enumerates them: `World::get_mut`, `QueryChunk::write`, `World::set_sparse`/`remove_sparse`, the
+structural entry points (`add`, `remove`, `set_shared`), the lifetime entry points (`create*`,
+`destroy*`, `instantiate`), `World::set_parent`, `CommandBuffer::record`, and `Snapshot::restore`.
+Two of those are the ones worth knowing about. `CommandBuffer::record` is checked at **record** time
+rather than at flush time, because the flush runs at a stage boundary under the simulation's own
+origin and would otherwise launder a VFX-driven structural change into an authoritative one; and
+`Snapshot::restore` is checked at the call because `Snapshot` is a friend of `World` and writes
+archetype rows directly, so it inherits nothing from a public entry point.
+
+`World::get` and `QueryChunk::read` are deliberately NOT doors — they hand back const, and
+`vfx-system` explicitly permits VFX to read gameplay state.
+
+**Nothing changes until a caller opens a `WriteScope`.** The origin is a stack-scoped, thread-local
+frame, because "what code path is executing" is a property of a call stack and two systems of one
+stage run concurrently over one world. Everything that has not declared itself is
+`WriteOrigin::Simulation` and is unrestricted; `Vfx`, `Inference` and `Presentation` are the three
+that are not, and `PinnedInference` is unrestricted because `ml-inference` says a pinned session may
+drive authoritative state.
+
+**A component is guarded only when something declares it.** `declare_from_reflection` derives
+`Replicated` from a field's `Replicated` attribute and `Authoritative` from an explicitly declared
+authoritative `Persistence`; a field that declares neither derives nothing, and the count of
+components it could not derive is reported rather than hidden. `PhysicsOwned` is not derivable and
+is declared by hand.
+
+`<cy/core/determinism/classification.h>` is the other half and not a competitor: it makes an
+illegal *read* unspellable at compile time for state that adopted `Classified<>`. This is the
+runtime half, and it exists because classification is opt-in per field while a component's storage
+is reachable through those doors whether or not anybody adopted a wrapper.
+
+**Two suites, and the second is here because the closing gate found the criterion unable to fail.**
+`src/ecs/tests/test_firewall.cpp` is the doors, one case each, in the module that owns them —
+`unit.ecs`. It exists because M8.c's gate mutated `WriteFirewall::admit` to return true
+unconditionally and `unit.ecs` still passed: not one of its fourteen sources named the firewall,
+while `tools/roadmap/milestones/m8c.toml`'s `m8c:firewall-ecs` criterion ran that suite and
+described "every door … refusing a write whose origin may not make it". With the suite in place the
+same mutation fails 8 of 54 cases and 34 of 1,048 assertions. The thread-locality half is
+deliberately not in it: this tier starts no thread, and the integration suite below covers it with
+eight.
+
+**AND WHAT NEITHER SUITE CAN TELL YOU: NOTHING IN THE ENGINE OR IN THE ARTEFACT DECLARES COMPONENT
+AUTHORITY YET.** `WriteFirewall` is armed from construction and `guards()` nothing until a caller
+calls `declare` or `declare_from_reflection`, which this header says plainly — and the only callers
+in the tree are three test files. A game built on this engine today therefore has a firewall that
+refuses nothing, because it has been told nothing is authoritative. The mechanism is real,
+enforced at one point, and proven by mutation; **its adoption is not, and the number that would say
+so is `AuthorityDerivationReport::underived` beside `guarded_count()`, printed by nobody.** The
+check this should become is a startup-time report — how many of a world's registered components are
+guarded — asserted by the artefact rather than by a unit test with three components in it.
+
+The second suite is `src/gameplay/tests/test_firewall.cpp` (it links `cy::runtime` for the state
+digest, which is why it does not live here), and it is a negative control: four separate source mutations —
+removing the enforcement point, removing the `get_mut` door, removing the deferred door, and
+removing the development-build report — each turn it red, and the fourth is the interesting one
+because the digest still matches (the firewall still refuses; only the report is gone). The results
+are on `docs/design/images/m8c-determinism-firewall.png`, which is a **diagram** and says so, with
+the mutation table's numbers taken from the runs themselves.
 
 ## Three things a later milestone should know
 
