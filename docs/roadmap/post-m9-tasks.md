@@ -97,7 +97,12 @@ out of disk mid-ledger fails a milestone for a reason that has nothing to do wit
 inside it, and listing what it will remove before removing it — the shape `maintenance-clean` already
 uses. Not automatic on a timer: a tree an agent is still using must never vanish underneath it.
 
-## 3. Virtual geometry has never been photographed
+## 3. Virtual geometry has never been photographed — DONE
+
+> **Closed.** `just capture-virtual-geometry` renders it, the frames are committed under
+> `docs/design/images/virtual-geometry-*.png`, and
+> [`docs/design/virtual-geometry.md`](../design/virtual-geometry.md) reads them. Both artifacts
+> carry the cluster progression. Making the pictures found the defect in §4 below.
 
 **The most visually demonstrable capability in this engine has no picture, and the reason is a
 sequencing accident rather than neglect.**
