@@ -98,6 +98,17 @@ against a log that does not exist yet.
 - [ ] 7.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`
 - [ ] 7.4 Move `ci.yml`'s milestone job to `m9` in the same commit that flips the gate green
 - [ ] 7.5 Open the M10 change
+- [ ] 7.5b **Two gate mechanisms M8.c's closing gate found thin and could not fix inside its own
+      scope.** First, `screenshot-*` criteria are `kind = "path"` — they check only that a file
+      EXISTS, so a committed picture that went stale would still pass. The gate ran the capture
+      fresh and compared: the control frame is pixel-identical, and the two lit frames are not,
+      because the population at the captured tick follows the run's parameters. `delivery-roadmap`
+      allows "a committed artefact that is regenerated and compared"; making that real needs a fixed
+      parameter set and a tolerance, and it is the honest next step. Second, a full ledger run on
+      this machine does not reliably exit zero: three wall-clock-bound suites — `unit.render_gpu_culling`,
+      `smoke.editor_window` and the editor's `across_a_process_boundary` — each failed once across
+      three runs under the ledger's own sustained load and each passes three to five times in
+      isolation on an idle machine. A gate that is red one run in three teaches people to re-run it
 - [ ] 7.6 **Two record corrections M8.c's closing gate handed forward, each an OpenSpec change
       against `delivery-roadmap` rather than an edit to a document.** First, its milestone table
       gives M8's artefact as "a playable vertical-slice game exercising every gameplay-facing
