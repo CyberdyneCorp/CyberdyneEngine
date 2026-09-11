@@ -35,6 +35,48 @@ is an argument for a self-hosted runner, not for a shorter ledger.
 
 **Do not shorten the ledger to fit CI.** The ledger is the thing that has caught eighteen findings.
 
+### What M9's closing gate then measured, which narrows this considerably
+
+The cancellations are real and they are the second problem. **The first is that the jobs were
+failing, and had been since M0.** `gh run list -L 100` returns sixty-three runs, from M0's first
+commit to M8.c's last, and **not one of them is `success`**. The most recent push run is the record:
+three jobs green (`spec validation`, `editor linux`, `roadmap-status`), **ten red**, twelve cancelled
+when the next push superseded them, and `milestone — the closed milestones' exit criteria` **has
+never started at all**.
+
+Every Linux job died at the same line, at CONFIGURE, before compiling anything:
+
+```
+CMake Error at build/dev/_deps/sdl3-src/cmake/macros.cmake:433 (message):
+  Couldn't find dependency package for XCURSOR.  Please install the needed packages
+  or configure with -DSDL_X11_XCURSOR=OFF
+```
+
+The step above it installed `libx11-dev libxext-dev libwayland-dev libxkbcommon-dev`. README.md's
+own "System libraries SDL3 builds against" list — the one a human runs on a fresh clone — also names
+`libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev`, and `cmake/dependencies.cmake` says exactly
+why those four: "What stays on is what DisplayServer needs — Xcursor, Xrandr for screen enumeration,
+Xfixes and XInput2 for input."
+
+**Fixed in M9's closing change**, along with the check that stops it recurring:
+`tools/ci/check_workflows.py` now fails when a Linux job's package list drops one README documents,
+with its own negative fixture. `libxss-dev` came *out* of README's list in the same change, because
+`cmake/dependencies.cmake` forces `SDL_X11_XSCRNSAVER` off and this machine builds without it.
+
+**Three failures are recorded and NOT fixed**, because this host runs neither operating system and a
+blind edit to a leg nobody can execute is how the list got wrong in the first place:
+
+| Leg | What it says |
+|---|---|
+| `build windows-x86_64`, `build windows-arm64` | `swift-actions/setup-swift@v2`: `Version "6.0" is not available` — while the Linux and macOS legs accept the same input |
+| `editor macos` | `mapfile: command not found` — the macOS image's bash is 3.2 and a recipe uses a bash 4 builtin |
+| `editor windows` | `rustfmt refused the generated src/generated/mod.rs` |
+
+So the order is: fix those three, then the concurrency group, then ask whether a hosted runner can
+carry the `milestone` job at all. Until a run finishes, **every `where = "ci"` criterion in this
+repository is deferring its question to a machine that has never answered one** — which is why M9's
+gate converted its own (`lockstep-cross-platform`) from `where = "ci"` into a declared gap.
+
 ## 2. The build directory grows without bound
 
 Cleared 2026-09-11: **93 stale directories, 431 GB**, taking the disk from 92 % to 67 %. Verified

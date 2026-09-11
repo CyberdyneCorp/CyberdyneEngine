@@ -422,6 +422,20 @@ completion that did not happen.
   with `src/networking/` behind it and the tree builds and passes with it OFF, which is the shape
   M8.b's gate found in `CY_UI` and M9 opened by repairing.
 
+  **The closing gate's adversarial pass found the one defect of this milestone that is in the engine
+  rather than in the checking**, and it is declared as `m9:reliable-channel-stalls-under-loss`
+  rather than written down. The four-player session holds at 0 % loss and at the 8 % the artefact
+  uses — four of four clients converge, and no effect is ever played twice at any loss rate
+  measured. At 25 % none converges, and it is not slowness: over a session five times as long, with
+  twelve thousand datagrams delivered by the transport, every client's authoritative frontier is
+  frozen at tick 54 to the tick. The reliable-*ordered* stream is stuck behind a hole it never
+  fills; `ReliabilityChannel::abandoned()` — the module's own "the connection is then over" — has no
+  caller outside `src/networking/src/`; and `replay-and-rollback`'s "a peer that cannot catch up
+  resynchronises from a snapshot" therefore has no trigger. It is the third armed-and-unread
+  mechanism this milestone has met, after the determinism firewall it armed and the breadcrumb ring
+  it declared. The row stays at Working because Working is "the requirements a real project depends
+  on", and the gap closes at M10.
+
 - **`diagnostics-profiling-and-crash` → Working, not Complete.** Rolling capture, the crash
   artefact, source-location privacy and reproduction artefacts landed. Two requirements did not.
   **Breadcrumbs are armed and have no callers**: `grep -rn CY_BREADCRUMB src/` outside

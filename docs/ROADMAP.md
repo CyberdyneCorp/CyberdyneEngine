@@ -1053,7 +1053,11 @@ profile or the profile's definition changes — and that is cheaper to learn at 
 paragraph is the record, written the way M5's, M6's, M7's, M8.a's and M8.c's gates wrote theirs —
 the plan is corrected rather than the record relaxed. **M9 completes nothing.**
 `replay-and-rollback` and `networking-and-replication` reach **Working** from nothing, and
-`design.md` §4's predicted demotion — networking — did not need one. `simulation-and-determinism`
+`design.md` §4's predicted demotion — networking — did not need one, though the closing gate's
+adversarial pass found a defect in it that is in the engine rather than in the checking: a
+reliable-ordered channel under 25 % packet loss stops delivering to the application for the rest of
+the session, nothing detects it, and `m9:reliable-channel-stalls-under-loss` says so on every run
+until M10 closes it. `simulation-and-determinism`
 advances Seed → **Working**: profiles declared and refused at *configuration*, deterministic
 parallelism, stable iteration, the floating-point policy with the thirteen `<cmath>` functions the
 spike measured, the generated codecs, hierarchical hashing, the validator and the lint all landed,

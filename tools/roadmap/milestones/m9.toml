@@ -766,6 +766,56 @@ known_gap = "four milestones closed with Complete cells in their own columns tha
 known_gap_closes = "m10"
 ci_job = "milestone-m9"
 
+# THE ONE FINDING OF M9'S ADVERSARIAL PASS THAT IS IN THE ENGINE RATHER THAN IN THE CHECKING.
+#
+# The pass did what the brief asks — "drop packets, reorder them, duplicate them, and confirm the
+# four-player session holds" — at the artefact's own 8 % and then above it. The session holds at 8 %
+# (4 of 4 clients converge, 271 rollbacks, 0 effects played twice) and at 0 %. At 15 % two clients
+# converge. AT 25 % NONE DOES, AND IT IS NOT SLOWNESS:
+#
+#   ticks=180  datagrams offered 3325  delivered 2559   client0 frontier 54  rollbacks 12
+#   ticks=900  datagrams offered 16727 delivered 12757  client0 frontier 54  rollbacks 12
+#
+# Five times the session, five times the traffic, TWELVE THOUSAND datagrams delivered by the
+# transport — and the client's authoritative frontier is frozen at tick 54 of 900, to the tick, with
+# the same twelve rollbacks. The datagrams arrive and the application never sees them: the
+# reliable-ORDERED stream is stuck behind a hole it never fills, and nothing anywhere notices.
+#
+# AND THE MODULE ALREADY HAS THE SIGNAL THAT WOULD SAY SO. `ReliabilityChannel::abandoned()` is set
+# when a datagram exhausts `RetransmitPolicy::maximum_attempts` — its own comment reads "The
+# connection is then over, and saying so is better than retrying forever" — and
+# `grep -rn 'abandoned()' src/ samples/` outside `src/networking/src/` and its tests returns
+# NOTHING. It is the third armed-and-unread mechanism this milestone has met: the determinism
+# firewall (task 1.4b, armed here) and the breadcrumb ring (declared above, still open) are the
+# other two, and this one was found by attacking the invariant rather than by reading the code.
+#
+# WHY IT IS A GAP RATHER THAN A DEMOTION. `networking-and-replication` reaches Working on what a
+# real project depends on, and a four-player session over a real adverse network is the artefact
+# that shows it. A loss rate at which a reliable stream gives up is a real limit of a real transport;
+# what is missing is that the limit is neither detected, reported, nor recovered from —
+# `replay-and-rollback`'s "a peer that cannot catch up resynchronises from a snapshot" has no
+# trigger, because nothing asks whether the peer is still being caught up at all.
+[[criterion]]
+id = "reliable-channel-stalls-under-loss"
+describe = "A RELIABLE-ORDERED CHANNEL UNDER 25 % LOSS STOPS DELIVERING AND NOTHING NOTICES. The four-player session converges at 0 % and at 8 %; at 25 % no client's frontier ever advances past tick 54, at 180 ticks and at 900 alike, while the transport goes on delivering twelve thousand datagrams. `ReliableEndpoint::abandoned()` is the signal that would say so and has no caller outside its own module, and resynchronisation has no trigger. This criterion runs the session at 25 % and asks for four converged clients"
+source = "tasks 8.3, networking-and-replication, replay-and-rollback"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+out="$("$d/samples/09-multiplayer/cy_sample_multiplayer" --only session --ticks 180 --loss 25 2>&1)"
+echo "$out" | grep -E "session_(datagrams_offered|datagrams_delivered|converged_clients|duplicate_effects) = |client0_frontier = "
+converged=$(echo "$out" | sed -n 's/^session_converged_clients = //p')
+duplicated=$(echo "$out" | sed -n 's/^session_duplicate_effects = //p')
+test "$duplicated" -eq 0 || { echo "the side-effect ledger let $duplicated effect(s) play twice"; exit 1; }
+echo "$converged of 4 clients converged at 25 % loss; the ledger suppressed every duplicate effect at every loss rate measured"
+test "$converged" -eq 4
+'''
+known_gap = "a reliable-ordered channel stops delivering to the application under sustained heavy loss and nothing detects it: the frontier freezes, the transport keeps delivering, `abandoned()` has no caller, and resynchronisation is never triggered. The session holds at the 8 % the artefact uses and at 0 %; it does not at 25 %. Closing it is a reader for the signal the module already raises, and a resync path behind it"
+known_gap_closes = "m10"
+ci_job = "milestone-m9"
+
 [[criterion]]
 id = "gameplay-benchmarks"
 describe = "`gameplay-framework`'s PERFORMANCE TABLE IS SPECIFIED TO BE BENCHMARKED AND IS NOT BENCHMARKED AT ALL. The specification's table — 100k active entities, 1M resident, 10k batch spawn, 100k commands a second, indexed queries, integer tag tests, no virtual dispatch — 'SHALL be benchmarked rather than asserted', and the framework's own cost 'SHALL be a reported fraction of simulation frame time'. `benchmarks/baseline.json` holds six entries and every one of them is `ecs/*` or `harness/*`"

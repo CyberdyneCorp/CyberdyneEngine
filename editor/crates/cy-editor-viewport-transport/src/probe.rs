@@ -153,6 +153,8 @@ fn run(gpu: &Arc<Gpu>, session: &mut ViewportSession, settings: &Settings) -> Me
         .then(|| readback_buffer(gpu, handshake.width, handshake.height));
 
     let mut measurements = Measurements::default();
+    // The last liveness this probe reported, so that a change is reported and a repetition is not.
+    let mut reported = Liveness::Live;
     let started = Instant::now();
     let mut next_due = started;
 
@@ -168,14 +170,25 @@ fn run(gpu: &Arc<Gpu>, session: &mut ViewportSession, settings: &Settings) -> Me
         }
         measurements.editor_frames += 1;
 
-        if session.liveness() != Liveness::Live && measurements.death.is_none() {
-            measurements.death =
-                Some((started.elapsed().as_secs_f64(), measurements.editor_frames));
+        // EVERY TRANSITION, NOT ONLY THE FIRST. M9's closing gate found this by loading the
+        // machine: under sixty-four spinning processes the publisher misses its heartbeat, the
+        // session reports `Wedged`, and the SIGKILL that follows moves it to `Gone` — which this
+        // reported only if `Gone` happened to be the first thing it saw. A runtime that stalls and
+        // then dies was therefore described, for the rest of the session, as one that had stalled.
+        // The editor's own message for the two is different on purpose, and
+        // `editor-rust-application` asks for the state to be shown rather than for a frozen image
+        // with no explanation, so the wrong one standing is the defect and not the loss of a line.
+        if session.liveness() != reported {
+            reported = session.liveness();
+            if measurements.death.is_none() && reported != Liveness::Live {
+                measurements.death =
+                    Some((started.elapsed().as_secs_f64(), measurements.editor_frames));
+            }
             println!(
                 "[probe] the runtime is {:?} at {:.2} s — {} — and the editor carries on",
-                session.liveness(),
+                reported,
                 started.elapsed().as_secs_f64(),
-                session.liveness().message()
+                reported.message()
             );
         }
 
