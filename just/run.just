@@ -362,3 +362,32 @@ run-multiplayer *args:
     python3 samples/09-multiplayer/multiplayer.py --profile "${profile}" \
         --sample "${build_dir}/samples/09-multiplayer/cy_sample_multiplayer" \
         --build-dir "${build_dir}" --work "${build_dir}/multiplayer" ${rest}
+
+# Regenerate docs/design/images/virtual-geometry-*.png: the M7 scene rendered, and the cluster
+# hierarchy choosing at three geometric-error thresholds.
+# Usage: just capture-virtual-geometry [--profile <p>]
+#
+# WHY THREE THRESHOLDS. The threshold is the screen-space geometric error the hierarchy is allowed
+# to commit, so one still frame cannot show the mechanism — only the same view at 1, 4 and 16 pixels
+# can, and the visible-cluster count falls 5247 -> 3332 -> 1878 across them while coverage holds.
+# That progression IS the "no manual level-of-detail authoring" claim, seen rather than read.
+#
+# It needs a graphics device. On a machine without one the tool says so and writes nothing, which is
+# why this is a recipe a person runs and not a test.
+capture-virtual-geometry *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    work="$(mktemp -d)"
+    trap 'rm -rf "${work}"' EXIT
+
+    for threshold in 1 4 16; do
+        echo "==> capture     virtual-geometry  threshold=${threshold}px"
+        "${build_dir}/samples/07-fidelity/cy_fidelity_capture" "${work}/t${threshold}" "${threshold}"
+    done
+
+    python3 tools/docs/collect_virtual_geometry.py "${work}"

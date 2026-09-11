@@ -173,3 +173,44 @@ them blind, which was right — none is reproducible on this machine: `setup-swi
 `Version "6.0" is not available` on both Windows legs, `mapfile: command not found` on macOS
 (bash 3.2), and rustfmt refusing the generated `mod.rs` on Windows. **The first green run will say
 which of these are real**, and that run is now possible for the first time.
+
+## 4. The visibility buffer's depth test is not atomic with its payload write
+
+**Found by rendering the M7 scene for documentation (item 3), not by a gate.** It is a correctness
+defect, not only a determinism one.
+
+`vgVisRaster` in `src/rendering/virtual_geometry/shaders/vg_visbuffer.slang` settles depth with
+`InterlockedMin(depth[pixel], key, previous)` and then writes `visbuffer[pixel]` as a **separate,
+unordered store**. The two are not atomic together, so for fragments at *different* depths:
+
+1. the far fragment runs its `InterlockedMin` first, sees `kFarDepth`, wins its compare, and will store;
+2. the near fragment then lowers `depth`, wins its own compare, and will store;
+3. both store, and **whichever store lands last owns the pixel** — which can be the farther surface.
+
+`depth` and `visbuffer` then disagree. The comment at that line claimed only coincident surfaces
+race and that "either answer is a correct one"; both halves were wrong, and the comment is corrected
+in place.
+
+**Evidence**, two identical runs of `cy_fidelity_capture` at 1280x720, threshold 1.0:
+
+| Quantity | Run to run |
+|---|---|
+| covered pixels | 921,593 — **stable** |
+| visible clusters | 5,247 — **stable** |
+| differing pixels | **110–150 (0.015%)**, at silhouettes |
+| `materials_seen` | **flips 4 ↔ 5** across six runs |
+
+Coverage and cluster count being bit-stable localises this to the payload pairing: not the traversal,
+not the raster bounds. `materials_seen` flips because a thin material's last few pixels are exactly
+the contested ones, and `fidelity.py` asserts only `materials > 1`, so the artefact never caught it.
+
+**Fix**: one 64-bit atomic min over `(key << 32) | payloadIndex`, so depth and payload move together.
+It needs shader int64 atomics (`VK_KHR_shader_atomic_int64`); where that is absent the fallback is a
+depth-only prepass followed by a payload pass that writes where `key == depth[pixel]`, with a
+deterministic tiebreak. **The regression test belongs on the PR that fixes it**: render one frame
+twice and require the visibility buffer to be identical — it fails today, which is the point.
+
+This is also why `docs/design/images/virtual-geometry-*.png` are reproducible only to within ~0.015%
+of pixels, and why the capture tool colours clusters by the stable `(instance, cluster)` pair rather
+than by `samples[].visible` — that index is atomic-append order and repaints the entire image on
+every run.

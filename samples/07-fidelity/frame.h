@@ -34,6 +34,7 @@
 // reports reproduce.
 
 #include <cy/core/memory/array.h>
+#include <cy/rendering/virtual_geometry/visbuffer.h>
 
 #include "scene.h"
 
@@ -88,8 +89,25 @@ struct FrameReport {
     bool levels_exhausted = false;
 };
 
+/// PROBE HOOK — the last frame's per-pixel readback, retained when a caller asks for it.
+///
+/// `render_frames` consumes each frame's readback and keeps only the summed counters, which is what
+/// the artefact needs and is why M7's picture is a chart. A caller that wants the frame itself
+/// passes one of these and gets the visibility samples and the resolved surface back.
+struct Capture {
+    explicit Capture(Allocator& allocator) noexcept
+        : samples(allocator), resolved(allocator), visible(allocator) {}
+    Array<rendering::vg::VisibilitySample> samples;
+    Array<Vec4> resolved;
+    /// The traversal's visible list for the same frame. A sample's `visible` is an index INTO this,
+    /// and that index is traversal order — which is atomic append order and therefore differs run
+    /// to run. The stable identity of a patch is the (instance, cluster) pair found here, so any
+    /// picture that must be reproducible has to colour by that rather than by the index.
+    Array<rendering::vg::VisibleCluster> visible;
+};
+
 [[nodiscard]] Status render_frames(const Scene& scene, const FrameOptions& options,
-                                   FrameReport& out) noexcept;
+                                   FrameReport& out, Capture* capture = nullptr) noexcept;
 
 /// What the illumination system answered over the surfaces the device resolved.
 struct LightReport {

@@ -130,7 +130,8 @@ struct Payload {
 
 }  // namespace
 
-Status render_frames(const Scene& scene, const FrameOptions& options, FrameReport& out) noexcept {
+Status render_frames(const Scene& scene, const FrameOptions& options, FrameReport& out,
+                     Capture* capture) noexcept {
     DeviceHolder holder;
     out.reason = holder.reason();
     if (!holder.real()) {
@@ -292,6 +293,29 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
             }
         }
         ++out.frames;
+
+        // The probe hook: keep the last timed frame's per-pixel readback so a caller can turn the
+        // frame into an image. `render_frames` otherwise consumes it and keeps only the counters.
+        if (capture != nullptr) {
+            capture->samples.clear();
+            capture->resolved.clear();
+            for (const auto& sample : visbuffer_readback.samples) {
+                if (Status added = capture->samples.push_back(sample); !added) {
+                    return added;
+                }
+            }
+            for (const auto& value : visbuffer_readback.resolved) {
+                if (Status added = capture->resolved.push_back(value); !added) {
+                    return added;
+                }
+            }
+            capture->visible.clear();
+            for (const auto& cluster : traversal_readback.visible) {
+                if (Status added = capture->visible.push_back(cluster); !added) {
+                    return added;
+                }
+            }
+        }
     }
 
     out.materials_seen = static_cast<u32>(__builtin_popcount(material_bits));

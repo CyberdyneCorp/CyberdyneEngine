@@ -377,8 +377,25 @@ void vgVisRaster(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID,
                 InterlockedMin(depth[pixel], key, previous);
                 if (key < previous)
                 {
-                    // A pixel whose depth this fragment won. Two fragments with the same key would
-                    // race here and either answer is a correct one for coincident surfaces.
+                    // A pixel whose depth this fragment won.
+                    //
+                    // KNOWN RACE, wider than coincident surfaces. The atomic settles `depth`, but
+                    // the payload write below is a separate, unordered store, so the pair is not
+                    // atomic together. Two fragments at DIFFERENT depths both take this branch when
+                    // the far one runs its InterlockedMin first: far sees kFarDepth and wins its
+                    // compare, near then lowers `depth` and wins its own. Both store, and whichever
+                    // store lands last owns the pixel — which can be the FARTHER surface, leaving
+                    // `depth` and `visbuffer` disagreeing.
+                    //
+                    // Measured on this scene at 1280x720: ~110-150 of 921,593 covered pixels (0.015%)
+                    // change between two identical runs, and `materials_seen` flips between 4 and 5
+                    // because a thin material's last pixels are the contested ones. Coverage and the
+                    // visible-cluster count are bit-stable, so this is the payload pairing alone and
+                    // not the traversal or the raster bounds.
+                    //
+                    // The fix is a single 64-bit atomic min over (key << 32 | payloadIndex) so depth
+                    // and payload move together; it needs shader int64 atomics, which is why it is
+                    // recorded in docs/roadmap/post-m9-tasks.md rather than done inline here.
                     visbuffer[pixel] = uint2(visibleIndex, triangle);
                 }
             }

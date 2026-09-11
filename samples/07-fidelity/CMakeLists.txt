@@ -82,3 +82,31 @@ add_test(NAME smoke.fidelity
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_tests_properties(smoke.fidelity PROPERTIES
                      LABELS "smoke" TIMEOUT "${CY_FIDELITY_TIMEOUT}")
+
+# THE CAPTURE TOOL, which regenerates docs/design/images/virtual-geometry-*.png. It is declared
+# beside the artefact because it renders the artefact's own scene through the artefact's own frame;
+# a second copy of either would be a second thing to keep true. It compiles tests/render/golden.cpp
+# directly rather than linking the test target, which is what src/vfx/tests does and what keeps one
+# PNG encoder in the tree.
+cy_add_module(
+    NAME cy_fidelity_capture
+    LAYER tools
+    TYPE EXECUTABLE
+    ALIAS cy::fidelity-capture
+    SOURCES
+        capture.cpp
+        scene.cpp
+        frame.cpp
+        "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
+    PRIVATE_DEPENDENCIES
+        cy::rendering-virtual-geometry
+        cy::rendering-gi
+        cy::rendering-arbiter
+        cy::rendering-graph
+        cy::rhi
+        cy::rhi-null)
+target_include_directories(cy_fidelity_capture PRIVATE "${CMAKE_SOURCE_DIR}/tests/render")
+if(CY_RENDERER_VULKAN)
+    target_link_libraries(cy_fidelity_capture PRIVATE cy::rhi-vulkan)
+    target_compile_definitions(cy_fidelity_capture PRIVATE CY_SAMPLE_FIDELITY_VULKAN=1)
+endif()

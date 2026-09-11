@@ -5,7 +5,7 @@ An open-source game engine. **C++20** core, **Swift** for gameplay, **Rust** for
 Inspired by Godot's server architecture and scene ergonomics, Unity's component composition and
 prefab workflow, and Unreal's render graph and tooling ambition — but not a port of any of them.
 
-> **Status: M0 through M8.c are closed. [M9 — Integrity](docs/ROADMAP.md) is next.**
+> **Status: M0 through M9 are closed. [M10 — Worlds](docs/ROADMAP.md) is next.**
 > **The engine now draws its own game, and this is a photograph of it rather than a drawing of
 > what it decided.** M8.b made a vertical slice that *plays* — 8,000 agents thinking, sensing,
 > navigating, animating and firing abilities inside one deterministic budget — and stopped one
@@ -21,6 +21,20 @@ prefab workflow, and Unreal's render graph and tooling ambition — but not a po
 > depth-prepass and 225 opaque draws, the particle renderer's sprite instances in the transparent
 > stage, and 0 validation errors. The same frame recorded through an empty `FrameSinks` lights zero
 > texels, which is what every caller in the tree produced before this milestone.*
+>
+> ### Virtual geometry, rendered
+>
+> **4,478,208 source triangles, ≈4.9 per covered pixel, no authored level of detail.** The same view
+> at three geometric-error budgets — one colour per cluster, and the only thing changed between them
+> is how much error the hierarchy may commit:
+>
+> | 1 px — 5,247 clusters | 4 px — 3,332 | 16 px — 1,878 |
+> |---|---|---|
+> | ![1px](docs/design/images/virtual-geometry-clusters-1px.png) | ![4px](docs/design/images/virtual-geometry-clusters-4px.png) | ![16px](docs/design/images/virtual-geometry-clusters-16px.png) |
+>
+> *The patches grow and coverage does not: 921,592 pixels covered at 16 px error as at 1 px, which
+> is the crack-free property. [The frame, the density, and what these images do not
+> show.](docs/design/virtual-geometry.md)*
 >
 > [`openspec/specs/`](openspec/specs/) holds **76 capabilities · 1,210 requirements · 2,680 scenarios**
 > that define what is being built and why, and are the contract the implementation must satisfy.
