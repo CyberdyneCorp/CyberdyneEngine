@@ -139,3 +139,10 @@ add_subdirectory(pipeline)
 # The first consumer of that layer, and the proof of it: a particle renderer that reaches the frame
 # through `PassExtension` rather than through a second frame of its own. M8.c task 1b.4.
 add_subdirectory(particles)
+
+# THE ARROW FROM A BONE MATRIX TO A MOVED VERTEX. M8.d. Before this module the engine could describe
+# a skin, bound it, store its blend shapes and publish its pose, and could not move one vertex:
+# there was no skinning shader in the tree and no CPU skinning either. It sits beside gpu_culling/ in
+# shape — a compute dispatch checked against a layer-2 CPU reference — and is placed after pipeline/
+# because its suite draws the vertices it skins through that layer's conventions.
+add_subdirectory(skinning)

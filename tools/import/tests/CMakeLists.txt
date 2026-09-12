@@ -76,6 +76,38 @@ function(cy_import_declare_tests)
         SOURCES "${tests_dir}/test_fbx.cpp"
         DEPENDENCIES cy::import)
 
+    # `import_fbx_skeleton` is the suite for step 7, and it is the ONLY suite in tools/ that links
+    # cy::animation. It does so because it is the case that proves a cooked skeleton record loads
+    # into `cy::animation::Skeleton` — the runtime's own refusals are the assertion, so a suite that
+    # only read the record back would be checking its own writer.
+    #
+    # BEHIND CY_ANIMATION, because `-D CY_ANIMATION=OFF` removes src/animation/ from the build and a
+    # suite naming it there would not configure. `cy_import` itself does NOT link it in any
+    # configuration, which is what keeps the importer's output the same in both — see
+    # cy/import/fbx_skeleton.h for that argument at length. M8.d.
+    if(CY_ANIMATION)
+        cy_add_test(
+            NAME import_fbx_skeleton
+            KIND integration
+            SOURCES "${tests_dir}/test_fbx_skeleton.cpp"
+            DEPENDENCIES cy::import cy::animation)
+    endif()
+
+    # `import_fbx_clip` is the suite for step 8: the animation-only document whose silent drop this
+    # milestone closed, the clip codec's tolerances, the sub-asset naming rule and determinism over a
+    # payload that passed through a third-party baker. Integration for the reasons above — ufbx
+    # parses several real documents and each one is baked, fitted and quantised.
+    #
+    # It does NOT link cy::animation: every assertion is on the cooked record and the import report,
+    # which is what a consumer of this importer actually sees. The cases that need the runtime are
+    # compiled out with `CY_IMPORT_ANIMATION`, so the suite still builds — and still asserts that
+    # nothing is dropped in silence — in a build configured with `-D CY_ANIMATION=OFF`. M8.d.
+    cy_add_test(
+        NAME import_fbx_clip
+        KIND integration
+        SOURCES "${tests_dir}/test_fbx_clip.cpp"
+        DEPENDENCIES cy::import)
+
     # `import_unwrap` covers the xatlas-backed lightmap unwrap, the overdraw reorder and the convex
     # decomposition — the three mesh-processing steps M6 added. Integration because an unwrap of a
     # mesh large enough to produce more than one chart is milliseconds of work by construction.

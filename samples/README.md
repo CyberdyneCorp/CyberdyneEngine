@@ -7,6 +7,7 @@ narrative.
 | Sample | Milestone | What it proves |
 |---|---|---|
 | `00-empty/` | M0 | Opens a window, runs an empty loop through `Runtime::tick()`, writes a trace, exits cleanly |
+| `09b-animated-character/` | M8.d | Imports four Mixamo FBX exports, retargets three clips onto one rig, drives idle → walk → run → death through a compiled locomotion machine, and skins the character on the GPU — the first thing here that draws an imported mesh |
 
 Run one with `just run-sample <name>`; `--headless` runs it under the headless display server, which
 is how the smoke test runs it in CI.

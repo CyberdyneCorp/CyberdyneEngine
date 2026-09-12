@@ -149,10 +149,14 @@
 # that is unmet, is in tools/roadmap/milestones/m6.toml beside `[criterion.expect_tiers]` and in
 # docs/roadmap/capability-matrix.md#where-m6s-tiers-are-thin. In short:
 #
-#   asset-import-pipeline             working  Model import's steps 7, 8 and 10 (skeletons,
-#                                              animations, the prefab), USD, PNG/JPEG decoding, the
-#                                              BC7/ASTC platform variants and the whole of "Virtual
-#                                              geometry cooking" have no implementation.
+#   asset-import-pipeline             working  Steps 7 and 8 (skeletons, animations) landed after M9
+#                                              for the FBX importer only; glTF still has neither, and
+#                                              SKINNED MESH VERTICES ARE NOT IMPORTED AT ALL — MeshData
+#                                              has no joint-index or weight arrays, so an imported rig
+#                                              has nothing bound to it. Step 10 (the prefab), USD,
+#                                              PNG/JPEG decoding, the BC7/ASTC platform variants and
+#                                              the whole of "Virtual geometry cooking" have no
+#                                              implementation.
 #   core-assets-and-io                working  Its "Streaming" requirement — partial residency driven
 #                                              by a residency budget and renderer feedback — is
 #                                              unimplemented, and src/core/assets/ has NO change in
@@ -167,9 +171,17 @@
 #                                              capability.
 #   rendering-geometry-and-resources  working  Its "Skinning" requirement reads bone matrices from
 #                                              the GPU pose world, which is `animation-and-skinning`
-#                                              at M8.b. `SkinningDescriptor::validate()` REFUSES that
-#                                              value with NotImplemented and the suite asserts the
-#                                              refusal. Task 10.8; the Complete cell moves to M8.b.
+#                                              at M8.b. At M6 `SkinningDescriptor::validate()`
+#                                              refused that value, naming the milestone that owed it.
+#                                              CORRECTED AT M8.d: the refusal went when M8.b built
+#                                              the world, `validate()` accepts the source, and both
+#                                              suites assert the acceptance rather than the refusal.
+#                                              M8.d added `src/rendering/skinning/` — the compute
+#                                              pass the requirement asks for, checked against
+#                                              `cpu_reference_skin` and drawn from a vertex buffer.
+#                                              The row stays Working: dual quaternion skinning and
+#                                              blend-shape deltas are declared and not implemented,
+#                                              and nothing decides WHICH instances are skinned.
 #
 # Six rows did advance, all to Working, all recorded against implement-m6-scale.
 

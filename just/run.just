@@ -391,3 +391,55 @@ capture-virtual-geometry *args:
     done
 
     python3 tools/docs/collect_virtual_geometry.py "${work}"
+
+# M8.d's ARTEFACT: docs/design/images/animated-character.png and
+# docs/design/videos/animated-character.mp4, regenerated from the four Mixamo FBX exports.
+#
+# WHY A VIDEO AND NOT A STILL. A single frame of a skinned character is indistinguishable from a
+# single frame of a POSED one — the claim M8.d has to be able to show is that the geometry deforms
+# between frames, and no still can carry it. The still this recipe also writes is for the readers and
+# the viewers that cannot play video, and it is the run's most legible frame rather than a second
+# claim.
+#
+# WHY THE FRAMES GO IN THE BUILD TREE AND NOT IN mktemp -d. The engine's PNG writer stores rather
+# than deflates, so three hundred frames at 960x540 are about half a gigabyte — more than a tmpfs
+# /tmp on many machines will hold. They are written under the build directory and deleted when the
+# recipe finishes, which is the same lifetime `mktemp -d` would have given them and not the same
+# filesystem.
+#
+# IT NEEDS TWO THINGS THE REPOSITORY DOES NOT HAVE. A graphics device, and the four Mixamo exports —
+# `Breathing Idle.fbx`, `Walking.fbx`, `Running.fbx` and `Dying Backwards.fbx` — which are 1 to 17 MB
+# each, are not redistributable, and live wherever `--sources` says. Without either, the program says
+# which one is missing and writes nothing. That is why this is a recipe a person runs and not a test,
+# exactly as `just capture-virtual-geometry` above is.
+
+# Import four FBX files, play idle->walk->run->die, and encode the video. Usage: just capture-animated-character [--profile <p>] [--sources <dir>] [--seconds <s>] [--width <n>] [--height <n>] [--fps <n>]
+capture-animated-character *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/09b-animated-character/cy_sample_animated-character"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-animated-character: ${sample} was not built. It is not declared with" >&2
+        echo "  -D CY_ANIMATION=OFF, which removes the animation runtime this artefact imports into." >&2
+        exit 1
+    fi
+
+    fps="${CY_CAPTURE_FPS:-30}"
+    work="${build_dir}/animated-character"
+    rm -rf "${work}"
+    mkdir -p "${work}/frames"
+    trap 'rm -rf "${work}/frames"' EXIT
+
+    echo "==> capture     animated-character  fps=${fps}"
+    "${sample}" --frames "${work}/frames" --still "${work}/still.png" --fps "${fps}" ${rest}
+
+    echo "==> encode      animated-character"
+    python3 tools/docs/collect_animated_character.py "${work}/frames" \
+        --still "${work}/still.png" --fps "${fps}"

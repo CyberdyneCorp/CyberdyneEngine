@@ -103,3 +103,15 @@ add_subdirectory(08-vertical-slice)
 # declares nothing without CY_ANIMATION: an option that removes a subsystem must not turn into a
 # configure error naming the artefact. Its CMakeLists.txt argues the shape.
 add_subdirectory(09-multiplayer)
+# M8.d's artefact is a TENTH shape, and it is the first thing in this repository ever to draw an
+# IMPORTED mesh. samples/09b-animated-character/cy_sample_animated-character reads four Mixamo FBX
+# exports through the importer's steps 7 and 8, retargets three of the four clips onto the rig that
+# came with the mesh, compiles a four-state locomotion machine over them, evaluates a pose per fixed
+# timestep, publishes it into the GPU pose world, and skins the character with the compute dispatch
+# that reads it — then writes one PNG per frame. `just capture-animated-character` turns the
+# sequence into the video and the still this milestone commits.
+#
+# It is also the line that answers M8.d's own gate. tools/import's steps 7 and 8, the retarget
+# correspondence, the locomotion compiler and the skinning pass each landed reachable only from
+# their own suites; this is the first target that names all four.
+add_subdirectory(09b-animated-character)

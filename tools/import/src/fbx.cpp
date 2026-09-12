@@ -1,10 +1,15 @@
 #include <cy/import/fbx.h>
 
+#include <cy/import/fbx_clip.h>
+#include <cy/import/fbx_skeleton.h>
 #include <cy/import/model.h>
 
 #include <ufbx.h>
 
+#include <array>
 #include <cmath>
+#include <cstdio>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -154,7 +159,41 @@ constexpr OptionSpec kFbxOptions[] = {
 
 constexpr std::string_view kExtensions[] = {".fbx"};
 constexpr assets::AssetKind kProduces[] = {assets::AssetKind::Mesh, assets::AssetKind::Material,
-                                           assets::AssetKind::Prefab};
+                                           assets::AssetKind::Animation, assets::AssetKind::Prefab};
+
+// --- BEGIN step 8: animations (cy/import/fbx_clip.h) ---------------------------------------------
+//
+// The schema this importer declares is the table above followed by the options step 8 declares,
+// spliced into one at compile time. They live in `fbx_clip.h`, beside the code that reads them, so
+// that a change to what a setting means and a change to how it is described are one edit — and they
+// are SPLICED rather than kept as a second schema because an option a caller cannot find in the one
+// place it looks is an option that does not reach the derivation key, which `options.h` names as
+// the one defect a cook cache cannot survive.
+constexpr usize kFbxOptionCount = std::size(kFbxOptions) + std::size(kFbxAnimationOptions);
+
+[[nodiscard]] constexpr std::array<OptionSpec, kFbxOptionCount> merge_fbx_options() noexcept {
+    std::array<OptionSpec, kFbxOptionCount> merged{};
+    usize at = 0;
+    for (const OptionSpec& spec : kFbxOptions) {
+        merged[at++] = spec;
+    }
+    for (const OptionSpec& spec : kFbxAnimationOptions) {
+        merged[at++] = spec;
+    }
+    return merged;
+}
+
+constexpr std::array<OptionSpec, kFbxOptionCount> kFbxSchema = merge_fbx_options();
+// --- END step 8 ----------------------------------------------------------------------------------
+
+/// The nine of the ten model-import steps this build reaches: `kHierarchyModelSteps` plus step 7,
+/// the skeleton (cy/import/fbx_skeleton.h). M8.d.
+///
+/// Its own constant rather than a change to the shared one, which `importer.h` asks for in those
+/// words: the shared set exists "so that the day one of them grows a skeleton the other's claim
+/// does not silently grow with it". This is that day, and the glTF importer's claim is unchanged.
+constexpr ModelImportStepSet kFbxModelSteps =
+    static_cast<ModelImportStepSet>(kHierarchyModelSteps | step_bit(ModelImportStep::Skeletons));
 
 // --- ufbx glue -----------------------------------------------------------------------------------
 
@@ -335,7 +374,7 @@ struct SourceAttributes {
 }  // namespace
 
 OptionsSchema fbx_options() noexcept {
-    return OptionsSchema(Span<const OptionSpec>(kFbxOptions));
+    return OptionsSchema(Span<const OptionSpec>(kFbxSchema.data(), kFbxSchema.size()));
 }
 
 ImporterInfo FbxImporter::info() const noexcept {
@@ -348,10 +387,18 @@ ImporterInfo FbxImporter::info() const noexcept {
         "Imports an FBX file into cooked meshes with levels of detail, standard materials, "
         "collision proxies from a naming convention, and the node hierarchy the cook step turns "
         "into a prefab. Parsing is ufbx's; every step after it is shared with the glTF importer.";
-    // The eight of the ten model-import steps this build reaches. 7 and 8 — skeletons and
-    // animations — are absent for the reason gltf.h states at length, and the report NAMES them
-    // rather than warning about them. M8.a task 3.3.
-    info.steps = kHierarchyModelSteps;
+    // M8.a task 3.3, amended by M8.d, which landed step 7.
+    info.steps = kFbxModelSteps;
+    // --- BEGIN step 8: animations (cy/import/fbx_clip.h) ---
+    //
+    // ORed onto step 7's claim rather than replacing it, so the two steps that landed together
+    // cannot silently take each other's place. The claim shrinks with the build: `-D
+    // CY_ANIMATION=OFF` removes the clip codec, and an importer that still said it reached step 8
+    // would be lying to the one report a caller has.
+    info.steps = static_cast<ModelImportStepSet>(
+        info.steps |
+        (kFbxClipsAvailable ? step_bit(ModelImportStep::Animations) : ModelImportStepSet{0}));
+    // --- END step 8 ---
     return info;
 }
 
@@ -473,22 +520,137 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
         }
     }
 
-    // --- Report what is read and skipped, once, rather than per mesh.
-    if (scene->skin_deformers.count != 0 || scene->anim_stacks.count > 1 ||
-        scene->blend_deformers.count != 0) {
-        if (Status reported = out.report(
-                ImportSeverity::Warning, "skipped-rig",
-                "this file carries skins, blend shapes or animation stacks, which this build does "
-                "not import: animation-and-skinning reaches Working at M8 and there is nothing to "
-                "import a skeleton into before it. Meshes and materials came through.",
-                request.source.view());
-            !reported) {
+    SubAssetNames names;
+
+    // --- 7. The skeleton. Everything about it is in cy/import/fbx_skeleton.h; this is the whole of
+    // its call site, deliberately, because step 7 needs nothing from this file but the loaded scene
+    // and the two options it shares with step 10. `skeleton` is kept because an animation importer
+    // resolves its tracks against the joint indices this record numbers.
+    ImportedSkeleton skeleton;
+    {
+        SkeletonImportOptions skeleton_options;
+        skeleton_options.scale = state.scale;
+        skeleton_options.up_override = state.up_override;
+        if (Status imported = import_fbx_skeleton(*scene, skeleton_options, names, out, skeleton);
+            !imported) {
             ufbx_free_scene(scene);
-            return reported;
+            return imported;
         }
     }
+    // --- end of step 7.
 
-    SubAssetNames names;
+    // --- BEGIN step 8: animations (cy/import/fbx_clip.h) ---------------------------------------
+    //
+    // Indexed against step 7's joints BY NAME, which is the only identity the two steps share: a
+    // clip's tracks address a joint by index, and the index that means anything is the one the
+    // skeleton record numbered. An empty list makes step 8 derive its own table, which is what an
+    // FBX with animation and no rig — a camera move, a prop, a door — needs.
+    //
+    // The options are read here rather than beside the others at the top of this function because
+    // every one of them belongs to step 8 alone: reading them where they are used keeps `fbx.cpp`'s
+    // share of animation import to this one block.
+    FbxClipReport clips;
+    {
+        const auto animation_option = [&](std::string_view name) noexcept {
+            return request.option(state.options, name);
+        };
+        Expected<OptionValue, Error> enabled = animation_option("import-animations");
+        Expected<OptionValue, Error> rate = animation_option("animation-sample-rate");
+        Expected<OptionValue, Error> reduction = animation_option("animation-key-reduction");
+        Expected<OptionValue, Error> translation_error =
+            animation_option("animation-translation-tolerance-mm");
+        Expected<OptionValue, Error> rotation_error =
+            animation_option("animation-rotation-tolerance-degrees");
+        Expected<OptionValue, Error> root_motion = animation_option("animation-root-motion");
+        if (!enabled || !rate || !reduction || !translation_error || !rotation_error ||
+            !root_motion) {
+            ufbx_free_scene(scene);
+            return fail(ErrorCode::Internal,
+                        "the FBX importer's animation option schema is inconsistent");
+        }
+
+        FbxClipOptions clip_options;
+        clip_options.import_animations = enabled.value().as_bool();
+        clip_options.scale = state.scale;
+        clip_options.z_up_override = state.up_override == "z-up";
+        clip_options.sample_rate = static_cast<f32>(rate.value().as_float());
+        clip_options.key_reduction = reduction.value().as_bool();
+        clip_options.translation_tolerance_mm =
+            static_cast<f32>(translation_error.value().as_float());
+        clip_options.rotation_tolerance_degrees =
+            static_cast<f32>(rotation_error.value().as_float());
+        clip_options.root_motion = root_motion.value().as_text();
+
+        std::vector<std::string_view> joint_names;
+        joint_names.reserve(skeleton.joints.size());
+        for (const ImportedJoint& joint : skeleton.joints) {
+            joint_names.emplace_back(joint.name);
+        }
+        if (Status imported = import_fbx_animations(
+                *scene, clip_options,
+                Span<const std::string_view>(joint_names.data(), joint_names.size()),
+                request.source.view(), names, out, clips);
+            !imported) {
+            ufbx_free_scene(scene);
+            return imported;
+        }
+    }
+    // --- end of step 8.
+
+    // --- What this import STILL did not produce, named rather than implied.
+    //
+    // THE CONDITION THIS REPLACES NEVER FIRED FOR THE FILE THAT NEEDED IT. It read
+    // `anim_stacks.count > 1` — strictly greater than one — beside two `!= 0`s, so a file with
+    // exactly ONE animation stack, no skin and no blend shape satisfied none of its three
+    // disjuncts and got no diagnostic at all. That is precisely the shape of an animation-only
+    // export from a character library: it imported to a prefab, in silence, with the animation the
+    // artist exported dropped and nobody told. A skinned character warned only incidentally,
+    // because it also carried a skin.
+    //
+    // It is also computed from what this import ACTUALLY produced rather than from what the format
+    // can hold, which is the second half of the same fix: warning that animation was skipped in a
+    // build that just imported four clips would be a diagnostic nobody could act on, and one a
+    // reader learns to ignore. Skins and blend shapes are genuinely absent; animation is named only
+    // when the file has some and none came through AND nothing more specific has already said why —
+    // a stack that animates nothing, a rig over the joint cap, a bake that failed and a build
+    // without the clip codec each report themselves, by name.
+    {
+        const bool skipped_skins = scene->skin_deformers.count != 0;
+        const bool skipped_blend_shapes = scene->blend_deformers.count != 0;
+        const bool skipped_animation = kFbxClipsAvailable && scene->anim_stacks.count != 0 &&
+                                       clips.clips == 0 && clips.constant_stacks == 0 &&
+                                       !clips.too_many_joints;
+        std::string what;
+        const auto name_one = [&what](std::string_view item) {
+            what += what.empty() ? "" : ", ";
+            what += item;
+        };
+        if (skipped_skins) {
+            name_one("skins");
+        }
+        if (skipped_blend_shapes) {
+            name_one("blend shapes");
+        }
+        if (skipped_animation) {
+            name_one("animation");
+        }
+        if (!what.empty()) {
+            // Measured against `ImportDiagnostic::kDetailCapacity`, which the sentence this
+            // replaces overran by 38 bytes — so its last clause, "Meshes and materials came
+            // through", had never reached a report.
+            char detail[ImportDiagnostic::kDetailCapacity] = {};
+            (void)std::snprintf(detail, sizeof(detail),
+                                "this file carries %s, which this import did not produce; "
+                                "everything else in it came through",
+                                what.c_str());
+            if (Status reported = out.report(ImportSeverity::Warning, "skipped-rig", detail,
+                                             request.source.view());
+                !reported) {
+                ufbx_free_scene(scene);
+                return reported;
+            }
+        }
+    }
 
     // --- 9. Materials.
     std::vector<std::string> material_names;

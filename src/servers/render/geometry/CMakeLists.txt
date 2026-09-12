@@ -30,6 +30,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/resources.cpp
+        src/skin_dispatch.cpp
         src/skinning.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::servers-render)

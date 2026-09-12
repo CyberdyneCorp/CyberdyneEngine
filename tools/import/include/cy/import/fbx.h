@@ -28,15 +28,27 @@
 // override — and `test_fbx.cpp` asserts the ordinary case rather than trusting the option.
 //
 // ================================================================================================
-// WHAT IS NOT IMPLEMENTED, AND WHY IT IS THE SAME LIST AS glTF's
+// WHAT IS NOT IMPLEMENTED, AND WHAT STOPPED BEING ON THAT LIST AT M8.d
 // ================================================================================================
 //
-// Steps 7, 8 and 9 of the ten — skeletons with bone LOD and profile remapping, animations with
-// error-bounded compression and retargeting, and material extraction as separately editable assets
-// — are absent here for exactly the reason `gltf.h` gives: `animation-and-skinning` reaches Working
-// at M8 and there is nothing to import a skeleton INTO before it. An FBX carrying a rig produces
-// its meshes and materials and a diagnostic naming what was skipped, so a project importing a
-// character learns that its rig did not come through rather than discovering it in the editor.
+// STEP 7 — skeletons, with bone levels of detail derived and the humanoid profile mapped — IS HERE,
+// in `cy/import/fbx_skeleton.h`. It was absent through M8.a for the reason `gltf.h` gives:
+// `animation-and-skinning` reaches Working at M8 and there was nothing to import a skeleton INTO
+// before it. M8.b landed `cy/animation/skeleton.h`, so the blocker is gone and this importer's
+// declared step set says so — the glTF importer's is unchanged, and the shared constant in
+// `importer.h` exists precisely so one importer's claim does not grow with the other's.
+//
+// Step 8 landed beside step 7: animation curves are sampled into `cy::animation::Clip` through the
+// quantised codec, so an FBX carrying a take now produces it rather than dropping it silently. Step
+// 9 — material extraction as separately editable assets — remains absent.
+//
+// SKINNED MESH VERTICES ARE THE HOLE THAT REMAINS, and it is worth naming here rather than in a
+// roadmap file: a skeleton and its clips import, but `MeshData` still carries no joint-index or
+// joint-weight arrays and `write_cooked_mesh` has no attribute bit for them. So the rig arrives and
+// the vertices are not bound to it. A project skinning an imported character has to supply weights
+// from somewhere else, which is exactly what `samples/09b-animated-character` does and says it
+// does. An FBX carrying one still reports a diagnostic naming what was skipped, so this is learned
+// at import rather than discovered in the editor.
 //
 // USD remains absent. `asset-import-pipeline` makes it "an optional, tool-time-only importer" and
 // `thirdparty-dependencies` calls OpenUSD "a large dependency, so editor and cooker only"; it is

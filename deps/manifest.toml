@@ -310,7 +310,7 @@ feature = ""
 system_package = false
 cmake_target = "ufbx"
 source_subdir = ""
-interface = "cy::import::FbxImporter in tools/import/, the only translation unit that names a ufbx_ symbol"
+interface = "cy::import::FbxImporter in tools/import/ — src/fbx.cpp and src/fbx_skeleton.cpp, the only translation units that name a ufbx_ symbol"
 scope = "tool-time"
 justification = "FBX is a closed format whose several binary and ASCII generations are only tractable through a maintained parser, and `thirdparty-dependencies` names this one. It is a single C file with no dependencies, so the cost of carrying it is the cost of compiling it once. Offered as MIT or Unlicense and taken under MIT."
 

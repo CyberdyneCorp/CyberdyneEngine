@@ -92,13 +92,15 @@ inline constexpr std::string_view kCollisionSubAssetPrefix = "collision/";
 /// | Profile           | Keeps                                                    |
 /// |-------------------|----------------------------------------------------------|
 /// | `Client`          | Everything an importer produces                           |
-/// | `DedicatedServer` | Prefabs, collision meshes, and nothing else this pipeline produces |
+/// | `DedicatedServer` | Prefabs, collision meshes, skeletons and clips, and nothing else         |
 /// | `Editor`          | Everything                                                |
 ///
 /// A `DedicatedServer` cook drops textures, materials and render meshes — "Textures, shaders,
 /// high-resolution meshes, audio, VFX assets, UI assets" — and keeps the prefab, because the
-/// hierarchy IS the gameplay data, and the colliders, because that is the subset the requirement
-/// names. Levels of detail go with the render mesh they reduce.
+/// hierarchy IS the gameplay data, the colliders, because that is the subset the requirement names,
+/// and `AssetKind::Animation`, because this profile's own description names "the animation data
+/// gameplay depends on" and a server integrates root motion and resolves hits against bones.
+/// Levels of detail go with the render mesh they reduce.
 [[nodiscard]] bool profile_retains(CookProfile profile, assets::AssetKind kind,
                                    std::string_view sub_asset_name) noexcept;
 

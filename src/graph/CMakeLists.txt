@@ -23,6 +23,13 @@
 # one per consumer, each to the form its own specification names, and none of them interprets a
 # graph at runtime.
 #
+# `locomotion.cpp` is the one file here that AUTHORS a graph rather than compiling one: the
+# four-state idle/walk/run/die machine, written as the nodes `lower_pose.cpp` understands and handed
+# to `compile_pose()`. It exists because `animation-and-skinning` allows no graph compiler in the
+# runtime and the editor cannot yet save an animation graph, so an engine with four imported clips
+# and no authored asset would otherwise have no way to reach a `PoseProgram` at all. It is not a
+# second compiler — see src/graph/README.md.
+#
 # `src/rendering/material/` IS NOT TOUCHED BY THIS MODULE and must not be. It is M7's closed work,
 # the open operation table would invalidate its cook keys, and re-testing it mid-milestone buys
 # nothing. Its criterion here is an ANCHOR instead: `tests/anchor/` expresses the material op table
@@ -44,6 +51,7 @@ cy_add_module(
         src/cybergraph.cpp
         src/emit.cpp
         src/expr.cpp
+        src/locomotion.cpp
         src/lower_behaviour.cpp
         src/lower_camera.cpp
         src/lower_pose.cpp

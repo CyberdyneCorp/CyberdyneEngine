@@ -198,7 +198,7 @@ regeneration needs them, and `just generate-check` is what notices.
 - **Licence**: MIT
 - **Licence text**: [`LICENSE`](https://github.com/ufbx/ufbx/blob/a63ff0a47485328880b3300e7bcdf01413343a45/LICENSE), and
   `LICENSE` at the root of the fetched source in any configured build tree
-- **Behind**: cy::import::FbxImporter in tools/import/, the only translation unit that names a ufbx_ symbol
+- **Behind**: cy::import::FbxImporter in tools/import/ — src/fbx.cpp and src/fbx_skeleton.cpp, the only translation units that name a ufbx_ symbol
 - **Included when**: always
 - **Linked into**: the editor and the cooker only
 - **Why integrated rather than built**: FBX is a closed format whose several binary and ASCII generations are only tractable through a maintained parser, and `thirdparty-dependencies` names this one. It is a single C file with no dependencies, so the cost of carrying it is the cost of compiling it once. Offered as MIT or Unlicense and taken under MIT.

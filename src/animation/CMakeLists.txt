@@ -52,6 +52,7 @@ cy_add_module(
         src/lod.cpp
         src/pose_world.cpp
         src/retarget.cpp
+        src/retarget_build.cpp
         src/skeleton.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-reflect

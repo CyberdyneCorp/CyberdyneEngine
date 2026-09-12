@@ -21,7 +21,10 @@
 #                       subject IS the repeated evaluation: making it cheap enough for the unit
 #                       tier's millisecond would mean measuring something else. The retarget BAKE is
 #                       here for the same reason and was moved here after being measured: at half
-#                       the unit budget it spent 0.73 ms of 0.50 ms, and it is a cook.
+#                       the unit budget it spent 0.73 ms of 0.50 ms, and it is a cook. M8.d's
+#                       crossing of three separately exported rigs onto one character is the same
+#                       work three more times over a twenty-eight joint skeleton, so it is here and
+#                       not beside the correspondence's own unit cases.
 #
 #   animation_teardown  integration, and hard rule 4's case. Pose worlds and batches created and
 #                       destroyed with work in flight and four spinner threads holding the cores. A
@@ -57,6 +60,7 @@ function(cy_animation_declare_tests)
             "${tests_dir}/test_ik.cpp"
             "${tests_dir}/test_lod.cpp"
             "${tests_dir}/test_retarget.cpp"
+            "${tests_dir}/test_retarget_build.cpp"
         DEPENDENCIES cy::animation)
 
     # The pose world's handoff is asserted against the module that consumes it rather than against a
@@ -67,6 +71,7 @@ function(cy_animation_declare_tests)
         KIND integration
         SOURCES
             "${tests_dir}/test_bake.cpp"
+            "${tests_dir}/test_retarget_exports.cpp"
             "${tests_dir}/test_evaluate.cpp"
             "${tests_dir}/test_pose_world.cpp"
         DEPENDENCIES cy::animation cy::servers-render-geometry)

@@ -18,6 +18,8 @@
 *.otf  binary
 *.woff binary
 *.woff2 binary
+# A committed video: M8.d's artefact is a DEFORMATION, and no still can carry one.
+*.mp4  binary
 *.wav  binary
 *.ogg  binary
 *.mp3  binary

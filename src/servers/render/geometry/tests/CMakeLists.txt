@@ -32,6 +32,7 @@ function(cy_render_geometry_declare_tests)
         KIND unit
         SOURCES
             "${tests_dir}/test_skinning.cpp"
+            "${tests_dir}/test_skin_dispatch.cpp"
             "${tests_dir}/test_resources.cpp"
         DEPENDENCIES cy::servers-render-geometry)
 

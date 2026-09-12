@@ -29,6 +29,22 @@
 #
 # Sources are listed explicitly and never globbed: a file this list does not name is compiled by
 # nothing, which reads in a review exactly like a file that passes.
+#
+# STEP 8 — ANIMATIONS — DEPENDS ON cy::animation, AND CONDITIONALLY. `animation-and-skinning`
+# requires its runtime to be removable, and `-D CY_ANIMATION=OFF` removes src/animation/ from the
+# build entirely: there is then no `Clip` to author and no codec to compress with. So the dependency
+# and the definition that reveals it are added only when the runtime is there, and src/fbx_clip.cpp
+# compiles either way — reporting that step 8 was not reached instead of pretending it was. The
+# definition is PUBLIC because a test, and a tool that inspects a package, needs the same answer.
+set(cy_import_animation_dependencies "")
+set(cy_import_animation_definitions "")
+if(CY_ANIMATION)
+    set(cy_import_animation_dependencies cy::animation)
+    # The keyword travels with its value, so that an empty list expands to nothing at all rather
+    # than to a keyword cy_add_module() would refuse for having been given no value.
+    set(cy_import_animation_definitions PUBLIC_DEFINITIONS CY_IMPORT_ANIMATION=1)
+endif()
+
 cy_add_module(
     NAME cy_import
     LAYER tools
@@ -36,6 +52,8 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/fbx.cpp
+        src/fbx_clip.cpp
+        src/fbx_skeleton.cpp
         src/gltf.cpp
         src/importer.cpp
         src/json.cpp
@@ -52,14 +70,16 @@ cy_add_module(
         src/unwrap.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    ${cy_import_animation_definitions}
     PUBLIC_DEPENDENCIES cy::core-assets cy::core-base cy::core-memory cy::core-values cy::core-math
                         cy::core-jobs
     # PRIVATE, and that is the isolation `thirdparty-dependencies` requires rather than a
     # convention: a consumer of cy::import inherits neither ufbx.h nor xatlas.h, so a translation
-    # unit outside src/fbx.cpp and src/unwrap.cpp cannot name one of their types even by accident.
+    # unit outside src/fbx.cpp, src/fbx_skeleton.cpp and src/unwrap.cpp cannot name one of their
+    # types even by accident.
     # deps/manifest.toml records those two files as the interface, and this line is what makes the
     # record true.
-    PRIVATE_DEPENDENCIES cy::dep::ufbx cy::dep::xatlas)
+    PRIVATE_DEPENDENCIES cy::dep::ufbx cy::dep::xatlas ${cy_import_animation_dependencies})
 
 cy_add_module(
     NAME cy_import_cli

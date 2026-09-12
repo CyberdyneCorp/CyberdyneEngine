@@ -458,6 +458,60 @@ struct Compilation {
 
 [[nodiscard]] Expected<PoseValue, Error> lower_value(Compilation& state, NodeKey node) noexcept;
 
+/// The `pose.clip` branch of `lower_value`, lifted out because it is the only one that mints a
+/// `ClipRef` and the only one with a table to deduplicate against — the rest of that function is a
+/// chain of one-line assignments, and reading them together made the chain hard to see.
+[[nodiscard]] Status lower_clip(Compilation& state, NodeKey node,
+                                PoseInstruction& instruction) noexcept {
+    PoseProgram& program = *state.program;
+    instruction.op = PoseOp::SampleClip;
+    const Literal* clip = state.graph->property(node, Name::intern("clip"));
+    const Literal* duration = state.graph->property(node, Name::intern("duration"));
+    ClipRef reference;
+    reference.name = clip != nullptr ? clip->text : Name{};
+    reference.duration = duration != nullptr ? duration->value.x : 1.0F;
+    // `animation-and-skinning`'s node table: "Clip | Plays a clip with speed and LOOP CONTROL". A
+    // `ClipRef` is the whole of what a compiled program says about a clip, so if the loop mode is
+    // not authored here the runtime has nowhere else to read it from — and the difference is not
+    // cosmetic: a death or a hit reaction that wraps returns the character to the moment it
+    // started. Absent, the property means the usual case, a looping locomotion clip, which is what
+    // this field already defaulted to.
+    const Literal* loop = state.graph->property(node, Name::intern("loop"));
+    reference.looping = loop == nullptr || loop->value.mask != 0;
+
+    Array<ClipRef>& clips = PoseProgramAccess::clips(program);
+    instruction.clip = static_cast<u16>(clips.size());
+    for (usize index = 0; index < clips.size(); ++index) {
+        if (clips[index].name != reference.name) {
+            continue;
+        }
+        instruction.clip = static_cast<u16>(index);
+        // ONE `ClipRef` PER CLIP NAME, so two nodes naming one clip have to agree about how it
+        // plays. Keeping the first silently would make the answer depend on the order states
+        // happened to be numbered in, which is a property of the node keys and not of anything the
+        // author decided.
+        if (clips[index].looping != reference.looping ||
+            clips[index].duration != reference.duration) {
+            Diagnostic conflict;
+            conflict.severity = Severity::Warning;
+            conflict.node = node;
+            conflict.detail = reference.name;
+            conflict.message =
+                "this clip is already referenced with a different duration or loop mode, and a "
+                "compiled program carries one reference per clip: the first one is what it keeps";
+            state.sink->report(conflict);
+        }
+    }
+    if (instruction.clip == clips.size()) {
+        if (Status pushed = clips.push_back(reference); !pushed) {
+            return pushed;
+        }
+    }
+    const Literal* time = state.graph->property(node, Name::intern("time_parameter"));
+    instruction.time_param = intern_parameter(program, time != nullptr ? time->text : Name{});
+    return ok();
+}
+
 [[nodiscard]] Expected<PoseValue, Error> lower_input(Compilation& state, NodeKey node,
                                                      const char* pin_name) noexcept {
     const NodeKey source = source_of(*state.graph, node, pin_name);
@@ -499,26 +553,9 @@ Expected<PoseValue, Error> lower_value(Compilation& state, NodeKey node) noexcep
     if (type == "pose.ref") {
         instruction.op = PoseOp::RefPose;
     } else if (type == "pose.clip") {
-        instruction.op = PoseOp::SampleClip;
-        const Literal* clip = state.graph->property(node, Name::intern("clip"));
-        const Literal* duration = state.graph->property(node, Name::intern("duration"));
-        ClipRef reference;
-        reference.name = clip != nullptr ? clip->text : Name{};
-        reference.duration = duration != nullptr ? duration->value.x : 1.0F;
-        Array<ClipRef>& clips = PoseProgramAccess::clips(program);
-        instruction.clip = static_cast<u16>(clips.size());
-        for (usize index = 0; index < clips.size(); ++index) {
-            if (clips[index].name == reference.name) {
-                instruction.clip = static_cast<u16>(index);
-            }
+        if (Status lowered = lower_clip(state, node, instruction); !lowered) {
+            return make_unexpected(lowered.error());
         }
-        if (instruction.clip == clips.size()) {
-            if (Status pushed = clips.push_back(reference); !pushed) {
-                return make_unexpected(pushed.error());
-            }
-        }
-        const Literal* time = state.graph->property(node, Name::intern("time_parameter"));
-        instruction.time_param = intern_parameter(program, time != nullptr ? time->text : Name{});
     } else if (type == "pose.blend" || type == "pose.blend_mask" || type == "pose.additive" ||
                type == "pose.layer") {
         instruction.op = PoseOp::Layer;
@@ -627,6 +664,25 @@ void finish_digest(PoseProgram& program) noexcept {
     for (const Transition& transition : program.transitions()) {
         digest = hash_u64(digest, transition.target_state);
         digest = hash_bytes(digest, &transition.duration, sizeof(transition.duration));
+        // THE WHOLE RULE, not only where the transition goes and how long it takes. Which parameter
+        // opens it, what it outranks and whether it can be interrupted are what `advance` reads
+        // every frame, so two programs that differ in them are two different programs.
+        digest = hash_u64(digest, transition.condition_param);
+        digest = hash_u64(digest, (static_cast<u64>(transition.priority) << 8U) |
+                                      static_cast<u64>(transition.interruption));
+    }
+    // THE CLIPS AND THE PARAMETERS ARE PART OF THE PROGRAM'S MEANING. An instruction records the
+    // INDEX of the clip it samples and the index of the parameter it reads, and an index says
+    // nothing about which clip or which parameter: without these two loops a program that walks and
+    // a program that sprints hash the same, and a cook keyed on the digest would serve one where
+    // the other was asked for.
+    for (const ClipRef& clip : program.clips()) {
+        digest = hash_text(digest, clip.name.text());
+        digest = hash_bytes(digest, &clip.duration, sizeof(clip.duration));
+        digest = hash_u64(digest, clip.looping ? 1U : 0U);
+    }
+    for (const Name& parameter : program.parameters()) {
+        digest = hash_text(digest, parameter.text());
     }
     PoseProgramAccess::set_digest(program, digest);
 }

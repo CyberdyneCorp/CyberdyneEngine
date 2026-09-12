@@ -22,6 +22,7 @@ So this module is three separable layers, and the middle one is smaller than the
 | The authoring layer | `cybergraph.h`, `text.h`, `merge.h`, `audit.h` | Nodes, typed pins, typed connections, stable identity, layout as a side table, a deterministic textual source, subgraphs, semantic diff and three-way merge, versioning and migration, opaque preservation, node- and pin-precise diagnostics, the debug map, capability sets and the determinism audit. **Every consumer adopts it.** |
 | The expression core | `expr.h`, `passes.h`, `emit.h` | A hash-consed pure-expression SSA DAG whose identity is a content hash — `src/rendering/material/`'s IR generalised by an open type lattice, an open operation table, declared roots and a declared phase boundary. **Only the consumers whose values are pure expressions use it.** |
 | One lowering per consumer | `lower_script.h`, `lower_pose.h`, `lower_behaviour.h`, `lower_camera.h` | The form each consumer's own specification names. All compiling; none interpreting. |
+| One graph the engine authors itself | `locomotion.h` | The four-state idle/walk/run/die machine, written as `pose.clip` / `pose.state` / `pose.transition` nodes and handed to `compile_pose()`. Not a second compiler: the output is the `PoseProgram` an artist's graph would have produced. |
 
 `lower_script.h` carries **both execution backends** `visual-scripting` requires from one
 intermediate representation — the bytecode register machine in `lower_script.cpp` and the
@@ -39,6 +40,31 @@ they agree effect for effect rather than only on the outcome.
 | `camera-system` | `lower_camera.h` — **on the expression core** | Every rig node is a pure function of its inputs. It is the first user of the open type lattice, of declared roots and of the phase boundary |
 | `material-compiler` | `src/rendering/material/` — **unchanged** | M7's closed work. See below |
 | `vfx-system`, `sequencing-and-cinematics` | M8.c | Deferred with the rest of that milestone |
+
+## A graph the engine authors, because the editor cannot yet save one
+
+`compile_pose()` is the only way a `PoseProgram` is ever populated — its one mutator is private to
+`lower_pose.cpp`, and `animation-and-skinning` requires it that way: "compilation SHALL occur at cook
+time; the runtime SHALL contain no graph compiler". That leaves everything the engine wants to do
+before an animation-graph asset exists — four imported clips and a machine to sequence them — with
+no way in.
+
+`locomotion.h` writes that machine as nodes. Four states, seven transitions, every one of them
+blended: idle -> walk -> run and back down through the walk, and any of the three into a terminal
+`die`. Three decisions in it are worth knowing before reading the code, and the header argues each
+one at length: **there is no `run -> idle` edge** (a character decelerates through the walk, because
+a two-hundred-millisecond blend out of a sprint reads as the run being deleted); **death outranks
+locomotion and cannot be outranked** (`kDeathPriority` against `kLocomotionPriority`, with the
+locomotion edges admitting a higher-priority interruption and the death edges admitting none); and
+**a blend duration of zero is refused rather than written**, because `lower_pose.cpp` reads a zero
+duration as a cut and the pop it produces is silent.
+
+`die` not looping is two separate facts and the builder owes both: the state has no outgoing
+transition, and its `ClipRef::looping` is false so `clip_time()` clamps the clock at the last frame
+instead of wrapping it. The second one is why `pose.clip` carries a `loop` property at all —
+`animation-and-skinning`'s node table says "Clip | Plays a clip with speed and **loop control**", a
+`ClipRef` is the whole of what a compiled program says about a clip, and until M8.d the field was
+compiled-in dead data that was always true.
 
 ## `src/rendering/material/` is not touched, and the anchor is why
 
@@ -78,6 +104,14 @@ every process, and to none at all reproducibly under `--profile release`.
 `samples/08-vertical-slice` found it by compiling one graph three times; M8.b's closing gate fixed
 it.
 
+`PoseProgram::digest()` had the mirror-image defect, found at M8.d and fixed with it: it closed over
+what each instruction *indexed* and never over what the index *named*. The clips a program samples,
+the parameters it reads, and a transition's condition, priority and interruption rule were all
+outside the hash, so a walking machine and a sprinting machine digested identically and a cook keyed
+on it would serve either for the other. The regression case builds two programs differing in one
+clip name, and three differing in one transition property, and was watched to go red against the old
+`finish_digest`.
+
 The rule the fix leaves behind, because it is not specific to this struct:
 
 - **`script::hash_constant` hashes the five fields.** Nothing here may hash a `Value` as an object.
@@ -112,4 +146,4 @@ The rule the fix leaves behind, because it is not specific to this struct:
 | Suite | Kind | Subject |
 |---|---|---|
 | `unit.cybergraph` | unit | The authoring layer: identity, typed pins, the textual round trip, diff and merge, migration, the audit |
-| `integration.graph_compiler` | integration | The expression core, the anchor, and the four lowerings. Integration because a case here runs the optimisation pipeline to a fixed point over a 26-node material several times and emits its program — the shape M7's own suite learnt does not fit the unit tier's millisecond in a Debug configuration |
+| `integration.graph_compiler` | integration | The expression core, the anchor, the four lowerings, and the locomotion graph the animation lowering is asked to compile. Integration because a case here runs the optimisation pipeline to a fixed point over a 26-node material several times and emits its program — the shape M7's own suite learnt does not fit the unit tier's millisecond in a Debug configuration |

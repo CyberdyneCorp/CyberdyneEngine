@@ -11,7 +11,8 @@
 #                file, no device and no world.
 #
 #   graph_compiler
-#                the expression core, the anchor, and the four consumer lowerings. INTEGRATION, and
+#                the expression core, the anchor, the four consumer lowerings, and the locomotion
+#                graph those lowerings are asked to compile. INTEGRATION, and
 #                deliberately: a case here runs the optimisation pipeline to a fixed point over a
 #                26-node material several times and emits its program, and the material compiler's
 #                own suite learnt at M7 that exactly this shape does not fit the unit tier's
@@ -55,6 +56,7 @@ function(cy_graph_declare_tests)
             "${cy_graph_tests_dir}/anchor/material_anchor_graph.cpp"
             "${cy_graph_tests_dir}/test_anchor.cpp"
             "${cy_graph_tests_dir}/test_expr.cpp"
+            "${cy_graph_tests_dir}/test_locomotion.cpp"
             "${cy_graph_tests_dir}/test_lowering.cpp"
         DEPENDENCIES cy::graph)
 endfunction()

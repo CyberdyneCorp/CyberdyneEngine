@@ -44,9 +44,10 @@ Nothing under `src/animation/` parses or lowers a graph.
 | `lod.h` | Animation LOD tiers, the policy that chooses one **from simulation state alone**, hysteresis, and the pose cache pose sharing runs through |
 | `ik.h` | The constraint framework: declared reads and writes, conflict detection at setup, two-bone IK and look-at, each weighted |
 | `retarget.h` | Retargeting by semantic chains, at runtime and as an offline bake |
+| `retarget_build.h` | Where a profile's joint pairs come from: the chain each standard humanoid joint belongs to, a measurement of how much two rigs have in common, and the two correspondences — joint for joint over two exports of one rig, or the twenty-two standard joints between two rigs that share only a body plan |
 | `pose_world.h` | The **GPU pose world**: current and previous bone matrices per instance, add and remove without a rebuild, derived velocities, and the upload range |
 
-## Four decisions worth knowing before changing anything here
+## Five decisions worth knowing before changing anything here
 
 ### 1. Root motion is computed in `advance()`, and that is the determinism contract
 
@@ -93,6 +94,31 @@ claiming a place in the world it has no skeleton in, and a per-skin upload carry
 belongs to the shared world. `test_pose_world.cpp` builds a descriptor from an offset the world
 actually issued and validates it, so the join is asserted from both sides.
 
+### 5. A retarget profile's pairs are derived, and a profile that maps nothing is refused
+
+`retarget.h` deliberately holds nothing but joint INDICES, because *"WHEN two skeletons use entirely
+different naming conventions THEN the retarget profile SHALL map them by chain semantics with no
+name matching"* is a property of that type. Until M8.d nothing authored the pairs, so the only
+callers were tests with them written out by hand. `retarget_build.h` is the authoring half, and it
+compares no name either — not out of purism, but because the same rig comes back as `mixamorig:Hips`
+from one export and `mixamorig1:Hips` from the next, so name equality is the one signal that fails
+on two exports of ONE rig. Shape and rest pose do not, and `compare_rigs()` measures both.
+
+Measured on the four Mixamo exports this was written for — one file with the mesh and the skin,
+three with an animation each — all four rigs are the same hierarchy, so the correspondence is joint
+for joint over all sixty-five joints and nothing is left at rest. Their REST POSES are not the same:
+they disagree by up to 6.4 mm and 29.9°, the worst of it at a finger. That difference is what the
+reconciliation absorbs, and it is not academic — the same clip bound straight to the character
+instead of retargeted puts a joint up to 0.15 m away from where the retarget puts it. Those files are
+16.7 MB and live outside the repository, so that measurement is not a committed test; the cases here
+build their rigs in code.
+
+The refusal matters as much as the mapping. A profile built from no pairs is not an error at
+runtime: `retarget_pose` writes nothing, the target keeps the reference pose it was seeded with, and
+the character stands in its bind pose through every frame of every clip with no status anywhere
+saying so. `build_retarget_profile()` therefore refuses to return one, and
+`test_retarget_build.cpp` asserts the refusal.
+
 ## What is NOT here, and is not pretended to be
 
 The M8.b row of `docs/ROADMAP.md` scopes this capability to *"Skeletons and bone LOD, clips and
@@ -125,6 +151,6 @@ does **not** gate `cy::graph`'s pose lowering, which is a compiler and belongs t
 
 | Suite | Kind | What it covers |
 |---|---|---|
-| `unit.animation` | unit | The asset model and the algebra over it: skeleton order and bone LOD, clip compression and cursored sampling, tier selection and the pose cache, constraint conflicts and the two-bone solver, retargeting and its bake |
-| `integration.animation_runtime` | integration | Compiling a graph, binding a rig, laziness, the state machine's blend, root motion across tiers and rates, batched evaluation of five hundred instances, events, and the pose world's handoff to skinning |
+| `unit.animation` | unit | The asset model and the algebra over it: skeleton order and bone LOD, clip compression and cursored sampling, tier selection and the pose cache, constraint conflicts and the two-bone solver, retargeting, the correspondence a profile is built from and its bake |
+| `integration.animation_runtime` | integration | Compiling a graph, binding a rig, laziness, the state machine's blend, root motion across tiers and rates, batched evaluation of five hundred instances, events, the pose world's handoff to skinning, and three separately exported rigs' clips baked onto one character |
 | `integration.animation_teardown` | integration | Sixty-four rounds of building and tearing down rigs, batches and pose worlds with four spinner threads holding the cores |

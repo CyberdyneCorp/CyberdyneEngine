@@ -237,6 +237,14 @@ public:
     [[nodiscard]] bool compressed() const noexcept { return compressed_; }
     [[nodiscard]] u32 track_count() const noexcept { return static_cast<u32>(tracks_.size()); }
     [[nodiscard]] Span<const TrackDesc> tracks() const noexcept { return tracks_.span(); }
+    /// The stored keys, as `compress()` left them. A track addresses its own run through
+    /// `TrackDesc::first_key` and `TrackDesc::key_count`; before compression this is empty.
+    ///
+    /// Exposed because A COOKED CLIP IS THESE BYTES. `compress()` is the only thing that can
+    /// produce the quantised form, so an import pipeline that writes a clip to disk has to be
+    /// able to read it back out — and the alternative, a `write()` on this class, would put a
+    /// file format inside the runtime that the format's own module should own.
+    [[nodiscard]] Span<const PackedKey> keys() const noexcept { return packed_.span(); }
     [[nodiscard]] Span<const ClipMarker> markers() const noexcept { return markers_.span(); }
     [[nodiscard]] Span<const ClipEvent> events() const noexcept { return events_.span(); }
     [[nodiscard]] const CompressionReport& report() const noexcept { return report_; }
