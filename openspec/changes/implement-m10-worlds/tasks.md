@@ -53,9 +53,13 @@ milestone's eight rows write into it.
 
 ## 5. `vfx-system` → Working
 
-- [ ] 5.1 Particle state resident in GPU buffers; indirect dispatch driven by GPU-maintained counts
-- [ ] 5.2 Async compute where the device exposes a queue; the GPU sort behind `BudgetLevers::sorted`
-- [ ] 5.3 The renderer kinds beyond `Sprite` and `Mesh`
+> Built, device-tested and confirmed by M10's gate, which broke each claim and watched it go red.
+> `cy::vfx-gpu` in `src/vfx/gpu/` keeps `cy::vfx` device-free, so `integration.vfx` stays headless.
+> Boxes ticked after the fact: agents do not commit, so nothing ticked them at the time.
+
+- [x] 5.1 Particle state resident in GPU buffers; indirect dispatch driven by GPU-maintained counts
+- [x] 5.2 Async compute where the device exposes a queue; the GPU sort behind `BudgetLevers::sorted`
+- [x] 5.3 The renderer kinds beyond `Sprite` and `Mesh`
 
 ## 6. The three rows M9 demoted, and the gaps it declared
 
