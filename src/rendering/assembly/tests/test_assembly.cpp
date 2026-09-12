@@ -263,7 +263,14 @@ CY_TEST_CASE("one frame reads a number out of every one of the eight modules") {
     // cy::rendering-sky — the table, rebuilt on the first frame.
     CY_CHECK(report.sky_rebuilt);
     CY_CHECK(assembly.sky().built());
-    CY_CHECK_GT(assembly.sky_irradiance().y, 0.0F);
+    // REGRESSION (M10). This is the SKY's own diffuse contribution to an upward-facing surface,
+    // not the sun's — a clear sky at noon delivers several thousand lux of it against the sun's
+    // hundred thousand — and the BAND is the assertion rather than "greater than zero": the check
+    // read zero-or-more for a whole milestone while the frame was integrating the sky from the
+    // CENTRE OF THE PLANET. See `update_sky()`, where the camera's world position is now converted
+    // into the planet-centred one the sky's own frame is written in.
+    CY_CHECK_GT(assembly.sky_irradiance().y, 2000.0F);
+    CY_CHECK_LT(assembly.sky_irradiance().y, 100000.0F);
     // cy::rendering-temporal — one frame advanced, and jitter applied in one place.
     CY_CHECK_EQ(report.temporal_frame, 1U);
     // cy::rendering-material — the table the draws index, AND the comparison between the two. The

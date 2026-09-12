@@ -10,16 +10,32 @@
 // "compiler-derived attribute layout" reach the generated code rather than stop at a report: the
 // same declaration that shrank the per-particle byte size also changed what the kernel emits.
 //
-// Every attribute is one `RWStructuredBuffer<uint>` addressed in 32-bit words, because a structured
-// buffer of `half` is not portable and a byte-address buffer needs a different spelling on every
-// backend. The words-per-particle count is derived from the precision and the component count, and
-// it is written into the generated comment beside the buffer so a reader can check the arithmetic.
+// Every attribute is a RANGE OF ONE shared `RWStructuredBuffer<uint>` addressed in 32-bit words,
+// because a structured buffer of `half` is not portable and a byte-address buffer needs a different
+// spelling on every backend. The words-per-particle count is derived from the precision and the
+// component count, and both it and the array's base word are written into the generated comment
+// beside the accessors so a reader can check the arithmetic.
+//
+// ================================================================================================
+// THE BINDING SET IS FIXED, AND THAT IS WHAT MAKES A DISPATCH POSSIBLE. M10 task 5.1.
+// ================================================================================================
+//
+// One shared particle buffer rather than one buffer an attribute; the counters in words of one
+// `cyVfxCounts` rather than a buffer a counter; one event ring divided into regions rather than a
+// pair of buffers a channel; the parameters unpacked from words rather than laid out by the
+// target's uniform rules. Every one of those is the same decision: the descriptor set a generated
+// kernel binds must NOT be a function of the effect, because a set layout that changed with the
+// effect could only be built by reflecting the generated module, and a reflected layout that
+// drifted from this generator would bind the wrong buffer to a kernel that still compiled.
+//
+// `<cy/vfx/gpu_layout.h>` is the contract, and `src/vfx/gpu/` is the other party to it.
 
 #include "emit_slang.h"
 
 #include "access.h"
 
 #include <cy/graph/emit.h>
+#include <cy/vfx/gpu_layout.h>
 
 #include <utility>
 
@@ -110,9 +126,9 @@ void write_component_load(TextWriter& writer, const AttributeSlot& slot, u32 com
             break;
     }
     writer.text(unpack);
-    writer.text("(cyVfxAttr_");
+    writer.text("(cyVfxParticles[cyVfxBase_");
     write_identifier(writer, slot.name.text());
-    writer.text("[base + ");
+    writer.text(" + base + ");
     writer.number(word);
     writer.text("u]");
     if (slot.precision != Precision::Float32) {
@@ -123,7 +139,8 @@ void write_component_load(TextWriter& writer, const AttributeSlot& slot, u32 com
     writer.text(")");
 }
 
-void write_attribute_accessors(TextWriter& writer, const AttributeSlot& slot) noexcept {
+void write_attribute_accessors(TextWriter& writer, const AttributeSlot& slot, u32 base_words,
+                               u32 capacity) noexcept {
     const u32 words = words_per_particle(slot);
     writer.text("// `");
     writer.text(slot.name.text());
@@ -133,12 +150,23 @@ void write_attribute_accessors(TextWriter& writer, const AttributeSlot& slot) no
     writer.number(slot.components);
     writer.text(" component(s), ");
     writer.number(slot.stride);
-    writer.text(" bytes a particle, ");
+    writer.text(" byte(s) a particle on the CPU, ");
     writer.number(words);
-    writer.text(" word(s).\n");
-    writer.text("RWStructuredBuffer<uint> cyVfxAttr_");
+    writer.text(" word(s) here.\n");
+    // ONE SHARED BUFFER, NOT ONE A PIECE. `vfx-system` asks for "a single VFX simulation world
+    // backed by SHARED PARTICLE MEMORY"; a buffer per attribute would also have made the binding
+    // set a function of the effect, and a set layout that changed with the effect cannot be built
+    // without reflecting the generated module. The base is `gpu_array_base_words` and the two are
+    // required to agree — see <cy/vfx/gpu_layout.h>, which computes it for the host.
+    writer.text("// array base = ");
+    writer.number(base_words);
+    writer.text(" word(s), capacity ");
+    writer.number(capacity);
+    writer.text(".\nstatic const uint cyVfxBase_");
     write_identifier(writer, slot.name.text());
-    writer.text(";\n");
+    writer.text(" = ");
+    writer.number(base_words);
+    writer.text("u;\n");
 
     writer.text(slang_type(slot.type));
     writer.text(" cyVfxLoad_");
@@ -178,9 +206,9 @@ void write_attribute_accessors(TextWriter& writer, const AttributeSlot& slot) no
         const bool partial = slot.precision != Precision::Float32 &&
                              (slot.components - (word * per_word)) < per_word;
         if (partial) {
-            writer.text("cyVfxAttr_");
+            writer.text("cyVfxParticles[cyVfxBase_");
             write_identifier(writer, slot.name.text());
-            writer.text("[base + ");
+            writer.text(" + base + ");
             writer.number(word);
             writer.text("u]");
         } else {
@@ -222,9 +250,9 @@ void write_attribute_accessors(TextWriter& writer, const AttributeSlot& slot) no
         writer.text("u);\n");
     }
     for (u32 word = 0; word < words; ++word) {
-        writer.text("    cyVfxAttr_");
+        writer.text("    cyVfxParticles[cyVfxBase_");
         write_identifier(writer, slot.name.text());
-        writer.text("[base + ");
+        writer.text(" + base + ");
         writer.number(word);
         writer.text("u] = w");
         writer.number(word);
@@ -257,15 +285,56 @@ void cyVfxPackLane(inout uint word, uint lane, uint bits, uint width) {
     word = (word & ~mask) | ((bits << shift) & mask);
 }
 
-// --- Per-dispatch inputs the host supplies. ---
+// --- The binding set. FIXED for every effect, which is what lets one descriptor set layout serve
+//     every generated kernel and the fixed support dispatches at the same time. The numbers are
+//     `cy::vfx::GpuBinding` in <cy/vfx/gpu_layout.h> and are spelled there once. ---
+[[vk::binding(0, 0)]] RWStructuredBuffer<uint> cyVfxParticles;
+[[vk::binding(1, 0)]] RWStructuredBuffer<uint> cyVfxAlive;
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint> cyVfxIndices;
+[[vk::binding(3, 0)]] RWStructuredBuffer<uint> cyVfxCounts;
+[[vk::binding(4, 0)]] RWStructuredBuffer<uint> cyVfxFree;
+[[vk::binding(5, 0)]] RWStructuredBuffer<uint> cyVfxParamWords;
+[[vk::binding(6, 0)]] RWStructuredBuffer<uint> cyVfxKeys;
+
+// The counter words, `cy::vfx::GpuCountWord`. Every one of them is written by a dispatch and read
+// by a dispatch: this is what "live particle counts MAINTAINED ON THE GPU" means as addresses.
+static const uint CY_VFX_COUNT_LIVE = 0u;
+static const uint CY_VFX_COUNT_FREE = 1u;
+static const uint CY_VFX_COUNT_SPAWN_REQUEST = 2u;
+static const uint CY_VFX_COUNT_SPAWN_GRANTED = 3u;
+static const uint CY_VFX_COUNT_SPAWNED = 4u;
+static const uint CY_VFX_COUNT_KILLED = 5u;
+static const uint CY_VFX_COUNT_REPORTED_LIVE = 6u;
+static const uint CY_VFX_COUNT_SORT_PASSES = 7u;
+static const uint CY_VFX_COUNT_EVENTS_BASE = 8u;
+static const uint CY_VFX_EVENT_STRIDE = 256u;
+
+// --- Per-dispatch inputs. PUSHED rather than bound, because `pass` changes between two dispatches
+//     in one command buffer and a word in device memory cannot. Matches
+//     `cy::vfx::GpuPushConstants` field for field. ---
 struct CyVfxInput {
     float dt;
     float emitter_age;
+    // Per-thread, and therefore overwritten by the entry point after it reads the block. They are
+    // members so that the pushed struct and the struct a kernel body reads are one struct.
     float particle_index;
     float spawn_index;
     float normalised_age;
+    uint pass;
+    uint capacity;
+    uint spawn_scale_fixed;
 };
-ConstantBuffer<CyVfxInput> cyVfxInput;
+[[vk::push_constant]] ConstantBuffer<CyVfxInput> cyVfxPush;
+
+// What a kernel body reads. A `static` global is per-thread in this model, which is exactly what
+// `particle_index` and `spawn_index` need to be — the CPU executor sets them per particle too, and
+// a uniform block could not have expressed that at all.
+static CyVfxInput cyVfxInput;
+
+static const uint CY_VFX_PASS_SPAWN = 0u;
+static const uint CY_VFX_PASS_INITIALISE = 1u;
+static const uint CY_VFX_PASS_UPDATE = 2u;
+static const uint CY_VFX_PASS_KEYS = 3u;
 
 // A per-particle random draw. The stream index is the authoring node's own key, so two `random`
 // nodes are two streams and one node is one value per particle per evaluation.
@@ -291,19 +360,40 @@ float cyVfxNoise(float x) {
 // generated call names the curve so a binding can replace it without the kernel changing.
 float cyVfxCurve(float t) { return saturate(t); }
 
-// An event channel's buffer and its append. The channel's declared maximum is enforced on the CPU
-// side by `EventRouter`; this is the GPU-side append, and the bound is the buffer's own size.
+// An event channel's record. The channel's declared maximum is enforced on the CPU side by
+// `EventRouter`; the GPU-side append below is bounded by BOTH that declaration and the ring's own
+// region, because a channel declared larger than the ring must not write past it.
 struct CyVfxEvent {
     uint source;
     uint depth;
     float rank;
     float payload;
 };
+[[vk::binding(7, 0)]] RWStructuredBuffer<CyVfxEvent> cyVfxEvents;
 
-// The kill and spawn sinks the roots assign into.
-RWStructuredBuffer<uint> cyVfxAlive;
-RWStructuredBuffer<uint> cyVfxSpawnCount;
-void cyVfxKill(uint particle) { cyVfxAlive[particle] = 0u; }
+// The kill sink the kill root assigns into. THE TWO COUNTERS ARE PART OF THE KILL, not bookkeeping
+// beside it.
+//
+// `CY_VFX_COUNT_KILLED` rising is what makes a falling population visible at all — a kill that did
+// not count would leave `StepReport::killed` reading zero while particles disappeared.
+//
+// `CY_VFX_COUNT_REPORTED_LIVE` falling is what makes the population the number the CPU path means
+// by one. The compaction sets it to `live + granted` BEFORE this pass runs, so without this
+// decrement it would report the population the sub-step STARTED with plus the spawn, and a run long
+// enough for particles to expire would over-count by exactly this sub-step's kills. That is not a
+// hypothetical: it is what the ninety-six-step comparison in `test_vfx_gpu_pass.cpp` caught.
+//
+// The subtraction is spelled as an addition of `0xFFFFFFFF` because `InterlockedAdd` is unsigned.
+// It cannot underflow: only a particle the compaction counted into `live`, or one the grant counted
+// into `granted`, can reach the guard above.
+void cyVfxKill(uint particle) {
+    if (cyVfxAlive[particle] != 0u) {
+        uint ignored = 0u;
+        InterlockedAdd(cyVfxCounts[CY_VFX_COUNT_KILLED], 1u, ignored);
+        InterlockedAdd(cyVfxCounts[CY_VFX_COUNT_REPORTED_LIVE], 0xFFFFFFFFu, ignored);
+    }
+    cyVfxAlive[particle] = 0u;
+}
 )";
 
 /// The Slang target. See `cy::graph::emit.h` for the split: the ORDER, the numbering and what is a
@@ -448,7 +538,7 @@ public:
             return;
         }
         if (slot == kSpawnRoot) {
-            writer.text("    cyVfxSpawnCount[0] = uint(max(");
+            writer.text("    cyVfxCounts[CY_VFX_COUNT_SPAWN_REQUEST] = uint(max(");
             view.operand(id);
             writer.text(", 0.0));\n");
             return;
@@ -585,23 +675,93 @@ private:
 /// One append per event channel this emitter raises on. The channel's declared per-frame maximum is
 /// the buffer's bound and is generated into the code, so a kernel cannot write past it — which is
 /// the GPU-side half of "exceeding either SHALL drop events ... rather than compounding".
-void write_channel(TextWriter& writer, const EventChannelDecl& channel) noexcept {
-    writer.text("RWStructuredBuffer<uint> cyVfxEventCount_");
+void write_channel(TextWriter& writer, const EventChannelDecl& channel, u32 index) noexcept {
+    // THE COUNTER IS A WORD OF `cyVfxCounts` AND THE RECORDS ARE A REGION OF ONE RING, not a pair
+    // of buffers a piece. A binding per channel would make the binding set a function of how many
+    // channels the author declared, and one set layout has to serve every effect — see the note on
+    // `write_attribute_accessors`.
+    writer.text("static const uint cyVfxChannel_");
     write_identifier(writer, channel.name.text());
-    writer.text(";\nRWStructuredBuffer<CyVfxEvent> cyVfxEvents_");
+    writer.text(" = ");
+    writer.number(index);
+    writer.text("u;\nvoid cyVfxRaise_");
     write_identifier(writer, channel.name.text());
-    writer.text(";\nvoid cyVfxRaise_");
-    write_identifier(writer, channel.name.text());
-    writer.text("(uint particle, float rank) {\n    uint slot = 0;\n    InterlockedAdd(");
-    writer.text("cyVfxEventCount_");
-    write_identifier(writer, channel.name.text());
-    writer.text("[0], 1u, slot);\n    if (slot >= ");
+    writer.text("(uint particle, float rank) {\n    uint slot = 0;\n");
+    writer.text("    InterlockedAdd(cyVfxCounts[CY_VFX_COUNT_EVENTS_BASE + ");
+    writer.number(index);
+    writer.text("u], 1u, slot);\n");
+    // BOTH BOUNDS, and the declared one first because it is the one the author reasons about.
+    // "Every event channel SHALL declare a maximum events per frame [...] Exceeding either SHALL
+    // drop events by a deterministic rank and report the overflow, rather than compounding" — the
+    // counter keeps rising past the bound, which is what makes the overflow a number the host reads
+    // rather than a silence.
+    writer.text("    if (slot >= ");
     writer.number(channel.max_events_per_frame);
-    writer.text("u) { return; }\n    CyVfxEvent raised;\n    raised.source = particle;\n");
+    writer.text("u || slot >= CY_VFX_EVENT_STRIDE) { return; }\n");
+    writer.text("    CyVfxEvent raised;\n    raised.source = particle;\n");
     writer.text("    raised.depth = 0u;\n    raised.rank = rank;\n    raised.payload = rank;\n");
-    writer.text("    cyVfxEvents_");
-    write_identifier(writer, channel.name.text());
-    writer.text("[slot] = raised;\n}\n");
+    writer.text("    cyVfxEvents[");
+    writer.number(index);
+    writer.text("u * CY_VFX_EVENT_STRIDE + slot] = raised;\n}\n");
+}
+
+/// The effect's parameter block, and the function that fills it from the bound words.
+///
+/// A `ConstantBuffer<CyVfxParams>` would put the members wherever the target's uniform layout rules
+/// put them — 16-byte alignment for a `float3` on one target, tight packing on another — while the
+/// host writes FOUR FLOATS PER PARAMETER in declaration order, which is what
+/// `SimulationWorld::write_parameters` does for the CPU path. One packing for both paths means the
+/// load is explicit and the two paths read the same words.
+void write_parameter_block(TextWriter& writer, Span<const ParameterDecl> parameters) noexcept {
+    writer.text("\n// --- The effect's parameter block. ---\nstruct CyVfxParams {\n");
+    if (parameters.empty()) {
+        // A struct with no members is not valid in every Slang target; one padding word costs
+        // nothing and keeps the declaration uniform.
+        writer.text("    float cyVfxUnused;\n");
+    }
+    for (const ParameterDecl& parameter : parameters) {
+        writer.text("    ");
+        const TypeId type = vfx_type_from_name(parameter.type);
+        writer.text(slang_type(type == kInvalidType ? static_cast<TypeId>(Float) : type));
+        writer.text(" ");
+        write_identifier(writer, parameter.name.text());
+        writer.text(";\n");
+    }
+    // UNPACKED FROM WORDS, NOT LAID OUT BY THE COMPILER. A `ConstantBuffer<CyVfxParams>` would put
+    // the members wherever the target's uniform layout rules put them — 16-byte alignment for a
+    // `float3` on one target, tight packing on another — while the host writes four floats per
+    // parameter in declaration order, which is what `SimulationWorld::write_parameters` does for
+    // the CPU path. One packing for both paths means the load is explicit and the two paths read
+    // the same words.
+    writer.text("};\nstatic CyVfxParams cyVfxParams;\nvoid cyVfxLoadParams() {\n");
+    if (parameters.empty()) {
+        writer.text("    cyVfxParams.cyVfxUnused = 0.0;\n");
+    }
+    for (usize index = 0; index < parameters.size(); ++index) {
+        const TypeId type = vfx_type_from_name(parameters[index].type);
+        const u32 components =
+            vfx_type_components(type == kInvalidType ? static_cast<TypeId>(Float) : type);
+        writer.text("    cyVfxParams.");
+        write_identifier(writer, parameters[index].name.text());
+        writer.text(" = ");
+        if (components > 1) {
+            writer.text(slang_type(type));
+            writer.text("(");
+        }
+        for (u32 component = 0; component < components; ++component) {
+            if (component != 0) {
+                writer.text(", ");
+            }
+            writer.text("asfloat(cyVfxParamWords[");
+            writer.number((static_cast<u32>(index) * 4U) + component);
+            writer.text("u])");
+        }
+        if (components > 1) {
+            writer.text(")");
+        }
+        writer.text(";\n");
+    }
+    writer.text("}\n\n");
 }
 
 /// Does any kernel of this emitter raise on `channel`? A channel nothing raises on gets no buffer,
@@ -630,21 +790,7 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
     writer.text("// different for every effect and cannot live in a shared standard library.\n");
     writer.text("// This unit imports nothing, so it compiles on its own.\n\n");
     writer.text(kHelpers);
-    writer.text("\n// --- The effect's parameter block. ---\nstruct CyVfxParams {\n");
-    if (parameters.empty()) {
-        // A struct with no members is not valid in every Slang target; one padding word costs
-        // nothing and keeps the declaration uniform.
-        writer.text("    float cyVfxUnused;\n");
-    }
-    for (const ParameterDecl& parameter : parameters) {
-        writer.text("    ");
-        const TypeId type = vfx_type_from_name(parameter.type);
-        writer.text(slang_type(type == kInvalidType ? static_cast<TypeId>(Float) : type));
-        writer.text(" ");
-        write_identifier(writer, parameter.name.text());
-        writer.text(";\n");
-    }
-    writer.text("};\nConstantBuffer<CyVfxParams> cyVfxParams;\n\n");
+    write_parameter_block(writer, parameters);
 
     writer.text("// --- The derived attribute layout. ");
     writer.number(emitter.layout().allocated_attributes());
@@ -653,6 +799,7 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
     writer.text(" elided,\n// ");
     writer.number(emitter.layout().bytes_per_particle());
     writer.text(" bytes a particle. ---\n");
+    const u32 capacity = emitter.capacity();
     for (const AttributeSlot& slot : emitter.layout().slots()) {
         if (slot.elided) {
             writer.text("// `");
@@ -660,13 +807,23 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
             writer.text("` was written and never read: not allocated.\n");
             continue;
         }
-        write_attribute_accessors(writer, slot);
+        write_attribute_accessors(writer, slot,
+                                  gpu_array_base_words(emitter.layout(), slot, capacity), capacity);
     }
 
     bool any_channel = false;
-    for (const EventChannelDecl& channel : channels) {
-        if (!raises_on(emitter, channel.name)) {
+    // THE CHANNEL'S INDEX IS ITS POSITION IN THE SYSTEM'S DECLARATION LIST, not its position among
+    // the channels this emitter happens to raise on. Two emitters of one system share the event
+    // ring, and an index that counted only one emitter's channels would have them appending into
+    // each other's region.
+    for (usize index = 0; index < channels.size(); ++index) {
+        if (!raises_on(emitter, channels[index].name)) {
             continue;
+        }
+        if (index >= kGpuMaxEventChannels) {
+            return fail(ErrorCode::OutOfRange,
+                        "vfx: an emitter raises on a channel past `kGpuMaxEventChannels`, which is "
+                        "the number of regions the GPU event ring is divided into");
         }
         if (!any_channel) {
             writer.text(
@@ -674,7 +831,7 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
                 "per-frame bounds. ---\n");
             any_channel = true;
         }
-        write_channel(writer, channel);
+        write_channel(writer, channels[index], static_cast<u32>(index));
     }
 
     Array<Name> samples(out.allocator());
@@ -683,17 +840,51 @@ Status emit_prelude(const CompiledEmitter& emitter, Span<const ParameterDecl> pa
         return collected;
     }
     if (!samples.empty()) {
-        writer.text("\n// --- One sampler per data-interface field this effect reads. ---\n");
+        // DEFINED, NOT DECLARED. A forward declaration with no definition is not a translation unit
+        // a shader front end can turn into a module, so the "self-contained" claim this file's
+        // header makes was true only for effects that sampled nothing. The body is the same answer
+        // src/vfx/README.md records for the CPU executor — "a sample of an unbound data interface
+        // reads zero [...] on both paths, at the same place in each" — and a bound interface
+        // replaces the definition rather than adding one.
+        writer.text(
+            "\n// --- One sampler per data-interface field this effect reads. Unbound here, and\n"
+            "//     an unbound interface reads zero on both paths — see src/vfx/README.md. ---\n");
     }
     for (usize index = 0; index < samples.size(); ++index) {
-        writer.text(slang_type(sample_types[index]));
+        const TypeId type = sample_types[index];
+        writer.text(slang_type(type));
         writer.text(" cyVfxSample_");
         write_identifier(writer, samples[index].text());
-        writer.text("(float x);\n");
+        writer.text("(float x) { return ");
+        writer.text(slang_type(type));
+        writer.text("(0);\n}\n");
     }
     writer.text("\n");
     return writer.status();
 }
+
+namespace {
+
+/// The body every entry point starts with: the per-thread inputs and the parameter block. Shared by
+/// the probe unit and the dispatch unit so the two cannot drift about what a kernel may read.
+void write_entry_prologue(TextWriter& writer) noexcept {
+    writer.text(
+        "    cyVfxInput = cyVfxPush;\n"
+        "    cyVfxLoadParams();\n");
+}
+
+/// The kernel of `emitter` that covers `stage`, written as a call. Null when the effect has no
+/// graph for that stage, which is legitimate: an emitter with no Update never moves.
+void write_kernel_call(TextWriter& writer, const CompiledEmitter& emitter, const VfxKernel& kernel,
+                       const char* argument) noexcept {
+    SlangTarget target(emitter, kernel);
+    target.write_entry_name(writer);
+    writer.text("(");
+    writer.text(argument);
+    writer.text(");\n");
+}
+
+}  // namespace
 
 Status emit_emitter_sources(CompiledEmitter& emitter,
                             Span<const ParameterDecl> /*parameters*/) noexcept {
@@ -727,17 +918,133 @@ Status assemble_translation_unit(const CompiledEmitter& emitter,
         writer.text("\n");
     }
 
-    // The entry point. A compute shader, because a simulation kernel is one — and because what this
-    // proves is that the generated program COMPILES and reflects, which is the same claim
-    // `src/rendering/material/`'s probe entry point makes for a material.
+    // The PROBE entry point. It calls every kernel over the raw thread index with no liveness
+    // check and no indirect argument, because what it proves is that the generated program COMPILES
+    // and reflects — the same claim `src/rendering/material/`'s probe entry point makes for a
+    // material. It is NOT the program a frame dispatches; that one is `assemble_dispatch_unit`, and
+    // the two are separate so that a cook's compile check cannot be mistaken for a simulation.
     writer.text("[shader(\"compute\")]\n[numthreads(64, 1, 1)]\nvoid ");
     writer.text(kVfxKernelEntryPoint);
     writer.text("(uint3 thread : SV_DispatchThreadID) {\n");
+    write_entry_prologue(writer);
     for (const VfxKernel& kernel : emitter.kernels()) {
-        SlangTarget target(emitter, kernel);
         writer.text("    ");
-        target.write_entry_name(writer);
-        writer.text("(thread.x);\n");
+        write_kernel_call(writer, emitter, kernel, "thread.x");
+    }
+    writer.text("}\n");
+    return writer.status();
+}
+
+Status assemble_dispatch_unit(const CompiledEmitter& emitter, Span<const ParameterDecl> parameters,
+                              Span<const EventChannelDecl> channels, Array<char>& out) noexcept {
+    out.clear();
+    if (Status prelude = emit_prelude(emitter, parameters, channels, out); !prelude) {
+        return prelude;
+    }
+    TextWriter writer(out);
+    for (const GeneratedSource& source : emitter.sources()) {
+        writer.text(source.view());
+        writer.text("\n");
+    }
+
+    // WHICH KERNEL RUNS IN WHICH PASS, and why it is decided here rather than by the host.
+    //
+    // The compiler may have FUSED Initialise with Update into one kernel, and when it has, the
+    // fused kernel is the one the spawn pass runs and the update pass has none of its own — which
+    // is exactly the CPU path's arrangement, where `run_initialise` marks a fused particle `2` so
+    // `run_update` does not advance it a second time in the same sub-step. A host that picked the
+    // kernels would have to know whether fusion happened; `kernel_for` already knows.
+    // `kernel_for` already prefers an exact-stage match over a fused one, so `update` is the plain
+    // Update kernel even when a second kernel covers Update as the fused half of Initialise. The
+    // only thing left to decide is whether the initialise the spawn pass runs has ALREADY advanced
+    // the particle, which is what the alive marker records.
+    const VfxKernel* spawn = emitter.kernel_for(Stage::Spawn);
+    const VfxKernel* initialise = emitter.kernel_for(Stage::Initialise);
+    const VfxKernel* update = emitter.kernel_for(Stage::Update);
+    const bool fused = initialise != nullptr && initialise->covers(Stage::Update);
+
+    writer.text(
+        "\n// --- The dispatch entry point. One program, four passes, selected by the pushed\n"
+        "//     `pass` word; the two that run over the population are dispatched INDIRECTLY from\n"
+        "//     counts this program and the support dispatches maintain. ---\n");
+    writer.text("[shader(\"compute\")]\n[numthreads(64, 1, 1)]\nvoid ");
+    writer.text(kVfxKernelEntryPoint);
+    writer.text("(uint3 thread : SV_DispatchThreadID) {\n");
+    write_entry_prologue(writer);
+    writer.text("    uint tid = thread.x;\n");
+
+    // Pass Spawn: one thread, and the answer is a count rather than a particle.
+    writer.text("    if (cyVfxInput.pass == CY_VFX_PASS_SPAWN) {\n");
+    if (spawn != nullptr) {
+        writer.text(
+            "        if (tid != 0u) { return; }\n        cyVfxInput.particle_index = 0.0;\n");
+        writer.text("        ");
+        write_kernel_call(writer, emitter, *spawn, "0u");
+    } else {
+        // An emitter with no Spawn graph asks for nothing, and says so in the same word the
+        // granting pass reads — rather than leaving the previous step's request standing.
+        writer.text("        if (tid == 0u) { cyVfxCounts[CY_VFX_COUNT_SPAWN_REQUEST] = 0u; }\n");
+    }
+    writer.text("        return;\n    }\n");
+
+    // Pass Initialise: indirect over what the grant pass allowed, and the slot comes off the free
+    // list the compaction built in ascending order.
+    writer.text("    if (cyVfxInput.pass == CY_VFX_PASS_INITIALISE) {\n");
+    writer.text("        if (tid >= cyVfxCounts[CY_VFX_COUNT_SPAWN_GRANTED]) { return; }\n");
+    writer.text("        uint particle = cyVfxFree[tid];\n");
+    writer.text("        cyVfxInput.particle_index = float(particle);\n");
+    writer.text("        cyVfxInput.spawn_index = float(tid);\n");
+    writer.text("        cyVfxInput.normalised_age = 0.0;\n");
+    if (initialise != nullptr) {
+        writer.text("        ");
+        write_kernel_call(writer, emitter, *initialise, "particle");
+    }
+    // ALWAYS 1, and the CPU path's `2` marker has no counterpart here on purpose.
+    //
+    // `run_update` walks one array doing both jobs, so a particle a FUSED initialise has just
+    // advanced must be marked `2` there or the same pass would advance it twice in the sub-step it
+    // was born in. The compaction that builds this path's live list runs BEFORE this pass, so a
+    // particle born now is not in this sub-step's list and cannot be advanced by it: the exclusion
+    // is structural rather than a flag, and a flag would be a second mechanism to keep in step.
+    // `vfx_compact` still promotes a `2` it finds, so a kernel cooked before this rule is safe.
+    writer.text("        cyVfxAlive[particle] = 1u;\n");
+    (void)fused;
+    writer.text("        uint ignored = 0u;\n");
+    writer.text("        InterlockedAdd(cyVfxCounts[CY_VFX_COUNT_SPAWNED], 1u, ignored);\n");
+    writer.text("        return;\n    }\n");
+
+    // Pass Keys: the sort key, read out of the attribute layout because the layout is the effect's
+    // and a fixed support dispatch cannot know it.
+    writer.text("    if (cyVfxInput.pass == CY_VFX_PASS_KEYS) {\n");
+    writer.text("        if (tid >= cyVfxCounts[CY_VFX_COUNT_LIVE]) { return; }\n");
+    writer.text("        uint particle = cyVfxIndices[tid];\n");
+    const AttributeSlot* position = emitter.layout().find(Name::intern("position"));
+    if (position != nullptr && !position->elided && position->components >= 3) {
+        // Distance to the camera, which `cyVfxInput.emitter_age`'s neighbours cannot carry — the
+        // camera-relative offset arrives in the parameter words' reserved tail. Squared distance,
+        // because a sort needs the ORDER and a square root would only cost a transcendental per
+        // particle to produce the same one.
+        writer.text("        float3 p = cyVfxLoad_position(particle);\n");
+        writer.text("        float d = dot(p, p);\n");
+        // Key ordering: far to near, so a back-to-front draw walks the array forwards. A float's
+        // bit pattern is monotonic for non-negative values, so the complement of the bits of a
+        // non-negative distance sorts descending as an unsigned integer.
+        writer.text("        cyVfxKeys[tid] = ~asuint(d);\n");
+    } else {
+        writer.text(
+            "        // This emitter has no `position` attribute; every key is equal and the sort\n"
+            "        // is order-preserving over the compaction's ascending list.\n"
+            "        cyVfxKeys[tid] = 0u;\n");
+    }
+    writer.text("        return;\n    }\n");
+
+    // Pass Update: indirect over the live count, through the compacted list.
+    writer.text("    if (tid >= cyVfxCounts[CY_VFX_COUNT_LIVE]) { return; }\n");
+    writer.text("    uint particle = cyVfxIndices[tid];\n");
+    writer.text("    cyVfxInput.particle_index = float(particle);\n");
+    if (update != nullptr) {
+        writer.text("    ");
+        write_kernel_call(writer, emitter, *update, "particle");
     }
     writer.text("}\n");
     return writer.status();

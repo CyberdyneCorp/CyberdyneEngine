@@ -14,10 +14,12 @@
 
 #include <cy/core/memory/system_allocator.h>
 #include <cy/test/test.h>
+#include <cy/vfx/gpu_layout.h>
 #include <cy/vfx/interfaces.h>
 #include <cy/vfx/runtime.h>
 
 #include <cstdio>
+#include <utility>
 
 using namespace cy;
 using namespace cy::vfx;
@@ -236,9 +238,32 @@ CY_TEST_CASE("the generated unit is self-contained: it imports nothing and decla
     // generated kernel that needed one would be a kernel blocked on a fix below this layer.
     CY_CHECK_EQ(text.find("import "), std::string_view::npos);
     CY_CHECK_NE(text.find("struct CyVfxParams"), std::string_view::npos);
-    CY_CHECK_NE(text.find("RWStructuredBuffer<uint> cyVfxAttr_position"), std::string_view::npos);
     CY_CHECK_NE(text.find(kVfxKernelEntryPoint), std::string_view::npos);
     CY_CHECK_NE(text.find("[shader(\"compute\")]"), std::string_view::npos);
+
+    // ONE SHARED PARTICLE BUFFER, AND A BASE WORD AN ATTRIBUTE — not a buffer an attribute. M10
+    // task 5.1 changed this and the reason is <cy/vfx/gpu_layout.h>: a binding set that varied with
+    // the effect could only be built by reflecting the generated module, and `src/vfx/gpu/`'s one
+    // descriptor set layout has to serve every effect and the fixed support dispatches at once.
+    CY_CHECK_EQ(text.find("RWStructuredBuffer<uint> cyVfxAttr_"), std::string_view::npos);
+    CY_CHECK_NE(text.find("RWStructuredBuffer<uint> cyVfxParticles"), std::string_view::npos);
+    CY_CHECK_NE(text.find("static const uint cyVfxBase_position"), std::string_view::npos);
+    CY_CHECK_NE(text.find("cyVfxParticles[cyVfxBase_position"), std::string_view::npos);
+
+    // THE BASE WORDS ARE THE HOST'S ARITHMETIC, SPELLED ONCE. The generator and
+    // `gpu_array_base_words` have to produce the same number or a dispatch reads the wrong array
+    // and reports success, so the number the shader carries is compared against the function the
+    // host will call rather than against a literal.
+    const AttributeLayout& layout = system->emitters()[0].layout();
+    const AttributeSlot* velocity = layout.find(Name::intern("velocity"));
+    CY_REQUIRE(velocity != nullptr);
+    char expected[96];
+    (void)std::snprintf(expected, sizeof(expected), "static const uint cyVfxBase_velocity = %uu;",
+                        gpu_array_base_words(layout, *velocity, system->emitters()[0].capacity()));
+    CY_CHECK_NE(text.find(expected), std::string_view::npos);
+
+    // The plume samples no data interface, so the sampler rule is checked by the case below rather
+    // than here — and it is checked, because before M10 it was not true.
 
     // WRITTEN OUT EVERY RUN, in the suite's own working directory. `material-compiler`'s recorded
     // gap at M7 was "the bundle carries the IR, the generated source, the cost report and the cook
@@ -251,6 +276,169 @@ CY_TEST_CASE("the generated unit is self-contained: it imports nothing and decla
         std::fprintf(stderr, "wrote vfx-kernel.slang (%zu bytes)\n", unit.size());
     }
     std::fprintf(stderr, "generated translation unit: %zu bytes\n", unit.size());
+}
+
+CY_TEST_CASE("the generated units are structurally well formed") {
+    // THE HOLE THIS CLOSES, found by breaking something else. A refactor of `emit_prelude` left a
+    // stray `}` in every generated unit; this suite went on passing sixteen of sixteen, because
+    // every case here is a substring search and none of them compiles anything. `render.vfx_gpu`
+    // caught it — on a machine with a GPU, in a suite that is not run in every profile.
+    //
+    // A brace count is not a parser and is not meant to be: what it catches is exactly the class of
+    // defect a text generator produces, which is an unbalanced emission. It costs a pass over a
+    // string, needs no shader compiler, and runs wherever this suite runs.
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    auto system = cook_plume(allocator(), sink, report, CompileOptions{});
+    CY_REQUIRE(system.has_value());
+
+    const auto balanced = [](Span<const char> text) noexcept {
+        i64 depth = 0;
+        i64 lowest = 0;
+        for (const char character : text) {
+            depth += character == '{' ? 1 : 0;
+            depth -= character == '}' ? 1 : 0;
+            lowest = depth < lowest ? depth : lowest;
+        }
+        // Both halves matter: a trailing `}` leaves the depth negative at some point even though it
+        // may end at zero, and a missing one leaves it positive at the end.
+        return depth == 0 && lowest == 0;
+    };
+
+    Array<char> probe(allocator());
+    Array<char> dispatch(allocator());
+    CY_REQUIRE(assemble_translation_unit(system->emitters()[0], system->parameters(),
+                                         system->channels(), probe)
+                   .has_value());
+    CY_REQUIRE(assemble_dispatch_unit(system->emitters()[0], system->parameters(),
+                                      system->channels(), dispatch)
+                   .has_value());
+    CY_CHECK(balanced(probe.span()));
+    CY_CHECK(balanced(dispatch.span()));
+
+    // And the prelude on its own, which is the half a generator is most likely to unbalance: the
+    // bodies come from `cy::graph`'s emitter and close what they open by construction.
+    Array<char> prelude(allocator());
+    CY_REQUIRE(
+        emit_prelude(system->emitters()[0], system->parameters(), system->channels(), prelude)
+            .has_value());
+    CY_CHECK(balanced(prelude.span()));
+
+    // THE CONTROL. A checker that answered "balanced" for everything would pass the three above
+    // just as happily, so it is shown to reject both directions of unbalance.
+    const char extra[] = "void f() {}\n}\n";
+    const char missing[] = "void f() {\n";
+    CY_CHECK(!balanced(Span<const char>(extra, sizeof(extra) - 1)));
+    CY_CHECK(!balanced(Span<const char>(missing, sizeof(missing) - 1)));
+}
+
+CY_TEST_CASE("an effect that samples a data interface still assembles a compilable unit") {
+    // THE CLAIM THE PLUME CANNOT MAKE, and the reason this case exists. `emit_prelude` used to
+    // write `float cyVfxSample_wind_field_speed(float x);` — a DECLARATION with no body — so the
+    // "self-contained translation unit" this module advertised was self-contained only for an
+    // effect that sampled nothing. The plume samples nothing, so every suite agreed.
+    //
+    // M10 task 5.1 needed the unit to become a module through `cy::shader`'s front end rather than
+    // through a hand-run `slangc`, which is where an undefined function stops being survivable. The
+    // body is the same answer the CPU executor gives an unbound interface — zero, at the same place
+    // in each — and a bound interface replaces the definition rather than adding one.
+    NodeRegistry registry(allocator());
+    DataInterfaceRegistry interfaces(allocator());
+    CY_REQUIRE(prepare(registry, interfaces).has_value());
+
+    VfxSystemAsset asset(allocator(), Name::intern("wind_probe"));
+    Emitter emitter(allocator(), Name::intern("probe"));
+    emitter.set_capacity(64);
+    AttributeDecl position;
+    position.name = Name::intern("position");
+    position.type = Name::intern("float3");
+    position.minimum = -64.0F;
+    position.maximum = 64.0F;
+    CY_REQUIRE(emitter.declare_attribute(position).has_value());
+
+    StageBuilder update(allocator(), "update");
+    const NodeKey dt = update.input(input::kDeltaTime);
+    const NodeKey drift = update.sample("wind_field", "speed", dt);
+    update.write("position", update.binary("vfx.add", update.attribute("position"),
+                                           update.make3(drift, drift, drift)));
+    CY_REQUIRE(update.ok());
+    CY_REQUIRE(emitter.set_stage(Stage::Update, update.take()).has_value());
+    CY_REQUIRE(asset.add_emitter(std::move(emitter)).has_value());
+    asset.resolve(registry);
+
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    auto system = compile_system(asset, registry, interfaces, CompileOptions{}, sink, report);
+    CY_REQUIRE(system.has_value());
+
+    Array<char> unit(allocator());
+    CY_REQUIRE(assemble_translation_unit(system->emitters()[0], system->parameters(),
+                                         system->channels(), unit)
+                   .has_value());
+    const std::string_view text(unit.data(), unit.size());
+    // The sampler is present, it is CALLED, and it has a BODY — the three together are what makes
+    // the unit a module rather than a link error.
+    CY_CHECK_NE(text.find("cyVfxSample_wind_field_speed"), std::string_view::npos);
+    CY_CHECK_NE(text.find("float cyVfxSample_wind_field_speed(float x) { return float(0);"),
+                std::string_view::npos);
+    CY_CHECK_EQ(text.find("float cyVfxSample_wind_field_speed(float x);"), std::string_view::npos);
+
+    // Written out beside the plume's, so the two can both be handed to a compiler by hand.
+    if (std::FILE* file = std::fopen("vfx-sampler.slang", "wb"); file != nullptr) {
+        (void)std::fwrite(unit.data(), 1, unit.size(), file);
+        (void)std::fclose(file);
+        std::fprintf(stderr, "wrote vfx-sampler.slang (%zu bytes)\n", unit.size());
+    }
+}
+
+CY_TEST_CASE(
+    "the dispatch unit carries the four passes a frame runs, and the probe unit does not") {
+    // `assemble_translation_unit` and `assemble_dispatch_unit` share a prelude and share the kernel
+    // bodies, and they must NOT share an entry point: the probe runs every kernel over the raw
+    // thread index to prove the program compiles, and a frame that dispatched it would advance dead
+    // slots and slots past the end of the block. Two functions, and this case is what keeps them
+    // two.
+    graph::DiagnosticSink sink(allocator());
+    CompileReport report(allocator());
+    auto system = cook_plume(allocator(), sink, report, CompileOptions{});
+    CY_REQUIRE(system.has_value());
+
+    Array<char> probe(allocator());
+    Array<char> dispatch(allocator());
+    CY_REQUIRE(assemble_translation_unit(system->emitters()[0], system->parameters(),
+                                         system->channels(), probe)
+                   .has_value());
+    CY_REQUIRE(assemble_dispatch_unit(system->emitters()[0], system->parameters(),
+                                      system->channels(), dispatch)
+                   .has_value());
+    const std::string_view probe_text(probe.data(), probe.size());
+    const std::string_view dispatch_text(dispatch.data(), dispatch.size());
+
+    // The dispatch unit reads the GPU-maintained counters and the compacted lists; the probe does
+    // not, and a probe that did would be a second simulation nobody dispatches.
+    CY_CHECK_NE(dispatch_text.find("cyVfxCounts[CY_VFX_COUNT_LIVE]"), std::string_view::npos);
+    CY_CHECK_NE(dispatch_text.find("cyVfxIndices[tid]"), std::string_view::npos);
+    CY_CHECK_NE(dispatch_text.find("cyVfxFree[tid]"), std::string_view::npos);
+    CY_CHECK_EQ(probe_text.find("cyVfxIndices[tid]"), std::string_view::npos);
+
+    // All four passes, by the names <cy/vfx/gpu_layout.h> gives them.
+    CY_CHECK_NE(dispatch_text.find("CY_VFX_PASS_SPAWN"), std::string_view::npos);
+    CY_CHECK_NE(dispatch_text.find("CY_VFX_PASS_INITIALISE"), std::string_view::npos);
+    CY_CHECK_NE(dispatch_text.find("CY_VFX_PASS_KEYS"), std::string_view::npos);
+
+    // THE SORT KEY IS READ OUT OF THE ATTRIBUTE LAYOUT, which is why the key pass is generated and
+    // not one of the fixed support dispatches: a fixed dispatch cannot know where `position` lives
+    // or what precision the compiler chose for it.
+    CY_CHECK_NE(dispatch_text.find("cyVfxLoad_position(particle)"), std::string_view::npos);
+    CY_CHECK_NE(dispatch_text.find("cyVfxKeys[tid] = ~asuint(d);"), std::string_view::npos);
+
+    std::fprintf(stderr, "probe unit %zu bytes, dispatch unit %zu bytes\n", probe.size(),
+                 dispatch.size());
+    if (std::FILE* file = std::fopen("vfx-dispatch.slang", "wb"); file != nullptr) {
+        (void)std::fwrite(dispatch.data(), 1, dispatch.size(), file);
+        (void)std::fclose(file);
+        std::fprintf(stderr, "wrote vfx-dispatch.slang (%zu bytes)\n", dispatch.size());
+    }
 }
 
 CY_TEST_CASE("two emitters compiled from one asset produce identical kernel digests") {
@@ -408,16 +596,25 @@ CY_TEST_CASE("the CPU path is DECLARED: every fall back to it carries its reason
     decision = decide_path(emitter, capability);
     CY_CHECK_EQ(decision.reason, FallbackReason::DisabledByHost);
 
-    // AND THE HONEST ONE. On a fully capable device the reason today is that this build has no
-    // compute dispatch for a VFX kernel, and the decision says so every time it is asked.
+    // AND THE ONE M10 CHANGED. Until task 5.1 this build had no compute dispatch for a VFX kernel
+    // at all, and a fully capable device still got `ExecutionPath::Cpu` with the reason saying so.
+    // `cy::vfx-gpu` is that dispatch, `device_dispatch_available()` answers true, and the decision
+    // on a capable device is now the GPU — which is the whole of what moving this row to Working
+    // means, expressed as the value a caller reads rather than as a sentence in a document.
     capability = DeviceCapability{};
     decision = decide_path(emitter, capability);
-    if (device_dispatch_available()) {
-        CY_CHECK_EQ(decision.path, ExecutionPath::Gpu);
-    } else {
-        CY_CHECK_EQ(decision.reason, FallbackReason::DeviceDispatchUnimplemented);
-        CY_CHECK(decision.is_fallback);
-    }
+    CY_CHECK(device_dispatch_available());
+    CY_CHECK_EQ(decision.path, ExecutionPath::Gpu);
+    CY_CHECK_EQ(decision.reason, FallbackReason::None);
+    CY_CHECK(!decision.is_fallback);
+
+    // AND THE HONEST ONE THAT REMAINS. A `SimulationWorld` holds no device, so an emitter it steps
+    // is on the CPU however capable the machine is — and the reason names that rather than claiming
+    // the dispatch is missing.
+    capability.indirect_dispatch = false;
+    decision = decide_path(emitter, capability);
+    CY_CHECK_EQ(decision.path, ExecutionPath::Cpu);
+    CY_CHECK(decision.is_fallback);
     std::fprintf(stderr, "path on a capable device: %s (%s)\n",
                  decision.path == ExecutionPath::Gpu ? "Gpu" : "Cpu",
                  fallback_reason_name(decision.reason));

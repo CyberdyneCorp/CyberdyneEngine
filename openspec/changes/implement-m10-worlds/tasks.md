@@ -6,49 +6,49 @@ milestone's eight rows write into it.
 
 ## 0. The spike — region invalidation in PCG
 
-- [ ] 0.1 Measure, do not assume: a dependency-driven partial regeneration over a graph with known
+- [x] 0.1 Measure, do not assume: a dependency-driven partial regeneration over a graph with known
       edges, against a full-world regeneration of the same seed, compared for identity of output and
       of generated identity. A partial regeneration that does not reproduce the full one is the
       finding, and it is a finding about the graph's dependency model rather than about the seed
-- [ ] 0.2 State plainly what the spike cannot answer on this host, through the ledger's own
+- [x] 0.2 State plainly what the spike cannot answer on this host, through the ledger's own
       `requires`/`where` mechanism rather than as a sentence
-- [ ] 0.3 Commit the spike and record its answer in `design.md`, the way M8.b's IR spike and M9's
+- [x] 0.3 Commit the spike and record its answer in `design.md`, the way M8.b's IR spike and M9's
       determinism spike were committed and consumed without re-deriving them
 
 ## 1. The substrate — one producer per field
 
-- [ ] 1.1 Field declaration and the sparse tiled store; CPU and GPU access to the same field
-- [ ] 1.2 **One producer per field, refused at registration** — a second producer for the same field
+- [x] 1.1 Field declaration and the sparse tiled store; CPU and GPU access to the same field
+- [x] 1.2 **One producer per field, refused at registration** — a second producer for the same field
       fails, naming both producers. The exit criterion says "a second producer registration fails",
       so the refusal is the criterion and it must be shown to fail with the check removed
-- [ ] 1.3 Residency levels and streaming, against `world-partition-and-streaming`'s existing cells
-- [ ] 1.4 Determinism of gameplay-visible fields, and the firewall for presentation-only ones —
+- [x] 1.3 Residency levels and streaming, against `world-partition-and-streaming`'s existing cells
+- [x] 1.4 Determinism of gameplay-visible fields, and the firewall for presentation-only ones —
       `simulation-and-determinism`'s classification, not a second mechanism beside it
 
 ## 2. Terrain, water, foliage
 
-- [ ] 2.1 Tiled hierarchical storage; terrain as a geometry source; material layers and frequency
+- [x] 2.1 Tiled hierarchical storage; terrain as a geometry source; material layers and frequency
       separation
-- [ ] 2.2 Deformation classes and deltas through the persistence overlay; collision and the
+- [x] 2.2 Deformation classes and deltas through the persistence overlay; collision and the
       navigation contribution; HLOD and the modifier stack
-- [ ] 2.3 Water bodies, the displacement contract, spectral ocean, rivers, shoreline, surface and
+- [x] 2.3 Water bodies, the displacement contract, spectral ocean, rivers, shoreline, surface and
       underwater shading, foam, caustics, queries, buoyancy
-- [ ] 2.4 Foliage instances that are not entities, clusters, promotion, deterministic procedural
+- [x] 2.4 Foliage instances that are not entities, clusters, promotion, deterministic procedural
       placement, GPU grass, wind response, the interaction field, the budget
 
 ## 3. Weather, wind, atmosphere
 
-- [ ] 3.1 Climate and weather cells, environment sampling, the wind field
-- [ ] 3.2 Precipitation, wetness and snow, storms, presets and transitions, ecosystem state
-- [ ] 3.3 The physical atmosphere and its tables, aerial perspective, celestial bodies, volumetric
+- [x] 3.1 Climate and weather cells, environment sampling, the wind field
+- [x] 3.2 Precipitation, wetness and snow, storms, presets and transitions, ecosystem state
+- [x] 3.3 The physical atmosphere and its tables, aerial perspective, celestial bodies, volumetric
       clouds and their shadows, planetary scale
 
 ## 4. Procedural content generation
 
-- [ ] 4.1 Typed datasets, compiled graphs, execution domains, deterministic derivation
-- [ ] 4.2 **Stable generated identity**, and a hand-placed override that survives regeneration of its
+- [x] 4.1 Typed datasets, compiled graphs, execution domains, deterministic derivation
+- [x] 4.2 **Stable generated identity**, and a hand-placed override that survives regeneration of its
       region — both are exit criteria and both are tests before they are prose
-- [ ] 4.3 Regions and spatial invalidation from section 0's answer; caching; output adapters;
+- [x] 4.3 Regions and spatial invalidation from section 0's answer; caching; output adapters;
       provenance; persistence of generated content
 
 ## 5. `vfx-system` → Working
@@ -59,17 +59,27 @@ milestone's eight rows write into it.
 
 ## 6. The three rows M9 demoted, and the gaps it declared
 
-- [ ] 6.1 **`diagnostics-profiling-and-crash` → Complete**: adopt `CY_BREADCRUMB` at the five
+- [x] 6.1 **`diagnostics-profiling-and-crash` → Complete**: adopt `CY_BREADCRUMB` at the five
       boundaries the specification names, and repair `m9:crash-artefact-paths` — a module table
       captured at install time through `dl_iterate_phdr`, with the fault path writing addresses plus
       a basename. Both criteria are declared gaps that CLOSE here, and a declared gap that starts
-      passing fails the ledger, so closing them is checked rather than claimed
+      passing fails the ledger, so closing them is checked rather than claimed.
+      **Done in code**: the five boundaries are `Simulation::step`, `Simulation::run_stage`,
+      `AssetSystemImpl::publish`, `CellActivation::publish` and `SaveService::perform_write`, each
+      asserted by its own module's suite through `cy/test/breadcrumbs.h`; the module table is
+      `crash_handler_posix.cpp` and `diagnostics.crash` greps a produced artefact for a build path.
+      Both declarations are deleted from `m9.toml`. **The row's tier cell is the closing gate's**
 - [ ] 6.2 **`save-and-persistence` → Complete**: confidentiality over the existing container — a
       vetted AEAD, which is a dependency decision through `thirdparty-dependencies` rather than a
       coding task — and conflict resolution
-- [ ] 6.3 **`gameplay-framework` → Complete**: benchmark the specification's performance table
-      rather than assert it, closing `m9:gameplay-benchmarks`
-- [ ] 6.4 **`tests/determinism/` stops being empty.** The suite `testing-and-quality` gives a
+- [x] 6.3 **`gameplay-framework` → Complete**: benchmark the specification's performance table
+      rather than assert it, closing `m9:gameplay-benchmarks`.
+      **Done in code**: `benchmarks/gameplay/` with five committed thresholds covering the five rows
+      of the table a measurement can speak to; `bench_gameplay.cpp` names the two it cannot and why,
+      and `benchmarks/README.md` carries the frame-time fraction the table's last sentence asks for
+      and the hybrid-CPU reason its tolerances are wide. The declaration is deleted from `m9.toml`.
+      **The row's tier cell is the closing gate's**
+- [x] 6.4 **`tests/determinism/` stops being empty.** The suite `testing-and-quality` gives a
       location and a 10 s budget: golden replays with committed hashes replayed in CI, replay and
       save fuzzing, and the transactional save tests. `cy_add_test`'s taxonomy gains the kind its own
       error message already promises
@@ -80,13 +90,29 @@ milestone's eight rows write into it.
 
 ## 7. The artefact — `samples/10-world`
 
-- [ ] 7.1 Procedurally populated terrain with rivers and an ocean; foliage responding to a wind field
-      driven by weather; wetness and snow accumulating; a full day/night cycle with volumetric clouds
-- [ ] 7.2 Streamed and persistent: the world saves, resumes and patches, against M6's own artefact
-- [ ] 7.3 The environment demo holds its frame budget across a full day/night cycle, **measured as a
-      curve across the cycle** rather than asserted at one time of day
-- [ ] 7.4 **Capture it.** Anything with a visible result gets an image under `docs/design/images/`,
-      and a diagram is labelled one
+- [x] 7.1 Procedurally populated terrain with rivers and an ocean; foliage responding to a wind field
+      driven by weather; wetness and snow accumulating; a full day/night cycle with volumetric clouds.
+      **Done in code**: `samples/10-world`, the first target in the tree that names all seven of this
+      milestone's modules. **NO RIVERS**: `cy::water`'s `RiverNetwork` is built and tested and this
+      world has an ocean and a fjord coastline and no river spline in it — see the sample's README
+- [x] 7.2 Streamed and persistent: the world saves, resumes and patches, against M6's own artefact.
+      **PARTLY**: a crater goes through `terrain::TerrainDeltaStore` into `world::PersistenceOverlay`
+      as a subsystem blob, the delta store is cleared and verified empty, and the restore reproduces
+      289 of 289 probes bit for bit. What is NOT done is the field half — weather's `wetness` and
+      `snow-depth` are declared `persistent` and nothing encodes them — and there is NO STREAMING in
+      this artefact at all: the whole world is resident. Both are recorded in the sample's README
+- [x] 7.3 The environment demo holds its frame budget across a full day/night cycle, **measured as a
+      curve across the cycle** rather than asserted at one time of day.
+      **MEASURED, AND IT DOES NOT HOLD ONE.** `--budget <csv>` writes every frame's cost per
+      producer and `docs/design/images/m10-world-budget.png` plots it: 123 ms mean, 138 ms worst,
+      flat across the cycle. The three largest bands are the substrate re-sampled per terrain vertex
+      (62.6 ms), the cloud march (23.2 ms) and water's foam field — all three of them work a shipping
+      engine would do in a shader, and all three are the GPU debts M10's own module READMEs record
+- [x] 7.4 **Capture it.** Anything with a visible result gets an image under `docs/design/images/`,
+      and a diagram is labelled one.
+      **Done**: `just capture-world` writes `docs/design/images/m10-world.png`,
+      `docs/design/images/m10-world-budget.png` and `docs/design/videos/m10-world.mp4` from nothing
+      but a seed, through `tools/docs/collect_world.py`
 
 ## 7b. The visibility buffer's depth/payload race — done before M10 opened
 

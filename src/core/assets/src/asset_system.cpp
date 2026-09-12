@@ -28,6 +28,7 @@
 
 #include <cy/core/assets/diagnostics.h>
 #include <cy/core/base/assert.h>
+#include <cy/core/diagnostics/breadcrumb.h>
 #include <cy/core/memory/scope.h>
 #include <cy/core/memory/system_allocator.h>
 
@@ -352,6 +353,13 @@ Status AssetSystemImpl::publish(AssetSlot& slot, Array<u8>&& payload, Span<const
     // The system keeps the initial reference until the request that started the load is forgotten,
     // so a load whose result is never taken does not evaporate before it can be.
     slot.pending = Ref<AssetData>::adopt(data);
+
+    // ASSET ACTIVATION, one of the five coarse phase boundaries `diagnostics-profiling-and-crash`
+    // names for breadcrumbs: this is the instant the payload becomes something the rest of the
+    // engine can reach. The detail is the low half of the asset id — the ring carries a u64 and the
+    // id is 128 bits, and the half that distinguishes two assets is enough to name which one was
+    // being activated when the process died.
+    CY_BREADCRUMB("asset.activation", slot.id.low());
     return ok();
 }
 

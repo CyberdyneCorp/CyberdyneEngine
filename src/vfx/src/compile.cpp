@@ -865,13 +865,61 @@ struct StageLowering {
 /// Documented rather than inferred: an effect whose render stage READS an attribute marks it read
 /// through the ordinary path, and this list is what keeps a sprite's size and colour alive in an
 /// emitter that has no render stage at all.
+///
+/// WHICH ATTRIBUTES THOSE ARE DEPENDS ON THE RENDERER, and M10 task 5.3 is where that stopped being
+/// a hypothetical. Four names serve a sprite; a `Decal` derives its projection axis from `velocity`
+/// and a `Mesh` needs a `mesh` and a `material`. Before the emitter declared its renderer this
+/// function could not know, so a decal emitter that wrote a velocity nothing else read had it
+/// ELIDED by liveness and projected along world -Y — which was found by a test asserting the axis
+/// rather than by reading this list.
 [[nodiscard]] Status renderer_inputs(const Emitter& emitter, Array<Name>& out) noexcept {
+    // `vfx-system`'s renderer table, by index. Spelled as indices rather than as `RendererKind`
+    // because that enumerator lives with the publications in `renderers.h`, and `cy::vfx-compiler`
+    // compiles without naming one — see `Emitter::set_renderer`.
+    enum : u8 { kSprite = 0, kMesh = 1, kRibbon = 2, kBeam = 3, kTrail = 4, kDecal = 5 };
+
     static constexpr const char* kNames[] = {"position", "size", "color", "emission"};
     out.clear();
     for (const char* name : kNames) {
         if (Status pushed = out.push_back(Name::intern(name)); !pushed) {
             return pushed;
         }
+    }
+    const auto add = [&out](const char* name) noexcept {
+        return out.push_back(Name::intern(name));
+    };
+    switch (emitter.renderer()) {
+        case kMesh:
+            // `publish_mesh_instances` reads both by name.
+            if (Status pushed = add("mesh"); !pushed) {
+                return pushed;
+            }
+            if (Status pushed = add("material"); !pushed) {
+                return pushed;
+            }
+            break;
+        case kDecal:
+            // The projection axis. `publish_decals` falls back to world -Y without it, which is a
+            // correct answer for a particle that is not moving and the wrong one for a decal whose
+            // velocity was elided behind the author's back.
+            if (Status pushed = add("velocity"); !pushed) {
+                return pushed;
+            }
+            break;
+        case kBeam:
+            // The far end. An emitter without one beams back to its own origin, which is a choice
+            // the author may have made; one whose `beam_end` was elided is not.
+            if (Status pushed = add("beam_end"); !pushed) {
+                return pushed;
+            }
+            break;
+        case kSprite:
+        case kRibbon:
+        case kTrail:
+        default:
+            // A ribbon and a trail read the four names above and nothing else: their width comes
+            // from `size` and their strip from the chain, neither of which is an attribute.
+            break;
     }
     // Whatever the render stage itself writes is an output by construction.
     const Graph* render = emitter.stage(Stage::Render);
@@ -1005,6 +1053,7 @@ struct KernelPlan {
     CompiledEmitter compiled(allocator);
     CompiledAccess::set_name(compiled, emitter.name());
     CompiledAccess::set_path(compiled, emitter.path());
+    CompiledAccess::set_renderer(compiled, emitter.renderer());
     CompiledAccess::set_capacity(compiled, emitter.capacity());
     AttributeLayout& layout = CompiledAccess::layout(compiled);
 
@@ -1127,6 +1176,11 @@ Expected<CompiledSystem, Error> compile_system(const VfxSystemAsset& asset,
             return make_unexpected(compiled.error());
         }
         cook_key = hash_u64(cook_key, compiled->digest());
+        // THE RENDERER IS PART OF THE IDENTITY. `digest()` is over the kernels, the layout and the
+        // interfaces, and two emitters that differ only in how they are DRAWN produce the same one
+        // — so without this line a ribbon and a sprite over one graph would share a cook key, and
+        // "two cooks that produce this key produce identical artefacts" would be false.
+        cook_key = hash_u64(cook_key, compiled->renderer());
 
         report.kernels += emitter_report.kernels;
         report.total_bytes_per_particle += emitter_report.bytes_per_particle;

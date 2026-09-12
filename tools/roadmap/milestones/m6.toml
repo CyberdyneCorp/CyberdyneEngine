@@ -383,7 +383,7 @@ id = "save-generations"
 describe = "a generation is written as chunks, verified, manifested and switched, and killing the process at any phase leaves the previous generation loadable; an unloaded region's state round-trips without loading it, and a corrupt newest generation falls back to an older one with the player told rather than quietly"
 source = "tasks 6.2, 6.4, ROADMAP M6 (Save generations are atomic under kill -9)"
 kind = "command"
-run = "just test-integration -R save_archive && just test-integration -R save_kill_nine"
+run = "just test-integration -R save_archive && just test-determinism -R save_kill_nine"
 ci_job = "save"
 
 [[criterion]]
@@ -391,7 +391,7 @@ id = "save-service"
 describe = "a save is CAPTURED on the calling thread and WRITTEN on another, the simulation is never paused for it, a second save while one is in flight is refused rather than raced, and a service torn down mid-write does not take the write with it — beside a fuzz corpus in which every truncation and every corrupted byte fails diagnostically rather than crashing"
 source = "tasks 6.2, 6.3"
 kind = "command"
-run = "just test-integration -R save_service && just test-integration -R save_fuzz"
+run = "just test-integration -R save_service && just test-determinism -R save_fuzz"
 ci_job = "save"
 
 # --- The build is a graph -------------------------------------------------------------------------

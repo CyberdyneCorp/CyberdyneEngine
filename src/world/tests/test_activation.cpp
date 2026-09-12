@@ -1,5 +1,6 @@
 // Staged, atomically-published activation, and its teardown mid-flight. Task 3.5.
 
+#include <cy/test/breadcrumbs.h>
 #include <cy/test/test.h>
 
 #include <cy/ecs/query.h>
@@ -360,4 +361,38 @@ CY_TEST_CASE("events are queued and consumed in a declared order, never called b
     CY_CHECK_EQ(queue.pending(), 0u);
 
     CY_CHECK_FALSE(queue.drain(4242, drained).has_value());
+}
+
+// `diagnostics-profiling-and-crash` — "Breadcrumbs": the specification names "level transition" as
+// one of the five coarse phase boundaries, and in a partitioned world there is no separate moment
+// when a level loads — a cell becoming published IS the transition. This is the case that says this
+// module reaches the boundary, and part of the regression test for `m9:breadcrumbs-adopted`, which
+// recorded a ring armed with no caller outside its own module.
+CY_TEST_CASE("publishing a cell leaves a level-transition breadcrumb naming the cell") {
+    cy::ecs::World ecs(cy::world::test::allocator());
+    CY_REQUIRE(ecs.initialize().has_value());
+    const auto ids = cy::world::test::register_components(ecs);
+    CY_REQUIRE(ids.has_value());
+
+    cy::world::HierarchicalGrid grid(grid_config());
+    cy::world::LayerTable layers(cy::world::test::allocator());
+    const cy::world::CookedCell cell = cy::world::test::cook_props(
+        cy::world::test::allocator(), grid, cy::world::CellCoord{3, 1, 0, 0}, 32, *ids, 1);
+
+    cy::world::CellActivation activation(cy::world::test::allocator(), cell);
+    CY_REQUIRE(activation.advance(cell, layers, nullptr, kUnbounded).has_value());
+
+    // Preparation is not the transition. The mark is taken after it, so a breadcrumb recorded here
+    // would have to come from `publish()`.
+    const cy::u64 mark = cy::test::breadcrumb_mark();
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "level.transition"), 0u);
+
+    CY_REQUIRE(activation.publish(ecs, layers).has_value());
+
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "level.transition"), 1u);
+    cy::u64 detail = 0;
+    CY_REQUIRE(cy::test::breadcrumb_detail_since(mark, "level.transition", detail));
+    // The cell, not a count: an artefact that says which cell was entering the world says where in
+    // the world the process was.
+    CY_CHECK_EQ(detail, activation.cell().value);
 }

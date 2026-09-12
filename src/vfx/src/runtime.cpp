@@ -421,8 +421,8 @@ const char* fallback_reason_name(FallbackReason reason) noexcept {
             return "DeviceLacksIndirectDispatch";
         case FallbackReason::DisabledByHost:
             return "DisabledByHost";
-        case FallbackReason::DeviceDispatchUnimplemented:
-            return "DeviceDispatchUnimplemented";
+        case FallbackReason::NoDeviceInThisWorld:
+            return "NoDeviceInThisWorld";
     }
     return "?";
 }
@@ -444,18 +444,19 @@ const char* fallback_explanation(FallbackReason reason) noexcept {
                    "particle count without a CPU readback of it.";
         case FallbackReason::DisabledByHost:
             return "The host disabled the GPU path — a capture, a profile or a bisection.";
-        case FallbackReason::DeviceDispatchUnimplemented:
-            return "The kernels are compiled and their Slang is generated; the compute dispatch "
-                   "that would run them is not in this build. Reported every frame rather than "
-                   "assumed.";
+        case FallbackReason::NoDeviceInThisWorld:
+            return "This build has a compute dispatch for a VFX kernel — cy::vfx-gpu's VfxGpuPass "
+                   "— and this SimulationWorld has no device to run it on. A host that wants the "
+                   "GPU path drives a VfxGpuPass from its frame.";
     }
     return "";
 }
 
 bool device_dispatch_available() noexcept {
-    // ONE LINE, ONE FACT. When `src/vfx/` grows a device dispatch this becomes a capability query
-    // and everything above it — the decision, the report, the counts — already reads it.
-    return false;
+    // ONE LINE, ONE FACT, and the fact changed at M10 task 5.1: `src/vfx/gpu/` is the dispatch.
+    // Everything above it — the decision, the report, the counts — already read it, which is why
+    // this is still one line.
+    return true;
 }
 
 PathDecision decide_path(const CompiledEmitter& emitter,
@@ -476,7 +477,7 @@ PathDecision decide_path(const CompiledEmitter& emitter,
     } else if (!capability.indirect_dispatch) {
         reason = FallbackReason::DeviceLacksIndirectDispatch;
     } else if (!device_dispatch_available()) {
-        reason = FallbackReason::DeviceDispatchUnimplemented;
+        reason = FallbackReason::NoDeviceInThisWorld;
     }
     if (reason == FallbackReason::None) {
         decision.path = ExecutionPath::Gpu;

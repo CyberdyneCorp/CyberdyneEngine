@@ -40,9 +40,16 @@ cy_add_module(
 
 find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
 
+# `--inspect` is the READER, and it is here because M10 changed the artefact's frame format to close
+# `m9:crash-artefact-paths` and found that `tools/trace/crash_inspect.py` — the whole of
+# `just diagnose-crash` — was reachable from no test at all. A format nothing reads back is a format
+# that breaks silently. The path is compiled in rather than guessed relative to this file, for the
+# reason tests/integration's seam test gives: a test that guesses where a tool is passes vacuously
+# when it guesses wrong.
 add_test(NAME diagnostics.crash
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_crash.py"
-            --probe $<TARGET_FILE:cy_diag_crash_probe>)
+            --probe $<TARGET_FILE:cy_diag_crash_probe>
+            --inspect "${CMAKE_SOURCE_DIR}/tools/trace/crash_inspect.py")
 set_tests_properties(diagnostics.crash PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" TIMEOUT 120 LABELS integration)
 

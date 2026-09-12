@@ -8,8 +8,8 @@ the fast set staying fast is a requirement, not an aspiration.
 | `unit/<module>/` | `just test-unit` | 1 ms CPU | Sub-millisecond tests of one unit, no I/O, no window |
 | `integration/` | `just test-integration` | 1 s CPU | Several subsystems together, and anything that does I/O |
 | `smoke/` | `just test-smoke` | 30 s CPU | The samples, run headless, asserted to exit cleanly |
-| `render/` | — | 5 s | Golden-image and render-seam checks; wired when the renderer lands at M3 |
-| `determinism/` | — | 10 s | Fixed-seed replay equivalence; wired when simulation lands at M9 |
+| `render/` | `just test-render` | 5 s | Golden-image and render-seam checks; declared only when a rendering backend is compiled in |
+| `determinism/` | `just test-determinism` | 10 s | Golden replays against committed hashes, replay and save fuzzing, transactional saves. Empty until M10 — `tests/determinism/README.md` says why |
 
 `harness/` is not a suite: it is the framework seam and the fixtures every suite links.
 

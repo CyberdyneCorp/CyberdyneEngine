@@ -48,7 +48,11 @@ cy_add_module(
         src/traits.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-assets cy::core-determinism cy::core-jobs cy::core-serialize
-                        cy::core-values)
+                        cy::core-values
+    # PRIVATE: the module writes a breadcrumb at the save boundary — one of the five
+    # `diagnostics-profiling-and-crash` names — and no public header of this module includes a
+    # diagnostics one, so a consumer does not inherit the dependency.
+    PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
 # A suite lands with the first real source. The EXISTS guard is what lets this line be written now:
 # it is the one line an agent adding tests/ does not then have to remember to add here.

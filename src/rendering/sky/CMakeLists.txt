@@ -21,6 +21,36 @@
 # checked against the full atmosphere's own irradiance integral, in this module's own suite, with no
 # global illumination system present. `sky_light.h` carries the three-line adapter the composition
 # point writes.
+# M10 TASK 3.3 ADDED FIVE FILES AND FOUR DEPENDENCIES. Each dependency is a requirement of
+# `atmosphere-sky-and-clouds` made into a build fact, and each is named here rather than left for a
+# reader to infer:
+#
+#   cy::environment        THE CLOUD SHADOW FIELD. "Clouds SHALL cast shadows onto the world through
+#                          a coarse world-scale shadow representation ... consumed by terrain,
+#                          foliage, water, and illumination." That is CyberField's job, and M10
+#                          section 1 built it. `src/cloud_shadows.cpp` declares one field, claims it
+#                          with a `ProducerToken`, and writes tiles; the four consumers read it
+#                          through `FieldReader` like any other field.
+#   cy::rendering-post     THE FROXEL VOLUME. "Clouds, fog, mist, smoke, and atmospheric volumes
+#                          SHALL share the engine's volumetric infrastructure rather than each
+#                          building its own pipeline: the froxel volume defined in
+#                          `rendering-post-processing`." `AerialPerspectiveTable` IS a
+#                          `rendering::FroxelVolume` and calls `froxel_slice_depth()` and
+#                          `froxel_slice_of()` rather than re-deriving the distribution; the cloud
+#                          march calls `henyey_greenstein()` from the same header.
+#   cy::rendering-temporal THE HISTORY CLASSIFIER. "Rendering SHALL run at reduced resolution with
+#                          temporal reconstruction THROUGH THE FRAMEWORK IN `temporal-rendering`."
+#                          `reproject_cloud()` calls `classify_history()`; what it adds is the
+#                          cloud's own motion and the weather rejection, which is the
+#                          cloud-specific half the requirement names.
+#   cy::rendering-arbiter  THE PRICED LADDER. "Tier selection SHALL follow the renderer profile and
+#                          the budget arbiter." `sky_quality_ladder()` returns a
+#                          `rendering::QualityLadder` in the arbiter's own currency.
+#
+# AND ONE DEPENDENCY THAT IS DELIBERATELY ABSENT: cy::rendering-shadows. "Cloud shadows SHALL NOT be
+# produced through the virtual shadow page system." There is no expression in this module that can
+# allocate a page, because the target that owns them is not linked — the mechanism is unreachable
+# rather than merely unused. See src/cloud_shadows.cpp.
 cy_add_module(
     NAME cy_rendering_sky
     LAYER rendering
@@ -29,9 +59,17 @@ cy_add_module(
     SOURCES
         src/atmosphere.cpp
         src/celestial.cpp
+        src/cloud_shadows.cpp
+        src/clouds.cpp
+        src/composition.cpp
+        src/diagnostics.cpp
+        src/profile.cpp
         src/sky_light.cpp
+        src/tables.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory)
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
+                        cy::environment cy::rendering-arbiter cy::rendering-post
+                        cy::rendering-temporal cy::world)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

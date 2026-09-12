@@ -115,15 +115,39 @@ i64 platform_write(i32 handle, const void* data, usize bytes) noexcept {
     return static_cast<i64>(::_write(handle, data, static_cast<unsigned int>(bytes)));
 }
 
+u32 platform_write_module_table(i32 handle) noexcept {
+    // NOT IMPLEMENTED HERE, AND SAID RATHER THAN FAKED. The POSIX half captures the table with
+    // dl_iterate_phdr() at installation so the artefact can carry a basename instead of the
+    // loader's absolute path; the Windows equivalent is EnumProcessModules() plus
+    // GetModuleFileNameA() in the same place, and this file has never been compiled — see the
+    // header comment. Writing nothing keeps the property that matters (`crash_report.cpp` prints
+    // "<no module table on this platform>" and the frames below carry no path either); what is
+    // missing is the name beside each offset, not the redaction.
+    (void)handle;
+    return 0;
+}
+
 u32 platform_write_backtrace(i32 handle) noexcept {
     void* frames[kMaxFrames];
     const USHORT count =
         ::CaptureStackBackTrace(0, static_cast<DWORD>(kMaxFrames), frames, nullptr);
     for (USHORT index = 0; index < count; ++index) {
-        char line[32];
+        // `  #<n> pc=0x…`: the POSIX line without the module half, because there is no table to
+        // resolve it against. `crash_inspect.py`'s frame pattern makes that half optional for
+        // exactly this case rather than requiring a `<unknown>+0x0` that claims an offset.
+        char line[40];
         u32 length = 0;
         line[length++] = ' ';
         line[length++] = ' ';
+        line[length++] = '#';
+        if (index >= 10) {
+            line[length++] = static_cast<char>('0' + (index / 10));
+        }
+        line[length++] = static_cast<char>('0' + (index % 10));
+        line[length++] = ' ';
+        line[length++] = 'p';
+        line[length++] = 'c';
+        line[length++] = '=';
         line[length++] = '0';
         line[length++] = 'x';
         const u64 address = reinterpret_cast<u64>(frames[index]);

@@ -515,6 +515,21 @@ namespace {
             return decoded;
         }
         if (Status added = out.append(record); !added) {
+            // A REFUSAL WITH NO REASON IS A REFUSAL A SUPPORT QUEUE CANNOT ANSWER, and this branch
+            // produced seventy of them. `RecordLog::append()` refuses a record whose tick goes
+            // backwards, which is exactly what a corrupted tick field in a chunk produces — and the
+            // reason was left at `None`, so `read_log()` reported a damaged file as a refusal with
+            // no verdict at all. `replay-and-rollback`: "the reason SHALL distinguish a build or
+            // content mismatch from a damaged file". The defect was invisible because nothing ever
+            // fed `read_log()` a file it had not just written itself; `tests/determinism/
+            // test_replay_fuzz.cpp` is the sweep that found it.
+            //
+            // Only `InvalidArgument` is a verdict about the FILE. An allocator that could not grow
+            // the log says nothing about the bytes, so it is left without a reason rather than
+            // reported as damage.
+            if (added.error().code == ErrorCode::InvalidArgument) {
+                why = RejectReason::Corrupt;
+            }
             return added;
         }
     }

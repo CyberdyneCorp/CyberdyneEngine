@@ -8,6 +8,7 @@
 #include <cy/core/assets/asset_system.h>
 #include <cy/core/assets/package.h>
 #include <cy/core/memory/scope.h>
+#include <cy/test/breadcrumbs.h>
 #include <cy/test/test.h>
 
 #include <cstring>
@@ -566,4 +567,44 @@ CY_TEST_CASE("A memory-mapped entry is served without a copy") {
         CY_CHECK(asset.value()->is_mapped());
         CY_CHECK_EQ(harness.assets.stats().entries_mapped, 1u);
     }
+}
+
+// `diagnostics-profiling-and-crash` — "Breadcrumbs": asset activation is one of the five coarse
+// phase boundaries the specification names, and the activation is `publish()` — the instant the
+// payload becomes something the rest of the engine can reach. This is the case that says this
+// module reaches the boundary, and part of the regression test for `m9:breadcrumbs-adopted`, which
+// recorded a ring armed with no caller outside its own module.
+//
+// THE ACTIVATION HAPPENS ON A WORKER, which is the other half of what this asserts: `breadcrumb()`
+// is callable from any thread with no lock, so the marker is there when the caller's `wait()`
+// returns rather than only when the load happened to run inline.
+CY_TEST_CASE("activating an asset leaves a breadcrumb naming it") {
+    const test::TempDir directory("assets_breadcrumb");
+    const std::string path = directory.file("content.cypak");
+    const cy::AssetId id = mint_asset_id();
+    const cy::Array<u8> payload = corpus(4096, 3);
+    const cy::Array<u8>* payloads[] = {&payload};
+    write_package(path, cy::Span<const cy::AssetId>(&id, 1),
+                  cy::Span<const cy::Array<u8>*>(payloads, 1));
+
+    Harness harness;
+    harness.mount(path, mount_priority::kBasePackage);
+
+    // Mounting is not activation. The mark is taken after it, so a breadcrumb counted below has to
+    // come from the load.
+    const cy::u64 mark = cy::test::breadcrumb_mark();
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "asset.activation"), 0u);
+
+    const auto request = harness.assets.load_async(id);
+    CY_REQUIRE(request.has_value());
+    CY_REQUIRE(harness.assets.wait(request.value()).has_value());
+
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "asset.activation"), 1u);
+    cy::u64 detail = 0;
+    CY_REQUIRE(cy::test::breadcrumb_detail_since(mark, "asset.activation", detail));
+    // The low half of the 128-bit id: the ring carries a u64, and the half that distinguishes two
+    // assets is what names which one was being activated.
+    CY_CHECK_EQ(detail, id.low());
+
+    CY_REQUIRE(harness.assets.forget(request.value()).has_value());
 }

@@ -57,11 +57,14 @@ function(cy_world_declare_tests)
             "${cy_world_tests_dir}/test_sources.cpp"
         DEPENDENCIES cy::world cy::ecs cy::core-reflect)
 
+    # cy::core-diagnostics is here for one case: "publishing a cell leaves a level-transition
+    # breadcrumb naming the cell" reads the breadcrumb ring back. `cy::world` links it privately, so
+    # the headers are not on this target's include path without saying so.
     cy_add_test(
         NAME world_activation
         KIND integration
         SOURCES "${cy_world_tests_dir}/test_activation.cpp"
-        DEPENDENCIES cy::world cy::ecs cy::core-reflect)
+        DEPENDENCIES cy::world cy::ecs cy::core-reflect cy::core-diagnostics)
 
     cy_add_test(
         NAME world_streaming

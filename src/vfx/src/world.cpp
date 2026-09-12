@@ -230,6 +230,18 @@ Span<u8> SimulationWorld::alive_flags(u32 block) noexcept {
     return {alive_.data() + offset, count};
 }
 
+Span<const u8> SimulationWorld::alive_flags(u32 block) const noexcept {
+    if (block >= blocks_.size() || block >= alive_offset_.size()) {
+        return {};
+    }
+    const u32 offset = alive_offset_[block];
+    const u32 count = blocks_[block].particles;
+    if (static_cast<usize>(offset) + count > alive_.size()) {
+        return {};
+    }
+    return {alive_.data() + offset, count};
+}
+
 namespace {
 
 /// A retired instance whose block range is the right size, or null. Reusing one is what stops a
@@ -664,14 +676,21 @@ Status SimulationWorld::simulate_emitter(EffectInstance& instance, u32 which,
 
     // THE PATH IS DECIDED AND COUNTED EVERY SUB-STEP, never assumed. A fallback is a number in the
     // report rather than a silence — `runtime.h` is where the reason lives.
-    const DeviceCapability capability;
-    const PathDecision decision = decide_path(emitter, capability);
-    if (decision.path == ExecutionPath::Gpu) {
-        ++report.gpu_emitters;
-    } else {
-        ++report.cpu_emitters;
-        report.cpu_fallbacks += decision.is_fallback ? 1U : 0U;
+    // THIS WORLD HAS NO DEVICE, so `gpu_path_enabled` is not what is false here — the dispatch
+    // exists (M10 task 5.1 built it, in `cy::vfx-gpu`) and this object cannot reach it. Declaring
+    // it rather than fabricating a capable device is what keeps the count true: every emitter
+    // stepped by a `SimulationWorld` runs the CPU executor below, and a report that said
+    // `gpu_emitters` on a frame this function integrated by hand would be a false green of exactly
+    // the shape `StepReport::cpu_fallbacks` exists to prevent.
+    DeviceCapability capability;
+    capability.indirect_dispatch = false;
+    PathDecision decision = decide_path(emitter, capability);
+    if (decision.reason == FallbackReason::DeviceLacksIndirectDispatch) {
+        decision.reason = FallbackReason::NoDeviceInThisWorld;
+        decision.explanation = fallback_explanation(decision.reason);
     }
+    ++report.cpu_emitters;
+    report.cpu_fallbacks += decision.is_fallback ? 1U : 0U;
 
     EmitterPass pass;
     pass.emitter = &emitter;

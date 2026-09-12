@@ -66,6 +66,27 @@ struct ComponentOverride {
     u32 size = 0;
 };
 
+/// A blob of SUBSYSTEM state the overlay carries for a cell, keyed by a subsystem channel and a
+/// key that subsystem defines.
+///
+/// Added at M10 by src/terrain/, whose specification requires runtime terrain change to be recorded
+/// "in the world persistence overlay ... so that saves, dedicated server persistence,
+/// replays, and editor play-mode changes handle terrain through the existing mechanism RATHER THAN
+/// A SECOND ONE". A terrain delta belongs to a piece of world rather than to an entity, so it
+/// cannot be a `ComponentOverride`: those are keyed by `PersistentId`, and this file's own rule is
+/// that a persistent identifier is "never derived from position". Inventing one per tile would have
+/// broken exactly that rule to reuse exactly that array.
+///
+/// The overlay does not interpret the bytes and does not know what a channel means. `channel` is
+/// the subsystem's own constant — see `terrain::kOverlayChannelTerrain`.
+struct OverlayBlob {
+    u32 channel = 0;
+    u64 key = 0;
+    /// Where the bytes live in the overlay's own value pool, as `ComponentOverride` does.
+    u32 first = 0;
+    u32 size = 0;
+};
+
 /// A persistent position written at a checkpoint — save, deactivation, or explicit request. NOT
 /// continuously: "crossing a cell boundary SHALL NOT rewrite persistent ownership".
 struct PositionRecord {
@@ -79,12 +100,18 @@ struct CellOverlay {
     Array<PersistentId> removed;
     Array<ComponentOverride> overrides;
     Array<PositionRecord> positions;
+    /// Subsystem state keyed by channel. See `OverlayBlob`.
+    Array<OverlayBlob> blobs;
     /// Entities created at runtime that persist with this cell, in the same ECS-native form a cook
     /// produces — so activation stages authored blocks and created blocks by one code path.
     CookedCell created;
 
     explicit CellOverlay(Allocator& allocator) noexcept
-        : removed(allocator), overrides(allocator), positions(allocator), created(allocator) {}
+        : removed(allocator),
+          overrides(allocator),
+          positions(allocator),
+          blobs(allocator),
+          created(allocator) {}
 
     CellOverlay(const CellOverlay&) = delete;
     CellOverlay& operator=(const CellOverlay&) = delete;
@@ -117,6 +144,10 @@ public:
                                         Span<const u32> sizes) noexcept;
     [[nodiscard]] Status record_position(CellId cell, PersistentId entity,
                                          const WorldPosition& position) noexcept;
+    /// Record one subsystem blob against a cell. Recording the same (channel, key) again replaces
+    /// it, exactly as a component override does.
+    [[nodiscard]] Status record_blob(CellId cell, u32 channel, u64 key,
+                                     Span<const u8> value) noexcept;
     [[nodiscard]] Status record_layer_state(LayerId layer, LayerState state) noexcept;
     [[nodiscard]] Status set_variable(u64 key, i64 value) noexcept;
     [[nodiscard]] Status set_real_variable(u64 key, f64 value) noexcept;
@@ -126,6 +157,8 @@ public:
     /// The overriding bytes, or an empty span. Reading this does not load the cell.
     [[nodiscard]] Span<const u8> component_override(CellId cell, PersistentId entity,
                                                     ecs::ComponentTypeId component) const noexcept;
+    /// The bytes of one subsystem blob, or an empty span. Reading this does not load the cell.
+    [[nodiscard]] Span<const u8> blob(CellId cell, u32 channel, u64 key) const noexcept;
     [[nodiscard]] const WorldVariable* variable(u64 key) const noexcept;
 
     /// Every cell the overlay holds state for. The save's iteration, and it streams nothing.

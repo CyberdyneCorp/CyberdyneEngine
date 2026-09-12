@@ -42,6 +42,50 @@ function(cy_render_sky_declare_tests)
         KIND integration
         SOURCES "${tests_dir}/test_sky_light.cpp"
         DEPENDENCIES cy::rendering-sky)
+
+    # M10 task 3.3. Three suites, and the split between them is the same argument the two above
+    # make: a claim about an INTEGRAL cannot be checked inside a 1 ms budget, and a version that
+    # could be would be a spot check.
+    #
+    #   render_sky_clouds       unit. Declarations, refusals, the tier table, the priced ladder,
+    #                           the transition curves, the cost attribution and the debug views —
+    #                           everything that is a property of a value rather than of an integral.
+    #   render_sky_tables       integration, and it is where M7's two named gaps are closed: the
+    #                           multiple-scattering table against the isotropic constant it
+    #                           replaces, and the incremental sky view against a FULL rebuild of the
+    #                           same table over a quarter-day. The oracle is `SkyViewTable`, which
+    #                           is why `IncrementalSkyView` carries its parameterisation character
+    #                           for character.
+    #   render_sky_composition  integration. The reconstruction, the march, the tiers over one
+    #                           weather, the lighting the illumination system consumes, the stars,
+    #                           the filtered radiance map and the profiles.
+    #   render_sky_fields       integration. The cloud shadow field through a real
+    #                           `environment::FieldRegistry` and `FieldStore`: the claim, the
+    #                           refusal that names both producers, the firewall, and a shadow that
+    #                           darkens the ground.
+    cy_add_test(
+        NAME render_sky_clouds
+        KIND unit
+        SOURCES "${tests_dir}/test_clouds.cpp"
+        DEPENDENCIES cy::rendering-sky)
+
+    cy_add_test(
+        NAME render_sky_tables
+        KIND integration
+        SOURCES "${tests_dir}/test_sky_tables.cpp"
+        DEPENDENCIES cy::rendering-sky)
+
+    cy_add_test(
+        NAME render_sky_composition
+        KIND integration
+        SOURCES "${tests_dir}/test_sky_composition.cpp"
+        DEPENDENCIES cy::rendering-sky)
+
+    cy_add_test(
+        NAME render_sky_fields
+        KIND integration
+        SOURCES "${tests_dir}/test_cloud_shadows.cpp"
+        DEPENDENCIES cy::rendering-sky cy::environment cy::world)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_render_sky_declare_tests)

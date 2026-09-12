@@ -2,6 +2,7 @@
 
 #include <cy/core/base/assert.h>
 #include <cy/core/base/diagnostic_sink.h>
+#include <cy/core/diagnostics/breadcrumb.h>
 
 namespace cy::runtime {
 namespace {
@@ -145,6 +146,10 @@ Status Simulation::run_stage(ecs::Stage stage, jobs::JobSystem* jobs) noexcept {
     if (schedule_.system_count(stage) == 0) {
         return ok();
     }
+    // STAGE, one of the five coarse phase boundaries `diagnostics-profiling-and-crash` names for
+    // breadcrumbs. A stage with no systems records nothing on purpose: the ring holds sixty-four
+    // markers and a boundary that did no work would push the tick that mattered out of it.
+    CY_BREADCRUMB("stage", static_cast<u64>(stage));
     return jobs != nullptr ? schedule_.run(stage, *jobs) : schedule_.run_serial(stage);
 }
 
@@ -187,6 +192,11 @@ Expected<determinism::CommitRecord, Error> Simulation::step(jobs::JobSystem* job
     // entities, and creating them before the world flush means the flush sees one world rather
     // than two states of it.
     clock_.advance();
+    // TICK. `simulation-and-determinism` makes this call the one point per tick at which state
+    // becomes authoritative, so it is the tick boundary `diagnostics-profiling-and-crash` asks for
+    // a breadcrumb at — recorded after the clock advances, so the detail is the tick being run and
+    // a crash artefact names the tick the process died in rather than the one before it.
+    CY_BREADCRUMB("tick", clock_.now().tick);
     if (tree_created_) {
         const FrameFlushReport report = commands_.flush(tree_);
         tick_stats_.frame_commands_applied = report.applied;

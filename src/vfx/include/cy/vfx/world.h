@@ -252,6 +252,10 @@ public:
     [[nodiscard]] Span<PoolBlock> blocks() noexcept { return blocks_.span(); }
     /// The alive flag of every particle of one emitter block.
     [[nodiscard]] Span<u8> alive_flags(u32 block) noexcept;
+    /// The same, for a reader. `renderers.cpp`'s publications take the world by const reference —
+    /// a publication that could mutate the simulation would be a publication that had to be
+    /// ordered against it — and liveness is exactly what they must see.
+    [[nodiscard]] Span<const u8> alive_flags(u32 block) const noexcept;
 
     /// The scheduler's grouping key: emitters sharing a compiled kernel and compatible bindings
     /// become one dispatch. Public because `world.cpp`'s grouping helper is a free function — a

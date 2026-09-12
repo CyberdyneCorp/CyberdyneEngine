@@ -1,0 +1,121 @@
+# M10 — Worlds: the exit criteria, as data.
+#
+# The sources are openspec/changes/implement-m10-worlds/tasks.md and the M10 row of
+# docs/ROADMAP.md; every criterion names which. `delivery-roadmap` requires each to be a recipe that
+# exits zero, a command that exits zero, a benchmark within a threshold, or a committed artefact
+# that is regenerated and compared — so an intention that cannot be run is a note at the bottom of
+# this file, not a criterion.
+#
+# --- THIS FILE IS OPENED BY THE SPIKE AND FINISHED BY TASK 8.1 ------------------------------------
+#
+# It carries, at the moment it is written, exactly the two criteria TASK 0.2 owes: the two questions
+# the spike could not answer on this host, declared through the ledger's own `requires`/`where`
+# mechanism rather than written as a sentence somewhere. Every other criterion M10 needs — the
+# substrate's one-producer-per-field refusal, terrain, water, foliage, weather, the atmosphere, the
+# PCG row's four conditions, `vfx-system`'s GPU path, the three rows M9 demoted, `tests/determinism/`
+# and the artefact's frame-budget curve — belongs to task 8.1, which EXTENDS this file and raises
+# `selftest.MINIMUM_CRITERIA["m10"]` from the floor of 2 the spike leaves it at. A later agent that
+# replaces this file rather than adding to it drops the milestone's only honest NOT EVALUATED.
+#
+# `milestone-m10` is not declared in gates.toml yet, and must not be until task 8.1: a green gate
+# with no matching `milestone` job in ci.yml is the pattern gates.toml's own header forbids.
+#
+# --- WHY BOTH OF THESE ARE `where = "ci"` AND NEITHER IS `requires = "gpu"` -----------------------
+#
+# `unmet_requirement()` reports NOT EVALUATED for `where = "ci"` on a developer's machine, which is
+# the honest answer for a question this host cannot ask. `requires = "gpu"` would NOT do it: this
+# machine has a DRM render node, so `_has_gpu()` is true, the criterion would RUN here, and it would
+# report a pass measured against one vendor's driver and one vendor's floating-point behaviour —
+# which is not the claim. A criterion that passes on the machine least able to judge it is the exact
+# defect `requires` exists to prevent, so the mechanism is used for what it says rather than for
+# what is convenient.
+#
+# And in continuous integration these do not become free: each `run` looks for the ONLY SHAPE that
+# could answer it — a job that publishes one leg's digest and compares it against another's — so a
+# green there means the comparison exists, not that a single-leg suite ran. That is M9's
+# `lockstep-cross-platform` lesson, kept: `where = "ci"` must never be a way of making a question
+# disappear.
+
+schema = 1
+id = "m10"
+name = "Worlds"
+artefact = "samples/10-world — not built yet. Task 8.1 replaces this line with what the artefact measured."
+
+notes = [
+    "This file is the spike's half of M10's ledger. tasks 1-7 and 9 are task 8.1's to declare, and `selftest.MINIMUM_CRITERIA[\"m10\"]` is the floor that forces a deliberate answer to how many exit conditions the milestone has.",
+    "tasks 0.1 and 0.3 — the spike itself and its record in design.md — are not criteria here. A spike's only deliverable is a decision, `docs/roadmap/risks.md` says a spike may not be merged, and the decision is consumed in design.md §1 where the rows that depend on it can read it. What IS checkable is that the four conditions §1.6 names become tests inside `procedural-content-generation`, and those criteria belong to task 4.x and are declared by task 8.1.",
+]
+
+# --- Section 0: what the spike could not answer on this host ---------------------------------------
+
+[[criterion]]
+id = "pcg-regeneration-cross-platform"
+describe = "A REGION GENERATED ON ONE ARCHITECTURE REPRODUCES ON ANOTHER — AND NOTHING IN THIS TREE HAS COMPARED A GENERATED REGION'S DIGEST BETWEEN TWO OF THEM. The M10 spike measured, over 24 configurations and 12 trials, that a dependency-driven partial regeneration reproduces a full one bit for bit on ONE x86-64 host (design.md §1.1); it says nothing about a second architecture, and M9 §1.2 already measured that the engine's own math primitives move under `-march=native` with contraction at the compiler's default. The check looks for the only shape that could close it: a continuous-integration job that publishes one leg's generated-region digest and compares it with another leg's"
+source = "tasks 0.2, design.md §1.5"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import pathlib, re, sys
+
+workflows = sorted(pathlib.Path(".github/workflows").glob("*.y*ml"))
+comparing = []
+for path in workflows:
+    text = path.read_text(encoding="utf-8")
+    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
+        name = block.strip().split(":", 1)[0].strip()
+        lowered = block.lower()
+        if not re.search(r"\bpcg\b|procedural|generated-region", lowered):
+            continue
+        if "download-artifact" not in lowered:
+            continue
+        comparing.append(f"{path.name}:{name}")
+print(f"{len(workflows)} workflow(s) examined; "
+      f"{len(comparing)} job(s) compare a generated-region digest between legs: {comparing or 'none'}")
+if not comparing:
+    print("  no job publishes one architecture's generated-region digest and compares it with")
+    print("  another's, so cross-architecture reproducibility of PCG is UNMEASURED rather than met.")
+    print("  The legs exist — ci.yml's matrices include linux-arm64, macos-arm64 and windows-arm64 —")
+    print("  and they run independently. Closing this needs an upload-then-compare job.")
+sys.exit(0 if comparing else 1)
+CHECK
+'''
+where = "ci"
+reason = "this host is one x86-64 machine, so a claim about a second architecture cannot be measured here and must not be reported as passing"
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "pcg-gpu-domain-agreement"
+describe = "A GPU EXECUTION DOMAIN REPRODUCES THE CPU DOMAIN'S OUTPUT FOR THE SAME SEED — AND THIS HOST HAS ONE GPU VENDOR, so an agreement measured here would be an agreement with one driver. `procedural-content-generation`'s execution domains include a GPU one, and the M10 spike's graph ran entirely on the CPU: nothing in design.md §1 measured a GPU domain at all. The check looks for the only shape that could close it: a continuous-integration job that runs the generation on two different GPU vendors and compares the digests"
+source = "tasks 0.2, 4.1, design.md §1.5"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import pathlib, re, sys
+
+workflows = sorted(pathlib.Path(".github/workflows").glob("*.y*ml"))
+comparing = []
+for path in workflows:
+    text = path.read_text(encoding="utf-8")
+    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
+        name = block.strip().split(":", 1)[0].strip()
+        lowered = block.lower()
+        if "gpu" not in lowered:
+            continue
+        if not re.search(r"\bpcg\b|procedural|generated-region", lowered):
+            continue
+        if "download-artifact" not in lowered:
+            continue
+        comparing.append(f"{path.name}:{name}")
+print(f"{len(workflows)} workflow(s) examined; "
+      f"{len(comparing)} job(s) compare a GPU-generated region digest across vendors: "
+      f"{comparing or 'none'}")
+if not comparing:
+    print("  no job runs procedural generation on a GPU on two vendors and compares the results, so")
+    print("  'the GPU execution domain agrees with the CPU one' is UNMEASURED rather than met. A")
+    print("  single-vendor comparison would answer a different question and must not read as green.")
+sys.exit(0 if comparing else 1)
+CHECK
+'''
+where = "ci"
+reason = "this host has one GPU vendor, so agreement measured here would be agreement with one driver rather than between two, and `requires = \"gpu\"` would make it RUN and PASS on exactly that evidence"
+ci_job = "milestone-m10"

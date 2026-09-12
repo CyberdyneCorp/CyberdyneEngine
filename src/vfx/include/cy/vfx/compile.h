@@ -153,6 +153,10 @@ public:
     [[nodiscard]] Span<const GeneratedSource> sources() const noexcept { return sources_.span(); }
     [[nodiscard]] usize source_bytes() const noexcept;
     [[nodiscard]] SimulationPath path() const noexcept { return path_; }
+    /// The emitter's declared renderer, as `Emitter::renderer()` gave it. Carried through the cook
+    /// because a host that had to keep the authored asset to know how to draw the cooked one would
+    /// make the cooked artefact incomplete.
+    [[nodiscard]] u8 renderer() const noexcept { return renderer_; }
     [[nodiscard]] u32 capacity() const noexcept { return capacity_; }
     /// Over the kernels' digests, the layout's digest and the interface registry's digest.
     [[nodiscard]] u64 digest() const noexcept { return digest_; }
@@ -167,6 +171,7 @@ private:
     Array<VfxKernel> kernels_;
     Array<GeneratedSource> sources_;
     SimulationPath path_ = SimulationPath::GpuPreferred;
+    u8 renderer_ = 0;
     u32 capacity_ = 0;
     u64 digest_ = 0;
 };
@@ -233,11 +238,32 @@ inline constexpr const char* kVfxKernelEntryPoint = "cyVfxKernel";
                                   Span<const ParameterDecl> parameters,
                                   Span<const EventChannelDecl> channels, Array<char>& out) noexcept;
 
-/// Prelude + the emitter's generated bodies + a compute entry point. A complete Slang translation
-/// unit that imports nothing.
+/// Prelude + the emitter's generated bodies + a PROBE compute entry point. A complete Slang
+/// translation unit that imports nothing.
+///
+/// The probe entry point runs every kernel over the raw thread index with no liveness check and no
+/// indirect argument: what it proves is that the generated program compiles and reflects. It is not
+/// what a frame dispatches — see `assemble_dispatch_unit`.
 [[nodiscard]] Status assemble_translation_unit(const CompiledEmitter& emitter,
                                                Span<const ParameterDecl> parameters,
                                                Span<const EventChannelDecl> channels,
                                                Array<char>& out) noexcept;
+
+/// The same prelude and the same kernel bodies, behind the entry point a FRAME dispatches. M10 task
+/// 5.1.
+///
+/// Four passes selected by `GpuPushConstants::pass`: the Spawn stage's count, the initialise over
+/// slots taken off the GPU-maintained free list, the sort key, and the update over the GPU-
+/// maintained live list. The two that run over the population are dispatched INDIRECTLY from counts
+/// no CPU read — `vfx-system`: "dispatch sizes SHALL follow via indirect arguments, with no CPU
+/// readback of counts".
+///
+/// The binding contract is `<cy/vfx/gpu_layout.h>` and it is fixed for every effect, which is what
+/// lets one descriptor set layout serve every generated kernel and the fixed support dispatches at
+/// once.
+[[nodiscard]] Status assemble_dispatch_unit(const CompiledEmitter& emitter,
+                                            Span<const ParameterDecl> parameters,
+                                            Span<const EventChannelDecl> channels,
+                                            Array<char>& out) noexcept;
 
 }  // namespace cy::vfx

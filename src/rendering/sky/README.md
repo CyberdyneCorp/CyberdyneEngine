@@ -1,82 +1,151 @@
-# `src/rendering/sky/` — layer 4
+# `src/rendering/sky/` — layer 4: CyberSky
 
-A participating atmosphere in physical units, the celestial model and its declared time domain, and
-the sky as a **light**.
+A participating atmosphere in physical units and its precomputed tables, the celestial model on a
+declared time domain, clouds that are **reconstructed rather than stored**, a cloud shadow field
+published into CyberField, the sky as a **light**, environment profiles and their transitions, the
+quality tiers, and the diagnostics that say what determined a pixel.
 
-**Governed by**: `atmosphere-sky-and-clouds`, at **Seed** for M7. Task 10.4.
+**Governed by**: `atmosphere-sky-and-clouds`. **Seed** at M7 (task 10.4); **Working** at M10
+(task 3.3).
+
+## THERE IS ONE SKY MODULE AND THIS IS IT
+
+M10's brief allowed for `src/sky/`. It was not created, because M7 left a real Seed here — an
+atmosphere in physical units with no colour constant in it, a celestial model a project can bypass,
+a measured GI sky term — and a second module would have meant two atmospheres that could disagree
+about what a sunset is. M10 EXTENDED this one: five new headers, five new translation units, four
+new dependencies and four new suites, against three files and three dependencies that were already
+here. `atmosphere.h`, `celestial.h` and `sky_light.h` are M7's and their public surface is unchanged.
 
 ## The files
 
-| File | What it holds |
-|---|---|
-| `atmosphere.h` | Rayleigh, Mie, ozone, ground albedo and stellar illuminance; transmittance, single scattering, the sun's disc, the sunlight that reaches the ground, and aerial perspective from the same parameters |
-| `celestial.h` | sun and moon from time, latitude and axial tilt, on a declared time domain — and a model a project bypasses by writing a direction |
-| `sky_light.h` | spherical-harmonic irradiance, the three-colour gradient `rendering-global-illumination` consumes, and the sky view table a frame samples instead of ray marching |
+| File | What it holds | Tier |
+|---|---|---|
+| `atmosphere.h` | Rayleigh, Mie, ozone, ground albedo and stellar illuminance; transmittance, single scattering, the sun's disc, the sunlight that reaches the ground, and aerial perspective from the same parameters | M7 |
+| `celestial.h` | sun and moon from time, latitude and axial tilt, on a declared time domain — and a model a project bypasses by writing a direction | M7 |
+| `sky_light.h` | spherical-harmonic irradiance, the three-colour gradient `rendering-global-illumination` consumes, and `SkyViewTable` — the full-rebuild sky view | M7 |
+| `tables.h` | `TransmittanceTable`, `MultipleScatteringTable`, `IncrementalSkyView` and `AerialPerspectiveTable`: the four tables the requirement names, and the two halves M7 declared as gaps | M10 |
+| `clouds.h` | the coarse weather map, the layers, `drive_cloud_layers()`, the procedural reconstruction, the ray march and its cost, and the cloud half of temporal reprojection | M10 |
+| `cloud_shadows.h` | the coarse world-scale cloud shadow field, produced into `cy::environment` under one `ProducerToken` | M10 |
+| `composition.h` | planetary scale, stars and background content, aurorae, the filtered radiance map, the composition itself, the sky as a light, and the medium weather publishes into fog | M10 |
+| `profile.h` | environment profiles, per-group transitions, the four named worlds, the quality tiers and the priced ladder | M10 |
+| `diagnostics.h` | the table and celestial diagnostics, the per-pixel "what determined this", the cost attribution and the debug views | M10 |
 
-## The sky follows from the coefficients. There is no tinted preset in this module
+## The measurements, because none of these is a claim
 
-`sky_radiance()` takes an `Atmosphere` and a direction and has no other input, and there is no colour
-constant anywhere in the file. The Rayleigh coefficients go as 1/λ⁴, so blue scatters about six
-times as strongly as red — that **is** why the sky is blue, and a project that changes them gets a
-different colour because the arithmetic changed.
+    ctest --test-dir build/<label> -R "render_sky" --output-on-failure
 
-`thin_dusty_atmosphere()` exists because the requirement's own scenario is "a project sets a dusty
-thin atmosphere", and a scenario with no example in the tree is a scenario nobody runs. The suite
-asserts the consequence rather than the parameters: Earth's zenith has more than 2.5× as much blue
-radiance as red, and the dusty planet's has less than 1.6× — it is not dimmer, it is a different
-colour.
+**Multiple scattering is a table, and the table is 20 to 32 per cent of a clear sky.** M7's
+`Atmosphere::multiple_scattering_factor` was an isotropic constant and its header said so.
+`MultipleScatteringTable` is the second-order table plus the geometric series that stands for orders
+three and up, and what it contributes is measured by an A/B a reader can reproduce: an
+`AtmosphereTables` whose multiple-scattering half was never built samples zero there, so the SAME
+function over the SAME transmittance evaluates single scattering alone. Zenith at noon 20.3%,
+horizon away from a low sun 32.3%, a slope facing away from the sun 32.2%.
 
-## "Sufficient for GI's sky term" is a measurement
+**Incremental regeneration is a measured trade-off rather than a design intention.** A moving sun
+never forces a full rebuild; what it costs and what it buys is this curve, over a quarter-day at 0.92
+degrees of sun movement per update — a day compressed to about six seconds, two hundred times faster
+than a project's twenty-minute day:
 
-`src/rendering/gi/` already declares what it wants — `gi::SkyTerm`, three colours and an intensity,
-with a comment saying the full model "is the seam it will replace, not a second sky".
-`fit_sky_gradient()` is that replacement, and the criterion is an **integral**: the irradiance the
-three-colour gradient delivers against the irradiance the full atmosphere delivers, over four sun
-elevations and three surface orientations. A gradient that agreed with the sky only at the zenith
-would pass a spot check and be wrong for every surface that is not facing straight up.
+| row budget of 16 | fraction of a rebuild | worst error, as a fraction of the brightest sky | worst row staleness |
+|---|---|---|---|
+| 1 | 7.2% | 35.6% | 40.0° |
+| 3 | 19.6% | 19.0% | 16.6° |
+| 8 | 50.5% | 7.3% | 6.7° |
 
-    just test-integration -R integration.render_sky_light
+Staleness **accumulates per row**, which is what stops a scheme that always refreshes the rows near
+the sun from starving the ones far from it — a failure a single sunrise hides completely.
 
-    gradient vs atmosphere: mean relative irradiance difference 12.395% over 12 sun and
-    surface combinations, worst 17.4125%
-    mean irradiance over three orientations: solved horizon 14.042% off, sampled horizon 111.651% off
-    SH-9 irradiance: worst relative difference 1.92087% over four orientations
-    sky view table at high quality: worst relative difference from the model 0.169231%
+**Clouds are compact, and the number is asserted rather than described.** A hundred-kilometre world's
+weather map is 50 000 bytes. The volume it replaces — the same world voxelised at the 32 m a ray
+march actually resolves — is 2 128 906 250. That is the requirement's "a world-scale volumetric cloud
+field SHALL NOT be stored, streamed, or replicated", as a ratio of forty thousand to one.
 
-**The horizon colour is solved for, not sampled**, and it is solved by least squares over five
-surface orientations rather than one. Three numbers from the run above: sampling the horizon
-direction is 112% off; solving for the upward hemisphere alone is exact there and 50% off on a wall
-facing away from the sun; solving over the five is what ships. A GI sky term is read by every
-surface in a scene and almost none of them faces straight up.
+**Aerial perspective is the atmosphere's, in the engine's own froxel volume.** `AerialPerspectiveTable`
+IS a `rendering::FroxelVolume` and calls `froxel_slice_depth()` and `froxel_slice_of()` rather than
+re-deriving the slice distribution. Against M7's `aerial_perspective()` at eight kilometres its
+transmittance agrees to within 0.8% and its in-scattering is 1.52 times as large — because the
+analytic function integrates single scattering only and the table adds the tabulated multiple
+scattering, which near the ground is a third of the light.
 
-For a consumer that can hold nine colours rather than three, `project_sky_irradiance()` is 1.9%.
+**Ground to orbit is one model.** A camera walked from two metres to four hundred kilometres,
+geometrically, shows a worst step in zenith radiance of 6.3% of the ground's value and arrives at a
+black sky because the model ran out of air. There is no altitude band anywhere in this module.
 
-**This module names nothing in `cy::rendering::gi` and does not link it.** That is what lets the
-measurement above run with no global illumination system present. The adapter at the composition
-point is two lines and `sky_light.h` carries them.
+## Two defects M10 found, both with the regression test beside the fix
 
-## What this Seed does not do, said rather than implied
+**The sky glowed at midnight.** M7's isotropic multiple-scattering stand-in was added wherever the
+view ray passed, WITHOUT the sun's own transmittance — so it was added to air no sunlight reaches. A
+sun twenty degrees below the horizon produced **378 nits at the zenith and 2 679 at the horizon**,
+which is daylight brightness in a scene that is supposed to be dark and which no tone mapper can
+recover from. The fix is one `cwise_mul` in `sky_radiance()`; the regression test is
+`test_sky_tables.cpp`'s midnight case, which checks both the marched and the tabulated path. With the
+factor applied, M7's 0.35 turns out to be a good guess in daylight — the constant and the table agree
+to within 15% where the sun can reach. It was never the daylight value that was wrong.
 
-* **Multiple scattering is an isotropic approximation**, not the second-order table the requirement's
-  list names. `Atmosphere::multiple_scattering_factor` is the knob. The visible consequence is a sky
-  slightly too dark near the horizon at sunset and a shadowed slope that is too blue.
-* **The sky view table is rebuilt in full**, not incrementally, when the sun moves past
-  `kSunMovementThreshold`. The requirement asks for incremental regeneration as the sun moves.
-  `SkyTableStats::full_rebuilds` is a counter a reader can see, which is the half of that
-  requirement this tier does honour — along with "regenerated only when the parameters change" (the
-  sun is compared by *angle*, because a sun driven from a clock is never twice the same float) and
-  "their generation cost SHALL be reported".
-* **No clouds, no aurorae, no stars.** All three are required by the capability and none is here;
-  they are its Working tier. `CelestialState::star_visibility` is computed and drives nothing in this
-  module, because the sky composition consumes it and the sky composition is not here either.
+**Every descending `remap01` returned zero, so there were no clouds anywhere.** `height_profile()`
+fades a layer's top out with `remap01(h, 1.0F, 0.88F)`, a deliberately DESCENDING interval. The guard
+was `max(high - low, 1e-5)`, which turns a span of −0.12 into +1e-5 and sends the result to zero — so
+the height profile was zero for every layer, the density was zero everywhere, and the cloud shadow
+field was a field of ones. `test_clouds.cpp`'s reconstruction case is the regression test, and it
+searches for a position the reconstruction actually puts a cloud at rather than asserting on one it
+assumes, because a determinism check on a sample that happens to be zero is a check that two zeroes
+are equal.
 
-## Two defects the tests found, both recorded at the site
+## The decisions worth reading before changing anything
 
-* **A ray starting exactly on the surface and pointing down was declared to miss the planet.** The
-  first-root test was `root > 0` and that root is exactly zero there, so the integration ran straight
-  through the planet and a sun 30° below the horizon delivered 5×10⁻³⁶ lux instead of none. The test
-  is now on the closest approach. Not zero is not zero, and the thing that eventually notices is a
-  tone mapper.
-* **The spherical-harmonic irradiance was 68% low, which is exactly 1 − 1/π.** The cosine convolution
-  had an extra 1/π folded in — the factor that turns irradiance into the "diffuse radiance" a shader
-  wants *after* it has also multiplied by albedo. The shape of the error is what named it.
+**1. What is STATE and what is DRAWING is drawn in the types.** The capability leads with "the same
+environmental state SHALL drive every tier", so `CloudWeatherState`, `CloudWeatherMap` and
+`drive_cloud_layers()` do not take a `CloudQuality` — a tier cannot reach them because it is not in
+their signatures. `CloudDensitySample` carries both halves for the same reason: `coverage` and `type`
+come from the map and are identical at every tier; `density` is the reconstruction and is not.
+
+**2. The cloud shadow is an `environment` field, and the alternative is unreachable rather than
+unused.** `src/rendering/sky/CMakeLists.txt` does not link `cy::rendering-shadows`, so there is no
+expression here that can allocate a virtual shadow page. `cloud_shadow_declaration()` also refuses a
+cell below 64 m, which is the other half of the same guarantee: a caller asking for two-metre cells
+is asking for a shadow map by another name.
+
+**3. A profile describes the world and a preset describes the day, and the enforcement is an
+absence.** There is no `CloudWeatherState` in `EnvironmentProfile`. `configure_sky(profile, weather)`
+is the only function in the module that reads both, so a project cannot end up with two definitions
+of what a storm does to the low deck.
+
+**4. Weather reaches fog through state, and the arrow only points one way.** `AtmosphericMedium` is
+published by whoever owns the weather; `derive_fog_parameters()` is a pure function from it; and no
+function here takes a `FogParameters` and writes it anywhere. The Koschmieder relation between
+visibility and extinction is one constant used in both directions, and the round trip is a test.
+
+**5. The noise is `cy/noise.slang`'s, transliterated.** `value_noise()` is that module's arithmetic
+operation for operation, so the day a cloud shader is written the CPU and the GPU reconstruct the
+same cloud rather than two clouds that look alike. The one addition is the seed, which offsets the
+lattice.
+
+**6. Temporal reconstruction calls the engine's classifier.** `reproject_cloud()` calls
+`rendering::classify_history()`; what it adds is the cloud's own screen motion — a still camera and a
+thirty-metre-a-second wind at three kilometres moves the fetch by 0.0087 of the screen, and a
+camera-only motion vector would have moved it by nothing — and the weather rejection, at two
+granularities because a cell that changed and a state that changed fail differently.
+
+## What this tier does NOT do, said rather than implied
+
+* **NO SHADER, AND NO DEVICE.** Everything here is CPU. The cloud march, the tables and the radiance
+  map are the algorithms a shader will implement, measured against each other and against the model;
+  no `.slang` module accompanies them and no agreement against a real device is claimed. In
+  particular `cy/field.slang` — which `src/environment/`'s README says is owed by "the renderer-facing
+  row that first samples a field in a shader" — is **not** written here: the cloud shadow field is
+  sampled on the CPU through `environment::FieldStore`, so this row does not discharge that debt.
+* **The lighting integral's cloud term is a hemispherical mean.** `compose_sky_lighting()` measures
+  the clouds' effect over twelve probes and applies one attenuation plus one addition. It is right in
+  magnitude — thicker cover gives less irradiance — and wrong in DIRECTION: a cloud bank on one
+  horizon tilts the real irradiance and this does not.
+* **The aurora is a band.** It is composed WITH the sky — occluded by cloud, attenuated by air,
+  invisible in daylight — which is the structural half of the requirement. Curtains and rays are a
+  project's own `aurora_radiance()`.
+* **`StarSource::Imagery` names an asset and does not resolve one.** This module owns no asset
+  system; the composition's caller binds the image. The other two sources compose through the same
+  function, which is what makes the choice a content decision rather than a structural one.
+* **No wetness, no precipitation and no wind field.** `CloudWeatherState` is DECLARED here and
+  PRODUCED by `weather-and-wind`. That direction is what let the sky be built and measured before
+  that row existed.

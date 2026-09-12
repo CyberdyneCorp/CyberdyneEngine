@@ -7,6 +7,7 @@
 
 #include <cy/core/memory/system_allocator.h>
 #include <cy/runtime/simulation.h>
+#include <cy/test/breadcrumbs.h>
 #include <cy/test/test.h>
 
 #include "fixtures.h"
@@ -521,4 +522,37 @@ CY_TEST_CASE("a frame command with no scene tree is refused rather than accumula
     CY_REQUIRE(static_cast<bool>(fixture.simulation.commands().call(nothing, nullptr)));
     // Silently never applying it would leave the queue growing for the life of the process.
     CY_CHECK_FALSE(static_cast<bool>(fixture.simulation.step(nullptr)));
+}
+
+// `diagnostics-profiling-and-crash` — "Breadcrumbs": "the engine SHALL record breadcrumbs at coarse
+// phase boundaries: tick, stage, asset activation, level transition, and save". Two of the five are
+// this module's, and this is the case that says so.
+//
+// IT IS ALSO THE REGRESSION TEST FOR `m9:breadcrumbs-adopted`. M9 shipped the ring armed and with
+// no caller outside its own module, so a crash artefact written by a running engine said
+// `[breadcrumbs] 0 of 64` — a mechanism that cost a global array and answered nothing. Asserting
+// that the boundaries are *reached* is the part a grep for the breadcrumb macro cannot do.
+CY_TEST_CASE("a tick and every stage that runs leave a breadcrumb") {
+    Fixture fixture(fixed_step_config(1, /*tree=*/false));
+    Journal journal;
+    journal.simulation = &fixture.simulation;
+    // Two stages with systems and two without: a stage that does no work records nothing, so the
+    // sixty-four-entry ring is not spent on boundaries that had nothing to fail in.
+    CY_REQUIRE(static_cast<bool>(
+        add_system(fixture.simulation, ecs::Stage::PreSimulation, "pre", journal)));
+    CY_REQUIRE(
+        static_cast<bool>(add_system(fixture.simulation, ecs::Stage::Simulation, "sim", journal)));
+    fixture.close();
+
+    const u64 mark = cy::test::breadcrumb_mark();
+    CY_REQUIRE(static_cast<bool>(fixture.simulation.step(nullptr)));
+
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "tick"), 1U);
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "stage"), 2U);
+
+    // And the detail is the tick that was run, which is what makes the marker worth reading in an
+    // artefact: "it died in tick 2" rather than "it died in a tick".
+    u64 tick_detail = 0;
+    CY_REQUIRE(cy::test::breadcrumb_detail_since(mark, "tick", tick_detail));
+    CY_CHECK_EQ(tick_detail, fixture.simulation.clock().tick());
 }

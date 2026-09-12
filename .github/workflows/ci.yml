@@ -733,9 +733,9 @@ jobs:
       - name: The overlay, its identity, its scopes and its dirty tracking
         run: just test-unit -R unit.save
       - name: Generations are atomic under kill -9, and an unloaded region round-trips
-        run: just test-integration -R save_archive && just test-integration -R save_kill_nine
+        run: just test-integration -R save_archive && just test-determinism -R save_kill_nine
       - name: Migration, preservation, and a damaged chunk as a diagnostic
-        run: just test-integration -R save_service && just test-integration -R save_fuzz
+        run: just test-integration -R save_service && just test-determinism -R save_fuzz
       # The spike's finding as a gate: a key that omits the compiler is unrepresentable.
       - name: Derivation keys, the toolchain fingerprint, and output digests
         run: just test-unit -R unit.build_graph

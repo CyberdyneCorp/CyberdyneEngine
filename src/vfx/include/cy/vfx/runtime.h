@@ -26,12 +26,16 @@
 //
 // **The kernel executor in this header is the CPU path.** It steps through `VfxKernel::program()` —
 // the flat, compiled form — and never sees a `cy::graph::Graph`, which is the whole of "the runtime
-// SHALL contain no graph interpreter". The GPU path's kernels are COMPILED and their Slang is
-// GENERATED (`assemble_translation_unit`), and `decide_path` will choose them the moment a device
-// dispatch exists to run them on; what does not exist yet in this tree is the dispatch itself.
+// SHALL contain no graph interpreter".
+//
+// **The GPU path is `cy::vfx-gpu`'s `VfxGpuPass`** and it exists since M10 task 5.1: the emitter's
+// generated dispatch unit compiled to a module, particle state resident in device memory, and the
+// update and the spawn dispatched indirectly from counts the device maintains. It is a SEPARATE
+// OBJECT a host drives from its frame, not something `SimulationWorld::step` can reach — this world
+// holds no device and must not, which is what keeps `integration.vfx` headless.
 // `device_dispatch_available()` answers that honestly, `decide_path` reports
-// `FallbackReason::DeviceDispatchUnimplemented` when it is the cause, and the report says so every
-// frame rather than once in a document.
+// `FallbackReason::NoDeviceInThisWorld` when it is the cause, and the report says so every frame
+// rather than once in a document.
 //
 // ================================================================================================
 // THE SEAM TO THE RENDERER IS THIRTY-TWO BYTES
@@ -68,9 +72,19 @@ enum class FallbackReason : u8 {
     DeviceLacksIndirectDispatch,
     /// The host turned the GPU path off — profiling, a capture, a bisection.
     DisabledByHost,
-    /// THE HONEST ONE. The kernels are compiled and their Slang is generated; the compute dispatch
-    /// that would run them is not in this tree yet. Reported every frame rather than assumed.
-    DeviceDispatchUnimplemented,
+    /// THE HONEST ONE. The build HAS a compute dispatch — `cy::vfx-gpu`'s `VfxGpuPass` since M10 —
+    /// and THIS SIMULATION WORLD has no device to run it on.
+    ///
+    /// `SimulationWorld` holds no device handle and never has: its own README's claim that "a
+    /// simulation that had to know how a frame is assembled would be a second renderer" is exactly
+    /// that property, and it is what lets every case in `integration.vfx` run headless. A host that
+    /// wants the GPU path creates a `VfxGpuPass` per emitter and drives it from its frame; a host
+    /// that steps a `SimulationWorld` is on the CPU path and this value is why.
+    ///
+    /// It replaced `DeviceDispatchUnimplemented`, which was true until M10 task 5.1 and is not any
+    /// more — and a reason that had stayed behind after the thing it names was built would be the
+    /// worst kind of report: a specific one that is wrong.
+    NoDeviceInThisWorld,
 };
 
 [[nodiscard]] const char* fallback_reason_name(FallbackReason reason) noexcept;
@@ -100,8 +114,12 @@ struct PathDecision {
     bool is_fallback = false;
 };
 
-/// Whether a compute dispatch that could run a compiled VFX kernel exists in this build. False
-/// today; the one place that fact lives, so it changes in one line when it changes.
+/// Whether a compute dispatch that could run a compiled VFX kernel exists in this build.
+///
+/// TRUE since M10 task 5.1: `cy::vfx-gpu`'s `VfxGpuPass` is it. What this does NOT say is that any
+/// particular `SimulationWorld` will use one — a world holds no device, so an emitter stepped by
+/// one runs on the CPU and reports `FallbackReason::NoDeviceInThisWorld`. The two facts are
+/// separate and this function answers only the first.
 [[nodiscard]] bool device_dispatch_available() noexcept;
 
 [[nodiscard]] PathDecision decide_path(const CompiledEmitter& emitter,

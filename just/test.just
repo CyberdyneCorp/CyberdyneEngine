@@ -30,18 +30,28 @@ test-smoke *args:
 test-render *args:
     @just _ctest render {{args}}
 
-# Every suite: unit, integration, smoke, render, and anything registered outside them. What CI runs.
+# Determinism: reproducibility of simulation and replication. Ten seconds each.
+#
+# The kind `testing-and-quality` gives its own row and its own budget, and the one row of the
+# taxonomy graded by SUBJECT rather than by cost — a golden replay is a ten-second case because a
+# session is ten seconds long, not because somebody let it grow. It joined the taxonomy at M10; see
+# tests/determinism/CMakeLists.txt for why it was empty until then.
+test-determinism *args:
+    @just _ctest determinism {{args}}
+
+# Every suite: unit, integration, smoke, render, determinism, and anything registered outside them.
+# What CI runs.
 test-all *args:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{root}}"
     failed=()
-    # `unclassified` is the fourth pass, and it is not a suite: it runs every test that carries none
-    # of the three labels. Without it, a test registered with a bare add_test() would be run by
+    # `unclassified` is the last pass, and it is not a suite: it runs every test that carries none
+    # of the taxonomy's labels. Without it, a test registered with a bare add_test() would be run by
     # nobody — invisible to every recipe here and green in CI by never executing. Running it is the
     # honest half; the recipe also names it, because a test with no label is a test with no budget
     # and the taxonomy is where it belongs.
-    for kind in unit integration smoke render unclassified; do
+    for kind in unit integration smoke render determinism unclassified; do
         # Not `set -e`: a failing suite must not hide the state of the two after it. CI reads the
         # summary below, and a developer who has broken two suites should learn that in one run.
         if ! just _ctest "${kind}" {{args}}; then
@@ -50,7 +60,7 @@ test-all *args:
     done
     echo
     if [ ${#failed[@]} -eq 0 ]; then
-        echo "test-all: unit, integration, smoke, render and the unclassified pass all green"
+        echo "test-all: unit, integration, smoke, render, determinism and the unclassified pass all green"
     else
         echo "test-all: failed — ${failed[*]}" >&2
         exit 1
@@ -176,7 +186,7 @@ _ctest kind *args:
     # the same exemption until task 4.1.4 landed smoke.empty_sample; it does not any more, so a
     # smoke suite that stops being registered fails here rather than reporting a vacuous pass.
     if [ "{{kind}}" = "unclassified" ]; then
-        ctest_args+=(--label-exclude "^(unit|integration|smoke|render)\$" --no-tests=ignore)
+        ctest_args+=(--label-exclude "^(unit|integration|smoke|render|determinism)\$" --no-tests=ignore)
     elif [ "{{kind}}" = "render" ]; then
         # The render suites are declared only when a rendering backend is compiled in
         # (tests/render/CMakeLists.txt), because every case needs a device to read back from. So an
@@ -209,12 +219,12 @@ _ctest kind *args:
         # ctest names them on failure; on success they are silent, and silently-passing tests
         # outside the taxonomy are exactly what this pass exists to surface.
         unclassified="$(ctest --test-dir "${build_dir}" -N \
-            --label-exclude "^(unit|integration|smoke|render)\$" 2>/dev/null \
+            --label-exclude "^(unit|integration|smoke|render|determinism)\$" 2>/dev/null \
             | sed -n 's/^  Test *#[0-9]*: //p')"
         if [ -n "${unclassified}" ]; then
             echo "note: these tests carry no taxonomy label, so no graduated recipe runs them:" >&2
             printf '        %s\n' ${unclassified} >&2
-            echo "      Declare them with cy_add_test(NAME <n> KIND unit|integration|smoke|render ...)" >&2
+            echo "      Declare them with cy_add_test(NAME <n> KIND unit|integration|smoke|render|determinism ...)" >&2
             echo "      from tests/, or set LABELS on them; that is what gives them a budget." >&2
         fi
     fi

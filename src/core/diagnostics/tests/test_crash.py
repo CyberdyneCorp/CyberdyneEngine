@@ -12,9 +12,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
+
+# What "contains no absolute path from the build machine" looks like as a pattern. The same three
+# shapes the `m9:crash-artefact-paths` ledger criterion greps for, held here as well so the property
+# is defended by `ctest -R diag_crash` and not only by a milestone recipe nobody runs on a branch.
+ABSOLUTE_PATH = re.compile(r"(/home/|/Users/|[A-Za-z]:\\)")
 
 
 # Printed by the probe when the mode it was asked for cannot run in this build. Two reasons, and
@@ -36,6 +42,7 @@ REQUIRED = (
     ("last_frame: 4242", "the last frame the process reached"),
     ("[breadcrumbs]", "the breadcrumb ring"),
     ("level.transition", "a breadcrumb that survived the crash"),
+    ("[modules]", "the module table captured when the handler installed"),
     ("[backtrace]", "the backtrace section"),
     ("[end]", "the report is complete, not truncated"),
 )
@@ -72,12 +79,68 @@ def check(report: str, mode: str) -> int:
             if needle not in report:
                 print(f"the assertion report is missing {needle!r}", file=sys.stderr)
                 failures += 1
-    # backtrace_symbols_fd writes one frame per line, each carrying a module and an address; a
-    # report with none is valid only on a platform that provides no backtrace, and says so.
+    # One frame per line, each carrying an address; a report with none is valid only on a platform
+    # that provides no backtrace, and says so.
     section = report.split("[backtrace]", 1)[-1]
     frames = [line for line in section.splitlines() if "0x" in line]
     if len(frames) < 3 and "<no backtrace available" not in section:
         print(f"the backtrace has {len(frames)} frames", file=sys.stderr)
+        failures += 1
+    failures += check_no_paths(report, section)
+    return failures
+
+
+def check_no_paths(report: str, backtrace: str) -> int:
+    """`diagnostics-profiling-and-crash`: a produced artefact carries no absolute build-machine path.
+
+    THIS IS THE REGRESSION TEST FOR `m9:crash-artefact-paths`, and it is written against the failure
+    that actually happened rather than against the requirement's wording alone. The frames used to
+    be written by `backtrace_symbols_fd()`, which emits each module exactly as the loader resolved
+    it — an absolute path under the account's home for any binary that was not invoked by a relative
+    one. So two checks, and the second is the one with teeth: the artefact as a whole carries no
+    `/home/…`, `/Users/…` or `C:\…`, AND the backtrace section carries no directory separator at
+    all, which fails the moment a frame goes back to being written as a path regardless of where
+    this machine happens to keep its home directory.
+    """
+    failures = 0
+    leaked = [line for line in report.splitlines() if ABSOLUTE_PATH.search(line)]
+    if leaked:
+        print(f"the artefact carries {len(leaked)} absolute build-machine path(s); the first is "
+              f"{leaked[0].strip()!r}", file=sys.stderr)
+        failures += 1
+    pathy = [line for line in backtrace.splitlines() if "/" in line or "\\" in line]
+    if pathy:
+        print(f"a backtrace frame carries a path separator: {pathy[0].strip()!r}. Frames name a "
+              f"module by BASENAME and an offset — see crash_handler_posix.cpp.", file=sys.stderr)
+        failures += 1
+    return failures
+
+
+def check_reader(inspect: str, report: str) -> int:
+    """The artefact is read back by the tool that ships to read it.
+
+    `tools/trace/crash_inspect.py` is the whole of `just diagnose-crash`, and until M10 changed the
+    frame format to close `m9:crash-artefact-paths` it was reachable from no test at all — so a
+    reader that stopped parsing the artefact would have been found by a person with a crash on their
+    hands. It is run here over the report this test just produced, and its own completeness check
+    (every named section present, parsed) is what decides.
+    """
+    completed = subprocess.run([sys.executable, inspect, report], capture_output=True, text=True,
+                               timeout=60, check=False)
+    failures = 0
+    if completed.returncode != 0:
+        print(f"crash_inspect.py rejected the artefact it is meant to read: "
+              f"{completed.stderr.strip()}", file=sys.stderr)
+        failures += 1
+    # It must have PARSED the frames, not merely not crashed: "0 frames" is what a reader that no
+    # longer understands the format prints, and it prints it with status 0.
+    for needle in ("backtrace  ", "modules  "):
+        if needle not in completed.stdout:
+            print(f"crash_inspect.py printed no {needle.strip()} line", file=sys.stderr)
+            failures += 1
+    if "backtrace            0 frames" in completed.stdout:
+        print("crash_inspect.py parsed no frames out of a report that has them; the reader and the "
+              "writer have gone out of step", file=sys.stderr)
         failures += 1
     return failures
 
@@ -85,6 +148,8 @@ def check(report: str, mode: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--probe", required=True, help="the crash probe executable")
+    parser.add_argument("--inspect", help="tools/trace/crash_inspect.py, run over what the probe "
+                                          "wrote so the reader and the writer stay in step")
     args = parser.parse_args()
 
     failures = 0
@@ -109,6 +174,8 @@ def main() -> int:
             with open(path, "r", encoding="utf-8", errors="replace") as handle:
                 report = handle.read()
             problems = check(report, mode)
+            if args.inspect:
+                problems += check_reader(args.inspect, path)
             if problems:
                 print(f"--- {mode} report ---\n{report}", file=sys.stderr)
             failures += problems

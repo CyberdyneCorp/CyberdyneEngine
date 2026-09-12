@@ -164,17 +164,63 @@ registered before it started. Compression is `None` at M0; the chunk header alre
 lengths, so turning on zstd changes the writer and the readers, not the format.
 
 A crash report is text, written by a path that assumes the process is damaged: no allocation, no
-lock, no variadic formatter, no subsystem re-entry. The path, the identity strings and the report
-buffer are prepared when the handler is installed. It carries the build identity, the declared
-classification ceiling, the signal or exception, the last frame the process reached, the breadcrumb
-ring, and the backtrace with module identities and offsets — symbol-independent, symbolicated later
-against the archived symbols. A report already written by a fatal assertion is not overwritten by the
-`SIGABRT` that assertion raised.
+lock, no variadic formatter, no subsystem re-entry. The path, the identity strings, the report
+buffer **and the module table** are prepared when the handler is installed. It carries the build
+identity, the declared classification ceiling, the signal or exception, the last frame the process
+reached, the breadcrumb ring, and the backtrace — symbol-independent, symbolicated later against the
+archived symbols. A report already written by a fatal assertion is not overwritten by the `SIGABRT`
+that assertion raised.
+
+**A frame is a basename and an offset, and that is a privacy property rather than a style.** The
+specification requires a produced artefact to contain no absolute path from the build machine, and
+the artefact's own header declares it `potentially-personal`. `backtrace_symbols_fd()` writes each
+frame's module exactly as the loader resolved it, which on an installed binary, a CI runner or a
+double-clicked game is an absolute path carrying the account name — M9's `m9:crash-artefact-paths`
+criterion is the gate that found it and M10 is where it closed. So the handler walks the loaded
+objects with `dl_iterate_phdr()` at **installation** (it takes the loader's lock and is not
+async-signal-safe), keeps a basename and a load span per object in a fixed array, and the fault path
+reads that array and nothing else:
+
+```
+[modules]
+  cy_diag_crash_probe base=0x00005a903ba1f000
+  libc.so.6 base=0x00007f0ab7e00000
+
+[backtrace]
+  #0 cy_diag_crash_probe+0x0000000000009e20 pc=0x00005a903ba28e20
+  #3 libc.so.6+0x0000000000045330 pc=0x00007f0ab7e45330
+```
+
+The offset is what `addr2line` wants. Because the report names a module and not a path,
+`--symbolicate` is told where the build's binaries are rather than guessing — `--binaries <dir>`,
+then the working directory. On a platform with no module table the frames carry `pc=` alone and the
+section says so; no platform writes a path.
 
 ```
 just diagnose-trace <capture> [--events N] [--kind counter] [--json]
-just diagnose-crash [report] [--directory <dir>] [--symbolicate]
+just diagnose-crash [report] [--directory <dir>] [--symbolicate] [--binaries <dir>]
 ```
+
+### Breadcrumbs have callers
+
+`breadcrumb.h`'s ring was armed at M0 and had no caller outside this module until M10, so a crash
+artefact written by a running engine said `[breadcrumbs] 0 of 64` — `m9:breadcrumbs-adopted`. The
+five coarse phase boundaries the specification names are now recorded where they happen, each by the
+module that owns the boundary, and each asserted by that module's own suite reading the ring back
+through `cy/test/breadcrumbs.h`:
+
+| Phase | Site | Detail | Suite |
+|---|---|---|---|
+| `tick` | `Simulation::step` | the tick | `integration.runtime_simulation` |
+| `stage` | `Simulation::run_stage` | the stage | `integration.runtime_simulation` |
+| `asset.activation` | `AssetSystemImpl::publish` | the asset id's low half | `integration.assets_loading` |
+| `level.transition` | `CellActivation::publish` | the cell | `integration.world_activation` |
+| `save` | `SaveService::perform_write` | entries captured | `integration.save_service` |
+
+The render graph's per-pass markers are the *other* mechanism the same requirement asks for and have
+existed since M3: `RenderGraphExecutor` writes a pass ordinal into a device-visible buffer under
+`options.breadcrumbs`, which is what a device-loss report reads back. A GPU cannot write into a host
+ring, and a host ring cannot say which pass the device died in.
 
 ## Seams, and what is deliberately not here
 

@@ -1,5 +1,6 @@
 #include <cy/world/activation.h>
 
+#include <cy/core/diagnostics/breadcrumb.h>
 #include <cy/ecs/world.h>
 #include <cy/world/overlay.h>
 
@@ -439,6 +440,13 @@ Status CellActivation::publish(ecs::World& world, const LayerTable& layers) noex
     }
     phase_ = StagingPhase::Published;
     measured_ = elapsed_since(started);
+
+    // LEVEL TRANSITION, one of the five coarse phase boundaries `diagnostics-profiling-and-crash`
+    // names for breadcrumbs. In a partitioned world there is no "load the next level" moment — a
+    // cell becoming published IS the transition, and it is the last one of these that a crash
+    // artefact needs in order to say where in the world the process was. Recorded after the atomic
+    // publication rather than before it, so the ring records cells that actually entered the world.
+    CY_BREADCRUMB("level.transition", id_.value);
     return ok();
 }
 

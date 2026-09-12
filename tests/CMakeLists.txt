@@ -22,6 +22,10 @@
 set(CY_TEST_BUDGET_unit        1000000)      # 1 ms
 set(CY_TEST_BUDGET_integration 1000000000)   # 1 s
 set(CY_TEST_BUDGET_smoke       30000000000)  # 30 s
+# determinism/: 10 s per test, which is `testing-and-quality`'s own row for the kind. A case here
+# runs a session twice, or sweeps one artefact's every truncation and every byte — work whose cost
+# is set by the length of the session rather than by how much of it the test chose to look at.
+set(CY_TEST_BUDGET_determinism 10000000000)  # 10 s
 # render/: 5 s per test, which is tests/render/README.md's own number. A case here creates a device,
 # submits real work and waits for the GPU, and it does so several times — the conventions suite
 # renders one frame per assertion because a frame is how you ask the device a question.
@@ -31,6 +35,7 @@ set(CY_TEST_TIMEOUT_unit        60)
 set(CY_TEST_TIMEOUT_integration 300)
 set(CY_TEST_TIMEOUT_smoke       300)
 set(CY_TEST_TIMEOUT_render      300)
+set(CY_TEST_TIMEOUT_determinism 300)
 
 # A test source that includes doctest directly has stepped around the CY_TEST_CASE wrapper, and the
 # wrapper is the whole reason doctest is an acceptable choice (design.md §5). Checked here, at the
@@ -71,7 +76,7 @@ function(cy_add_test)
     if(NOT DEFINED CY_TEST_BUDGET_${arg_KIND})
         message(FATAL_ERROR
             "cy_add_test(${arg_NAME}): KIND '${arg_KIND}' is not part of the taxonomy. It is one of "
-            "unit, integration, smoke or render; determinism joins them at M9.")
+            "unit, integration, smoke, render or determinism.")
     endif()
     if(NOT arg_SOURCES)
         message(FATAL_ERROR "cy_add_test(${arg_NAME}): SOURCES is required.")
@@ -110,6 +115,8 @@ add_subdirectory(smoke)
 # conventions-on-a-device suite, and task 6.3's golden images join it.
 add_subdirectory(render)
 
-# determinism/ holds a README and nothing else: it is the suite whose subject does not exist yet, and
-# an empty CMakeLists.txt would only be a place for a placeholder test to accumulate. It is added
-# when simulation lands at M9.
+# determinism/ joined the taxonomy at M10 rather than at M9, and the delay is recorded rather than
+# tidied away: M9 built the simulation this suite is about and put its determinism cases in unit/ and
+# integration/, so `m9`'s own closing gate handed the empty directory forward. M10 task 6.4 declares
+# the kind above and the suites below.
+add_subdirectory(determinism)

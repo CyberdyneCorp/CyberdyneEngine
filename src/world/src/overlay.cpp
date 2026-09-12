@@ -18,7 +18,8 @@ const char* migration_policy_name(MigrationPolicy policy) noexcept {
 }
 
 bool CellOverlay::empty() const noexcept {
-    return removed.empty() && overrides.empty() && positions.empty() && created.blocks.empty();
+    return removed.empty() && overrides.empty() && positions.empty() && blobs.empty() &&
+           created.blocks.empty();
 }
 
 PersistenceOverlay::PersistenceOverlay(Allocator& allocator) noexcept
@@ -92,6 +93,32 @@ Status PersistenceOverlay::record_component(CellId cell, PersistentId entity,
     }
     return (*overlay)->overrides.push_back(
         ComponentOverride{entity, component, first, static_cast<u32>(value.size())});
+}
+
+Status PersistenceOverlay::record_blob(CellId cell, u32 channel, u64 key,
+                                       Span<const u8> value) noexcept {
+    Expected<CellOverlay*, Error> overlay = entry_for(cell);
+    if (!overlay) {
+        return Status{make_unexpected(overlay.error())};
+    }
+
+    const auto first = static_cast<u32>(values_.size());
+    if (Status appended = values_.append(value); !appended) {
+        return appended;
+    }
+
+    // Replaces the previous blob for the same (channel, key), for the reason a component override
+    // does: the old bytes stay in the pool because compacting them would move every other record's
+    // offset, and the pool is bounded by how much of the world has changed.
+    for (OverlayBlob& existing : (*overlay)->blobs.span()) {
+        if (existing.channel == channel && existing.key == key) {
+            existing.first = first;
+            existing.size = static_cast<u32>(value.size());
+            return ok();
+        }
+    }
+    return (*overlay)->blobs.push_back(
+        OverlayBlob{channel, key, first, static_cast<u32>(value.size())});
 }
 
 Status PersistenceOverlay::record_created(CellId cell, PersistentId entity, LayerId layer,
@@ -179,6 +206,19 @@ Span<const u8> PersistenceOverlay::component_override(
     }
     for (const ComponentOverride& record : overlay->overrides.span()) {
         if (record.entity == entity && record.component == component) {
+            return values_.span().subspan(record.first, record.size);
+        }
+    }
+    return {};
+}
+
+Span<const u8> PersistenceOverlay::blob(CellId cell, u32 channel, u64 key) const noexcept {
+    const CellOverlay* overlay = find(cell);
+    if (overlay == nullptr) {
+        return {};
+    }
+    for (const OverlayBlob& record : overlay->blobs.span()) {
+        if (record.channel == channel && record.key == key) {
             return values_.span().subspan(record.first, record.size);
         }
     }

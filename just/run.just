@@ -443,3 +443,61 @@ capture-animated-character *args:
     echo "==> encode      animated-character"
     python3 tools/docs/collect_animated_character.py "${work}/frames" \
         --still "${work}/still.png" --fps "${fps}"
+
+# M10's ARTEFACT: docs/design/images/m10-world.png, docs/design/images/m10-world-budget.png and
+# docs/design/videos/m10-world.mp4, regenerated from nothing but a seed.
+#
+# WHY A VIDEO AND NOT A STILL. A single frame of a world is a single frame of a world. What M10's
+# artefact claims is that the sun crosses it, a weather front moves through it, snow settles on the
+# windward slope and thaws on the lee, the sea's spectrum follows the wind that weather published and
+# the trees lean with the same field — and no still carries any of that. The still this recipe also
+# writes is for the readers and the viewers that cannot play video, and it is the run's most legible
+# frame rather than a second claim.
+#
+# WHY THERE IS A THIRD ARTEFACT. M10 tasks.md 7.3 asks for the environment demo's frame budget
+# "measured as a CURVE across the cycle rather than asserted at one time of day". The program writes
+# every frame's per-producer cost to a CSV and the collector plots it; a maximum printed in a log
+# would have been exactly the assertion that task is written to refuse.
+#
+# WHY THE FRAMES GO IN THE BUILD TREE AND NOT IN mktemp -d. The engine's PNG writer stores rather
+# than deflates, so six hundred frames at 1280x720 are about two gigabytes — more than a tmpfs /tmp
+# on many machines will hold. They are written under the build directory and deleted when the recipe
+# finishes, which is the same lifetime `mktemp -d` would have given them and not the same filesystem.
+#
+# IT NEEDS ONE THING THE REPOSITORY DOES NOT HAVE: a graphics device. It needs NO content at all —
+# there is no asset, no mesh and no texture anywhere in this artefact; the world is generated from
+# the seed on the command line. Without a device the program still generates, cooks, claims, places
+# and simulates the whole world, prints its report, says which device it did not find, and writes no
+# frames. That is why this is a recipe a person runs and not a test, exactly as
+# `just capture-animated-character` and `just capture-virtual-geometry` above are.
+
+# Generate a world, film a day of it, and encode the video, the still and the budget curve. Usage: just capture-world [--profile <p>] [--seconds <s>] [--width <n>] [--height <n>] [--fps <n>] [--seed <n>] [--regions <n>]
+capture-world *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}"
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/10-world/cy_sample_world"
+    if [ ! -x "${sample}" ]; then
+        echo "capture-world: ${sample} was not built." >&2
+        exit 1
+    fi
+
+    fps="${CY_CAPTURE_FPS:-30}"
+    work="${build_dir}/world"
+    rm -rf "${work}"
+    mkdir -p "${work}/frames"
+    trap 'rm -rf "${work}/frames"' EXIT
+
+    echo "==> capture     world  fps=${fps}"
+    "${sample}" --frames "${work}/frames" --still "${work}/still.png" \
+        --budget "${work}/budget.csv" --fps "${fps}" ${rest}
+
+    echo "==> encode      world"
+    python3 tools/docs/collect_world.py "${work}/frames" \
+        --still "${work}/still.png" --budget "${work}/budget.csv" --fps "${fps}"

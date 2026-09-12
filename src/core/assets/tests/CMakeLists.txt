@@ -83,11 +83,14 @@ function(cy_assets_declare_tests)
         SOURCES "${cy_assets_tests_dir}/test_streaming.cpp"
         DEPENDENCIES cy::core-assets cy::core-jobs)
 
+    # cy::core-diagnostics is here for one case: "activating an asset leaves a breadcrumb naming
+    # it" reads the breadcrumb ring back. `cy::core-assets` links it privately, so the headers are
+    # not on this target's include path without saying so.
     cy_add_test(
         NAME assets_loading
         KIND integration
         SOURCES "${cy_assets_tests_dir}/test_asset_system.cpp"
-        DEPENDENCIES cy::core-assets cy::core-jobs)
+        DEPENDENCIES cy::core-assets cy::core-jobs cy::core-diagnostics)
 
     # The watcher and the reload it feeds. Integration rather than unit for the same reason
     # `assets_loading` is: the reload cases start a job system and an I/O thread. The watcher's own

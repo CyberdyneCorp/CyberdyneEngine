@@ -14,6 +14,7 @@ itself.
 | `harness/` | Registration, the timing loop, the calibration, and the results file. `cy::bench-harness`. |
 | `micro/` | Benchmarks with no engine dependency. Today: one, and it measures the harness. |
 | `ecs/` | The ECS's per-entity costs: query iteration, random access, spawn, block activation, deferred structural change. |
+| `gameplay/` | `gameplay-framework`'s performance table: command submission and commit, hierarchical tag tests, the indexed ownership query, and the batch-admit round trip. |
 | `tools/compare.py` | Turns a run into a pass or a failure against the baseline. |
 | `baseline.json` | The thresholds. A reviewed file: changing it is recording an intentional trade-off. |
 
@@ -55,6 +56,38 @@ divides out neither. They were measured at 25% for `ecs/query-iterate` and 35% f
 allocate or chase pointers — chosen from the spread of repeated runs on the recording machine, wide
 enough not to fire on a busy agent and far too narrow for a doubling to hide in.
 
+### `gameplay/` carries 35%, and 50% for one, because the ratio does not divide out a hybrid CPU
+
+The four entries at 35% and `gameplay/command-record` at 50% are wide for a reason that is a
+property of the machine they were recorded on, and it is written down here rather than left to be
+guessed from five unusual numbers.
+
+Across seven repeated runs of the same binary within twenty minutes, every gameplay ratio moved by
+up to **2.2×** — `gameplay/tag-test` between 5.71 and 11.28, `gameplay/batch-admit` between 397 and
+1027 — while in the same window `ecs/` measured **within 35% of a baseline recorded eight days
+earlier, on the fast side of it**. So it is not the machine being slow; it is these bodies moving
+and those ones not.
+
+The recording machine is an i9-12900K: eight performance cores and eight efficiency cores, with no
+affinity pinned. The calibration workload and the benchmark body are separate measurement phases, so
+each may be scheduled on either kind of core — and a ratio between a P-core measurement and an
+E-core one is roughly double a ratio between two of the same kind. The `ecs/` bodies are bound by
+2.4 MB of column data and by the chunk allocator, so the core they land on moves them much less; the
+gameplay bodies are ALU- and branch-bound, which is exactly the case the ratio is supposed to divide
+the machine out of and exactly the case a hybrid CPU breaks it for.
+
+**These five were therefore recorded from the SLOW end of the observed spread**, so a run on a
+quieter machine reports "faster — re-record" (a note) rather than failing, and a tolerance covers the
+rest. What survives is what the requirement is actually about: `gameplay-framework`'s table is
+architectural — indexed rather than scanned, integers rather than strings — and those regressions are
+five- to eight-hundred-fold, not thirty per cent. Turning `GameplayIndexes::owned_by` into a scan of
+every tracked entity was measured at **+600%** against these thresholds, which no tolerance here
+hides.
+
+**They should be re-recorded on a quiet reference machine with affinity pinned to one core kind**,
+and then tightened. Until they are, read a gameplay failure as "look at it" rather than as "it
+regressed".
+
 **Not every runner in `benchmarks/` is one of these.** `cy_bench_jobs_throughput` measures a thread
 pool against a serial baseline, owns its own thresholds, and has its own recipe (`just
 test-bench-jobs`); `just test-bench` recognises it by the fact that it does not answer `--list` and
@@ -81,6 +114,25 @@ the baseline holding only the last runner's benchmarks. An entry that is genuine
 deleted by hand, which is the right amount of friction for discarding a threshold.
 `python3 benchmarks/tools/compare.py --selftest` checks that and the comparison's other decisions;
 `just test-bench` runs it before it measures anything.
+
+## The framework's share of a frame
+
+`gameplay-framework` asks for one number that is not a per-operation cost: "The framework's own cost
+SHALL be a reported fraction of simulation frame time, so that regressions are attributable to it
+rather than to the game."
+
+At benchmark scale that fraction is a division on `baseline.json`, and it is a division a reader can
+do because all three terms are ratios against the same calibration workload:
+
+```
+gameplay/command-commit + gameplay/batch-admit     the framework's per-entity cost in a tick
+---------------------------------------------
+              ecs/query-iterate                    the simulation's inner loop over that entity
+```
+
+A move in that fraction is attributable to whichever of the three ratios moved, which is what the
+requirement asks for. **What it is not** is an attribution of a *running* frame: that is a profiler
+zone summed over the frame, in `src/core/diagnostics/`, and no gameplay system declares one yet.
 
 ## What is not here yet
 

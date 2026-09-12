@@ -63,6 +63,14 @@ const char* channel_name(Channel channel) noexcept {
             return "audio";
         case Channel::Illumination:
             return "illumination";
+        case Channel::Fields:
+            return "fields";
+        case Channel::Terrain:
+            return "terrain";
+        case Channel::Water:
+            return "water";
+        case Channel::Foliage:
+            return "foliage";
         case Channel::kCount:
             break;
     }
@@ -91,6 +99,27 @@ ChannelMask profile_channels(WorldProfile profile) noexcept {
             mask.set(Channel::Physics);
             mask.set(Channel::Navigation);
             mask.set(Channel::Ai);
+            // A server needs the environment fields too: they carry gameplay-visible state —
+            // water flow drives a boat, moisture modifies navigation cost — and a server that
+            // omitted them would simulate a different world from its clients.
+            mask.set(Channel::Fields);
+            // And the water channel, for the same reason and with one addition of its own: a
+            // dedicated server floats boats, paths swimmers and answers depth queries, so it needs
+            // water's queries and physics representation. What it does not need is the surface
+            // geometry inside that payload, and `water::profile_payloads()` is what drops it —
+            // see src/water/include/cy/water/streaming.h.
+            mask.set(Channel::Water);
+            // And the terrain: a server resolves collision against the ground and rebuilds
+            // navigation over it, so a server that omitted terrain would simulate a world its
+            // clients are standing on and it is not.
+            mask.set(Channel::Terrain);
+            // And the foliage: `foliage` makes an instance PROMOTABLE to an entity when gameplay
+            // touches it, and a felled tree is authoritative state. A server that omitted the
+            // clusters could not derive the identity the promotion is anchored to, so it could not
+            // fell a tree its clients had just felled. What it does not need is the ground cover's
+            // expansion, and that costs nothing here: a patch description is thirty-two bytes and
+            // no blade exists until something asks a view for one.
+            mask.set(Channel::Foliage);
             return mask;
         case WorldProfile::Client:
         case WorldProfile::Editor:

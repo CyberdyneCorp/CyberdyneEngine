@@ -187,6 +187,18 @@ public:
     [[nodiscard]] SimulationPath path() const noexcept { return path_; }
     void set_path(SimulationPath path) noexcept { path_ = path; }
 
+    /// WHICH RENDERER DRAWS THIS EMITTER, and the properties `vfx-system` requires every renderer
+    /// to support. M10 task 5.3.
+    ///
+    /// An index into `vfx-system`'s renderer table rather than the `RendererKind` enumerator
+    /// itself, because that enumerator lives in `renderers.h` with the publications — and this
+    /// header is the asset model, which `cy::vfx-compiler` compiles without ever naming a
+    /// publication. `renderer_kind_name` is the spelling; a value at or above
+    /// `kRendererKindCount` is refused by the publication that reads it, not here, because the
+    /// cook has no table to check it against either.
+    [[nodiscard]] u8 renderer() const noexcept { return renderer_; }
+    void set_renderer(u8 kind) noexcept { renderer_ = kind; }
+
     /// The particle count this emitter asks for at full quality.
     [[nodiscard]] u32 capacity() const noexcept { return capacity_; }
     void set_capacity(u32 capacity) noexcept { capacity_ = capacity; }
@@ -203,6 +215,8 @@ private:
     Array<StageEntry> stages_;
     Array<AttributeDecl> attributes_;
     SimulationPath path_ = SimulationPath::GpuPreferred;
+    /// `RendererKind::Sprite`. See `set_renderer`.
+    u8 renderer_ = 0;
     u32 capacity_ = 1024;
 };
 

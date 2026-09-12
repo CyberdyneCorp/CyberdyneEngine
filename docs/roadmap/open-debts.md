@@ -21,9 +21,6 @@ The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.
 
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
-| M9 | `breadcrumbs-adopted` | **M10** | the breadcrumb ring has no callers outside its own module, so a crash artefact reports zero breadcrumbs. Four of the five boundaries the specification names are in directories this milestone's othe… |
-| M9 | `crash-artefact-paths` | **M10** | the [backtrace] section is written by backtrace_symbols_fd(), which emits each frame's absolute module path; the artefact's own header declares it potentially-personal. The repair is a module table… |
-| M9 | `gameplay-benchmarks` | **M10** | the gameplay framework's performance contracts are asserted in a specification and measured nowhere. This blocker is independent of sections 3 and 4 landing, which is why `gameplay-framework` does … |
 | M9 | `record-matches-plan-history` | **M10** | four milestones closed with Complete cells in their own columns that the status record does not support, and no check compared the two until M9's gate wrote one. M9 repaired its own column; auditin… |
 | M9 | `reliable-channel-stalls-under-loss` | **M10** | a reliable-ordered channel stops delivering to the application under sustained heavy loss and nothing detects it: the frontier freezes, the transport keeps delivering, `abandoned()` has no caller, … |
 | M8.c | `steam-audio-configures` | **M11** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |

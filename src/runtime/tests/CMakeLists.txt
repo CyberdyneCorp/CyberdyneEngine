@@ -50,11 +50,14 @@ function(cy_runtime_declare_tests)
             "${cy_runtime_tests_dir}/test_servers.cpp"
         DEPENDENCIES cy::runtime)
 
+    # cy::core-diagnostics is here for one case: "a tick and every stage that runs leave a
+    # breadcrumb" reads the breadcrumb ring back. `cy::runtime` links it privately, so the headers
+    # are not on this target's include path without saying so.
     cy_add_test(
         NAME runtime_simulation
         KIND integration
         SOURCES "${cy_runtime_tests_dir}/test_simulation.cpp"
-        DEPENDENCIES cy::runtime)
+        DEPENDENCIES cy::runtime cy::core-diagnostics)
 
     cy_add_test(
         NAME module_order

@@ -87,6 +87,77 @@ add_subdirectory(physics)
 # before runtime/, which drives its tick.
 add_subdirectory(world)
 
+# environment/ is CyberField and M10 section 1: the shared environment substrate — field
+# declaration, the sparse tiled store, one producer per field refused at registration, the GPU
+# image, residency levels, and streaming bound to world cells through the shared residency policy.
+# Layer 4, the rung world/ and gameplay/ chose. Read AFTER world/, whose coordinates and cell events
+# it consumes, and before every M10 row that writes into it — seven of them do, which is why the
+# substrate is built first and alone.
+add_subdirectory(environment)
+
+# water/ is CyberWater and M10 section 2.3: water bodies over several simulation backends, the
+# displacement contract, the cascaded spectral ocean, river spline networks and their flow, the
+# shoreline that water OWNS, foam, queries, buoyancy and the surface and underwater shading
+# parameters. Layer 4, the rung world/, environment/ and gameplay/ chose.
+#
+# Read AFTER environment/, because water is a PRODUCER into the substrate — it claims water
+# distance, water depth and water flow, and the shoreline it owns is what writes them. Read before
+# every consumer of those fields: `water` requires that terrain read the fields rather than call
+# into water, and the order of these two lines is the first place that direction is visible.
+add_subdirectory(water)
+
+# terrain/ is CyberTerrain and M10 section 2: tiled hierarchical storage, the representation
+# interface and its queries, material layers and the runtime virtual-texture producer, deformation
+# and its deltas through the world's persistence overlay, meshing, collision, the navigation
+# contribution and the modifier stack. Layer 4, the rung world/, environment/ and navigation/ chose.
+# Read AFTER environment/, whose `soil` field it claims as a producer and whose moisture, wetness
+# and water fields its material rules read, and after navigation/ and physics/, whose own input
+# types it produces. cy::terrain-cook is declared beside it and names the renderer; see
+# src/terrain/CMakeLists.txt for why the two are separate targets.
+add_subdirectory(terrain)
+
+# weather/ is CyberWeather and M10 section 3: climate, weather cells and their hierarchy, the
+# environment sample, the wind field every consumer reads, precipitation and its occlusion
+# representation, wetness and snow accumulation, storms and lightning, presets and transitions, and
+# the macro ecosystem. Layer 4, the rung world/, environment/, water/ and terrain/ chose.
+#
+# Read AFTER environment/, because weather is a PRODUCER into the substrate — it claims the wind,
+# temperature, precipitation, visibility, wetness, snow and ecosystem fields — and AFTER water/,
+# whose `water-shore-wetness` it composes when the water row does not own `wetness`. It names
+# neither terrain/ nor the renderer: what it needs from terrain is one elevation callback, and the
+# cloud state the sky consumes is produced as plain data for the composition point to assign. See
+# src/weather/CMakeLists.txt, where that absence is the specification's own requirement.
+add_subdirectory(weather)
+
+# foliage/ is CyberFoliage and M10 section 2.4: vegetation as a GPU-instance ecosystem — compact
+# instances in clusters, promotion to entities and back, deterministic rule-driven placement,
+# exceptions and their re-resolution, GPU ground cover, wind response, the interaction field and the
+# budget. Layer 4, the rung world/, environment/, water/ and terrain/ chose.
+#
+# Read AFTER terrain/, and the order is the requirement rather than a convenience: `foliage` places
+# against what TERRAIN actually produced — the column, its slope and curvature, the holes it
+# reports, the `soil` category it claims as a producer — so placement calls `terrain::TerrainQuery`
+# and is measured against a heightfield and a mesh cliff rather than against an assumed heightmap.
+# Read after environment/ and water/ for the same reason terrain/ is: foliage READS moisture,
+# temperature, biome, water distance and burn state, and CLAIMS exactly one field of its own,
+# `vegetation`, which is what makes "a grown forest appears grown" a property of the substrate
+# rather than of a cache. cy::foliage-render is declared beside it and names the renderer; see
+# src/foliage/CMakeLists.txt for why the two are separate targets.
+add_subdirectory(foliage)
+
+# pcg/ is CyberPCG and M10 section 4: typed spatial datasets, graphs compiled through a typed
+# intermediate representation into an executable program, execution domains and their budgets,
+# deterministic derivation, stable generated identity, regions and their fixed-point invalidation,
+# derivation keys and caching, output adapters, overrides and orphans, provenance and the persistent
+# delta. Layer 4, the rung world/, environment/, terrain/, foliage/ and weather/ chose.
+#
+# Read AFTER foliage/ and terrain/, because the SECOND target declared in that directory —
+# cy::pcg-adapters — is what turns a generated point set into a foliage cluster and a terrain stamp.
+# cy::pcg itself names neither, and src/pcg/CMakeLists.txt says at length why: "Generators SHALL
+# produce results through output adapters, and the adapter SHALL determine the representation", so a
+# generator that could name a representation would be a generator with the adapter compiled in.
+add_subdirectory(pcg)
+
 # gameplay/ is layer 4 and arrives at M4 (section 4.4). It is read after scene/ and rendering/ and
 # before runtime/, which is where it sits in the stack: above the ECS and the servers, below the
 # loop that drives them. Its dependency list is short on purpose and the omission is the point —

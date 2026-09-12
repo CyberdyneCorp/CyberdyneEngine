@@ -240,6 +240,14 @@ u64 write_crash_report_to_fd(i32 handle, const CrashSignal& signal) noexcept {
     write_health(out, monotonic_now_ns());
     write_breadcrumbs(out);
     write_reproduction_link(out);
+    // The module table BEFORE the frames, because a frame is an offset into one of these and a
+    // reader needs the table to make sense of it. Both are basenames and offsets: the artefact
+    // declares itself potentially-personal and `diagnostics-profiling-and-crash` requires it to
+    // carry no absolute path from the build machine, so the loader's resolved paths stay out of it.
+    out.text("\n[modules]\n");
+    if (platform_write_module_table(out.handle()) == 0) {
+        out.text("  <no module table on this platform>\n");
+    }
     out.text("\n[backtrace]\n");
     const u32 frames = platform_write_backtrace(out.handle());
     if (frames == 0) {

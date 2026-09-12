@@ -56,6 +56,10 @@ LAYER_OF_NAME = {
     # in `engine-architecture`'s table — and it is named here so that the include check covers it
     # rather than skipping it as a directory outside the stack.
     "world": 4,
+    "terrain": 4,
+    "foliage": 4,
+    "weather": 4,
+    "pcg": 4,
     "runtime": 5,
     "abi": 6,
     "editor": 7,
@@ -75,6 +79,26 @@ DIRECTORY_LAYERS = {
     "src/scene": 4,
     "src/rendering": 4,
     "src/world": 4,
+    # CyberTerrain (M10 section 2). It declares LAYER scene in cy_add_module() for the reason
+    # src/world/ does, and is named here so the include check covers it rather than skipping it as
+    # a directory outside the stack. src/terrain/src/cook.cpp is layer 4 too — `rendering` and
+    # `scene` share index 4 — so its renderer includes are in range.
+    "src/terrain": 4,
+    # CyberFoliage (M10 section 2.4). It declares LAYER scene in cy_add_module() for the reason
+    # src/world/ and src/terrain/ do, and is named here so the include check covers it rather than
+    # skipping it as a directory outside the stack. src/foliage/src/cook.cpp is layer 4 too —
+    # `rendering` and `scene` share index 4 — so its renderer includes are in range.
+    "src/foliage": 4,
+    # CyberWeather (M10 section 3). It declares LAYER scene in cy_add_module() for the reason
+    # src/world/ does, and is named here so the include check covers it rather than skipping it as
+    # a directory outside the stack — which matters more for this module than for most, because its
+    # whole contract is what it does NOT include: no renderer, no terrain, no foliage, no VFX.
+    "src/weather": 4,
+    # CyberPCG (M10 section 4). It declares LAYER scene in cy_add_module() for the reason
+    # src/world/ does, and is named here so the include check covers it rather than skipping it as
+    # a directory outside the stack. src/pcg/src/foliage_adapter.cpp is layer 4 too, which is where
+    # the only includes of cy/foliage/ and cy/terrain/ in this module are.
+    "src/pcg": 4,
     "src/runtime": 5,
     "src/abi": 6,
     "editor": 7,

@@ -14,7 +14,9 @@
 #                   a Debug configuration, and the subject IS the repeated compilation.
 #
 #   vfx             KIND integration. A simulation world, a shared pool, four hundred instances and
-#                   a synthetic overload. A world and a particle system, so it is not a unit test.
+#                   a synthetic overload, plus the six renderer kinds' publications (M10 task 5.3) —
+#                   which need a world and a cooked effect for the same reason and so are the same
+#                   suite rather than a fourth one.
 #
 # THE DEVICE SUITE IS DECLARED SEPARATELY, and only when CY_RENDERER_VULKAN is on — for the reason
 # tests/render/ gives: a suite that always skips is a suite whose failure nobody would notice. With
@@ -67,6 +69,7 @@ function(cy_vfx_declare_tests)
         SOURCES
             "${tests_dir}/effects.cpp"
             "${tests_dir}/test_vfx_runtime.cpp"
+            "${tests_dir}/test_vfx_renderers.cpp"
         DEPENDENCIES cy::vfx)
     target_include_directories(cy_test_integration_vfx PRIVATE "${tests_dir}")
 

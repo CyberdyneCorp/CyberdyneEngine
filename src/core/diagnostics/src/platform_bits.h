@@ -37,8 +37,18 @@ void platform_close_file(i32 handle) noexcept;
 /// Bytes written, or a negative value. Async-signal-safe: one raw write, no buffering, no locks.
 i64 platform_write(i32 handle, const void* data, usize bytes) noexcept;
 
-/// Write the calling thread's backtrace, one frame per line, with module identities and offsets.
-/// Returns the number of frames, or zero where the platform gives none.
+/// Write the module table captured when the handler was INSTALLED: one line per loaded object,
+/// `  <basename> base=0x…`. Returns the number of modules, or zero where the platform gives none.
+///
+/// A basename and a load base, never a path. `diagnostics-profiling-and-crash` requires a produced
+/// artefact to carry no absolute path from the build machine, and this table plus the offsets below
+/// is what replaced `backtrace_symbols_fd()`'s loader-resolved paths — see crash_handler_posix.cpp.
+u32 platform_write_module_table(i32 handle) noexcept;
+
+/// Write the calling thread's backtrace, one frame per line, as
+/// `  #<n> <basename>+0x<offset within the module> pc=0x<address>`. Returns the number of frames,
+/// or zero where the platform gives none. The offset is what `crash_inspect.py --symbolicate` hands
+/// to addr2line against the symbols the build archived.
 u32 platform_write_backtrace(i32 handle) noexcept;
 
 /// Take over the process's fault conditions. Returns how many were taken.

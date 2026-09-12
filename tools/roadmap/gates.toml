@@ -445,9 +445,9 @@ describe = "THE SAVE IS THE OVERLAY, AND A GENERATION IS ATOMIC UNDER `kill -9`.
 runs = [
     "just test-unit -R unit.save",
     "just test-integration -R save_archive",
-    "just test-integration -R save_kill_nine",
+    "just test-determinism -R save_kill_nine",
     "just test-integration -R save_service",
-    "just test-integration -R save_fuzz",
+    "just test-determinism -R save_fuzz",
 ]
 platforms = ["linux"]
 since = "m6"
@@ -1060,6 +1060,30 @@ since = "m9"
 class = "milestone"
 milestone = "m9"
 state = "green"
+
+
+# --- M10 -----------------------------------------------------------------------------------------
+#
+# DECLARED BY THE SPIKE, AT `joins-on-close`, because `tools/roadmap/milestones/m10.toml` exists from
+# task 0.2 onwards and `just roadmap-test` refuses a ledger whose criteria name a CI job that is not
+# a declared gate — correctly: a criterion pointing at a gate nobody declared is a criterion nobody
+# runs. `joins-on-close` is the honest state for it, and is what M8.c's and M9's gates carried until
+# their closing changes: the gate is named, it is not yet claimed, and nothing inherits it.
+#
+# IT MUST NOT BECOME `green` HERE. `tools/ci/check_workflows.py` refuses to see this line and
+# ci.yml's `milestone` job apart, so the flip belongs to task 8.4's change, made once
+# `just roadmap-milestone m10` has been run end to end — and the ledger it evaluates is at that
+# point the whole of M10's, not the two criteria the spike opened it with.
+
+[[gate]]
+id = "milestone-m10"
+describe = "M10 — Worlds: the exit criteria of the milestone that makes the engine's world large — one environment substrate with one producer per field, terrain, water, foliage, weather and wind, the physical atmosphere, and the procedural generation that populates them, all streamed, all persistent, and deterministic where gameplay can see them."
+runs = ["just roadmap-milestone m10"]
+platforms = ["linux", "windows", "macos"]
+since = "m10"
+class = "milestone"
+milestone = "m10"
+state = "joins-on-close"
 
 
 # --- Recorded overrides ---------------------------------------------------------------------------

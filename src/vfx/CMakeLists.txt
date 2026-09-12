@@ -59,6 +59,7 @@ cy_add_module(
         src/asset.cpp
         src/compile.cpp
         src/emit_slang.cpp
+        src/gpu_layout.cpp
         src/interfaces.cpp
         src/ir.cpp
         src/layout.cpp
@@ -78,6 +79,7 @@ cy_add_module(
     SOURCES
         src/budget.cpp
         src/events.cpp
+        src/renderers.cpp
         src/runtime.cpp
         src/world.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -88,6 +90,11 @@ cy_add_module(
         cy::ecs
         cy::rendering-particles
         cy::vfx-compiler)
+
+# gpu/ is a THIRD target and its own directory. See gpu/CMakeLists.txt for why it cannot be part of
+# either target above: it names a device, a render graph and a shader front end, and the property
+# that makes `cy::vfx`'s "no second renderer" claim checkable is that `cy::vfx` names none of them.
+add_subdirectory(gpu)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

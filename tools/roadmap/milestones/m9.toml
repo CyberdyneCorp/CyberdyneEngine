@@ -57,14 +57,21 @@
 # `unmet_requirement()` reports NOT EVALUATED rather than passing it. It is declared rather than
 # omitted because the question is real and the CI matrix is where it can be asked.
 #
-# --- AND THREE GAPS ARE DECLARED RATHER THAN HIDDEN ----------------------------------------------
+# --- AND GAPS ARE DECLARED RATHER THAN HIDDEN ----------------------------------------------------
 #
 # `known_gap` is M8.c's mechanism and it is used here for what it is for: a criterion that RUNS, that
 # FAILS, that PRINTS its failure with the rung that must close it, and that does not hold a permanent
-# merge gate red forever. A declared gap that starts PASSING fails the ledger, so none of the three
-# can outlive itself. Each was found by an implementing agent auditing its own row rather than by the
+# merge gate red forever. A declared gap that starts PASSING fails the ledger, so none of them can
+# outlive itself. Each was found by an implementing agent auditing its own row rather than by the
 # gate, and each is why `diagnostics-profiling-and-crash` and `gameplay-framework` do NOT reach
 # Complete at this milestone — see `roadmap-tiers` below.
+#
+# THE DIRECTION THAT KEEPS THEM FROM ROTTING IS THE OTHER ONE, AND IT HAS NOW FIRED. M10 closed
+# `breadcrumbs-adopted`, `crash-artefact-paths` and `gameplay-benchmarks`; each declaration was
+# deleted in the change that closed it, because the ledger fails a gap that starts passing with THE
+# GAP IS CLOSED, DELETE THE DECLARATION. The three criteria are still here and still run — what is
+# gone is the marker that said they were allowed to fail. What they now defend, and the suites that
+# hold the behaviour behind each, is in their own `describe`.
 
 schema = 1
 id = "m9"
@@ -80,7 +87,7 @@ notes = [
     "tasks 8.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
     "THE ARTEFACT'S FIGURES ARE EXACT RATHER THAN APPROXIMATE, and that is a property of the subject rather than of the machine: the condition simulator draws every drop, duplicate, delay and reorder from a seeded `determinism::RandomStream` indexed by the datagram ordinal, so two runs at one seed destroy the same datagrams. `multiplayer-control` below is the criterion that requires it, by running the session twice and comparing every figure. No number in `artefact` above is a timing.",
     "WHY THERE IS NO CRITERION FOR THE FIVE READERS READING ONE RECORD TYPE. There is one — `replay-one-record` — and it is a C++ test rather than a grep, because `src/replay/record.h` makes it a compile-time property: `ReadsTheOneRecord` is static_asserted over every reader, so a reader that grew its own record does not link. The suite is what proves the concept still has teeth.",
-    "THE DIAGNOSTICS AND GAMEPLAY ROWS DID NOT REACH COMPLETE, and the three `known_gap` criteria below are why rather than a substitute for saying so: breadcrumbs are armed and have no callers outside their own module, a produced crash artefact still contains the build machine's absolute paths, and `gameplay-framework`'s performance table is specified to be benchmarked and is not benchmarked at all. Each is a small, nameable piece of work, which is exactly what a declared gap is for.",
+    "THE DIAGNOSTICS AND GAMEPLAY ROWS DID NOT REACH COMPLETE AT M9, and three declared gaps were why rather than a substitute for saying so: breadcrumbs were armed and had no callers outside their own module, a produced crash artefact still contained the build machine's absolute paths, and `gameplay-framework`'s performance table was specified to be benchmarked and was benchmarked nowhere. Each was a small, nameable piece of work, which is exactly what a declared gap is for — and M10 closed all three, deleting each declaration in the change that closed it. The criteria remain and still run; `breadcrumbs-adopted`, `crash-artefact-paths` and `gameplay-benchmarks` below say what each defends now.",
 ]
 
 # --- The static gates: cheap, and they fail first -------------------------------------------------
@@ -686,17 +693,15 @@ ci_job = "milestone-m9"
 
 [[criterion]]
 id = "breadcrumbs-adopted"
-describe = "BREADCRUMBS ARE ARMED AND GUARD NOTHING, which is the same shape as the firewall M9 had to arm. `diagnostics-profiling-and-crash` requires breadcrumbs at coarse phase boundaries — tick, stage, asset activation, level transition, save — and per-pass markers in the render graph. `grep -rn CY_BREADCRUMB src/` outside src/core/diagnostics/ returns NOTHING, so a crash artefact written today says `[breadcrumbs] 0 of 64`"
+describe = "THE BREADCRUMB RING HAS CALLERS. `diagnostics-profiling-and-crash` requires breadcrumbs at coarse phase boundaries — tick, stage, asset activation, level transition, save — and per-pass markers in the render graph, which the render graph has had since M3 as GPU-visible writes. M9 shipped the CPU ring armed with NO caller outside its own module, so a crash artefact written by a running engine said `[breadcrumbs] 0 of 64`; this criterion is the grep that said so, and it was a DECLARED GAP until M10 adopted the five boundaries. The grep is what remains: the behaviour is asserted by the four suites that drive those boundaries and read the ring back (`integration.runtime_simulation`, `integration.assets_loading`, `integration.world_activation`, `integration.save_service`), because a grep cannot tell a call site from a call"
 source = "tasks 5.3, diagnostics-profiling-and-crash"
 kind = "command"
 run = "set -o pipefail; callers=$(grep -rl 'CY_BREADCRUMB' src/ --include='*.cpp' --include='*.h' 2>/dev/null | grep -v '^src/core/diagnostics/' | wc -l); echo \"$callers caller(s) of CY_BREADCRUMB outside src/core/diagnostics/\"; test \"$callers\" -gt 0"
-known_gap = "the breadcrumb ring has no callers outside its own module, so a crash artefact reports zero breadcrumbs. Four of the five boundaries the specification names are in directories this milestone's other phases owned, and adopting it is a small, nameable piece of work rather than a design question"
-known_gap_closes = "m10"
 ci_job = "milestone-m9"
 
 [[criterion]]
 id = "crash-artefact-paths"
-describe = "A PRODUCED CRASH ARTEFACT STILL CONTAINS THE BUILD MACHINE'S ABSOLUTE PATHS. `diagnostics-profiling-and-crash` is unambiguous — 'WHEN any produced trace, log or crash artefact is inspected for strings THEN it SHALL contain no absolute path from the build machine, and the check SHALL be a gate rather than a review'. This IS that gate: it runs the real crash probe and greps what it wrote. Source locations were closed at this milestone; module paths were not, because `backtrace_symbols_fd()` writes each frame's absolute module path straight to the descriptor"
+describe = "A PRODUCED CRASH ARTEFACT CONTAINS NO ABSOLUTE PATH FROM THE BUILD MACHINE. `diagnostics-profiling-and-crash` is unambiguous — 'WHEN any produced trace, log or crash artefact is inspected for strings THEN it SHALL contain no absolute path from the build machine, and the check SHALL be a gate rather than a review'. This IS that gate: it runs the real crash probe and greps what it wrote. Source locations were closed at M9; module paths were a DECLARED GAP until M10, because `backtrace_symbols_fd()` wrote each frame's absolute module path straight to the descriptor. The repair is a module table captured at installation through `dl_iterate_phdr()`, with the fault path writing a basename and an offset — crash_handler_posix.cpp, and `diagnostics.crash` is the suite that holds it"
 source = "tasks 5.3, diagnostics-profiling-and-crash"
 kind = "command"
 run = '''
@@ -721,8 +726,6 @@ echo "$report: $found line(s) carrying an absolute build-machine path"
 grep -m 3 -o -E '(/home|/Users)/[A-Za-z0-9_.-]+' "$report" || true
 test "$found" -eq 0
 '''
-known_gap = "the [backtrace] section is written by backtrace_symbols_fd(), which emits each frame's absolute module path; the artefact's own header declares it potentially-personal. The repair is a module table captured at install time via dl_iterate_phdr with the fault path writing addresses plus a basename, which changes the format `just diagnose-crash --symbolicate` parses"
-known_gap_closes = "m10"
 timeout_s = 7200
 ci_job = "milestone-m9"
 
@@ -818,7 +821,7 @@ ci_job = "milestone-m9"
 
 [[criterion]]
 id = "gameplay-benchmarks"
-describe = "`gameplay-framework`'s PERFORMANCE TABLE IS SPECIFIED TO BE BENCHMARKED AND IS NOT BENCHMARKED AT ALL. The specification's table — 100k active entities, 1M resident, 10k batch spawn, 100k commands a second, indexed queries, integer tag tests, no virtual dispatch — 'SHALL be benchmarked rather than asserted', and the framework's own cost 'SHALL be a reported fraction of simulation frame time'. `benchmarks/baseline.json` holds six entries and every one of them is `ecs/*` or `harness/*`"
+describe = "`gameplay-framework`'s PERFORMANCE TABLE IS BENCHMARKED RATHER THAN ASSERTED. The specification's table — 100k active entities, 1M resident, 10k batch spawn, 100k commands a second, indexed queries, integer tag tests, no virtual dispatch — 'SHALL be benchmarked rather than asserted'. At M9 `benchmarks/baseline.json` held six entries and every one of them was `ecs/*` or `harness/*`, and this was a DECLARED GAP until M10 added `benchmarks/gameplay/`: five bodies with committed thresholds, covering the five rows of the table a measurement can speak to. bench_gameplay.cpp names the two it cannot and why, and benchmarks/README.md carries the frame-time fraction the table's last sentence asks for"
 source = "tasks 5.1, gameplay-framework"
 kind = "command"
 run = '''
@@ -831,8 +834,6 @@ print(f"{len(gameplay)} gameplay benchmark(s) of {len(ids)} in benchmarks/baseli
 sys.exit(0 if gameplay else 1)
 CHECK
 '''
-known_gap = "the gameplay framework's performance contracts are asserted in a specification and measured nowhere. This blocker is independent of sections 3 and 4 landing, which is why `gameplay-framework` does not reach Complete at this milestone"
-known_gap_closes = "m10"
 ci_job = "milestone-m9"
 
 # --- What this machine cannot answer --------------------------------------------------------------

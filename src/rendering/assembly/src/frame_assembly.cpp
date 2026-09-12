@@ -420,16 +420,27 @@ Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyRep
 // --- 7. The sky -------------------------------------------------------------------------------
 
 Status FrameAssembly::update_sky(const AssemblyView& view, AssemblyReport& out) noexcept {
-    const Expected<bool, Error> rebuilt =
-        sky_.update(view.atmosphere, view.cull.camera_position, view.sun_direction);
+    // THE SKY WANTS A PLANET-CENTRED POSITION AND THE CAMERA IS A WORLD ONE, and the conversion is
+    // this line. `cy::rendering::sky`'s frame has its origin at the planet's CENTRE — every
+    // function in `atmosphere.h` says so — while the renderer's camera is in world space, where the
+    // ground is y = 0. Passing the camera straight through put the eye at the centre of the planet.
+    //
+    // It went unnoticed because the M7 sky's isotropic multiple-scattering term was added whether
+    // or not any sunlight reached the air being integrated, so an eye buried under six thousand
+    // kilometres of rock still received a plausible-looking irradiance. M10 attenuated that term by
+    // the sun's own transmittance — `sky_radiance()` — and the frame's ambient went to exactly
+    // zero, which is what a camera at the planet's centre should always have seen.
+    const Vec3 eye = sky::ground_position(view.atmosphere, view.cull.camera_position.y);
+
+    const Expected<bool, Error> rebuilt = sky_.update(view.atmosphere, eye, view.sun_direction);
     if (!rebuilt) {
         return make_unexpected(rebuilt.error());
     }
     out.sky_rebuilt = *rebuilt;
     // Upward-facing, which is the ambient term a frame's sky contributes to a horizontal surface —
     // the reference `fit_sky_gradient` is measured against and the number a light meter would read.
-    sky_irradiance_ = sky::sky_irradiance(view.atmosphere, view.cull.camera_position,
-                                          view.sun_direction, Vec3{0.0F, 1.0F, 0.0F});
+    sky_irradiance_ =
+        sky::sky_irradiance(view.atmosphere, eye, view.sun_direction, Vec3{0.0F, 1.0F, 0.0F});
     return ok();
 }
 

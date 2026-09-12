@@ -2,67 +2,21 @@
 
 #include <cy/core/math/math.h>
 
+#include "internal.h"
+
 #include <cmath>
 
 namespace cy::rendering::sky {
-namespace {
 
-/// Where a ray from `origin` in `direction` leaves a sphere of `radius` centred on the origin of
-/// the coordinate system, or -1 when it never does. Only the FAR root is wanted: the view ray
-/// starts inside the atmosphere and leaves through the top.
-[[nodiscard]] f32 exit_distance(Vec3 origin, Vec3 direction, f32 radius) noexcept {
-    const f32 b = dot(origin, direction);
-    const f32 c = length_squared(origin) - (radius * radius);
-    const f32 discriminant = (b * b) - c;
-    if (discriminant < 0.0F) {
-        return -1.0F;
-    }
-    return -b + std::sqrt(discriminant);
-}
-
-/// Where a ray first meets a sphere, or -1 when it misses or the sphere is behind.
-///
-/// THE TEST IS ON THE CLOSEST APPROACH, NOT ON THE ROOT'S SIGN, and the difference is the whole of
-/// whether the sun can light a scene from below the horizon. A ray starting exactly ON the surface
-/// and pointing down has a first root of exactly zero, which `root > 0` rejects — so the ray is
-/// declared to miss the planet, the integration runs straight through it, and a sun 30 degrees
-/// below the horizon delivers 5e-36 lux instead of none. That is not zero, and the thing that
-/// eventually notices is a tone mapper.
-///
-/// A ray from inside or on a sphere meets it exactly when it is heading inwards, which is what
-/// `b < 0` says, and its closest approach to the centre is below the radius.
-[[nodiscard]] f32 entry_distance(Vec3 origin, Vec3 direction, f32 radius) noexcept {
-    const f32 b = dot(origin, direction);
-    if (b >= 0.0F) {
-        return -1.0F;  // heading away from the centre: it cannot meet a sphere it is outside of
-    }
-    const f32 closest_squared = length_squared(origin) - (b * b);
-    if (closest_squared >= radius * radius) {
-        return -1.0F;
-    }
-    const f32 root =
-        -b - std::sqrt(math::max((b * b) - (length_squared(origin) - (radius * radius)), 0.0F));
-    return math::max(root, 0.0F);
-}
-
-[[nodiscard]] Vec3 exp3(Vec3 v) noexcept {
-    return Vec3{std::exp(-v.x), std::exp(-v.y), std::exp(-v.z)};
-}
-
-[[nodiscard]] f32 density_at(f32 altitude, f32 scale_height) noexcept {
-    return std::exp(-math::max(altitude, 0.0F) / math::max(scale_height, 1.0F));
-}
-
-/// Ozone's tent: one at the layer's centre, zero at its edges, and it does not fall off with
-/// altitude the way a scale-height gas does. That shape is why a clear sky stays blue at twilight
-/// rather than going grey — the long horizon path passes through the layer and loses its greens.
-[[nodiscard]] f32 ozone_density_at(const Atmosphere& atmosphere, f32 altitude) noexcept {
-    const f32 width = math::max(atmosphere.ozone_width, 1.0F);
-    const f32 offset = std::fabs(altitude - atmosphere.ozone_center) / width;
-    return math::max(0.0F, 1.0F - offset);
-}
-
-}  // namespace
+// The ray-sphere and density arithmetic these functions are written in lives in `internal.h`,
+// because M10's tables, clouds and composition need the same arithmetic and a second copy of
+// `entry_distance()` would be a second place for the below-the-horizon defect this module's
+// README records to come back.
+using detail::density_at;
+using detail::entry_distance;
+using detail::exit_distance;
+using detail::exp3;
+using detail::ozone_density_at;
 
 Atmosphere earth_atmosphere() noexcept {
     return Atmosphere{};
@@ -240,13 +194,23 @@ Vec3 sky_radiance(const Atmosphere& atmosphere, Vec3 view_position, Vec3 view_di
                             atmosphere.mie_scattering * mie_density * mie_p};
 
         // The isotropic multiple-scattering stand-in: the same scattering coefficients with a
-        // uniform phase, attenuated by the view path only. It is not a second-order table and the
-        // header says so; what it buys is a horizon and a shadowed slope that are not black.
-        const Vec3 multiple =
-            (atmosphere.rayleigh_scattering * rayleigh_density +
-             Vec3{atmosphere.mie_scattering, atmosphere.mie_scattering, atmosphere.mie_scattering} *
-                 mie_density) *
-            (atmosphere.multiple_scattering_factor / (4.0F * math::kPi));
+        // uniform phase. It is not a second-order table and the header says so; what it buys is a
+        // horizon and a shadowed slope that are not black. `tables.h`'s
+        // `MultipleScatteringTable` is the table that replaces it.
+        //
+        // IT IS ATTENUATED BY THE SUN'S OWN TRANSMITTANCE, AND M10 ADDED THAT FACTOR. Without it
+        // the term is added wherever the view ray passes, whether or not any sunlight reaches that
+        // air — so a sun twenty degrees BELOW the horizon still lit the sky, and the measured
+        // consequence was 378 nits at the zenith and 2 679 at the horizon at midnight, which is
+        // daylight brightness in a scene that is supposed to be dark. Multiply-scattered light is
+        // still light that came from the star, and air the star cannot reach does not have any.
+        // `test_sky_tables.cpp`'s midnight case is the regression test.
+        const Vec3 multiple = cwise_mul((atmosphere.rayleigh_scattering * rayleigh_density +
+                                         Vec3{atmosphere.mie_scattering, atmosphere.mie_scattering,
+                                              atmosphere.mie_scattering} *
+                                             mie_density),
+                                        sun_transmittance) *
+                              (atmosphere.multiple_scattering_factor / (4.0F * math::kPi));
 
         scattered = scattered +
                     cwise_mul(view_transmittance,

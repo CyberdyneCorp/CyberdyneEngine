@@ -3,6 +3,8 @@
 
 #include <cy/save/service.h>
 
+#include <cy/core/diagnostics/breadcrumb.h>
+
 #include <atomic>
 #include <chrono>
 
@@ -123,6 +125,14 @@ void SaveService::write_operation(void* user) noexcept {
 }
 
 void SaveService::perform_write() noexcept {
+    // SAVE, one of the five coarse phase boundaries `diagnostics-profiling-and-crash` names for
+    // breadcrumbs, and recorded HERE rather than in `begin_save()`: this is the call that touches
+    // the disk, and "the process died while a save was in flight" is the thing a reader of the
+    // artefact has to know before deciding whether the archive can be trusted. The detail is the
+    // number of entries captured, which distinguishes a checkpoint from a journal append at a
+    // glance.
+    CY_BREADCRUMB("save", static_cast<u64>(captured_.entry_count()));
+
     // Read once. `shutdown()` waits for this operation before it clears the pointer, so the archive
     // is alive for the whole of this call; the local copy is what makes that reasoning local.
     SaveArchive* archive = archive_;

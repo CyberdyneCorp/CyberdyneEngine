@@ -3,6 +3,7 @@
 
 #include <cy/save/service.h>
 #include <cy/save/storage.h>
+#include <cy/test/breadcrumbs.h>
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
@@ -257,4 +258,33 @@ CY_TEST_CASE("a service cannot start against a store that is not open") {
     SaveArchive unopened(test_allocator());
     SaveService service(test_allocator());
     CY_CHECK_FALSE(service.start(harness.jobs, harness.async, unopened, identity()).has_value());
+}
+
+// `diagnostics-profiling-and-crash` — "Breadcrumbs": save is one of the five coarse phase
+// boundaries the specification names, and this is the case that says this module reaches it. It is
+// also part of the regression test for `m9:breadcrumbs-adopted`, which recorded a ring with no
+// caller outside its own module; asserting that the write path is reached is what a grep for the
+// breadcrumb macro cannot do.
+//
+// THE DETAIL IS THE POINT AS MUCH AS THE MARKER. A crash artefact that says "a save was in flight"
+// tells a reader the archive may be mid-commit; one that also says how many entries were captured
+// tells them which save.
+CY_TEST_CASE("a save leaves a breadcrumb on the thread that writes it") {
+    Harness harness;
+    SaveService service(test_allocator());
+    CY_REQUIRE(service.start(harness.jobs, harness.async, harness.archive, identity()).has_value());
+
+    Overlay live(test_allocator());
+    populate(live, 3, 5);
+    const u64 entries = static_cast<u64>(live.entry_count());
+
+    const u64 mark = cy::test::breadcrumb_mark();
+    CY_REQUIRE(service.begin_save(live, SaveKind::Checkpoint).has_value());
+    service.wait();
+    CY_REQUIRE(service.take_outcome().has_value());
+
+    CY_CHECK_EQ(cy::test::breadcrumbs_since(mark, "save"), 1U);
+    u64 detail = 0;
+    CY_REQUIRE(cy::test::breadcrumb_detail_since(mark, "save", detail));
+    CY_CHECK_EQ(detail, entries);
 }

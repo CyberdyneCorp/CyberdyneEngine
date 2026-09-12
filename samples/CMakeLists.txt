@@ -115,3 +115,14 @@ add_subdirectory(09-multiplayer)
 # correspondence, the locomotion compiler and the skinning pass each landed reachable only from
 # their own suites; this is the first target that names all four.
 add_subdirectory(09b-animated-character)
+# M10's artefact is an ELEVENTH shape, and it is the first thing in this repository ever to draw a
+# WORLD. samples/10-world/cy_sample_world generates a 1 536 m island with `cy::pcg`, cooks it into
+# `cy::terrain` tiles, floats a `cy::water` ocean on it, runs a `cy::weather` climate over it,
+# places `cy::foliage` on the ground those two produced, and shades the whole of it with the light
+# `cy::rendering::sky` composes — every one of them writing into or reading out of `cy::environment`,
+# the substrate M10 built first and alone. `just capture-world` turns the sequence into the video and
+# the still this milestone commits.
+#
+# It is also the line that answers M10's own gate: seven modules landed this milestone, each reached
+# only from its own suite, and this is the first target that names all seven.
+add_subdirectory(10-world)

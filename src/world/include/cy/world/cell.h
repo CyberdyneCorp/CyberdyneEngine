@@ -69,6 +69,36 @@ enum class Channel : u8 {
     Ai,
     Audio,
     Illumination,
+    /// Environment field tiles (`environment-fields`, "Field tiles SHALL be cooked as a cell
+    /// channel and stream with world cells ... and SHALL be evicted with them"). Added at M10 by
+    /// src/environment/, which consumes `CellEventQueue` and keys on this bit; nothing in this
+    /// module produces or consumes it, which is why it costs this file one enumerator and
+    /// `profile_channels()` one line.
+    Fields,
+    /// Water payloads (`water`, "Water streaming": "Water payloads SHALL be a cell channel, so a
+    /// server profile can omit surface rendering data while retaining the queries and physics
+    /// representation it needs"). Added at M10 by src/water/, which consumes `CellEventQueue` and
+    /// binds a body's segments to the cells that carry this bit; nothing in this module produces or
+    /// consumes it. The *surface rendering* half of a water payload is dropped inside that module
+    /// by the world profile rather than by a second channel, because a server that dropped the
+    /// whole channel would lose the queries and the physics representation with it.
+    Water,
+    /// Terrain tiles (`terrain`, "Tiled hierarchical storage": "Tiles SHALL stream as part of world
+    /// cells (see `world-partition-and-streaming`), with terrain data COOKED AS A CELL CHANNEL").
+    /// Added at M10 by src/terrain/, which owns the arithmetic saying which tiles a cell covers —
+    /// `terrain::cell_tile_footprint()` — and keys on this bit; nothing in this module produces or
+    /// consumes it, which is why it costs this file one enumerator and `profile_channels()` one
+    /// line. The COLLISION resolution of those tiles is a separate axis inside that module rather
+    /// than a second channel, because a distant tile may be visible with coarse physics and that is
+    /// a detail level, not a payload.
+    Terrain,
+    /// Foliage clusters (`foliage`, "Foliage clusters": "Clusters SHALL stream with world cells AS
+    /// A CELL CHANNEL, and SHALL be independently evictable"). Added at M10 by src/foliage/, which
+    /// consumes `CellEventQueue` and binds a cell's clusters on this bit; nothing in this module
+    /// produces or consumes it. Ground cover travels inside the same payload rather than in a
+    /// second channel, because a patch is decoded against its cluster's bounds and grass that
+    /// outlived its cluster would have nothing to decode itself against.
+    Foliage,
     kCount,
 };
 

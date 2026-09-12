@@ -14,14 +14,16 @@
 #   save_fuzz       the two exhaustive sweeps: a chunk truncated at every length and corrupted at
 #                   every byte. A few hundred decodes each, which is three times the unit budget in
 #                   the debug profile — so it is here rather than shrunk, because the claim is
-#                   "at every truncation" and "at every byte".
+#                   "at every truncation" and "at every byte". KIND determinism since M10 task 6.4;
+#                   it runs as `determinism.save_fuzz`.
 #   save_archive    generations, retention, the journal, compaction and the transactional case that
 #                   fails a write at every step. Each case commits several generations and hashes
 #                   every chunk in them, which is over the unit budget by design rather than by
 #                   accident.
 #   save_kill_nine  the exit criterion: a child process SIGKILLed at each phase of a real commit to
-#                   a real directory. It forks, so it is an integration case by construction — and
+#                   a real directory. It forks, so it is not a unit case by construction — and
 #                   it is separate from save_archive so that a failure names the criterion.
+#                   KIND determinism since M10 task 6.4; it runs as `determinism.save_kill_nine`.
 #   save_service    the background writer, and teardown while a write is in flight. It starts a job
 #                   system and an async service, forty times over in one case.
 
@@ -32,7 +34,7 @@ function(cy_save_declare_tests)
 
     # cy_add_test() reads the taxonomy from variables that tests/CMakeLists.txt sets in its own
     # directory scope, and this function runs in the top-level scope, which is not a child of it.
-    foreach(kind IN ITEMS unit integration)
+    foreach(kind IN ITEMS unit integration determinism)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -57,9 +59,14 @@ function(cy_save_declare_tests)
             "${tests_dir}/test_traits.cpp"
         DEPENDENCIES cy::save)
 
+    # KIND determinism, NOT integration, since M10 task 6.4 — and the source stays here, with the
+    # module it tests, because that is how every module's suites are declared in this tree.
+    # `testing-and-quality` lists "replay and save fuzzing" in the `tests/determinism/` row, and the
+    # kind did not exist when this suite was written at M6. The budget goes from 1 s to 10 s with it,
+    # which is room these two exhaustive sweeps can use rather than a target to grow into.
     cy_add_test(
         NAME save_fuzz
-        KIND integration
+        KIND determinism
         SOURCES "${tests_dir}/test_fuzz.cpp"
         DEPENDENCIES cy::save)
 
@@ -69,17 +76,25 @@ function(cy_save_declare_tests)
         SOURCES "${tests_dir}/test_archive.cpp"
         DEPENDENCIES cy::save)
 
+    # KIND determinism, NOT integration, since M10 task 6.4. `testing-and-quality`'s row for that
+    # suite names "transactional save tests: failure injected after each write phase, with the
+    # previous save still valid", and this file is that criterion in its strongest form — a real
+    # child process SIGKILLed at each phase of a real commit. The in-process half of the same claim
+    # stays in test_archive.cpp beside the archive model it is a property of.
     cy_add_test(
         NAME save_kill_nine
-        KIND integration
+        KIND determinism
         SOURCES "${tests_dir}/test_kill_nine.cpp"
         DEPENDENCIES cy::save)
 
+    # cy::core-diagnostics is here for one case: "a save leaves a breadcrumb on the thread that
+    # writes it" reads the breadcrumb ring back. `cy::save` links it privately, so the headers are
+    # not on this target's include path without saying so.
     cy_add_test(
         NAME save_service
         KIND integration
         SOURCES "${tests_dir}/test_service.cpp"
-        DEPENDENCIES cy::save)
+        DEPENDENCIES cy::save cy::core-diagnostics)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_save_declare_tests)

@@ -176,6 +176,44 @@ was missed and a capability is scheduled before something it needs.
 that cannot start because a prerequisite is missing is a roadmap defect, fixed by an OpenSpec change
 that states what was learned — not by an ad-hoc exception.
 
+### 11 — Region invalidation regenerates exactly what changed, and no more
+
+**Milestone**: M10. **Owner**: `procedural-content-generation`.
+
+Appended after the register was written and kept in numeric order rather than renumbering the nine
+entries above it; by expected cost it belongs beside 1 and 2.
+
+A dependency-driven partial regeneration either reproduces the full regeneration of the same seed or
+it does not, and the two ways of being wrong are both project-defining: stale content, where the
+cache serves a region the edit should have moved, and full-world regeneration, where an edit is
+correct because nothing is ever reused. `docs/ROADMAP.md`'s M10 row names it as that milestone's
+risk.
+
+*Mitigation*: the M10 spike measures a partial regeneration against a full one, for output and for
+generated identity separately, over a graph carrying the three kinds of edge a real one has.
+
+**M10's outcome: the risk closes, and it closes conditionally.**
+`~/cyberdyne-spikes/m10-pcg-spike/` measured twenty-four configurations over twelve trials — a
+different seed and a different edit each — and **two of them reproduce the full regeneration
+exactly, in every trial, for output and identity both**. So caching and spatial invalidation stay in
+`procedural-content-generation`'s scope rather than coming out of it. What the spike changes is that
+reproduction is now known to need **four properties at once**, each of which the measurement shows is
+load-bearing: order-free conflict resolution between regions, invalidation expanded to a fixed point
+rather than to a declared radius, an iterative solve run to convergence rather than to a sweep
+budget, and a generated identity derived from stable identifiers rather than assigned by traversal
+order. Drop any one and the configuration diverges.
+
+**The most useful number in it is the one that nearly passed.** A statically-closed invalidation —
+the declared radius-one edge, applied once, which is what an implementation writes first —
+reproduced in **7 of 12 trials**. A spike that had run one edit on one seed would have called it
+sound more often than not, which is why this one runs twelve and why the blast radius is reported
+beside the verdict. The other surprise is where the cost is: the transitive edge everyone worries
+about (water crossing regions) invalidates 40 regions to find the 19 it changes, while a long-range
+gather whose declared reach is five regions invalidates 179 of 576 to find **one**. Long-range
+gathers, not transitive edges, are what make partial regeneration expensive.
+
+`openspec/changes/implement-m10-worlds/design.md` §1 is the measurement in full, with the figure.
+
 ---
 
 ## Deferred scope

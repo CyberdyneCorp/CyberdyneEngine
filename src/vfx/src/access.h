@@ -48,6 +48,9 @@ public:
     static void set_path(CompiledEmitter& emitter, SimulationPath path) noexcept {
         emitter.path_ = path;
     }
+    static void set_renderer(CompiledEmitter& emitter, u8 renderer) noexcept {
+        emitter.renderer_ = renderer;
+    }
     static void set_capacity(CompiledEmitter& emitter, u32 capacity) noexcept {
         emitter.capacity_ = capacity;
     }
