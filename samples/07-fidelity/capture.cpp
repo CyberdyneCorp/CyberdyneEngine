@@ -4,8 +4,8 @@
 // visibility buffer, and for two milestones its only committed picture was a chart — because at M7
 // nothing in this engine could turn a frame into a file. M8.c built that, and everything else was
 // already read back per pixel: a visible-cluster index, a triangle index, and the resolved world
-// normal. This writes three views of one frame, which is what `docs/design/images/virtual-geometry-*`
-// are and how they are regenerated:
+// normal. This writes three views of one frame, which is what
+// `docs/design/images/virtual-geometry-*` are and how they are regenerated:
 //
 //     cy_fidelity_capture <stem> [threshold_pixels]
 //
@@ -48,12 +48,33 @@ namespace {
     f32 g = t;
     f32 b = p;
     switch (sector % 6) {
-        case 1: r = q; g = v; b = p; break;
-        case 2: r = p; g = v; b = t; break;
-        case 3: r = p; g = q; b = v; break;
-        case 4: r = t; g = p; b = v; break;
-        case 5: r = v; g = p; b = q; break;
-        default: break;
+        case 1:
+            r = q;
+            g = v;
+            b = p;
+            break;
+        case 2:
+            r = p;
+            g = v;
+            b = t;
+            break;
+        case 3:
+            r = p;
+            g = q;
+            b = v;
+            break;
+        case 4:
+            r = t;
+            g = p;
+            b = v;
+            break;
+        case 5:
+            r = v;
+            g = p;
+            b = q;
+            break;
+        default:
+            break;
     }
     const auto byte = [](f32 value) { return static_cast<u32>(value * 255.0F) & 0xFFU; };
     return 0xFF000000U | (byte(b) << 16U) | (byte(g) << 8U) | byte(r);
@@ -105,8 +126,7 @@ int main(int argc, char** argv) {
     for (render_test::Image* image : {&shaded, &clusters, &triangles}) {
         image->width = options.width;
         image->height = options.height;
-        if (Status sized = image->texels.resize(
-                static_cast<usize>(options.width) * options.height);
+        if (Status sized = image->texels.resize(static_cast<usize>(options.width) * options.height);
             !sized) {
             return 1;
         }
@@ -122,24 +142,23 @@ int main(int argc, char** argv) {
         }
         // Shaded: the resolved world normal under one direction. This is what the M7 resolve
         // evaluates, so the picture is the resolve's own answer rather than a re-derivation.
-        const Vec4 n = i < capture.resolved.size() ? capture.resolved[i]
-                                                   : Vec4{0.5F, 0.5F, 1.0F, 0.0F};
-        const f32 lambert = std::abs(((n.x * 2.0F - 1.0F) * 0.35F) +
-                                     ((n.y * 2.0F - 1.0F) * 0.72F) +
+        const Vec4 n =
+            i < capture.resolved.size() ? capture.resolved[i] : Vec4{0.5F, 0.5F, 1.0F, 0.0F};
+        const f32 lambert = std::abs(((n.x * 2.0F - 1.0F) * 0.35F) + ((n.y * 2.0F - 1.0F) * 0.72F) +
                                      ((n.z * 2.0F - 1.0F) * 0.60F));
         const f32 lit = 0.16F + (0.84F * lambert);
         const auto grey = [lit](f32 tint) { return static_cast<u32>(lit * tint) & 0xFFU; };
-        shaded.texels[i] = 0xFF000000U | (grey(206.0F) << 16U) | (grey(222.0F) << 8U) | grey(232.0F);
+        shaded.texels[i] =
+            0xFF000000U | (grey(206.0F) << 16U) | (grey(222.0F) << 8U) | grey(232.0F);
 
         // STABLE IDENTITY, not the traversal index. `samples[i].visible` indexes the visible list
         // in atomic-append order, so coluring by it repaints the whole image on every run and the
         // picture cannot be regenerated. The (instance, cluster) pair behind it does not move.
         const u32 slot = capture.samples[i].visible;
-        const u32 identity =
-            slot < capture.visible.size()
-                ? ((capture.visible[slot].cluster * 2654435761U) ^
-                   (capture.visible[slot].instance * 2246822519U))
-                : slot;
+        const u32 identity = slot < capture.visible.size()
+                                 ? ((capture.visible[slot].cluster * 2654435761U) ^
+                                    (capture.visible[slot].instance * 2246822519U))
+                                 : slot;
         clusters.texels[i] = hue(identity >> 11U);
         triangles.texels[i] = hue((capture.samples[i].triangle * 2654435761U) >> 15U);
     }

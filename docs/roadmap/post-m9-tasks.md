@@ -179,7 +179,17 @@ them blind, which was right — none is reproducible on this machine: `setup-swi
 (bash 3.2), and rustfmt refusing the generated `mod.rs` on Windows. **The first green run will say
 which of these are real**, and that run is now possible for the first time.
 
-## 4. The visibility buffer's depth test is not atomic with its payload write
+## 4. The visibility buffer's depth test is not atomic with its payload write — FIXED
+
+> **Closed.** Depth and payload are settled in one 64-bit atomic min over `(key << 32) | payload`;
+> `vg.vis.unpack` turns that into the visibility buffer every downstream pass already read, so the
+> change stops at the raster. The regression test in `test_visbuffer.cpp` renders one frame six
+> times over a stack of overlapping instances and requires the resolve and the bin counts to match —
+> **verified to fail on the old raster and pass on the new one**. On the artefact's set the run-to-run
+> difference fell from 110-150 pixels to 1-3, and `materials_seen` stopped flipping.
+>
+> The residue is a different thing: exact depth ties between neighbouring clusters, broken by the
+> traversal's atomic append order. Removing it needs a stable cluster identity in the payload.
 
 **Found by rendering the M7 scene for documentation (item 3), not by a gate.** It is a correctness
 defect, not only a determinism one.

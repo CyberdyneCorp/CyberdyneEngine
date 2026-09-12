@@ -88,21 +88,17 @@ milestone's eight rows write into it.
 - [ ] 7.4 **Capture it.** Anything with a visible result gets an image under `docs/design/images/`,
       and a diagram is labelled one
 
-## 7b. The visibility buffer's depth/payload race (carried in from M9)
+## 7b. The visibility buffer's depth/payload race — done before M10 opened
 
-Found by rendering the M7 scene for documentation, recorded in `docs/roadmap/post-m9-tasks.md` §4.
-It is a correctness defect, not only a determinism one: `vgVisRaster`'s `InterlockedMin` on `depth`
-and its `visbuffer[pixel]` store are not atomic together, so a farther fragment's store can land last
-and own the pixel. Measured at 110-150 of 921,593 covered pixels (0.015%) between identical runs,
-with `materials_seen` flipping 4 to 5.
+Found by rendering the M7 scene for documentation and fixed in the same pass; kept here because the
+milestone's records should say where it went. See `docs/roadmap/post-m9-tasks.md` §4.
 
-- [ ] 7b.1 Pair depth and payload in one 64-bit atomic min over `(key << 32) | payloadIndex`; where
-      shader int64 atomics are absent, a depth-only prepass and a payload pass keyed on
-      `key == depth[pixel]` with a deterministic tiebreak
-- [ ] 7b.2 **Regression test**: render one frame twice and require the visibility buffer to be
-      byte-identical. It fails today — that is what makes it a regression test
-- [ ] 7b.3 Declare it as a `known_gap` in `m10.toml` if 7b.1 does not land in this milestone, naming
-      the rung that closes it
+- [x] 7b.1 Depth and payload settled in one 64-bit atomic min, with `vg.vis.unpack` deriving the
+      visibility buffer so no downstream pass changed
+- [x] 7b.2 **Regression test** — six runs over overlapping instances, resolve and bin counts required
+      to match; verified to fail on the old raster
+- [ ] 7b.3 The remaining residue: exact depth ties broken by traversal append order, 1-3 pixels in
+      921,593. Needs a stable cluster identity in the raster payload rather than the visible index
 - [ ] 7b.4 Tighten `fidelity.py`'s `materials_seen` assertion, which asks only for `> 1` and so
       never saw this
 

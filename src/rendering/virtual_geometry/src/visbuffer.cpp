@@ -18,11 +18,21 @@ enum VisPass : u32 {
     kPassClear = 0,
     kPassPrepare,
     kPassRaster,
+    kPassUnpack,
     kPassClassify,
     kPassScan,
     kPassScatter,
     kPassResolve,
     kPassCount,
+};
+
+/// The visibility payload is `(visibleIndex << 8) | triangle`, settled with the depth key in one
+/// 64-bit atomic. Both halves are bounded here and in `vg_visbuffer.slang`, and the two must move
+/// together.
+enum : u32 {
+    kTrianglePayloadBits = 8U,
+    kMaxTrianglesPacked = 1U << kTrianglePayloadBits,
+    kMaxVisiblePacked = 1U << (32U - kTrianglePayloadBits),
 };
 
 enum VisBinding : u32 {
@@ -374,6 +384,15 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
                 GpuClusterGeometry record;
                 record.payload_offset = running;
                 record.vertex_count = cluster.vertex_count;
+                // THE PACKING'S OTHER HALF. The raster packs `triangle` into 8 bits beside the
+                // visible index, so a cluster carrying 256 triangles or more would wrap onto a
+                // neighbour. The cook's policy caps this well below the limit; a cooked asset that
+                // says otherwise is refused rather than rendered wrong.
+                if (cluster.index_count / 3U > kMaxTrianglesPacked) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "VisbufferPass::initialise: a cluster carries more triangles than "
+                                "the visibility payload packs (2^8)");
+                }
                 record.index_count = cluster.index_count;
                 if (Status pushed = geometry.push_back(record); !pushed) {
                     return pushed;
@@ -412,7 +431,7 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
         {&payload_, "vg.vis.payload", payload.size(), storage, rhi::MemoryUse::DeviceLocal},
         {&visbuffer_, "vg.vis.visbuffer", pixels * sizeof(VisibilitySample),
          storage | rhi::BufferUsage::TransferSource, rhi::MemoryUse::DeviceLocal},
-        {&depth_, "vg.vis.depth", pixels * sizeof(u32), storage, rhi::MemoryUse::DeviceLocal},
+        {&depth_, "vg.vis.depth", pixels * sizeof(u64), storage, rhi::MemoryUse::DeviceLocal},
         {&bin_counts_, "vg.vis.bin-counts", static_cast<u64>(options.material_count) * sizeof(u32),
          storage | rhi::BufferUsage::TransferSource, rhi::MemoryUse::DeviceLocal},
         {&bin_offsets_, "vg.vis.bin-offsets",
@@ -487,11 +506,15 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
         {"vg.vis.clear", Span<const u32>(kVgVisClearSpirv)},
         {"vg.vis.prepare", Span<const u32>(kVgVisPrepareSpirv)},
         {"vg.vis.raster", Span<const u32>(kVgVisRasterSpirv)},
+        {"vg.vis.unpack", Span<const u32>(kVgVisUnpackSpirv)},
         {"vg.vis.classify", Span<const u32>(kVgVisClassifySpirv)},
         {"vg.vis.scan", Span<const u32>(kVgVisScanSpirv)},
         {"vg.vis.scatter", Span<const u32>(kVgVisScatterSpirv)},
         {"vg.vis.resolve", Span<const u32>(kVgVisResolveSpirv)},
     };
+    static_assert(kPassCount == VisbufferPass::kPassSlots,
+                  "VisbufferPass::modules_/pipelines_ must have one slot per VisPass — adding a "
+                  "pass without widening them overruns both arrays");
     for (u32 index = 0; index < kPassCount; ++index) {
         rhi::ShaderModuleDescription module_description;
         module_description.name = modules[index].name;
@@ -619,7 +642,7 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
     const u64 pixels = static_cast<u64>(options_.width) * options_.height;
     const ResourceId visbuffer =
         import(visbuffer_, "vg.vis.visbuffer", pixels * sizeof(VisibilitySample), storage);
-    const ResourceId depth = import(depth_, "vg.vis.depth", pixels * sizeof(u32), storage);
+    const ResourceId depth = import(depth_, "vg.vis.depth", pixels * sizeof(u64), storage);
     const ResourceId bin_counts =
         import(bin_counts_, "vg.vis.bin-counts",
                static_cast<u64>(options_.material_count) * sizeof(u32), storage);
@@ -638,6 +661,16 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
     const ResourceId visible =
         import(traversal.visible_buffer(), "vg.visible",
                static_cast<u64>(traversal.visible_capacity()) * sizeof(GpuVisibleCluster), storage);
+
+    // THE PACKING MUST FIT. `vgVisRaster` settles depth and payload in one 64-bit atomic, and the
+    // payload half is `(visibleIndex << 8) | triangle`. That is 24 bits of visible index and 8 of
+    // triangle, so a configuration that outgrows either would silently wrap a pixel onto the wrong
+    // cluster — the exact class of bug the packing was introduced to remove. It is refused instead.
+    if (traversal.visible_capacity() > kMaxVisiblePacked) {
+        return fail(ErrorCode::InvalidArgument,
+                    "vg.vis: visible_capacity exceeds what the visibility payload packs (2^24); "
+                    "raise kTrianglePayloadBits in vg_visbuffer.slang and here together");
+    }
 
     states_.clear();
     if (Status reserved = states_.reserve(kPassCount); !reserved) {
@@ -672,6 +705,16 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
         .read(args, rhi::Access::IndirectCommandRead)
         .read(visible, rhi::Access::ComputeStorageRead)
         .use(depth, rhi::Access::ComputeStorageReadWrite)
+        .record(&record_pass, &states_.back());
+
+    // THE UNPACK, between the raster and everything that reads the visibility buffer. The raster
+    // settles depth and payload in one atomic; this turns that into the `uint2` visibility buffer
+    // the four passes below have always read, so the fix stops here rather than reaching them.
+    if (Status pushed = states_.push_back(PassState{this, kPassUnpack, pixel_groups}); !pushed) {
+        return pushed;
+    }
+    graph.add_pass("vg.vis.unpack", rhi::QueueKind::Graphics)
+        .read(depth, rhi::Access::ComputeStorageRead)
         .write(visbuffer, rhi::Access::ComputeStorageWrite)
         .record(&record_pass, &states_.back());
 

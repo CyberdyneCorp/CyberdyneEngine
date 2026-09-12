@@ -286,3 +286,166 @@ CY_TEST_CASE(
 
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
+
+// ================================================================================================
+// REGRESSION — the depth test and the payload write are one atomic
+// ================================================================================================
+//
+// `vgVisRaster` used to settle depth with an `InterlockedMin` and then store `visbuffer[pixel]` as
+// a SEPARATE, unordered write. The pair was not atomic, so two fragments at DIFFERENT depths both
+// took the write branch whenever the farther one ran its atomic first, and whichever store retired
+// last owned the pixel — sometimes the farther surface, leaving `depth` and `visbuffer`
+// disagreeing.
+//
+// It was found by rendering samples/07-fidelity for documentation: 110-150 of 921,593 covered
+// pixels changed between identical runs and `materials_seen` flipped between 4 and 5, while
+// coverage and the visible-cluster count stayed bit-stable — which is what localised it to the
+// pairing rather than to the traversal or the raster bounds.
+//
+// WHAT THIS ASSERTS, and what it deliberately does not. Depth and payload are one 64-bit atomic
+// now, so a fragment at a GREATER depth can no longer take a pixel from a nearer one — that is the
+// defect, and in this scene it makes the resolved buffer and the bin counts identical every run.
+//
+// It is not a claim of total determinism. Where two surfaces tie on the depth key EXACTLY, the
+// packed minimum breaks the tie by payload, and the payload carries the traversal's append order,
+// which is atomic-append and permutes between runs. On the artefact's set that residue is one to
+// three pixels in 921,593 — against 110 to 150 before — and removing it needs a stable cluster
+// identity in the payload rather than the visible index. This scene has no such ties, which is why
+// the assertion here can be exact; a scene built to produce coincident surfaces could not assert
+// this.
+CY_TEST_CASE("the visibility buffer resolves identically across runs") {
+    DeviceFixture fixture;
+    if (!fixture.have_vulkan()) {
+        fixture.report_skip();
+        return;
+    }
+    Allocator& allocator = fixture.allocator();
+
+    const vg::test::MeshData mesh = vg::test::two_material_sphere(allocator, 3);
+    Expected<vg::GeometryBuild, Error> build =
+        vg::build_geometry(mesh.source(), test_options(), allocator);
+    CY_REQUIRE(build.has_value());
+    Array<u8> bytes(allocator);
+    CY_REQUIRE(vg::encode_asset(*build, vg::VertexEncoding{}, bytes).has_value());
+    Expected<vg::DecodedAsset, Error> decoded = vg::decode_asset(bytes.span(), allocator);
+    CY_REQUIRE(decoded.has_value());
+    const vg::DecodedAsset& asset = *decoded;
+
+    vg::GpuScene scene(allocator);
+    CY_REQUIRE(scene.add_asset(asset).has_value());
+    // DEPTH CONTENTION IS THE WHOLE POINT. A single convex sphere never puts two fragments at
+    // different depths on one pixel, so the unpaired store had nothing to lose and this test passed
+    // against the defect it was written for. These instances are stacked along the view axis and
+    // overlap in screen space, so most covered pixels are contested several times over — which is
+    // the condition the race needs and the artefact's fluted, self-occluding set produced by
+    // accident.
+    constexpr u32 kInstances = 8;
+    Array<vg::GeometryInstance> stack(allocator);
+    for (u32 i = 0; i < kInstances; ++i) {
+        vg::GeometryInstance placed;
+        placed.translation = Vec3{static_cast<f32>(i) * 0.05F, static_cast<f32>(i) * 0.03F,
+                                  static_cast<f32>(i) * -0.25F};
+        placed.scale = 1.0F - (static_cast<f32>(i) * 0.02F);
+        placed.material_offset = i % 3U;
+        CY_REQUIRE(stack.push_back(placed).has_value());
+    }
+    CY_REQUIRE(scene.set_instances(stack.span()).has_value());
+
+    vg::GpuTraversal traversal(allocator, fixture.device());
+    CY_REQUIRE(traversal.initialise(scene, vg::GpuTraversalOptions{}).has_value());
+    Array<vg::PageTableEntry> table(allocator);
+    CY_REQUIRE(table.resize(asset.pages.size()).has_value());
+    for (vg::PageTableEntry& entry : table) {
+        entry.generation = 1;
+        entry.flags = vg::PageFlags::kResident;
+    }
+    CY_REQUIRE(traversal.upload_page_table(table.span()).has_value());
+
+    vg::VisbufferOptions visbuffer_options;
+    visbuffer_options.width = kSide;
+    visbuffer_options.height = kSide;
+    visbuffer_options.material_count = 4;
+    vg::VisbufferPass visbuffer(allocator, fixture.device());
+    const vg::DecodedAsset* assets[1] = {&asset};
+    const u32 payload_offsets[1] = {0};
+    CY_REQUIRE(visbuffer
+                   .initialise(scene, Span<const vg::DecodedAsset* const>(assets, 1), asset.payload,
+                               Span<const u32>(payload_offsets, 1), visbuffer_options)
+                   .has_value());
+
+    const Vec3 camera{0.0F, 0.0F, 4.0F};
+    const Mat4 view = look_at(camera, Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F});
+    const Mat4 world_to_clip = perspective_reversed_z_infinite(1.0471975512F, 1.0F, 0.1F) * view;
+
+    vg::TraversalView traversal_view;
+    traversal_view.projection.camera_position = camera;
+    traversal_view.projection.viewport_height = static_cast<f32>(kSide);
+    traversal_view.projection.fov_y_radians = 1.0471975512F;
+    traversal_view.threshold_pixels = 1.0F;
+    traversal_view.minimum_instance_pixels = 0.0F;
+    traversal_view.cone_culling = true;
+    for (Plane& plane : traversal_view.frustum.planes) {
+        plane = Plane{Vec3{0.0F, 0.0F, 1.0F}, 1.0e9F};
+    }
+    traversal_view.frustum.refresh_corner_masks();
+
+    // Six runs, because the defect was a race: one comparison can agree by luck. When this test was
+    // written against the unpaired store it failed on the first or second comparison every time.
+    constexpr u32 kRuns = 6;
+    Array<Vec4> first_resolved(allocator);
+    Array<u32> first_bins(allocator);
+    u32 first_covered = 0;
+    for (u32 run = 0; run < kRuns; ++run) {
+        GraphExecutor executor(allocator, fixture.device());
+        RenderGraph graph(allocator);
+        CY_REQUIRE(traversal.record(graph, traversal_view, kInstances).has_value());
+        CY_REQUIRE(visbuffer.record(graph, traversal, world_to_clip).has_value());
+        CY_REQUIRE(graph.status().has_value());
+        CY_REQUIRE(executor.execute(graph, CompileOptions{}, ExecuteOptions{}).has_value());
+        CY_REQUIRE(fixture.device().wait_idle().has_value());
+
+        vg::VisbufferReadback readback(allocator);
+        CY_REQUIRE(visbuffer.read_back(readback).has_value());
+
+        if (run == 0) {
+            for (const Vec4& value : readback.resolved) {
+                CY_REQUIRE(first_resolved.push_back(value).has_value());
+            }
+            for (const u32 count : readback.bin_counts) {
+                CY_REQUIRE(first_bins.push_back(count).has_value());
+            }
+            first_covered = readback.covered_pixels();
+            CY_CHECK_GT(first_covered, 400U);
+            continue;
+        }
+
+        // THE COVERAGE AND THE BINS. `materials_seen` flipping 4 to 5 in the artefact was a bin
+        // whose last pixels were the contested ones, so the bin counts are where that shows up.
+        CY_CHECK_EQ(readback.covered_pixels(), first_covered);
+        CY_REQUIRE_EQ(readback.bin_counts.size(), first_bins.size());
+        u32 bins_differing = 0;
+        for (usize i = 0; i < first_bins.size(); ++i) {
+            if (readback.bin_counts[i] != first_bins[i]) {
+                ++bins_differing;
+            }
+        }
+        CY_CHECK_EQ(bins_differing, 0U);
+
+        // THE RESOLVE. A farther fragment winning a pixel changed the attribute resolved there, so
+        // an exact comparison of the resolved buffer is the sharpest statement of the fix.
+        CY_REQUIRE_EQ(readback.resolved.size(), first_resolved.size());
+        u32 differing = 0;
+        for (usize i = 0; i < first_resolved.size(); ++i) {
+            const Vec4& a = first_resolved[i];
+            const Vec4& b = readback.resolved[i];
+            if (a.x != b.x || a.y != b.y || a.z != b.z || a.w != b.w) {
+                ++differing;
+            }
+        }
+        CY_TEST_MESSAGE("run " << run << ": " << differing
+                               << " resolved pixel(s) differ from run 0");
+        CY_CHECK_EQ(differing, 0U);
+    }
+
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}

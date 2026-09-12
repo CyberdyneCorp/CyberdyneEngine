@@ -196,8 +196,12 @@ private:
     rhi::DescriptorSetLayoutHandle set_layout_;
     rhi::PipelineLayoutHandle pipeline_layout_;
     rhi::DescriptorSetHandle descriptors_;
-    rhi::ShaderModuleHandle modules_[7];
-    rhi::ComputePipelineHandle pipelines_[7];
+    /// One per pass in `VisPass`, which is the enum in visbuffer.cpp that orders them. These were
+    /// two hand-written 7s; adding a pass overran both arrays and corrupted whatever followed, so
+    /// the count lives in one named constant that the pass table is checked against.
+    static constexpr u32 kPassSlots = 8U;
+    rhi::ShaderModuleHandle modules_[kPassSlots];
+    rhi::ComputePipelineHandle pipelines_[kPassSlots];
 
     Array<PassState> states_;
 };

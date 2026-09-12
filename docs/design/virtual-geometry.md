@@ -69,12 +69,17 @@ make affordable.*
 
 ## What these images do not show
 
-They are reproducible to **within about 0.015% of pixels**, not exactly. Two identical runs differ
-in 110–150 covered pixels along silhouettes, because `vgVisRaster`'s atomic depth test and its
-payload write are not atomic *together* — a farther fragment's store can land last and own the
-pixel. That is a correctness defect, it is recorded with its evidence and its fix in
-[`docs/roadmap/post-m9-tasks.md`](../roadmap/post-m9-tasks.md) §4, and it is carried as tasks 7b.x
-on the M10 change. It was found by making these pictures.
+They are reproducible to **one to three pixels in 921,593** (0.0003%), not exactly. Where two
+surfaces tie on the depth key exactly — neighbouring clusters meeting on a shared edge — the winner
+is broken by the traversal's append order, which is atomic and permutes between runs. Removing that
+residue needs a stable cluster identity in the raster payload rather than the visible index.
+
+It used to be **110 to 150 pixels**, and that was a different and worse thing: `vgVisRaster` settled
+depth with an atomic and then wrote the payload as a separate, unordered store, so a *farther*
+surface could take a pixel simply by storing last. Depth and payload are now one 64-bit atomic, and
+[`test_visbuffer.cpp`](../../src/rendering/virtual_geometry/tests/test_visbuffer.cpp) renders one
+frame six times and requires the resolve and the bin counts to match — it fails on the old raster.
+That defect was found by making these pictures.
 
 For the same reason the capture colours clusters by the stable `(instance, cluster)` pair rather
 than by the visibility sample's `visible` index: that index is traversal *append* order, which

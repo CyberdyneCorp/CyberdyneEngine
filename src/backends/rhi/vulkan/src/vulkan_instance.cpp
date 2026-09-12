@@ -416,6 +416,17 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
     features.features.fillModeNonSolid = supported.features.fillModeNonSolid;
     features.features.shaderInt64 = supported.features.shaderInt64;
 
+    // 64-BIT BUFFER ATOMICS, asked for and then checked like bindless above. CyberGeometry's
+    // visibility raster settles depth and payload in ONE atomic, so a farther fragment cannot take
+    // a pixel by storing last; that needs this feature. A device that refuses it fails to create
+    // the visibility pipelines with a named error, which is the honest outcome — the alternative,
+    // the unpaired depth test this replaced, corrupted about 0.015% of pixels without saying
+    // anything.
+    features12.shaderBufferInt64Atomics = (supported12.shaderBufferInt64Atomics == VK_TRUE &&
+                                           supported.features.shaderInt64 == VK_TRUE)
+                                              ? VK_TRUE
+                                              : VK_FALSE;
+
     VkDeviceCreateInfo create{};
     create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create.pNext = &features;

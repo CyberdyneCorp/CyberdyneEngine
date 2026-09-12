@@ -152,7 +152,7 @@ ConstantBuffer<VgVisPush> push;
 [[vk::binding(4, 0)]] StructuredBuffer<VgAsset> assets;
 [[vk::binding(5, 0)]] ByteAddressBuffer payload;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint2> visbuffer;
-[[vk::binding(7, 0)]] RWStructuredBuffer<uint> depth;
+[[vk::binding(7, 0)]] RWStructuredBuffer<uint64_t> depth;
 [[vk::binding(8, 0)]] RWStructuredBuffer<uint> binCounts;
 [[vk::binding(9, 0)]] RWStructuredBuffer<uint> binOffsets;
 [[vk::binding(10, 0)]] RWStructuredBuffer<uint> binCursor;
@@ -174,6 +174,18 @@ static const uint kArgsResolve = 3;
 
 static const uint kNoSurface = 0xFFFFFFFFu;
 static const uint kFarDepth = 0xFFFFFFFFu;
+
+/// DEPTH AND PAYLOAD IN ONE ATOMIC. The depth test and the payload store used to be two unordered
+/// writes, so a farther fragment's store could land last and own a pixel the nearer one won. They
+/// are one 64-bit value now: the depth key in the high half, the payload in the low half, settled by
+/// a single `InterlockedMin`. Ordering by the packed value orders by depth first, and ties break by
+/// payload — deterministically, rather than by whichever store the memory system retired last.
+///
+/// The payload is `(visibleIndex << kTrianglePayloadBits) | triangle`. `VisbufferOptions::validate`
+/// refuses a configuration that would not fit, so the packing cannot silently truncate.
+static const uint kTrianglePayloadBits = 8u;
+static const uint kTrianglePayloadMask = (1u << kTrianglePayloadBits) - 1u;
+static const uint64_t kFarPacked = 0xFFFFFFFFFFFFFFFFull;
 
 // --- Decoding -----------------------------------------------------------------------------------
 //
@@ -269,7 +281,7 @@ void vgVisClear(uint3 id : SV_DispatchThreadID)
     if (pixel < push.width * push.height)
     {
         visbuffer[pixel] = uint2(kNoSurface, 0u);
-        depth[pixel] = kFarDepth;
+        depth[pixel] = kFarPacked;
         resolved[pixel] = float4(0.0f, 0.0f, 0.0f, 0.0f);
         binPixels[pixel] = kNoSurface;
     }
@@ -373,34 +385,39 @@ void vgVisRaster(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID,
                 }
                 uint key = uint(saturate(1.0f - z) * 4294967040.0f);
                 uint pixel = uint(y) * push.width + uint(x);
-                uint previous;
-                InterlockedMin(depth[pixel], key, previous);
-                if (key < previous)
-                {
-                    // A pixel whose depth this fragment won.
-                    //
-                    // KNOWN RACE, wider than coincident surfaces. The atomic settles `depth`, but
-                    // the payload write below is a separate, unordered store, so the pair is not
-                    // atomic together. Two fragments at DIFFERENT depths both take this branch when
-                    // the far one runs its InterlockedMin first: far sees kFarDepth and wins its
-                    // compare, near then lowers `depth` and wins its own. Both store, and whichever
-                    // store lands last owns the pixel — which can be the FARTHER surface, leaving
-                    // `depth` and `visbuffer` disagreeing.
-                    //
-                    // Measured on this scene at 1280x720: ~110-150 of 921,593 covered pixels (0.015%)
-                    // change between two identical runs, and `materials_seen` flips between 4 and 5
-                    // because a thin material's last pixels are the contested ones. Coverage and the
-                    // visible-cluster count are bit-stable, so this is the payload pairing alone and
-                    // not the traversal or the raster bounds.
-                    //
-                    // The fix is a single 64-bit atomic min over (key << 32 | payloadIndex) so depth
-                    // and payload move together; it needs shader int64 atomics, which is why it is
-                    // recorded in docs/roadmap/post-m9-tasks.md rather than done inline here.
-                    visbuffer[pixel] = uint2(visibleIndex, triangle);
-                }
+                uint payload = (visibleIndex << kTrianglePayloadBits) |
+                               (triangle & kTrianglePayloadMask);
+                uint64_t packed = (uint64_t(key) << 32) | uint64_t(payload);
+                InterlockedMin(depth[pixel], packed);
+
             }
         }
     }
+}
+
+/// THE UNPACK. `vgVisRaster` settles depth and payload together in one 64-bit atomic, so the
+/// visibility buffer is a pure function of that buffer rather than something the raster races to
+/// write. Splitting it out keeps every pass downstream — classify, scan, scatter, resolve — reading
+/// the same `uint2` visibility buffer they always did, which is why this fix does not reach them.
+///
+/// One thread per pixel, no atomics, no contention: the answer is already decided.
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void vgVisUnpack(uint3 id : SV_DispatchThreadID)
+{
+    uint pixel = id.x;
+    if (pixel >= push.width * push.height)
+    {
+        return;
+    }
+    uint64_t packed = depth[pixel];
+    if (packed == kFarPacked)
+    {
+        visbuffer[pixel] = uint2(kNoSurface, 0u);
+        return;
+    }
+    uint payload = uint(packed & 0xFFFFFFFFull);
+    visbuffer[pixel] = uint2(payload >> kTrianglePayloadBits, payload & kTrianglePayloadMask);
 }
 
 /// `virtual-geometry` — "Material resolve SHALL **classify pixels by material** into bins". This is
