@@ -23,6 +23,7 @@ The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.
 |---|---|---|---|
 | M9 | `record-matches-plan-history` | **M10** | four milestones closed with Complete cells in their own columns that the status record does not support, and no check compared the two until M9's gate wrote one. M9 repaired its own column; auditin… |
 | M9 | `reliable-channel-stalls-under-loss` | **M10** | a reliable-ordered channel stops delivering to the application under sustained heavy loss and nothing detects it: the frontier freezes, the transport keeps delivering, `abandoned()` has no caller, … |
+| M10 | `sky-field-round-trip` | **M11** | the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have… |
 | M8.c | `steam-audio-configures` | **M11** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
 | M9 | `lockstep-cross-platform` | **M11** | this host has one architecture and one operating system, and no continuous-integration job compares a state hash between two of them. The legs exist — ci.yml's build and test matrices are six, incl… |
 
