@@ -175,17 +175,48 @@ CY_TEST_CASE("cloud shadows: an update writes the field, and a storm darkens the
 
     // And it is READ THROUGH THE SUBSTRATE, so terrain, foliage, water and illumination all get the
     // same number rather than each deriving one.
+    // A GRID INSIDE THE RADIUS, not a diagonal out of it. The earlier version of this walked
+    // (step*128, 0, step*128) for step in [-3, 3], and at step 3 that is 543 m from the centre
+    // against a 512 m `radius_metres` — outside everything the update wrote. Sampling a line also
+    // makes a miss indistinguishable from lit ground.
     f32 lowest = 1.0F;
     f32 highest = 0.0F;
-    for (cy::i32 step = -3; step <= 3; ++step) {
-        const f32 sampled = CloudShadowField::sample(
-            store,
-            WorldVec3d{static_cast<double>(step) * 128.0, 0.0, static_cast<double>(step) * 128.0});
-        CY_CHECK_GE(sampled, 0.0F);
-        CY_CHECK_LE(sampled, 1.0F);
-        lowest = cy::math::min(lowest, sampled);
-        highest = cy::math::max(highest, sampled);
+    u32 sampled_count = 0;
+    for (cy::i32 zs = -2; zs <= 2; ++zs) {
+        for (cy::i32 xs = -2; xs <= 2; ++xs) {
+            const f32 sampled = CloudShadowField::sample(
+                store, WorldVec3d{static_cast<double>(xs) * 128.0, 0.0,
+                                  static_cast<double>(zs) * 128.0});
+            CY_CHECK_GE(sampled, 0.0F);
+            CY_CHECK_LE(sampled, 1.0F);
+            lowest = cy::math::min(lowest, sampled);
+            highest = cy::math::max(highest, sampled);
+            ++sampled_count;
+        }
     }
+    CY_TEST_MESSAGE("through the store: ", sampled_count, " samples, lowest ", lowest,
+                    ", highest ", highest);
+    CY_CHECK_GE(highest, lowest);
+
+    // AND THE FIELD MUST ACTUALLY CARRY A SHADOW. The four assertions above — in range, ordered, and
+    // a default far away — are every one of them satisfied by a field nobody ever wrote to, because
+    // the declared default is 1.0 and 1.0 is in range and equals itself. M10's gate proved it: with
+    // `CloudShadowField::update`'s publish suppressed the producer computed everything, wrote
+    // nothing, and this case stayed green. So assert the thing that distinguishes a published field
+    // from an empty one — that somewhere under the cloud the sun is measurably blocked.
+    // THESE TWO ASSERTIONS ARE THE ONES THAT BELONG HERE, AND THEY FAIL TODAY:
+    //     CY_CHECK_LT(lowest, 0.99F);
+    //     CY_CHECK_GT(highest - lowest, 0.01F);
+    // Twenty-five samples inside the 512 m radius all return exactly 1.0 — the declared default —
+    // while `stats()` above reports a real shadow (darkest < 0.5, brightest > 0.9, tiles written).
+    // So the producer computes a shadow and nothing readable reaches the store. It is sky-specific:
+    // terrain's and water's suites both go red when their `publish()` is suppressed, so the
+    // substrate's write path is sound.
+    //
+    // It is declared as `m10:sky-field-round-trip` in tools/roadmap/milestones/m10.toml rather than
+    // left as a red suite, because the ledger enforces both halves — an open gap keeps failing, and
+    // a gap that starts PASSING fails the ledger and must be deleted. Restore the two lines above
+    // when it closes; they are the check, and this comment is only where it is parked.
     CY_CHECK_GE(highest, lowest);
 
     // A sample far outside the written radius returns the declared default — FULL SUN — rather than

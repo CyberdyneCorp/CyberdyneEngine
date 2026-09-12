@@ -119,3 +119,23 @@ CHECK
 where = "ci"
 reason = "this host has one GPU vendor, so agreement measured here would be agreement with one driver rather than between two, and `requires = \"gpu\"` would make it RUN and PASS on exactly that evidence"
 ci_job = "milestone-m10"
+
+# --- A GAP M10'S GATE FOUND, DECLARED RATHER THAN HIDDEN ------------------------------------------
+#
+# Found by the gate agent refuting "terrain, water and sky each reach Working ... and each is a
+# producer into the substrate". Terrain and water survived: suppressing their `publish()` turned
+# their suites red. Sky did not — its suite PASSED with the publish suppressed, because every
+# substantive assertion read `stats()`, the producer's own in-memory summary, rather than the store.
+#
+# Strengthening the test then showed the claim is not merely unasserted but FALSE: twenty-five
+# samples inside the radius all return the declared default while `stats()` reports a real shadow.
+# The producer computes a cloud shadow and nothing readable reaches the substrate.
+
+[[criterion]]
+id = "sky-field-round-trip"
+describe = "THE SKY COMPUTES A CLOUD SHADOW AND THE SUBSTRATE CANNOT SEE IT. `CloudShadowField::update` reports darkest < 0.5 and brightest > 0.9 over tiles it says it wrote, and `CloudShadowField::sample` returns the declared 1.0 at every point inside `radius_metres`. `atmosphere-sky-and-clouds` requires the shadow to be \"consumed by terrain, foliage, water, and illumination\", which is what reading it through the field is for; today none of them could. Terrain and water round-trip correctly through the same store, so this is the sky's write path and not the substrate's."
+source = "M10 gate, claim 2; openspec/specs/atmosphere-sky-and-clouds/spec.md"
+kind = "command"
+run = "set -o pipefail; out=$(ctest --test-dir \"${CY_BUILD_DIR:-build/dev}\" -R 'render_sky_fields' --output-on-failure 2>&1 || true); echo \"$out\" | grep -q 'through the store' || { echo 'the sky round-trip case did not run'; exit 1; }; echo \"$out\" | grep -oE 'lowest [0-9.]+' | head -1; echo \"$out\" | grep -qE 'lowest (1|1\\.0+)[,.]' && { echo 'the field still reads all-default: the shadow does not reach the store'; exit 1; }; echo 'the cloud shadow reaches the substrate'"
+known_gap = "the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have caught this asserted only against the producer's own statistics, which is the defect class this project has now hit twice"
+known_gap_closes = "m11"

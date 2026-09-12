@@ -281,8 +281,15 @@ const char* Stage::absence() const noexcept {
     if (device_ == nullptr) {
         return "the stage was never opened";
     }
-    return device_->selection.reason != nullptr ? device_->selection.reason
-                                                : "no reason was reported";
+    // EMPTY IS AS UNHELPFUL AS NULL, and it is the case that actually happens: a host whose Vulkan
+    // loader finds no driver at all reports a selection with a reason that is present and blank,
+    // and the message a reader then gets is "no graphics device answered ()". Measured by running
+    // this program with `VK_DRIVER_FILES` pointed at a file that does not exist.
+    const char* reason = device_->selection.reason;
+    return (reason != nullptr && reason[0] != '\0') ? reason
+                                                    : "no backend reported a reason, which on this "
+                                                      "platform usually means the Vulkan loader "
+                                                      "found no driver";
 }
 
 Status Stage::open(u32 width, u32 height) noexcept {

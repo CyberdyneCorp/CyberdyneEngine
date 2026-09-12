@@ -55,8 +55,17 @@ struct Options {
     std::string frames;
     std::string still;
     std::string budget;
-    u32 width = 1280;
-    u32 height = 720;
+    /// 960x540 AND NOT 720p, AND THE REASON IS THE COMMITTED VIDEO RATHER THAN THE PICTURE. This
+    /// default is what `just capture-world` writes into `docs/design/videos/`, and a forest of a
+    /// hundred thousand small triangles is the hardest thing x264 is ever asked to carry: the same
+    /// day at 1280x720 encodes to 9.0 MiB at the CRF `tools/docs/collect_world.py` picked, against
+    /// 5.0 MiB here, and that file has to be cloned by everyone who clones the repository. The
+    /// budget table in this sample's README is measured at this resolution too — the frame cost is
+    /// dominated by per-vertex work on the processor and barely moves with it (123.41 ms mean at
+    /// 720p against 123 ms here), but a table and a picture that disagree about their own capture
+    /// would still be two claims. `--width`/`--height` override both.
+    u32 width = 960;
+    u32 height = 540;
     u32 fps = 30;
     /// Which frame is written a second time under `--still`. Chosen by `--still-frame`, and
     /// defaulted to just over a quarter of the way through the take — mid-morning, before the front
@@ -480,6 +489,22 @@ int main(int argc, char** argv) {
         return 1;
     }
     print_persistence(persistence);
+
+    // THE PROBE COUNT IS A CHECK AND NOT A CAPTION. Printing "0 of 289 probes disagree" and
+    // carrying on regardless is the false green this project has shipped before: a restore that
+    // came back lossy would print "289 of 289" in the middle of a page of output nobody reads
+    // line by line, and `just capture-world` would still write a video of a world whose
+    // persistence does not round trip. `samples_compared` is checked too, because "0 of 0 disagree"
+    // is what a crater stamped outside every resident tile would print, and it reads like a pass.
+    if (!persistence.restored || persistence.samples_compared == 0 ||
+        persistence.samples_disagreeing != 0) {
+        std::fprintf(stderr,
+                     "m10 task 7.2 failed: the crater did not survive the overlay round trip "
+                     "(%u of %u probes disagree, restored=%s)\n",
+                     persistence.samples_disagreeing, persistence.samples_compared,
+                     persistence.restored ? "yes" : "no");
+        return 1;
+    }
 
     Stage stage(allocator);
     const bool wants_pictures = !options.frames.empty() && !options.headless;

@@ -110,7 +110,8 @@ def plot_budget(csv_path: pathlib.Path, name: str) -> bool:
     rain = [float(row["precipitation_mm_per_hour"]) for row in rows]
 
     figure, (cost_axes, sky_axes) = plt.subplots(
-        2, 1, figsize=(11, 7), height_ratios=[3, 1], sharex=True
+        2, 1, figsize=(11, 7), height_ratios=[3, 1], sharex=True,
+        gridspec_kw={"hspace": 0.34},
     )
     cost_axes.stackplot(hours, *series, labels=[label for _, label in PRODUCERS], linewidth=0)
     total = [sum(values) for values in zip(*series)]
@@ -120,7 +121,14 @@ def plot_budget(csv_path: pathlib.Path, name: str) -> bool:
         "samples/10-world — where one frame goes, across a full day/night cycle\n"
         "every producer on the processor; the device's share is the bottom band"
     )
-    cost_axes.legend(loc="upper left", fontsize=8, framealpha=0.9)
+    # THE LEGEND SITS OUTSIDE THE AXES, and that is not a matter of taste. Nine entries stacked
+    # inside the plot cover about a fifth of it, and the fifth they cover is the quiet morning
+    # before the front arrives — the part of the curve a reader is most likely to be checking,
+    # because it is where the claim "flat across the cycle" is easiest to disbelieve. Three columns
+    # under the whole figure cost thirty pixels of height and hide nothing.
+    cost_axes.legend(
+        loc="upper center", bbox_to_anchor=(0.5, -0.02), ncol=3, fontsize=8, frameon=False
+    )
     cost_axes.grid(alpha=0.25)
     cost_axes.set_ylim(bottom=0.0)
 
@@ -134,7 +142,12 @@ def plot_budget(csv_path: pathlib.Path, name: str) -> bool:
     sky_axes.legend(loc="upper left", fontsize=8, framealpha=0.9)
     sky_axes.grid(alpha=0.25)
 
-    figure.tight_layout()
+    # NO `tight_layout` HERE. It recomputes `hspace` from the axes alone, which is exactly the
+    # measurement that does not see the legend, so calling it would undo the gap opened for it.
+    # `tight_layout` measures the axes and not the legend hanging below the upper one, so the gap
+    # BETWEEN the two panels is opened afterwards to make the room it did not reserve. It is
+    # `hspace` and not `bottom`: raising the bottom would move both panels up and leave the space
+    # under the x label instead of where the legend actually is.
     out = IMAGES / f"{name}-budget.png"
     figure.savefig(out, dpi=110)
     plt.close(figure)

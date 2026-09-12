@@ -98,16 +98,22 @@ milestone's eight rows write into it.
 - [x] 7.2 Streamed and persistent: the world saves, resumes and patches, against M6's own artefact.
       **PARTLY**: a crater goes through `terrain::TerrainDeltaStore` into `world::PersistenceOverlay`
       as a subsystem blob, the delta store is cleared and verified empty, and the restore reproduces
-      289 of 289 probes bit for bit. What is NOT done is the field half — weather's `wetness` and
-      `snow-depth` are declared `persistent` and nothing encodes them — and there is NO STREAMING in
+      289 of 289 probes bit for bit — and the program EXITS NON-ZERO if it does not, so a regression
+      fails `just capture-world` rather than printing a different number into a log. What is NOT
+      done is the field half — weather's `wetness` and `snow-depth` are declared `persistent` and
+      nothing encodes them — and there is NO STREAMING in
       this artefact at all: the whole world is resident. Both are recorded in the sample's README
 - [x] 7.3 The environment demo holds its frame budget across a full day/night cycle, **measured as a
       curve across the cycle** rather than asserted at one time of day.
       **MEASURED, AND IT DOES NOT HOLD ONE.** `--budget <csv>` writes every frame's cost per
-      producer and `docs/design/images/m10-world-budget.png` plots it: 123 ms mean, 138 ms worst,
-      flat across the cycle. The three largest bands are the substrate re-sampled per terrain vertex
-      (62.6 ms), the cloud march (23.2 ms) and water's foam field — all three of them work a shipping
-      engine would do in a shader, and all three are the GPU debts M10's own module READMEs record
+      producer and `docs/design/images/m10-world-budget.png` plots it: about 122 ms mean and about
+      145 ms worst, NEARLY flat across the cycle — the only band that knows the time of day is the
+      cloud march, 25.5 ms with the sun up against 21.7 ms with it down, in every capture. Six
+      captures of the same seed spread 121.6-123.9 ms mean and 140.9-147.5 ms worst, so the tenths
+      are this host's load rather than this world's cost; the shape is identical in all six. The
+      three largest bands are the substrate re-sampled per terrain vertex (63.0 ms), the cloud march
+      (23.2 ms) and water's foam field — all three of them work a shipping engine would do in a
+      shader, and all three are the GPU debts M10's own module READMEs record
 - [x] 7.4 **Capture it.** Anything with a visible result gets an image under `docs/design/images/`,
       and a diagram is labelled one.
       **Done**: `just capture-world` writes `docs/design/images/m10-world.png`,
