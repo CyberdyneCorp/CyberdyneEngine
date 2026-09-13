@@ -220,9 +220,26 @@ _cargo-profile profile:
 # `build/editor/` by default, never editor/target/: a build tree belongs under build/ with the
 # others, so that `just build-clean` and a milestone's per-label trees mean the same thing for
 # Cargo as they do for CMake. CY_BUILD_DIR redirects it the way it redirects the engine's.
+#
+# AN ABSOLUTE CY_BUILD_DIR IS A PATH, NOT A FRAGMENT. This line read
+# `{{root}}/${CY_BUILD_DIR:-build}/editor` unconditionally, so an absolute override produced
+# `<root>/<root>/<override>/editor` — a second copy of the tree written INSIDE the source
+# directory, three gigabytes of it, while every consumer looked for the editor under the override
+# itself. M10's gate found it: `just build-editor` reported success in twenty-five seconds and
+# `integration.editor_session_selftest`, `smoke.editor_session` and `smoke.authoring` then failed
+# with "cyberdyne-editor is not at <override>/editor/debug/cyberdyne-editor. Build it with: just
+# build-editor" — the recipe that had just run. Nothing else joined: `build-engine` hands the
+# override to `cmake -B`, and `_ctest`, `run-*` and `_sanitize-dir` are relative to the root they
+# cd into. tools/ci/test_recipes.py holds this.
 [private]
 _editor-target-dir:
-    @echo "{{root}}/${CY_BUILD_DIR:-build}/editor"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    directory="${CY_BUILD_DIR:-build}"
+    case "${directory}" in
+        /*) echo "${directory}/editor" ;;
+        *)  echo "{{root}}/${directory}/editor" ;;
+    esac
 
 # The files rustfmt is pointed at.
 #
@@ -310,3 +327,95 @@ _resolve-target requested:
     echo "  file and a platform SDK, and the first of those arrive with the mobile targets at M9." >&2
     echo "  Build for ${host}, or run this on a ${requested} host." >&2
     exit 2
+
+# Reclaim the build directories nothing is using.
+# Usage: just build-reap [--older-than <minutes>] [--keep <name>] [--apply]
+#
+# WHY THIS EXISTS. Hard rule 11 gives every agent its own build directory and NOTHING collects them.
+# Twice now the tree has had to be cleared by hand — 218 GB, then 892 GB across 106 directories — and
+# the second time the shortage had already blocked a criterion: `m10:four-profiles` needs four engine
+# trees plus four `test-all` passes and there was no room for them. A build tree is pure derived state,
+# rebuildable from a committed source tree, so the only question a reaper has to answer correctly is
+# WHICH ONES ARE IN USE.
+#
+# It answers that three ways, and every one of them has to say yes before a directory is removed:
+#   * no process has its working directory inside it (/proc/*/cwd),
+#   * it has not been written to inside --older-than minutes (default 120), which is what protects a
+#     tree a build is writing to from OUTSIDE this machine's process table, and
+#   * it is not named by --keep.
+#
+# DRY RUN BY DEFAULT. It prints what it would remove and stops; `--apply` is what deletes. That is the
+# opposite of most cleanup tools and deliberate: the cost of keeping a stale tree is disk, and the cost
+# of removing a live one is somebody's multi-hour run.
+build-reap *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+
+    # BIND THE RECIPE'S ARGUMENTS TO $@ BEFORE PARSING THEM. Without this the loop below reads an
+    # empty positional list, every flag is silently ignored, and the recipe reports a dry run whatever
+    # it was asked for — which is what the self-test caught: --keep, --older-than and --apply all did
+    # nothing. `just` interpolates {{args}} as text, it does not set $@.
+    set -- {{args}}
+
+    minutes=120
+    apply=0
+    keep=()
+    while (($#)); do
+        case "$1" in
+            --older-than) minutes="$2"; shift 2 ;;
+            --keep)       keep+=("$2");  shift 2 ;;
+            --apply)      apply=1;       shift ;;
+            *) echo "build-reap: unknown argument '$1'" >&2; exit 2 ;;
+        esac
+    done
+
+    if [[ ! -d build ]]; then
+        echo "build-reap: no build/ directory; nothing to reap"
+        exit 0
+    fi
+
+    # A directory whose name a running process sits inside is live whatever its timestamp says.
+    active=()
+    while IFS= read -r cwd; do
+        case "$cwd" in
+            */build/*) active+=("$(basename "${cwd#*/build/}" | cut -d/ -f1)") ;;
+        esac
+    done < <(readlink /proc/*/cwd 2>/dev/null || true)
+
+    reaped=0
+    kept=0
+    freed=0
+    for path in build/*/; do
+        name="$(basename "$path")"
+        skip=""
+        for k in ${keep[@]+"${keep[@]}"}; do
+            [[ "$name" == "$k" ]] && skip="named by --keep"
+        done
+        for a in ${active[@]+"${active[@]}"}; do
+            [[ "$name" == "$a" ]] && skip="a process is inside it"
+        done
+        if [[ -z "$skip" ]] && [[ -n "$(find "$path" -maxdepth 0 -mmin "-${minutes}" 2>/dev/null)" ]]; then
+            skip="written to within ${minutes} minutes"
+        fi
+
+        size="$(du -sm "$path" 2>/dev/null | cut -f1)"
+        if [[ -n "$skip" ]]; then
+            printf '  keep    %-28s %6s MB  (%s)\n' "$name" "${size:-?}" "$skip"
+            kept=$((kept + 1))
+            continue
+        fi
+        printf '  reap    %-28s %6s MB\n' "$name" "${size:-?}"
+        reaped=$((reaped + 1))
+        freed=$((freed + ${size:-0}))
+        if ((apply)); then
+            rm -rf -- "$path"
+        fi
+    done
+
+    if ((apply)); then
+        echo "build-reap: removed ${reaped} directory(ies), ${freed} MB; kept ${kept}"
+    else
+        echo "build-reap: would remove ${reaped} directory(ies), ${freed} MB; kept ${kept}"
+        echo "build-reap: this was a DRY RUN — pass --apply to remove them"
+    fi

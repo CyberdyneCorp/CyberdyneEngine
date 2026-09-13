@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -95,6 +96,78 @@ def sanitized_tree_survives_wl(root: pathlib.Path) -> list[str]:
     return failures
 
 
+def editor_target_dir_honours_the_override(root: pathlib.Path) -> list[str]:
+    """The editor's cargo target directory is the override, not the override glued to the root.
+
+    `_editor-target-dir` joined `{{root}}/${CY_BUILD_DIR:-build}/editor` unconditionally, so an
+    ABSOLUTE override became `<root>/<root>/<override>/editor`: three gigabytes of editor written
+    inside the source tree while every consumer — `samples/05-editor-session/session.py`,
+    `samples/08a-authoring/authoring.py` and the `--build-dir` CTest passes — looked under the
+    override itself. `just build-editor` reported success and the editor suites then failed with
+    "cyberdyne-editor is not at <override>/editor/<cargo>/cyberdyne-editor. Build it with: just
+    build-editor --profile debug", naming the recipe that had just run. Found closing M10.
+    """
+    failures = []
+
+    default = recipe(root, ["_editor-target-dir"], None)
+    if default != f"{root}/build/editor":
+        failures.append(f"the default editor tree is {default!r}, expected {str(root) + '/build/editor'!r}")
+
+    for override in ("build/dev", "build/gate-profiles", "/tmp/cy-build", str(root) + "/build/dev"):
+        chosen = recipe(root, ["_editor-target-dir"], override)
+        expected = (
+            f"{override}/editor" if override.startswith("/") else f"{root}/{override}/editor"
+        )
+        if chosen != expected:
+            failures.append(
+                f"CY_BUILD_DIR={override} puts the editor at {chosen!r}, expected {expected!r}"
+            )
+        if pathlib.PurePosixPath(chosen).is_absolute() is False:
+            failures.append(f"{chosen!r} is relative; CARGO_TARGET_DIR is read from cargo's own cwd")
+        # The engine's tree and the editor's must be the same directory, whatever the override's
+        # shape: `--build-dir <tree>` is how the CTest entries find the binary cargo just wrote.
+        if not chosen.startswith(
+            (override if override.startswith("/") else f"{root}/{override}") + "/"
+        ):
+            failures.append(
+                f"CY_BUILD_DIR={override} puts the editor outside the build tree, at {chosen!r}"
+            )
+    return failures
+
+
+def a_recipe_that_parses_flags_binds_them(root: pathlib.Path) -> list[str]:
+    """`just` interpolates `{{args}}` as TEXT; it does not set `$@`.
+
+    A recipe that parses flags with a `while (($#))` loop and never runs `set -- {{args}}` reads an
+    EMPTY positional list, silently ignores every flag it was handed, and reports success for work it
+    did not do. `build-reap` shipped with exactly that: `--keep`, `--older-than` and `--apply` were all
+    dropped, so the one flag that deletes anything did nothing while the recipe claimed a dry run.
+
+    That is a silent wrong answer rather than a crash, which is the class a self-test has to catch —
+    the recipe LOOKED like it worked, and only exercising each flag showed it did not.
+    """
+    text = (root / "just" / "build.just").read_text(encoding="utf-8")
+    # Split on RECIPE HEADERS, not on blank lines: a recipe body contains blank lines of its own, so
+    # splitting on those separates a header from the body it introduces and the check silently finds
+    # nothing. That is how the first version of this case passed with the defect reinstated.
+    headers = [
+        (m.start(), m.group(1))
+        for m in re.finditer(r"^([a-z_][\w-]*) \*args:$", text, re.MULTILINE)
+    ]
+    offenders: list[str] = []
+    for index, (start, name) in enumerate(headers):
+        end = headers[index + 1][0] if index + 1 < len(headers) else len(text)
+        body = text[start:end]
+        parses = "$#" in body or re.search(r"^\s+shift\b", body, re.MULTILINE) is not None
+        if parses and "set -- {{args}}" not in body:
+            offenders.append(name)
+    return [
+        f"{name}: parses positional arguments but never runs `set -- {{{{args}}}}`, so every flag it "
+        "is given is silently ignored"
+        for name in offenders
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -111,6 +184,10 @@ def main() -> int:
             sanitized_tree_is_never_the_build_tree
         ),
         "a sanitized build tree's path survives -Wl,": sanitized_tree_survives_wl,
+        "a recipe that parses flags binds them to $@": a_recipe_that_parses_flags_binds_them,
+        "the editor is built into the build tree the override names": (
+            editor_target_dir_honours_the_override
+        ),
     }
 
     failed = 0
