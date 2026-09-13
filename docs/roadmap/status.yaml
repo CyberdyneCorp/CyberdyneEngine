@@ -618,25 +618,25 @@ capabilities:
     milestone: null
     change: null
   build-system-and-platforms:
-    tier: working
-    milestone: M4
-    change: implement-m4-playable
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
   developer-workflow-and-just:
-    tier: working
-    milestone: M6
-    change: implement-m6-scale
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
   testing-and-quality:
-    tier: working
-    milestone: M3
-    change: implement-m3-first-light
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
   diagnostics-profiling-and-crash:
     tier: complete
     milestone: M10
     change: implement-m10-worlds
   thirdparty-dependencies:
-    tier: working
-    milestone: M8B
-    change: implement-m8b-systems
+    tier: seed
+    milestone: M0
+    change: implement-m0-ground
   delivery-roadmap:
     tier: working
     milestone: M0

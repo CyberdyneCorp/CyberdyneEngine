@@ -34,7 +34,12 @@ A capability the plan promised by a milestone that has **closed**, which the sta
 holds lower. This is where a demotion shows up: seven consecutive gates have demoted a row
 rather than accept a claim, and each one is a piece of work the plan still expects.
 
-Nothing behind plan: every closed milestone's promised tiers are met.
+| Capability | Planned | Recorded | Promised by |
+|---|---|---|---|
+| [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | working | **seed** | M4 |
+| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | working | **seed** | M6 |
+| [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | working | **seed** | M3 |
+| [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | working | **seed** | M8.b |
 
 ## 3. What each milestone said it did not close
 
