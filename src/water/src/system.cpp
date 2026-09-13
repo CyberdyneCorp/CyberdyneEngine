@@ -76,6 +76,14 @@ Status WaterSystem::set_ocean(WaterBodyId body, const OceanParams& params, u64 s
         return ensured;
     }
     BodyState* state = find_state(body);
+    // ENSURE_STATE JUST CREATED IT, so this cannot be null in a correct build — but `find_state`
+    // returns a pointer that may be, assertions are compiled out under NDEBUG, and the Profile build
+    // is `-Werror=null-dereference` on exactly this shape. The check is the honest form of what the
+    // assertion said, and it costs one branch on a path that already searched a vector.
+    if (state == nullptr) {
+        return fail(ErrorCode::NotFound, "WaterSystem::set_ocean: the body state went missing after "
+                                         "it was ensured");
+    }
     state->model = *model;
     state->params = resolved;
     state->has_model = true;

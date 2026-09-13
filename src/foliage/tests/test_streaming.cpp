@@ -1,6 +1,8 @@
 // Clusters bound to world cells, evicted with them, and independently evictable. M10 task 2.4;
 // `foliage`'s "Foliage clusters" streaming requirement.
 
+#include <cstring>
+
 #include <cy/test/test.h>
 
 #include <cy/foliage/streaming.h>
@@ -207,7 +209,13 @@ CY_TEST_CASE("a dedicated server keeps the foliage channel, because a felled tre
         cy::world::profile_channels(cy::world::WorldProfile::Client);
     CY_CHECK(client.has(cy::world::Channel::Foliage));
     // The mask has a name for the channel, which is what a diagnostic prints.
-    CY_CHECK_EQ(cy::world::channel_name(cy::world::Channel::Foliage), "foliage");
+    //
+    // COMPARED AS A STRING, NOT AS A POINTER. `channel_name` returns `const char*`, so `CY_CHECK_EQ`
+    // against a literal compares ADDRESSES across two translation units. GCC merges identical string
+    // literals only from -O1 up, so this passed in dev, profile and release and failed in Debug —
+    // which is how it survived to M10's gate. src/networking/tests/test_udp.cpp:74 already does the
+    // comparison this way; this was the one place in the tree that did not.
+    CY_CHECK(std::strcmp(cy::world::channel_name(cy::world::Channel::Foliage), "foliage") == 0);
 }
 
 CY_TEST_CASE("streaming refuses to tick before it has joined the world's queue") {

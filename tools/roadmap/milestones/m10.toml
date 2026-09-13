@@ -1511,6 +1511,6 @@ id = "four-profiles"
 describe = "all four profiles build clean and just test-all is green in each — including src/environment/, src/terrain/, src/water/, src/foliage/, src/weather/, src/pcg/, src/vfx/gpu/, tests/determinism/ and samples/10-world. M8.c's gate found its artefact red in Debug because nobody had looked; this milestone's artefact is a world whose every reported figure is a count or a digest rather than a timing, precisely so that the four profiles have to agree about it"
 source = "tasks 9.1"
 kind = "command"
-run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
 timeout_s = 28800
 ci_job = "profiles"
