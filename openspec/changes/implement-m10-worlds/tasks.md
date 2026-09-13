@@ -215,9 +215,9 @@ milestone's records should say where it went. See `docs/roadmap/post-m9-tasks.md
 
 ## 8. Records and gates
 
-- [ ] 8.1 `tools/roadmap/milestones/m10.toml`; declare `milestone-m10` in `gates.toml` and raise
+- [x] 8.1 `tools/roadmap/milestones/m10.toml`; declare `milestone-m10` in `gates.toml` and raise
       `selftest.MINIMUM_CRITERIA`
-- [ ] 8.2 An `m11-open` criterion using the double-star glob form
+- [x] 8.2 An `m11-open` criterion using the double-star glob form
 - [x] 8.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`.
       **Done.** Eight rows to Working (seven from `none`, `vfx-system` from Seed),
       `diagnostics-profiling-and-crash` and `gameplay-framework` to Complete, and
