@@ -15,16 +15,26 @@ from its first symbol whether that symbol appears next month or next year. The r
 
 ## The shape of it
 
-Thirteen milestones, four eras. Each milestone ends in something that runs, committed to the
-repository and exercised by continuous integration — so it becomes a regression gate for everything
-after it.
+Nineteen rungs, four eras. Each rung ends in something that runs, committed to the repository and
+exercised by continuous integration — so it becomes a regression gate for everything after it.
 
-Thirteen and not twelve because [`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposal.md)
-**inserted M5.5 · Operable between M5 and M6** rather than renumbering M6 through M11: M5 claimed
-`editor-ui-ux` at Working and closed on a scripted session with no window, and the correct repair
-was to give the window a milestone rather than to make the plan retroactively right. Inserting keeps
-every reference to a later milestone valid, and the fractional number says plainly that the ladder
-gained an entry rather than always having had one.
+**Nineteen and not twelve, because the ladder has been split three times and never renumbered.**
+[`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposal.md) **inserted
+M5.5 · Operable between M5 and M6**: M5 claimed `editor-ui-ux` at Working and closed on a scripted
+session with no window, and the correct repair was to give the window a milestone rather than make
+the plan retroactively right.
+[`split-m8-authorable-and-systems`](../openspec/changes/archive/2026-09-08-split-m8-authorable-and-systems/proposal.md)
+**made M8 into M8.a, M8.b and M8.c**, because a milestone whose artefact cannot be reached without
+its own risk spike succeeding contains two. And
+[`implement-m11-reach`](../openspec/changes/implement-m11-reach/proposal.md) task 0.1 **made M11
+into M11.a through M11.e** — applied by
+[`implement-m11a-foundations`](../openspec/changes/implement-m11a-foundations/proposal.md), which
+carries the rule — because sixty-five Complete cells behind one artefact is a gate that cannot name
+what it is looking at.
+
+Inserting rather than renumbering keeps every reference to a later milestone valid, and the suffix
+says plainly that the ladder gained an entry rather than always having had one. **M8 and M11 remain
+the names of their groups**, and a sentence written before either split still means what it said.
 
 ```mermaid
 flowchart LR
@@ -49,29 +59,34 @@ flowchart LR
         M7["M7 · Fidelity<br/><i>the modern renderer</i>"]
         M8A["M8.a · Authorable<br/><i>build a scene, press play</i>"]
         M8B["M8.b · Systems<br/><i>a vertical slice</i>"]
-        M6 --> M7 --> M8A --> M8B
+        M8C["M8.c · Spectacle<br/><i>particles, a cinematic</i>"]
+        M6 --> M7 --> M8A --> M8B --> M8C
     end
     subgraph SH["Shipping"]
         direction TB
         M9["M9 · Integrity<br/><i>determinism, network</i>"]
         M10["M10 · Worlds<br/><i>environment, PCG</i>"]
-        M11["M11 · Reach<br/><i>platforms · 1.0</i>"]
-        M9 --> M10 --> M11
+        M11A["M11.a · Foundations<br/><i>the debts, the budget</i>"]
+        M11B["M11.b · Authoring<br/><i>a real game</i>"]
+        M11C["M11.c · Image<br/><i>a beauty shot</i>"]
+        M11D["M11.d · Desktop<br/><i>Metal · D3D12 · native</i>"]
+        M11E["M11.e · Ship<br/><i>mobile · 1.0</i>"]
+        M9 --> M10 --> M11A --> M11B --> M11C --> M11D --> M11E
     end
     M2 --> M3
     M5B --> M6
-    M8B --> M9
+    M8C --> M9
 
     classDef gate fill:#3b1f1f,stroke:#f87171,stroke-width:2px,color:#fee2e2
-    class M11 gate
+    class M11E gate
 ```
 
 | Era | Milestones | What exists at the end |
 |---|---|---|
 | **Foundation** | M0 – M2 | A headless simulation that is deterministic and serializable. Nothing user-visible. |
 | **First playable** | M3 – M5.5 | A game you can write in Swift and edit in the editor — in a window, or through an agent driving the same editor. |
-| **Production scale** | M6 – M8.b | A world larger than memory, rendered at film detail, playable as a real game. |
-| **Shipping** | M9 – M11 | Multiplayer, open worlds, every platform, 1.0. |
+| **Production scale** | M6 – M8.c | A world larger than memory, rendered at film detail, playable as a real game. |
+| **Shipping** | M9 – M11.e | Multiplayer, open worlds, a game made in the editor, every platform, 1.0. |
 
 Foundation is one unbroken sequence. M0, M1 and M2 produce nothing usable individually, and the
 roadmap says so rather than pretending otherwise.
@@ -602,15 +617,19 @@ The reasoning per row, with the evidence, is in
 [the capability matrix](roadmap/capability-matrix.md#where-m6s-tiers-are-thin) and in
 `tools/roadmap/milestones/m6.toml` beside `[criterion.expect_tiers]`.
 
-*(**And M10's record audit added a seventh row to this milestone, in the direction no gate had looked
-for.** `developer-workflow-and-just` reached **Working** here and nobody wrote it down: the whole
-Content category of the recipe surface was `_not-implemented` stubs at M5 (`git show
-412c955:just/content.just`) and the stubs were gone by M6 (`ec8d087`). Its **W** cell moved from M5's
-column to this one and the record was corrected to M6 — a claim rather than a demotion, which is the
-half of `record-matches-plan-history` nobody had expected to find. The same audit claimed
-`testing-and-quality` at M3, `build-system-and-platforms` at M4 and `thirdparty-dependencies` at
-M8.b for the same reason: the column was right and the record had never been written. **None of the
-four has a criterion of its own**, which is recorded as a gap in
+*(**And M10's record audit looked at a seventh row of this milestone, in the direction no gate had
+looked for — then M10's closing gate refused what it found.** The audit argued that
+`developer-workflow-and-just` reached **Working** here and nobody wrote it down: the whole Content
+category of the recipe surface was `_not-implemented` stubs at M5 (`git show
+412c955:just/content.just`) and the stubs were gone by M6 (`ec8d087`). Its **W** cell did move from
+M5's column to this one, and that move stands. **The record did not move, and holds `seed` from
+M0.** The same audit argued `testing-and-quality` at M3, `build-system-and-platforms` at M4 and
+`thirdparty-dependencies` at M8.b, and all four were reverted for one reason: **none of the four has
+a criterion of its own**, and the only `expect_tiers` entry naming any of them expects `seed`, which
+an exit-tier FLOOR can never contradict. A tier recorded on an argument that nothing re-checks is the
+defect `record-matches-plan-history` exists to catch, so that criterion is a **declared gap again**,
+over exactly these four cells, closing at M11. The evidence each row would need is preserved as the
+brief for the criterion that would close it, in
 [M10's record audit](roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones).)*
 
 ---
@@ -1266,38 +1285,282 @@ streaming**, both on its own README's face.
 
 ---
 
-## M11 — Reach — the 1.0 gate
+## Reach — the 1.0 gate, and why M11 is five rungs
 
 *The same project, everywhere, from one command.*
 
+**M11 is not a milestone section. It is the name of five.** The five below — M11.a Foundations,
+M11.b Authoring, M11.c Image, M11.d Desktop, M11.e Ship — are the milestone, and every existing
+reference to "M11" in this document, in the capability matrix, in the ledgers and in the archived
+changes stays valid as the name of the group, exactly as references to M8 did when it became M8.a,
+M8.b and M8.c.
+
+**Why it was split.** The matrix has said since M6 that M11 was the one milestone that could
+reasonably be split, *"through a change if the work turns out to be separable along a real seam
+rather than an arbitrary one"*. Two things then happened at M10's gate: an audit of four earlier
+closed columns moved thirteen Complete cells here (48 → 61), and M10's own closing gate moved four
+more (61 → **65**). Seventeen of the sixty-five arrived because a gate refused a claim, not because
+anybody planned the work here.
+
+**The seam is the artefact.** `split-m8-authorable-and-systems` added the rule that a milestone
+whose closing artefact cannot be reached without its own risk spike succeeding contains two; that
+rule is about risk, and M11 is not blocked by one spike. The rule this split adds is the sibling: **a
+milestone whose scope cannot be judged by one closing artefact is several milestones sharing a
+number, because a gate that cannot name what it is looking at is not a gate.** Splitting by count is
+refused by the same rule — a rung has to be a claim an artefact can refute.
+
+**And the order is what each artefact depends on.** The editor is finished before the picture is
+art-directed, deliberately: a beauty shot assembled by hand in C++ proves the renderer and nothing
+else, while one authored *through* the editor proves both, and is the honest demonstration of a
+usable engine. Mobile is last because it is the only scope on the ladder that this project cannot
+evaluate on any machine it owns.
+
+| Rung | Rows | Reqs | Closing artefact |
+|---|---:|---:|---|
+| **M11.a** · Foundations | 12 | 233 | the world demo inside its frame budget, on a device, streaming |
+| **M11.b** · Authoring | 24 | 420 | a real sample game, made through the editor |
+| **M11.c** · Image | 15 | 232 | an art-directed beauty shot, authored through that editor |
+| **M11.d** · Desktop | 10 | 129 | `samples/11-ship` on desktop, and a native platform backend |
+| **M11.e** · Ship | 4 | 55 | `samples/11-ship` on every target, and the 1.0 record |
+
+**Exit criteria of M11 as a whole**, unchanged by the split and owned by the rung named against each:
+
+- Golden images match across Vulkan, Metal and D3D12 within tolerance — **M11.d**
+- A native backend for one desktop platform passes the M0 sample and the M3 golden images, requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/` — **M11.d**
+- The porting surface builds against a stub platform that shares no desktop assumption — **M11.d**, and against a real non-desktop one — **M11.e**
+- Every capability is Complete or has a recorded deferral with its re-entry point — **M11.e**
+- Every requirement maps to a test, a gate, or a recorded exemption — **M11.e**
+- The documentation gate passes: every public API documented, every recipe described — **M11.d**
+- The XR prerequisite checks still pass — **M11.e**
+- Version, changelog and artefacts are produced by the release recipes — **M11.e**
+
+---
+
+## M11.a — Foundations
+
+*The debts paid, and the frame budget made real.*
+
 **Entry**: M10 green.
+
+**Why this rung exists.** Seven declared gaps named M11 as the rung that closes them; **six of them
+now name M11.a** and the seventh — `m9:record-matches-plan-history` — names M11.e, because it cannot
+pass until the last of its four rows is evaluated *and* recorded and two of those four are M11.d's.
+Every one of the seven is a criterion that runs and fails today. Nothing downstream is credible while they are
+open: an editor rung authoring content into a world that costs **122 ms a frame against 16.7** is
+authoring into a world nobody can ship, and an image rung tuning a picture no shader samples the
+environment through is tuning the wrong thing. The three largest bands are the substrate re-sampled
+at every terrain vertex (63.0 ms), the cloud march (23.2 ms) and water's foam field (12.0 ms), and
+all three are work a shipping engine does in a shader.
 
 **Work**
 
 | Capability | → | Scope |
 |---|:---:|---|
-| `rhi-and-render-graph` | C | **Metal** (native, not a translation layer) and **D3D12** to parity with Vulkan |
-| `build-system-and-platforms` | C | Cross-compilation, the **porting surface**, mobile targets, distribution artefacts, full continuous integration matrix |
-| `core-platform-abstraction` | C | A **native** `Platform` and `DisplayServer` backend for one desktop platform, replacing SDL3 there and proving the abstraction carries no SDL assumption; the porting surface proven to carry no desktop assumption |
-| `build-and-packaging` | C | Content audit, provenance and symbols, downloadable content, distributed execution |
-| `rendering-forward-clustered` | C | Mobile pipeline differences, MSAA, multi-view |
-| `xr-support` | — | Prerequisites verified and held open; XR itself remains deferred |
-| Everything else | C | Every remaining requirement, or an explicitly recorded deferral |
-| `testing-and-quality` | C | The full gate set, the documentation gate |
+| `environment-fields` | C | `cy/field.slang` and a shader-side field sampler — unwritten today, and the one piece of work three of the seven gaps point at — bound through the GPU scene and measured on a device. Closes `m10:fields-sampled-on-a-device`, whose measurement is zero `.slang` modules |
+| `terrain` / `foliage` / `water` / `weather-and-wind` | C | The three budget bands as shaders, in the order the gap names them; **one** `vegetation-potential`, which is a modelling decision across `foliage` and `weather-and-wind` before it is a code change; the persistence of `wetness` and `snow-depth` M10 declared and did not encode |
+| `atmosphere-sky-and-clouds` | — | The sky's write path into `FieldStore`, the two assertions parked in `test_cloud_shadows.cpp` restored as the check, and the consumers the requirement names. The row's **C** cell is M11.c's; closing `m10:sky-field-round-trip` is this rung's, because M11.c cannot write a consumer of a field that reads back its default |
+| `procedural-content-generation` | C | The cross-leg digest comparison, the standing benchmark, and the execution domains judged on more than one vendor's driver |
+| `world-partition-and-streaming` | C | The streaming binder `src/terrain/`'s README records as its largest gap, so the row is judged on a world that streams rather than on one that fits |
+| `save-and-persistence` | C | **Re-scoped first.** Demoted at M9 and again at M10, so by `delivery-roadmap`'s own rule it is mis-scoped rather than late: nine of twenty requirements satisfied, three unmet, eight partial, and eleven pieces of work — the inspector, the semantic diff, the ten forbidden patterns each made checkable, the missing benchmark, the engine-side consumer that lives in a sample today, and a vetted AEAD that is a dependency adoption of its own |
+| `simulation-and-determinism` / `replay-and-rollback` / `networking-and-replication` | C | The 47 requirements nothing has yet read end to end at Complete grade, and the cross-platform lockstep comparison |
+| `audio` | C | Steam Audio configured and simulating — a dependency adoption before it is a backend, whose cost M8.c measured in full: four upstream dependencies and an ABI flag that blocks both pinned compilers |
 
-**Closing artefact**: `samples/11-ship` — one project built, cooked, packaged and launched on every
-supported target from a single recipe.
+**And the machinery**, which is this rung's and no other's: the five ledgers, the five gates, the
+five criteria floors, the matrix columns and the load table, and the seven inherited gaps re-pointed
+from `m11` at the rung that actually closes each. A gap is re-pointed, never deleted, unless the
+defect is fixed and its criterion is green.
+
+**Closing artefact**: the M10 world demo **inside a 16.7 ms budget on a device**, with the substrate
+sampled in a shader, the world streaming, and the ledger reporting each of the seven inherited gaps
+either closed or still red with its reason.
+
+**Exit criteria**
+
+- A `.slang` module samples an environment field, and the count that is zero today is not zero
+- The world demo holds 16.7 ms across a full day/night cycle, measured on a device and headless
+- A project registering both `cy::foliage`'s and `cy::weather`'s producers starts
+- The cloud shadow field reads back what the producer wrote, and something outside `src/rendering/sky/` reads it
+- One CI job publishes one leg's digest and compares it with another's, answering all three of `m9:lockstep-cross-platform`, `m10:pcg-regeneration-cross-platform` and `m10:pcg-gpu-domain-agreement`
+- Each of the four rows whose Working tier no criterion evaluates has a criterion that evaluates it
+- Every one of the seven inherited gaps is closed, or still declared against a named rung with its reason
+
+**Risk spike**: **port one band — the 63.0 ms substrate re-sample — to a shader and measure it
+before scoping the other two.** If a GPU field sampler does not recover that band, the 122 ms figure
+is not a shader problem and every estimate in this rung is wrong.
+
+---
+
+## M11.b — Authoring
+
+*A real game, made in the editor.*
+
+**Entry**: M11.a green.
+
+**Why this rung exists.** `editor-architecture` and `live-editing` have been at **Seed since M5**
+while five milestones built features on top of them, and the first thing this rung establishes is
+whether that is a mis-record or a thin foundation. `samples/11-ship` is a packaging proof and each
+existing demo proves one slice; twenty-four authoring and gameplay rows can only be judged by
+something a person plays.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `editor-architecture` / `live-editing` | C | The three play modes — `InEditor`, `SeparateProcess`, `RemoteDevice` — which no grep finds today; the specialised editors the `CentreLower` region is reserved for; project creation and settings; the build-and-deployment client; the debugger and the frame profiler; and a per-field live edit policy with the reinitialise, recreate and restart outcomes |
+| `editor-rust-application` / `editor-ui-ux` / `editor-visual-language` / `editor-viewport-and-gizmos` / `editor-documents-and-transactions` / `editor-agent-interface` | C | Source control behind a provider interface with a null provider, the eight missing view modes, and a document model in which a node has a name |
+| `project-and-plugins` | C | Plugins, their lifecycle, resolution, the lockfile and trust tiers — four requirements of eleven with no implementation since M5 |
+| `asset-import-pipeline` | C | Skins and animations through glTF, PNG and JPEG decoding, **BC7 and ASTC encoding**, input assets authored and cooked, and virtual-geometry cooking reachable from inside the editor |
+| `visual-scripting` / `ui-system` / `text-and-fonts` / `rendering-2d` | C | The authoring surfaces a game's interface is built from, including the three text dependencies |
+| `gameplay-abilities-and-effects` / `ai-system` / `animation-and-skinning` / `camera-system` / `navigation` / `physics` / `sequencing-and-cinematics` / `input-and-actions` | C | The rows a game exercises by being played, read end to end at Complete grade rather than argued from a specification |
+| `ml-inference` | C | Off Seed, or an explicitly recorded deferral at M11.e with its re-entry point if the game does not want inference |
+| `swift-scripting` | C | The three scripting items, and a shipping configuration with a toolchain pin verified in CI — which may prove to be M11.d's row wearing this one's name |
+
+**Closing artefact**: **a real sample game** — a start, a loop, a way to win or lose, and content
+authored **in the editor** rather than assembled in C++ — published with an honest statement of
+which parts a person authored and which parts the sample's code assembles.
+
+**Exit criteria**
+
+- The three play modes exist and are exercised, and a live edit follows a declared per-field policy
+- A texture authored in the editor is encoded to BC7 and to ASTC by the engine's own encoder
+- The game is playable from its start state to an end state without a C++ fixture standing in for content
+- Every editor row's remaining requirements are met, or the row is demoted to M11.e with its reason
+- A node has a name, and source control has a provider interface with a null provider
+
+**Risk spike**: **the play-mode seam.** `InEditor`, `SeparateProcess` and `RemoteDevice` are one
+requirement in two specifications, and whether the hosted runtime carries all three without a second
+world model is the question M5 seeded and nobody has asked since.
+
+---
+
+## M11.c — Image
+
+*What the engine actually looks like.*
+
+**Entry**: M11.b green.
+
+**Why this rung exists.** Every renderer row is at Working and **the demos do not look like a modern
+engine**: the world is untextured procedural geometry, the virtual-geometry capture is a normals
+debug view, post-processing is untuned, and nothing has been optimised so nothing has been tuned.
+There are six image files in the entire tree outside `docs/`, so every material in every published
+picture is a constant. The mechanisms are real and gated; the **output** is not.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `material-compiler` / `shader-system` | C | **First, and deliberately first**: image quality is expressed through them, and global illumination cannot be Complete on a material compiler that is not. Node previews through the runtime compiler, every lowering stage visible, and the interchange forms the two backends will need |
+| `virtual-geometry` / `virtual-shadows` | C | The rows whose published evidence is a debug view, photographed as an image instead |
+| `rendering-global-illumination` / `denoising` / `ray-tracing-infrastructure` | C | **The row the plan promised Complete at M10 and M10 did not deliver**: the GI/atmosphere seam of [cycle 2](roadmap/dependencies.md#2--global-illumination--atmosphere) — one adapter at one composition point — plus the denoiser signals with no producer |
+| `rendering-post-processing` / `temporal-rendering` / `rendering-lighting-and-shadows` | C | A post chain, tone mapping and anti-aliasing that are in the frame the artefact photographs. `samples/10-world` links none of them today, so the world picture never passes through any of it |
+| `rendering-culling-and-lod` | C | A hierarchical depth buffer on the device and cluster-granular occlusion, against a CPU two-pass model that exists and a device path that does not |
+| `atmosphere-sky-and-clouds` | C | The sky judged as an image rather than as a table — **conditional on M11.a closing `m10:sky-field-round-trip`**, because this rung owns the illumination consumer of a field whose sampler returns its default at every point today |
+| `rendering-architecture` / `rendering-geometry-and-resources` | C | Subsystem controllers reporting measured costs to the arbiter, and a skin pass with dual quaternions and blend shapes where the specification puts them |
+| `vfx-system` | C | Because an art-directed shot with no particles in it does not exercise the row |
+
+**Closing artefact**: **an art-directed beauty shot** — real materials, tone mapping,
+anti-aliasing, tuned post — assembled **through the editor M11.b finished** rather than in C++, and
+published beside a statement of what was authored and what the renderer produced.
+
+**Exit criteria**
+
+- A textured material authored in the editor reaches the renderer as textures rather than as constants
+- The beauty shot passes through tone mapping and anti-aliasing, and the frame graph says so
+- `gi::SkyTerm` is constructed from the atmosphere at one composition point, and cycle 2 is closed or re-argued
+- The virtual-geometry and virtual-shadow evidence is an image, not a debug visualisation
+- Every row's remaining requirements are met first-hand, or the row is demoted with its reason
+
+**Risk spike**: **one authored material, end to end, before anything is scoped.** Author one
+textured material in the editor's graph, compile it through the runtime compiler, encode its
+textures, bind it in the assembled frame, and photograph it. Everything in this rung assumes that
+path exists; nothing in the tree has ever run it.
+
+---
+
+## M11.d — Desktop
+
+*Three backends, one platform layer, one package.*
+
+**Entry**: M11.c green.
+
+**Why this rung exists.** `rhi-and-render-graph` has been Working since M3 and the gap to Complete
+is entirely the second and third backends; `core-platform-abstraction` has SDL3 as its only
+implementation, so nothing has yet proved the abstraction carries no SDL assumption. Neither MSL nor
+DXIL is emitted anywhere in the tree today, which is why `shader-system` is M11.c's row and this
+rung's hard prerequisite.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `rhi-and-render-graph` | C | **Metal, native and not a translation layer**, and **D3D12 to parity with Vulkan**. The eight gaps the Metal seed recorded are interface changes before they are backends: an opaque memory-pool class, layouts derived from the access masks, a queue-ownership query, a per-format support query, a pipeline-cache token, and a precondition on secondary recording |
+| `core-platform-abstraction` | C | A **native** `Platform` and `DisplayServer` for one desktop platform, replacing SDL3 there and **requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`**, plus the porting surface built against a stub platform that shares no desktop assumption |
+| `rendering-forward-clustered` | — | MSAA and multi-view, the desktop half. The row's **C** cell stays at M11.e with the mobile pipeline differences, because a row is not Complete on the half of its scope this rung can reach |
+| `build-and-packaging` | C | Content audit, provenance and symbols |
+| `testing-and-quality` | C | The full gate set and the documentation gate |
+| `developer-workflow-and-just` | C | The release and second-platform targets, from the same recipes on every desktop |
+| `core-assets-and-io` / `core-jobs-and-concurrency` / `core-memory-and-containers` / `ecs-core` / `engine-architecture` | C | Here rather than in M11.a for one reason: the exit criterion for the native backend is that **none of `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/` changes**, which is a first-hand audit of exactly these rows whether or not anybody calls it one |
+
+**Closing artefact**: `samples/11-ship` built, cooked, packaged and launched on each desktop target
+from one recipe, plus the M0 sample and the M3 golden images on the native platform backend with
+`src/core/`, `src/ecs/`, `src/servers/` and `src/scene/` untouched.
 
 **Exit criteria**
 
 - Golden images match across Vulkan, Metal and D3D12 within tolerance
-- A native backend for one desktop platform passes the M0 sample and the M3 golden images, requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`
+- The native backend passes the M0 sample and the M3 golden images, and the diff touches no engine layer
 - The porting surface builds against a stub platform that shares no desktop assumption
-- Every capability is Complete or has a recorded deferral with its re-entry point
-- Every requirement maps to a test, a gate, or a recorded exemption
 - The documentation gate passes: every public API documented, every recipe described
+- `samples/11-ship` is built, cooked, packaged and launched on each desktop target from one recipe
+
+**Risk spike**: **settle the eight RHI gaps as interface changes, on Vulkan and null, before a line
+of either backend is written** — and, before that, find out whether a hosted macOS or Windows runner
+can present a graphics device at all, because every image claim in this rung depends on the answer.
+
+---
+
+## M11.e — Ship
+
+*Every target, and the 1.0 record.*
+
+**Entry**: M11.d green.
+
+**Why this rung is last.** Mobile is the only scope on the ladder this project cannot evaluate on
+any machine it owns, and the sweep — every row an earlier rung demoted — cannot be sized until the
+earlier rungs have run. **Four rows is the smallest count on the ladder and not the smallest rung**:
+M11.a predicts demoting `save-and-persistence` and `audio`, M11.b `ml-inference` and
+`swift-scripting`, M11.c `rendering-culling-and-lod`, M11.d `build-and-packaging`, and this rung's
+real load is whatever arrives.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `build-system-and-platforms` | C | Cross-compilation, mobile targets, distribution artefacts and the full continuous-integration matrix |
+| `rendering-forward-clustered` | C | The mobile pipeline differences, with M11.d's desktop half already in |
+| `thirdparty-dependencies` | C | The rest of the intended dependency set under the manifest's governance — about half of roughly forty-two named libraries is integrated today — and the runtime attribution API |
+| `delivery-roadmap` | C | The matrix, the status record and the ledgers agreeing, and **the 1.0 record**: what 1.0 is and what it is not |
+| `xr-support` | — | Prerequisites verified and held open; XR itself remains deferred, as a decision restated rather than a row skipped |
+| Everything else | C | Every remaining requirement, or an explicitly recorded deferral with its re-entry point. **This is the only rung permitted to record a deferral** — a rung before it demotes with a reason instead, which is what makes the discipline enforceable |
+
+**Closing artefact**: `samples/11-ship` on every supported target from a single recipe — the desktop
+half from M11.d and at least one mobile target here — and **the 1.0 record**: 76 rows, each Complete
+or deferred with a re-entry point, every deferral naming what is unmet and what would bring it back.
+
+**Exit criteria**
+
+- A mobile artefact is produced by the continuous-integration matrix, or mobile is a recorded deferral with a re-entry point
+- The porting surface is proved against a real non-desktop platform
+- Every capability is Complete or has a recorded deferral with its re-entry point, checked by a criterion that names the offending row rather than by a document asserting it
+- Every requirement maps to a test, a gate, or a recorded exemption
 - The XR prerequisite checks still pass
-- Version, changelog and artefacts are produced by the release recipes
+- Version, changelog and artefacts are produced by the release recipes, and no recipe refuses naming a milestone that is not on the ladder
+- The 1.0 record states what 1.0 is and what it is not
+
+**Risk spike**: **find out whether a mobile artefact can be produced in CI at all, before anything
+else in this rung is scoped.** One empty project, cross-compiled, packaged and reported from a
+hosted runner. If it cannot be done, mobile is a deferral with a re-entry point and this rung is the
+distribution and record rung — a finding worth having on day one rather than at the gate.
 
 ---
 

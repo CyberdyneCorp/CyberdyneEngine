@@ -6,17 +6,19 @@
 // libraries**, content-addressed artefacts containing SPIR-V or backend-native code, reflection
 // data, and the permutation key.
 //
-// --- WHY REFLECTION IS IN THE ARTEFACT -------------------------------------------------------------
+// --- WHY REFLECTION IS IN THE ARTEFACT
+// -------------------------------------------------------------
 //
-// It could be recomputed from the SPIR-V at load. It is stored instead, for a reason that is easy to
-// miss: **a shipping build has no compiler, and a shipping build for a backend-native target has no
-// SPIR-V either.** `shader-system`'s pipeline step 4 retains SPIR-V for Vulkan but produces MSL for
-// Metal and DXIL for D3D12, and neither of those can be reflected by the parser in `spirv.h`.
+// It could be recomputed from the SPIR-V at load. It is stored instead, for a reason that is easy
+// to miss: **a shipping build has no compiler, and a shipping build for a backend-native target has
+// no SPIR-V either.** `shader-system`'s pipeline step 4 retains SPIR-V for Vulkan but produces MSL
+// for Metal and DXIL for D3D12, and neither of those can be reflected by the parser in `spirv.h`.
 // Reflection therefore has to survive the cook, in a form that does not depend on which target the
 // code half of the entry is. That is also what lets a library be *inspected* — `just` recipes and
 // the editor's shader view read the reflection without a compiler and without a device.
 //
-// --- THE FORMAT ------------------------------------------------------------------------------------
+// --- THE FORMAT
+// ------------------------------------------------------------------------------------
 //
 //   header      magic, format version, entry count, the library's own content hash
 //   entries     fixed-size records: permutation key, stage, target, entry-point name, and the
@@ -24,12 +26,13 @@
 //   blobs       code and reflection payloads, each aligned to four bytes
 //
 // Fixed-size records and explicit offsets, not a serialization framework: the file is read by
-// `memcpy` out of a mapped region, an entry is found by binary search over a sorted table, and there
-// is no per-entry allocation on the load path. That matters because a project's library holds tens
-// of thousands of entries and a game loads it during a loading screen it is being measured on.
+// `memcpy` out of a mapped region, an entry is found by binary search over a sorted table, and
+// there is no per-entry allocation on the load path. That matters because a project's library holds
+// tens of thousands of entries and a game loads it during a loading screen it is being measured on.
 //
 // Everything is little-endian and the format version is checked. A library from a different version
-// is rejected rather than migrated: it is derived data, and recompiling it is what the cache is for.
+// is rejected rather than migrated: it is derived data, and recompiling it is what the cache is
+// for.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
@@ -148,8 +151,8 @@ private:
 /// Serialise reflection into a self-describing blob, and read it back.
 ///
 /// Public because the library is not the only consumer: a diagnostic dump and the editor's shader
-/// view both want the blob without the container around it, and a second encoder for them would be a
-/// second thing to keep in step with `Reflection`.
+/// view both want the blob without the container around it, and a second encoder for them would be
+/// a second thing to keep in step with `Reflection`.
 [[nodiscard]] Status encode_reflection(const Reflection& reflection, Array<u8>& out) noexcept;
 [[nodiscard]] Expected<Reflection, Error> decode_reflection(Span<const u8> bytes,
                                                             Allocator& allocator) noexcept;

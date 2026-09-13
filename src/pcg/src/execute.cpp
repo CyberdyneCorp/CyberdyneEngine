@@ -180,6 +180,16 @@ Status GenerationWorld::demote(const RegionCoord& region) noexcept {
     state->accepted.clear();
     state->candidates.clear();
     state->provenance.clear();
+    // AND THE REGION IS NO LONGER EVALUATED. Its candidates are what a cross-region conflict
+    // resolution in a NEIGHBOUR reads, so a region whose detail is gone cannot answer for itself:
+    // leaving the mask set made `complete_through()` call the world complete and let a partial
+    // regeneration beside it run against a neighbour supplying no candidates at all. The M10 gate's
+    // adversarial pass measured that — a neighbour's accepted set silently diverging from what a
+    // full run of the same seed produces, reported as a successful regeneration — and the rule this
+    // module already states is the answer: a partial regeneration over a world with a hole in it is
+    // REFUSED, because a gather would read a region that has no values.
+    state->evaluated_mask = 0;
+    state->stage_digests.clear();
     return ok();
 }
 
@@ -1494,6 +1504,18 @@ Status Generator::advance_stage() noexcept {
 
 Status Generator::begin(ExecutionDomain domain, const GenerationContext& context,
                         const RegionSet& seeds, DirtyCause cause, u8 first_stage) noexcept {
+    // THE SAME REFUSAL `regenerate()` MAKES, and it was missing here. `begin()` is the budgeted,
+    // resumable, RUNTIME entry point — the one a game actually calls — and it went straight to work
+    // over a world with holes in it. The exception is the run that fills the world: seeding every
+    // region from stage zero reads nothing it does not also write, which is how the suites drive a
+    // first generation in steps.
+    const bool fills_the_world =
+        first_stage == 0 && static_cast<i64>(seeds.size()) == world_->extent().count();
+    if (!fills_the_world) {
+        if (Status complete = refuse_incomplete_world(); !complete) {
+            return complete;
+        }
+    }
     if (Status prepared = prepare(domain, context); !prepared) {
         return prepared;
     }
@@ -1505,6 +1527,10 @@ Status Generator::begin(ExecutionDomain domain, const GenerationContext& context
 
 Status Generator::begin_edit(ExecutionDomain domain, const GenerationContext& context,
                              Span<const AuthoredStamp> changed) noexcept {
+    // An edit is always partial, so there is no world-filling exception to make here.
+    if (Status complete = refuse_incomplete_world(); !complete) {
+        return complete;
+    }
     if (Status prepared = prepare(domain, context); !prepared) {
         return prepared;
     }

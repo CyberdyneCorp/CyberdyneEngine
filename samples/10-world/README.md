@@ -208,7 +208,7 @@ in the order the dependencies force. `stage.h`/`stage.cpp` are the renderer and 
 |---|---|
 | `--frames <dir>` | write `frame_%04d.png` per frame |
 | `--still <path>` | write one frame a second time, for the committed image |
-| `--budget <path>` | write the per-frame, per-producer cost as a CSV |
+| `--budget <path>` | write the per-frame, per-producer cost as a CSV — plus `field_points` and `field_throttled`, which are what the substrate publication DID, since weather publishes inside its own tick and the two halves cannot be timed apart |
 | `--headless` | generate, cook, claim, place and simulate; draw nothing |
 | `--seconds <s>` | length of the take, which is always exactly one simulated day |
 | `--fps <n>` | frames per second of the take. One frame is one simulated tick |

@@ -210,11 +210,12 @@ CY_TEST_CASE("a dedicated server keeps the foliage channel, because a felled tre
     CY_CHECK(client.has(cy::world::Channel::Foliage));
     // The mask has a name for the channel, which is what a diagnostic prints.
     //
-    // COMPARED AS A STRING, NOT AS A POINTER. `channel_name` returns `const char*`, so `CY_CHECK_EQ`
-    // against a literal compares ADDRESSES across two translation units. GCC merges identical string
-    // literals only from -O1 up, so this passed in dev, profile and release and failed in Debug —
-    // which is how it survived to M10's gate. src/networking/tests/test_udp.cpp:74 already does the
-    // comparison this way; this was the one place in the tree that did not.
+    // COMPARED AS A STRING, NOT AS A POINTER. `channel_name` returns `const char*`, so
+    // `CY_CHECK_EQ` against a literal compares ADDRESSES across two translation units. GCC merges
+    // identical string literals only from -O1 up, so this passed in dev, profile and release and
+    // failed in Debug — which is how it survived to M10's gate.
+    // src/networking/tests/test_udp.cpp:74 already does the comparison this way; this was the one
+    // place in the tree that did not.
     CY_CHECK(std::strcmp(cy::world::channel_name(cy::world::Channel::Foliage), "foliage") == 0);
 }
 

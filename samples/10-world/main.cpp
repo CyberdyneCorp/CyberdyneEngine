@@ -304,19 +304,22 @@ void print_persistence(const World::PersistenceReport& report) {
     std::fprintf(file,
                  "frame,day_fraction,sun_elevation_degrees,precipitation_mm_per_hour,weather_ms,"
                  "water_ms,ocean_ms,sky_ms,terrain_shade_ms,foliage_ms,producers_ms,"
-                 "stage_build_ms,stage_submit_ms,frame_ms,plants_drawn,stars_drawn,triangles\n");
+                 "stage_build_ms,stage_submit_ms,frame_ms,field_points,field_throttled,"
+                 "plants_drawn,stars_drawn,triangles\n");
     for (usize frame = 0; frame < costs.size(); ++frame) {
         const FrameCosts& cost = costs[frame];
         const StageReport& drawn = stage[frame];
         const f64 total = cost.total() + drawn.build_ms + drawn.submit_ms;
         std::fprintf(
             file,
-            "%llu,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u,%u,%u\n",
+            "%llu,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%llu,%u,%u,%u,"
+            "%u\n",
             static_cast<unsigned long long>(frame), static_cast<double>(day[frame]),
             static_cast<double>(sun_elevation[frame]), static_cast<double>(rain[frame]),
             cost.weather_ms, cost.water_ms, cost.ocean_ms, cost.sky_ms, cost.terrain_shade_ms,
             cost.foliage_ms, cost.total(), drawn.build_ms, drawn.submit_ms, total,
-            drawn.plants_drawn, drawn.stars_drawn,
+            static_cast<unsigned long long>(cost.field_points),
+            cost.field_publication_throttled ? 1U : 0U, drawn.plants_drawn, drawn.stars_drawn,
             drawn.sky_triangles + drawn.terrain_triangles + drawn.water_triangles +
                 drawn.foliage_triangles);
     }
@@ -436,6 +439,21 @@ void print_budget(const Take& take) {
     std::printf("  %.2f ms best, %.2f ms mean, %.2f ms worst (frame %llu, sun %+.1f deg)\n", best,
                 mean, worst, static_cast<unsigned long long>(worst_frame),
                 take.sun.empty() ? 0.0 : static_cast<double>(take.sun[worst_frame]));
+    // A BUDGET HELD BY DROPPING WORK IS NOT A BUDGET HELD, so the one lever in this world that
+    // actually throttles says so on its own line rather than only in a column. Weather defers a
+    // field publication whose lattice would exceed the tick's allowance, and a frame that published
+    // nothing is a frame whose consumers read the previous tick's weather.
+    cy::u64 throttled = 0;
+    cy::u64 points = 0;
+    for (const FrameCosts& cost : take.costs) {
+        throttled += cost.field_publication_throttled ? 1U : 0U;
+        points += cost.field_points;
+    }
+    std::printf(
+        "  substrate: %llu lattice point(s) published a frame, %llu frame(s) deferred by "
+        "the field-update budget\n",
+        static_cast<unsigned long long>(take.costs.empty() ? 0 : points / take.costs.size()),
+        static_cast<unsigned long long>(throttled));
     std::printf("  the whole curve is in the CSV; the video's companion figure plots it.\n");
 }
 

@@ -217,7 +217,7 @@ consumer and expensive with seven, which is exactly what the spike bought.
 and extract", an editor operation over a data model that has supported it since M2, and it sits with
 `live-editing` and `editor-viewport-and-gizmos`, which complete in the same milestone. The M8.a graph
 above shows it feeding `gameplay-framework`'s play mode, and that edge is satisfied at Working, not
-at Complete. `editor-documents-and-transactions` completes at M11 rather than M8.a: its remaining
+at Complete. `editor-documents-and-transactions` completes at M11.b rather than M8.a: its remaining
 requirement is "Source control integration", a provider interface with Git, Perforce and a null
 implementation, which no milestone between here and 1.0 schedules and which every other `editor-*`
 row's Complete cell already waits for. Both edges out of them in the M8.a subgraph are Seed-level
@@ -226,7 +226,7 @@ Working — is unaffected, and `just roadmap-test` checks that rather than this 
 
 ---
 
-## Shipping — M9 to M11
+## Shipping — M9 to M11.e
 
 ```mermaid
 flowchart TB
@@ -246,13 +246,19 @@ flowchart TB
     WP3["world-partition · cell payloads"] --> FIELDS
     MC2["material-compiler · environment inputs"] --> TERR
 
-    ATMO --> GI2["rendering-global-illumination → Complete at M11"]
-    NAV2["navigation → Complete at M11"] --> TERR
+    ATMO --> GI2["rendering-global-illumination → Complete at M11.c"]
+    NAV2["navigation → Complete at M11.b"] --> TERR
 
-    BACKENDS["Metal · D3D12"] --> SHIP["1.0"]
-    PORT["porting surface · native backend · mobile"] --> SHIP
-    ATMO --> SHIP
-    NET --> SHIP
+    FIELDS --> RA["M11.a · Foundations<br/><i>the debts, the frame budget</i>"]
+    NET --> RA
+    RA --> RB["M11.b · Authoring<br/><i>a real game, made in the editor</i>"]
+    RB --> RC["M11.c · Image<br/><i>a beauty shot, authored through it</i>"]
+    GI2 --> RC
+    RC --> RD["M11.d · Desktop<br/><i>Metal · D3D12 · native platform</i>"]
+    BACKENDS["Metal · D3D12"] --> RD
+    RD --> RE["M11.e · Ship<br/><i>mobile · distribution · the 1.0 record</i>"]
+    PORT["porting surface · mobile"] --> RE
+    RE --> SHIP["1.0"]
 
     classDef gate fill:#3b1f1f,stroke:#f87171,stroke-width:2px,color:#fee2e2
     class SHIP gate
@@ -261,6 +267,16 @@ flowchart TB
 **Why networking is this late.** Replication schemas need stable field identity (M1), component
 storage (M2), the command stream (M4), streamed cells for interest management (M6), and rollback
 primitives that are the *same mechanism* as replay. Built before those, it is built twice.
+
+**Why M11 is five rungs, and why they are in this order.** The rungs are not a partition of the work
+by size: each one is a claim its own closing artefact can refute, and the edges above are what each
+artefact depends on. **M11.a first**, because a world costing 122 ms a frame is one nobody can author
+into and one nobody can tune a picture of. **M11.b before M11.c**, because a beauty shot assembled by
+hand in C++ proves the renderer and nothing else, while one authored *through* the editor proves
+both. **M11.d before M11.e**, because a porting surface is proved against a stub before it is proved
+against a device nobody here owns. The argument is in
+[`implement-m11-reach`](../../openspec/changes/implement-m11-reach/proposal.md) task 0.1 and the rule
+it added is in `delivery-roadmap`.
 
 **Why environment is after game systems.** Terrain, foliage, water and weather are the largest block
 of work whose absence blocks nothing else. They consume the field substrate, the streaming
@@ -282,7 +298,7 @@ requires tiles to stream through those cells.
 partition's Working tier in **M6**, with no terrain in existence. Terrain implements the contract as
 a payload producer in **M10**. Both directions are satisfied without either waiting on the other.
 
-**The break held and `world-partition-and-streaming`'s Complete cell still moved to M11**, because
+**The break held and `world-partition-and-streaming`'s Complete cell still moved to M11.a**, because
 the milestone that was to complete it closed on an artefact with **no streaming in it**:
 `samples/10-world` keeps the whole world resident, meshes every terrain tile at level 0, and reports
 `MeshReport::stitched_vertices` as zero precisely so a reader can see that nothing streamed. Terrain
@@ -299,7 +315,7 @@ integration the renderer settles.
 images. The physical atmosphere, its precomputed tables and volumetric clouds land at **M10**, which
 is why `rendering-global-illumination` was planned to complete at M10 rather than M7.
 
-**THE ATMOSPHERE LANDED AT M10 AND THE SEAM WAS NEVER JOINED, so GI's Complete cell moved to M11.**
+**THE ATMOSPHERE LANDED AT M10 AND THE SEAM WAS NEVER JOINED, so GI's Complete cell moved to M11.c.**
 The break above is sound and the work to close it was simply not done: `gi/lighting.h` still
 describes its two-colour gradient as *"the seam it will replace, not a second sky"*;
 `sky_light.h` carries the three-line adapter and says a composition point writes it; **nothing in
@@ -309,7 +325,7 @@ deliberate, which is what made the gradient fit measurable without a GI system p
 why nobody was obliged to join the two. M10's closing gate moved the cell rather than let a
 completion the code does not support close silently; the evidence is in
 [where M10's tiers are thin](capability-matrix.md#where-m10s-tiers-are-thin). **Joining it is one
-adapter at one composition point**, and it is M11's.
+adapter at one composition point**, and it is M11.c's — checked there by `gi-sky-term-constructed`, which fails today because nothing in the tree constructs a `gi::SkyTerm`.
 
 ### 3 — AI ↔ navigation ↔ world partition
 
@@ -322,7 +338,8 @@ direction that matters. The third edge — density feeding back into streaming p
 and cutting it removes the cycle entirely.
 
 **Terrain's half of the first edge landed at M10 and `navigation`'s Complete cell still moved to
-M11.** `src/terrain/include/cy/terrain/collision.h` produces a `navigation::NavSourceGeometry` from
+M11.b**, with the rest of the rows a game exercises by being played.
+`src/terrain/include/cy/terrain/collision.h` produces a `navigation::NavSourceGeometry` from
 the collision representation with its material and slope data — the requirement
 `Environment-driven navigation` names — and terrain's own `CMakeLists.txt` states the boundary: it
 *"creates no body and builds no navmesh"*. That is one requirement of sixteen, and no M10 task named

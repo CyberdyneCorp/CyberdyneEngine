@@ -26,7 +26,9 @@ using cy::rendering::ProducerKind;
 using cy::rendering::PublicationSite;
 using cy::rendering::RenderImportance;
 
-cy::Allocator& allocator() noexcept { return cy::system_allocator(MemoryDomain::Renderer); }
+cy::Allocator& allocator() noexcept {
+    return cy::system_allocator(MemoryDomain::Renderer);
+}
 
 GpuInstance instance_at(Vec3 position) noexcept {
     GpuInstance instance;
@@ -38,8 +40,8 @@ GpuInstance instance_at(Vec3 position) noexcept {
 }  // namespace
 
 CY_TEST_CASE("gpu scene: an affine transform round trips through a Mat4") {
-    const Mat4 source = Mat4::from_trs(Vec3{3.0f, -4.0f, 5.0f}, cy::Quat::identity(),
-                                       Vec3{2.0f, 2.0f, 2.0f});
+    const Mat4 source =
+        Mat4::from_trs(Vec3{3.0f, -4.0f, 5.0f}, cy::Quat::identity(), Vec3{2.0f, 2.0f, 2.0f});
     const Mat4 restored = AffineTransform3x4::from_mat4(source).to_mat4();
     for (cy::usize row = 0; row < 4; ++row) {
         for (cy::usize column = 0; column < 4; ++column) {
@@ -50,8 +52,8 @@ CY_TEST_CASE("gpu scene: an affine transform round trips through a Mat4") {
 
 CY_TEST_CASE("gpu scene: a producer reserves a range and fills it") {
     GpuScene scene(allocator());
-    const auto producer = scene.register_producer(ProducerKind::Extract, "extract",
-                                                  PublicationSite::Cpu);
+    const auto producer =
+        scene.register_producer(ProducerKind::Extract, "extract", PublicationSite::Cpu);
     CY_REQUIRE(producer.has_value());
 
     const auto range = scene.reserve(*producer, 3);
@@ -73,8 +75,7 @@ CY_TEST_CASE("gpu scene: a producer reserves a range and fills it") {
 
 CY_TEST_CASE("gpu scene: the previous transform shifts once per frame, not once per write") {
     GpuScene scene(allocator());
-    const auto producer =
-        scene.register_producer(ProducerKind::Vfx, "vfx", PublicationSite::Cpu);
+    const auto producer = scene.register_producer(ProducerKind::Vfx, "vfx", PublicationSite::Cpu);
     CY_REQUIRE(producer.has_value());
     const auto range = scene.reserve(*producer, 1);
     CY_REQUIRE(range.has_value());
@@ -82,33 +83,30 @@ CY_TEST_CASE("gpu scene: the previous transform shifts once per frame, not once 
     // A slot's first publication has no history: previous equals current, so a newly spawned
     // instance does not smear across the screen in its first frame.
     GpuInstance instance = instance_at(Vec3{0.0f, 0.0f, 0.0f});
-    CY_REQUIRE(
-        scene.write_instances(*producer, *range, cy::Span<const GpuInstance>(&instance, 1))
-            .has_value());
+    CY_REQUIRE(scene.write_instances(*producer, *range, cy::Span<const GpuInstance>(&instance, 1))
+                   .has_value());
     CY_CHECK_EQ(scene.instance(range->first)->previous_transform.m[3], 0.0f);
 
     scene.begin_frame();
     instance = instance_at(Vec3{10.0f, 0.0f, 0.0f});
-    CY_REQUIRE(
-        scene.write_instances(*producer, *range, cy::Span<const GpuInstance>(&instance, 1))
-            .has_value());
+    CY_REQUIRE(scene.write_instances(*producer, *range, cy::Span<const GpuInstance>(&instance, 1))
+                   .has_value());
     CY_CHECK_EQ(scene.instance(range->first)->transform.m[3], 10.0f);
     CY_CHECK_EQ(scene.instance(range->first)->previous_transform.m[3], 0.0f);
 
     // The second write in the same frame is the case a mesh-particle producer hits: it must not
     // report the delta between its own two writes as motion.
     instance = instance_at(Vec3{20.0f, 0.0f, 0.0f});
-    CY_REQUIRE(
-        scene.write_instances(*producer, *range, cy::Span<const GpuInstance>(&instance, 1))
-            .has_value());
+    CY_REQUIRE(scene.write_instances(*producer, *range, cy::Span<const GpuInstance>(&instance, 1))
+                   .has_value());
     CY_CHECK_EQ(scene.instance(range->first)->transform.m[3], 20.0f);
     CY_CHECK_EQ(scene.instance(range->first)->previous_transform.m[3], 0.0f);
 }
 
 CY_TEST_CASE("gpu scene: a GPU-site producer declares bounds instead of writing instances") {
     GpuScene scene(allocator());
-    const auto gpu = scene.register_producer(ProducerKind::VirtualGeometry, "clusters",
-                                             PublicationSite::Gpu);
+    const auto gpu =
+        scene.register_producer(ProducerKind::VirtualGeometry, "clusters", PublicationSite::Gpu);
     CY_REQUIRE(gpu.has_value());
     const auto range = scene.reserve(*gpu, 4);
     CY_REQUIRE(range.has_value());
@@ -118,8 +116,8 @@ CY_TEST_CASE("gpu scene: a GPU-site producer declares bounds instead of writing 
     const Aabb bounds = Aabb::from_center_extents(Vec3{}, Vec3{50.0f, 50.0f, 50.0f});
     CY_REQUIRE(scene.declare_gpu_written(*gpu, *range, bounds).has_value());
     CY_CHECK_EQ(scene.live_instances(), 4U);
-    CY_CHECK(cy::rendering::has_flag(scene.instance(range->first)->flags,
-                                     InstanceFlags::GpuAuthored));
+    CY_CHECK(
+        cy::rendering::has_flag(scene.instance(range->first)->flags, InstanceFlags::GpuAuthored));
 
     // And the CPU route is refused rather than being a slow path someone reaches for by accident.
     const GpuInstance one = instance_at(Vec3{});
@@ -133,10 +131,10 @@ CY_TEST_CASE("gpu scene: a GPU-site producer declares bounds instead of writing 
 
 CY_TEST_CASE("gpu scene: retiring a producer frees its slots and disturbs no other") {
     GpuScene scene(allocator());
-    const auto extract = scene.register_producer(ProducerKind::Extract, "extract",
-                                                 PublicationSite::Cpu);
-    const auto foliage = scene.register_producer(ProducerKind::Foliage, "foliage",
-                                                 PublicationSite::Cpu);
+    const auto extract =
+        scene.register_producer(ProducerKind::Extract, "extract", PublicationSite::Cpu);
+    const auto foliage =
+        scene.register_producer(ProducerKind::Foliage, "foliage", PublicationSite::Cpu);
     CY_REQUIRE(extract.has_value());
     CY_REQUIRE(foliage.has_value());
 
@@ -148,12 +146,10 @@ CY_TEST_CASE("gpu scene: retiring a producer frees its slots and disturbs no oth
     const GpuInstance keep[2] = {instance_at(Vec3{1.0f, 0.0f, 0.0f}),
                                  instance_at(Vec3{2.0f, 0.0f, 0.0f})};
     const GpuInstance drop[3] = {instance_at(Vec3{}), instance_at(Vec3{}), instance_at(Vec3{})};
-    CY_REQUIRE(
-        scene.write_instances(*extract, *extract_range, cy::Span<const GpuInstance>(keep, 2))
-            .has_value());
-    CY_REQUIRE(
-        scene.write_instances(*foliage, *foliage_range, cy::Span<const GpuInstance>(drop, 3))
-            .has_value());
+    CY_REQUIRE(scene.write_instances(*extract, *extract_range, cy::Span<const GpuInstance>(keep, 2))
+                   .has_value());
+    CY_REQUIRE(scene.write_instances(*foliage, *foliage_range, cy::Span<const GpuInstance>(drop, 3))
+                   .has_value());
     CY_CHECK_EQ(scene.live_instances(), 5U);
 
     CY_REQUIRE(scene.retire_producer(*foliage).has_value());

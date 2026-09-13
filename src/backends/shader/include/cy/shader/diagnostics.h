@@ -10,19 +10,22 @@
 //
 // Two consequences of that sentence:
 //
-//   * A report entry has to carry its **permutation key and the domain to print it against**, or the
-//     flag says "some variant of this shader is expensive", which sends the reader to look at all of
-//     them. `format_entry()` prints `axis=value` pairs.
-//   * The threshold is **configured, not fixed**. A compute kernel with ten thousand instructions is
+//   * A report entry has to carry its **permutation key and the domain to print it against**, or
+//   the
+//     flag says "some variant of this shader is expensive", which sends the reader to look at all
+//     of them. `format_entry()` prints `axis=value` pairs.
+//   * The threshold is **configured, not fixed**. A compute kernel with ten thousand instructions
+//   is
 //     ordinary and a fragment shader with ten thousand is a bug; the threshold is per stage.
 //
-// Register and occupancy estimates are recorded as `0 == not provided`, because no toolchain on this
-// platform provides them today: Slang does not, and the vendor tools that do are not integrated. A
-// field that is present and honestly empty is better than one that is absent, because it is where
-// the number goes when the tool arrives, and because a report that silently omits a column teaches
-// its readers that the column does not exist.
+// Register and occupancy estimates are recorded as `0 == not provided`, because no toolchain on
+// this platform provides them today: Slang does not, and the vendor tools that do are not
+// integrated. A field that is present and honestly empty is better than one that is absent, because
+// it is where the number goes when the tool arrives, and because a report that silently omits a
+// column teaches its readers that the column does not exist.
 //
-// --- THE COUNTERS ----------------------------------------------------------------------------------
+// --- THE COUNTERS
+// ----------------------------------------------------------------------------------
 //
 // Every counter below is a classified trace field. `diagnostics-profiling-and-crash` makes the
 // privacy classification a **required argument** of `CY_TRACE_FIELD`, and design.md §2 makes it a
@@ -67,8 +70,8 @@ struct ReportEntry {
 struct InstructionBudget {
     u32 per_stage[kStageCount] = {};
 
-    /// The engine's starting point: 4k for a vertex stage, 8k for a fragment stage, 16k for compute,
-    /// and 8k for everything else.
+    /// The engine's starting point: 4k for a vertex stage, 8k for a fragment stage, 16k for
+    /// compute, and 8k for everything else.
     [[nodiscard]] static InstructionBudget defaults() noexcept;
 };
 

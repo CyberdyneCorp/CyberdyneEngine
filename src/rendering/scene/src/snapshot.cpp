@@ -20,7 +20,9 @@ Status SnapshotBuilder::publish(u64 identity, const GpuInstance& instance) noexc
     return published_.push_back(InstanceUpdate{identity, instance});
 }
 
-Status SnapshotBuilder::remove(u64 identity) noexcept { return removed_.push_back(identity); }
+Status SnapshotBuilder::remove(u64 identity) noexcept {
+    return removed_.push_back(identity);
+}
 
 Status SnapshotBuilder::add_light(const LightState& light) noexcept {
     return lights_.push_back(light);

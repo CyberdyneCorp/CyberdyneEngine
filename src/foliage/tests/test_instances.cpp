@@ -91,6 +91,7 @@ CY_TEST_CASE("identity is derived and is injective over clusters and slots") {
     // `a * b` for small operands and `a * b` is not injective — region 1 slot 5 and region 5 slot 1
     // collided. Substream-then-draw does not, and this is the check that says so.
     cy::HashMap<cy::u64, cy::u64> seen(test::allocator());
+    CY_REQUIRE(seen.reserve(static_cast<cy::usize>(64U) * 64U).has_value());
     cy::u32 collisions = 0;
     for (cy::u32 cluster = 1; cluster <= 64; ++cluster) {
         for (cy::u32 slot = 0; slot < 64; ++slot) {

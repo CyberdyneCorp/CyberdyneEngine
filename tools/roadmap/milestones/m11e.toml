@@ -1,0 +1,525 @@
+# M11.e — Ship: the exit criteria of the LAST rung on this ladder.
+#
+# WHAT MAKES THIS RUNG DIFFERENT FROM THE OTHER FOUR. It is the only one with no rung above it, so it
+# is the only one permitted to record a DEFERRAL: a rung before it demotes a capability with the
+# reason that demoted it, and a deferral is the final rung's act because it is the point at which
+# "later" stops being available. That rule is what makes the deferral discipline enforceable rather
+# than a habit, and `deferral-is-the-last-rungs-act` below is how it is checked.
+#
+# FOUR ROWS IS THE SMALLEST COUNT ON THE LADDER AND NOT THE SMALLEST RUNG. M11.a predicts demoting
+# `save-and-persistence` and `audio`; M11.b `ml-inference` and `swift-scripting`; M11.c
+# `rendering-culling-and-lod`; M11.d `build-and-packaging`. Six named candidates and an unknown
+# number of unnamed ones arrive here, and the honest position stated at proposal time is that this
+# rung's real load is whatever the four rungs above could not finish.
+#
+# THE SPIKE THAT COMES FIRST AND MAY REWRITE THE RUNG. Can a hosted runner produce a mobile artefact
+# at all? One empty project, cross-compiled, packaged and reported. If it cannot be done, the mobile
+# scope is a deferral with a re-entry point and this becomes the distribution and record rung — which
+# is a finding worth having on day one rather than at the gate. Sections 1 and 2 of this rung's tasks
+# are scoped CONTINGENTLY on that answer and this file's mobile criteria are written to be reportable
+# three ways.
+#
+# THERE IS NO `m12-open` CRITERION AND THE ABSENCE IS DECLARED RATHER THAN LEFT. Every rung since
+# M8.a has closed by opening the next one. This rung has no next rung: what replaces that criterion
+# is `one-point-oh-record` — the 1.0 claim evaluated by something that names the offending row — and
+# `ladder-ends-here`, which fails if a rung is ever added above this one in some places and not
+# others. A reader must not read the absence of an `*-open` criterion as an omission.
+
+schema = 1
+id = "m11e"
+name = "Ship"
+artefact = "`samples/11-ship` on every supported target from a single recipe — the desktop half from M11.d and at least one mobile target here — and THE 1.0 RECORD: seventy-six rows, each Complete or deferred with a re-entry point, every deferral naming what is unmet, why, and the condition that brings it back."
+
+notes = [
+    "`just roadmap-milestone m11e` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "THE STATIC GATES ARE SPELLED HERE EXACTLY AS THE OTHER FOUR RUNGS SPELL THEM. Running this ledger therefore evaluates the whole ladder ONCE — every closed milestone's criteria, deduplicated — which is what `criteria.build_plan` is for and what makes this rung's run the 1.0 regression suite rather than a fifth copy of it.",
+    "TWO OF THE THREE STALE-REFUSAL RECIPES ARE M11.d's ROW. `build-shaders` and `maintenance-clean` belong to `developer-workflow-and-just`; the four `release-*` recipes are this rung's. `no-recipe-refuses-with-a-dead-milestone` below checks all of them from here, because the check is cheap and the defect is the same one, and this rung fixing a one-line label string is not this rung absorbing another rung's capability.",
+    "`m9:record-matches-plan-history` CLOSES HERE AND NOT EARLIER, and the reason is arithmetic rather than preference: the gap is four rows over four closed milestones, two of them are M11.d's rows and two are this rung's, and it cannot pass until the last of the four is evaluated AND recorded. M11.a wrote the criteria that evaluate them; this rung is where the last tier lands.",
+    "tasks 10.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "`just quality-requirements` DOES NOT EXIST YET AND THE CRITERIA THAT CALL IT WILL SAY SO. `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the tool that checks it is one of that row's four absent gates — the row is M11.d's. It is named here rather than avoided because the mapping IS the Complete-grade claim these rows are being judged on: whichever rung reaches it first writes the tool, and M11.d is where it is finished. A criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red.",
+]
+
+# --- The static gates, shared with every other rung -----------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the whole specification set — which at this rung is the 1.0 set"
+source = "tasks 9.3"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained a mobile target and the distribution surface"
+source = "tasks 10.1"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean, including over the mobile pipeline differences in the forward-clustered renderer"
+source = "tasks 10.1"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with a non-desktop platform in it, which is the strongest test the platform/SDL rule has ever had"
+source = "tasks 10.1, engine-architecture, core-platform-abstraction"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree, over the FULL matrix this rung builds — and it goes red the moment `milestone-m11e` is green above the newest ledger any workflow evaluates"
+source = "tasks 9.4, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three commands — and at this rung THIRD_PARTY.md is the attribution record of a released engine rather than a developer convenience"
+source = "tasks 3, thirdparty-dependencies"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for all seventy-six rows"
+source = "tasks 9.3"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, the ladder ends at m11e, and a declared gap that started passing fails"
+source = "tasks 9.1, 9.3, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each. At this rung it is the release claim: a profile that is green only on the machine that tuned it is not a profile"
+source = "tasks 10.1"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# --- Section 1: mobile, if the spike cleared it ------------------------------------------------------
+
+[[criterion]]
+id = "mobile-artefact-is-produced"
+describe = "the continuous-integration matrix produces a mobile artefact. THE SPIKE AT THE HEAD OF THIS RUNG ASKS WHETHER A HOSTED RUNNER CAN DO THIS AT ALL, and if the answer is no, the honest outcome is a recorded deferral with a re-entry point rather than a green criterion over a cross-compile nobody installed"
+source = "tasks 1, build-system-and-platforms"
+kind = "command"
+run = "just content-package 11-ship --target mobile"
+where = "ci"
+reason = "no mobile toolchain and no device exist on this host; the claim is reported NOT EVALUATED here rather than passed, and the matrix leg is where it is answered"
+timeout_s = 7200
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "cross-compilation-works"
+describe = "the build system cross-compiles: a target that is not the host builds from one recipe. It is the half of the mobile claim every machine can judge, because a cross-compile is a build-system property before it is a device property"
+source = "tasks 1, build-system-and-platforms"
+kind = "command"
+run = "just build-engine --target cross --dry-run"
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "porting-surface-against-a-real-non-desktop"
+describe = "the porting surface is proved against a REAL non-desktop platform rather than against the stub M11.d built. A stub shares no desktop assumption because nobody wrote one into it; a real target is what finds the ones nobody noticed"
+source = "tasks 1, 2, core-platform-abstraction, ROADMAP M11.e exit criteria"
+kind = "command"
+run = "just build-engine --platform mobile"
+where = "ci"
+reason = "no mobile toolchain on this host; `porting-surface-against-a-stub` in M11.d's ledger carries the half that can be judged anywhere"
+timeout_s = 7200
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "mobile-pipeline-differences"
+describe = "`rendering-forward-clustered`'s mobile pipeline differences are implemented and tested — tile memory, bandwidth and the precision differences a desktop pipeline does not have. M11.d took MSAA and multi-view; this is the other half, and the row's Complete cell is here because a row is not Complete on the half of its scope one rung could reach"
+source = "tasks 2, rendering-forward-clustered"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rendering_forward"
+test -x "$binary" || { echo "no $binary — the suite unit.rendering_forward does not exist"; exit 1; }
+filter='the mobile pipeline*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.rendering_forward any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11e"
+
+# --- Section 2: the dependency set and attribution ----------------------------------------------------
+
+[[criterion]]
+id = "dependency-set-integrated"
+describe = "the intended dependency set is integrated rather than listed. `thirdparty-dependencies` says about half of it is not, and the specification's own phrase — 'about half the intended set' — is a sentence that cannot go red, so this check counts `[[dependency]]` entries against the named set and fails naming the shortfall"
+source = "tasks 3, thirdparty-dependencies, deps/manifest.toml"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+manifest = tomllib.loads(pathlib.Path("deps/manifest.toml").read_text(encoding="utf-8"))
+entries = manifest.get("dependency", [])
+names = sorted(entry.get("name", "?") for entry in entries)
+print(f"{len(entries)} dependency entries in deps/manifest.toml:")
+print("  " + ", ".join(names))
+spec = pathlib.Path("openspec/specs/thirdparty-dependencies/spec.md").read_text(encoding="utf-8")
+intended = set()
+for line in spec.splitlines():
+    if line.startswith("|"):
+        # THE TABLE WRITES LIBRARY NAMES IN BOLD, NOT BACKTICKS. Splitting on backticks collected
+        # nothing, so `intended` was the EMPTY SET and this criterion passed over any manifest at all —
+        # the check written to replace a sentence that could not go red could not go red either.
+        intended.update(part.strip() for part in line.split("**")[1::2])
+# NORMALISE BOTH SIDES BEFORE COMPARING. The specification writes human names -- "Jolt Physics",
+# "HarfBuzz", "SPIRV-Cross" -- and deps/manifest.toml writes identifiers -- "jolt", "vulkan_headers".
+# The first version of this filter kept only names that were already lowercase and space-free, which
+# threw away every multi-word and every camel-cased library and left the set empty.
+def key(text):
+    return "".join(ch for ch in text.lower() if ch.isalnum())
+integrated = {key(n) for n in names}
+intended = {n for n in intended if n and not n.startswith("|")}
+missing = sorted(
+    n for n in intended
+    if not any(k.startswith(key(n)) or key(n).startswith(k) for k in integrated if k)
+)
+print(f"{len(intended)} named in the intended set, {len(missing)} not integrated:")
+print("  " + (", ".join(missing) or "none"))
+sys.exit(1 if missing else 0)
+CHECK
+'''
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "attribution-api"
+describe = "the runtime exposes an attribution API: a shipped binary can report what it is built from. `THIRD_PARTY.md` is generated and is a developer artefact; a released engine has to answer the question at runtime"
+source = "tasks 3, thirdparty-dependencies"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_thirdparty"
+test -x "$binary" || { echo "no $binary — the suite unit.thirdparty does not exist"; exit 1; }
+filter='the runtime reports what it is built from*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.thirdparty any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11e"
+
+# --- Section 3: distribution ---------------------------------------------------------------------------
+
+[[criterion]]
+id = "release-recipes-produce-artefacts"
+describe = "version, changelog, artefacts and publish are produced by the RECIPES rather than by hand. All four refuse today, and this is ROADMAP.md's last M11 exit criterion in its own words"
+source = "tasks 4, developer-workflow-and-just, build-and-packaging, ROADMAP M11.e exit criteria"
+kind = "command"
+run = "just release-version && just release-changelog && just release-artefacts && just release-publish --dry-run"
+timeout_s = 7200
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "no-recipe-refuses-with-a-dead-milestone"
+describe = "no recipe refuses naming a milestone that is not on the ladder, or one whose gate is already green. FOUR RECIPES IN `just/release.just` REFUSE NAMING 'M12 — build-and-packaging' TODAY, a milestone that does not exist on a ladder whose `record.MILESTONES` ends at m11e, and two more name rungs elsewhere. A refusal is a statement of the plan presented to a user as the current one"
+source = "tasks 4, delivery-roadmap (A recipe that refuses names a rung that exists)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, re, sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import record as record_module
+ladder = list(record_module.MILESTONES)
+gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
+green = {gate.get("milestone") for gate in gates["gate"] if gate.get("state") == "green"}
+problems = []
+for path in sorted(pathlib.Path("just").glob("*.just")):
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for name in re.findall(r"\bM(\d+(?:\.5|\.[a-e])?)\b", line):
+            identifier = "m" + name.replace(".5", "b").replace(".", "")
+            if identifier not in ladder:
+                problems.append(f"{path.name}:{number}: names M{name}, which is not on the ladder")
+            elif identifier in green:
+                problems.append(f"{path.name}:{number}: names M{name}, whose gate is already green")
+for problem in problems:
+    print(f"  {problem}")
+print(f"{len(problems)} recipe line(s) name a milestone that is absent or already closed")
+sys.exit(1 if problems else 0)
+CHECK
+'''
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "downloadable-content-and-distributed-execution"
+describe = "downloadable content and distributed execution are implemented, or each is a recorded deferral with a re-entry point. `docs/roadmap/risks.md` already lists distributed build execution as deferred to 'M11 or later', and 'or later' is not a re-entry point — a deferral carries a condition that brings it back, not a date"
+source = "tasks 4, build-and-packaging, delivery-roadmap (Deferred scope has re-entry points)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_packaging"
+test -x "$binary" || { echo "no $binary — the suite integration.packaging does not exist"; exit 1; }
+filter='downloadable content*,distributed execution*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.packaging any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11e"
+
+# --- Section 4: the full matrix ------------------------------------------------------------------------
+
+[[criterion]]
+id = "full-ci-matrix"
+describe = "the continuous-integration matrix covers every supported target, and every leg runs the recipes a developer runs. `ci.yml`'s matrices are six legs today and the mobile ones do not exist"
+source = "tasks 5, build-system-and-platforms, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-jobs"
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "every-requirement-maps"
+describe = "every requirement of every capability maps to a test, a gate or a recorded exemption. It is ROADMAP.md's exit criterion and it is the largest single check on the ladder: 1,069 requirements over 76 rows"
+source = "tasks 6, testing-and-quality, ROADMAP M11.e exit criteria"
+kind = "command"
+run = "just quality-requirements --all"
+timeout_s = 7200
+ci_job = "milestone-m11e"
+
+# --- Section 5: the sweep, the deferrals, and XR ---------------------------------------------------------
+
+[[criterion]]
+id = "one-point-oh-record"
+describe = "EVERY CAPABILITY IS COMPLETE OR DEFERRED WITH A RE-ENTRY POINT, evaluated by a check that reads the record and the deferral register and FAILS NAMING any capability that is neither. This is the 1.0 claim, and `delivery-roadmap`'s new requirement says in as many words that it SHALL NOT be satisfied by a document asserting it. Today it fails naming sixty-six rows"
+source = "tasks 6.4, 8.4, delivery-roadmap (The 1.0 record is a criterion, not a document)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys
+sys.path.insert(0, "tools/roadmap")
+import record as record_module
+entries = record_module.read()
+register = pathlib.Path("docs/roadmap/risks.md").read_text(encoding="utf-8")
+short = []
+for entry in sorted(entries, key=lambda item: item.capability):
+    if entry.tier == "complete":
+        continue
+    if f"`{entry.capability}`" in register:
+        continue
+    short.append(f"{entry.capability}: recorded {entry.tier}, and no deferral names it")
+for line in short:
+    print(f"  {line}")
+print(f"{len(short)} capability(ies) are neither Complete nor deferred with a re-entry point")
+sys.exit(1 if short else 0)
+CHECK
+'''
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "every-deferral-carries-its-three-parts"
+describe = "every deferral names what is unmet, why — a measurement or a decision, not an exhausted schedule — and the condition that brings it back, which is a state of the world rather than a date. A deferral carrying fewer than three is refused by `delivery-roadmap` and this is the check that refuses it"
+source = "tasks 6, 9.5, delivery-roadmap (Deferred scope has re-entry points)"
+kind = "command"
+run = "just roadmap-debts --check"
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "deferral-is-the-last-rungs-act"
+describe = "no rung below this one recorded a deferral. A rung that cannot finish a capability DEMOTES it with the reason; only the final rung may defer, because deferring is the point at which 'later' stops being available. The check reads the deferral register for entries whose recording rung is not m11e"
+source = "tasks 6, delivery-roadmap (A deferral is recorded before the final rung)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, re, sys
+register = pathlib.Path("docs/roadmap/risks.md").read_text(encoding="utf-8")
+early = []
+for line in register.splitlines():
+    if not line.startswith("|") or "defer" not in line.lower():
+        continue
+    for name in re.findall(r"\bM(11\.[a-d])\b", line):
+        early.append(f"a deferral is recorded at M{name}: {line.strip()[:110]}")
+for entry in early:
+    print(f"  {entry}")
+print(f"{len(early)} deferral(s) recorded by a rung below the last one")
+sys.exit(1 if early else 0)
+CHECK
+'''
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "xr-prerequisites-still-pass"
+describe = "the XR prerequisite checks still pass, and the half of the seam that is known not to hold is recorded against the deferral rather than reported green. A seam check that passes over a seam half open is worse than an unchecked one, because it reads as safe"
+source = "tasks 7, xr-support, delivery-roadmap"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.xr|integration.xr_prerequisites)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 2 suite(s) match $pattern"
+test "$registered" -ge 2 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "record-matches-plan-history-closed"
+describe = "every closed milestone's column agrees with the status record, over all nineteen rungs. `m9:record-matches-plan-history` — four cells over four closed milestones whose Working tier no criterion evaluated — closes HERE because two of its four rows are M11.d's and two are this rung's, and it cannot pass until the last is evaluated and recorded"
+source = "tasks 6, m9:record-matches-plan-history, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import sys, tomllib, pathlib
+sys.path.insert(0, "tools/roadmap")
+import plan as plan_module
+import record as record_module
+import gates as gates_module
+matrix = plan_module.read_matrix()
+entries = {entry.capability: entry for entry in record_module.read()}
+gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
+closed = {gate["milestone"] for gate in gates["gate"]
+          if gate.get("class") == "milestone" and gate.get("state") == "green"}
+short = []
+for capability, row in sorted(matrix.cells.items()):
+    for rung, planned in row.items():
+        if rung not in closed:
+            continue
+        have = entries.get(capability)
+        tier = have.tier if have else None
+        if tier not in plan_module.TIERS or plan_module.tier_rank(tier) < plan_module.tier_rank(planned):
+            short.append(f"{rung.upper()} {capability}: {planned} planned, {tier} recorded")
+for line in short:
+    print(f"  {line}")
+print(f"{len(short)} cell(s) over closed milestones exceed the status record")
+sys.exit(1 if short else 0)
+CHECK
+'''
+ci_job = "milestone-m11e"
+
+# --- Section 6: the artefact -----------------------------------------------------------------------------
+
+[[criterion]]
+id = "ship-sample-everywhere"
+describe = "`samples/11-ship` is built, cooked, packaged and launched on EVERY supported target from a single recipe — the desktop half from M11.d and at least one mobile target from this rung"
+source = "tasks 8.1, 8.2, ROADMAP M11.e closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+just content-package 11-ship --all-targets
+just run-sample 11-ship --from-package --all-targets
+'''
+where = "ci"
+reason = "no single machine holds every supported target; the artefact is assembled across the matrix, which is the same shape as the cross-leg comparison M11.a built"
+timeout_s = 14400
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "ship-sample-drawn-on-the-target"
+describe = "a picture of the application running ON THE TARGET PLATFORM, committed under docs/design/images/. It is the only evidence that distinguishes a cross-compile from a port, and where no device exists to photograph it, that is recorded rather than substituted"
+source = "tasks 8.3, ROADMAP M11.e closing artefact"
+kind = "path"
+path = "docs/design/images/m11e-ship*.png"
+ci_job = "milestone-m11e"
+
+[[criterion]]
+id = "one-point-oh-record-states-what-it-is-not"
+describe = "the 1.0 record states what 1.0 IS AND WHAT IT IS NOT — which capabilities are complete, which are deferred, and what a person adopting this engine should and should not expect. A record listing only what was achieved is a record nobody can make a decision with, and `delivery-roadmap` requires the second half explicitly"
+source = "tasks 8.4, delivery-roadmap (The 1.0 record is a criterion, not a document)"
+kind = "command"
+run = '''
+set -eo pipefail
+record=docs/roadmap/release-1.0.md
+test -f "$record" || { echo "no $record — the 1.0 record does not exist"; exit 1; }
+grep -qi "is not\|should not expect" "$record"
+rows=$(grep -c '^| `' "$record" || true)
+echo "$record carries $rows capability row(s) and states what 1.0 is not"
+test "$rows" -ge 76
+'''
+ci_job = "milestone-m11e"
+
+# --- Section 7: the record, the tiers, and the end of the ladder -------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this rung's exit tiers: four rows to Complete, two of them recorded at Seed since M0. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM. `rendering-forward-clustered` is the row this rung predicts it may demote — if the closing gate judges that a row cannot be Complete while the scenario naming its hardware has never run, it is recorded at Working with the mobile half deferred and a re-entry point"
+source = "tasks 9.3, ROADMAP M11.e, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11e"
+
+[criterion.expect_tiers]
+build-system-and-platforms = "complete"
+thirdparty-dependencies = "complete"
+delivery-roadmap = "complete"
+rendering-forward-clustered = "complete"
+
+# THE LADDER ENDS HERE, AND THE END IS CHECKED RATHER THAN ASSUMED. There is no `m12-open` criterion
+# because there is no M12: this is the 1.0 gate. What could still go wrong is a rung added above this
+# one in SOME of the places that read the ladder and not others — which is exactly the failure M8's
+# split produced three times in one change, in three readers with three regular expressions. So the
+# check is that the ladder's end is consistent: either m11e is the last rung everywhere, or whatever
+# follows it carries a ledger, a gate, a floor and a change directory, all four.
+[[criterion]]
+id = "ladder-ends-here"
+describe = "m11e is the last rung on the ladder in every place that reads one — or, if a rung has been added above it, that rung carries a ledger, a gate, a criteria floor and a change directory, all four. A ladder extended in three of four places is the defect M8's split found three times in one change"
+source = "tasks 9.2, delivery-roadmap (An inserted milestone's rung is checked, not assumed)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import record as record_module
+import selftest as selftest_module
+order = list(record_module.MILESTONES)
+above = order[order.index("m11e") + 1:] if "m11e" in order else []
+if not above:
+    print("m11e is the last rung on record.MILESTONES: the ladder ends at the 1.0 gate")
+    sys.exit(0)
+gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
+declared = {gate.get("milestone") for gate in gates["gate"]}
+problems = []
+for rung in above:
+    if not (pathlib.Path("tools/roadmap/milestones") / f"{rung}.toml").is_file():
+        problems.append(f"{rung} has no ledger")
+    if rung not in declared:
+        problems.append(f"{rung} has no gate in gates.toml")
+    if rung not in selftest_module.MINIMUM_CRITERIA:
+        problems.append(f"{rung} has no floor in selftest.MINIMUM_CRITERIA")
+    if not list(pathlib.Path("openspec/changes").glob(f"**/*{rung}*/proposal.md")):
+        problems.append(f"{rung} has no change directory")
+for problem in problems:
+    print(f"  {problem}")
+print(f"the ladder continues past 1.0 with {above}; {len(problems)} problem(s) with that extension")
+sys.exit(1 if problems else 0)
+CHECK
+'''
+ci_job = "milestone-m11e"

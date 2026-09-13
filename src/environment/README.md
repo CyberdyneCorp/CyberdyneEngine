@@ -24,6 +24,14 @@ diagnostic. The guarantee is `ProducerToken`: it is issued once, it is move-only
 thing `FieldStore` accepts a write through — so a second writer cannot be written even by a caller
 that ignored the error.
 
+The store checks the token against **its own** registry (`FieldStore::produces()`), and that is the
+half M10's gate found missing. A `ProducerToken` is a plain value — a field identity, a producer
+identity and a name — so a SECOND registry, which is a legitimate thing for an offline cooker or an
+editor validating a declaration to build, will hand one out for a field this store already has a
+producer for, and the store used to accept it: the interloper wrote the field, and evicting the
+incumbent's tile through it was accepted too. "One producer per field" is a rule about the FIELD,
+so both places that could answer it now do.
+
 **2. There are two sampling paths and the FIELD decides which one a reader gets.** `sample()` walks
 the levels from finest to coarsest; `sample_deterministic()` reads one declared level and returns the
 declared default where it has no data. A gameplay-visible field is sampled deterministically for

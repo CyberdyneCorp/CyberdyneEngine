@@ -344,7 +344,7 @@ Status FieldStore::place_tile(const TileAddress& address, Span<const u8> data, b
 
 Status FieldStore::insert_tile(const ProducerToken& token, const TileAddress& address,
                                Span<const u8> data, bool guaranteed) noexcept {
-    if (!token.valid() || !(token.field() == address.field)) {
+    if (!token.valid() || !(token.field() == address.field) || !produces(token)) {
         return fail(ErrorCode::PermissionDenied,
                     "environment: a tile may only be inserted by the field's own producer");
     }
@@ -353,6 +353,12 @@ Status FieldStore::insert_tile(const ProducerToken& token, const TileAddress& ad
 
 Status FieldStore::insert_default_tile(const ProducerToken& token, const TileAddress& address,
                                        bool guaranteed) noexcept {
+    // Checked here as well as in `insert_tile()` below, so that a refused producer does not first
+    // get the store to build a tile's worth of default values on its behalf.
+    if (!token.valid() || !(token.field() == address.field) || !produces(token)) {
+        return fail(ErrorCode::PermissionDenied,
+                    "environment: a tile may only be inserted by the field's own producer");
+    }
     const FieldDeclaration* declaration = registry_->declaration(address.field);
     if (declaration == nullptr) {
         return fail(ErrorCode::NotFound, "environment: no such field is declared");
@@ -376,7 +382,7 @@ Status FieldStore::insert_default_tile(const ProducerToken& token, const TileAdd
 }
 
 Status FieldStore::evict_tile(const ProducerToken& token, const TileAddress& address) noexcept {
-    if (!token.valid() || !(token.field() == address.field)) {
+    if (!token.valid() || !(token.field() == address.field) || !produces(token)) {
         return fail(ErrorCode::PermissionDenied,
                     "environment: a tile may only be evicted by the field's own producer");
     }
@@ -806,6 +812,16 @@ FieldDiagnostics FieldStore::diagnostics(FieldId field) const noexcept {
 // --- Writing
 // ---------------------------------------------------------------------------------------
 
+bool FieldStore::produces(const ProducerToken& token) const noexcept {
+    if (!token.valid()) {
+        return false;
+    }
+    const FieldRecord* record = registry_->find(token.field());
+    // The PRODUCER identity and not merely the field: a token is a value, and a second registry
+    // will hand one out for a field this registry already has a producer for. See the declaration.
+    return record != nullptr && record->claimed && record->producer == token.producer();
+}
+
 Expected<FieldWriter, Error> FieldStore::open_writer(const ProducerToken& token) noexcept {
     if (!token.valid()) {
         return fail(ErrorCode::PermissionDenied,
@@ -815,12 +831,18 @@ Expected<FieldWriter, Error> FieldStore::open_writer(const ProducerToken& token)
     if (declaration == nullptr) {
         return fail(ErrorCode::NotFound, "environment: no such field is declared");
     }
+    if (!produces(token)) {
+        return fail(ErrorCode::PermissionDenied,
+                    "environment: this store's registry records a different producer for that "
+                    "field — one producer per field is a rule about the FIELD, and a token minted "
+                    "by another registry does not carry it");
+    }
     return FieldWriter(*this, token.field(), *declaration);
 }
 
 FieldWriter::FieldWriter(FieldStore& store, FieldId field,
                          const FieldDeclaration& declaration) noexcept
-    : store_(&store), declaration_(&declaration), field_(field), staged_(*store.allocator_) {}
+    : store_(&store), declaration_(declaration), field_(field), staged_(*store.allocator_) {}
 
 FieldWriter::Staged* FieldWriter::find_staged(const TileAddress& address) noexcept {
     for (Staged& staged : staged_) {
@@ -839,7 +861,7 @@ Status FieldWriter::stage(const TileAddress& address) noexcept {
     if (address.layer >= kFieldLayerCount || address.level >= kFieldResidencyCount) {
         return fail(ErrorCode::OutOfRange, "environment: no such layer or residency level");
     }
-    if (!declaration_->levels[address.level].declared()) {
+    if (!declaration_.levels[address.level].declared()) {
         return fail(ErrorCode::InvalidArgument,
                     "environment: this field does not declare that residency level");
     }
@@ -858,7 +880,7 @@ Status FieldWriter::stage(const TileAddress& address) noexcept {
         }
         staged.existed = true;
     } else {
-        const u32 bytes = FieldStore::tile_bytes(*declaration_);
+        const u32 bytes = FieldStore::tile_bytes(declaration_);
         if (Status reserved = staged.data.reserve(bytes); !reserved) {
             return reserved;
         }
@@ -867,11 +889,11 @@ Status FieldWriter::stage(const TileAddress& address) noexcept {
                 return pushed;
             }
         }
-        const u32 points = kTileCells * kTileCells * declaration_->vertical_cells;
+        const u32 points = kTileCells * kTileCells * declaration_.vertical_cells;
         for (u32 point = 0; point < points; ++point) {
             encode_value(
-                *declaration_, declaration_->default_value,
-                staged.data.data() + (static_cast<usize>(point) * declaration_->value_bytes()));
+                declaration_, declaration_.default_value,
+                staged.data.data() + (static_cast<usize>(point) * declaration_.value_bytes()));
         }
     }
     return staged_.push_back(std::move(staged));
@@ -883,11 +905,11 @@ Status FieldWriter::set(const TileAddress& address, u32 x, u32 y, u32 z,
     if (staged == nullptr) {
         return fail(ErrorCode::NotFound, "environment: stage the tile before writing into it");
     }
-    if (x >= kTileCells || z >= kTileCells || y >= declaration_->vertical_cells) {
+    if (x >= kTileCells || z >= kTileCells || y >= declaration_.vertical_cells) {
         return fail(ErrorCode::OutOfRange, "environment: that lattice point is outside the tile");
     }
-    encode_value(*declaration_, value,
-                 staged->data.data() + FieldStore::lattice_offset(*declaration_, x, y, z));
+    encode_value(declaration_, value,
+                 staged->data.data() + FieldStore::lattice_offset(declaration_, x, y, z));
     return ok();
 }
 
@@ -896,11 +918,11 @@ Status FieldWriter::fill(const TileAddress& address, const FieldValue& value) no
     if (staged == nullptr) {
         return fail(ErrorCode::NotFound, "environment: stage the tile before writing into it");
     }
-    const u32 points = kTileCells * kTileCells * declaration_->vertical_cells;
+    const u32 points = kTileCells * kTileCells * declaration_.vertical_cells;
     for (u32 point = 0; point < points; ++point) {
         encode_value(
-            *declaration_, value,
-            staged->data.data() + (static_cast<usize>(point) * declaration_->value_bytes()));
+            declaration_, value,
+            staged->data.data() + (static_cast<usize>(point) * declaration_.value_bytes()));
     }
     return ok();
 }
@@ -980,6 +1002,10 @@ Status FieldStore::recover_tile(FieldWriter& writer, const FieldDeclaration& cur
 }
 
 Status FieldStore::advance_recovery(const ProducerToken& token, f32 seconds) noexcept {
+    if (!produces(token)) {
+        return fail(ErrorCode::PermissionDenied,
+                    "environment: only the field's own producer steps its recovery");
+    }
     const FieldRecord* record = registry_->find(token.field());
     if (record == nullptr) {
         return fail(ErrorCode::NotFound, "environment: no such field is declared");

@@ -731,7 +731,7 @@ ci_job = "milestone-m9"
 
 [[criterion]]
 id = "record-matches-plan-history"
-describe = "NO CLOSED MILESTONE'S COLUMN CLAIMS A TIER THE STATUS RECORD DOES NOT SUPPORT. The same comparison `record-matches-plan` makes for M9, made for every milestone whose gate is already green. It found NINETEEN cells over four milestones, thirteen of them Complete — M8.b's column alone claimed twelve — and it was a declared gap until M10 task 6.5 audited all nineteen against the code and moved or claimed each one: fifteen cells moved, four rows were recorded at the tier their column already claimed. The declaration is gone and the check remains, because the direction that matters now is the next column that outlives its evidence"
+describe = "NO CLOSED MILESTONE'S COLUMN CLAIMS A TIER THE STATUS RECORD DOES NOT SUPPORT. The same comparison `record-matches-plan` makes for M9, made for every milestone whose gate is already green. It found NINETEEN cells over four milestones, thirteen of them Complete — M8.b's column alone claimed twelve — and M10 task 6.5 audited all nineteen against the code: FIFTEEN CELLS MOVED, and four rows were recorded at the tier their column already claimed. THE FOUR RECORDINGS DID NOT SURVIVE M10's OWN GATE — see `known_gap` below — so the check is a declared gap again and those four cells are exactly what it names. The direction that matters is unchanged: the next column that outlives its evidence"
 source = "tasks 7.6, 8.4, delivery-roadmap"
 kind = "command"
 run = '''
@@ -772,6 +772,8 @@ for rung, entries in sorted(by_rung.items()):
 sys.exit(1 if short else 0)
 CHECK
 '''
+known_gap = "FOUR CELLS OVER FOUR CLOSED MILESTONES: M3 `testing-and-quality`, M4 `build-system-and-platforms`, M6 `developer-workflow-and-just`, M8.b `thirdparty-dependencies` — each column claims Working and the status record holds Seed from M0. M10 task 6.5 closed this gap by RECORDING all four at the tier their column claimed, and M10's closing gate put the record back, because no criterion anywhere evaluates any of the four: over all fifteen ledgers the only `expect_tiers` entry naming one of them is `m0:roadmap-tiers`, which expects `seed`, and `_check_tiers` treats an exit tier as a FLOOR, so a `seed` expectation can never contradict a Working claim. `build-system-and-platforms` appears in no ledger but m0.toml at all. A tier recorded because a document argued for it, with nothing that re-checks it, is the same defect as a column that outlives its evidence — one level down — so the four cells stay where they are and the gap says so. Closing it is one of two deliberate acts, and both belong to a milestone that wants the tier: write criteria that EVALUATE these four rows and then record them, or move the four cells the way the other fifteen moved. The per-row evidence is already written out in docs/roadmap/capability-matrix.md; what does not exist is a check"
+known_gap_closes = "m11e"
 ci_job = "milestone-m9"
 
 # THE ONE FINDING OF M9'S ADVERSARIAL PASS THAT IS IN THE ENGINE RATHER THAN IN THE CHECKING.
@@ -899,7 +901,7 @@ sys.exit(0 if comparing else 1)
 CHECK
 '''
 known_gap = "this host has one architecture and one operating system, and no continuous-integration job compares a state hash between two of them. The legs exist — ci.yml's build and test matrices are six, including linux-arm64, macos-arm64 and windows-arm64 — but they run independently, so closing this needs an upload-then-compare job that M9 did not build. It is declared rather than reported NOT EVALUATED because `where = \"ci\"` would have made it PASS in continuous integration, satisfied by a single-leg suite, which is the defect this practice exists to catch"
-known_gap_closes = "m11"
+known_gap_closes = "m11a"
 ci_job = "milestone-m9"
 
 # --- Section 7: the record and the next rung ------------------------------------------------------

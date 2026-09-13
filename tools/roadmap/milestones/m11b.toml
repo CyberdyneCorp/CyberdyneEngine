@@ -1,0 +1,563 @@
+# M11.b — Authoring: the exit criteria of M11's second rung.
+#
+# WHAT THIS RUNG IS FOR. `editor-architecture` and `live-editing` have been at SEED SINCE M5 while
+# five milestones built features on top of them, and the first thing this rung establishes is
+# whether that is a mis-record or a thin foundation. It is the largest requirement load of the five
+# rungs — twenty-four rows carrying 420 requirements, 39 % of the 1,069 M11 owes in total — and more
+# rows than any closed milestone on this ladder advanced.
+#
+# WHY THE ARTEFACT IS A GAME AND NOT A SAMPLE. `samples/11-ship` is a PACKAGING proof and every
+# existing demo proves one slice. Twenty-four authoring and gameplay rows can only be judged by
+# something a person plays, whose content was authored in the editor rather than assembled in C++.
+# The artefact must be honest about which parts a person authored and which parts the sample's code
+# assembles, because that distinction is the entire claim.
+#
+# WHY IT COMES BEFORE M11.c AND THE ORDERING IS THE ARGUMENT. An art-directed shot assembled by hand
+# in C++ proves the renderer and nothing else; one authored THROUGH this editor proves both. The
+# dependency is concrete rather than rhetorical: M11.c needs textured materials and there is no BC7
+# or ASTC encoder in the tree, so the texture path is this rung's work before it is that rung's
+# subject.
+
+schema = 1
+id = "m11b"
+name = "Authoring"
+artefact = "a real sample game — a start, a loop, a way to win or lose, and content authored IN THE EDITOR rather than assembled in C++ — published with a statement of which parts a person authored and which parts the sample's code assembles."
+
+notes = [
+    "`just roadmap-milestone m11b` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "THE STATIC GATES ARE SPELLED HERE EXACTLY AS M11.a SPELLS THEM, so `criteria.fingerprint` collapses them to one check each. A rung that re-worded a `run` string would double the work and multiply its own failure probability by the number of ledgers naming it.",
+    "THE SEVEN INHERITED GAPS ARE NONE OF THEM THIS RUNG'S. Six close at M11.a and one at M11.e; they are in the permanent set this ledger inherits and they still run on every evaluation. A gap re-pointed at the wrong rung is a gap nobody owns, which is why tasks 12.2 asks this rung to CONFIRM each still names the rung that closes it rather than to re-declare any of them here.",
+    "WHERE THIS HOST CANNOT JUDGE A CLAIM THE CRITERION REPORTS NOT EVALUATED THROUGH `where`/`requires` RATHER THAN PASSING. The editor's own surfaces need a display; the game needs a device to be played on. Each such criterion has a companion that needs neither, which is M8.c's rule: nothing a milestone claims should be judgeable only on the machines with a GPU in them.",
+    "tasks 13.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "`just quality-requirements` DOES NOT EXIST YET AND THE CRITERIA THAT CALL IT WILL SAY SO. `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the tool that checks it is one of that row's four absent gates — the row is M11.d's. It is named here rather than avoided because the mapping IS the Complete-grade claim these rows are being judged on: whichever rung reaches it first writes the tool, and M11.d is where it is finished. A criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red.",
+]
+
+# --- The static gates, shared with every other rung -----------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set, including the deltas this rung writes against `live-editing`, `asset-import-pipeline`, `editor-documents-and-transactions` and `testing-and-quality`"
+source = "tasks 12.4"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained the play modes, the live edit policy, the specialised editor panels, a source-control provider interface, a texture encoder and a game"
+source = "tasks 13.1"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean, including the cognitive-complexity limits — which a play-mode host that has to carry three transports and one world model is exactly the kind of code to breach"
+source = "tasks 13.1"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with three play modes in it. `SeparateProcess` and `RemoteDevice` are transports, and a transport that reaches into the editor's document model — or an editor that links the runtime to host `InEditor` — is the layering violation this rung is most likely to commit"
+source = "tasks 13.1, engine-architecture, editor-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11b` is green above the newest ledger any workflow evaluates"
+source = "tasks 12.5, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three commands. It matters here because this rung adopts the text dependencies — HarfBuzz, ICU, FreeType, msdfgen — and image codecs and a texture encoder, and an adoption that does not reach THIRD_PARTY.md is an unattributed one"
+source = "tasks 12.6, thirdparty-dependencies"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for twenty-four rows"
+source = "tasks 12.4"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, the ladder places m11b between m11a and m11c, and a declared gap that started passing fails"
+source = "tasks 12.1, 12.4, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each, including the editor's Rust crates and the game"
+source = "tasks 13.1"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# --- Section 1: the two rows that have been at Seed since M5 ---------------------------------------
+#
+# M10's audit ran two greps and both returned nothing:
+#   grep -rniI 'SeparateProcess\|RemoteDevice\|InEditor' src/ editor/ tools/
+#   grep -rniI 'LiveEditPolicy\|ReinitializeComponent\|RecreateEntity\|RestartWorld' src/ editor/ tools/
+# Those two absences are what put `editor-architecture` and `live-editing` at Seed and kept them
+# there while five milestones built on top of them. The criteria below are those greps inverted.
+
+[[criterion]]
+id = "play-modes-exist"
+describe = "the three play modes are named in the tree and reachable. `InEditor`, `SeparateProcess` and `RemoteDevice` are one requirement in two specifications and no grep finds any of the three today, which is most of why `editor-architecture` is at Seed"
+source = "tasks, editor-architecture (Play modes), live-editing"
+kind = "command"
+run = '''
+set -eo pipefail
+missing=""
+for mode in SeparateProcess RemoteDevice InEditor; do
+    hits=$(grep -rniIl "$mode" src/ editor/crates/ tools/ | grep -v "^tools/roadmap/" 2>/dev/null | grep -v "/target/" || true)
+    count=$(printf '%s' "$hits" | grep -c . || true)
+    echo "  $mode: $count file(s)"
+    test "$count" -gt 0 || missing="$missing $mode"
+done
+test -z "$missing" || { echo "play modes with no implementation:$missing"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "live-edit-policy-exists"
+describe = "a per-field live edit policy exists with the three outcomes the requirement names — reinitialise the component, recreate the entity, restart the world. A capability with no per-field policy and no play modes is Seed, and this is the other half of why"
+source = "tasks, live-editing (Live edit policy)"
+kind = "command"
+run = '''
+set -eo pipefail
+missing=""
+for symbol in LiveEditPolicy ReinitializeComponent RecreateEntity RestartWorld; do
+    hits=$(grep -rniIl "$symbol" src/ editor/crates/ tools/ | grep -v "^tools/roadmap/" 2>/dev/null | grep -v "/target/" || true)
+    count=$(printf '%s' "$hits" | grep -c . || true)
+    echo "  $symbol: $count file(s)"
+    test "$count" -gt 0 || missing="$missing $symbol"
+done
+test -z "$missing" || { echo "live edit policy symbols absent:$missing"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "play-mode-round-trip"
+describe = "a world is played in each of the three modes and the same command stream drives all three. The spike this rung names asks whether the hosted runtime carries all three WITHOUT A SECOND WORLD MODEL; this is the case that answers it in the tree rather than in a design document"
+source = "tasks, design.md §1, editor-architecture (Play modes)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_editor_play"
+test -x "$binary" || { echo "no $binary — the suite integration.editor_play does not exist"; exit 1; }
+filter='a world plays in each of the three modes*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.editor_play any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+timeout_s = 3600
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "live-edit-applies-without-a-restart"
+describe = "a field edited while a world is playing takes effect under its declared policy, and a field whose policy says restart restarts. The claim is that the policy is DECLARED per field rather than inferred, so the case edits one field of each policy class"
+source = "tasks, live-editing"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_editor_live_edit"
+test -x "$binary" || { echo "no $binary — the suite integration.editor_live_edit does not exist"; exit 1; }
+filter='a field edited while playing*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.editor_live_edit any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+# --- Section 2: the rest of the editor -------------------------------------------------------------
+
+[[criterion]]
+id = "source-control-provider"
+describe = "source control is behind a provider interface with a null implementation. M10's audit found seven hits for source control across the tree and every one of them a comment: `editor-documents-and-transactions`' last open requirement has been the same sentence since M8.a's gate wrote it"
+source = "tasks, editor-documents-and-transactions (Source control integration)"
+kind = "command"
+run = '''
+set -eo pipefail
+impl=$(grep -rniIl "SourceControlProvider\|NullSourceControl" src/ editor/crates/ 2>/dev/null | grep -v "/target/" || true)
+count=$(printf '%s' "$impl" | grep -c . || true)
+echo "$count file(s) implement a source-control provider:"
+printf '%s\n' "${impl:-  none — the seven hits in the tree are comments}"
+test "$count" -ge 2
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "view-modes"
+describe = "every view mode the editor declares is drawn. `PLANNED_VIEWS` has eight entries and `ViewMode` nineteen, and the gap between those two numbers is the requirement"
+source = "tasks, editor-viewport-and-gizmos, editor-ui-ux"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_editor_views"
+test -x "$binary" || { echo "no $binary — the suite unit.editor_views does not exist"; exit 1; }
+filter='every declared view mode draws*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.editor_views any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "plugins"
+describe = "plugins load, resolve, lock and carry a trust tier. Four of `project-and-plugins`' eleven requirements — Plugins, Plugin lifecycle, Plugin resolution and lockfile, Trust tiers for extensions — have had no implementation since M5: `find src tools -iname '*plugin*'` returns one layercheck fixture"
+source = "tasks, project-and-plugins"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.project|integration.plugins)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 2 suite(s) match $pattern"
+test "$registered" -ge 2 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "a-node-has-a-name"
+describe = "a node in the editor's document model has a name. It is a one-line claim and a document-model change rather than a field, which is why it has outlived four milestones' worth of larger work"
+source = "tasks, editor-documents-and-transactions, scene-graph-and-nodes"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_editor_documents"
+test -x "$binary" || { echo "no $binary — the suite unit.editor_documents does not exist"; exit 1; }
+filter='a node has a name*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.editor_documents any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "specialised-editors"
+describe = "the `CentreLower` region `chrome.rs` reserves for 'the active specialised editor: script graph, animation, materials, sequencing' is filled by something. It is reserved and empty today, and four rows of this rung are the four editors it names"
+source = "tasks, editor-architecture, editor-ui-ux, visual-scripting, sequencing-and-cinematics"
+kind = "command"
+run = '''
+set -eo pipefail
+fills=$(grep -rniIl "CentreLower" editor/crates/ 2>/dev/null | grep -v "/target/" || true)
+count=$(printf '%s' "$fills" | grep -c . || true)
+echo "$count file(s) reference the CentreLower region: ${fills:-none}"
+test "$count" -ge 3
+ctest --test-dir "${CY_BUILD_DIR:-build/dev}" -R '^unit.render_sky$' --output-on-failure
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "editor-window"
+describe = "the editor opens, docks its panels and draws the specialised editor in the region reserved for it. The half of this rung that is a user interface is judged by a machine with a display, and `specialised-editors` above carries the structural half everywhere else"
+source = "tasks, editor-rust-application, editor-ui-ux"
+kind = "command"
+run = "just run-editor --smoke"
+requires = "display"
+reason = "an editor window needs a display; the structural claims it carries are checked by `specialised-editors` and `view-modes`, which need neither, so nothing here is judgeable only on a machine with a screen"
+ci_job = "milestone-m11b"
+
+# --- Section 3: the authoring formats ---------------------------------------------------------------
+#
+# THE TEXTURE PATH IS THIS RUNG'S WORK BEFORE IT IS M11.c's SUBJECT. There are six image files in the
+# entire tree outside docs/ — four editor identity marks and two golden references — so every
+# material in every published picture is a constant, and no encoder exists to change that.
+
+[[criterion]]
+id = "texture-encoders"
+describe = "the engine encodes BC7 and ASTC. Neither exists in the tree today, and M11.c's beauty shot cannot show a textured material without them: `gltf.cpp` and `texture.cpp` each record the absence against their own row"
+source = "tasks, asset-import-pipeline (Texture cooking)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_asset_import"
+test -x "$binary" || { echo "no $binary — the suite unit.asset_import does not exist"; exit 1; }
+filter='BC7*,ASTC*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.asset_import any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "image-codecs"
+describe = "PNG and JPEG decode through the importer. A format the importer cannot read is content a person cannot bring, and this is the other half of why the tree has six images in it"
+source = "tasks, asset-import-pipeline"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_asset_import"
+test -x "$binary" || { echo "no $binary — the suite unit.asset_import does not exist"; exit 1; }
+filter='a PNG decodes*,a JPEG decodes*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.asset_import any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "skins-and-animations-import"
+describe = "a glTF skin and its animations import, through the same derivation key as every other format. M7 unified those keys and a second key added for a new path is the correctness bug M7 spent its first section repairing"
+source = "tasks, asset-import-pipeline, animation-and-skinning"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_asset_import_gltf"
+test -x "$binary" || { echo "no $binary — the suite integration.asset_import_gltf does not exist"; exit 1; }
+filter='a skin imports*,an animation imports*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.asset_import_gltf any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "import-from-the-editor"
+describe = "every format `tools/import` supports is reachable from inside the editor. M8.a added `asset.import` for the formats it had; this rung's claim is that the set is the same set, which is a check rather than a sentence"
+source = "tasks, asset-import-pipeline, editor-agent-interface"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_editor_import"
+test -x "$binary" || { echo "no $binary — the suite integration.editor_import does not exist"; exit 1; }
+filter='every format tools/import supports*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.editor_import any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+# --- Section 4: the gameplay rows a game exercises by being played ---------------------------------
+
+[[criterion]]
+id = "gameplay-suites"
+describe = "the gameplay suites are green at Complete grade: abilities and effects, AI, animation and skinning, camera, navigation, physics, sequences, the interface, text and 2D"
+source = "tasks"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.gameplay|unit.ai|unit.animation|unit.camera_system|unit.navigation|unit.physics|unit.cy_sequencing|unit.ui|unit.cy_text|unit.rendering_2d)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 10 suite(s) match $pattern"
+test "$registered" -ge 10 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+timeout_s = 3600
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "gameplay-at-complete-grade"
+describe = "every requirement of the eight largest gameplay rows maps to a test, a gate or a recorded exemption. `sequencing-and-cinematics` (31 requirements), `animation-and-skinning` (30) and `camera-system` (28) carry no named blocker, which is its own risk: nothing has refused them because nothing has read them end to end"
+source = "tasks, testing-and-quality"
+kind = "command"
+run = "just quality-requirements gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-and-cinematics input-and-actions"
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "editor-at-complete-grade"
+describe = "and the same mapping over the editor rows, which is where this rung's claim actually lives: eight editor capabilities, 13 to 22 requirements each, two of them at Seed since M5"
+source = "tasks, testing-and-quality"
+kind = "command"
+run = "just quality-requirements editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-and-gizmos editor-documents-and-transactions editor-agent-interface project-and-plugins"
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "ml-inference-or-a-deferral"
+describe = "`ml-inference` is exercised by the game's AI, or it is recorded as a deferral with its re-entry point at M11.e. It has been at Seed from M8.c with nine requirements and the only thing that would exercise it is a game whose AI wants inference. A Complete cell over an unexercised runtime is the outcome this criterion exists to refuse"
+source = "tasks, ml-inference, delivery-roadmap (Deferred scope has re-entry points)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_ai"
+test -x "$binary" || { echo "no $binary — the suite integration.ai does not exist"; exit 1; }
+filter='the agent asks the inference runtime*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.ai any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11b"
+
+# --- Section 5: the artefact -----------------------------------------------------------------------
+
+[[criterion]]
+id = "the-game-exists"
+describe = "the game is in the tree as a project, with its content in the project rather than in C++. `samples/` holds sixteen entries and not one of them is a game with authored content: 08-vertical-slice is a slice and 11-ship is a packaging proof"
+source = "tasks, ROADMAP M11.b closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+dir=$(ls -d samples/*game* 2>/dev/null | head -1 || true)
+test -n "$dir" || { echo "no game project under samples/"; exit 1; }
+echo "game project: $dir"
+assets=$(find "$dir" -type f \( -name '*.cyasset' -o -name '*.cyscene' -o -name '*.json' -o -name '*.toml' \) | wc -l)
+sources=$(find "$dir" -type f \( -name '*.cpp' -o -name '*.h' \) | wc -l)
+echo "  $assets authored file(s), $sources C++ file(s)"
+test "$assets" -gt "$sources"
+'''
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "the-game-is-playable"
+describe = "the game runs from its start state to an end state without a C++ fixture standing in for content — a win and a loss, both reached, headless. This is the half every machine can judge, and it is the half that matters: a game that only proves itself on a machine with a screen proves the screen"
+source = "tasks, ROADMAP M11.b closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+dir=$(ls -d samples/*game* 2>/dev/null | head -1 || true)
+test -n "$dir" || { echo "no game project under samples/"; exit 1; }
+name=${dir#samples/}
+just run-sample "$name" --headless --script win
+just run-sample "$name" --headless --script loss
+'''
+timeout_s = 3600
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "the-game-drawn"
+describe = "and a still of it, captured on a device, committed under docs/design/images/. The rule since M8.c: anything with a visible result gets an image, and a picture is the only evidence that distinguishes a game from a test harness that reports it won"
+source = "tasks, ROADMAP M11.b closing artefact"
+kind = "path"
+path = "docs/design/images/m11b-game*.png"
+ci_job = "milestone-m11b"
+
+[[criterion]]
+id = "the-game-is-honest-about-its-content"
+describe = "the artefact's README states which parts a person authored in the editor and which parts the sample's code assembles. The distinction IS the claim of this rung, and an artefact that does not draw it cannot be used to judge twenty-four rows"
+source = "tasks, ROADMAP M11.b closing artefact, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+readme=$(ls samples/*game*/README.md 2>/dev/null | head -1 || true)
+test -n "$readme" || { echo "the game project has no README"; exit 1; }
+grep -qi "authored" "$readme"
+grep -qi "assembl\|in C++\|by the sample" "$readme"
+echo "$readme distinguishes authored content from assembled content"
+'''
+ci_job = "milestone-m11b"
+
+# --- Section 6: the record, the tiers, and the next rung -------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this rung's exit tiers: twenty-four rows to Complete, three of them from Seed. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO. A row this rung cannot finish is DEMOTED with its reason to a later rung — only M11.e may record a deferral — and the expectation below moves with it"
+source = "tasks 12.4, ROADMAP M11.b, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11b"
+
+[criterion.expect_tiers]
+editor-architecture = "complete"
+live-editing = "complete"
+editor-rust-application = "complete"
+editor-ui-ux = "complete"
+editor-visual-language = "complete"
+editor-viewport-and-gizmos = "complete"
+editor-documents-and-transactions = "complete"
+editor-agent-interface = "complete"
+project-and-plugins = "complete"
+asset-import-pipeline = "complete"
+visual-scripting = "complete"
+ui-system = "complete"
+text-and-fonts = "complete"
+rendering-2d = "complete"
+gameplay-abilities-and-effects = "complete"
+ai-system = "complete"
+animation-and-skinning = "complete"
+camera-system = "complete"
+navigation = "complete"
+physics = "complete"
+sequencing-and-cinematics = "complete"
+input-and-actions = "complete"
+ml-inference = "complete"
+swift-scripting = "complete"
+
+# THE HANDOVER CHECK, IN THE SHAPE `implement-m11-reach` TASK 0.1 SETTLED FOR ALL FIVE RUNGS. The
+# double-star glob is kept as the search; what is asked of the result is ENTRY rather than existence,
+# because the five rung changes were opened together and a `kind = "path"` criterion over
+# `openspec/changes/**/*m11c*/proposal.md` would pass the moment it was written and could never go
+# red. A criterion that cannot fail is not a criterion.
+[[criterion]]
+id = "m11c-open"
+describe = "the next rung's change exists — open, or closed and archived — AND has been deliberately entered. That rung is M11.c, Image, which this rung hands two things it cannot finish without: a texture encoder and an editor to author a material in"
+source = "tasks 12.3, implement-m11-reach task 0.1, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+# the double-star glob the ladder has used since M8.a: openspec/changes/**/*m11c*/proposal.md
+dirs=$(find openspec/changes -type d -name '*m11c*' | sort)
+test -n "$dirs" || { echo "no change directory matching openspec/changes/**/*m11c*/"; exit 1; }
+entered=""
+for d in $dirs; do
+    test -f "$d/proposal.md" || continue
+    echo "  $d/proposal.md"
+    # A CHECKED TASK OUTSIDE SECTION 0, and the exclusion is the point. Section 0 is a rung's own
+    # decision-and-spike section, which the split that opened all five rungs could answer in advance;
+    # a checked box there says the rung was SCOPED. A checked box in the body says the rung was
+    # STARTED, which is the deliberate act this criterion is standing in for.
+    if [ -f "$d/tasks.md" ] && grep -qE '^- \[x\] [1-9]' "$d/tasks.md"; then
+        entered="$entered $d"
+    fi
+done
+if [ -z "$entered" ]; then
+    echo "the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+    exit 1
+fi
+echo "entered:$entered"
+'''
+ci_job = "milestone-m11b"

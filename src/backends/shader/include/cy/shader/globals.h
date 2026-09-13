@@ -3,16 +3,17 @@
 // Global shader parameters: project-wide values every shader can read. Task 3.6.
 //
 // `shader-system` — "Global shader parameters": named, project-wide values (wind, time of day,
-// gameplay state) settable at runtime and readable by any shader, stored in a global uniform buffer,
-// with **no per-material update needed**. One update, and every shader referencing the parameter
-// observes the new value the next frame, with no material or pipeline changes.
+// gameplay state) settable at runtime and readable by any shader, stored in a global uniform
+// buffer, with **no per-material update needed**. One update, and every shader referencing the
+// parameter observes the new value the next frame, with no material or pipeline changes.
 //
-// --- WHERE THE LAYOUT COMES FROM ------------------------------------------------------------------
+// --- WHERE THE LAYOUT COMES FROM
+// ------------------------------------------------------------------
 //
 // The obvious implementation gives each parameter an offset chosen by the C++ side and a matching
-// `float` at that offset in a hand-written Slang struct. That is precisely the hand-maintained table
-// task 3.3 exists to abolish, one subsystem over: the struct and the table drift, and the symptom is
-// wind blowing at the time of day.
+// `float` at that offset in a hand-written Slang struct. That is precisely the hand-maintained
+// table task 3.3 exists to abolish, one subsystem over: the struct and the table drift, and the
+// symptom is wind blowing at the time of day.
 //
 // So the layout is **derived from the declaration order**, computed once by `finalise()`, and the
 // Slang side reads it from generated source rather than from a hand-written struct — the generator
@@ -21,15 +22,17 @@
 // before the material compiler arrives, which is the cheapest possible way to find out whether the
 // seam is the right shape.
 //
-// --- THE PACKING RULE ------------------------------------------------------------------------------
+// --- THE PACKING RULE
+// ------------------------------------------------------------------------------
 //
 // std140, because the block is a uniform buffer and that is what a uniform buffer's layout is:
-// scalars align to 4, `float2` to 8, `float3` and `float4` to 16, and a `float3` does not straddle a
-// 16-byte boundary. `finalise()` sorts by decreasing alignment before assigning offsets, so a
+// scalars align to 4, `float2` to 8, `float3` and `float4` to 16, and a `float3` does not straddle
+// a 16-byte boundary. `finalise()` sorts by decreasing alignment before assigning offsets, so a
 // declaration order that would waste half the block does not; the sort is stable on the declaration
 // index, so the layout is deterministic and the generated Slang matches it exactly.
 //
-// --- WHAT "THE NEXT FRAME" MEANS -------------------------------------------------------------------
+// --- WHAT "THE NEXT FRAME" MEANS
+// -------------------------------------------------------------------
 //
 // `set()` writes into the CPU-side block and bumps `version()`. The renderer uploads the block once
 // per frame when the version has changed. There is no per-shader and no per-material path, which is
@@ -99,8 +102,8 @@ public:
     GlobalParameters(const GlobalParameters&) = delete;
     GlobalParameters& operator=(const GlobalParameters&) = delete;
 
-    /// Declare a parameter. Only before `finalise()`: a global that appears after the block's layout
-    /// has been published would change the offsets every compiled shader was built against.
+    /// Declare a parameter. Only before `finalise()`: a global that appears after the block's
+    /// layout has been published would change the offsets every compiled shader was built against.
     [[nodiscard]] Expected<GlobalId, Error> declare(const char* name, GlobalType type) noexcept;
 
     /// Compute the layout and lock the declaration. Idempotent.
@@ -114,8 +117,8 @@ public:
     [[nodiscard]] GlobalId find(const char* name) const noexcept;
     [[nodiscard]] u32 count() const noexcept { return static_cast<u32>(parameters_.size()); }
     [[nodiscard]] GlobalParameter parameter(GlobalId id) const noexcept;
-    /// Iterate in layout order — the order `emit_slang_declaration()` writes and the order the block
-    /// is packed in. Deterministic, whatever order the declarations arrived in.
+    /// Iterate in layout order — the order `emit_slang_declaration()` writes and the order the
+    /// block is packed in. Deterministic, whatever order the declarations arrived in.
     [[nodiscard]] GlobalParameter at(u32 index) const noexcept;
 
     /// Write a value. The type must match the declaration; a mismatch is a programmer error and

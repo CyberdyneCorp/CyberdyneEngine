@@ -65,17 +65,25 @@ class PlanError(Exception):
 def milestone_id(column: str) -> str:
     """A matrix column heading as the identifier a file name and a record value use.
 
-    `M5.5` is `m5b`, and `M8.a`/`M8.b` are `m8a`/`m8b`: a milestone id is also a file name under
-    `tools/roadmap/milestones/`, and a dot in one is a needless special case.
+    `M5.5` is `m5b`, `M8.a`/`M8.b` are `m8a`/`m8b`, and `M11.a` … `M11.e` are `m11a` … `m11e`: a
+    milestone id is also a file name under `tools/roadmap/milestones/`, and a dot in one is a
+    needless special case.
 
     The mapping is a table rather than a chain of `replace` calls because the chain was one:
     `.replace(".5", "b")` turned `M5.5` into `m5b` correctly and turned `M8.a` into `m8.a`, which
     matched no milestone at all — so the split columns parsed as nothing, every M8 cell vanished
     from the matrix, and the Complete column of nine capabilities pointed at a milestone the matrix
     no longer contained. The checks below caught it, which is what they are for.
+
+    AND THE SAME BUG CAME BACK AT M11's SPLIT, one level up: the three patterns below admitted
+    `.a`, `.b` and `.c` because M8 had three rungs, so `M11.d` and `M11.e` parsed as nothing and
+    fourteen capabilities' Complete column pointed at columns the matrix no longer contained.
+    `_check_every_reader_admits_an_insertion` in selftest.py now names every suffix on the ladder.
     """
     text = column.strip().lower().replace(" ", "")
-    return {"m5.5": "m5b", "m8.a": "m8a", "m8.b": "m8b", "m8.c": "m8c"}.get(text, text)
+    return {"m5.5": "m5b", "m8.a": "m8a", "m8.b": "m8b", "m8.c": "m8c",
+            "m11.a": "m11a", "m11.b": "m11b", "m11.c": "m11c", "m11.d": "m11d",
+            "m11.e": "m11e"}.get(text, text)
 
 
 def tier_rank(tier: str) -> int:
@@ -148,10 +156,11 @@ def read_matrix(path: Path = MATRIX) -> Matrix:
             if row[0] != "Capability":
                 continue
             for index, header in enumerate(row):
-                # `M5.5` and `M8.a`/`M8.b` are insertions: a milestone heading is a number with an
-                # optional `.5` or `.a`/`.b` suffix. A pattern that admitted only `.5` silently
-                # dropped the split columns and took every M8 cell with them.
-                if re.fullmatch(r"M\d+(\.5|\.[abc])?", header):
+                # `M5.5`, `M8.a`/`M8.b`/`M8.c` and `M11.a` … `M11.e` are insertions: a milestone
+                # heading is a number with an optional `.5` or single-letter suffix. A pattern that
+                # admitted only `.5` silently dropped M8's split columns and took every M8 cell with
+                # them; one that admitted only `.a`–`.c` did it again to M11.d and M11.e.
+                if re.fullmatch(r"M\d+(\.5|\.[a-e])?", header):
                     columns[index] = milestone_id(header)
                 elif header == "Complete":
                     complete_column = index
@@ -202,7 +211,7 @@ def read_load_summary(path: Path = MATRIX) -> dict[str, Load]:
         # section headings, and this table's row labels all name a milestone, and all three read it
         # with a pattern of their own. Three patterns for one grammar is why the split had to be
         # made three times before the checks went quiet.
-        name = re.match(r"\*\*(M\d+(?:\.5|\.[abc])?)\*\*", row[0])
+        name = re.match(r"\*\*(M\d+(?:\.5|\.[a-e])?)\*\*", row[0])
         if name is None:
             continue
         which = row[3].replace("—", "").strip()
@@ -271,7 +280,7 @@ def read_sections(path: Path = ROADMAP) -> dict[str, Section]:
         # pattern that admits only `.5` reads a split milestone's section as a continuation of the
         # one above it, so its whole work table is attributed to the previous milestone — which is
         # how thirty-six of M8.b's tier claims briefly became M7's.
-        heading = re.match(r"^## (M\d+(?:\.5|\.[abc])?) ", line)
+        heading = re.match(r"^## (M\d+(?:\.5|\.[a-e])?) ", line)
         if heading is not None:
             close()
             current = milestone_id(heading.group(1))

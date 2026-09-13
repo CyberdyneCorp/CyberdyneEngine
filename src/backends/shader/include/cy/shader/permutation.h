@@ -12,24 +12,25 @@
 //   3. **Preprocessor permutations** — last resort, requiring an explicit declaration of the axis
 //      and its cardinality.
 //
-// THE DISTINCTION THAT MATTERS, AND THE ONE THIS FILE ENFORCES. A specialization axis multiplies the
-// number of *pipelines*; a generic or preprocessor axis multiplies the number of *compilations*.
-// Those two numbers are wildly different in cost — one is a driver call, the other is a Slang
-// invocation and a cache entry — and a permutation budget that adds them together is a budget that
-// punishes the cheap choice. `PermutationDomain` reports them separately, `compiled_variants()` is
-// what the budget is checked against, and that is the whole mechanism by which the preference order
-// above becomes something a build can fail on.
+// THE DISTINCTION THAT MATTERS, AND THE ONE THIS FILE ENFORCES. A specialization axis multiplies
+// the number of *pipelines*; a generic or preprocessor axis multiplies the number of
+// *compilations*. Those two numbers are wildly different in cost — one is a driver call, the other
+// is a Slang invocation and a cache entry — and a permutation budget that adds them together is a
+// budget that punishes the cheap choice. `PermutationDomain` reports them separately,
+// `compiled_variants()` is what the budget is checked against, and that is the whole mechanism by
+// which the preference order above becomes something a build can fail on.
 //
-// `shader-system`: "Every permutation axis SHALL declare its allowed values so the total permutation
-// count is known and reportable at build time." An axis therefore carries its values, not just its
-// arity: a report that says "axis `shadow_quality` has 4 values" is actionable and one that says
-// "some axis has 4 values" is not.
+// `shader-system`: "Every permutation axis SHALL declare its allowed values so the total
+// permutation count is known and reportable at build time." An axis therefore carries its values,
+// not just its arity: a report that says "axis `shadow_quality` has 4 values" is actionable and one
+// that says "some axis has 4 values" is not.
 //
-// --- THE KEY IS A MIXED-RADIX NUMBER --------------------------------------------------------------
+// --- THE KEY IS A MIXED-RADIX NUMBER
+// --------------------------------------------------------------
 //
 // A variant is identified by one `u64`: the axis values in declaration order, in mixed radix. It is
-// small enough to sit in a cache key and a library entry, it is dense (so a domain's variants can be
-// enumerated by counting), and it is **stable** — the same declaration produces the same key on
+// small enough to sit in a cache key and a library entry, it is dense (so a domain's variants can
+// be enumerated by counting), and it is **stable** — the same declaration produces the same key on
 // every machine, which is what lets a cooked shader library from CI be indexed by a developer's
 // build. The cost is that adding an axis renumbers every key; the cache key includes the domain's
 // own hash, so that renumbering invalidates rather than mismatches.
@@ -47,7 +48,8 @@ namespace cy::shader {
 enum class PermutationKind : u8 {
     /// A SPIR-V specialization constant. Costs one pipeline per value, zero extra compilations.
     Specialization = 0,
-    /// A Slang generic or interface parameter. Costs one compilation per value, and is how genuinely
+    /// A Slang generic or interface parameter. Costs one compilation per value, and is how
+    /// genuinely
     /// different code is selected without the preprocessor.
     Generic = 1,
     /// A preprocessor define. Costs one compilation per value and carries no type checking; the
@@ -132,9 +134,9 @@ public:
 
     /// Check `compiled_variants()` against a ceiling and report the breakdown.
     ///
-    /// `shader-system`'s "Permutation explosion is visible" scenario: the build warns *with the axis
-    /// breakdown*, "before compile times become a problem". The breakdown is the point — a bare
-    /// count tells an author that something is wrong and not what to change.
+    /// `shader-system`'s "Permutation explosion is visible" scenario: the build warns *with the
+    /// axis breakdown*, "before compile times become a problem". The breakdown is the point — a
+    /// bare count tells an author that something is wrong and not what to change.
     [[nodiscard]] PermutationBudget check_budget(u64 budget) const noexcept;
 
     /// Build a key from one value per axis, in declaration order.
@@ -147,9 +149,9 @@ public:
 
     /// The key with every specialization axis set to zero.
     ///
-    /// **This is the compilation key**: two variants that differ only in specialization values share
-    /// one SPIR-V blob and one cache entry, which is the whole reason the specification prefers
-    /// specialization constants. The cache is keyed on this, the pipeline on the full key.
+    /// **This is the compilation key**: two variants that differ only in specialization values
+    /// share one SPIR-V blob and one cache entry, which is the whole reason the specification
+    /// prefers specialization constants. The cache is keyed on this, the pipeline on the full key.
     [[nodiscard]] PermutationKey compilation_key(PermutationKey key) const noexcept;
 
     /// Write `axis=value` pairs, comma separated, into `out`. Returns the length written, excluding

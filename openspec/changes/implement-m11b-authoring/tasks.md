@@ -1,0 +1,443 @@
+# Tasks: M11.b — Authoring
+
+Ordered. Section 0 is the spike and it runs first because the play-mode seam decides whether the
+editor rows below it are built on one hosted world model or two, and discovering that after sections
+2 to 5 are written is a migration rather than an edit. Section 1 is next and alone, because
+**thirteen of this rung's requirements are not code in `editor/` at all** — they are third-party
+integrations that `thirdparty-dependencies` requires to go through the OpenSpec change flow one at a
+time, and a rung that starts them in section 6 starts them too late.
+
+**Three rows here are at Seed and reach Complete, which is two tiers in one rung and which nothing on
+this ladder has done.** `editor-architecture` and `live-editing` have been at Seed since M5;
+`ml-inference` since M8.c. Each of the three has its own section, and each section's Working half is
+separable from its Complete half on purpose, so a rung that runs short demotes a **tier** rather than
+abandoning a row.
+
+## 0. The spike — the play-mode seam
+
+- [x] 0.1 **Is `editor-architecture` and `live-editing` at Seed a mis-record or a thin foundation?
+      ANSWERED BEFORE THE RUNG OPENED, AND IT IS A THIN FOUNDATION.** M10 task 6.5 read all nineteen
+      contested cells against the tree M10 closes on rather than against the gate that parked them,
+      moved fifteen and claimed four, and **kept both of these rows at Seed with a grep as the
+      evidence for each** — `SeparateProcess|RemoteDevice|InEditor` returns nothing across `src/`,
+      `editor/` and `tools/`, and so does
+      `LiveEditPolicy|ReinitializeComponent|RecreateEntity|RestartWorld`. Both greps were re-run on
+      the tree this rung opens against and both still return nothing. The record is right; the
+      foundation is thin. **This is recorded here so the rung does not spend a spike re-asking a
+      question the previous milestone's audit already answered**, and so that M11.a is not asked for
+      it either
+- [ ] 0.2 **The spike proper: can one hosted runtime carry `InEditor`, `SeparateProcess` and
+      `RemoteDevice` without a second world model?** `live-editing` says *"Locality SHALL be an
+      optimisation of transport, not a different architecture"* and *"no play mode runs in the editor
+      process"*; `HostingMode::Hosted` is already the production default and the M5.5 live-bridge
+      spike already measured the process boundary at about 60 µs at the median against an 8.6 ms
+      runtime frame. So the architecture question is **not** whether out-of-process is affordable —
+      that is measured — it is whether the three modes are three transports over one world model or
+      three world models. Measure it; do not reason about it
+- [ ] 0.3 **The three facts the spike has to start from, each verified rather than assumed.**
+      (a) `cy_editor_documents::worlds` already carries the three *world kinds* the specification
+      demands — Authoring, Preview, Runtime — with a `compile` step and an independent
+      `authoring_leaks` check, so the editor side of the model exists.
+      (b) `play.enter` already reaches a runtime over a real socket and `cy::gameplay::PlaySession`
+      already restores the authored document byte for byte on stop, verified rather than asserted —
+      so *play* is not the gap, the **mode** is.
+      (c) `cy_editor_viewport::transport::TransportKind` declares `LocalSurface`, `SharedTexture` and
+      `EncodedStream`, and the only one implemented above a local surface is a **same-machine**
+      shared texture built on `VK_KHR_external_semaphore_fd`. **`RemoteDevice` cannot use it**, so
+      `EncodedStream` is on this rung's critical path and nothing in the tree encodes a frame
+- [ ] 0.4 **The failure budget, stated before the work rather than after it.** One world model and
+      three transports costs nothing. One world model, three transports and a declared per-mode
+      capability set — *"this mode cannot single-step"* — costs a capability query on every feature
+      that steps, and is still one architecture. **Two world models is the refutation**, and if the
+      spike spends it the rung is re-planned the way M8.b was re-planned on its own spike's answer,
+      not delivered on a premise the spike refuted
+- [ ] 0.5 **And the one outcome that is worse than a refutation: a silent fallback.** A mode that is
+      selected and not implemented must refuse by name. A `RemoteDevice` request that quietly runs
+      `InEditor` is a green test over a feature that does not exist, and it is the exact shape M9's
+      gate found when a criterion passed 44 of 44 with its enforcement point deleted
+- [ ] 0.6 Commit the spike and record its answer in `design.md` §1, the way M8.b's IR spike, M9's
+      determinism spike and M10's invalidation spike were committed and consumed without being
+      re-derived
+
+## 1. The thirteen dependency adoptions, each its own change
+
+**This section is the rung's long pole and it is not editor work.** `thirdparty-dependencies` names
+an intended set, `deps/manifest.toml` carries seventeen of it, and **thirteen of the entries this
+rung's rows require by name are absent** — HarfBuzz, ICU, FreeType, msdfgen, libpng, libjpeg-turbo,
+libwebp, tinyexr, a BC7 encoder, astc-encoder, cgltf, meshoptimizer and OpenUSD, with ACL beside them
+marked *to evaluate*. That specification's "New dependency is a reviewed
+decision" scenario is normative: adding one *"SHALL go through the OpenSpec change flow recording the
+evaluation against these criteria"*. Thirteen changes, not one section.
+
+The row that owes the `thirdparty-dependencies` **cell** is M11.e's. The *adoptions* are this rung's,
+because this rung's rows are what cannot be Complete without them.
+
+- [ ] 1.1 **Text: HarfBuzz, ICU, FreeType, msdfgen.** `text-and-fonts` names the first three in
+      normative text — *"shaped through HarfBuzz"*, *"via ICU"* — and `src/text/README.md` states
+      plainly that the module is the honest half: the algorithms over declared coverage, with
+      `ShapingCapabilities`, `coverage_of()`, `BidiResult::approximated`, `BreakReport::used_dictionary`
+      and `plural_rules_known()` reporting every gap in code. The engine can lay out Hebrew, Arabic
+      and Thai and **cannot load a font to draw them with**: the only font it loads is
+      `ImageGridFont`, a bitmap grid. `deps/manifest.toml` defers all three by name and states the
+      cost, and ICU in particular is *"an autotools project whose CMake support is somebody else's
+      build system wearing a hat"*
+- [ ] 1.2 **Images: libpng, libjpeg-turbo, libwebp, tinyexr.** `decode_image` reads Targa and
+      nothing else, and names what the other two would need — *"PNG needs a DEFLATE decoder and JPEG
+      a DCT one"* (`tools/import/src/texture.cpp:433`)
+- [ ] 1.3 **Texture compression: an ISPC-class BC7 encoder and astc-encoder.** There is no encoder in
+      the tree. `cy::import::select_format` already names the format a cook *would* produce and
+      records `CookedTexture::encoded = false` beside the uncompressed payload — see task 6.4, which
+      is what stops a cache built without an encoder from being served to a build with one
+- [ ] 1.4 **glTF: cgltf.** `tools/import/src/json.cpp` is a strict JSON reader *"written to be
+      deleted when this lands"* and its header says so
+- [ ] 1.5 **Meshes: meshoptimizer.** M5 delivered engine-owned simplification, vertex cache and fetch
+      optimisation behind free functions over `cy::import::MeshData`, so this is a change to one
+      `.cpp` and to nothing that calls it — `tools/import/include/cy/import/mesh.h` states what the
+      engine-owned simplifier costs against a tuned one
+- [ ] 1.6 **USD: OpenUSD, optional and tool-time only**, which the specification requires in so many
+      words — *"SHALL NOT be linked into a shipped runtime"*
+- [ ] 1.7 **Animation compression: ACL, or a recorded decision not to.** The specification marks it
+      *to evaluate* and states the rule for that marking: *"the requirement is the capability, not the
+      library"*. A recorded evaluation concluding the engine-owned codec is sufficient closes this
+      item; silence does not
+- [ ] 1.8 **Every one of the thirteen is judged against the dependency policy's own criteria,
+      including the licence rule** — GPL is refused for runtime code by name — and each lands with
+      its attribution row in `THIRD_PARTY.md`, its `cy__configure_<name>` block, and a pin. **A
+      dependency adopted without the change record is the defect this section exists to prevent**,
+      and the check is cheap: the manifest's names against the specification's table
+- [ ] 1.9 **State the arithmetic at the head of the rung rather than at its gate.** Thirteen
+      adoptions is thirteen libraries plus one marked *to evaluate*, against the **seventeen**
+      entries `deps/manifest.toml` has accumulated across the whole ladder to date — so this one rung
+      proposes to grow the dependency set by more than three quarters.
+      `design.md` §3 carries the contingency; if it does not fit, the rows that move are named there
+      and they move **with their reason recorded**
+
+## 2. The plugin surface — `project-and-plugins` → C
+
+**First among the editor sections, and not by preference.** `editor-architecture`'s "Specialised
+editors" requirement is normative about it: *"Each SHALL be a plugin using the same panel and undo
+infrastructure as user plugins, so the extension API is exercised by the engine's own tooling"*, with
+a scenario — *"WHEN a built-in editor is implemented THEN it SHALL use only the public plugin API"*.
+Section 3 cannot be built before this one without violating the requirement it is built to satisfy.
+
+- [ ] 2.1 Plugins, extension points and the plugin lifecycle. `find src tools -iname '*plugin*'`
+      returns **one layercheck fixture** and has since M5; four of the row's eleven requirements have
+      no implementation
+- [ ] 2.2 The plugin binary boundary as the engine's C ABI, and type ownership with unload safety —
+      against the engine's own reload model, which `cy-editor-sdk`'s `RuntimeLibrary` already
+      states: serialize, migrate by name, recreate, **never `dlclose`**, because a retired image's
+      string literals are still referenced by every component and behaviour registration
+- [ ] 2.3 Plugin resolution and the lockfile; trust tiers for extensions
+- [ ] 2.4 Layered typed configuration, and the project graph as authoritative
+- [ ] 2.5 **The check that makes 2.1 load-bearing**: a built-in specialised editor that reaches past
+      the public plugin API fails the build. Without it, "the engine dogfoods its plugin API" is a
+      convention, and a convention is what this rung is here to stop relying on
+
+## 3. The two Seed rows — `editor-architecture` → C, `live-editing` → C
+
+Section 0's answer is the input to 3.1 and 3.2. Everything else here is independent of it.
+
+- [ ] 3.1 **The three play modes exposed and driveable**, per section 0 — `InEditor`,
+      `SeparateProcess`, `RemoteDevice`, all three through the same live bridge, with pause, single
+      frame step and single simulation tick step in every mode where the runtime permits. **A mode
+      that is not available refuses by name** (task 0.5)
+- [ ] 3.2 **The live edit policy**, per field, with the outcomes the requirement names —
+      reinitialise the component, recreate the entity, restart the world. Nothing in the tree carries
+      the concept: `LiveEditPolicy|ReinitializeComponent|RecreateEntity|RestartWorld` returns nothing
+- [ ] 3.3 **The specialised editors**, into the `CentreLower` region `chrome.rs` has reserved since
+      M5.5 for *"the active specialised editor: script graph, animation, materials, sequencing"* and
+      which nothing fills. **Read the requirement's whole list before scoping this task**: it names
+      materials, animation graphs and clips, the VFX graph, **terrain, foliage, water and environment
+      fields**, tilemaps, UI layout, audio buses, navigation baking, lighting and lightmap baking,
+      abilities and effects, gameplay and utility graphs, sequences and cinematics, and localisation
+      tables — plus an environment tool set with sculpting over a non-destructive modifier stack,
+      river spline authoring and foliage rule authoring. That is a larger surface than the two Seed
+      rows' twenty-four requirements suggest and `design.md` §4 says what this rung does about it
+- [ ] 3.4 **One node-graph canvas and one timeline surface, not six of each.** The requirement
+      forbids a sixth bespoke graph editor by name and requires all keyed-time editors to share one
+      curve surface, one keying model and one identity model for tracks, sections and keys
+- [ ] 3.5 **Rule-driven tools explain themselves** — *"WHEN a designer asks why no trees appear in a
+      region THEN the tool SHALL name the rule input responsible"*. This is a join with M10's PCG and
+      foliage provenance, and it is a real requirement rather than a nicety: a procedural result that
+      cannot be explained cannot be corrected
+- [ ] 3.6 **Project creation from templates and project settings**, stored in text form suitable for
+      version control with user preferences stored separately — neither has an implementation
+- [ ] 3.7 **Build and deployment as a client of the build service**, which the requirement states in
+      the negative: the editor *"SHALL NOT invoke shell scripts and parse their output"*. Select a
+      target, request compile, cook, package and deploy, show structured progress, allow
+      cancellation. **The service is `build-and-packaging`'s, which is M11.d's row** — see
+      `design.md` §6
+- [ ] 3.8 **The debugging and profiling surface, which is the largest single requirement on this
+      rung and is routinely under-read.** It is not "a profiler panel": a `profiler` panel kind, its
+      title and a docking slot exist, and what the shell reports into it is the *editor's* own frame
+      cost. The requirement asks for a **remote and local debugger with breakpoints, stepping and
+      variable inspection for Swift and native**; a live entity inspector for the running game; a
+      frame profiler over CPU stages, jobs and GPU passes with a timeline; memory profiling by
+      allocator tag and asset category; a **render debugger** showing the render graph as it was
+      built for a frame with per-pass GPU time, queue, resources, transient memory and barrier wait,
+      plus the budget arbiter's allocations and adjustments; and a **shader and material inspector**
+      showing every stage of lowering — graph, material IR before and after optimisation, generated
+      Slang, backend binary — with cost attributed to graph nodes. Profiler markers map into
+      RenderDoc, PIX, Xcode, Nsight and Radeon GPU Profiler, and a capture is launchable from the
+      editor. **The last two are joins with rows other rungs own** — see `design.md` §6 — and the
+      editor is a *client* of `diagnostics-profiling-and-crash`, which is Complete since M10, not its
+      owner
+- [ ] 3.9 **Capture, crash and reproduction artefacts open without the game running**, including
+      artefacts produced on another platform — which is a check this host can actually run, because
+      M10 closed `m9:crash-artefact-paths` and a produced artefact exists to open
+- [ ] 3.10 Live asset reload, shader and material live reload, module hot reload as a declared
+      capability, runtime inspection, runtime tweaking distinct from authoring with the keep-changes
+      flow, the versioned live bridge protocol, and live editing diagnostics
+
+## 4. The document model, and a node with a name — `editor-documents-and-transactions` → C
+
+- [ ] 4.1 **A node has a name.** `cy_editor_documents` carries none: identity is a `NodeId` and
+      nothing else, and `hierarchy.rs:28` says so at the field — *"a node has no name in the document
+      model … so the label is the node's **kind**"*. The consequence is visible in the tree and is
+      worse than a missing field: `samples/05b-editor-window/project/worlds/city.cyworld` reads
+      `node 0 - "Pillar"`, `node 1 - "Crate"`, `node 2 - "Marker"` — and **the third field of a
+      `node` line is the layer**, so the only authored world in the repository that looks like it
+      names its nodes is putting three objects in three one-node layers because there is nowhere else
+      to put a name. See `specs/editor-documents-and-transactions/spec.md`
+- [ ] 4.2 **Source control integration, which is unstarted rather than partial.**
+      `grep -niE 'source.control' editor/crates/*/src/` returns seven hits and every one is a comment
+      or a remedy string. The requirement asks for a provider interface — status, history, diff,
+      check out, revert, submit, lock — with **Git, Perforce and a null provider** behind it. The
+      null provider is not a placeholder: it is what makes the other two optional
+- [ ] 4.3 The rest of the row's twelve: semantic diff and three-way merge over authored documents,
+      which `src/sequencing/README.md` is also waiting on — *"there is no text form, no diff and no
+      merge. That is an editor feature with an editor's test surface"*
+
+## 5. The rest of the editor — `editor-rust-application`, `editor-viewport-and-gizmos`, `editor-ui-ux`, `editor-visual-language`, `editor-agent-interface` → C
+
+- [ ] 5.1 **The eight missing view modes.** `ViewMode` carries nineteen discriminants mirroring
+      `cy::render::DebugViewMode` exactly, and `PLANNED_VIEWS` is an eight-entry table naming what the
+      requirement asks for and the engine cannot draw: lightmap density, GI probe placement, virtual
+      texture feedback, virtual texture residency, virtual shadow pages, physics colliders,
+      navigation data, audio emitters — plus streaming region state. **Five of the eight are drawn by
+      subsystems M11.c owns** and `design.md` §6 records that as a dependency rather than absorbing
+      it. The editor half — the mirror, the command palette entry, the per-viewport request and the
+      composition with visibility filters and isolation — is this rung's, and
+      `tests::the_mode_list_matches_the_engines` is the check that keeps the two lists honest
+- [ ] 5.2 **`EncodedStream`**, per task 0.3(c): the transport kind that makes a remote device
+      possible, which is declared and unimplemented
+- [ ] 5.3 The enumeration `cy-editor-sdk`'s `HostingMode` reserves for features that require
+      in-process execution is **empty today, and it must still be empty when this rung closes** —
+      *"such reasons SHALL be enumerated rather than accumulated"*. A feature added here that needs
+      `Embedded` adds its reason to that list or does not ship
+- [ ] 5.4 The remaining requirements of the five rows, read first-hand rather than inherited: the
+      application shell, the inspector's generation from reflection, the visual language's tokens and
+      the agent interface's resources and tools
+- [ ] 5.5 **A runtime failure in any mode leaves the editor running**, checked in all three play
+      modes rather than in the one that exists today
+
+## 6. The authoring formats — `asset-import-pipeline` → C, `input-and-actions` → C
+
+Section 1's adoptions are the input to 6.1 through 6.4.
+
+- [ ] 6.1 **Skins and animations through glTF.** `tools/import/src/gltf.cpp:940` reports
+      `skipped-rig` when a file carries either, with a message that names M8 as the milestone after
+      which there would be something to import a skeleton into. There has been since M8.b.
+      `MeshData` carries no joint or weight array, which is the model change beneath the parser change
+- [ ] 6.2 PNG, JPEG, WebP and EXR decoding, over section 1.2
+- [ ] 6.3 BC7 and ASTC encoding, over section 1.3
+- [ ] 6.4 **The derivation key changes when an encoder lands**, so a cache built without one is not
+      served to a build with one. `deps/manifest.toml` already asserts this as the intended behaviour
+      — *"a build that links an encoder produces a different derivation key and re-cooks rather than
+      serving uncompressed pixels from the cache"* — and nothing checks it. See
+      `specs/asset-import-pipeline/spec.md`
+- [ ] 6.5 **Virtual-geometry cooking reachable from inside the editor** rather than from a command
+      line only. The cooker is `virtual-geometry`'s and exists; the reachability is this rung's
+- [ ] 6.6 USD import, tool-time only, over section 1.6
+- [ ] 6.7 **Input assets authored and cooked.** `src/servers/input/README.md` records the gap in its
+      own words: *"Input assets are not cooked … M4 builds the tables in code"*. Actions, contexts,
+      bindings, processors and triggers authored as assets, cooked into the runtime tables,
+      participating in the derived data cache and the identity manifest
+- [ ] 6.8 `ActionStableId` allocated from `identity/manifest.toml` rather than being the right shape
+      with nothing allocating it; the interface-routing half `ui-system` owes (section 7); and the
+      eight-user, thousand-action benchmark the requirement's performance clause asks for and which
+      `benchmarks/` does not contain
+
+## 7. Text, the interface and 2D — `text-and-fonts` → C, `ui-system` → C, `rendering-2d` → C
+
+- [ ] 7.1 **Fonts that load**, over section 1.1: TrueType, OpenType, `.ttc`, WOFF and WOFF2, bitmap;
+      shaping through HarfBuzz with GSUB and GPOS; variable-font axes, OpenType feature selection and
+      colour glyphs; FreeType rasterisation and hinting; SDF through msdfgen
+- [ ] 7.2 The Unicode half ICU owns and `src/text/` currently approximates and **reports** it is
+      approximating: X10's isolating run sequences, N0 paired brackets, mirrored glyphs, the Korean
+      and emoji line-break classes, a shipped Thai/Khmer/Lao dictionary, and number, currency and
+      date formatting — which are locale **data** and which a hand-written table would get wrong for
+      most of the world
+- [ ] 7.3 **The twenty-six named widgets.** `widgets.h` has the reconciler, virtualisation and data
+      binding — *"the machinery every widget is made of"* — and not one widget
+- [ ] 7.4 Animation and transitions actually evaluated (`transition-duration` is parsed and not
+      played: no keyframe player, no spring, no stagger); the immediate-mode API; world-space and
+      surface-space UI, UI materials and effects, and the render-target capture the budget's
+      blur-behind rung needs — this module *"produces a primitive stream and does not submit it"*
+- [ ] 7.5 **The forcing functions, which are the row's own requirement and not a nicety.**
+      `ui-system` is explicit that an interface system with no demanding first-party consumer decays,
+      and names them: the developer console, the debuggers, the profiler overlays, the settings
+      interface and the conformance suite. **`cy::ui` has exactly one consumer in this tree —
+      `samples/08-vertical-slice` — and the editor is not one**, because the editor is a Rust
+      application with its own chrome. So the consumer that makes this row Complete is section 11's
+      game, and the console and settings interface are built in it
+- [ ] 7.6 `rendering-2d`'s remaining requirements, read first-hand
+
+## 8. The graph consumers finished — `visual-scripting`, `gameplay-abilities-and-effects`, `ai-system`, `animation-and-skinning`, `camera-system`, `sequencing-and-cinematics` → C
+
+**Four of M8.b's and M8.c's tasks in these rows are unchecked and they are this rung's opening
+position**, not a discovery: M8.b 2.4 (a lowering per consumer), 2.5 (execution backends, async
+graphs, semantic merge and debugging), 7.1 and 7.2 (compiled timelines, exact time, bindings, tracks
+and authority; batched dispatch, arbitration, capture and restore, seek and skip, preload plans).
+
+- [ ] 8.1 **The editor half these rows have been waiting on.** `src/graph/README.md`'s section
+      heading is the whole argument — *"A graph the engine authors, because the editor cannot yet
+      save one"* — and `locomotion.h` is a state machine written in C++ because there is no graph
+      asset. Section 3.4's one canvas is what closes it
+- [ ] 8.2 M8.b 2.4 and 2.5: the lowerings and the execution backends, per the verdict M8.b's spike
+      wrote — one authoring layer, one shared expression core, a lowering each, **all compiling and
+      none interpreting**
+- [ ] 8.3 M8.b 7.1 and 7.2, which are `sequencing-and-cinematics`' and `camera-system`'s
+- [ ] 8.4 **`sequencing-and-cinematics`' six recorded absences**, which `src/sequencing/README.md`
+      lists because *"a specification cell that says Working over a gap nobody wrote down is how a
+      capability rots"*: source form, semantic diff and three-way merge (section 4.3); replication and
+      late join; persistence (**`PersistenceClass` is declared and carried and no save format writes
+      it — see `design.md` §6, this is M11.a's re-scoped `save-and-persistence`**); replay and
+      rollback reconciliation; reverse playback of channels; and track-kind extension by plugins
+      (section 2)
+- [ ] 8.5 **`animation-and-skinning`'s eleven recorded absences**, likewise listed in
+      `src/animation/README.md` against the row's thirty requirements: clip streaming, cubic
+      interpolation stored with tangents, motion matching and pose search, animation warping, the
+      control rig as an asset, full-body IK and FABRIK and CCD and spline IK and spring bones and
+      foot placement (**each refused by name today by `solve_unimplemented()`, with
+      `test_ik.cpp` asserting the refusal — so each is a check that goes red the day it is
+      answered**), physics animation, facial animation, tweens, the rigging workspace (section 3.3)
+      and animation diagnostics as a view
+- [ ] 8.6 `visual-scripting`, `gameplay-abilities-and-effects` and `ai-system` read requirement by
+      requirement at Complete grade. **`design.md` §4 says why these three are the rows most likely
+      to surprise this rung**, and it is not because anything has refused them
+
+## 9. Physics, navigation and scripting — `physics` → C, `navigation` → C, `swift-scripting` → C
+
+- [ ] 9.1 **Constraints and the character controller.** `Joint` and `CharacterBody` are registered
+      and counted in `BridgeStatistics` and **nothing is created**, because neither backend maps them
+      and both report `Capabilities::constraints == false`. A bridge that tried would fail at every
+      world with a diagnostic about a component the author was entitled to add
+- [ ] 9.2 `navigation`'s remaining requirements, read first-hand. The row carries no named blocker
+- [ ] 9.3 **`swift-scripting`'s shipping configuration**: the static, whole-module,
+      cross-module-optimised half of the two the specification requires, of which only the dynamic,
+      hot-reloadable one is exercised
+- [ ] 9.4 **The Swift toolchain pin**, which the requirement asks for *"per engine release and
+      verified in CI"*, in `deps/host-tools.toml` — where `just env-doctor`'s Swift check already
+      says it will read a `swift` entry when one lands. **This half of the row is a build-system
+      requirement wearing a scripting row's name and it cannot be judged before M11.d pins the
+      matrix**; `design.md` §4 names it as the likeliest demotion on this rung
+- [ ] 9.5 `@Node(path)` resolving to something: ABI 1.0 has no node entry, and the wrapper is the
+      seam. The tree callbacks — `onEnterTree`, `onReady`, `onEnable`, `onDisable`, `onUpdate`,
+      `onExitTree` — declared in `behaviourCallbacks` and driven rather than declared. A chunk source
+      for the generator. `CyStage` and `CySeverity` appended to `CyInterface` so the generator owns
+      both enumerations rather than the binding restating them — which is the fix for a defect that
+      already shipped once, six enumerators against the engine's three, every `Log.info` arriving as
+      an error on a green run
+
+## 10. Inference — `ml-inference`, and the deferral this rung predicts
+
+**This section's honest outcome may be a recorded deferral, and that is stated before the work rather
+than at the gate.** See `design.md` §4.
+
+- [ ] 10.1 **Does the game want inference?** Section 11's game is the only thing on this rung that
+      would exercise the row. If its AI does not want a model, a Complete cell over an unexercised
+      runtime is a claim nothing supports
+- [ ] 10.2 If it does: the AI graph node that binds a model — *"`ml-inference` requires CyberML to be
+      **usable** from the AI graph, and `ai-system` SHALL NOT depend on it"*, so the node is the
+      cook's resolution rather than a link, and `cy::ml::pinning_of` is the half that already exists.
+      Plus the cook driver call that refuses a graph binding a non-pinned model
+- [ ] 10.3 If it does: the Swift surface `ml-inference`'s gameplay-API requirement asks for, which is
+      `native-abi`'s work over a C++ surface deliberately kept small enough to bind
+- [ ] 10.4 **If it does not: an explicitly recorded deferral with its re-entry point at M11.e**, with
+      what is unmet, why, and the condition that brings it back — the three things
+      `implement-m11e-ship`'s proposal says a deferral needs to be honest. **Not a Complete cell**
+
+## 11. The artefact — `samples/11b-game`, a real game
+
+**Fifteen samples and not one of them is a game.** Each proves one slice — `03-first-light` a frame,
+`04-character` a character, `06-open-world` streaming and saving, `08-vertical-slice` a playable
+slice, `09-multiplayer` four peers, `10-world` an environment — and `samples/11-ship`, which M11.d and
+M11.e own, is a packaging proof that would prove its recipe over an empty directory just as well.
+
+**This is the only artefact that can judge twenty-four authoring and gameplay rows at once**, and it
+is the forcing function `ui-system` requires by name (task 7.5).
+
+- [ ] 11.1 **A small complete game**: a start, a loop, a way to win or lose, an end, and a way back to
+      the start. Not a slice and not a scene
+- [ ] 11.2 **Authored through the editor, not assembled in C++.** Its content lives in the project's
+      own files — worlds, prefabs, graphs, sequences, input assets, interface documents, localisation
+      tables — and the sample's C++ is an entry point and a rules module, not a scene builder
+- [ ] 11.3 **And the artefact states which is which, checkably.** The sample reports its own split —
+      the authored content files it loads against the lines of its own code that construct scene
+      content — and the check fails when the sample constructs in code what it claims to have
+      authored. See `specs/testing-and-quality/spec.md`. **This is the task that stops this rung
+      telling itself the pleasant version of its own result**
+- [ ] 11.4 Every authored kind this rung built is exercised by it: a visual script, an ability with
+      effects, an animation graph authored as an asset rather than in `locomotion.h`, a camera rig, a
+      sequence, a navmesh, an interface with the widget set, text in more than one script, a 2D
+      element, an input asset, and a plugin
+- [ ] 11.5 **The three play modes are demonstrated on it**, which is what makes section 3.1 a claim
+      rather than an interface: the same game entered `InEditor`, run `SeparateProcess`, and — or, if
+      no second machine is available, reported NOT EVALUATED with the mechanism the ledger already
+      has — `RemoteDevice`
+- [ ] 11.6 Runs from a single recipe; a recorded gap exits non-zero rather than printing a different
+      number into a log
+- [ ] 11.7 **Capture it.** A screenshot under `docs/design/images/`, and the picture is the game as a
+      player sees it. **It is not the beauty shot**: M11.c owns that, this rung's renderer is
+      whatever M11.c has not yet done, and a sample game that looks unfinished and says so is more
+      honest than one that borrows a claim from the rung above it
+
+## 12. Records and gates
+
+- [ ] 12.1 Write `tools/roadmap/milestones/m11b.toml`; declare `milestone-m11b` in `gates.toml` and
+      raise `selftest.MINIMUM_CRITERIA`. **Every criterion needs a `ci_job` — `criteria.py` rejects
+      one without it — and must be able to go red.** Where this host cannot judge a claim, the
+      criterion reports NOT EVALUATED through `requires`/`where` rather than passing on evidence that
+      does not support it
+- [ ] 12.2 **Re-point, do not delete, the inherited gaps this rung inherits from M11's proposal.**
+      None of the seven `known_gap_closes = "m11"` entries is this rung's to close — they are M11.a's
+      — but a gap re-pointed at the wrong rung is a gap nobody owns. Confirm each still names the
+      rung that closes it
+- [ ] 12.3 The successor criterion. **`m11c-open` in the double-star glob form the ladder has used
+      since M8.c would pass the moment it is written**, because `openspec/changes/implement-m11c-image/`
+      already carries a proposal — the five rung changes were opened together. A criterion that
+      cannot fail is not a criterion, so this rung's handover check must be something else: that
+      M11.c's `tasks.md` exists and that M11.b's own findings reached it. **The shape of a
+      handover criterion between rungs opened together is a ladder-mechanics question and
+      `implement-m11-reach`'s task 0.1 is where it is answered — M11.a owns that.** See `design.md` §6
+- [ ] 12.4 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
+      the plan-consistency checks over them. **Recording a tier is this rung's closing gate, not this
+      phase**
+- [ ] 12.5 Move `ci.yml`'s milestone job to `m11b` in the same commit that flips the gate green, and
+      not before: the job runs on every push to `main`
+- [ ] 12.6 **Thirteen dependency changes archived**, or the ones that did not land named with the row
+      they block
+
+## 13. The gate
+
+- [ ] 13.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
+- [ ] 13.2 **Every criterion executes something and can fail** — break what it checks and prove it
+      goes red. This is the check M9's gate added after a criterion passed 44 of 44 with its
+      enforcement point deleted, and M10's gate used it to refuse four claims
+- [ ] 13.3 **Adversarial pass on this rung's own invariants**: select a play mode that is not
+      available and confirm it refuses by name rather than falling back; reach past the public plugin
+      API from a built-in editor and confirm the build fails; give two authored nodes the same name
+      and confirm the document model keeps them distinct; request a cooked texture from a cache built
+      without an encoder and confirm it re-cooks; delete an authored content file the game claims and
+      confirm the game fails rather than falling back to code
+- [ ] 13.4 **Twenty-four rows read requirement by requirement against what the code supports**, not
+      against what this task list claimed. Three of them arrive at this gate from Seed, which is two
+      tiers in one rung, and a gate that reads a specification and feels better about it is the exact
+      failure M10's gate refused twice
+- [ ] 13.5 **The spike's failure budget reconciled against what it actually spent** (task 0.4), and
+      `design.md` §1 updated with the result rather than the forecast
+- [ ] 13.6 **Demotions, if any, recorded with their re-entry point** rather than absorbed. A row that
+      does not fit moves to a named rung with what is unmet, why, and the condition that brings it
+      back. `design.md` §4 predicts which rows those are; the gate's job is to compare the prediction
+      with the outcome and record both

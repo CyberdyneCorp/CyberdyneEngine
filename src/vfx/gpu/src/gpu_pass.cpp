@@ -8,9 +8,10 @@
 #include <cstring>
 
 // THE BUILD'S OWN FEATURE TABLE. `CY_SHADER_SLANG` is defined by src/vfx/gpu/CMakeLists.txt only in
-// the ON case, so `#if CY_SHADER_SLANG` is `-Werror=undef` in Profile and Shipping — where the option
-// defaults off. This header defines it either way, which is the arrangement every sibling compute
-// module already relies on and the reason they build in all four profiles and this one did not.
+// the ON case, so `#if CY_SHADER_SLANG` is `-Werror=undef` in Profile and Shipping — where the
+// option defaults off. This header defines it either way, which is the arrangement every sibling
+// compute module already relies on and the reason they build in all four profiles and this one did
+// not.
 #include <cy_features.h>
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG

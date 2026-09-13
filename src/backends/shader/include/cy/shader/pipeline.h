@@ -9,25 +9,27 @@
 // generic fallback for any state not yet compiled, and compiles the missing state asynchronously.
 // **Blocking the frame to compile a pipeline state does not occur in shipping builds.**
 //
-// --- WHY THIS LIVES IN THE SHADER MODULE AND NOT IN THE RENDERER ----------------------------------
+// --- WHY THIS LIVES IN THE SHADER MODULE AND NOT IN THE RENDERER
+// ----------------------------------
 //
 // Because the specification's third scenario — "Every pipeline benefits" — is the whole point: a
 // project using the visibility-buffer pipeline or a custom pipeline gets the same manifest, warming
 // and fallback as Forward+. A manager that lived in the forward renderer would be one the second
 // renderer reimplements, and the reimplementation is where the fallback stops working.
 //
-// --- WHAT THIS MODULE OWNS AND WHAT IT DOES NOT ----------------------------------------------------
+// --- WHAT THIS MODULE OWNS AND WHAT IT DOES NOT
+// ----------------------------------------------------
 //
-// It owns the **key**, the **manifest**, the **policy** and the **statistics**. It creates no device
-// object: `PipelineBuilder` is the interface the RHI implements, and everything here is expressed
-// over opaque `PipelineHandle`s the builder mints. That is what keeps Vulkan out of this module
-// entirely — and it is also what makes the whole of the warming and fallback behaviour testable with
-// a fake builder and no GPU, which is exactly how the tests beside this header work.
+// It owns the **key**, the **manifest**, the **policy** and the **statistics**. It creates no
+// device object: `PipelineBuilder` is the interface the RHI implements, and everything here is
+// expressed over opaque `PipelineHandle`s the builder mints. That is what keeps Vulkan out of this
+// module entirely — and it is also what makes the whole of the warming and fallback behaviour
+// testable with a fake builder and no GPU, which is exactly how the tests beside this header work.
 //
 // A pipeline state key includes, per the specification: the shader stages, render target formats,
 // depth and stencil state, blend state, rasteriser state, sample count, and the permutation key.
-// `PipelineStateKey` below has a field for each, and `hash()` folds all of them — a key that omitted
-// one would serve a pipeline built for a different render target format, which is undefined
+// `PipelineStateKey` below has a field for each, and `hash()` folds all of them — a key that
+// omitted one would serve a pipeline built for a different render target format, which is undefined
 // behaviour that usually looks like a corrupted frame rather than a crash.
 
 #include <cy/core/base/expected.h>
@@ -104,8 +106,8 @@ struct PipelineStateKey {
     [[nodiscard]] ContentHash hash() const noexcept;
 };
 
-/// An opaque handle onto a device pipeline. Minted by the builder; meaningless to this module beyond
-/// equality and validity, which is what keeps the RHI's types out of this header.
+/// An opaque handle onto a device pipeline. Minted by the builder; meaningless to this module
+/// beyond equality and validity, which is what keeps the RHI's types out of this header.
 struct PipelineHandle {
     u64 value = 0;
 
@@ -201,8 +203,8 @@ struct PipelineStats {
     /// States warmed from the manifest before the first frame.
     u64 warmed = 0;
     u64 total_build_ns = 0;
-    /// Pipelines built on the render thread while a frame was waiting. **This number must be zero in
-    /// a shipping build**, and it is the one the specification's requirement is measured by.
+    /// Pipelines built on the render thread while a frame was waiting. **This number must be zero
+    /// in a shipping build**, and it is the one the specification's requirement is measured by.
     u64 blocking_builds = 0;
 };
 
@@ -221,9 +223,9 @@ public:
 
     /// Build every state in the manifest, reporting progress.
     ///
-    /// `progress` is called with (completed, total) after each state, which is what a loading screen
-    /// needs; it may be null. Warming continues past a failure and reports the count, because one
-    /// state a driver refuses should not stop a game from loading.
+    /// `progress` is called with (completed, total) after each state, which is what a loading
+    /// screen needs; it may be null. Warming continues past a failure and reports the count,
+    /// because one state a driver refuses should not stop a game from loading.
     using ProgressFn = void (*)(void* context, u32 completed, u32 total);
     [[nodiscard]] Status warm(const PipelineManifest& manifest, ProgressFn progress,
                               void* context) noexcept;

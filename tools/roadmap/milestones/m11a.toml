@@ -1,0 +1,640 @@
+# M11.a — Foundations: the exit criteria of the first of M11's five rungs.
+#
+# WHY THIS FILE EXISTS AT ALL, which is the same sentence as "why M11 is five rungs".
+# `implement-m11-reach` task 0.1 answered the question the capability matrix had carried since M6.
+# M11 completed SIXTY-FIVE of seventy-six capabilities behind ONE closing artefact, seventeen of them
+# arriving at M10's gate because a gate refused a claim rather than because anyone planned the work
+# there. M8's split rule is about RISK; this one is about JUDGEMENT — a milestone whose scope cannot
+# be judged by one closing artefact is several milestones sharing a number, because a gate that
+# cannot name what it is looking at is not a gate.
+#
+# THIS RUNG IS THE DEBTS. Seven declared gaps named `m11` as the rung that closes them; six now name
+# `m11a` and one names `m11e`, and every one of them is a criterion that RUNS and FAILS today. The
+# rule they are under has not changed: a declared gap that starts PASSING fails the ledger until its
+# declaration is deleted, so none of the seven can be quietly fixed and none can be quietly forgotten.
+#
+# THE ORDER MATTERS AND IS NOT A PREFERENCE. Nothing downstream of this rung is credible while the
+# gaps are open: an editor rung authoring content into a world that costs 122 ms a frame against
+# 16.7 is authoring into a world nobody can ship, and an image rung tuning a picture that no shader
+# samples the environment through is tuning the wrong thing.
+#
+# WHAT IS NOT A CRITERION HERE. The spike — port the 63.0 ms substrate band to a shader and measure
+# it before scoping the other two — is not one: `docs/roadmap/risks.md` says a spike may not be
+# merged and its only deliverable is a decision, consumed in design.md §1 where the rows that depend
+# on it can read it. What IS checkable is the shader the spike produces, and `field-sampler-written`
+# below is that.
+
+schema = 1
+id = "m11a"
+name = "Foundations"
+artefact = "the M10 world demo inside a 16.7 ms budget on a device, with the environment substrate sampled in a shader rather than re-sampled at every terrain vertex on the processor, the world streaming rather than resident, and the ledger reporting each of the seven inherited gaps either closed with its declaration deleted or still red with the reason it did not close here."
+
+notes = [
+    "`just roadmap-milestone m11a` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "THE STATIC GATES ARE SPELLED HERE EXACTLY AS THE LEDGERS BELOW SPELL THEM, and that is deliberate: `criteria.fingerprint` collapses declarations that run the same command under the same conditions, so `specs`, `format`, `lint`, `layering`, `workflows`, `generated-code`, `roadmap-record`, `plan-consistency` and `four-profiles` are ONE check each however many rungs declare them. A rung that re-worded a `run` string would double the work and multiply its own failure probability by the number of ledgers naming it, which is the defect `_check_flat_ledger` exists to catch.",
+    "tasks 9.3 — the handover criterion. `m11b-open` below is NOT `kind = \"path\"` over `openspec/changes/**/*m11b*/proposal.md`, and the reason is the split itself: all five rung changes were opened together, so that path exists ALREADY and the criterion would pass the moment it was written. A criterion that cannot go red is not a criterion. The double-star glob is kept as the search — the same shape, matching an open change and an archived one alike — and what it asks is ENTRY rather than existence: the next rung's change exists AND somebody has deliberately entered it. `implement-m11-reach` task 0.1 records that decision for all five rungs, so the ladder has one handover check rather than five different ones.",
+    "THE SEVEN INHERITED GAPS ARE NOT RE-DECLARED HERE WITH THE SAME `run` STRINGS. They live in m8c.toml, m9.toml and m10.toml, they are in the permanent set this ledger inherits once those gates are green, and they still run on every evaluation. Restating one here would collapse into the original declaration and report nothing new. What this file declares instead is the STRONGER claim each gap's closure is supposed to produce — a sampler with consumers rather than a non-zero count of shader modules, a budget held across a cycle rather than a single measurement — so that closing a gap and satisfying this rung are two different bars.",
+    "tasks 10.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "`just quality-requirements` DOES NOT EXIST YET AND THE CRITERIA THAT CALL IT WILL SAY SO. `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the tool that checks it is one of that row's four absent gates — the row is M11.d's. It is named here rather than avoided because the mapping IS the Complete-grade claim these rows are being judged on: whichever rung reaches it first writes the tool, and M11.d is where it is finished. A criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red.",
+]
+
+# --- The static gates, shared with every other rung -----------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set, including the four capabilities this rung's change writes deltas against"
+source = "tasks 9.4"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained a shader-side field sampler, the sky's write path, a streaming binder, the save inspector and the Steam Audio simulation path"
+source = "tasks 10.1"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean, including the cognitive-complexity limits this project holds systems code to — which a field sampler bound through the GPU scene and a save inspector are exactly the kind of code to breach"
+source = "tasks 10.1"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with the field sampler in it: the module that samples a field on a device does not give `cy::environment` a dependency on the renderer, which is the invariant M10 established and the one this rung is most likely to break"
+source = "tasks 10.1, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree — which is what makes the new cross-leg digest job checkable rather than asserted, and what goes red the moment `milestone-m11a` is green above the newest ledger any workflow evaluates"
+source = "tasks 9.6, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which matters here because this rung adopts two dependencies, Steam Audio and an AEAD, and an adoption that does not reach the manifest is the shape of an unattributed one"
+source = "tasks 10.1, thirdparty-dependencies"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it"
+source = "tasks 9.4"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the four plan documents agree with the five M11 columns in them, every ledger under milestones/ has a floor recorded, the ladder places m11a between m10 and m11b, and a declared gap that started passing fails"
+source = "tasks 9.2, 9.4, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each. This rung's headline number is a TIMING, and a timing that holds in one profile and not the others is a tuning rather than a fix"
+source = "tasks 10.1"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# --- Section 1: the device-side field sampler, which three of the seven gaps point at --------------
+#
+# `m10:fields-sampled-on-a-device` asks whether ANY `.slang` module samples an environment field, and
+# the answer today is zero of the twenty-six in the tree. That criterion goes green the moment one
+# exists. This rung's bar is higher on purpose: the sampler has to agree with the processor's, and
+# the consumers the requirement names have to use it, because a shader nobody binds is a file.
+
+[[criterion]]
+id = "field-sampler-written"
+describe = "`cy/field.slang` exists and is written against the buffer layout `gpu.h` already fixes. `src/environment/`'s README says this module is owed by the first renderer-facing row to sample a field in a shader, and no renderer-facing row has: the fifteen modules under src/rendering/shaders/cy/ are brdf, cluster, color, frame, fullscreen, globals, light, material, noise, packing, particle, sampling, shadow, tonemap and view"
+source = "tasks 1.1, environment-fields (CPU and GPU access), src/environment/README.md"
+kind = "command"
+run = '''
+set -eo pipefail
+module=src/rendering/shaders/cy/field.slang
+if [ ! -f "$module" ]; then
+    echo "no $module — the shader-side environment-field sampler does not exist"
+    echo "  modules present: $(ls src/rendering/shaders/cy/ 2>/dev/null | tr '\n' ' ')"
+    exit 1
+fi
+echo "$module exists, $(wc -l < "$module") line(s)"
+grep -q "FieldImageHeader\|field_image\|kFieldImage" "$module"
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "field-sampler-consumed"
+describe = "the sampler is BOUND rather than written: at least two shader modules outside `field.slang` itself sample a field through it. A shader module nothing includes is a file, and `Cloud shadows` requires the field to be consumed by terrain, foliage, water and illumination — four consumers, of which this asks for two before a device is involved"
+source = "tasks 1.1, 1.3, environment-fields, atmosphere-sky-and-clouds (Cloud shadows)"
+kind = "command"
+run = '''
+set -eo pipefail
+users=$(grep -rl "cy/field.slang\|cy.field" --include='*.slang' src/ 2>/dev/null | grep -v "cy/field.slang" || true)
+count=$(printf '%s' "$users" | grep -c . || true)
+echo "$count .slang module(s) include the field sampler: ${users:-none}"
+test "$count" -ge 2
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "field-device-agrees-with-cpu"
+describe = "the device sampler and the processor sampler return the same value at the same positions. `integration.environment_gpu` proves the decode agrees on the processor TWICE — one packer and a second independent decoder — and that is evidence about a layout rather than about a device. This case samples the same field at the same points through both paths and compares"
+source = "tasks 1.1, environment-fields (CPU and GPU access)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_environment_gpu"
+test -x "$binary" || { echo "no $binary — the suite integration.environment_gpu does not exist"; exit 1; }
+filter='the device sampler agrees with the processor*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.environment_gpu any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+requires = "gpu"
+reason = "sampling a field in a shader needs a graphics device; on a machine without one the claim is reported NOT EVALUATED rather than passed, because the processor half already passes and would make a green look like agreement"
+ci_job = "milestone-m11a"
+
+# --- Section 2: the frame budget, which is the honest headline of M10's artefact -------------------
+#
+# `m10:world-frame-budget` measures about 122 ms a frame with a device drawing and about 106 ms
+# headless, against 16.7 ms — seven times over either way — nearly flat across the day/night cycle,
+# with the three largest bands in the same order in both takes. THE CRITERIA HERE ARE TWO, AND THE
+# COMPANION WITHOUT A DEVICE IS M8.c's RULE KEPT: nothing a milestone claims should be judgeable only
+# on the machines with a GPU in them.
+
+[[criterion]]
+id = "world-budget-headless"
+describe = "the world demo's headless frame cost is inside 16.7 ms across a full day/night cycle, at a seed the tuning did not use. Headless was 106 ms at M10, so this is the same claim the device criterion makes with the draw removed — and it is the half every machine can judge"
+source = "tasks 1.2, ROADMAP M11.a exit criteria"
+kind = "command"
+run = '''
+set -eo pipefail
+just run-sample 10-world --headless --seed 20260913 --cycle --budget-ms 16.7
+'''
+timeout_s = 3600
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "world-budget-on-a-device"
+describe = "and with a device drawing. The three bands the gap names — the substrate re-sampled at every terrain vertex at 63.0 ms, the cloud march at 23.2 ms and water's foam field at 12.0 ms — are all three of them work a shipping engine does in a shader, and this is the measurement that says whether moving them there did what the spike predicted"
+source = "tasks 1.2, ROADMAP M11.a exit criteria"
+kind = "command"
+run = '''
+set -eo pipefail
+just run-sample 10-world --seed 20260913 --cycle --budget-ms 16.7
+'''
+requires = "gpu"
+reason = "the measurement with a device drawing needs one; `world-budget-headless` above carries the same claim on every machine, which is M8.c's rule that no claim is judgeable only where a GPU is"
+timeout_s = 3600
+ci_job = "milestone-m11a"
+
+# --- Section 3: the sky's write path, and the consumers the requirement names ----------------------
+
+[[criterion]]
+id = "sky-field-consumed-outside-the-sky"
+describe = "something outside `src/rendering/sky/` reads the cloud shadow field. `m10:sky-field-round-trip` is about the write path — `update` reports writing tiles darker than 0.5 and `sample` returns the declared 1.0 at all twenty-five points inside `radius_metres` — and this is the half that gap does NOT check: the requirement says the field is consumed by terrain, foliage, water and illumination, and at M10 nothing outside that one directory read it at all"
+source = "tasks 1.3, atmosphere-sky-and-clouds (Cloud shadows)"
+kind = "command"
+run = '''
+set -eo pipefail
+readers=$(grep -rln "cloud_shadow\|CloudShadowField" --include='*.cpp' --include='*.h' src/ \
+    | grep -v "^src/rendering/sky/" || true)
+count=$(printf '%s' "$readers" | grep -c . || true)
+echo "$count file(s) outside src/rendering/sky/ read the cloud shadow field:"
+printf '%s\n' "${readers:-  none}"
+test "$count" -ge 2
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "sky-field-round-trips"
+describe = "the two assertions parked in `src/rendering/sky/tests/test_cloud_shadows.cpp` are restored as the check and pass: a producer that reports writing darkened tiles is read back darkened. The parked assertions are the evidence that the defect was known and the test was loosened rather than the code fixed, so restoring them is the closure and not a new test"
+source = "tasks 1.3, src/rendering/sky/tests/test_cloud_shadows.cpp"
+kind = "command"
+run = '''
+set -eo pipefail
+parked=$(grep -c "parked\|M11\|disabled" src/rendering/sky/tests/test_cloud_shadows.cpp || true)
+echo "$parked line(s) in test_cloud_shadows.cpp still mention a parked or deferred assertion"
+test "$parked" -eq 0
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+ctest --test-dir "$d" -R '^unit.render_sky$' --output-on-failure
+'''
+ci_job = "milestone-m11a"
+
+# --- Section 4: one `vegetation-potential` --------------------------------------------------------
+#
+# A modelling decision across two rows before it is a code change. `weather-and-wind` owns macro
+# ecosystem state including vegetation density; `FoliageSystem::register_producer()` declares and
+# claims a `vegetation` field of its own. Whether those are one quantity with two names is the
+# question, and `integration.standard_fields` goes red on purpose the day it is answered, because it
+# asserts the KNOWN state rather than the desired one.
+
+[[criterion]]
+id = "both-producers-register"
+describe = "a project that registers `cy::foliage`'s and `cy::weather`'s producers STARTS. Today `vegetation-potential` is declared UNorm8/Static/Presentation-side by one and UNorm16/SlowlyVarying/Authoritative by the other, `FieldRegistry::declare()` refuses the second in either order, and the project fails at startup. The case composes both in both directions, because a fix that works in one order is a fix to the order"
+source = "tasks 1.4, environment-fields (One producer per field)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_standard_fields"
+test -x "$binary" || { echo "no $binary — the suite integration.standard_fields does not exist"; exit 1; }
+filter='both producers register in both directions*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.standard_fields any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11a"
+
+# --- Section 5: the one CI job that answers three criteria -----------------------------------------
+#
+# `m9:lockstep-cross-platform`, `m10:pcg-regeneration-cross-platform` and
+# `m10:pcg-gpu-domain-agreement` each look for exactly one shape — a job that publishes one leg's
+# digest and compares it with another's — and each fails or reports NOT EVALUATED for want of it. The
+# legs already exist: ci.yml's matrices include linux-arm64, macos-arm64 and windows-arm64 and they
+# run independently. ONE JOB ANSWERS THREE CRITERIA, and building it once rather than three times is
+# most of the reason this rung exists.
+
+[[criterion]]
+id = "cross-leg-digest-job"
+describe = "a continuous-integration job publishes one leg's digest and downloads another's to compare them. The check reads the workflows rather than trusting a name: a job that uploads an artefact and never downloads one from a second leg is a publication, not a comparison"
+source = "tasks 2.1, simulation-and-determinism (CrossPlatform), procedural-content-generation"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, re, sys
+comparing = []
+for path in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+    text = path.read_text(encoding="utf-8")
+    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
+        name = block.strip().split(":", 1)[0].strip()
+        lowered = block.lower()
+        if "upload-artifact" in lowered and "download-artifact" in lowered and "digest" in lowered:
+            comparing.append(f"{path.name}:{name}")
+print(f"{len(comparing)} job(s) publish one leg's digest and compare another's: {comparing or 'none'}")
+if not comparing:
+    print("  three criteria in three ledgers look for this one job: m9:lockstep-cross-platform,")
+    print("  m10:pcg-regeneration-cross-platform and m10:pcg-gpu-domain-agreement. The legs exist")
+    print("  and run independently; the comparison between them does not.")
+sys.exit(0 if comparing else 1)
+CHECK
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "lockstep-agrees-across-architectures"
+describe = "and the digests AGREE. The job existing is one claim and the answer it returns is another: a disagreement between two architectures is a FINDING this rung reports, not a failure it hides, and the criterion exists to be capable of going red on it"
+source = "tasks 2.1, simulation-and-determinism (CrossPlatform)"
+kind = "command"
+run = "just test-determinism --compare-legs"
+where = "ci"
+reason = "this host has one architecture and one operating system, so the comparison cannot be made here at all; it is reported NOT EVALUATED rather than passed by a single-leg suite, which is the defect m9:lockstep-cross-platform was declared to avoid"
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "pcg-regenerates-across-architectures"
+describe = "a generated region reproduces bit-for-bit on a second architecture, and the GPU execution domain reproduces the CPU domain's output on more than one vendor's driver. Both were reported NOT EVALUATED at M10 for want of the job above; with the job they become answerable, and either answer is worth having"
+source = "tasks 2.1, procedural-content-generation (Deterministic derivation, Execution domains)"
+kind = "command"
+run = "just test-determinism --compare-legs --pcg"
+where = "ci"
+reason = "one host with one GPU vendor cannot compare two; `requires = \"gpu\"` would make this RUN here and PASS on one driver's floating-point behaviour, which is not the claim"
+ci_job = "milestone-m11a"
+
+# --- Section 6: the world that streams ------------------------------------------------------------
+
+[[criterion]]
+id = "world-streams"
+describe = "`samples/10-world` streams. It keeps the whole world resident today, meshes every terrain tile at level 0 and reports `MeshReport::stitched_vertices` as zero precisely so a reader can see that nothing streamed — which is why `world-partition-and-streaming`'s Complete cell was moved off M10 by its own gate. The check asks for tiles evicted and vertices stitched to a coarser neighbour, both of which are zero today"
+source = "tasks, world-partition-and-streaming, src/terrain/README.md"
+kind = "command"
+run = '''
+set -eo pipefail
+just run-sample 10-world --headless --seed 20260913 --stream-report | tee /tmp/cy-m11a-stream.txt
+grep -E "evicted: [1-9]" /tmp/cy-m11a-stream.txt
+grep -E "stitched_vertices: [1-9]" /tmp/cy-m11a-stream.txt
+'''
+timeout_s = 3600
+ci_job = "milestone-m11a"
+
+# --- Section 7: `save-and-persistence`, re-scoped before it is implemented -------------------------
+#
+# Demoted at M9 and again at M10, so by `delivery-roadmap`'s own rule it is MIS-SCOPED RATHER THAN
+# LATE and is re-scoped through a change against its own specification before it is recorded either
+# way. Read requirement by requirement the row is nine satisfied, three unmet, eight partial — eleven
+# pieces of work rather than the two M9 named. THE FOUR BELOW ARE THE FOUR THAT ARE CHECKABLE WITHOUT
+# JUDGEMENT; the rest are ordinary requirements the tier floor covers.
+
+[[criterion]]
+id = "save-inspector"
+describe = "a save can be inspected and diffed. `Save diagnostics and inspection` asks what is in a save, why a field is in it, and what changed between two of them; there is no inspector in the tree and no semantic diff"
+source = "save-and-persistence (Save diagnostics and inspection), src/save/README.md"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_save"
+test -x "$binary" || { echo "no $binary — the suite unit.save does not exist"; exit 1; }
+filter='a save is inspected*,a semantic diff*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.save any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "save-forbidden-patterns-checked"
+describe = "the ten forbidden save patterns are CHECKED. The specification says each `SHALL be checkable` and not one of them is checked by any tool, criterion or grep today, which is the difference between a rule and a sentence"
+source = "save-and-persistence (Forbidden save patterns)"
+kind = "command"
+run = '''
+set -eo pipefail
+checker=tools/save/check_forbidden.py
+test -f "$checker" || { echo "no $checker — not one of the ten forbidden save patterns is checked by anything"; exit 1; }
+python3 "$checker" --list | tee /tmp/cy-m11a-save.txt
+count=$(grep -c . /tmp/cy-m11a-save.txt || true)
+echo "$count forbidden save pattern(s) are checked"
+test "$count" -ge 10
+python3 "$checker"
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "save-benchmark"
+describe = "the large-world save benchmark the requirement says the engine SHALL maintain exists and has a committed baseline. `benchmarks/` holds `ecs`, `gameplay` and `micro` and no save entry at all"
+source = "save-and-persistence, benchmarks/baseline.json"
+kind = "command"
+run = '''
+set -eo pipefail
+test -d benchmarks/save
+python3 - <<'CHECK'
+import json, sys
+baseline = json.load(open("benchmarks/baseline.json"))
+text = json.dumps(baseline)
+present = "save" in text
+print("benchmarks/baseline.json carries a save entry:", present)
+sys.exit(0 if present else 1)
+CHECK
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "save-has-an-engine-consumer"
+describe = "something in the engine above `src/save/` links `cy::save`. The only thing outside it that does today is `samples/06-open-world`, which is where the ordered load pipeline and the ninety-line translation between `world::PersistenceOverlay` and `save::Overlay` live — a sample standing in for an engine module is the shape of a capability that was never integrated"
+source = "save-and-persistence, src/save/README.md"
+kind = "command"
+run = '''
+set -eo pipefail
+users=$(grep -rl "cy::save" --include=CMakeLists.txt src/ | grep -v "^src/save/" || true)
+count=$(printf '%s' "$users" | grep -c . || true)
+echo "$count engine module(s) above src/save/ link cy::save:"
+printf '%s\n' "${users:-  none}"
+test "$count" -ge 1
+'''
+ci_job = "milestone-m11a"
+
+# --- Section 8: audio, which is a dependency adoption before it is a backend ----------------------
+
+[[criterion]]
+id = "steam-audio-simulates"
+describe = "`-D CY_AUDIO_STEAM_AUDIO=ON` configures, builds, and `SteamAudioBackend::simulate` returns a result rather than `NotImplemented`. M8.c measured the whole cost rather than guessing at it — four upstream dependencies and an ABI flag that blocks both pinned compilers — and `m8c:steam-audio-configures` is the gap that has named it ever since. THIS IS THE ROW THIS RUNG IS MOST LIKELY TO DEFER, and if the ABI flag holds, the honest outcome is a recorded deferral with its re-entry point rather than a Complete cell over a backend that returns NotImplemented"
+source = "tasks, audio, deps/manifest.toml"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_audio_acoustics"
+test -x "$binary" || { echo "no $binary — the suite unit.audio_acoustics does not exist"; exit 1; }
+filter='steam audio simulates*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.audio_acoustics any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11a"
+
+# --- Section 9: the four rows whose Working tier no criterion evaluates ----------------------------
+#
+# `m9:record-matches-plan-history` now closes at M11.e, because it cannot pass until the last of its
+# four rows is evaluated AND recorded, and two of the four are M11.d's rows and two are M11.e's. What
+# THIS rung owes is the first half: criteria that EVALUATE the rows, so that the tier a later rung
+# records is one something re-checks. A tier written into a record nothing re-checks is the defect the
+# gap is about, one level down.
+
+[[criterion]]
+id = "the-four-rows-are-evaluated"
+describe = "each of `testing-and-quality`, `build-system-and-platforms`, `developer-workflow-and-just` and `thirdparty-dependencies` is BOTH named by a criterion that runs something AND expected above `seed` by some ledger's `expect_tiers`. Before the five M11 ledgers were written, `build-system-and-platforms` appeared in no ledger but m0.toml at all, and the only tier expectation naming any of the four was `m0:roadmap-tiers` expecting `seed` — which is a FLOOR and can never contradict a Working claim. **THIS CRITERION WENT GREEN THE DAY THE FIVE LEDGERS LANDED AND IT IS A REGRESSION GUARD FROM HERE ON**: it goes red again if the criteria that evaluate a row are deleted or its tier expectation is dropped. The other half of the defect — the tiers actually being RECORDED — is `m9:record-matches-plan-history`, which fails today and closes at M11.e"
+source = "tasks, delivery-roadmap (A recorded tier is evaluated by a criterion)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+rows = ["testing-and-quality", "build-system-and-platforms",
+        "developer-workflow-and-just", "thirdparty-dependencies"]
+# TWO HALVES, AND THE GAP IS ABOUT BOTH. A criterion that RUNS something and declares the row it is
+# evaluating — `source` is that declaration, and `describe` is prose, so only `source` is read; and a
+# tier expectation ABOVE `seed` somewhere, because `_check_tiers` treats an exit tier as a FLOOR and
+# a `seed` expectation can never contradict a Working claim. This criterion excludes itself: a check
+# that counted its own declaration would be the same defect one level up.
+RANK = {"seed": 0, "working": 1, "complete": 2}
+evaluating = {row: [] for row in rows}
+floors = {row: [] for row in rows}
+for path in sorted(pathlib.Path("tools/roadmap/milestones").glob("*.toml")):
+    for criterion in tomllib.loads(path.read_text(encoding="utf-8")).get("criterion", ()):
+        label = f"{path.stem}:{criterion['id']}"
+        if criterion["kind"] == "tiers":
+            for row, tier in criterion.get("expect_tiers", {}).items():
+                if row in rows and RANK.get(tier, 0) > RANK["seed"]:
+                    floors[row].append(f"{label} expects {tier}")
+            continue
+        if criterion["id"] == "the-four-rows-are-evaluated":
+            continue
+        for row in rows:
+            if row in str(criterion.get("source", "")):
+                evaluating[row].append(label)
+short = []
+for row in rows:
+    print(f"  {row}")
+    print(f"    runs:  {', '.join(evaluating[row]) or 'NOTHING RUNS FOR THIS ROW'}")
+    print(f"    floor: {', '.join(floors[row]) or 'NO LEDGER EXPECTS IT ABOVE seed'}")
+    if not evaluating[row] or not floors[row]:
+        short.append(row)
+sys.exit(1 if short else 0)
+CHECK'''
+ci_job = "milestone-m11a"
+
+# --- Section 10: determinism, replay and the network -----------------------------------------------
+#
+# 47 requirements between `replay-and-rollback` and `networking-and-replication` with NO NAMED
+# BLOCKER, which is its own kind of risk: nothing has refused them because nothing has read them end
+# to end at Complete grade.
+
+[[criterion]]
+id = "determinism-suites"
+describe = "the determinism, replay and network suites are green at Complete grade, including the adversarial cases M9's pass added: the four-player session under loss, reorder and duplication, and the reliable-ordered channel that stopped delivering at 25 % loss"
+source = "tasks, simulation-and-determinism, replay-and-rollback, networking-and-replication"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(determinism.simulation|integration.replay|integration.network)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 3 suite(s) match $pattern"
+test "$registered" -ge 3 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+timeout_s = 3600
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "network-at-complete-grade"
+describe = "every requirement of `networking-and-replication` maps to a test, a gate or a recorded exemption. The row has twenty-six requirements, was read end to end by nobody at Complete grade, and the check is the mapping rather than the suite"
+source = "tasks, networking-and-replication, testing-and-quality"
+kind = "command"
+run = "just quality-requirements networking-and-replication replay-and-rollback simulation-and-determinism"
+ci_job = "milestone-m11a"
+
+# --- Section 11: the record, the tiers, and the next rung ------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this rung's exit tiers: twelve rows from Working to Complete. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM, AND IT IS MEANT TO — M8.a's and M8.b's ledgers declared the identical forcing function and said so in their own notes. A row this rung demotes instead is recorded at Working with its reason, and the expectation below moves to the rung that takes it"
+source = "tasks 9.4, ROADMAP M11.a, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11a"
+
+[criterion.expect_tiers]
+environment-fields = "complete"
+terrain = "complete"
+water = "complete"
+foliage = "complete"
+weather-and-wind = "complete"
+procedural-content-generation = "complete"
+world-partition-and-streaming = "complete"
+save-and-persistence = "complete"
+simulation-and-determinism = "complete"
+replay-and-rollback = "complete"
+networking-and-replication = "complete"
+audio = "complete"
+
+# THE LADDER'S HANDOVER CHECK, AND WHY IT IS NOT `kind = "path"`.
+#
+# Every rung since M8.a has closed by opening the next one, checked by a `kind = "path"` criterion
+# over `openspec/changes/**/*<next>*/proposal.md`. The double-star glob is the point and m6.toml's
+# comment says why: a change lives at `openspec/changes/<name>/` while it is open and at
+# `openspec/changes/archive/<date>-<name>/` once it closes, so a pattern matching only an open change
+# would turn red on the day the next milestone closed.
+#
+# THE SPLIT BREAKS THAT CRITERION IN ONE SPECIFIC WAY. M11's five rung changes were opened TOGETHER,
+# so `openspec/changes/implement-m11b-authoring/proposal.md` exists already and a `kind = "path"`
+# criterion over it would pass the moment it was written and could never go red. A criterion that
+# cannot fail is not a criterion. So the glob is kept as the SEARCH — same shape, matching an open
+# change and an archived one alike — and what is asked of the result is ENTRY rather than existence:
+# somebody has deliberately started the next rung. `implement-m11-reach` task 0.1 records this for
+# all five rungs, so the ladder has one handover check rather than five different ones.
+[[criterion]]
+id = "m11b-open"
+describe = "the next rung's change exists — open, or closed and archived — AND has been deliberately entered, which after a simultaneous split is what 'opened' has to mean. That rung is M11.b, Authoring: the editor off Seed and a real game made in it, which `record.MILESTONES` carries after m11a"
+source = "tasks 9.3, 9.7, implement-m11-reach task 0.1, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+# the double-star glob the ladder has used since M8.a: openspec/changes/**/*m11b*/proposal.md
+dirs=$(find openspec/changes -type d -name '*m11b*' | sort)
+test -n "$dirs" || { echo "no change directory matching openspec/changes/**/*m11b*/"; exit 1; }
+entered=""
+for d in $dirs; do
+    test -f "$d/proposal.md" || continue
+    echo "  $d/proposal.md"
+    # A CHECKED TASK OUTSIDE SECTION 0, and the exclusion is the point. Section 0 is a rung's own
+    # decision-and-spike section, which the split that opened all five rungs could answer in advance;
+    # a checked box there says the rung was SCOPED. A checked box in the body says the rung was
+    # STARTED, which is the deliberate act this criterion is standing in for.
+    if [ -f "$d/tasks.md" ] && grep -qE '^- \[x\] [1-9]' "$d/tasks.md"; then
+        entered="$entered $d"
+    fi
+done
+if [ -z "$entered" ]; then
+    echo "the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+    echo "  The five rung changes were opened together by the split, so existence alone cannot go red;"
+    echo "  what this criterion asks is that the ladder continues as a deliberate act."
+    exit 1
+fi
+echo "entered:$entered"
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "ladder-carries-five-rungs"
+describe = "the split is applied in every place that reads it, and not in four of the five. `record.MILESTONES` carries m11a … m11e in position and no longer carries `m11`; each has a ledger, a gate and a floor in `selftest.MINIMUM_CRITERIA`; and the matrix has five M11 columns. M8's split found THREE readers that silently dropped its new columns, and this is the check that would have caught all three"
+source = "tasks 9.2, implement-m11-reach task 0.1, delivery-roadmap (An inserted milestone's rung is checked)"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import plan as plan_module
+import record as record_module
+import selftest as selftest_module
+rungs = ("m11a", "m11b", "m11c", "m11d", "m11e")
+problems = []
+order = record_module.MILESTONES
+if "m11" in order:
+    problems.append("record.MILESTONES still carries `m11` beside the five rungs")
+for rung in rungs:
+    if rung not in order:
+        problems.append(f"record.MILESTONES omits {rung}")
+    if not (pathlib.Path("tools/roadmap/milestones") / f"{rung}.toml").is_file():
+        problems.append(f"no ledger for {rung}")
+    if rung not in selftest_module.MINIMUM_CRITERIA:
+        problems.append(f"selftest.MINIMUM_CRITERIA has no floor for {rung}")
+gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
+declared = {gate.get("milestone") for gate in gates["gate"]}
+for rung in rungs:
+    if rung not in declared:
+        problems.append(f"gates.toml declares no milestone gate for {rung}")
+columns = plan_module.read_matrix().milestones
+for rung in rungs:
+    if rung not in columns:
+        problems.append(f"the capability matrix has no {rung} column")
+for problem in problems:
+    print(f"  {problem}")
+print(f"{len(problems)} problem(s) with the five-rung ladder")
+sys.exit(1 if problems else 0)
+CHECK
+'''
+ci_job = "milestone-m11a"

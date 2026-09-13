@@ -271,8 +271,8 @@ public:
     /// other producer's slots move and nothing is rebuilt.
     [[nodiscard]] Status retire_producer(ProducerHandle producer) noexcept;
 
-    [[nodiscard]] Expected<ProducerInfo, Error> producer_info(ProducerHandle producer) const
-        noexcept;
+    [[nodiscard]] Expected<ProducerInfo, Error> producer_info(
+        ProducerHandle producer) const noexcept;
 
     // --- Reservation -----------------------------------------------------------------------------
 
@@ -317,11 +317,9 @@ public:
     [[nodiscard]] Span<const GpuInstance> instances() const noexcept { return instances_.span(); }
     [[nodiscard]] const GpuInstance* instance(u32 slot) const noexcept;
 
-    /// The slot ranges written since `clear_dirty()`, coalesced. What the transfer that mirrors this
-    /// scene into a GPU buffer reads, and the reason publication is range-shaped.
-    [[nodiscard]] Span<const InstanceRange> dirty_ranges() const noexcept {
-        return dirty_.span();
-    }
+    /// The slot ranges written since `clear_dirty()`, coalesced. What the transfer that mirrors
+    /// this scene into a GPU buffer reads, and the reason publication is range-shaped.
+    [[nodiscard]] Span<const InstanceRange> dirty_ranges() const noexcept { return dirty_.span(); }
     void clear_dirty() noexcept { dirty_.clear(); }
 
     /// Slots that have ever been reserved — the high-water mark, which is the buffer size a backend

@@ -1,0 +1,495 @@
+# M11.c — Image: the exit criteria of M11's third rung.
+#
+# WHY THIS RUNG EXISTS, stated the way its proposal states it. Every renderer row is at Working and
+# THE DEMOS DO NOT LOOK LIKE A MODERN ENGINE: the world is untextured procedural geometry, the
+# virtual-geometry capture is a normals debug view, post-processing is untuned, and nothing has been
+# optimised so nothing has been tuned. There are six image files in the entire tree outside docs/ —
+# four editor identity marks and two golden references — so every material in every published
+# picture is a constant. `samples/10-world` links neither `cy::rendering-assembly` nor the post,
+# temporal, forward or shadow libraries, so the world picture never passes through tone mapping or
+# anti-aliasing at all. THE MECHANISMS ARE REAL AND GATED; THE OUTPUT IS NOT.
+#
+# WHY `material-compiler` AND `shader-system` COME FIRST AND THE ORDER IS NOT A PREFERENCE. Image
+# quality is expressed through them, and `rendering-global-illumination` cannot be Complete on a
+# material compiler that is not. The visual material editor is the panel M11.b built; this rung is
+# what stands behind it.
+#
+# WHY THE ARTEFACT IS AUTHORED THROUGH THE EDITOR. A shot assembled by hand in C++ proves the
+# renderer and nothing else. One authored through the editor M11.b finished proves both, and is the
+# honest demonstration of a usable engine. It must be published beside a statement of what was
+# authored and what the renderer produced, or it is a screenshot rather than evidence.
+#
+# ONE HARD CROSS-RUNG GATE, STATED RATHER THAN RISKED. `atmosphere-sky-and-clouds` cannot complete
+# here unless M11.a closes `m10:sky-field-round-trip`: this rung owns the illumination consumer of
+# the cloud shadow field and a consumer cannot be written against a sampler that returns its declared
+# default at every point. status.yaml already states the condition in as many words.
+
+schema = 1
+id = "m11c"
+name = "Image"
+artefact = "an art-directed beauty shot — real materials, tone mapping, anti-aliasing, tuned post — assembled THROUGH the editor M11.b finished rather than in C++, and published beside a statement of what was authored and what the renderer produced."
+
+notes = [
+    "`just roadmap-milestone m11c` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "THE STATIC GATES ARE SPELLED HERE EXACTLY AS M11.a AND M11.b SPELL THEM, so they collapse to one check each across the ladder.",
+    "THE DEVICE CRITERIA EACH HAVE A COMPANION THAT NEEDS NO DEVICE, which is M8.c's rule: nothing a milestone claims should be judgeable only on the machines with a GPU in them. `beauty-shot` needs one; `frame-passes-through-post` and `materials-are-textures` do not, and they carry the structural half of the same claim.",
+    "WHAT IS NOT A CRITERION BECAUSE NO MACHINE HERE CAN SETTLE IT. Whether the shot is beautiful is a judgement and there is no check for it. What IS checkable is that it went through tone mapping and anti-aliasing, that its materials are textures rather than constants, that it was assembled through the editor, and that the README says which is which — four facts that together make the judgement possible rather than replacing it.",
+    "tasks 9.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "`just quality-requirements` DOES NOT EXIST YET AND THE CRITERIA THAT CALL IT WILL SAY SO. `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the tool that checks it is one of that row's four absent gates — the row is M11.d's. It is named here rather than avoided because the mapping IS the Complete-grade claim these rows are being judged on: whichever rung reaches it first writes the tool, and M11.d is where it is finished. A criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red.",
+]
+
+# --- The static gates, shared with every other rung -----------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set, including the six deltas this rung writes"
+source = "tasks 8.3"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained the shader targets, the GI/atmosphere adapter, a hierarchical depth buffer and a tuned post chain"
+source = "tasks 9.1"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean, including the cognitive-complexity limits — which a material compiler's lowering stages and a denoiser are exactly the kind of code to breach, and which this project's own table permits 25 to 35 for and no more"
+source = "tasks 9.1"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with the GI/atmosphere seam joined. `src/rendering/sky/CMakeLists.txt` records the absent dependency on `cy::rendering-gi` as DELIBERATE, which is what made the gradient fit measurable with no GI system present; joining the seam must not turn that absence into a cycle"
+source = "tasks 9.1, engine-architecture, dependencies.md cycle 2"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11c` is green above the newest ledger any workflow evaluates"
+source = "tasks 8.4, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three commands — including the image codecs and texture encoders this rung's materials depend on, which M11.b adopts and this rung consumes"
+source = "tasks 9.1, thirdparty-dependencies"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for fifteen rows"
+source = "tasks 8.3"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, the ladder places m11c between m11b and m11d, and a declared gap that started passing fails"
+source = "tasks 8.1, 8.3, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each. A renderer tuned in one profile and broken in another is a tuning rather than a fix, and this rung is entirely tuning"
+source = "tasks 9.1"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# --- Section 1: the material compiler and the shader system, first ---------------------------------
+
+[[criterion]]
+id = "material-compiler-at-complete-grade"
+describe = "every requirement of `material-compiler` and `shader-system` maps to a test, a gate or a recorded exemption. They are first because image quality is expressed through them and because GI cannot be Complete on a material compiler that is not — twenty-one and thirteen requirements, both Working since M7 and M3 respectively"
+source = "tasks 1, material-compiler, shader-system, testing-and-quality"
+kind = "command"
+run = "just quality-requirements material-compiler shader-system"
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "material-node-previews"
+describe = "a node in the material graph previews through the RUNTIME compiler rather than through a second evaluator written for the editor. A preview computed by a second implementation is a preview of that implementation"
+source = "tasks 1, material-compiler, editor-visual-language"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_material_preview"
+test -x "$binary" || { echo "no $binary — the suite integration.material_preview does not exist"; exit 1; }
+filter='a node previews through the runtime compiler*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.material_preview any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "lowering-stages-inspectable"
+describe = "every lowering stage of a material is inspectable — graph, IR, optimised IR, generated source, compiled program. `editor-architecture`'s shader and material inspector requirement names all five, and a compiler whose stages cannot be read is one nobody can debug"
+source = "tasks 1, material-compiler, shader-system, editor-architecture"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_material_compiler"
+test -x "$binary" || { echo "no $binary — the suite unit.material_compiler does not exist"; exit 1; }
+filter='every lowering stage is inspectable*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.material_compiler any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+# --- Section 2: the eight rows that are the image ---------------------------------------------------
+
+[[criterion]]
+id = "gi-sky-term-constructed"
+describe = "`gi::SkyTerm` is constructed from the atmosphere at one composition point, which is the whole of [cycle 2](docs/roadmap/dependencies.md). NOTHING IN THE TREE CONSTRUCTS ONE TODAY: `gi/lighting.h` still describes its two-colour gradient as 'the seam it will replace, not a second sky', `sky_light.h` carries a three-line adapter and says a composition point writes it, and neither module links the other. THE PLAN PROMISED THIS ROW COMPLETE AT M10 AND M10 DID NOT DELIVER IT"
+source = "tasks 2, rendering-global-illumination, dependencies.md cycle 2"
+kind = "command"
+run = '''
+set -eo pipefail
+users=$(grep -rln "SkyTerm" --include='*.cpp' --include='*.h' src/ | grep -v "^src/rendering/gi/" || true)
+count=$(printf '%s' "$users" | grep -c . || true)
+echo "$count file(s) outside src/rendering/gi/ construct or consume a gi::SkyTerm:"
+printf '%s\n' "${users:-  none — the seam cycle 2 is about has never been joined}"
+test "$count" -ge 1
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_rendering_gi_sky"
+test -x "$binary" || { echo "no $binary — the suite integration.rendering_gi_sky does not exist"; exit 1; }
+filter='the sky term is built from the atmosphere*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 1 || { echo "the named case is not in integration.rendering_gi_sky any more"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "denoiser-signals-have-producers"
+describe = "every signal the denoiser declares has a producer. `denoising` has six requirements and the ones with no producer in the tree are the reason the row is Working: a denoiser fed by a signal nothing writes denoises a constant"
+source = "tasks 2, denoising"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_denoising"
+test -x "$binary" || { echo "no $binary — the suite unit.denoising does not exist"; exit 1; }
+filter='every declared signal has a producer*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.denoising any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "ray-tracing-capability-honest"
+describe = "`Capability::RayTracing` reports what the DEVICE supports rather than what the backend compiled. It is unset today, and an honest reading of a capability set implemented in the Vulkan backend alone is 'Vulkan only' — which is a finding this rung reports rather than a cell it claims"
+source = "tasks 2, ray-tracing-infrastructure, rhi-and-render-graph"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rhi"
+test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
+filter='the ray-tracing capability reports the device*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "frame-passes-through-post"
+describe = "the assembled frame passes through tone mapping and anti-aliasing, and the frame graph says so. `samples/10-world` links neither `cy::rendering-assembly` nor the post, temporal, forward or shadow libraries, so the world picture this project has been publishing never passed through any of it. THIS IS THE STRUCTURAL HALF OF THE ARTEFACT AND IT NEEDS NO DEVICE"
+source = "tasks 2, rendering-post-processing, temporal-rendering, rendering-architecture"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_rendering_assembly"
+test -x "$binary" || { echo "no $binary — the suite integration.rendering_assembly does not exist"; exit 1; }
+filter='the frame passes through tone mapping*,the frame passes through anti-aliasing*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.rendering_assembly any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "virtual-geometry-image"
+describe = "the virtual-geometry and virtual-shadow evidence is an image of the shaded result rather than a normals debug view. The capture in the tree today is a debug visualisation, which proves the cluster selection and says nothing about what the renderer produces"
+source = "tasks 2, virtual-geometry, virtual-shadows"
+kind = "command"
+run = "just test-render virtual-geometry --shaded --compare-golden"
+requires = "gpu"
+reason = "a shaded capture needs a graphics device; `frame-passes-through-post` above carries the structural claim on every machine"
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "lighting-and-shadow-suites"
+describe = "the lighting, shadow, GI, denoising, post, temporal and virtual-geometry suites are green together. Eight rows have been at Working since M7 and each has been gated separately; this is the one run in which they are all true at once"
+source = "tasks 2"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.rendering_lighting|unit.rendering_shadows|unit.rendering_gi|unit.denoising|unit.rendering_post|unit.temporal_rendering|unit.virtual_geometry|unit.virtual_shadows)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 8 suite(s) match $pattern"
+test "$registered" -ge 8 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+timeout_s = 3600
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "image-rows-at-complete-grade"
+describe = "every requirement of the eight image rows maps to a test, a gate or a recorded exemption — 26, 20, 29, 6, 6, 15, 8 and 13 requirements respectively, none of them read end to end at Complete grade by anybody"
+source = "tasks 2, testing-and-quality"
+kind = "command"
+run = "just quality-requirements virtual-geometry virtual-shadows rendering-global-illumination denoising ray-tracing-infrastructure rendering-post-processing temporal-rendering rendering-lighting-and-shadows"
+ci_job = "milestone-m11c"
+
+# --- Section 3: culling, the sky, and the two architecture rows -------------------------------------
+
+[[criterion]]
+id = "hierarchical-depth-on-a-device"
+describe = "a hierarchical depth buffer is built and read on the device, and occlusion is cluster-granular. `cull_pass.cpp` carries the two-pass model on the processor and no device path exists — which is why this rung predicts demoting `rendering-culling-and-lod` and says so before its gate does"
+source = "tasks 3, rendering-culling-and-lod"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_rendering_culling"
+test -x "$binary" || { echo "no $binary — the suite integration.rendering_culling does not exist"; exit 1; }
+filter='a hierarchical depth buffer is built on the device*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.rendering_culling any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+requires = "gpu"
+reason = "an HZB is built by the device; the CPU two-pass model it replaces is already covered by `unit.rendering-culling`, so a green here must mean the device path and not the model"
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "sky-as-an-image"
+describe = "the sky is judged as an image rather than as a table: a capture at four times of day compared against goldens within tolerance. CONDITIONAL ON M11.a CLOSING `m10:sky-field-round-trip` — this rung owns the illumination consumer of the cloud shadow field and cannot write one against a sampler that returns its declared default at every point"
+source = "tasks 3, atmosphere-sky-and-clouds"
+kind = "command"
+run = "just test-render sky --times-of-day 4 --compare-golden"
+requires = "gpu"
+reason = "a sky capture needs a device; the field round trip it depends on is checked without one by M11.a's `sky-field-consumed-outside-the-sky`"
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "subsystem-controllers-report-costs"
+describe = "subsystem controllers under `src/` report MEASURED costs to the arbiter rather than declared ones. `rendering-architecture`'s budget arbitration is the requirement, and an arbiter fed by declarations arbitrates between opinions"
+source = "tasks 4, rendering-architecture"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rendering_architecture"
+test -x "$binary" || { echo "no $binary — the suite unit.rendering_architecture does not exist"; exit 1; }
+filter='the arbiter is fed measured costs*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.rendering_architecture any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "skin-pass-complete"
+describe = "the skin pass does dual quaternions and blend shapes where the specification puts them. `skin_dispatch.cpp` and `skin_pass.h` each record the absence against `rendering-geometry-and-resources`, which has been Working since M3"
+source = "tasks 4, rendering-geometry-and-resources, animation-and-skinning"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rendering_geometry"
+test -x "$binary" || { echo "no $binary — the suite unit.rendering_geometry does not exist"; exit 1; }
+filter='dual quaternion skinning*,blend shapes*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.rendering_geometry any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "vfx-in-the-shot"
+describe = "particles are in the artefact's frame. An art-directed shot with no particles in it does not exercise `vfx-system`, and the row's own README records four absences by name — the fourth of which is an editor surface M11.b owes and this rung consumes"
+source = "tasks 5, vfx-system"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_vfx"
+test -x "$binary" || { echo "no $binary — the suite integration.vfx does not exist"; exit 1; }
+filter='particles are in the assembled frame*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.vfx any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+# --- Section 4: the artefact -------------------------------------------------------------------------
+
+[[criterion]]
+id = "materials-are-textures"
+describe = "the artefact's materials are TEXTURES rather than constants. Six image files exist in this tree outside docs/ — four editor identity marks and two golden references — so every material in every picture this project has published is a constant. The check counts the texture assets the shot's materials reference"
+source = "tasks 6, ROADMAP M11.c closing artefact, material-compiler"
+kind = "command"
+run = '''
+set -eo pipefail
+shot=$(ls -d samples/*beauty* content/*beauty* 2>/dev/null | head -1 || true)
+test -n "$shot" || { echo "no beauty-shot project in the tree"; exit 1; }
+textures=$(find "$shot" -type f \( -name '*.ktx2' -o -name '*.dds' -o -name '*.png' -o -name '*.cytex' \) | wc -l)
+echo "$shot references $textures texture file(s)"
+test "$textures" -ge 4
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "shot-authored-through-the-editor"
+describe = "the shot was assembled THROUGH the editor rather than in C++: its scene is a project document and the sample's own code does not construct the materials it photographs. This is the ordering argument of the whole split, made checkable"
+source = "tasks 6, ROADMAP M11.c closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+shot=$(ls -d samples/*beauty* content/*beauty* 2>/dev/null | head -1 || true)
+test -n "$shot" || { echo "no beauty-shot project in the tree"; exit 1; }
+docs=$(find "$shot" -type f \( -name '*.cyscene' -o -name '*.cydoc' -o -name '*.cymat' \) | wc -l)
+sources=$(find "$shot" -type f \( -name '*.cpp' -o -name '*.h' \) | wc -l)
+echo "  $docs authored document(s), $sources C++ file(s)"
+test "$docs" -gt 0
+grep -rqi "authored" "$shot"/README.md
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "beauty-shot"
+describe = "and the shot itself, captured on a device and committed under docs/design/images/. It is the artefact that answers whether this looks like a real engine, and it is published beside a statement of what is authored content and what the renderer produced"
+source = "tasks 6, ROADMAP M11.c closing artefact"
+kind = "path"
+path = "docs/design/images/m11c-beauty*.png"
+ci_job = "milestone-m11c"
+
+# --- Section 5: the record, the tiers, and the next rung --------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this rung's exit tiers: fifteen rows from Working to Complete. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO. This rung predicts demoting `rendering-culling-and-lod`, and `ray-tracing-infrastructure` and `vfx-system` if their cross-rung dependencies do not land; a demoted row is recorded at Working with its reason and the expectation moves to the rung that takes it"
+source = "tasks 8.3, ROADMAP M11.c, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11c"
+
+[criterion.expect_tiers]
+material-compiler = "complete"
+shader-system = "complete"
+virtual-geometry = "complete"
+virtual-shadows = "complete"
+rendering-global-illumination = "complete"
+denoising = "complete"
+ray-tracing-infrastructure = "complete"
+rendering-post-processing = "complete"
+temporal-rendering = "complete"
+rendering-lighting-and-shadows = "complete"
+rendering-culling-and-lod = "complete"
+atmosphere-sky-and-clouds = "complete"
+rendering-architecture = "complete"
+rendering-geometry-and-resources = "complete"
+vfx-system = "complete"
+
+# THE HANDOVER CHECK, in the shape `implement-m11-reach` task 0.1 settled for all five rungs: the
+# double-star glob as the search, ENTRY rather than existence as the claim, because the five rung
+# changes were opened together and a `kind = "path"` criterion over them could never go red.
+[[criterion]]
+id = "m11d-open"
+describe = "the next rung's change exists — open, or closed and archived — AND has been deliberately entered. That rung is M11.d, Desktop, which depends on this one for a hard prerequisite: neither MSL nor DXIL is emitted anywhere in the tree, and `shader-system` is this rung's row"
+source = "tasks 8.2, implement-m11-reach task 0.1, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+# the double-star glob the ladder has used since M8.a: openspec/changes/**/*m11d*/proposal.md
+dirs=$(find openspec/changes -type d -name '*m11d*' | sort)
+test -n "$dirs" || { echo "no change directory matching openspec/changes/**/*m11d*/"; exit 1; }
+entered=""
+for d in $dirs; do
+    test -f "$d/proposal.md" || continue
+    echo "  $d/proposal.md"
+    # A CHECKED TASK OUTSIDE SECTION 0, and the exclusion is the point. Section 0 is a rung's own
+    # decision-and-spike section, which the split that opened all five rungs could answer in advance;
+    # a checked box there says the rung was SCOPED. A checked box in the body says the rung was
+    # STARTED, which is the deliberate act this criterion is standing in for.
+    if [ -f "$d/tasks.md" ] && grep -qE '^- \[x\] [1-9]' "$d/tasks.md"; then
+        entered="$entered $d"
+    fi
+done
+if [ -z "$entered" ]; then
+    echo "the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+    exit 1
+fi
+echo "entered:$entered"
+'''
+ci_job = "milestone-m11c"
+
+[[criterion]]
+id = "shader-targets-for-the-next-rung"
+describe = "the shader system emits MSL and DXIL, which M11.d cannot start without. `cache.h` names 'metal-msl' and 'd3d12-dxil' as interchange forms, `compiler.h` describes the translation in a comment, `SLANG_ENABLE_DXIL` is OFF, and NEITHER IS EMITTED ANYWHERE IN THE TREE. It is this rung's row and the next rung's largest unpriced scope risk, so it is checked here rather than discovered there"
+source = "tasks 1, shader-system, M11.d design.md §6"
+kind = "command"
+run = '''
+set -eo pipefail
+just build-shaders --targets | tee /tmp/cy-m11c-targets.txt
+grep -qi "msl" /tmp/cy-m11c-targets.txt
+grep -qi "dxil" /tmp/cy-m11c-targets.txt
+'''
+ci_job = "milestone-m11c"

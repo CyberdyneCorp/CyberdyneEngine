@@ -343,27 +343,28 @@ u64 PointSet::digest() const noexcept {
     return digest.value();
 }
 
-Expected<PointSet, Error> PointSet::clone() const noexcept {
+Expected<PointSet, Error> PointSet::clone(usize extra_capacity) const noexcept {
     PointSet copy(*allocator_);
-    if (Status reserved = copy.x_.reserve(capacity_); !reserved) {
+    const usize room = capacity_ + extra_capacity;
+    if (Status reserved = copy.x_.reserve(room); !reserved) {
         return make_unexpected(reserved.error());
     }
-    if (Status reserved = copy.y_.reserve(capacity_); !reserved) {
+    if (Status reserved = copy.y_.reserve(room); !reserved) {
         return make_unexpected(reserved.error());
     }
-    if (Status reserved = copy.z_.reserve(capacity_); !reserved) {
+    if (Status reserved = copy.z_.reserve(room); !reserved) {
         return make_unexpected(reserved.error());
     }
-    if (Status reserved = copy.slots_.reserve(capacity_); !reserved) {
+    if (Status reserved = copy.slots_.reserve(room); !reserved) {
         return make_unexpected(reserved.error());
     }
-    if (Status reserved = copy.identities_.reserve(capacity_); !reserved) {
+    if (Status reserved = copy.identities_.reserve(room); !reserved) {
         return make_unexpected(reserved.error());
     }
     if (Status reserved = copy.columns_.reserve(columns_.size()); !reserved) {
         return make_unexpected(reserved.error());
     }
-    copy.capacity_ = capacity_;
+    copy.capacity_ = room;
     for (const Column& column : columns_) {
         Expected<Column*, Error> slot = copy.columns_.emplace_back(*allocator_);
         if (!slot) {
@@ -371,7 +372,7 @@ Expected<PointSet, Error> PointSet::clone() const noexcept {
         }
         (*slot)->id = column.id;
         (*slot)->type = column.type;
-        if (Status sized = (*slot)->data.resize(column.data.size()); !sized) {
+        if (Status sized = (*slot)->data.resize(room * attribute_bytes(column.type)); !sized) {
             return make_unexpected(sized.error());
         }
         if (column.data.size() != 0) {

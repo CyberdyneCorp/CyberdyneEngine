@@ -375,7 +375,7 @@ ci_job = "milestone-m8c"
 # gate red. The direction that keeps it honest is the other one — the ledger FAILS if a declared gap
 # starts passing, because a marker that outlived its gap is the next thing nobody notices.
 known_gap = "Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned compilers, and a build-time tool this manifest has no field for — and moved `audio`'s Complete cell to M11 rather than claim the tier. FallbackAcoustics answers every query in every build, which is what `audio`'s \"content SHALL NOT depend on Steam Audio being present\" asks for"
-known_gap_closes = "m11"
+known_gap_closes = "m11a"
 
 # --- Section 5: the artefact ----------------------------------------------------------------------
 

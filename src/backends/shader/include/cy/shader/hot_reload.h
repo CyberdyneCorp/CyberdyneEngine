@@ -7,7 +7,8 @@
 // without restarting. Compilation occurs on job workers; **the previous pipeline stays in use until
 // the new one is ready**; a failed compile keeps the previous pipeline and reports the error.
 //
-// --- THE TWO PROPERTIES THAT MAKE THIS MORE THAN A RECOMPILE ---------------------------------------
+// --- THE TWO PROPERTIES THAT MAKE THIS MORE THAN A RECOMPILE
+// ---------------------------------------
 //
 // **"Affected" is a transitive-import question, not a filename question.** Editing `cy/brdf.slang`
 // affects every shader that imports it, directly or through another module. This class keeps the
@@ -22,13 +23,14 @@
 // The failure is *sticky* — the entry keeps failing state until an edit compiles — so the error
 // stays on screen rather than flickering away on the next poll that found nothing.
 //
-// --- WHY THE SETTLING RULE MATTERS HERE ------------------------------------------------------------
+// --- WHY THE SETTLING RULE MATTERS HERE
+// ------------------------------------------------------------
 //
-// `cy::assets::FileWatcher` reports a file only once two polls agree about its size and modification
-// time, precisely so a loader is never handed a file an editor is still writing. A shader compiler
-// handed half a file produces a syntax error at the truncation point, which is a confusing thing to
-// show a developer who has just pressed save. The watcher's one-poll latency is the price, and this
-// class pays it rather than reimplementing the check.
+// `cy::assets::FileWatcher` reports a file only once two polls agree about its size and
+// modification time, precisely so a loader is never handed a file an editor is still writing. A
+// shader compiler handed half a file produces a syntax error at the truncation point, which is a
+// confusing thing to show a developer who has just pressed save. The watcher's one-poll latency is
+// the price, and this class pays it rather than reimplementing the check.
 
 #include <cy/core/assets/hot_reload.h>
 #include <cy/core/base/expected.h>
@@ -76,10 +78,10 @@ struct ReloadReport {
 
 /// Watches shader sources and recompiles what an edit affects.
 ///
-/// Development builds only — `shader-system` is explicit that runtime shader compilation exists only
-/// there. It is a compile error to *use* this in a shipping build only in the sense that the Slang
-/// compiler is absent and `current_compiler()` reports unavailable; the class itself is harmless and
-/// is compiled everywhere so that its tests run in every profile.
+/// Development builds only — `shader-system` is explicit that runtime shader compilation exists
+/// only there. It is a compile error to *use* this in a shipping build only in the sense that the
+/// Slang compiler is absent and `current_compiler()` reports unavailable; the class itself is
+/// harmless and is compiled everywhere so that its tests run in every profile.
 class ShaderHotReload {
 public:
     ShaderHotReload(SourceStore& sources, Allocator& allocator) noexcept;
@@ -144,8 +146,8 @@ private:
     assets::FileWatcher watcher_;
     Array<Tracked> entries_;
     Array<assets::FileEvent> events_;
-    /// Sources whose text changed in this poll. A member rather than a local so that a poll does not
-    /// allocate; hot reload runs every frame in a development build.
+    /// Sources whose text changed in this poll. A member rather than a local so that a poll does
+    /// not allocate; hot reload runs every frame in a development build.
     Array<SourceId> changed_;
 };
 

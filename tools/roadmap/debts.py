@@ -45,13 +45,19 @@ NOT_CLOSED = "## What this milestone did NOT close"
 
 
 def milestone_label(identifier: str) -> str:
-    """`m8a` reads as `M8.a` everywhere a person sees it."""
+    """`m8a` reads as `M8.a` everywhere a person sees it.
+
+    THE SUFFIX LIST USED TO BE ("A", "B", "C") AND M11's SPLIT CAUGHT IT RENDERING `M11E`. Three
+    rungs were enough for M8 and the fourth reader of a milestone identifier was written the same
+    way as the three that dropped M8's columns. It is a letter range now, and the rule is the one
+    the ladder already uses: a rung identifier is a number with an optional single-letter suffix.
+    """
     if identifier == "m5b":
         return "M5.5"
     text = identifier.upper()
-    for suffix in ("A", "B", "C"):
-        if text.endswith(suffix) and text[:-1].rstrip("0123456789") == "M":
-            return f"{text[:-1]}.{suffix.lower()}"
+    suffix = text[-1:]
+    if suffix.isalpha() and text[:-1].rstrip("0123456789") == "M" and text[:-1] != "M":
+        return f"{text[:-1]}.{suffix.lower()}"
     return text
 
 

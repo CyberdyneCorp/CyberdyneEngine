@@ -214,6 +214,30 @@ gathers, not transitive edges, are what make partial regeneration expensive.
 
 `openspec/changes/implement-m10-worlds/design.md` §1 is the measurement in full, with the figure.
 
+### 12 — M11's five rungs, and the five spikes they each run first
+
+**Milestone**: M11.a to M11.e. **Owner**: `delivery-roadmap`, and the row each rung names.
+
+Appended after the register was written, and kept in numeric order rather than renumbering the
+eleven above it. `docs/ROADMAP.md` names a spike for every milestone and M11 had none, because M11
+had no scope: it was *"everything remaining"* until `implement-m11-reach` task 0.1 split it into
+five rungs. **Each rung's spike runs at the head of its rung rather than inside it**, and a spike's
+only deliverable is a decision, consumed in that rung's `design.md` where the rows depending on it
+can read it. None of the five has run.
+
+| Rung | The spike | What it decides, and what a bad answer costs |
+|---|---|---|
+| **M11.a** | Port **one** band — the 63.0 ms substrate re-sample — to a shader and measure it before scoping the other two | If a GPU field sampler does not recover that band, the 122 ms figure is not a shader problem and **every estimate in M11.a is wrong**. The three inherited field gaps then need a different answer, and so does M11.c, whose atmosphere row is judged on the same cloud march |
+| **M11.b** | The **play-mode seam**: can the hosted runtime carry `InEditor`, `SeparateProcess` and `RemoteDevice` without a second world model? | M5 seeded the question and nobody has asked it since. A second world model is the defect: two definitions of "the world" is how live editing, replay and play mode each stop meaning the same thing |
+| **M11.c** | **One authored material, end to end**: author it in the editor's graph, compile it through the runtime compiler, encode its textures, bind it in the assembled frame, photograph it | Everything in M11.c assumes that path exists and **nothing in the tree has ever run it**. If it does not exist, the rung is building the path rather than tuning the picture, which is a different size of work |
+| **M11.d** | Settle the **eight RHI interface gaps** on Vulkan and null before a line of either backend is written — and, before that, find out whether a hosted macOS or Windows runner can present a graphics device at all | A gap closed inside one backend is a gap the other two rediscover. And if no hosted runner can present a device, every image claim in the rung is reportable only as NOT EVALUATED, which changes what the gate can say rather than what the code does |
+| **M11.e** | Can a hosted runner **produce a mobile artefact at all**? One empty project, cross-compiled, packaged and reported | If it cannot, mobile is a deferral with a re-entry point and M11.e is the distribution and record rung. That is a finding worth having on day one rather than at the gate, which is the whole argument for running a spike at the head of a rung |
+
+*Why this is one register entry and not five*: the risk they share is the split itself. If the seam
+is wrong — if the rungs turn out not to be separable along their artefacts — the ladder gains four
+gates that cannot close independently, which is the failure mode `split-m8-authorable-and-systems`
+named when it refused to split by count.
+
 ---
 
 ## Deferred scope

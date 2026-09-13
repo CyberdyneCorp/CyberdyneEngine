@@ -38,6 +38,25 @@ TIER_LABEL = {"none": "not started", "seed": "seed", "working": "working", "comp
 #
 # A capability row in docs/roadmap/status.yaml that M5.5 advanced therefore names `M5B`.
 #
+# M11 IS SPLIT INTO FIVE, AND THE REASON IS A DIFFERENT ONE FROM M8's. `implement-m11-reach` task
+# 0.1 answered the question the matrix had carried since M6: M11 completed SIXTY-FIVE of the
+# seventy-six capabilities, seventeen of which arrived at M10's closing gate because a gate refused a
+# claim rather than because anyone planned the work there. M8's rule is about RISK — a milestone
+# blocked by its own spike contains two. M11's is about JUDGEMENT: a milestone whose scope cannot be
+# judged by one closing artefact is several milestones sharing a number, because a gate that cannot
+# name what it is looking at is not a gate. The five rungs are `m11a` Foundations (the seven
+# inherited gaps and the frame budget), `m11b` Authoring (the editor, and a real game made in it),
+# `m11c` Image (materials, shaders, and a beauty shot authored through that editor), `m11d` Desktop
+# (Metal, D3D12 and a native platform backend) and `m11e` Ship (mobile, distribution and the 1.0
+# record). The ORDER is again the whole point, and it is the artefacts' dependency order rather than
+# a size ordering.
+#
+# `m11` IS GONE FROM THIS TUPLE AND THAT IS DELIBERATE. `criteria._check_known_gap` refuses a
+# `known_gap_closes` naming an identifier this tuple does not carry, so the seven inherited gaps had
+# to be re-pointed at the rung that closes each in the SAME commit that replaced `m11` here. That
+# coupling is a forcing function in the right direction: the ledgers stop loading if the two halves
+# are separated. "M11" remains the name of the group everywhere it is written in prose.
+#
 # M8 IS SPLIT THE SAME WAY, and for a reason worth stating rather than repeating by habit.
 # `split-m8-authorable-and-systems` divides it into `m8a` — a scene a person builds by hand:
 # primitives, import from inside the editor, a body on an object, play mode — and `m8b`, everything
@@ -60,7 +79,11 @@ MILESTONES = (
     "m8c",
     "m9",
     "m10",
-    "m11",
+    "m11a",
+    "m11b",
+    "m11c",
+    "m11d",
+    "m11e",
 )
 ENTRY_KEYS = ("tier", "milestone", "change")
 

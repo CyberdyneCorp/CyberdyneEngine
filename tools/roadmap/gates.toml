@@ -1100,17 +1100,41 @@ state = "green"
 #   m10:vfx-device    beside m10:vfx-runtime
 #   m10:world-still   beside m10:world-artefact and m10:world-seed-control
 #
-# **AND FOUR ARE DECLARED GAPS**, every one of them closing at M11. They RUN on every evaluation,
-# they PRINT their failure with the rung that must close them, and a declared gap that starts
-# PASSING fails the ledger — so this gate can go green with them open and none of them can outlive
-# itself. Three of the four are one absence seen from three sides: M10 shipped no `.slang` module
-# for an environment field, a terrain material, a water surface, grass expansion or a cloud march.
+# **AND FOUR OF M10's OWN ARE DECLARED GAPS**, every one of them closing at M11.a. They RUN on every
+# evaluation, they PRINT their failure with the rung that must close them, and a declared gap that
+# starts PASSING fails the ledger — so this gate can go green with them open and none of them can
+# outlive itself. Three of the four are one absence seen from three sides: M10 shipped no `.slang`
+# module for an environment field, a terrain material, a water surface, grass expansion or a cloud
+# march.
 #
 #   m10:sky-field-round-trip        the sky computes a cloud shadow and the substrate cannot see it
 #   m10:fields-sampled-on-a-device  no shader samples an environment field
 #   m10:world-frame-budget          the artefact costs ~122 ms a frame against a 16.7 ms budget
-#   m10:fields-one-wind-declaration `wind` is Presentation in cy::foliage and Authoritative in
-#                                   cy::weather, and the two refuse each other in either order
+#   m10:fields-one-vegetation-potential
+#                                   `vegetation-potential` is UNorm8/Static/Persistent in
+#                                   cy::foliage and UNorm16/SlowlyVarying/Authoritative in
+#                                   cy::weather, and `FieldRegistry::declare()` refuses the second
+#                                   in either order
+#
+# THE FOURTH ROW USED TO READ `m10:fields-one-wind-declaration`, AND THAT WAS WRONG. That criterion
+# carries no `known_gap`, and it PASSES — eleven declarations of eleven standard names, none refused
+# — because the `wind` disagreement it describes was repaired inside M10. M10's gate found the entry
+# naming a criterion that is green as a gap, which is the same class of mistake one level up from
+# the ones the ledger checks; `just roadmap-debts` renders section 1 of docs/roadmap/open-debts.md
+# from the `known_gap` fields themselves and is the list to trust.
+#
+# **AND THIS GATE INHERITS THREE MORE**, because the permanent set comes with it: M8.c's
+# `steam-audio-configures`, M9's `lockstep-cross-platform`, and M9's `record-matches-plan-history`,
+# whose declaration M10 deleted when task 6.5 made it pass and M10's closing gate RESTORED when it
+# refused the four tier claims that had made it pass. Seven declared gaps evaluate here.
+#
+# **AND M11 IS NOW FIVE RUNGS, so the seven no longer all name the same one.** `implement-m11-reach`
+# task 0.1 split M11 into M11.a … M11.e, `record.MILESTONES` carries the five in place of `m11`, and
+# each gap was re-pointed at the rung that actually closes it rather than deleted: six name
+# **M11.a** — the field sampler, the frame budget, the sky round trip, the one
+# `vegetation-potential`, the cross-leg digest comparison and Steam Audio — and
+# `record-matches-plan-history` names **M11.e**, because it cannot pass until the last of its four
+# rows is evaluated and recorded, and two of the four are M11.d's rows and two are M11.e's.
 
 [[gate]]
 id = "milestone-m10"
@@ -1120,6 +1144,80 @@ platforms = ["linux", "windows", "macos"]
 since = "m10"
 class = "milestone"
 milestone = "m10"
+state = "joins-on-close"
+
+
+# --- The gates M11's five rungs add ----------------------------------------------------------------
+#
+# `implement-m11-reach` task 0.1 split M11 into five rungs, so M11 gains FIVE milestone gates rather
+# than one. Each is `joins-on-close` until its own change closes it; the change that closes a rung
+# sets its `state = "green"` and moves ci.yml's `milestone` job to that rung in the same commit.
+#
+# WHY FIVE GATES AND NOT ONE. A milestone gate's job is to name what it is looking at. M11 as written
+# completed sixty-five of seventy-six capabilities behind ONE closing artefact — the definition of
+# 1.0 — and seventeen of the sixty-five arrived at M10's gate because a gate refused a claim rather
+# than because anybody planned the work there. Five artefacts need five gates: the world demo inside
+# its budget, a real game made in the editor, an art-directed beauty shot authored through that
+# editor, `samples/11-ship` on desktop with a native platform backend, and `samples/11-ship`
+# everywhere plus the 1.0 record.
+#
+# THE LEDGERS ARE FLAT AND THE STATIC GATES ARE SPELLED IDENTICALLY IN ALL FIVE, so `specs`,
+# `format`, `lint`, `layering`, `workflows`, `generated-code`, `roadmap-record`, `plan-consistency`
+# and `four-profiles` collapse to one check each however many rungs declare them. Running
+# `just roadmap-milestone m11e` therefore evaluates the whole ladder once, not five times.
+#
+# AND THE SEVEN INHERITED GAPS ARE RE-POINTED RATHER THAN DELETED: six name `m11a` and
+# `record-matches-plan-history` names `m11e`, because it cannot pass until the last of its four rows
+# is evaluated and recorded and two of those four are M11.d's rows.
+
+[[gate]]
+id = "milestone-m11a"
+describe = "M11.a — Foundations: the exit criteria of the rung that pays M11's inherited debts — a shader-side environment-field sampler, the world demo inside a 16.7 ms budget rather than seven times over it, the sky field readable by its consumers, one `vegetation-potential`, one continuous-integration job that publishes one leg's digest and compares it with another's, a world that streams, `save-and-persistence` re-scoped, and Steam Audio simulating or deferred with its re-entry point."
+runs = ["just roadmap-milestone m11a"]
+platforms = ["linux", "windows", "macos"]
+since = "m11a"
+class = "milestone"
+milestone = "m11a"
+state = "joins-on-close"
+
+[[gate]]
+id = "milestone-m11b"
+describe = "M11.b — Authoring: the exit criteria of the rung that takes `editor-architecture` and `live-editing` off the Seed they have sat at since M5, finishes the rest of the editor and the gameplay rows a game exercises by being played, and closes on a real sample game authored through the editor rather than assembled in C++."
+runs = ["just roadmap-milestone m11b"]
+platforms = ["linux", "windows", "macos"]
+since = "m11b"
+class = "milestone"
+milestone = "m11b"
+state = "joins-on-close"
+
+[[gate]]
+id = "milestone-m11c"
+describe = "M11.c — Image: the exit criteria of the rung that makes the engine look like one — `material-compiler` and `shader-system` first because image quality is expressed through them, then the eight rows the picture is made of, and an art-directed beauty shot authored through the editor M11.b finished, published beside a statement of what was authored and what the renderer produced."
+runs = ["just roadmap-milestone m11c"]
+platforms = ["linux", "windows", "macos"]
+since = "m11c"
+class = "milestone"
+milestone = "m11c"
+state = "joins-on-close"
+
+[[gate]]
+id = "milestone-m11d"
+describe = "M11.d — Desktop: the exit criteria of the rung that makes the engine portable across desktops — Metal native rather than a translation layer, D3D12 to Vulkan parity, a native `Platform` and `DisplayServer` replacing SDL3 on one desktop with no change in src/core/, src/ecs/, src/servers/ or src/scene/, the full gate set and the documentation gate, and `samples/11-ship` built, cooked, packaged and launched on each desktop target from one recipe."
+runs = ["just roadmap-milestone m11d"]
+platforms = ["linux", "windows", "macos"]
+since = "m11d"
+class = "milestone"
+milestone = "m11d"
+state = "joins-on-close"
+
+[[gate]]
+id = "milestone-m11e"
+describe = "M11.e — Ship: the exit criteria of the last rung on the ladder — mobile targets and cross-compilation, the full continuous-integration matrix, the rest of the intended dependency set, distribution artefacts from the release recipes, the sweep of every row an earlier rung demoted, and the 1.0 record: seventy-six rows, each Complete or deferred with a re-entry point, checked by something that names the offending row rather than by a document asserting it."
+runs = ["just roadmap-milestone m11e"]
+platforms = ["linux", "windows", "macos"]
+since = "m11e"
+class = "milestone"
+milestone = "m11e"
 state = "joins-on-close"
 
 

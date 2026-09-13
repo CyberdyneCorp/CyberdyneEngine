@@ -169,10 +169,19 @@ struct BuildReport {
 /// filled by `advance()` from a monotonic clock; `main.cpp` writes every frame's to a CSV and
 /// `tools/docs/collect_world.py` plots it.
 struct FrameCosts {
+    /// Weather's whole tick, the publication into the substrate INCLUDED. The two are not timed
+    /// apart, and this used to claim they were: `weather-and-wind` declares two budgets — the
+    /// simulation's and the field update's — but `WeatherSystem::advance()` publishes inside itself
+    /// and offers no second entry point, so a `fields_ms` beside this one could only ever have been
+    /// zero. It was, for every frame of every take, and no column of the budget curve carried it.
     f64 weather_ms = 0.0;
-    /// Publishing weather's fields into the substrate. Separated from the simulation because
-    /// `weather-and-wind` declares two different budgets over exactly these two numbers.
-    f64 fields_ms = 0.0;
+    /// What the publication DID, which is the half of it that can be measured from outside: the
+    /// lattice points weather wrote into the substrate this frame, and whether the field-update
+    /// bandwidth budget deferred the write instead. A frame that published nothing is a frame whose
+    /// consumers read last frame's weather, and that is a budget being held by dropping work —
+    /// which a curve of milliseconds alone cannot show.
+    u64 field_points = 0;
+    bool field_publication_throttled = false;
     /// The water simulation: the spectrum re-derived from the wind, the clock, and the foam
     /// field's advection and decay over its whole grid.
     f64 water_ms = 0.0;
@@ -187,8 +196,7 @@ struct FrameCosts {
     f64 foliage_ms = 0.0;
 
     [[nodiscard]] f64 total() const noexcept {
-        return weather_ms + fields_ms + water_ms + ocean_ms + sky_ms + terrain_shade_ms +
-               foliage_ms;
+        return weather_ms + water_ms + ocean_ms + sky_ms + terrain_shade_ms + foliage_ms;
     }
 };
 

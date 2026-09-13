@@ -1,79 +1,93 @@
 # Tasks: M11 — Reach
 
-**This is a decision list, not an implementation plan.** The change was opened by M10's closing gate
-(M10 task 8.5, checked by `m10:m11-open`) so the ladder continues as a deliberate act. Section 0 has
-to be answered before any of the rest can be written honestly, and nothing below section 0 should be
-expanded into a task list until it is.
+**THIS WAS A DECISION LIST AND THE DECISIONS ARE TAKEN.** The change was opened by M10's closing gate
+(M10 task 8.5, checked by `m10:m11-open`) so the ladder continued as a deliberate act, and section 0
+had to be answered before any of the rest could be written honestly. **It is answered: M11 is five
+rungs.** Sections 1 to 3 below were the unexpanded scope; each now names the rung that owns it, and
+the work is in that rung's own `tasks.md`.
 
 ## 0. The decisions that scope this milestone
 
-- [ ] 0.1 **Is M11 one milestone or two?** The matrix has said since M6 that M11 is the one milestone
-      that could reasonably be split, "through a change if the work turns out to be separable along a
-      real seam rather than an arbitrary one". Its load is now **65 of 76 capabilities**, seventeen of
-      which arrived at M10's gate alone. `proposal.md` names the seam it thinks is real — a
-      *platform and reach* group, which is what `delivery-roadmap`'s M11 row is actually about,
-      against an *editor and authoring* group and a *finishing* group, which are accumulated debt.
-      Splitting the ladder is an OpenSpec change against `delivery-roadmap` by that specification's
-      own rule, and `record.MILESTONES`, `gates.toml`, `selftest.MINIMUM_CRITERIA`, the matrix
-      columns and the load table all move with it
-- [ ] 0.2 **The milestone's named spike.** `docs/roadmap/risks.md` names the spike for each
-      milestone; decide M11's before scoping the backends, and run it at the head of the milestone
-      rather than inside it
-- [ ] 0.3 **What `save-and-persistence` actually costs.** `proposal.md` carries M10's
-      requirement-by-requirement audit — nine satisfied, three unmet, eight partial, eleven pieces of
-      work — as a finding handed forward rather than a scope. Decide whether the row is completed
-      here, split, or re-scoped through a change against its own specification. The AEAD half is a
-      **dependency adoption** and `thirdparty-dependencies` requires it to go through the OpenSpec
-      change flow with the evaluation recorded, so it is a change of its own either way
+- [x] 0.1 **Is M11 one milestone or two?** **ANSWERED: five.** The matrix had said since M6 that M11
+      was the one milestone that could reasonably be split, "through a change if the work turns out
+      to be separable along a real seam rather than an arbitrary one". Its load reached **65 of 76
+      capabilities**, seventeen of which arrived at M10's gate alone. The seam is **the artefact**:
+      a milestone whose scope cannot be judged by one closing artefact is several milestones sharing
+      a number, because a gate that cannot name what it is looking at is not a gate. The rungs are
+      `implement-m11a-foundations`, `implement-m11b-authoring`, `implement-m11c-image`,
+      `implement-m11d-desktop` and `implement-m11e-ship` — 12, 24, 15, 10 and 4 rows, 233, 420, 232,
+      129 and 55 requirements, every one of the 65 rows owned exactly once.
+- [x] 0.1.1 **The ladder mechanics, all in one commit, because they cannot be separated.**
+      `record.MILESTONES` loses `m11` and gains `m11a` … `m11e` in position; the seven inherited gaps
+      are re-pointed at the rung that closes each (`criteria._check_known_gap` refuses a
+      `known_gap_closes` the ladder does not carry, so the two halves are one edit); five ledgers;
+      five gates at `joins-on-close`; five floors in `selftest.MINIMUM_CRITERIA`; five matrix columns
+      and five load rows; five ROADMAP sections; the dependency subgraph; and risks entry 12.
+- [x] 0.1.2 **The three readers that drop a split milestone's columns**, which M8's split found the
+      hard way, were widened from `.5|.a-.c` to `.5|.a-.e` — and M11.d and M11.e proved the point by
+      vanishing from the matrix until they were. `debts.py`'s label renderer had the same defect and
+      printed `M11E`. `_check_every_reader_admits_an_insertion` now names **every** suffix on the
+      ladder rather than the ones the last split needed.
+- [x] 0.1.3 **The handover criterion between rungs opened together.** `m11b-open` … `m11e-open` could
+      not be `kind = "path"` over `openspec/changes/**/*m11x*/proposal.md`, because the split opened
+      all five changes at once: such a criterion would pass the moment it was written and could never
+      go red, and **a criterion that cannot fail is not a criterion**. The glob is kept as the search
+      and what is asked of the result is **entry** rather than existence — a checked task in the
+      *body* of the next rung's list, not in its section 0, because a split can answer a rung's
+      scoping section in advance and two of the five already had one checked when this was written.
+      All four fail today. The rule is in this change's
+      `delivery-roadmap` delta so the ladder has one handover shape rather than five. The last rung
+      has **no** `*-open` criterion and says so in its notes; `m11e:ladder-ends-here` replaces it.
+- [x] 0.2 **The milestone's named spike.** M11 had none, because M11 had no scope. **Each rung now
+      names its own**, recorded in `docs/roadmap/risks.md` entry 12 and run at the head of its rung
+      rather than inside it: M11.a ports one band to a shader and measures it; M11.b asks whether the
+      hosted runtime carries three play modes without a second world model; M11.c authors one material
+      end to end; M11.d settles the eight RHI interface gaps on Vulkan and null, and asks first
+      whether a hosted runner can present a device; M11.e asks whether a hosted runner can produce a
+      mobile artefact at all. **None has run**, and nothing downstream of one should be read as
+      settled until it has.
+- [x] 0.3 **What `save-and-persistence` actually costs.** **ANSWERED: it is M11.a's, and M11.a
+      re-scopes it through a change against its own specification before recording it either way** —
+      which is what `delivery-roadmap` requires of a capability demoted twice. The AEAD half is a
+      dependency adoption and goes through the OpenSpec change flow with its evaluation recorded, as
+      `thirdparty-dependencies` requires. M11.a names the row as the one it predicts it will demote.
 
-## 1. The three inherited gaps that are one piece of work
+## 1. The three inherited gaps that are one piece of work → **M11.a**
 
-`m10:fields-sampled-on-a-device`, `m10:world-frame-budget` and — the only credible route to the
-second — a field sampler on the device. Scoping these together is the point; scoping them apart is
-how the artefact stays at seven times its budget.
+`m10:fields-sampled-on-a-device`, `m10:world-frame-budget` and a field sampler on the device. Scoped
+together, in `implement-m11a-foundations/tasks.md` §1, with `m10:sky-field-round-trip` and
+`m10:fields-one-vegetation-potential` beside them. All four gaps now name `m11a`.
 
-- [ ] 1.1 `cy/field.slang` and a shader-side environment-field sampler, which `src/environment/`'s
-      README says is owed by the first renderer-facing row to sample a field in a shader. Closes
-      `m10:fields-sampled-on-a-device`, whose current measurement is **zero `.slang` modules**
-- [ ] 1.2 The three bands `m10:world-frame-budget` names, in that order: the substrate re-sampled at
-      every terrain vertex (63.0 ms), the cloud march (23.2 ms) and water's foam field (12.0 ms). All
-      three are work a shipping engine does in a shader and all three are recorded as GPU debts in
-      M10's own module READMEs
-- [ ] 1.3 `m10:sky-field-round-trip` — the sky's write path into `FieldStore`, and the two assertions
-      parked in `src/rendering/sky/tests/test_cloud_shadows.cpp` restored as the check. **And the
-      consumers**: `Cloud shadows` requires the field to be "consumed by terrain, foliage, water, and
-      illumination" and nothing outside `src/rendering/sky/` reads it
-- [ ] 1.4 `m10:fields-one-vegetation-potential` — a modelling decision across two rows before it is a
-      code change. `weather-and-wind` owns macro ecosystem state including vegetation density;
-      `FoliageSystem::register_producer()` declares and claims a `vegetation` field of its own.
-      Whether those are one quantity with two names is the question, and `integration.standard_fields`
-      goes red on purpose the day it is answered, because it asserts the known state
+- [x] 1.1 Allocated to M11.a — `cy/field.slang` and the shader-side sampler
+- [x] 1.2 Allocated to M11.a — the three budget bands, in the order the gap names them
+- [x] 1.3 Allocated to M11.a — the sky's write path, the parked assertions, and the consumers
+- [x] 1.4 Allocated to M11.a — one `vegetation-potential`, a modelling decision across two rows
 
-## 2. The one CI job that answers three criteria
+## 2. The one CI job that answers three criteria → **M11.a**
 
-- [ ] 2.1 A continuous-integration job that publishes one leg's digest and compares it with
-      another's. `m9:lockstep-cross-platform`, `m10:pcg-regeneration-cross-platform` and
-      `m10:pcg-gpu-domain-agreement` each look for exactly this shape and each fails or reports NOT
-      EVALUATED for want of it. The legs already exist — `ci.yml`'s matrices include `linux-arm64`,
-      `macos-arm64` and `windows-arm64` — and they run independently
+- [x] 2.1 Allocated to M11.a — the digest-publishing, digest-comparing job.
+      `m9:lockstep-cross-platform` now names `m11a`; `m10:pcg-regeneration-cross-platform` and
+      `m10:pcg-gpu-domain-agreement` are answered by the same job and stay reported NOT EVALUATED
+      until it exists
 
-## 3. The milestone as planned
+## 3. The milestone as planned → **the five rungs**
 
-Not expanded until 0.1 is answered.
+- [x] 3.1 `rhi-and-render-graph` → **M11.d**
+- [x] 3.2 `core-platform-abstraction` → **M11.d**
+- [x] 3.3 `build-system-and-platforms` → **M11.e**
+- [x] 3.4 `build-and-packaging` → **M11.d**, with downloadable content and distributed execution at
+      **M11.e**
+- [x] 3.5 `rendering-forward-clustered` → **M11.e** for the cell; MSAA and multi-view at **M11.d**
+- [x] 3.6 `m8c:steam-audio-configures` → **M11.a**, with `audio`
+- [x] 3.7 `testing-and-quality` → **M11.d**
+- [x] 3.8 Every remaining capability → allocated across the five rungs, each row owned exactly once;
+      `xr-support` stays deferred at **M11.e**, the only rung permitted to record a deferral
+- [x] 3.9 `samples/11-ship` → **M11.d** on desktop, **M11.e** everywhere
 
-- [ ] 3.1 `rhi-and-render-graph` → Complete: **Metal** (native, not a translation layer) and
-      **D3D12** to parity with Vulkan
-- [ ] 3.2 `core-platform-abstraction` → Complete: a native `Platform` and `DisplayServer` backend for
-      one desktop platform, replacing SDL3 there and requiring no change in `src/core/`, `src/ecs/`,
-      `src/servers/` or `src/scene/`
-- [ ] 3.3 `build-system-and-platforms` → Complete: cross-compilation, the porting surface, mobile
-      targets, distribution artefacts, the full CI matrix
-- [ ] 3.4 `build-and-packaging` → Complete: content audit, provenance and symbols, downloadable
-      content, distributed execution
-- [ ] 3.5 `rendering-forward-clustered` → Complete: mobile pipeline differences, MSAA, multi-view
-- [ ] 3.6 `m8c:steam-audio-configures` — the cost is already measured in full in `deps/manifest.toml`
-- [ ] 3.7 `testing-and-quality` → Complete: the full gate set and the documentation gate
-- [ ] 3.8 Every remaining capability to Complete, or an explicitly recorded deferral with its
-      re-entry point. `xr-support` stays deferred with its prerequisites checked
-- [ ] 3.9 `samples/11-ship` — one project built, cooked, packaged and launched on every supported
-      target from a single recipe
+## 4. What this change does not do
+
+- [ ] 4.1 **It does not implement anything.** Every row above is scoped in a rung's own change, and
+      this one stays as the record of the split. It is not archived into a rung and it is not deleted
+- [ ] 4.2 **It does not record a tier.** Recording a tier is a rung's closing gate, and each rung's
+      `roadmap-tiers` criterion fails until its own closing change writes them — deliberately, as
+      M8.a's and M8.b's ledgers did before it

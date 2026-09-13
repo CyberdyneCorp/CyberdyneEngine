@@ -58,13 +58,13 @@ notes = [
     "`just roadmap-milestone m10` is this recipe, so it cannot be one of the criteria it evaluates.",
     "tasks 0.1 and 0.3 — the spike itself and its record in design.md — are not criteria here. A spike's only deliverable is a decision, `docs/roadmap/risks.md` says a spike may not be merged, and the decision is consumed in design.md §1 where the rows that depend on it can read it. What IS checkable is that the four conditions §1.6 names became tests inside `procedural-content-generation`, and `pcg-spike-conditions` is those four tests.",
     "tasks 8.4 — moving ci.yml's `milestone` job to `m10` is checked by `workflows` above (`just ci-check`), which goes red the moment `milestone-m10` is green above the newest ledger any workflow evaluates. It is the closing change's edit to make, together with flipping gates.toml, and not this file's.",
-    "tasks 8.5 — opening the M11 change is `m11-open` above, which asks only that the change exists. AT THE TIME THIS FILE WAS FINISHED IT FAILS, and it is meant to, exactly as m8c.toml's `m9-open` and m9.toml's `m10-open` did: openspec/changes/ holds `implement-m10-worlds` and no `implement-m11-*`. The next rung IS M11 — `record.MILESTONES` carries m11 after m10 and no further split has been declared.",
+    "tasks 8.5 — opening the M11 change is `m11-open` above, which asks only that the change exists. AT THE TIME THIS FILE WAS FINISHED IT FAILS, and it is meant to, exactly as m8c.toml's `m9-open` and m9.toml's `m10-open` did: openspec/changes/ holds `implement-m10-worlds` and no `implement-m11-*`. The next rung IS M11, AND M11 HAS SINCE BEEN SPLIT INTO FIVE: `implement-m11-reach` task 0.1 divided it into m11a Foundations, m11b Authoring, m11c Image, m11d Desktop and m11e Ship, and `record.MILESTONES` carries those five in place of `m11` after m10. The glob is unaffected — `*m11*` matches every one of the five change directories as well as the umbrella — and the rung this criterion actually points at is M11.a, which is where four of this ledger's own declared gaps now close.",
     "tasks 9.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
     "WHY THE SUITE CRITERIA ARE ONE PER SUITE AND THE CLAIM CRITERIA ARE ONE PER CASE SET. `criteria.fingerprint` collapses declarations that run the same command, so five criteria over `unit.environment` would be reported as ONE check and READ as five — M9's `determinism-core` says the same thing. Where a claim has to be separable from the suite carrying it, the criterion runs the named cases under doctest's `-tc` filter and REQUIRES THE FILTER TO HAVE SELECTED THEM, because a filter that matches nothing exits zero and 'the case was renamed' must not look like 'the case passed'. `one-producer-refused`, `fields-determinism-split`, `pcg-partial-reproduces-full`, `pcg-spike-conditions` and `pcg-override-survives-regeneration` are the five that do it.",
     "WHY THERE IS NO CTest ENTRY FOR samples/10-world AND NO CRITERION PRETENDS OTHERWISE. The picture needs a graphics device, and `just/run.just`'s own note states the rule: a suite that skipped on every machine without one would be a suite whose failure nobody would notice. So the artefact is split by what each half needs — `world-artefact`, `world-seed-control` and the two budget criteria need NO device and are most of the claim; `world-still` carries `requires = \"gpu\"` and a reason.",
     "WHY THE TWO ENGINE-OUTPUT PICTURES ARE `kind = \"path\"` AND M9's THREE WERE REGENERATED AND COMPARED. M9's figures are drawn from INTEGER counts, so a fresh run redraws them byte-identically and staleness is detectable. `m10-world.png` is drawn on a DEVICE and `m10-world-budget.png` plots WALL-CLOCK MILLISECONDS — the sample's README measures six captures of one seed spreading 2.3 ms of mean and 6.6 ms of worst frame — so a byte comparison would fail on a different GPU or a busier machine and a tolerance wide enough to survive both would not detect a changed curve either. The determinism claim behind the pictures is checked directly instead, by `world-still` and `world-seed-control`.",
     "THE THREE ROWS M9 DEMOTED, AND WHY TWO OF THEM ARE NOT RESTATED AS CRITERIA HERE. `m9:breadcrumbs-adopted`, `m9:crash-artefact-paths` and `m9:gameplay-benchmarks` are in the permanent set this ledger inherits and still RUN on every evaluation; what M10 deleted was the `known_gap` marker on each, in the change that closed it, because a declared gap that starts passing fails the ledger. Redeclaring them here with identical `run` strings would collapse into M9's entries and report nothing new. The third row is `save-and-persistence`, which did NOT complete — see `roadmap-tiers`.",
-    "TWO OF M9's DECLARED GAPS NAMED M10 AS THE RUNG THAT CLOSES THEM. ONE IS CLOSED AND ONE IS NOT. `m9:record-matches-plan-history` — four closed milestones' columns claiming nineteen cells the status record does not support — was M10 tasks.md 6.5, and 6.5 audited all nineteen: fifteen cells moved in the capability matrix, four rows were claimed in the record, the criterion PASSES, and its `known_gap` marker is deleted from m9.toml by the same change, because a declared gap that starts passing fails the ledger. `m9:reliable-channel-stalls-under-loss` — a reliable-ordered channel that stops delivering under 25 % loss with nothing noticing — was in no M10 task at all, and closing it was an omission corrected rather than new scope: it is CLOSED, its `known_gap` marker deleted from m9.toml by the same change, and it was two defects rather than the one M9 guessed at — a replay window narrower than the retransmission horizon, and a retransmission horizon longer than the session. Both criteria that named M10 as their closing rung are therefore closed.",
+    "TWO OF M9's DECLARED GAPS NAMED M10 AS THE RUNG THAT CLOSES THEM. ONE IS CLOSED AND ONE IS NOT, AND THE ONE THAT IS NOT WAS BRIEFLY REPORTED AS CLOSED. `m9:record-matches-plan-history` — four closed milestones' columns claiming nineteen cells the status record does not support — was M10 tasks.md 6.5, and 6.5 audited all nineteen: fifteen cells moved in the capability matrix and four rows were claimed in the record, at which point the criterion passed and its `known_gap` marker was deleted. TASK 9.4 REFUSED THE FOUR CLAIMS AND THE MARKER IS RESTORED, closing at M11. The four are `testing-and-quality` M3, `build-system-and-platforms` M4, `developer-workflow-and-just` M6 and `thirdparty-dependencies` M8.b, and the reason is that no criterion in any of the fifteen ledgers evaluates one of them: the only `expect_tiers` entry naming any of the four is `m0:roadmap-tiers` expecting `seed`, and `_check_tiers` treats an exit tier as a FLOOR, so `seed` can never contradict a Working claim. A gap closed by writing a tier into a record that nothing re-checks is not closed, and a declared gap that fails is the honest shape. `m9:reliable-channel-stalls-under-loss` — a reliable-ordered channel that stops delivering under 25 % loss with nothing noticing — was in no M10 task at all, and closing it was an omission corrected rather than new scope: it is CLOSED, its `known_gap` marker deleted from m9.toml by the same change, and it was two defects rather than the one M9 guessed at — a replay window narrower than the retransmission horizon, and a retransmission horizon longer than the session. So of the two criteria that named M10 as their closing rung, ONE is closed and one is a declared gap again, now closing at M11.",
     "WHAT IS NOT A CRITERION BECAUSE NO MACHINE CAN SETTLE IT. `procedural-content-generation`'s hundred-kilometre standing benchmark with ten million trees is NOT COMMITTED and src/pcg/README.md records it as a declared gap of the row; the derived-data cache is in-process and is not bound to `build-and-packaging`'s artefact store; `classify_parallelism()` reports per-stage parallelism that the evaluator does not dispatch; and the PCG editor tooling is data with no view. Each names the row that owes it in that README, and none is restated here as a criterion that could not fail.",
 ]
 
@@ -153,6 +153,38 @@ ci_job = "milestone-m10"
 # samples inside the radius all return the declared default while `stats()` reports a real shadow.
 # The producer computes a cloud shadow and nothing readable reaches the substrate.
 
+# --- WHAT M10'S CLOSING GATE MEASURED AGAINST THIS GAP, AND IT CONTRADICTS THE DIAGNOSIS ----------
+#
+# Nothing below is edited: the criterion runs, it fails, and a declared gap that started passing
+# would fail the ledger. What is added is the measurement, because a record that asserts a cause the
+# tree refutes is the defect `record-matches-plan` exists to catch, one level down.
+#
+# The gate instrumented the case itself — `store.tiles_of()` over both declared levels, the raw tile
+# bytes, and a 65x65 sweep at 64 m — and found:
+#
+#   * the Regional level holds 4 tiles whose LOWEST RAW BYTE IS 28, and the Macro level 4 whose
+#     lowest is 1. The shadow is in the store, quantised, where the producer said it wrote it.
+#   * `CloudShadowField::sample(store, {960, 0, -1600})` returns 0.1098 — 28/255 — so the shadow is
+#     READ BACK THROUGH THE SUBSTRATE by the same public sampler every consumer would use. The round
+#     trip works; "nothing readable reaches the substrate" is not what the tree does.
+#   * `sample()` at the origin reports `resolved = true`, level 1, 4 lattice reads, value 1.0. It
+#     resolves a real tile and that tile really holds 255 there.
+#   * 1089 samples at 32 m spacing across the whole 512 m radius all read exactly 1.0, and a profile
+#     along +x out to 2560 m reads 1.0 at every step. The shade in this sky is OFF-AXIS, at a scale
+#     set by the 16x16 weather map at 1000 m a texel: the 5x5 grid at 128 m the case walks is a
+#     square of ground this particular sky leaves in full sun.
+#
+# So the case fails for the same class of reason the gap was written about — a probe that does not
+# reach what it measures — one layer out. Proved by construction: widening ONLY the case's sampling
+# (65x65 at 64 m, nothing else touched, no assertion relaxed) makes the line read
+# `through the store: 4225 samples, lowest 0.109804, highest 1` and this criterion PASSES.
+#
+# M11 OWNS THE DECISION, and it is one of two, not a repair to slip in here: either the case samples
+# where the field varies — at which point this gap is CLOSED and its declaration must be deleted in
+# the same change, which is not a closing gate's call to make — or the gap is restated as what is
+# actually unproven, that no CONSUMER (terrain, foliage, water, illumination) reads the field at all.
+# `declare_consumers()` names those four and nothing in the tree opens a reader as any of them.
+
 [[criterion]]
 id = "sky-field-round-trip"
 describe = "THE SKY COMPUTES A CLOUD SHADOW AND THE SUBSTRATE CANNOT SEE IT. `CloudShadowField::update` reports darkest < 0.5 and brightest > 0.9 over tiles it says it wrote, and `CloudShadowField::sample` returns the declared 1.0 at every point inside `radius_metres`. `atmosphere-sky-and-clouds` requires the shadow to be \"consumed by terrain, foliage, water, and illumination\", which is what reading it through the field is for; today none of them could. Terrain and water round-trip correctly through the same store, so this is the sky's write path and not the substrate's."
@@ -188,7 +220,7 @@ print(f"the cloud shadow reaches the substrate: lowest {lowest}, spread {highest
 '
 '''
 known_gap = "the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have caught this asserted only against the producer's own statistics, which is the defect class this project has now hit twice"
-known_gap_closes = "m11"
+known_gap_closes = "m11a"
 ci_job = "milestone-m10"
 
 # ==================================================================================================
@@ -798,8 +830,31 @@ ci_job = "milestone-m10"
 id = "vfx-device"
 describe = "**PARTICLE STATE RESIDENT IN GPU BUFFERS, INDIRECT DISPATCH DRIVEN BY GPU-MAINTAINED COUNTS, ASYNC COMPUTE WHERE THE DEVICE EXPOSES A QUEUE, AND THE GPU SORT BEHIND `BudgetLevers::sorted`** — on a device, through `cy::vfx-gpu`. Six cases: the device advances the same population the CPU executor does; population and dispatch size come from the DEVICE and not from this process; the particle-count lever bounds the population the device holds; the cap reduces a block that is ALREADY FULL and not only one that is filling; the GPU sort orders the live list back to front and the lever removes it; async compute is used where the device has a queue and turning it off changes nothing. Its companion `vfx-runtime` above needs no device, so the row is not judgeable only where a GPU is"
 source = "tasks 5.1, 5.2, ROADMAP M10, vfx-system"
-kind = "recipe"
-run = "just test-render -R ^render.vfx_gpu$"
+# KIND `command` AND NOT `recipe`, AND THE THREE LINES BELOW ARE WHY. M10's gate ran this
+# criterion against a tree with `render.vfx_gpu` DELETED and it stayed GREEN. `just/test.just`'s
+# `_ctest` gives the render kind `--no-tests=ignore` where every other kind gets
+# `--no-tests=error`, because the render suites are not declared at all in a build with no
+# rendering backend (tests/render/CMakeLists.txt) and a suite that failed on every machine
+# without one is a suite nobody would keep in the set. That exemption is right for
+# `just test-render` with no argument — and it means an EMPTY SELECTION EXITS ZERO, so a
+# criterion that names one render suite through the recipe asserts nothing about that suite: rename
+# it, delete it, or configure the tree without Vulkan, and the criterion still passes having run
+# NOTHING. The registration is therefore asserted here, in the criterion, before the suite is run.
+# The recipe is left alone: its exemption is load-bearing for `test-all` on a device-free machine,
+# and any other ledger naming ONE render suite needs this same guard rather than a changed recipe.
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+ctest --test-dir "$d" -N -R '^render.vfx_gpu$' 2>/dev/null | grep -q 'render.vfx_gpu' || {
+    echo "render.vfx_gpu is not registered in $d — the suite has been renamed or deleted, or this"
+    echo "tree was configured with no rendering backend. Either way the GPU particle path is"
+    echo "UNMEASURED, and the render recipe would report that as a pass by running nothing."
+    exit 1
+}
+just test-render -R '^render.vfx_gpu$'
+'''
 requires = "gpu"
 reason = "particle state resident in GPU buffers and a dispatch sized by the device cannot be measured on a machine with no device, and must not be reported as passing there — `vfx-runtime` is the companion that needs none"
 timeout_s = 7200
@@ -1120,7 +1175,7 @@ sys.exit(0 if worst <= BUDGET_MS else 1)
 CHECK
 '''
 known_gap = "the environment demo costs about 122 ms a frame against a 16.7 ms budget, and the three bands that make it are the substrate re-sampled at every terrain vertex, the cloud march and water's foam field — all three of them work a shipping engine would do in a shader. M10 shipped no `.slang` module for an environment field, a terrain material, a water surface, grass expansion or a cloud march, and six of its module READMEs record that gap against their own rows. This closes when those shaders exist, not by optimising the CPU loop"
-known_gap_closes = "m11"
+known_gap_closes = "m11a"
 timeout_s = 7200
 ci_job = "milestone-m10"
 
@@ -1330,7 +1385,7 @@ print("every field every producing module declares composes in one registry, bot
 '
 '''
 known_gap = "`vegetation-potential` is declared UNorm8/Static/Persistent by `cy::foliage` and UNorm16/SlowlyVarying/Authoritative by `cy::weather`'s ecosystem half, and `FieldRegistry::declare()` refuses the second in either order — so a project that registers both rows' producers fails at startup, which is the `wind` defect again one namespace down. Closing it means deciding whether foliage's realised `vegetation` density and weather's ecosystem `vegetation-density` are one quantity — `weather-and-wind` gives the ecosystem to weather — and then one of the two declarations, or one of the two producers, goes away"
-known_gap_closes = "m11"
+known_gap_closes = "m11a"
 timeout_s = 7200
 ci_job = "milestone-m10"
 
@@ -1363,7 +1418,7 @@ fi
 test "$count" -gt 0
 '''
 known_gap = "no `.slang` module samples an environment field, so `environment-fields`' CPU-and-GPU-access requirement is discharged on the processor only. It is the same gap that makes the artefact cost 122 ms a frame and the same gap six of M10's module READMEs record against terrain materials, water surfaces, grass expansion and the cloud march. Closing it is `cy/field.slang` written against the layout `gpu.h` already fixes, bound through the GPU scene, and measured against a device"
-known_gap_closes = "m11"
+known_gap_closes = "m11a"
 ci_job = "milestone-m10"
 
 # --- Section 8: the record, the tiers, and the next rung -------------------------------------------
@@ -1376,9 +1431,13 @@ ci_job = "milestone-m10"
 #
 # AT THE TIME THIS FILE WAS WRITTEN IT FAILS, AND IT IS MEANT TO, exactly as m8c.toml's `m9-open` and
 # m9.toml's `m10-open` did before it: `openspec/changes/` holds `implement-m10-worlds` and no
-# `implement-m11-*`. Task 8.5 is what closes it. The next rung IS M11 — `record.MILESTONES` carries
-# m11 after m10 and no further split has been declared — and it is the rung that owns the platform
-# matrix, which is where three of this file's own gaps point.
+# `implement-m11-*`. Task 8.5 is what closes it.
+#
+# AND WHEN IT WAS CLOSED, M11 TURNED OUT TO BE FIVE RUNGS. `implement-m11-reach` task 0.1 split it
+# into `m11a` … `m11e`, so `record.MILESTONES` now carries those five in place of `m11`. This
+# criterion is unaffected by that — `*m11*` matches the umbrella change and all five rung changes —
+# and the rung it points at is M11.a, which is where four of this file's own declared gaps close.
+# The platform matrix three of them used to be filed against is M11.d and M11.e's.
 [[criterion]]
 id = "m11-open"
 describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M11, which `record.MILESTONES` already carries after m10, and which this milestone hands four things: `sky-field-round-trip`, `fields-one-vegetation-potential`, `world-frame-budget` and the two questions this host cannot ask"
@@ -1511,6 +1570,35 @@ id = "four-profiles"
 describe = "all four profiles build clean and just test-all is green in each — including src/environment/, src/terrain/, src/water/, src/foliage/, src/weather/, src/pcg/, src/vfx/gpu/, tests/determinism/ and samples/10-world. M8.c's gate found its artefact red in Debug because nobody had looked; this milestone's artefact is a world whose every reported figure is a count or a digest rather than a timing, precisely so that the four profiles have to agree about it"
 source = "tasks 9.1"
 kind = "command"
-run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+# THE `run` IS THE TWELVE EARLIER LEDGERS' STRING, CHARACTER FOR CHARACTER, AND THAT IS THE POINT.
+# `criteria.fingerprint` collapses declarations that run the same command, so the four-configuration
+# build and test is evaluated ONCE however many ledgers name it. M10's gate found this ledger had
+# spliced `just build-editor` into the middle of the line instead: a different `run` is a different
+# fingerprint, so `just roadmap-milestone m10` planned TWO four-profile entries and ran twelve heavy
+# recipes and eight build trees for a check that must run once — and `just roadmap-test` went red on
+# "`four-profiles` is declared by several ledgers and evaluated once", which is `plan-consistency`
+# above. The editor half is real and is kept: it is `four-profiles-editor` below, as its own
+# criterion, because that is how a milestone adds a check without forking one it inherited.
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
 timeout_s = 28800
+ci_job = "profiles"
+
+# `just build-engine` DOES NOT BUILD THE RUST EDITOR, and until M10 no ledger said so: `four-profiles`
+# above is engine-only, and `smoke.authoring` runs against whatever editor binary happened to be in
+# the tree. The four profiles map onto two cargo profiles through `_cargo-profile`, and
+# `editor/tests/profiles.rs` asserts that the binary it runs in was compiled with the assertions its
+# row of the profile table declares — so a mapping that drifted is a red test rather than a silent
+# difference.
+#
+# ONE TREE AND NOT FOUR. Cargo's target directory is `${CY_BUILD_DIR:-build}/editor` and the cargo
+# profiles coexist inside it, so this loop costs one directory however many profiles it walks. It is
+# deliberately NOT run under `${CY_BUILD_DIR}/$p` the way the engine loop is: that would be four
+# cargo target directories for two distinct builds.
+[[criterion]]
+id = "four-profiles-editor"
+describe = "THE EDITOR BUILDS IN ALL FOUR PROFILES TOO. `just build-engine` does not build it — `build-all` is the recipe that builds both — so an engine-only four-profile check is a four-profile check with the editor missing from it, and `smoke.authoring` would then be asserting against whatever binary was left in the tree. Declared separately from `four-profiles` rather than folded into it, because that criterion's `run` is shared verbatim with twelve earlier ledgers and editing it forks a check the ledger is supposed to inherit"
+source = "tasks 9.1, developer-workflow-and-just"
+kind = "command"
+run = "for p in debug dev profile release; do just build-editor --profile \"$p\" || exit 1; done"
+timeout_s = 7200
 ci_job = "profiles"

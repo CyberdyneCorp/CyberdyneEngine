@@ -185,8 +185,8 @@ CY_TEST_CASE("cloud shadows: an update writes the field, and a storm darkens the
     for (cy::i32 zs = -2; zs <= 2; ++zs) {
         for (cy::i32 xs = -2; xs <= 2; ++xs) {
             const f32 sampled = CloudShadowField::sample(
-                store, WorldVec3d{static_cast<double>(xs) * 128.0, 0.0,
-                                  static_cast<double>(zs) * 128.0});
+                store,
+                WorldVec3d{static_cast<double>(xs) * 128.0, 0.0, static_cast<double>(zs) * 128.0});
             CY_CHECK_GE(sampled, 0.0F);
             CY_CHECK_LE(sampled, 1.0F);
             lowest = cy::math::min(lowest, sampled);
@@ -194,17 +194,17 @@ CY_TEST_CASE("cloud shadows: an update writes the field, and a storm darkens the
             ++sampled_count;
         }
     }
-    CY_TEST_MESSAGE("through the store: ", sampled_count, " samples, lowest ", lowest,
-                    ", highest ", highest);
+    CY_TEST_MESSAGE("through the store: ", sampled_count, " samples, lowest ", lowest, ", highest ",
+                    highest);
     CY_CHECK_GE(highest, lowest);
 
-    // AND THE FIELD MUST ACTUALLY CARRY A SHADOW. The four assertions above — in range, ordered, and
-    // a default far away — are every one of them satisfied by a field nobody ever wrote to, because
-    // the declared default is 1.0 and 1.0 is in range and equals itself. M10's gate proved it: with
-    // `CloudShadowField::update`'s publish suppressed the producer computed everything, wrote
-    // nothing, and this case stayed green. So assert the thing that distinguishes a published field
-    // from an empty one — that somewhere under the cloud the sun is measurably blocked.
-    // THESE TWO ASSERTIONS ARE THE ONES THAT BELONG HERE, AND THEY FAIL TODAY:
+    // AND THE FIELD MUST ACTUALLY CARRY A SHADOW. The four assertions above — in range, ordered,
+    // and a default far away — are every one of them satisfied by a field nobody ever wrote to,
+    // because the declared default is 1.0 and 1.0 is in range and equals itself. M10's gate proved
+    // it: with `CloudShadowField::update`'s publish suppressed the producer computed everything,
+    // wrote nothing, and this case stayed green. So assert the thing that distinguishes a published
+    // field from an empty one — that somewhere under the cloud the sun is measurably blocked. THESE
+    // TWO ASSERTIONS ARE THE ONES THAT BELONG HERE, AND THEY FAIL TODAY:
     //     CY_CHECK_LT(lowest, 0.99F);
     //     CY_CHECK_GT(highest - lowest, 0.01F);
     // Twenty-five samples inside the 512 m radius all return exactly 1.0 — the declared default —

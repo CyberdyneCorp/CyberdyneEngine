@@ -37,7 +37,7 @@ it has, and each of them is a test in `tests/` before it is a sentence here.
 | **An iterative operator declares CONVERGENCE, not a budget** | `budget2` reproduces **0 of 12, in all 12 of its configurations** — the only axis with no survivor anywhere | A budget is allowed and sets `Program::cacheable()` false; `RegionCache::store()` refuses it |
 | **Identity DERIVED from stable identifiers**, never a traversal counter and never a rank among survivors | `counter` mis-binds **43%** of 7 877 overrides on an ordinary FULL regeneration; `rank` 3.7%; `derived` **0** | `compile()` refuses the other two by name. `PointSet` stores each point's original SLOT so a filtered set cannot invent a rank |
 
-## The six decisions a reader should know before changing anything
+## The eight decisions a reader should know before changing anything
 
 **1. Evaluation is STAGE-MAJOR, not region-major, and that is the whole reason a partial
 regeneration reproduces a full one.** A gather reads its neighbours' output *of the previous stage*,
@@ -75,6 +75,30 @@ one.
 another, so a cache populated on one target is a MISS on another rather than a silently-wrong hit.
 When `pcg-regeneration-cross-platform` goes green in continuous integration, the honest change is to
 **delete** `platform_tag()`'s contribution, not to add a second one.
+
+**7. A REGION WITH ITS DETAIL DROPPED IS A REGION THAT WAS NOT EVALUATED, and a partial regeneration
+over one is refused.** `GenerationWorld::demote()` keeps the macro summary and clears the candidates,
+the accepted points and the provenance — and it also clears the region's `evaluated_mask`, so
+`complete_through()` stops calling the world complete. It did not, and M10's gate measured what that
+cost: `forest.spacing` resolves candidate conflicts by reading its neighbours' CANDIDATES, so a
+region regenerated beside a demoted one was evaluated against a neighbour supplying none, and its
+accepted set silently diverged from what a full run of the same seed produces — reported as a
+successful regeneration. The same pass found that `begin()` and `begin_edit()`, the BUDGETED runtime
+entry points, never made the refusal at all; they do now, with one exception that reads nothing it
+does not also write: a run seeding every region from stage zero, which is how a first generation is
+driven in steps.
+
+**8. THE OVERRIDE MERGE RESOLVES EVERY OVERRIDE BEFORE IT APPLIES ANY.** It used to bind and apply
+one at a time, so a `Move` relocated the point a later spatial re-anchor measured its distance to and
+the same two overrides placed in the other order produced a different world — the write-order failure
+`environment-fields` refuses one layer down. Resolution is now two phases over the point set as the
+regeneration left it: identity binds first, each claiming its instance, then the spatial fallbacks,
+with a contested instance going to NOBODY. Both contenders become orphans, which is visible, rather
+than one of them becoming a silent mis-bind — and the outcome needs no ordering rule to be a function
+of the overrides rather than of the order they were written in. In the same pass, `OverrideOp::Add`
+was found to count a hand-placed instance and never put it in the result, and `Lock` to report an
+instance the generator had stopped producing as an ORPHAN rather than preserving it; both are
+materialised from the override record now, which is why `anchor_*` is recorded for every override.
 
 ## What is NOT here, and who owns it
 

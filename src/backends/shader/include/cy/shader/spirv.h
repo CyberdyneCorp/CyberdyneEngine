@@ -3,7 +3,8 @@
 // SPIR-V as the interchange form: validation of its shape, and reflection out of it. Tasks 3.1 and
 // 3.3.
 //
-// --- WHY THE ENGINE PARSES SPIR-V ITSELF -----------------------------------------------------------
+// --- WHY THE ENGINE PARSES SPIR-V ITSELF
+// -----------------------------------------------------------
 //
 // It looks like the one place a dependency would obviously be right — SPIRV-Reflect exists and is
 // small. Three reasons it is not:
@@ -13,17 +14,19 @@
 //     reflector part of the binding contract, and a contract implemented by a library the engine
 //     does not control is one whose behaviour changes under it.
 //   * **The output shape is the engine's, not the reflector's.** Every reflection library returns
-//     its own structs, so a wrapper would be written anyway; what is saved is the traversal, and the
-//     traversal is the part below — a linear walk over a word stream with no allocation per
+//     its own structs, so a wrapper would be written anyway; what is saved is the traversal, and
+//     the traversal is the part below — a linear walk over a word stream with no allocation per
 //     instruction.
-//   * **It has to work with no device and no Vulkan headers.** `Reflection` is derived and validated
+//   * **It has to work with no device and no Vulkan headers.** `Reflection` is derived and
+//   validated
 //     in CI on machines with neither, which is what makes the null-backend path meaningful.
 //
 // This is a *reflector*, emphatically not a validator and not an optimiser. It trusts the module's
 // structure and reports what it finds; `spirv-val` is the validator and Slang is the optimiser, and
 // `thirdparty-dependencies` is clear that the engine writes neither.
 //
-// --- WHAT IT UNDERSTANDS ---------------------------------------------------------------------------
+// --- WHAT IT UNDERSTANDS
+// ---------------------------------------------------------------------------
 //
 // One linear pass collects names, decorations, types, constants, variables and entry points; a
 // second attributes each variable to the entry points whose interface list names it. SPIR-V 1.4 and
@@ -59,8 +62,8 @@ struct SpirvHeader {
 };
 
 /// Read and check the header. Rejects a wrong magic, a byte-swapped module (the engine never
-/// produces one and converting it would hide a build that targets the wrong endianness), a truncated
-/// header, and an id bound large enough to be a length mistake rather than a shader.
+/// produces one and converting it would hide a build that targets the wrong endianness), a
+/// truncated header, and an id bound large enough to be a length mistake rather than a shader.
 [[nodiscard]] Expected<SpirvHeader, Error> spirv_header(Span<const u32> words) noexcept;
 
 /// Reflect a whole module.
@@ -70,9 +73,9 @@ struct SpirvHeader {
 ///
 /// Fails on a module that is structurally impossible to reflect: a bad header, an instruction whose
 /// word count is zero (which would loop forever), an instruction running past the end. It does not
-/// fail on a module that is merely *wrong* — a binding with no descriptor set decoration is reported
-/// as set 0, because that is what the driver will do with it, and the convention validator is where
-/// that becomes a diagnostic.
+/// fail on a module that is merely *wrong* — a binding with no descriptor set decoration is
+/// reported as set 0, because that is what the driver will do with it, and the convention validator
+/// is where that becomes a diagnostic.
 [[nodiscard]] Expected<Reflection, Error> reflect_spirv(Span<const u32> words,
                                                         Allocator& allocator) noexcept;
 

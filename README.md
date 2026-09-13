@@ -343,18 +343,20 @@ code written after them: computed barriers, stable field identity, one command s
 simulation, transactions as the only write path. Established at the right moment they cost almost
 nothing; established late, everything downstream has to be revisited.
 
-So the order is specified too, in thirteen milestones with no dates — because a date is an estimate
-that decays, while *after what* is a design consequence that does not.
+So the order is specified too, in nineteen rungs with no dates — because a date is an estimate that
+decays, while *after what* is a design consequence that does not. Nineteen and not twelve because the
+ladder has been split three times and never renumbered: M5.5 was inserted, M8 became M8.a, M8.b and
+M8.c, and M11 became M11.a through M11.e.
 
 | Era | | Ends with |
 |---|---|---|
 | **Foundation** | M0 Ground · M1 Substrate · M2 World | A headless simulation that ticks, hashes, and reproduces its hash exactly |
 | **First playable** | M3 First light · M4 Playable · M5 Authorable · M5.5 Operable | A character controller written in Swift, edited in an editor with a window that survives a runtime crash — and that an agent can drive |
-| **Production scale** | M6 Scale · M7 Fidelity · M8 Game systems | A streamed multi-kilometre world at film detail, playable as a real game |
-| **Shipping** | M9 Integrity · M10 Worlds · M11 Reach | Four-player rollback, open worlds, every platform — 1.0 |
+| **Production scale** | M6 Scale · M7 Fidelity · M8.a Authorable · M8.b Systems · M8.c Spectacle | A streamed multi-kilometre world at film detail, playable as a real game |
+| **Shipping** | M9 Integrity · M10 Worlds · M11.a Foundations · M11.b Authoring · M11.c Image · M11.d Desktop · M11.e Ship | Four-player rollback, open worlds, a game made in the editor, every platform — 1.0 |
 
 Every milestone ends in a runnable artefact committed to the repository, and once its checks are
-green they stay in continuous integration — so the M4 character controller still runs at M11.
+green they stay in continuous integration — so the M4 character controller still runs at M11.e.
 
 → [**The roadmap**](docs/ROADMAP.md) · [capability matrix](docs/roadmap/capability-matrix.md) ·
 [dependencies](docs/roadmap/dependencies.md) · [risks and deferrals](docs/roadmap/risks.md)

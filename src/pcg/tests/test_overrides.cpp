@@ -307,3 +307,163 @@ CY_TEST_CASE("two overrides of one instance are two records, and one is replacea
     CY_CHECK(layer.remove(target, OverrideOp::Lock));
     CY_CHECK_FALSE(layer.remove(target, OverrideOp::Delete));
 }
+
+// ================================================================================================
+// THE M10 GATE'S ADVERSARIAL PASS (tasks.md 9.3): TRYING TO BEAT 0 MIS-BOUND OF 7 877
+// ================================================================================================
+//
+// The spike measured `Derived` at zero mis-bound over twelve regenerations, and the cases above
+// hold the three fates an override can have. These attack the fates themselves rather than the
+// derivation: an override that is COUNTED as having survived but is not in the result has beaten
+// every count in `MergeResult` without moving a single identity.
+
+namespace {
+
+/// The identity every point in `region_points()` carries at `slot`. So a case can name the instance
+/// an override targets without first producing it.
+[[nodiscard]] GeneratedId identity_of(cy::u32 slot) noexcept {
+    return GeneratedId{cy::pcg::derive_identity(99, cy::pcg::node_identity(test::kScatterNode),
+                                                cy::pcg::region_key(2, 3, 0), slot)
+                           .value};
+}
+
+/// Is `target` in the merged point set at all? What "survives regeneration" means for a reader,
+/// as opposed to what a counter says happened.
+[[nodiscard]] bool present(const PointSet& points, GeneratedId target) noexcept {
+    for (cy::usize index = 0; index < points.size(); ++index) {
+        if (points.identity(index) == target.value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+CY_TEST_CASE("a hand-ADDED instance is in the merged result, not only in its count") {
+    // THE ATTACK. `OverrideOp::Add` is "an instance the generator did not produce" — a designer's
+    // tree, placed where the rules put none. `generated base + author overrides = authored result`
+    // makes it part of the result, so a merge that counts it and does not carry it has deleted a
+    // designer's work while reporting that it bound.
+    const PointSet base = region_points(8);
+    OverrideLayer layer(test::allocator());
+
+    Override add;
+    // Minted by the override layer's own node, so it can never collide with a generated identity.
+    add.target = GeneratedId{cy::pcg::derive_identity(99, cy::pcg::node_identity("override.layer"),
+                                                      cy::pcg::region_key(2, 3, 0), 0)
+                                 .value};
+    add.op = OverrideOp::Add;
+    add.origin = OverrideOrigin::Authored;
+    add.x = 40.0;
+    add.y = 2.0;
+    add.z = 9.0;
+    add.anchor_x = 40.0;
+    add.anchor_z = 9.0;
+    add.attribute = kVariant;  // which column the variant lands in, as `Replace` names it too
+    add.variant = 3;
+    add.written_against_version = 1;
+    CY_REQUIRE(layer.place(add));
+
+    cy::Expected<MergeResult, cy::Error> merged = layer.merge(base, 0.0, 0.0, 0.0F, 1);
+    CY_REQUIRE(merged.has_value());
+    CY_CHECK_EQ(merged->added, 1u);
+
+    // The count is not the result. A reader iterates the points.
+    CY_REQUIRE_EQ(merged->points.size(), 9u);
+    CY_REQUIRE(present(merged->points, add.target));
+    for (cy::usize index = 0; index < merged->points.size(); ++index) {
+        if (merged->points.identity(index) != add.target.value) {
+            continue;
+        }
+        CY_CHECK_EQ(merged->points.x(index), 40.0F);
+        CY_CHECK_EQ(merged->points.z(index), 9.0F);
+        CY_CHECK_EQ(merged->points.get_i32(kVariant, index), 3);
+    }
+
+    // And it is still there after a second merge, which is what "survives regeneration" asks.
+    const PointSet again = region_points(8);
+    cy::Expected<MergeResult, cy::Error> twice = layer.merge(again, 0.0, 0.0, 0.0F, 1);
+    CY_REQUIRE(twice.has_value());
+    CY_CHECK(present(twice->points, add.target));
+}
+
+CY_TEST_CASE("a locked instance survives a regeneration that GENUINELY stopped producing it") {
+    // THE ATTACK, and it is an attack on a test as much as on the code. The case above named
+    // "a locked instance survives a regeneration that no longer produces it" merges against
+    // `region_points(8)` — the same eight points, the locked one among them — so the regeneration
+    // it describes never happened and the lock was never asked to do anything.
+    //
+    // "Locked instances SHALL be preserved through regeneration" is about the other case: the rules
+    // changed, the generator would not place this tree now, and the designer said keep it.
+    const PointSet base = region_points(8);
+    const GeneratedId locked = identity_of(7);
+    CY_REQUIRE(present(base, locked));
+
+    OverrideLayer layer(test::allocator());
+    Override lock;
+    lock.target = locked;
+    lock.op = OverrideOp::Lock;
+    lock.origin = OverrideOrigin::Authored;
+    lock.anchor_x = static_cast<cy::f64>(base.x(7));
+    lock.anchor_y = static_cast<cy::f64>(base.y(7));
+    lock.anchor_z = static_cast<cy::f64>(base.z(7));
+    lock.written_against_version = 1;
+    CY_REQUIRE(layer.place(lock));
+
+    // The rule changed: slot 7 is no longer produced.
+    const PointSet regenerated = region_points(7);
+    CY_REQUIRE_FALSE(present(regenerated, locked));
+
+    cy::Expected<MergeResult, cy::Error> merged = layer.merge(regenerated, 0.0, 0.0, 0.0F, 1);
+    CY_REQUIRE(merged.has_value());
+    CY_CHECK_EQ(merged->locked, 1u);
+    CY_CHECK_EQ(merged->orphaned, 0u);
+    CY_REQUIRE_EQ(merged->points.size(), 8u);
+    CY_CHECK(present(merged->points, locked));
+}
+
+CY_TEST_CASE("a merge does not depend on the order the overrides were placed in") {
+    // THE ATTACK, and it is the write-order failure this whole milestone is about, one layer up.
+    // `merge()` walks the overrides in the order they were PLACED, and each one it applies mutates
+    // the point set the next one searches: a `Move` relocates the very point a later spatial
+    // re-anchor measures its distance to. So two overrides placed in one order and the same two
+    // placed in the other could produce two different worlds from one regeneration.
+    //
+    // What is asserted is the property and not a particular resolution: the same overrides over the
+    // same regenerated region give the same points and the same fates, whichever order a designer
+    // happened to write them in.
+    const PointSet base = region_points(8);
+
+    cy::u64 digests[2] = {0, 0};
+    cy::u32 reanchored[2] = {0, 0};
+    for (cy::usize pass = 0; pass < 2; ++pass) {
+        OverrideLayer layer(test::allocator());
+        // Slots 6 and 7 vanish in the regeneration below, and slot 5 is the surviving point nearest
+        // to both anchors — so both fall through to the spatial search and contend for it.
+        const cy::u32 order[2] = {pass == 0 ? cy::u32{6} : cy::u32{7},
+                                  pass == 0 ? cy::u32{7} : cy::u32{6}};
+        for (cy::u32 slot : order) {
+            Override move;
+            move.target = identity_of(slot);
+            move.op = OverrideOp::Move;
+            move.origin = OverrideOrigin::Authored;
+            move.anchor_x = static_cast<cy::f64>(base.x(slot));
+            move.anchor_z = static_cast<cy::f64>(base.z(slot));
+            move.x = static_cast<cy::f64>(slot) + 100.0;
+            move.z = 30.0;
+            move.written_against_version = 1;
+            CY_REQUIRE(layer.place(move));
+        }
+
+        const PointSet regenerated = region_points(6);  // slots 0..5 survive
+        cy::Expected<MergeResult, cy::Error> merged = layer.merge(
+            regenerated, 0.0, 0.0, 10.0F /* a generous tolerance */, 2 /* a new version */);
+        CY_REQUIRE(merged.has_value());
+        digests[pass] = merged->points.digest();
+        reanchored[pass] = merged->reanchored;
+    }
+
+    CY_CHECK_EQ(reanchored[0], reanchored[1]);
+    CY_CHECK_EQ(digests[0], digests[1]);
+}

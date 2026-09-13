@@ -26,8 +26,8 @@ namespace cy::shader {
 
 using assets::ContentHash;
 
-/// A programmable stage. Ray tracing and mesh shading are declared here and capability-gated at use:
-/// `shader-system` requires them "as capability-gated additions, with SPIR-V remaining the
+/// A programmable stage. Ray tracing and mesh shading are declared here and capability-gated at
+/// use: `shader-system` requires them "as capability-gated additions, with SPIR-V remaining the
 /// interchange form", and a stage the enum cannot name is a stage the cache key cannot distinguish.
 enum class Stage : u8 {
     Vertex = 0,
@@ -98,10 +98,10 @@ constexpr StageMask& operator|=(StageMask& a, StageMask b) noexcept {
 /// The interchange form a compilation produces.
 ///
 /// `shader-system`'s pipeline is SPIR-V first and backend-native afterwards: SPIR-V is retained for
-/// Vulkan, cross-compiled to MSL for Metal, and lowered to DXIL for D3D12. M3 produces only SPIR-V —
-/// there is no Metal and no D3D12 backend until M11 — but the enumerator exists now because it is
-/// part of the **cache key**, and a key that cannot distinguish two targets is a key that serves one
-/// target's artefact to the other.
+/// Vulkan, cross-compiled to MSL for Metal, and lowered to DXIL for D3D12. M3 produces only SPIR-V
+/// — there is no Metal and no D3D12 backend until M11 — but the enumerator exists now because it is
+/// part of the **cache key**, and a key that cannot distinguish two targets is a key that serves
+/// one target's artefact to the other.
 enum class Target : u8 {
     SpirV = 0,
     Msl = 1,
@@ -140,8 +140,8 @@ const char* renderer_profile_name(RendererProfile profile) noexcept;
 /// Capability bits a compilation may assume. A feature the device does not have is a feature the
 /// shader must not reference, so this is part of the cache key exactly as the profile is.
 ///
-/// The set is small and grows with the RHI's capability model rather than ahead of it: a bit with no
-/// backend behind it is a cache key that splits for no reason.
+/// The set is small and grows with the RHI's capability model rather than ahead of it: a bit with
+/// no backend behind it is a cache key that splits for no reason.
 enum class FeatureSet : u32 {
     None = 0,
     /// `VK_EXT_descriptor_indexing` and its friends: unbounded descriptor arrays.

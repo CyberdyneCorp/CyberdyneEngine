@@ -2,7 +2,8 @@
 #define CY_SHADER_REFLECTION_H
 // What a compiled shader says about itself, and the binding layout derived from it. Task 3.3.
 //
-// --- THE INVARIANT ---------------------------------------------------------------------------------
+// --- THE INVARIANT
+// ---------------------------------------------------------------------------------
 //
 // `shader-system` — "Reflection-driven binding": *descriptor set layouts, push-constant ranges, and
 // vertex input layouts SHALL be derived from shader reflection, not declared separately in C++.*
@@ -15,7 +16,8 @@
 // `PipelineLayoutDesc` can only be produced by `derive_layout()`, from a `Reflection` that can only
 // be produced by parsing a compiled artefact. That is what "cannot drift" has to mean.
 //
-// --- THE DESCRIPTOR SET CONVENTION -----------------------------------------------------------------
+// --- THE DESCRIPTOR SET CONVENTION
+// -----------------------------------------------------------------
 //
 // `shader-system` fixes four sets so that reflection results are predictable:
 //
@@ -26,15 +28,16 @@
 //   | 2   | Pass: pass-specific resources                                     | per pass         |
 //   | 3   | Draw: material data and per-draw resources (unused when bindless)  | per draw         |
 //
-// `validate_convention()` is the "Convention violated" scenario made executable: a shader that binds
-// a per-frame resource in set 3 fails the cook with a diagnostic naming the convention. A convention
-// is only enforceable if the engine knows which resources are per-frame, so the engine *reserves the
-// names*: a binding called `cy_frame`, `cy_globals` or `cy_samplers` belongs in set 0 wherever it
-// appears, and one called `cy_view` belongs in set 1. Those names are declared in this file and
-// declared in the Slang standard library (`src/rendering/shaders/cy/globals.slang`), and the
-// validator is what keeps the two in agreement.
+// `validate_convention()` is the "Convention violated" scenario made executable: a shader that
+// binds a per-frame resource in set 3 fails the cook with a diagnostic naming the convention. A
+// convention is only enforceable if the engine knows which resources are per-frame, so the engine
+// *reserves the names*: a binding called `cy_frame`, `cy_globals` or `cy_samplers` belongs in set 0
+// wherever it appears, and one called `cy_view` belongs in set 1. Those names are declared in this
+// file and declared in the Slang standard library (`src/rendering/shaders/cy/globals.slang`), and
+// the validator is what keeps the two in agreement.
 //
-// --- WHAT IS NOT HERE ------------------------------------------------------------------------------
+// --- WHAT IS NOT HERE
+// ------------------------------------------------------------------------------
 //
 // No `VkDescriptorSetLayout`, no `VkDescriptorType`, no Vulkan anything. `derive_layout()` produces
 // an engine-owned description; turning that into a device object is the RHI's, one layer of
@@ -85,9 +88,9 @@ const char* descriptor_set_frequency(DescriptorSet set) noexcept;
 /// Names the engine reserves, each pinned to the set the convention puts it in.
 ///
 /// Reserved rather than merely conventional: these are the blocks the engine itself writes, so a
-/// user shader that declares one in a different set is not expressing a preference, it is describing
-/// a program that cannot be bound. Every name begins `cy_`, which is also the rule that keeps a
-/// user's own uniform out of this table.
+/// user shader that declares one in a different set is not expressing a preference, it is
+/// describing a program that cannot be bound. Every name begins `cy_`, which is also the rule that
+/// keeps a user's own uniform out of this table.
 struct ReservedBinding {
     const char* name;
     DescriptorSet set;
@@ -221,10 +224,11 @@ struct Reflection {
     /// Sort every array into a canonical order — bindings by (set, binding), inputs by location,
     /// constants by id, entry points by name. Called by the parser before it returns.
     ///
-    /// **Determinism, not tidiness.** `rendering-architecture` requires deterministic submission and
-    /// design.md §6 spells out why; a reflection whose binding order came from the order SPIR-V
-    /// happened to declare variables would put that non-determinism into every derived layout, every
-    /// cache key computed over one, and every golden image that depends on a descriptor write order.
+    /// **Determinism, not tidiness.** `rendering-architecture` requires deterministic submission
+    /// and design.md §6 spells out why; a reflection whose binding order came from the order SPIR-V
+    /// happened to declare variables would put that non-determinism into every derived layout,
+    /// every cache key computed over one, and every golden image that depends on a descriptor write
+    /// order.
     void canonicalise() noexcept;
 };
 

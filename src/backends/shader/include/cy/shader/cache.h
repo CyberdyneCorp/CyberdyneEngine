@@ -7,7 +7,8 @@
 // populated by CI** — the same tiering as the cook cache in `asset-import-pipeline`. Identical
 // compilation work is not repeated when a tier already holds the result.
 //
-// --- WHY THE TIERS ARE AN INTERFACE AND THE FILESYSTEM IS ONE IMPLEMENTATION ----------------------
+// --- WHY THE TIERS ARE AN INTERFACE AND THE FILESYSTEM IS ONE IMPLEMENTATION
+// ----------------------
 //
 // A remote tier is an HTTP or object-store client, and there is no HTTP client in this engine at M3
 // — `core-assets-and-io`'s `RemoteMount` is the seam that will hold one and it is a stub. Writing
@@ -28,7 +29,8 @@
 //   * **the key** — `compile_cache_key()` in `compiler.h`. A tier never invents a key; it stores
 //     bytes under one. That is what makes the cache content-addressed rather than merely a map.
 //
-// --- WHAT IS DELIBERATELY MISSING ------------------------------------------------------------------
+// --- WHAT IS DELIBERATELY MISSING
+// ------------------------------------------------------------------
 //
 // Eviction. A local shader cache is bounded by the number of variants a project has, not by time,
 // and a cache that evicts under a size ceiling before anything has measured the ceiling is a source
@@ -86,8 +88,9 @@ public:
     /// which is an ordinary outcome and not a failure worth a diagnostic.
     [[nodiscard]] virtual Status get(const ContentHash& key, Array<u8>& out) noexcept = 0;
 
-    /// Store an entry. Overwrites silently: the key is a content hash, so a second write of the same
-    /// key is the same bytes, and refusing it would make two workers racing on one variant an error.
+    /// Store an entry. Overwrites silently: the key is a content hash, so a second write of the
+    /// same key is the same bytes, and refusing it would make two workers racing on one variant an
+    /// error.
     [[nodiscard]] virtual Status put(const ContentHash& key, Span<const u8> bytes) noexcept = 0;
 
     /// True when the key is present, without reading the payload.
@@ -105,8 +108,8 @@ protected:
 /// entry for the next build to read as a valid artefact.
 class DirectoryCacheTier final : public CacheTier {
 public:
-    /// `root` is created if it does not exist and `writable` is true; a read-only tier that does not
-    /// exist is simply a tier that never hits.
+    /// `root` is created if it does not exist and `writable` is true; a read-only tier that does
+    /// not exist is simply a tier that never hits.
     DirectoryCacheTier(const char* name, const char* root, bool writable,
                        Allocator& allocator) noexcept;
 

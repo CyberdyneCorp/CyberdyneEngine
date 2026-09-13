@@ -1,26 +1,28 @@
 // The SPIR-V reflector. Tasks 3.1 and 3.3.
 //
 // One linear pass over the word stream fills per-id tables; a second turns those tables into a
-// `Reflection`. There is no recursion over the instruction stream and no allocation per instruction:
-// the id tables are sized once from the header's id bound, which is what makes reflecting a
-// thousand-variant library a linear cost rather than a quadratic one.
+// `Reflection`. There is no recursion over the instruction stream and no allocation per
+// instruction: the id tables are sized once from the header's id bound, which is what makes
+// reflecting a thousand-variant library a linear cost rather than a quadratic one.
 //
-// --- READING THIS FILE ------------------------------------------------------------------------------
+// --- READING THIS FILE
+// ------------------------------------------------------------------------------
 //
 // SPIR-V is a stream of instructions, each `word[0] = (word_count << 16) | opcode`. Every constant
 // below is from the SPIR-V specification's Binary Form section, and each is spelled with its
-// specification name so it can be looked up. Nothing here is Vulkan: SPIR-V is a Khronos interchange
-// format that Vulkan consumes, and the distinction is what lets this file compile and be tested on a
-// machine with no Vulkan headers and no device.
+// specification name so it can be looked up. Nothing here is Vulkan: SPIR-V is a Khronos
+// interchange format that Vulkan consumes, and the distinction is what lets this file compile and
+// be tested on a machine with no Vulkan headers and no device.
 //
-// --- THE ONE APPROXIMATION, STATED ------------------------------------------------------------------
+// --- THE ONE APPROXIMATION, STATED
+// ------------------------------------------------------------------
 //
 // A binding's `block_size` is computed as `offset of the last member + size of the last member`,
 // using the `Offset` decorations the compiler emitted. That is exact for the layouts Slang produces
-// and it is *not* a std140/std430 layout engine — the engine deliberately does not have one, because
-// the compiler already laid the block out and recomputing it would be a second opinion that can
-// disagree. A block ending in a runtime array reports 0, which is the honest answer: its size is not
-// static.
+// and it is *not* a std140/std430 layout engine — the engine deliberately does not have one,
+// because the compiler already laid the block out and recomputing it would be a second opinion that
+// can disagree. A block ending in a runtime array reports 0, which is the honest answer: its size
+// is not static.
 
 #include <cy/shader/spirv.h>
 
@@ -31,7 +33,8 @@
 namespace cy::shader {
 namespace {
 
-// --- The parts of the SPIR-V binary form this file reads ------------------------------------------
+// --- The parts of the SPIR-V binary form this file reads
+// ------------------------------------------
 
 enum : u32 {
     kOpName = 5,
@@ -166,8 +169,8 @@ u32 literal_string_words(const u32* words, u32 available) noexcept {
 /// Everything the first pass records about one result id.
 struct IdInfo {
     u32 opcode = 0;
-    /// Type-specific operands, verbatim from the defining instruction. Which slot means what depends
-    /// on `opcode`, and every reader below is next to the opcode it reads for.
+    /// Type-specific operands, verbatim from the defining instruction. Which slot means what
+    /// depends on `opcode`, and every reader below is next to the opcode it reads for.
     u32 operand[4] = {kNoValue, kNoValue, kNoValue, kNoValue};
     u32 name = kNoValue;  // offset into the name arena
     u32 set = kNoValue;
@@ -491,7 +494,8 @@ u32 Reflector::type_size(u32 type) const noexcept {
         case kOpTypeArray: {
             const u32 length_id = info.operand[1];
             const u32 length = length_id < ids_.size() ? ids_[length_id].constant : 0;
-            const u32 stride = info.array_stride != 0 ? info.array_stride : type_size(info.operand[0]);
+            const u32 stride =
+                info.array_stride != 0 ? info.array_stride : type_size(info.operand[0]);
             return length * stride;
         }
         case kOpTypeRuntimeArray:
@@ -635,8 +639,7 @@ Status Reflector::add_binding(Reflection& reflection, u32 variable) noexcept {
 
     // OpVariable's result type is a pointer; its pointee is what is actually bound.
     const u32 pointer_type = ids_[variable].operand[3];
-    const u32 pointee =
-        pointer_type < ids_.size() ? ids_[pointer_type].operand[1] : kNoValue;
+    const u32 pointee = pointer_type < ids_.size() ? ids_[pointer_type].operand[1] : kNoValue;
     if (pointee == kNoValue) {
         return ok();
     }
@@ -713,8 +716,8 @@ Expected<Reflection, Error> Reflector::build() noexcept {
         }
     }
 
-    // Only the vertex stage's inputs are attributes. A fragment stage's inputs are interpolants from
-    // the stage before it, and reporting them as vertex inputs would make a mesh layout check
+    // Only the vertex stage's inputs are attributes. A fragment stage's inputs are interpolants
+    // from the stage before it, and reporting them as vertex inputs would make a mesh layout check
     // compare a vertex buffer against a varying.
     const bool has_vertex_stage = [this]() noexcept {
         for (const EntryPointRecord& record : entry_points_) {
@@ -810,8 +813,9 @@ Expected<SpirvHeader, Error> spirv_header(Span<const u32> words) noexcept {
     header.id_bound = words[3];
 
     // An id bound larger than the module has words cannot be honest — every id is defined by an
-    // instruction of at least two words — and it is what a length mistake looks like. Checked before
-    // the id table is sized, because that table is the one allocation proportional to the bound.
+    // instruction of at least two words — and it is what a length mistake looks like. Checked
+    // before the id table is sized, because that table is the one allocation proportional to the
+    // bound.
     if (header.id_bound == 0 || header.id_bound > words.size()) {
         return make_unexpected(Error{ErrorCode::InvalidArgument,
                                      "the SPIR-V id bound is impossible for a module this size",

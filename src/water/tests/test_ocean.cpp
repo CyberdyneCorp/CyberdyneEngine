@@ -148,7 +148,19 @@ CY_TEST_CASE("no world-scale ocean mesh exists: the patch costs the same whereve
     OceanSurface surface(test::allocator());
     OceanSurfaceParams params;
     params.near_cell_metres = 2.0F;
-    params.ring_quads = 8;
+    // FOUR QUADS A RING, NOT EIGHT, AND THE THREE RINGS STAY. What this case measures is that the
+    // patch costs THE SAME at the origin and a thousand kilometres out; the size of the patch is
+    // not its subject, and the ring cascade — the thing a camera-relative surface has and a
+    // world-scale mesh does not — is the ring COUNT rather than the tessellation of each one.
+    // `build_indices` makes a ring `(ring_quads + 1)^2` vertices, so eight quads meant 3 * 81 = 243
+    // vertices evaluated twice, and M10's four-profile gate measured this case at a mean of 1.24 ms
+    // of CPU over ten runs (0.39 to 2.19) against a unit budget of 1.00 — it failed about half its
+    // runs in `dev`, `profile` and `Shipping`, and passed in Debug only because the harness scales
+    // the budget against a reference workload that `-O0` slows too. Four quads is 3 * 25 = 75
+    // vertices, a third of the work, with every assertion below unchanged: the equality that is the
+    // requirement does not care how many vertices there are, only that the number is the same in
+    // both places. The sibling case above made the same call for the same reason.
+    params.ring_quads = 4;
     params.rings = 3;
     CY_REQUIRE(surface.configure(params).has_value());
 
@@ -164,8 +176,9 @@ CY_TEST_CASE("no world-scale ocean mesh exists: the patch costs the same whereve
     CY_CHECK_EQ(surface.vertex_count(), vertices_at_origin);
     CY_CHECK_EQ(surface.bytes(), bytes_at_origin);
 
-    // And the patch reaches as far as its rings say and no further, whatever the ocean's bounds.
-    CY_CHECK_NEAR(surface.extent_metres(), 2.0F * 4.0F * 8.0F * 0.5F, 1e-4F);
+    // And the patch reaches as far as its rings say and no further, whatever the ocean's bounds:
+    // near cell 2 m, coarsest ring 2^(3-1) times that, four quads across it, half-extent.
+    CY_CHECK_NEAR(surface.extent_metres(), 2.0F * 4.0F * 4.0F * 0.5F, 1e-4F);
 }
 
 CY_TEST_CASE("the patch is generated around the camera and snapped, not swimming under it") {

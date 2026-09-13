@@ -6,7 +6,8 @@
 // the reader because this file is where four of them are ordered:
 //
 //   1. Slang source → Slang compiler → SPIR-V per entry point and permutation   (`ShaderCompiler`)
-//   2. SPIR-V → validation and optimisation                                     (the compiler's own)
+//   2. SPIR-V → validation and optimisation                                     (the compiler's
+//   own)
 //   3. SPIR-V → reflection                                                      (`spirv.h`)
 //   4. Per backend: SPIR-V retained, or cross-compiled                          (M11)
 //   5. Package into a shader library keyed by content hash                      (`library.h`)
@@ -16,7 +17,8 @@
 // What it owns is the *request* — which source, which entry point, which permutation, which target,
 // which feature set — and everything that happens to the answer.
 //
-// --- WHY THERE IS AN INTERFACE HERE AT ALL --------------------------------------------------------
+// --- WHY THERE IS AN INTERFACE HERE AT ALL
+// --------------------------------------------------------
 //
 // Three reasons, and the third is the one that pays for it:
 //
@@ -25,7 +27,8 @@
 //     implementation be absent from a link rather than present and unreachable.
 //   * The Slang library is a 3 GB build tree and a hard dependency for anyone who touches this
 //     module. Behind an interface, the cache, the library format, the permutation model, the
-//     reflection parser and the pipeline manager are all testable without it — which is what CI has.
+//     reflection parser and the pipeline manager are all testable without it — which is what CI
+//     has.
 //   * M7's material compiler and M11's Metal backend each add a step to this pipeline. A concrete
 //     compiler class would grow a flag per addition; an interface grows an implementation.
 //
@@ -55,8 +58,9 @@ const char* severity_name(Severity severity) noexcept;
 ///
 /// `shader-system`'s "Compile error surfaces with source location" scenario: the error carries the
 /// Slang source file, line and column, and appears in the editor's shader editor and the build log.
-/// The file is a `ShortName` rather than a pointer because the message outlives the compilation that
-/// produced it — a failed hot reload keeps its diagnostic on screen until the next successful one.
+/// The file is a `ShortName` rather than a pointer because the message outlives the compilation
+/// that produced it — a failed hot reload keeps its diagnostic on screen until the next successful
+/// one.
 struct Diagnostic {
     Severity severity = Severity::Error;
     ShortName file;
@@ -69,10 +73,10 @@ struct Diagnostic {
 
 /// Everything that identifies one compilation. Every field is part of the cache key.
 ///
-/// `shader-system` — "Shader compilation service and tiered cache": the key includes the source, the
-/// compiler version, the IR version, the target platform, the renderer profile, and the feature set,
-/// "so a compiler change invalidates derived data without invalidating authored assets". `key()`
-/// below is that sentence, executable.
+/// `shader-system` — "Shader compilation service and tiered cache": the key includes the source,
+/// the compiler version, the IR version, the target platform, the renderer profile, and the feature
+/// set, "so a compiler change invalidates derived data without invalidating authored assets".
+/// `key()` below is that sentence, executable.
 struct CompileRequest {
     /// The module holding the entry point. Its imports are resolved through the same store.
     SourceId source;
@@ -82,8 +86,9 @@ struct CompileRequest {
     Optimisation optimisation = Optimisation::Default;
     RendererProfile profile = RendererProfile::Desktop;
     FeatureSet features = FeatureSet::None;
-    /// The permutation, already reduced by `PermutationDomain::compilation_key()`: two variants that
-    /// differ only in specialization constants are one compilation and must be one cache entry.
+    /// The permutation, already reduced by `PermutationDomain::compilation_key()`: two variants
+    /// that differ only in specialization constants are one compilation and must be one cache
+    /// entry.
     PermutationKey permutation = kDefaultPermutation;
     /// Retained in non-shipping artefacts so RenderDoc, PIX and Xcode have something to show —
     /// `shader-system`'s GPU-debugging requirement. It changes the output, so it is in the key.
@@ -137,8 +142,8 @@ public:
     /// a development build checks before offering hot reload.
     [[nodiscard]] virtual bool available() const noexcept = 0;
 
-    /// A hash over everything about the compiler that changes its output: its name, its version, and
-    /// the version of the intermediate form it emits.
+    /// A hash over everything about the compiler that changes its output: its name, its version,
+    /// and the version of the intermediate form it emits.
     ///
     /// **This is what makes "a compiler change invalidates derived data" true rather than hoped
     /// for.** It is part of every cache key, so a Slang upgrade turns every cached artefact into a
@@ -174,8 +179,9 @@ void set_current_compiler(ShaderCompiler* compiler) noexcept;
 /// The cache key for a request, given the resolved source hash and the domain it permutes over.
 ///
 /// Every input the specification names is folded in, in a fixed order. Two builds that agree about
-/// all of them agree about the key — which is what makes a CI-populated cache usable by a developer,
-/// and it is checked by a test that computes the same key twice from independently built inputs.
+/// all of them agree about the key — which is what makes a CI-populated cache usable by a
+/// developer, and it is checked by a test that computes the same key twice from independently built
+/// inputs.
 [[nodiscard]] ContentHash compile_cache_key(const CompileRequest& request,
                                             const ContentHash& resolved_source_hash,
                                             const ContentHash& compiler_identity,

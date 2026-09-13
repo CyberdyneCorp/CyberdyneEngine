@@ -18,8 +18,8 @@ using cy::rendering::DrawItem;
 using cy::rendering::DrawSortInput;
 using cy::rendering::DrawSortKey;
 using cy::rendering::make_sort_key;
-using cy::rendering::SortLayer;
 using cy::rendering::sort_draws;
+using cy::rendering::SortLayer;
 
 DrawItem draw(SortLayer layer, cy::u64 program, cy::u64 mesh, cy::u64 identity, cy::f32 depth,
               cy::u32 slot) noexcept {
@@ -107,9 +107,8 @@ CY_TEST_CASE("sort key: publication order does not reach the ordering") {
     for (cy::u32 i = 0; i < kCount; ++i) {
         const cy::u64 identity = 0x1000 + i;
         const cy::f32 depth = static_cast<cy::f32>(i % 97) / 97.0f;
-        CY_REQUIRE(
-            forward.push_back(draw(SortLayer::Opaque, i % 13, i % 7, identity, depth, i))
-                .has_value());
+        CY_REQUIRE(forward.push_back(draw(SortLayer::Opaque, i % 13, i % 7, identity, depth, i))
+                       .has_value());
     }
     for (cy::u32 i = kCount; i > 0; --i) {
         const cy::u32 index = i - 1;

@@ -1453,10 +1453,11 @@ Status World::advance(FrameCosts& costs) noexcept {
     const f64 after_weather = now_millis();
     costs.weather_ms = after_weather - mark;
     // The publication is inside `advance()` and cannot be timed apart from it without a second
-    // entry point weather does not have, so the field half is REPORTED AS ITS OWN NUMBER from the
-    // tick report's own count rather than from a clock that cannot see it.
-    costs.fields_ms = 0.0;
-    const u64 published = ticked->atmosphere.lattice_points;
+    // entry point weather does not have, so what is reported is WHAT IT DID rather than a clock
+    // that cannot see it: the lattice points written, and whether the bandwidth budget deferred
+    // them. `costs.weather_ms` above is both halves together and says so.
+    costs.field_points = ticked->atmosphere.lattice_points;
+    costs.field_publication_throttled = ticked->publication_throttled;
 
     const WorldVec3d middle = centre();
     const weather::EnvironmentSample sample = weather_.sample(
@@ -1548,7 +1549,6 @@ Status World::advance(FrameCosts& costs) noexcept {
     state_.exposure = lighting_.exposure;
     state_.star_visibility = celestial_.star_visibility;
     state_.snow_depth_metres = snow.value.x();
-    (void)published;
     return ok();
 }
 

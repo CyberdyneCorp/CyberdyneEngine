@@ -114,43 +114,51 @@
 #                                  and builds no navmesh", in its own CMakeLists' words, and no M10
 #                                  task names this capability.
 
-# --- M10's record audit: nineteen cells over four closed milestones, and the four rows it claims ---
+# --- M10's record audit: nineteen cells over four closed milestones, and the four rows it did NOT --
 #
 # M9's gate added `record-matches-plan`, ran the same comparison over every milestone whose gate was
 # already green, and found NINETEEN cells those columns claim that this file does not support —
 # thirteen of them Complete. It declared the finding as `m9:record-matches-plan-history` rather than
-# claim the rows. M10 task 6.5 is the audit that closed it: every one of the nineteen was read
-# against the tree M10 closes on, FIFTEEN CELLS MOVED in the capability matrix, and FOUR ROWS ARE
-# CLAIMED HERE. The evidence per cell is in docs/roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones
+# claim the rows. M10 task 6.5 is the audit that read every one of the nineteen against the tree M10
+# closes on: FIFTEEN CELLS MOVED in the capability matrix, and four rows were claimed HERE, at which
+# point the criterion passed and its declaration was deleted. The evidence per cell is in
+# docs/roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones
 # and the change is openspec/changes/audit-closed-milestone-columns/, because moving a capability
 # between milestones is an OpenSpec change against `delivery-roadmap` by that specification's rule.
 #
-# THE FOUR ROWS BELOW MOVED IN THIS FILE, AND ALL FOUR ARE CORRECTIONS RATHER THAN ADVANCES — the
-# same shape as M8.a's `physics` correction, and for the same reason: the `milestone` field means
-# "the milestone at which this tier became true", so each names the rung its own evidence sits at,
-# verified against that rung's commit rather than against today's tree alone. Each had been recorded
-# at `seed` since the milestone that seeded it while its matrix column claimed Working at a milestone
-# whose task list never mentioned it — so no gate ever advanced it, and no gate ever refused to.
+# **M10's CLOSING GATE REFUSED THE FOUR CLAIMS AND THIS FILE HOLDS seed/M0 FOR ALL FOUR.** NOTHING
+# IN THE REPOSITORY EVALUATES ANY OF THEM. Over all fifteen ledgers the only `expect_tiers` entry
+# naming one of the four is `m0:roadmap-tiers`, which expects `seed`, and `_check_tiers` treats an
+# exit tier as a FLOOR — so `seed` can never contradict a Working claim, and no gate could ever
+# refuse one. `build-system-and-platforms` appears in no milestone ledger but m0.toml at all. A tier
+# written into this file because a document argued well for it, with nothing that re-checks it, is
+# the same defect as a plan column that outlives its evidence, one level down.
 #
-#   testing-and-quality          seed -> working  M0 -> M3.  At M3's closing commit: cy_add_test
-#                                carrying the taxonomy's per-case budgets and CTest labels, the
+# So `m9:record-matches-plan-history` is a DECLARED GAP again, over exactly these four cells, closing
+# at M11. Raising a row here needs a criterion that evaluates it, and writing that criterion belongs
+# to whichever milestone wants the tier. WHAT FOLLOWS IS THE AUDIT'S EVIDENCE, PRESERVED AS THE BRIEF
+# FOR THAT CRITERION — it is what a check would have to assert, and it is NOT this file's claim:
+#
+#   testing-and-quality          would be working at M3; recorded seed/M0. At M3's closing commit:
+#                                cy_add_test carrying the taxonomy's per-case budgets and CTest
+#                                labels, the
 #                                unit, integration, smoke and render suites, golden images,
 #                                benchmarks/ with a committed baseline and per-benchmark tolerances,
 #                                and sanitize, sanitize-nightly, quality, specs, generated, identity
 #                                and profiles jobs in CI. Complete stays at M11: swift-format, the
 #                                licence-header check, the spelling check and the undocumented-symbol
 #                                gate do not exist, and the three acceptance scenarios are unwritten.
-#   build-system-and-platforms   seed -> working  M0 -> M4.  Four profiles that mean the same thing
-#                                in every toolchain, feature options, dependency management from the
+#   build-system-and-platforms   would be working at M4; recorded seed/M0. Four profiles that mean
+#                                the same thing in every toolchain, feature options, dependency management from the
 #                                manifest, code generation, the compiler matrix — and at M4 the Swift
 #                                toolchain integration the requirement names, which is the rung at
 #                                which this build system first had to serve a second toolchain.
-#   developer-workflow-and-just  seed -> working  M0 -> M6.  Every category of the required recipe
-#                                surface does something from M6. At M5 the whole Content category
+#   developer-workflow-and-just  would be working at M6; recorded seed/M0. Every category of the
+#                                required recipe surface does something from M6. At M5 the whole Content category
 #                                was `_not-implemented` stubs, which is why the W cell moved from
 #                                M5 to M6 rather than being claimed where it stood.
-#   thirdparty-dependencies      seed -> working  M0 -> M8B. The manifest carries every field the
-#                                requirement lists, for fifteen dependencies at M8.b and seventeen
+#   thirdparty-dependencies      would be working at M8.b; recorded seed/M0. The manifest carries
+#                                every field the requirement lists, for fifteen dependencies at M8.b and seventeen
 #                                today, with deps/host-tools.toml for build-time tooling that is
 #                                never linked, THIRD_PARTY.md generated from both, optional
 #                                dependencies feature-gated with a test that proves a disabled
@@ -159,7 +167,9 @@
 #
 # NO ROW MOVED DOWN IN THIS FILE, and that is the point worth stating: the audit moved PLAN cells,
 # not recorded tiers. Fifteen cells in four columns claimed more than the tree holds; the record
-# already said so, and it is the plan that now agrees with it.
+# already said so, and it is the plan that now agrees with it. NO ROW MOVED UP EITHER — the four
+# above stand at seed/M0 where M0 left them, and `just roadmap-debts` lists all four under
+# "Behind the plan" as well as naming the reinstated gap.
 
 # --- M8.a's amendment: two rows the plan marked Complete are still Working, and one row moved -----
 #

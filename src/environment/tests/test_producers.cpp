@@ -18,6 +18,8 @@
 #include <cy/environment/field.h>
 #include <cy/environment/store.h>
 
+#include <cstdio>
+
 #include "fixtures.h"
 
 using cy::environment::FieldRegistry;
@@ -185,4 +187,155 @@ CY_TEST_CASE(
     const cy::environment::FieldRecord* record = registry.find(biome.id());
     CY_REQUIRE(record != nullptr);
     CY_CHECK(record->producer_kind == ProducerKind::Baked);
+}
+
+// ================================================================================================
+// THE M10 GATE'S ADVERSARIAL PASS (tasks.md 9.3): TRYING TO GET TWO PRODUCERS ONTO ONE FIELD ANYWAY
+// ================================================================================================
+//
+// The cases above hold the refusal that `claim()` makes. These try to get PAST it — a different
+// module, a different order, a token that outlives its owner, the same field under a different
+// residency — because a refusal is only worth what the paths around it are worth.
+
+CY_TEST_CASE("a token minted by a SECOND registry does not write this store's field") {
+    // THE ATTACK. `claim()`'s refusal is per REGISTRY, and a `FieldStore` holds exactly one. A
+    // module that builds a registry of its own — an offline cooker, an editor validating a
+    // declaration before the runtime exists, a test — can claim a field there that another module
+    // already produces here, because that registry has never heard of the incumbent. The token it
+    // gets back is a plain value: a field identity, a producer identity and a name.
+    //
+    // So the store is the second place the rule has to hold, and it holds it by asking ITS OWN
+    // registry who produces the field rather than by trusting the token it was handed.
+    FieldRegistry engine(test::allocator());
+    const auto moisture = test::moisture_like();
+    CY_REQUIRE(engine.declare(moisture).has_value());
+    const auto partition = test::partition();
+    FieldStore store(test::allocator(), engine, partition);
+
+    cy::Expected<ProducerToken, cy::Error> incumbent =
+        engine.claim(moisture.id(), "terrain.hydrology", ProducerKind::System);
+    CY_REQUIRE(incumbent.has_value());
+    const auto tile = test::tile_at(moisture.id(), 2, 0, 0);
+    CY_REQUIRE(test::fill_tile(store, *incumbent, tile, FieldValue::scalar(0.25F)).has_value());
+
+    // A second registry, declaring the same field IDENTICALLY — which `declare()` accepts on
+    // purpose, so that two modules needing `wetness` need not agree on which of them declares it.
+    FieldRegistry other(test::allocator());
+    CY_REQUIRE(other.declare(moisture).has_value());
+    cy::Expected<ProducerToken, cy::Error> interloper =
+        other.claim(moisture.id(), "weather.precipitation", ProducerKind::System);
+    CY_REQUIRE(interloper.has_value());
+    CY_CHECK_EQ(engine.conflict_count(), 0u);  // the engine's registry was never asked
+
+    // The attack itself: a writable view of a field this producer does not produce.
+    CY_CHECK_FALSE(store.open_writer(*interloper).has_value());
+    CY_CHECK_FALSE(
+        test::fill_tile(store, *interloper, tile, FieldValue::scalar(0.99F)).has_value());
+    CY_CHECK_FALSE(
+        store.insert_default_tile(*interloper, test::tile_at(moisture.id(), 2, 1, 0), false)
+            .has_value());
+    CY_CHECK_FALSE(store.evict_tile(*interloper, tile).has_value());
+    CY_CHECK_FALSE(store.advance_recovery(*interloper, 1.0F).has_value());
+
+    // And the incumbent's value is what a reader still sees: the refusal did not resolve by write
+    // order, which is the requirement's own sentence.
+    const cy::environment::FieldSample sample = store.sample(moisture.id(), test::at(1.0, 1.0));
+    CY_CHECK(sample.resolved);
+    CY_CHECK_LT(sample.value.x(), 0.5F);
+
+    // The incumbent is unaffected by the attempt.
+    CY_CHECK(store.open_writer(*incumbent).has_value());
+}
+
+CY_TEST_CASE("a producer token that outlives its holder still names one producer, and only one") {
+    // A token is a value with no destructor and no release: a module that claims a field and then
+    // goes away leaves the field CLAIMED, so the next module to ask is refused rather than handed
+    // a second writer. That is the conservative direction on purpose — the alternative is a field
+    // whose producer changes when an unrelated object is destroyed.
+    FieldRegistry registry(test::allocator());
+    const auto moisture = test::moisture_like();
+    CY_REQUIRE(registry.declare(moisture).has_value());
+
+    {
+        cy::Expected<ProducerToken, cy::Error> transient =
+            registry.claim(moisture.id(), "terrain.hydrology", ProducerKind::System);
+        CY_REQUIRE(transient.has_value());
+    }  // the holder is gone, and the claim is not
+
+    CY_CHECK_FALSE(
+        registry.claim(moisture.id(), "weather.precipitation", ProducerKind::System).has_value());
+    CY_CHECK(test::same_text(registry.last_conflict().incumbent, "terrain.hydrology"));
+}
+
+CY_TEST_CASE("one producer per FIELD, not one per residency level or per layer") {
+    // THE ATTACK. A field has three residency levels and two layers, and a second system that
+    // cannot have the field might still hope to have a corner of it — the Delta layer, or the
+    // Local level nothing else writes. `claim()` is per field identity, so there is no corner to
+    // take, and the store's addresses carry the field identity the token is checked against.
+    FieldRegistry registry(test::allocator());
+    const auto moisture = test::moisture_like();
+    CY_REQUIRE(registry.declare(moisture).has_value());
+    const auto partition = test::partition();
+    FieldStore store(test::allocator(), registry, partition);
+
+    cy::Expected<ProducerToken, cy::Error> incumbent =
+        registry.claim(moisture.id(), "terrain.hydrology", ProducerKind::System);
+    CY_REQUIRE(incumbent.has_value());
+
+    const char* per_level[3] = {"weather.local", "weather.regional", "weather.macro"};
+    for (const char* challenger : per_level) {
+        CY_CHECK_FALSE(registry.claim(moisture.id(), challenger, ProducerKind::System).has_value());
+        CY_CHECK(test::same_text(registry.last_conflict().challenger, challenger));
+    }
+    CY_CHECK_EQ(registry.conflict_count(), 3u);
+
+    // The incumbent writes every level and both layers through the one token it holds.
+    CY_REQUIRE(test::fill_tile(store, *incumbent, test::tile_at(moisture.id(), 2, 0, 0),
+                               FieldValue::scalar(0.25F))
+                   .has_value());
+    CY_REQUIRE(
+        test::fill_tile(store, *incumbent,
+                        test::tile_at(moisture.id(), 1, 0, 0, cy::environment::FieldLayer::Delta),
+                        FieldValue::scalar(0.75F))
+            .has_value());
+}
+
+CY_TEST_CASE("a writer keeps reading the right declaration after the registry grows") {
+    // THE ATTACK. `open_writer()` hands the writer the declaration the registry holds, and the
+    // registry holds its records in a growable array. A producer that opened a writer and then let
+    // any other module declare a field would be writing through a declaration the array had moved
+    // out from under it — an encoding and a range read from freed memory, which decides what every
+    // byte this writer stores MEANS.
+    FieldRegistry registry(test::allocator());
+    const auto moisture = test::moisture_like();
+    CY_REQUIRE(registry.declare(moisture).has_value());
+    const auto partition = test::partition();
+    FieldStore store(test::allocator(), registry, partition);
+
+    cy::Expected<ProducerToken, cy::Error> token =
+        registry.claim(moisture.id(), "terrain.hydrology", ProducerKind::System);
+    CY_REQUIRE(token.has_value());
+    cy::Expected<cy::environment::FieldWriter, cy::Error> writer = store.open_writer(*token);
+    CY_REQUIRE(writer.has_value());
+
+    // Anything else in the engine declaring a field. Enough of them that the array must reallocate.
+    CY_REQUIRE(registry.declare(test::biome_like()).has_value());
+    CY_REQUIRE(registry.declare(test::wind_like()).has_value());
+    CY_REQUIRE(registry.declare(test::project_radiation()).has_value());
+    for (cy::u32 index = 0; index < 64; ++index) {
+        auto extra = test::moisture_like();
+        static char names[64][32];
+        (void)std::snprintf(names[index], sizeof(names[index]), "test.filler%u", index);
+        extra.name = names[index];
+        CY_REQUIRE(registry.declare(extra).has_value());
+    }
+
+    // The writer still writes moisture, still quantised over moisture's declared range.
+    const auto tile = test::tile_at(moisture.id(), 2, 0, 0);
+    CY_REQUIRE(writer->stage(tile).has_value());
+    CY_REQUIRE(writer->fill(tile, FieldValue::scalar(0.5F)).has_value());
+    CY_REQUIRE(writer->publish().has_value());
+    const cy::environment::FieldSample sample = store.sample(moisture.id(), test::at(1.0, 1.0));
+    CY_REQUIRE(sample.resolved);
+    CY_CHECK_NEAR(sample.value.x(), 0.5F, 0.01F);
 }

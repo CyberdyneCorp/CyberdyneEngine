@@ -1,0 +1,460 @@
+# M11.d — Desktop: the exit criteria of M11's fourth rung.
+#
+# WHAT THIS RUNG IS FOR. `rhi-and-render-graph` has been Working since M3 and the whole gap to
+# Complete is the second and third backends; `core-platform-abstraction` has SDL3 as its only
+# implementation, so nothing has yet proved the abstraction carries no SDL assumption. Seven of this
+# rung's ten rows were last advanced at M0, M1 or M2, which makes it the rung carrying the OLDEST
+# tiers in the record and the first to read them at Complete grade.
+#
+# WHAT IS VERIFIED ABSENT ON THE TREE THIS RUNG OPENS ON. There are no D3D12 files anywhere.
+# `src/backends/rhi-metal/` is a seed whose `device.mm` has never been compiled by this project's
+# continuous integration and whose README names two gaps with no workaround. Neither MSL nor DXIL is
+# emitted: `cache.h` names 'metal-msl' and 'd3d12-dxil' as interchange forms, `compiler.h` describes
+# the translation in a comment, and `SLANG_ENABLE_DXIL` is OFF. SDL3 is the only `Platform` and the
+# only `DisplayServer`.
+#
+# THE RUNG'S CENTRAL EVIDENCE QUESTION IS ANSWERED BY ITS SPIKE AND NOT BY THIS FILE: whether a
+# hosted macOS or Windows runner can present a graphics device at all. Every image claim below is
+# therefore written to be reportable three ways — passed, failed, or NOT EVALUATED with a reason —
+# and a criterion that would PASS on a runner with no device is the defect `where` exists to prevent.
+#
+# AN OWNERSHIP OVERLAP RECORDED RATHER THAN DECIDED. `developer-workflow-and-just`'s Complete cell is
+# this rung's by the split's row allocation, and the four `release-*` recipes it depends on are
+# M11.e's work by M11.e's own proposal. `release-recipes-stop-refusing` below is declared HERE
+# because the row is here, and if the recipes are still refusing at this gate the row is demoted to
+# M11.e with its reason rather than claimed over four recipes that refuse.
+
+schema = 1
+id = "m11d"
+name = "Desktop"
+artefact = "`samples/11-ship` built, cooked, packaged and launched on each desktop target from ONE recipe, plus the M0 sample and the M3 golden images running on a native platform backend with `src/core/`, `src/ecs/`, `src/servers/` and `src/scene/` untouched."
+
+notes = [
+    "`just roadmap-milestone m11d` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "THE STATIC GATES ARE SPELLED HERE EXACTLY AS THE OTHER FOUR RUNGS SPELL THEM, so they collapse to one check each across the ladder.",
+    "THE NATIVE-PLATFORM CLAIM IS A DIFF CHECK AND NOT A TEST, and that is the point: the exit criterion is that replacing SDL3 on one desktop requires NO CHANGE in src/core/, src/ecs/, src/servers/ or src/scene/. A test cannot see that; a diff over the change that added the backend can, which is why `port-touches-no-engine-layer` reads the repository rather than running a suite.",
+    "MSL AND DXIL ARE `shader-system`'s, WHICH IS M11.c's ROW. This rung's ledger checks that they exist because it cannot start without them, not because it owns them — M11.c's `shader-targets-for-the-next-rung` is the same claim from the other side, and the two are deliberately both present so the handover cannot be lost between rungs.",
+    "tasks 9.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "`just quality-requirements` DOES NOT EXIST YET AND THE CRITERIA THAT CALL IT WILL SAY SO. `testing-and-quality` requires every requirement to map to a test, a gate or a recorded exemption, and the tool that checks it is one of that row's four absent gates — the row is M11.d's. It is named here rather than avoided because the mapping IS the Complete-grade claim these rows are being judged on: whichever rung reaches it first writes the tool, and M11.d is where it is finished. A criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red.",
+]
+
+# --- The static gates, shared with every other rung -----------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set, including the four deltas this rung writes"
+source = "tasks"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained two graphics backends and a native platform backend"
+source = "tasks"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over both new backends, including the cognitive-complexity limits a barrier-deriving render graph is exactly the kind of code to breach"
+source = "tasks"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with three backends and two platform implementations in it — including the platform/SDL rule, which is the rule this rung's whole claim is about: the engine layers may not know which platform backend they are on"
+source = "tasks, engine-architecture, core-platform-abstraction"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11d` is green above the newest ledger any workflow evaluates"
+source = "tasks, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three commands — including the feature options two new backends add, each of which must fetch, build and link nothing when disabled"
+source = "tasks, thirdparty-dependencies, build-system-and-platforms"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for ten rows, seven of which were last advanced at M0, M1 or M2"
+source = "tasks"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, the ladder places m11d between m11c and m11e, and a declared gap that started passing fails"
+source = "tasks, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each, on every desktop platform — which for this rung is the claim rather than the hygiene"
+source = "tasks"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# --- Section 1: the eight interface gaps, settled before either backend is written -----------------
+#
+# The Metal seed's README records eight gaps and they are INTERFACE CHANGES before they are backends:
+# an opaque memory-pool class the graph only compares for equality, layouts derived from the access
+# masks `access.h` already carries, a queue-ownership capability query, a per-format support query, a
+# pipeline-cache token, and a precondition on secondary recording. The seed exists to make that
+# finding cheap; spending it is this rung's first task, and these two criteria are how it is spent.
+
+[[criterion]]
+id = "rhi-interface-gaps-settled"
+describe = "the eight gaps the Metal seed recorded are closed in the INTERFACE, proved against Vulkan and the null backend before either new backend is written. A gap closed inside a backend is a gap the other two backends will rediscover"
+source = "tasks 1, rhi-and-render-graph, src/backends/rhi-metal/README.md"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rhi"
+test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
+filter='an opaque memory pool*,queue ownership*,per-format support*,a pipeline cache token*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 4 it names"
+test "${selected:-0}" -ge 4 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "null-backend-refuses-what-it-cannot-do"
+describe = "the null backend refuses every capability it does not implement rather than silently succeeding. It is the cheapest place to discover an interface that cannot express a refusal, and this rung adds two backends that will each need to make one"
+source = "tasks 1, rhi-and-render-graph"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rhi"
+test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
+filter='the null backend refuses*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 1 it names"
+test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+# --- Section 2: the two backends --------------------------------------------------------------------
+
+[[criterion]]
+id = "metal-backend-is-native"
+describe = "`src/backends/rhi-metal/` compiles and runs as a NATIVE backend rather than a translation layer. `device.mm` has never been compiled by this project's continuous integration and the seed's README names two gaps with no workaround; the check is that the backend builds and passes the RHI conformance suite"
+source = "tasks 2, rhi-and-render-graph"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.rhi_metal)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 1 suite(s) match $pattern"
+test "$registered" -ge 1 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+where = "ci"
+reason = "Metal exists only on macOS and this host is Linux; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "d3d12-backend-exists"
+describe = "a D3D12 backend exists and passes the RHI conformance suite. THERE ARE NO D3D12 FILES ANYWHERE IN THE TREE TODAY, which is why this criterion is a build-and-run rather than a parity comparison"
+source = "tasks 3, rhi-and-render-graph"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.rhi_d3d12)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 1 suite(s) match $pattern"
+test "$registered" -ge 1 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+where = "ci"
+reason = "D3D12 exists only on Windows and this host is Linux; reported NOT EVALUATED here rather than passed by a suite that did not run"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "golden-images-across-three-backends"
+describe = "the M3 golden images match across Vulkan, Metal and D3D12 within tolerance. It is the milestone's first exit criterion as ROADMAP.md has stated it since the plan was drawn, and it is the one claim that cannot be made by any single leg"
+source = "tasks 2, 3, ROADMAP M11.d exit criteria"
+kind = "command"
+run = "just test-render --compare-backends vulkan metal d3d12"
+where = "ci"
+reason = "three backends live on three operating systems and no single machine has all three; the comparison is between legs of the matrix, which is the same shape as the cross-leg digest job M11.a builds"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "shader-targets-emitted"
+describe = "the shader system emits MSL and DXIL. `shader-system` is M11.c's row and this is the handover: `cache.h` names both as interchange forms, `compiler.h` describes the translation in a comment, `SLANG_ENABLE_DXIL` is OFF, and neither is emitted. This rung cannot start without them and checks so rather than discovering it"
+source = "tasks 2, 3, shader-system, design.md §6"
+kind = "command"
+run = '''
+set -eo pipefail
+just build-shaders --targets | tee /tmp/cy-m11d-targets.txt
+grep -qi "msl" /tmp/cy-m11d-targets.txt
+grep -qi "dxil" /tmp/cy-m11d-targets.txt
+'''
+ci_job = "milestone-m11d"
+
+# --- Section 3: the native platform backend ----------------------------------------------------------
+
+[[criterion]]
+id = "native-platform-backend"
+describe = "a native `Platform` and `DisplayServer` exists for one desktop platform and SDL3 is not the only implementation. SDL3 is both today, so nothing has proved the abstraction carries no SDL assumption"
+source = "tasks 4, core-platform-abstraction"
+kind = "command"
+run = '''
+set -eo pipefail
+impls=$(grep -rln "class .*DisplayServer\|: public .*DisplayServer\|DisplayServer final" \
+    --include='*.h' --include='*.cpp' --include='*.mm' src/ | sort || true)
+count=$(printf '%s' "$impls" | grep -c . || true)
+echo "$count DisplayServer implementation(s):"
+printf '%s\n' "${impls:-  none}"
+non_sdl=$(printf '%s\n' "$impls" | grep -vi "sdl" | grep -c . || true)
+echo "  of which non-SDL: $non_sdl"
+test "$non_sdl" -ge 1
+'''
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "port-touches-no-engine-layer"
+describe = "and adding it required NO CHANGE in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`. This is the exit criterion in ROADMAP.md's own words, it is a property of the DIFF rather than of a test, and it is the only evidence that distinguishes an abstraction from a wrapper"
+source = "tasks 4, ROADMAP M11.d exit criteria, core-platform-abstraction"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import subprocess, sys
+marker = "native-platform-backend"
+log = subprocess.run(["git", "log", "--format=%H %s", "-40"], capture_output=True, text=True).stdout
+commits = [line.split(" ", 1)[0] for line in log.splitlines() if marker in line.lower()]
+if not commits:
+    print(f"no commit naming '{marker}' in the last 40 — the native backend has not landed,")
+    print("  so the claim that it touched no engine layer cannot be evaluated and is not passed")
+    sys.exit(1)
+forbidden = ("src/core/", "src/ecs/", "src/servers/", "src/scene/")
+bad = []
+for commit in commits:
+    files = subprocess.run(["git", "show", "--name-only", "--format=", commit],
+                           capture_output=True, text=True).stdout.split()
+    bad += [f"{commit[:9]} {name}" for name in files if name.startswith(forbidden)]
+for entry in bad:
+    print(f"  {entry}")
+print(f"{len(bad)} engine-layer file(s) changed by the native platform backend")
+sys.exit(1 if bad else 0)
+CHECK
+'''
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "porting-surface-against-a-stub"
+describe = "the porting surface builds against a stub platform that shares no desktop assumption. A porting surface only ever exercised by desktops is a desktop interface, and M11.e proves the same surface against a real non-desktop one"
+source = "tasks 4, ROADMAP M11.d exit criteria, build-system-and-platforms"
+kind = "command"
+run = "just build-engine --platform stub"
+timeout_s = 3600
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "native-backend-runs-the-m0-sample"
+describe = "the M0 sample and the M3 golden images run on the native backend. The sample is the cheapest possible proof that the window, the event loop and the device all came up, and the goldens are the proof that the picture is the same one"
+source = "tasks 4, ROADMAP M11.d exit criteria"
+kind = "command"
+run = "just run-sample 00-empty --platform native && just test-render m3 --platform native --compare-golden"
+requires = "display"
+reason = "a native DisplayServer needs a display to open a window; `port-touches-no-engine-layer` and `porting-surface-against-a-stub` carry the structural half of the claim on every machine"
+ci_job = "milestone-m11d"
+
+# --- Section 4: the gates, the quality rows, and the oldest tiers in the record ----------------------
+
+[[criterion]]
+id = "documentation-gate"
+describe = "the documentation gate passes: every public API documented, every recipe described. It is one of `testing-and-quality`'s four absent gates — with swift-format, the licence-header check and the spelling check — and the row has been recorded at Seed since M0 while its column claimed Working since M3"
+source = "tasks, testing-and-quality, ROADMAP M11.d exit criteria"
+kind = "recipe"
+run = "just quality-docs"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "full-gate-set"
+describe = "the rest of `testing-and-quality`'s absent gates: swift-format, the licence-header check and the spelling check. THIS IS ONE HALF OF WHAT `m9:record-matches-plan-history` IS ABOUT — the row's Working tier has been claimed by a column and evaluated by no criterion in any ledger, and this is the first criterion in the project that runs something for it"
+source = "tasks, testing-and-quality, m9:record-matches-plan-history"
+kind = "command"
+run = "just quality-swift-format && just quality-licence-headers && just quality-spelling"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "developer-workflow-recipes"
+describe = "every category of the required recipe surface does something, and no recipe refuses naming a milestone that is not on the ladder. THE OTHER HALF OF `record-matches-plan-history` THIS RUNG OWNS: `developer-workflow-and-just` is recorded at Seed with its column claiming Working since M6, and four recipes in `just/release.just` refuse naming 'M12 — build-and-packaging', a milestone that does not exist on a ladder whose `record.MILESTONES` ends at m11e"
+source = "tasks, developer-workflow-and-just, m9:record-matches-plan-history"
+kind = "command"
+run = '''
+set -eo pipefail
+python3 - <<'CHECK'
+import pathlib, re, sys
+sys.path.insert(0, "tools/roadmap")
+import record as record_module
+ladder = set(record_module.MILESTONES)
+stale = []
+for path in sorted(pathlib.Path("just").glob("*.just")):
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for name in re.findall(r"\bM(\d+(?:\.5|\.[a-e])?)\b", line):
+            identifier = f"m{name}".replace(".5", "b").replace(".", "")
+            if identifier not in ladder and ("refus" in line.lower() or "not yet" in line.lower()
+                                             or "—" in line):
+                stale.append(f"{path.name}:{number}: names M{name}, which is not on the ladder")
+for entry in stale:
+    print(f"  {entry}")
+print(f"{len(stale)} recipe line(s) refuse naming a milestone the ladder does not carry")
+sys.exit(1 if stale else 0)
+CHECK
+'''
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "release-recipes-stop-refusing"
+describe = "the release recipes produce a version, a changelog and artefacts rather than refusing. THE OWNERSHIP HERE IS RECORDED RATHER THAN SETTLED: the row is this rung's and the four recipes are M11.e's work by M11.e's own proposal, so if they still refuse at this gate the row is demoted to M11.e with its reason instead of claimed over four refusals"
+source = "tasks, developer-workflow-and-just, build-and-packaging"
+kind = "command"
+run = "just release-version && just release-changelog && just release-artefacts --dry-run"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "content-audit-and-symbols"
+describe = "`build-and-packaging`'s content audit, provenance and symbol handling: a package names every asset in it, where each came from, and ships symbols separable from the binary"
+source = "tasks, build-and-packaging"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_packaging"
+test -x "$binary" || { echo "no $binary — the suite integration.packaging does not exist"; exit 1; }
+filter='a package audits its content*,provenance*,symbols are separable*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 3 it names"
+test "${selected:-0}" -ge 3 || { echo "the named case(s) are not in integration.packaging any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "core-rows-at-complete-grade"
+describe = "every requirement of the five core rows maps to a test, a gate or a recorded exemption. These rows are in this rung because the native backend's exit criterion is a first-hand audit of exactly them — `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`, `ecs-core` and `engine-architecture`, last advanced at M1 and M2 and never read at Complete grade"
+source = "tasks, testing-and-quality"
+kind = "command"
+run = "just quality-requirements core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction rhi-and-render-graph"
+ci_job = "milestone-m11d"
+
+# --- Section 5: the artefact --------------------------------------------------------------------------
+
+[[criterion]]
+id = "ship-sample-on-desktop"
+describe = "`samples/11-ship` is built, cooked, packaged and launched on each desktop target from ONE recipe. Four verbs, and *packaged* and *launched* are the two this project has never done: a recipe that produces a package nobody installed is a build claim wearing a ship claim's name"
+source = "tasks, ROADMAP M11.d closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+just content-package 11-ship
+just run-sample 11-ship --from-package
+'''
+timeout_s = 7200
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "ship-sample-exists"
+describe = "and it exists at all. `samples/` holds sixteen entries and not one of them is a packaged project, so this is the criterion that goes red first and is worth separating from the recipe above"
+source = "tasks, ROADMAP M11.d closing artefact"
+kind = "path"
+path = "samples/11-ship/CMakeLists.txt"
+ci_job = "milestone-m11d"
+
+[[criterion]]
+id = "ship-sample-drawn"
+describe = "a picture of the packaged application running, committed under docs/design/images/. The rule since M8.c holds, and a picture of the application running is the only evidence that distinguishes a package from an archive"
+source = "tasks, ROADMAP M11.d closing artefact"
+kind = "path"
+path = "docs/design/images/m11d-ship*.png"
+ci_job = "milestone-m11d"
+
+# --- Section 6: the record, the tiers, and the next rung -----------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this rung's exit tiers: ten rows to Complete, two of them recorded at Seed since M0 with columns that have claimed Working since M3 and M6. IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO, and `testing-and-quality` and `developer-workflow-and-just` are two of the four rows `m9:record-matches-plan-history` is about — so recording them here is half of closing that gap at M11.e"
+source = "tasks, ROADMAP M11.d, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11d"
+
+[criterion.expect_tiers]
+rhi-and-render-graph = "complete"
+core-platform-abstraction = "complete"
+build-and-packaging = "complete"
+testing-and-quality = "complete"
+developer-workflow-and-just = "complete"
+core-assets-and-io = "complete"
+core-jobs-and-concurrency = "complete"
+core-memory-and-containers = "complete"
+ecs-core = "complete"
+engine-architecture = "complete"
+
+# THE HANDOVER CHECK, in the shape `implement-m11-reach` task 0.1 settled for all five rungs.
+[[criterion]]
+id = "m11e-open"
+describe = "the next rung's change exists — open, or closed and archived — AND has been deliberately entered. That rung is M11.e, Ship: the last on the ladder, which this rung hands the desktop half of `samples/11-ship`, a porting surface proved against a stub, and whatever it could not finish"
+source = "tasks, implement-m11-reach task 0.1, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+# the double-star glob the ladder has used since M8.a: openspec/changes/**/*m11e*/proposal.md
+dirs=$(find openspec/changes -type d -name '*m11e*' | sort)
+test -n "$dirs" || { echo "no change directory matching openspec/changes/**/*m11e*/"; exit 1; }
+entered=""
+for d in $dirs; do
+    test -f "$d/proposal.md" || continue
+    echo "  $d/proposal.md"
+    # A CHECKED TASK OUTSIDE SECTION 0, and the exclusion is the point. Section 0 is a rung's own
+    # decision-and-spike section, which the split that opened all five rungs could answer in advance;
+    # a checked box there says the rung was SCOPED. A checked box in the body says the rung was
+    # STARTED, which is the deliberate act this criterion is standing in for.
+    if [ -f "$d/tasks.md" ] && grep -qE '^- \[x\] [1-9]' "$d/tasks.md"; then
+        entered="$entered $d"
+    fi
+done
+if [ -z "$entered" ]; then
+    echo "the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+    exit 1
+fi
+echo "entered:$entered"
+'''
+ci_job = "milestone-m11d"

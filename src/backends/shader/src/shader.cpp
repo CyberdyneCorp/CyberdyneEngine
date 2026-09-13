@@ -14,9 +14,19 @@ namespace {
 /// Indexed by `Stage`. Kept beside `kStageProfiles` so a stage added to one and not the other is a
 /// compile error rather than a mismatch — the static_assert below is what makes that true.
 constexpr const char* kStageNames[] = {
-    "vertex",   "fragment",       "compute",     "geometry",    "tessellation-control",
-    "tessellation-evaluation",    "task",        "mesh",        "ray-generation",
-    "intersection",               "any-hit",     "closest-hit", "miss",
+    "vertex",
+    "fragment",
+    "compute",
+    "geometry",
+    "tessellation-control",
+    "tessellation-evaluation",
+    "task",
+    "mesh",
+    "ray-generation",
+    "intersection",
+    "any-hit",
+    "closest-hit",
+    "miss",
     "callable",
 };
 
@@ -24,9 +34,8 @@ constexpr const char* kStageNames[] = {
 /// handed to somebody else's command line, and the two vocabularies agreeing today is a coincidence
 /// worth not depending on.
 constexpr const char* kStageProfiles[] = {
-    "vertex",       "fragment", "compute",     "geometry", "hull", "domain",          "amplification",
-    "mesh",         "raygeneration",           "intersection",     "anyhit",          "closesthit",
-    "miss",         "callable",
+    "vertex", "fragment",      "compute",      "geometry", "hull",       "domain", "amplification",
+    "mesh",   "raygeneration", "intersection", "anyhit",   "closesthit", "miss",   "callable",
 };
 
 static_assert(sizeof(kStageNames) / sizeof(kStageNames[0]) == kStageCount);

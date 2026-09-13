@@ -42,8 +42,15 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/vfx/gpu_layout.h>
 
+// THE BUILD'S OWN FEATURE TABLE, for the same reason src/vfx/gpu/src/gpu_pass.cpp includes it: this
+// suite needs to know whether this build can compile the generated kernel at all. The macro is
+// EMITTED ONLY IN THE ON CASE — cy_features.h writes `/* CY_SHADER_SLANG is disabled */` otherwise
+// — so it is tested with defined() first, exactly as the module does.
+#include <cy_features.h>
+
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 using namespace cy;
@@ -57,6 +64,36 @@ namespace {
 
 Allocator& allocator() noexcept {
     return system_allocator(MemoryDomain::Renderer);
+}
+
+/// WHETHER THIS BUILD CAN COMPILE THE GENERATED SIMULATION KERNEL AT ALL.
+///
+/// `VfxGpuPass::create` compiles the per-emitter kernel through `cy::shader`'s Slang front end, and
+/// that front end exists only where CY_SHADER_SLANG is on — which `shader-system` forbids in a
+/// shipping build, so cmake/features.cmake leaves it off in Profile and Shipping. The pass also
+/// accepts PRE-COOKED SPIR-V through `GpuPassDescription::kernel_spirv`, and gpu_pass.h says on its
+/// own face that the cook step which would produce it belongs to `asset-import-pipeline` and is not
+/// in this tree. So in those two profiles there is no kernel for this suite to run — the same kind
+/// of structural absence as a machine with no GPU, and reported the same way rather than failing
+/// six cases on a build that was never going to have one.
+///
+/// M10'S FOUR-PROFILE GATE IS WHAT FOUND THIS. Every case here failed in Profile with
+/// "VfxGpuPass::create refused: this build has no Slang front end (CY_SHADER_SLANG is off)",
+/// because until that gate the suite had only ever been built in `dev`. The skip is not taken on
+/// trust: the last case in this file asserts the refusal in the build that has no compiler, and
+/// asserts that `create` succeeds in the build that has one, so a front end that silently stopped
+/// being linked is a failure here rather than five quiet returns.
+#if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
+constexpr bool kKernelCompilerAvailable = true;
+#else
+constexpr bool kKernelCompilerAvailable = false;
+#endif
+
+void report_no_kernel_compiler() noexcept {
+    std::fprintf(stderr,
+                 "no Slang front end in this build (CY_SHADER_SLANG is off) and nothing has cooked "
+                 "a kernel for this effect, so the generated dispatch cannot be built here; see "
+                 "GpuPassDescription::kernel_spirv\n");
 }
 
 /// MEASURED on this engine's reference machine against the plume's `position`, `velocity` and
@@ -293,6 +330,10 @@ TEST_CASE("the device advances the same population the CPU executor does") {
         gpu.report_skip();
         return;
     }
+    if (!kKernelCompilerAvailable) {
+        report_no_kernel_compiler();
+        return;
+    }
     CookedPlume cooked;
     const CompiledSystem& system = cooked.system.value();
     const BudgetLevers levers = authored_levers(system);
@@ -388,6 +429,10 @@ TEST_CASE("population and dispatch size come from the device, not from this proc
         gpu.report_skip();
         return;
     }
+    if (!kKernelCompilerAvailable) {
+        report_no_kernel_compiler();
+        return;
+    }
     CookedPlume cooked;
     const CompiledSystem& system = cooked.system.value();
     const BudgetLevers levers = authored_levers(system);
@@ -438,6 +483,10 @@ TEST_CASE("the particle-count lever bounds the population the device holds") {
         gpu.report_skip();
         return;
     }
+    if (!kKernelCompilerAvailable) {
+        report_no_kernel_compiler();
+        return;
+    }
     CookedPlume cooked;
     const CompiledSystem& system = cooked.system.value();
     const std::vector<f32> parameters = authored_parameters(system);
@@ -477,6 +526,10 @@ TEST_CASE("the cap reduces a block that is already full, not only one that is fi
     DeviceFixture gpu("cy_test_render_vfx_gpu_shrink");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
+        return;
+    }
+    if (!kKernelCompilerAvailable) {
+        report_no_kernel_compiler();
         return;
     }
     CookedPlume cooked;
@@ -529,6 +582,10 @@ TEST_CASE("the GPU sort orders the live list back to front, and the lever remove
     DeviceFixture gpu("cy_test_render_vfx_gpu_sort");
     if (!gpu.has_gpu()) {
         gpu.report_skip();
+        return;
+    }
+    if (!kKernelCompilerAvailable) {
+        report_no_kernel_compiler();
         return;
     }
     CookedPlume cooked;
@@ -625,6 +682,10 @@ TEST_CASE(
             gpu.report_skip();
             return 0U;
         }
+        if (!kKernelCompilerAvailable) {
+            report_no_kernel_compiler();
+            return 0U;
+        }
         device_has_queue = gpu.device().has_queue(rhi::QueueKind::AsyncCompute);
         VfxGpuPass pass;
         if (!create_pass(gpu, system, pass, pass_async)) {
@@ -650,7 +711,7 @@ TEST_CASE(
     const u32 on_async = run(true, true, async_queue, async_errors, device_has_async);
     const u32 on_graphics = run(true, false, graphics_queue, graphics_errors, ignored_queue_report);
     if (on_async == 0 && on_graphics == 0) {
-        return;  // no device; the skip was already reported
+        return;  // no device, or no kernel compiler; either skip was already reported
     }
 
     std::fprintf(stderr, "async queue population %u, graphics queue population %u\n", on_async,
@@ -677,4 +738,54 @@ TEST_CASE(
     CHECK_EQ(on_async, on_graphics);
     CHECK_EQ(async_errors, 0U);
     CHECK_EQ(graphics_errors, 0U);
+}
+
+// THE CASE THAT KEEPS THE SKIP HONEST, and it runs in every build rather than in the ones that can
+// simulate. Every case above returns early where CY_SHADER_SLANG is off; this one asserts what the
+// pass does INSTEAD, so "the suite was green in Profile" means "the pass refused, naming the cooked
+// module it needs" rather than "nothing ran and nobody looked".
+//
+// In a build that HAS the front end it asserts the other half: that `create` succeeds from the
+// generated source alone. That is the direction that catches the failure
+// src/vfx/gpu/src/gpu_pass.cpp's `register_slang_backend()` comment describes — a Slang backend
+// whose static registration the linker dropped, which makes a build with a front end behave exactly
+// like a build without one. Before this case, that regression would have skipped five cases quietly
+// in dev and looked like a build-configuration difference.
+TEST_CASE("the kernel is compiled where there is a front end, and refused where there is not") {
+    DeviceFixture gpu("cy_test_render_vfx_gpu_kernel_source");
+    if (!gpu.has_gpu()) {
+        gpu.report_skip();
+        return;
+    }
+    CookedPlume cooked;
+    VfxGpuPass pass;
+    // kernel_spirv is left empty: the generated source is the only thing this pass is given, which
+    // is the configuration every other case in this file runs in.
+    GpuPassDescription description;
+    description.emitter = 0;
+    const Status created =
+        pass.create(allocator(), gpu.device(), cooked.system.value(), description);
+
+    // THE GENERATED SOURCE EXISTS EITHER WAY. `assemble_dispatch_unit` runs before the front end is
+    // reached, so a build with no compiler still emits the kernel it cannot compile — which is what
+    // makes the cooked-module path a cook of this exact text rather than of something else.
+    CHECK_GT(pass.generated_source().size(), 0U);
+
+    if constexpr (kKernelCompilerAvailable) {
+        CHECK(created.has_value());
+        if (!created.has_value()) {
+            std::fprintf(stderr, "create refused on a build with a front end: %s\n",
+                         created.error().message);
+        }
+    } else {
+        CHECK_FALSE(created.has_value());
+        if (!created.has_value()) {
+            // Unsupported and not InvalidArgument: the inputs were fine, the BUILD cannot do it.
+            CHECK_EQ(static_cast<int>(created.error().code),
+                     static_cast<int>(ErrorCode::Unsupported));
+            // And the message names the way out, because a refusal that does not is a dead end.
+            CHECK(std::strstr(created.error().message, "kernel_spirv") != nullptr);
+        }
+    }
+    CHECK_EQ(gpu.validation_errors(), 0U);
 }

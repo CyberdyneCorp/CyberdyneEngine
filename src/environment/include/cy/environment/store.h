@@ -263,6 +263,16 @@ public:
     /// writes many times over a session and holds its capability across all of them.
     [[nodiscard]] Expected<FieldWriter, Error> open_writer(const ProducerToken& token) noexcept;
 
+    /// Whether THIS store's registry records `token`'s producer as the producer of `token`'s field.
+    ///
+    /// "One producer per field" is a rule about a field, and `FieldRegistry::claim()` can only
+    /// enforce it over the registry that issued the token. A `ProducerToken` is a plain value —
+    /// a field identity, a producer identity and a name — so a token minted by a SECOND registry
+    /// is indistinguishable from the incumbent's unless the store checks it against the registry it
+    /// was built with. Every write path below does, which is why the rule survives an offline
+    /// cooker, an editor validating a declaration, or a module that keeps a registry of its own.
+    [[nodiscard]] bool produces(const ProducerToken& token) const noexcept;
+
     // --- Reading
     // ----------------------------------------------------------------------------------
 
@@ -458,7 +468,11 @@ private:
     [[nodiscard]] Staged* find_staged(const TileAddress& address) noexcept;
 
     FieldStore* store_;
-    const FieldDeclaration* declaration_;
+    /// A COPY, not a pointer into the registry. The registry holds its records in a growable array,
+    /// so a writer that outlived any other module's `declare()` would read its encoding and its
+    /// range — what every byte it stores MEANS — out of freed memory. The M10 gate's adversarial
+    /// pass reached that with four more declarations and a segmentation fault.
+    FieldDeclaration declaration_;
     FieldId field_;
     Array<Staged> staged_;
 };

@@ -241,7 +241,12 @@ public:
     /// into a different buffer must compare equal to the one it reproduces.
     [[nodiscard]] u64 digest() const noexcept;
 
-    [[nodiscard]] Expected<PointSet, Error> clone() const noexcept;
+    /// Copy this set. `extra_capacity` reserves room beyond what is copied, for the one caller
+    /// that legitimately adds points to a finished set: the override layer materialising a
+    /// hand-placed instance the generator did not produce, or preserving a locked one it stopped
+    /// producing. Zero — the default — reproduces the source's capacity exactly, so the ordinary
+    /// clone still allocates nothing a generator did not ask for.
+    [[nodiscard]] Expected<PointSet, Error> clone(usize extra_capacity = 0) const noexcept;
 
 private:
     struct Column {

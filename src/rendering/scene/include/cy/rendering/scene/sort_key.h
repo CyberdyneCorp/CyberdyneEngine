@@ -41,8 +41,9 @@
 // first and state second, because back-to-front is a correctness requirement and batching is not.
 // One key layout cannot do both, so there are two builders and one comparison.
 //
-//   opaque       [63:61] layer  [60:45] program  [44:29] mesh  [28:5] depth (near first)  [4:0] surface
-//   transparent  [63:61] layer  [60:37] depth (far first)  [36:21] program  [20:5] mesh  [4:0] surface
+//   opaque       [63:61] layer  [60:45] program  [44:29] mesh  [28:5] depth (near first)  [4:0]
+//   surface transparent  [63:61] layer  [60:37] depth (far first)  [36:21] program  [20:5] mesh
+//   [4:0] surface
 //
 // `program` and `mesh` are 16-bit folds of 64-bit stable identities. A fold collides, and a
 // collision costs a lost batch — two materials that could have been drawn together are not

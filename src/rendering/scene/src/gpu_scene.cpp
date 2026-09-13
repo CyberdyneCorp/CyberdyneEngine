@@ -421,7 +421,9 @@ Status GpuScene::declare_gpu_written(ProducerHandle producer, InstanceRange rang
     return ok();
 }
 
-void GpuScene::begin_frame() noexcept { ++frame_index_; }
+void GpuScene::begin_frame() noexcept {
+    ++frame_index_;
+}
 
 const GpuInstance* GpuScene::instance(u32 slot) const noexcept {
     return slot < instances_.size() ? &instances_[slot] : nullptr;
