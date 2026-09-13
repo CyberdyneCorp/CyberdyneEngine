@@ -131,9 +131,15 @@ Checks: >
 WarningsAsErrors: '*'
 
 # Findings are reported for the engine's own headers and for nothing else. A dependency's header is
-# included as a system header and is not this project's to fix; the directory names below are the
-# engine tree, and no fetched dependency's path matches them.
+# included as a system header and is not this project's to fix.
+#
+# THE SECOND LINE IS LOAD-BEARING, and the claim the first one used to make on its own was false.
+# `HeaderFilterRegex` matches a PATH FRAGMENT, so `(^|/)src/` matches a fetched dependency laid out as
+# `_deps/<library>-src/src/...` — which most of them are. Measured on a dev tree: 55 findings in
+# `build/<tree>/_deps`, in libraries this project does not own and cannot fix, all of them admitted by
+# the very filter whose comment said "no fetched dependency's path matches them".
 HeaderFilterRegex: '(^|/)(src|platform|modules|tests|benchmarks|samples|tools|editor)/'
+ExcludeHeaderFilterRegex: '(^|/)(_deps|build)/'
 
 FormatStyle: file
 
