@@ -52,6 +52,11 @@ void write_u32(u8* out, u32 value) noexcept {
 /// remembers and the window an acknowledgement describes are the same window by construction.
 inline constexpr u16 kReplayWindow = 32;
 
+/// How many sequences a receiver will remember to acknowledge by name at once. The list is drained
+/// on every collection, so this is a ceiling on one burst rather than a queue depth; a sequence
+/// dropped because the list was full is re-recorded when the sender retransmits it, which it will.
+inline constexpr u32 kMaxNamedAcks = 64;
+
 /// Remove one element, keeping the order of the rest. `Array::remove_unordered` is O(1) and wrong
 /// here: an unacknowledged queue in send order is what makes the arena compactable from the front.
 template <class T>
@@ -191,7 +196,8 @@ ReliabilityChannel::ReliabilityChannel(Allocator& allocator, ChannelId channel) 
       delivery_arena_(allocator),
       delivery_(allocator),
       reorder_arena_(allocator),
-      reorder_(allocator) {}
+      reorder_(allocator),
+      named_acks_(allocator) {}
 
 DatagramHeader ReliabilityChannel::outgoing_header(DeliveryMode delivery, u16 sequence,
                                                    u16 payload_size) noexcept {
@@ -264,6 +270,28 @@ Status ReliabilityChannel::frame_ack(Array<u8>& out) noexcept {
     return ok();
 }
 
+Status ReliabilityChannel::frame_named_acks(Array<u8>& out) noexcept {
+    for (const u16 sequence : named_acks_.span()) {
+        const usize start = out.size();
+        if (Status grown = out.resize(start + kDatagramHeaderSize); !grown) {
+            return grown;
+        }
+        // Built by hand rather than through `outgoing_header()`, which would put `newest_received_`
+        // in the `ack` field and clear `owes_ack_`. This datagram exists to name ONE sequence the
+        // window cannot reach; the ordinary acknowledgement is still owed and still framed.
+        DatagramHeader header;
+        header.sequence = 0;
+        header.ack = sequence;
+        header.ack_bits = 0;
+        header.channel = channel_;
+        header.delivery = DeliveryMode::Unreliable;
+        header.payload_size = 0;
+        encode_header(header, out.data() + start);
+    }
+    named_acks_.clear();
+    return ok();
+}
+
 void ReliabilityChannel::drop_acknowledged(u16 sequence) noexcept {
     for (usize index = 0; index < unacked_.size(); ++index) {
         if (unacked_[index].sequence == sequence) {
@@ -315,6 +343,35 @@ bool ReliabilityChannel::already_received(u16 sequence) const noexcept {
         return true;
     }
     return (received_bits_ & (1U << (distance - 1))) != 0;
+}
+
+bool ReliabilityChannel::already_taken_ordered(u16 sequence) const noexcept {
+    // Exact, and it needs no window: `next_ordered_` is the frontier the application has been
+    // handed up to, so anything strictly older than it has already been delivered.
+    if (sequence_newer(next_ordered_, sequence)) {
+        return true;
+    }
+    return std::ranges::any_of(reorder_.span(), [sequence](const Queued& held) noexcept {
+        return held.sequence == sequence;
+    });
+}
+
+bool ReliabilityChannel::beyond_ack_window(u16 sequence) const noexcept {
+    if (!any_received_ || sequence == newest_received_ ||
+        sequence_newer(sequence, newest_received_)) {
+        return false;
+    }
+    return static_cast<u16>(newest_received_ - sequence) > kReplayWindow;
+}
+
+Status ReliabilityChannel::note_named_ack(u16 sequence) noexcept {
+    if (std::ranges::find(named_acks_.span(), sequence) != named_acks_.span().end()) {
+        return ok();
+    }
+    if (named_acks_.size() >= kMaxNamedAcks) {
+        return ok();
+    }
+    return named_acks_.push_back(sequence);
 }
 
 void ReliabilityChannel::note_received(u16 sequence) noexcept {
@@ -392,6 +449,39 @@ Status ReliabilityChannel::drain_ordered() noexcept {
     return ok();
 }
 
+Status ReliabilityChannel::accept_ordered(const DatagramHeader& header, Span<const u8> payload,
+                                          ReceiveVerdict& verdict) noexcept {
+    // Asked BEFORE `note_received()`, which moves `newest_received_` and would make a sequence that
+    // arrived 470 behind look like the newest one.
+    const bool unreachable_by_bits = beyond_ack_window(header.sequence);
+    note_received(header.sequence);
+    owes_ack_ = true;
+    if (unreachable_by_bits) {
+        // This side is taking responsibility for the sequence — delivering it, holding it, or
+        // recognising it as one it already delivered — and `ack_bits` cannot say so. Name it, or
+        // the sender retransmits until it abandons a peer that is in fact listening.
+        if (Status noted = note_named_ack(header.sequence); !noted) {
+            return noted;
+        }
+    }
+    if (already_taken_ordered(header.sequence)) {
+        ++duplicates_;
+        verdict = ReceiveVerdict::Duplicate;
+        return ok();
+    }
+    if (header.sequence == next_ordered_) {
+        if (Status queued = queue_for_delivery(header.sequence, header.delivery, payload);
+            !queued) {
+            return queued;
+        }
+        ++next_ordered_;
+        verdict = ReceiveVerdict::Delivered;
+        return drain_ordered();
+    }
+    verdict = ReceiveVerdict::Buffered;
+    return buffer_for_ordering(header.sequence, header.delivery, payload);
+}
+
 Status ReliabilityChannel::accept(const DatagramHeader& header, Span<const u8> payload,
                                   ReceiveVerdict& verdict) noexcept {
     acknowledge(header.ack, header.ack_bits);
@@ -399,6 +489,11 @@ Status ReliabilityChannel::accept(const DatagramHeader& header, Span<const u8> p
     if (header.payload_size == 0 && header.sequence == 0) {
         verdict = ReceiveVerdict::AckOnly;
         return ok();
+    }
+    // The ordered channel answers from its own frontier rather than from the replay window — see
+    // the header comment, and `m9:reliable-channel-stalls-under-loss`, which the window caused.
+    if (header.delivery == DeliveryMode::ReliableOrdered) {
+        return accept_ordered(header, payload, verdict);
     }
     if (already_received(header.sequence)) {
         ++duplicates_;
@@ -415,26 +510,8 @@ Status ReliabilityChannel::accept(const DatagramHeader& header, Span<const u8> p
     }
     note_received(header.sequence);
     owes_ack_ = true;
-
-    if (header.delivery != DeliveryMode::ReliableOrdered) {
-        verdict = ReceiveVerdict::Delivered;
-        return queue_for_delivery(header.sequence, header.delivery, payload);
-    }
-    if (header.sequence == next_ordered_) {
-        if (Status queued = queue_for_delivery(header.sequence, header.delivery, payload);
-            !queued) {
-            return queued;
-        }
-        ++next_ordered_;
-        verdict = ReceiveVerdict::Delivered;
-        return drain_ordered();
-    }
-    if (!sequence_newer(header.sequence, next_ordered_)) {
-        verdict = ReceiveVerdict::TooOld;
-        return ok();
-    }
-    verdict = ReceiveVerdict::Buffered;
-    return buffer_for_ordering(header.sequence, header.delivery, payload);
+    verdict = ReceiveVerdict::Delivered;
+    return queue_for_delivery(header.sequence, header.delivery, payload);
 }
 
 void ReliabilityChannel::compact_delivery_arena() noexcept {
@@ -511,6 +588,7 @@ void ReliabilityChannel::clear() noexcept {
     delivery_head_ = 0;
     reorder_arena_.clear();
     reorder_.clear();
+    named_acks_.clear();
 }
 
 // --- ReliableEndpoint ----------------------------------------------------------------------------
@@ -589,6 +667,9 @@ Status ReliableEndpoint::collect_outgoing(u64 now_ms, Array<u8>& out) noexcept {
             if (Status acked = one.frame_ack(out); !acked) {
                 return acked;
             }
+        }
+        if (Status named = one.frame_named_acks(out); !named) {
+            return named;
         }
     }
     return ok();

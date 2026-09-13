@@ -240,7 +240,7 @@ blocks without runtime fixup is the assumption the whole storage decision rests 
 
 **Corrections recorded at M2's close.** The row above is the plan; where the implementation came out
 differently the difference is written down in
-[the capability matrix](roadmap/capability-matrix.md#where-m2s-tiers-are-thin) rather than edited
+[the capability matrix](roadmap/capability-matrix.md#where-m2s-tiers-were-thin-and-what-m3-closed) rather than edited
 away here. The four a reader of this row should know: the spike found that a cooked block needs a
 **reference fixup pass after the copy**, which the specifications already allowed for and which
 makes M6's activation a copy *plus* a pass rather than a copy; `core-assets-and-io` reaches Working
@@ -402,6 +402,16 @@ editor talks to is a test stub: no engine binary accepts a live-bridge connectio
 runtime-owned worlds and the bridge's engine half are all absent. Correcting this row itself belongs
 to [`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposal.md), which inserts
 **M5.5 · Operable** between M5 and M6 and gives its own reasoning for the `editor-ui-ux` correction.
+
+*(**M10's record audit closed the divergence this paragraph describes.** Until M10 the correction
+lived only here, in prose, while the matrix column went on claiming what the gate had refused —
+which is how `m9:record-matches-plan-history` came to find nineteen such cells over four closed
+columns. `editor-architecture` and `live-editing` now read **S** in the M5 column and
+`project-and-plugins`' Complete cell has moved to M11, so the plan agrees with the record for all
+three and the sentence above is a record of the gate's finding rather than of a live disagreement.
+`developer-workflow-and-just`'s **W** also moved out of this column — to M6 — because at M5 the whole
+Content category of the required recipe surface was `_not-implemented` stubs. Per-cell evidence:
+[M10's record audit](roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones).)*
 
 ---
 
@@ -591,6 +601,17 @@ advanced, all to Working: `build-and-packaging`, `residency`, `save-and-persiste
 The reasoning per row, with the evidence, is in
 [the capability matrix](roadmap/capability-matrix.md#where-m6s-tiers-are-thin) and in
 `tools/roadmap/milestones/m6.toml` beside `[criterion.expect_tiers]`.
+
+*(**And M10's record audit added a seventh row to this milestone, in the direction no gate had looked
+for.** `developer-workflow-and-just` reached **Working** here and nobody wrote it down: the whole
+Content category of the recipe surface was `_not-implemented` stubs at M5 (`git show
+412c955:just/content.just`) and the stubs were gone by M6 (`ec8d087`). Its **W** cell moved from M5's
+column to this one and the record was corrected to M6 — a claim rather than a demotion, which is the
+half of `record-matches-plan-history` nobody had expected to find. The same audit claimed
+`testing-and-quality` at M3, `build-system-and-platforms` at M4 and `thirdparty-dependencies` at
+M8.b for the same reason: the column was right and the record had never been written. **None of the
+four has a criterion of its own**, which is recorded as a gap in
+[M10's record audit](roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones).)*
 
 ---
 
@@ -945,13 +966,19 @@ visible in a photograph rather than in a counter, and the sprite and mesh public
 suites, five mutations each proven red, and the vertical slice plays 477 effects and 4,346 live
 particles a frame inside the budget M8.b declared.
 
-**What does not exist is the GPU compute dispatch, and the specification's own Purpose is what makes
-that decisive**: *"GPU simulation is the **default**, not an advanced mode"*, over a system
-*"targeting millions of particles"*. `decide_path` returns `ExecutionPath::Gpu` for every emitter
-that could have it and `device_dispatch_available()` answers false, so all 36,880 emitter-steps of
+**What did not exist at M8.c was the GPU compute dispatch, and the specification's own Purpose is
+what made that decisive**: *"GPU simulation is the **default**, not an advanced mode"*, over a system
+*"targeting millions of particles"*. `decide_path` returned `ExecutionPath::Gpu` for every emitter
+that could have it while `device_dispatch_available()` answered false, so all 36,880 emitter-steps of
 the slice ran on the CPU — reported honestly, every frame, as
-`FallbackReason::DeviceDispatchUnimplemented`, which is far better than a silence, and still not the
-requirement. The slice's own numbers put that path at 1.57 ms a tick against a peak population of
+`FallbackReason::DeviceDispatchUnimplemented`, which was far better than a silence and still not the
+requirement. **M10 built it** (task 5.1, `src/vfx/gpu/`): `device_dispatch_available()` answers true,
+and `DeviceDispatchUnimplemented` no longer exists as a reason — `FallbackReason::NoDeviceInThisWorld`
+replaced it, because a `SimulationWorld` holding no device is still the CPU path and must be. The
+paragraphs below are M8.c's finding in M8.c's tense; **the record is
+[`status.yaml`](roadmap/status.yaml)**, which carries this row at Working from M10.
+
+The slice's own numbers put that path at 1.57 ms a tick against a peak population of
 4,346 — **0.36 µs per live particle per tick measured at the peak, so a lower bound on the average**
 — and a million particles is therefore at least a third of a second a frame: three orders of
 magnitude from the target the capability is defined by, on the machine the capability was built on. Beside it, `Async compute` is a requirement with nothing to schedule,
@@ -965,7 +992,12 @@ interfaces, the data model, and the invariants exist … behaviour may be minima
 unoptimised, or restricted to one backend"*, which is this module exactly. **The W cell moves to
 M10**, where the renderer's remaining GPU compute work already lives, and the gap this milestone
 leaves is one file and one function rather than a redesign: everything above
-`device_dispatch_available()` already reads it.
+`device_dispatch_available()` already reads it. *(That prediction held. M10 added
+`src/vfx/gpu/` — particle state resident in device buffers, indirect dispatch driven by
+GPU-maintained counts, async compute where the device exposes a queue, and the GPU sort behind
+`BudgetLevers::sorted` — and changed one line of `src/vfx/src/runtime.cpp`. `cy::vfx` stays
+device-free so `integration.vfx` stays headless. The six renderer kinds beyond `Sprite` and `Mesh`
+now publish rows; what remains absent is the compositing, which `src/vfx/README.md` records.)*
 
 **AND THE CONSEQUENCE, STATED RATHER THAN LEFT FOR SOMEBODY TO FIND.** `delivery-roadmap`'s own
 milestone table gives M8's artefact as *"a playable vertical-slice game exercising every
@@ -979,6 +1011,12 @@ OpenSpec change against that capability and is recorded here as work M9 inherits
 performed by a gate that did not plan it. The **M8.c work table above still says W because it
 is the plan the milestone was written against**; the record is `docs/roadmap/status.yaml` and this
 paragraph is the correction — the same convention M5's section uses.
+*(**M10 discharged this the other way round, and the better way.** `vfx-system` is at Working from
+M10, so the twelfth of the twelve counted above is no longer the exception and no sentence needed
+correcting: the inherited work was to correct the claim or build the thing, and the thing was built.
+The count of twelve excludes `ml-inference`, which `delivery-roadmap`'s M8 row also names and which
+is **still at Seed from M8.c** — so that row is not wholly true of the M8 series even now, for a
+different capability and for a reason M10 neither examined nor changed.)*
 
 **AND ONE MORE THING THE MILESTONE HAD TO BUILD BEFORE IT COULD BUILD ANYTHING ELSE: A SHADER AND
 PIPELINE LAYER.** M8.b's own closing report said a person could build all of M8.b and still not
@@ -1056,8 +1094,14 @@ the plan is corrected rather than the record relaxed. **M9 completes nothing.**
 `design.md` §4's predicted demotion — networking — did not need one, though the closing gate's
 adversarial pass found a defect in it that is in the engine rather than in the checking: a
 reliable-ordered channel under 25 % packet loss stops delivering to the application for the rest of
-the session, nothing detects it, and `m9:reliable-channel-stalls-under-loss` says so on every run
-until M10 closes it. `simulation-and-determinism`
+the session, nothing detects it, and `m9:reliable-channel-stalls-under-loss` said so on every run
+until M10 closed it. **It closed at M10, and it was two defects rather than the one M9 named.** M9
+read the cause as *"`abandoned()` has no caller"*; the cause was the replay window —
+`already_received()` treated anything more than 32 sequences behind the newest arrival as a replay,
+which is right for an unreliable datagram and wrong for one retransmitted across a 7.5 s horizon, so
+the frontier froze. The second defect was a default retransmission horizon longer than the session
+itself, with no route for an application to state its own. 0 of 4 clients converged at 25 % loss
+before; 4 of 4 at nine seeds in nine after, and `abandoned()` has its reader at last. `simulation-and-determinism`
 advances Seed → **Working**: profiles declared and refused at *configuration*, deterministic
 parallelism, stable iteration, the floating-point policy with the thirteen `<cmath>` functions the
 spike measured, the generated codecs, hierarchical hashing, the validator and the lint all landed,
@@ -1107,9 +1151,13 @@ column for rows this milestone never proposed, never touched and never audited**
 (`camera-system`, `core-jobs-and-concurrency`, `ecs-core`, `gameplay-abilities-and-effects`,
 `physics`, `sequencing-and-cinematics`) were moved to M11 by the closing gate rather than left
 claiming a completion that did not happen. No existing check compared a milestone's column with the
-status record; `m9:record-matches-plan` is that comparison, and `m9:record-matches-plan-history` is
-the declared gap it opened over four earlier milestones whose columns claim nineteen cells the
-record does not support.
+status record; `m9:record-matches-plan` is that comparison, and `m9:record-matches-plan-history` was
+the declared gap it opened over four earlier milestones whose columns claimed nineteen cells the
+record did not support. **M10 task 6.5 audited all nineteen and closed it**: fifteen cells moved and
+four rows were claimed, because in four cases the column was right and the record had simply never
+been written. The per-cell evidence is in
+[M10's record audit](roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones)
+and the change is `openspec/changes/audit-closed-milestone-columns/`.
 
 ---
 
@@ -1148,6 +1196,73 @@ a full day/night cycle with volumetric clouds, all streamed and all persistent.
 
 **Risk spike**: region invalidation in PCG. Getting dependency-driven partial regeneration wrong
 means either stale content or full-world regeneration, and both are project-defining.
+
+**What closed here, and what did not.** The table above is the plan M10 was written against; the
+record is [`status.yaml`](roadmap/status.yaml), and this paragraph is the correction — the
+convention M5's, M6's, M7's, M8.a's, M8.c's and M9's sections all use. **All eight Working cells
+landed**, seven of them from nothing: `src/environment/`, `src/terrain/`, `src/water/`,
+`src/foliage/`, `src/weather/` and `src/pcg/` did not exist when this milestone opened, and
+`atmosphere-sky-and-clouds` was extended in place at `src/rendering/sky/` rather than forked into a
+second module that could disagree with M7's about what a sunset is. `vfx-system` reaches Working on
+`src/vfx/gpu/`, the one file and one function M8.c's gate predicted.
+
+**Of the three rows M9 demoted, two complete and one is demoted a second time.**
+`diagnostics-profiling-and-crash` and `gameplay-framework` reach **Complete**, each because the
+criterion that blocked it went green and its declaration was deleted from `m9.toml` — the ledger
+fails a declared gap that starts passing, so closing one is checked rather than claimed.
+**`save-and-persistence` stays at Working and its Complete cell moves to M11.** Conflict resolution
+landed on a type that has no timestamp field in it; confidentiality needs a vetted AEAD, which
+`thirdparty-dependencies` requires to go through the OpenSpec change flow and which M10 did not open.
+A requirement-by-requirement audit then found the bill is **eleven pieces of work rather than the two
+M9 named** — nine of twenty requirements satisfied, three unmet, eight partial, with the evidence in
+`src/save/README.md`. `design.md` §4 wrote down in advance what a second demotion means: the row is
+**mis-scoped rather than late**, and that finding is carried into M11's proposal rather than left in
+a tasks file.
+
+**`atmosphere-sky-and-clouds` is at Working with a running, failing gap against it, and the gate
+wrote down why.** `m10:sky-field-round-trip`: the cloud shadow field is computed by a producer that
+reports writing darkened tiles, and read back as the declared 1.0 at all twenty-five points inside
+its radius; nothing outside `src/rendering/sky/` reads the field at all. That is one requirement of
+thirteen and half of that one — the mechanism half is met and enforced by an absent build dependency,
+and the twelve others are built and measured by five criteria over five suites. The argument for the
+cell, and the statement that the row does **not** reach Complete at M11 while the gap is open, is in
+[where M10's tiers are thin](roadmap/capability-matrix.md#where-m10s-tiers-are-thin).
+
+**Two more gaps were declared here rather than fixed quietly**, each running and failing and naming
+M11: `m10:fields-one-vegetation-potential` — `cy::foliage` and `cy::weather` declare
+`vegetation-potential` with different encodings and different classifications, so a project
+registering both producers fails at startup, which is a modelling decision across two rows and not a
+gate's to take — and `m10:world-frame-budget`, which is the honest headline of the artefact: about
+122 ms mean with a device drawing and about 106 ms headless, against a 16.7 ms 60 Hz frame —
+**seven times over either way** — nearly flat across the cycle, with the three largest bands in the
+same order in both takes: the substrate re-sampled at every terrain vertex at 63.0 ms, the cloud
+march at 23.2 ms and water's foam field at 12.0 ms, all three of them work a shipping engine would do
+in a shader. `m10:fields-sampled-on-a-device` is the gap behind all three: no `.slang` module
+samples an environment field yet.
+
+**The same wind defect was fixed rather than declared, because it had an owner.**
+`src/foliage/` and `src/weather/` both declared the standard `wind` field — Presentation against
+Authoritative — so `FieldRegistry::declare()` refused the second in either order and a project using
+both failed at startup. Three requirements settle the ownership rather than declaration order, so
+weather produces `wind` and foliage reads it; foliage's declaration is deleted and
+`integration.standard_fields` registers every module through the entry point a project calls and
+composes them in both directions.
+
+**Three Complete cells left the M10 column for rows this milestone never proposed, touched or
+audited** — `navigation`, `rendering-global-illumination` and `world-partition-and-streaming` — and
+each has a first-hand refutation rather than only an absence of work: the GI–atmosphere seam that
+[cycle 2](roadmap/dependencies.md#2--global-illumination--atmosphere) is entirely about was never
+joined; the milestone that was to complete streaming closed on an artefact with **no streaming in
+it**; and terrain's navigation contribution is one requirement of sixteen. **M11's load goes 61 →
+65** on top of the 48 → 61 that M10's audit of four earlier closed columns already moved onto it.
+
+**And two exit criteria above are not met, stated here rather than absorbed.** *"The environment demo
+holds its frame budget across a full day/night cycle"* — it does not, by seven times, and the curve
+across the cycle was measured rather than the claim asserted at one time of day. *"Terrain
+deformation persists through the save overlay and replays correctly"* holds for terrain (289 of 289 probes bit for bit, and the program exits
+non-zero if it does not) and **not** for the field half: weather's `wetness` and `snow-depth` are
+declared persistent and nothing encodes them. The artefact also has **no rivers** and **no
+streaming**, both on its own README's face.
 
 ---
 

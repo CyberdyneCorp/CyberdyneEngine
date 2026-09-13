@@ -163,9 +163,22 @@ def act_frame(report: Report, values: dict[str, object]) -> Statistic | None:
         report.gap("both halves of the shot are on the device",
                    f"interior {interior:,.0f}, exterior {exterior:,.0f} — one of them drew nothing")
 
+    # WHAT THIS USED TO ASK FOR, AND WHY IT WAS NOT ENOUGH. The assertion was `materials > 1`, and
+    # for two milestones it passed while this number FLIPPED BETWEEN 4 AND 5 on identical runs —
+    # the visibility buffer's depth test and its payload store were two unordered writes, and a
+    # thin material's last few pixels were the contested ones. A floor of one cannot see a value
+    # move; it can only see it collapse. So the number is now checked against the set the SCENE
+    # PLACES, and the run-to-run comparison below checks that it does not move.
     materials = number(values, "materials_seen")
-    if materials > 1:
-        report.did("the visibility buffer binned more than one material", f"{materials:.0f} bins")
+    placed = number(values, "materials_placed")
+    if materials == placed and materials > 1:
+        report.did("every material the scene places reaches the visibility buffer's bins",
+                   f"{materials:.0f} of {placed:.0f}")
+    elif materials > 1:
+        report.gap("every material the scene places reaches the visibility buffer's bins",
+                   f"{materials:.0f} bins received a pixel of the {placed:.0f} the scene places — "
+                   "either the camera never framed one of them, or pixels that belong to it are "
+                   "being taken by another surface")
     else:
         report.gap("the visibility buffer binned more than one material",
                    f"{materials:.0f}; a single bin makes the classification vacuous")
@@ -187,6 +200,49 @@ def act_frame(report: Report, values: dict[str, object]) -> Statistic | None:
     return report.figure(
         Statistic.stable("median device frame (submit to idle)",
                          number(values, "median_frame_ms"), "ms", samples=int(frames))
+    )
+
+
+def act_frame_reproduces(report: Report, runs: list[dict[str, float]]) -> None:
+    """The device act, run whole several times, has to produce the same numbers.
+
+    M10 task 7b.4. This is the check that would have caught the depth/payload race: `materials_seen`
+    flipped between 4 and 5 across six runs of the same binary on the same scene, while coverage and
+    the visible-cluster count stayed bit-stable — and nothing here compared one run with another, so
+    the artefact reported a pass every time.
+
+    COVERAGE AND THE CLUSTER COUNT ARE THE CONTROL, not decoration. They are what localised the
+    original defect to the payload pairing rather than to the traversal, and if THEY move then the
+    two runs did not draw the same thing and a stable bin count would mean nothing.
+    """
+    print("\n==> the frame, again: the same binary on the same scene, run to run")
+    if len(runs) < 2:
+        report.not_evaluated(
+            "the device frame reproduces across whole runs",
+            f"{len(runs)} device run(s); pass --repeat 2 or more for this to have two to compare",
+        )
+        return
+
+    moved = [
+        (name, sorted({run[name] for run in runs}))
+        for name in ("covered_pixels", "visible_clusters", "materials_seen")
+        if len({run[name] for run in runs}) > 1
+    ]
+    if not moved:
+        report.did(
+            "the device frame reproduces across whole runs",
+            f"{len(runs)} runs agree exactly on coverage ({runs[0]['covered_pixels']:,.0f} px), "
+            f"visible clusters ({runs[0]['visible_clusters']:,.0f}) and bins "
+            f"({runs[0]['materials_seen']:.0f})",
+        )
+        return
+    report.gap(
+        "the device frame reproduces across whole runs",
+        "; ".join(
+            f"{name} took {len(values)} values over {len(runs)} runs: "
+            + ", ".join(f"{value:,.0f}" for value in values)
+            for name, values in moved
+        ),
     )
 
 
@@ -522,6 +578,9 @@ def main() -> int:
 
         medians: list[float] = []
         device_medians: list[float] = []
+        # The device act's invariants, one entry per run. Gathered on EVERY attempt — the acts
+        # themselves only run on the first, which is why nothing compared two runs until 7b.4.
+        device_runs: list[dict[str, float]] = []
         values: dict[str, object] = {}
         for attempt in range(max(1, arguments.repeat)):
             values = run_sample(binary, invocation)
@@ -537,7 +596,14 @@ def main() -> int:
             medians.append(spike.value)
             if str(values.get("device")) == "1":
                 device_medians.append(number(values, "median_frame_ms"))
+                device_runs.append({
+                    name: number(values, name)
+                    for name in ("covered_pixels", "visible_clusters", "materials_seen")
+                })
             del device
+
+        if device_runs:
+            act_frame_reproduces(report, device_runs)
 
         headline = report.headline(
             Statistic.median("median frame while the arbiter reallocates, over whole runs",

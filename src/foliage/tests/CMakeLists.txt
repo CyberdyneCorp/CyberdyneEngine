@@ -64,7 +64,12 @@ function(cy_foliage_declare_tests)
             "${cy_foliage_tests_dir}/test_promotion.cpp"
             "${cy_foliage_tests_dir}/test_diagnostics.cpp"
             "${cy_foliage_tests_dir}/test_cook.cpp"
-        DEPENDENCIES cy::foliage cy::foliage-render)
+        # cy::weather because test_wind.cpp reads THE wind field's one declaration from the row that
+        # produces it rather than declaring a second copy — see the note at the top of that file and
+        # src/foliage/include/cy/foliage/wind.h. The same shape as fixtures.h's real
+        # terrain::TerrainQuery: a foliage suite is written against what the other rows actually
+        # produce.
+        DEPENDENCIES cy::foliage cy::foliage-render cy::weather)
 
     cy_add_test(
         NAME foliage_grass

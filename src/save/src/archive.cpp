@@ -243,6 +243,7 @@ Status build_manifest(const Overlay& overlay, const SaveIdentity& identity, u32 
     out.save = identity.save;
     out.campaign = identity.campaign;
     out.session_seed = identity.session_seed;
+    out.progress = identity.progress;
     out.simulation_point = overlay.simulation_point();
     out.content_version =
         identity.content_version.is_zero() ? overlay.content_version() : identity.content_version;

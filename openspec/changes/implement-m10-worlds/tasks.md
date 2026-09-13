@@ -75,7 +75,30 @@ milestone's eight rows write into it.
       Both declarations are deleted from `m9.toml`. **The row's tier cell is the closing gate's**
 - [ ] 6.2 **`save-and-persistence` → Complete**: confidentiality over the existing container — a
       vetted AEAD, which is a dependency decision through `thirdparty-dependencies` rather than a
-      coding task — and conflict resolution
+      coding task — and conflict resolution.
+      **NOT DONE, AND THE ROW IS DEMOTED A SECOND TIME.**
+      **Half of it landed**: conflict resolution is `src/save/include/cy/save/conflict.h`, a decision
+      over the logical metadata the specification names — generation, campaign identity, simulation
+      point, progress marker, content version — taken on a type that HAS NO TIMESTAMP FIELD IN IT, so
+      it cannot be decided on a file's modification time even by accident. `Manifest::progress`
+      carries the progress marker and is written only when non-zero, so a save written before this
+      field existed decodes rather than failing on a missing required field. Eight unit cases, plus
+      one over two real save directories in which the copy that must LOSE is the newest file on disk.
+      **The other half did not**: confidentiality needs a vetted AEAD, `thirdparty-dependencies`
+      names mbedTLS as this engine's cryptography library, and adopting a dependency "SHALL go
+      through the OpenSpec change flow recording the evaluation against these criteria" — a change of
+      its own, not one to open inside a closing gate, and M10 added no dependency at all.
+      **AND THE AUDIT FOUND MORE THAN THE TWO BLOCKERS M9 NAMED.** Read requirement by requirement
+      against this tree, `save-and-persistence`'s twenty requirements come out **nine satisfied,
+      three unmet and eight partial**. The three unmet are integrity and confidentiality (the AEAD);
+      save diagnostics and inspection (there is no inspector, nothing answers "why is this field in
+      the save", and there is no semantic diff); and forbidden save patterns, of whose ten "each
+      SHALL be checkable" and none is checked. Among the partial is the **large-world save benchmark
+      the requirement says the engine "SHALL maintain"**, which `benchmarks/` does not contain. The
+      table, with the evidence for each row, is in `src/save/README.md`.
+      design.md §4 wrote down in advance what a second demotion of one row means — mis-scoped rather
+      than late. A Complete cell for this capability costs eleven pieces of work rather than the two
+      M9 named, and **that is the finding for M11's proposal**
 - [x] 6.3 **`gameplay-framework` → Complete**: benchmark the specification's performance table
       rather than assert it, closing `m9:gameplay-benchmarks`.
       **Done in code**: `benchmarks/gameplay/` with five committed thresholds covering the five rows
@@ -87,10 +110,40 @@ milestone's eight rows write into it.
       location and a 10 s budget: golden replays with committed hashes replayed in CI, replay and
       save fuzzing, and the transactional save tests. `cy_add_test`'s taxonomy gains the kind its own
       error message already promises
-- [ ] 6.5 **`m9:record-matches-plan-history`**: audit the four closed milestones whose matrix columns
+- [x] 6.5 **`m9:record-matches-plan-history`**: audit the four closed milestones whose matrix columns
       claim nineteen cells the status record does not support, thirteen of them Complete, and move
       or claim each one. An OpenSpec change against `delivery-roadmap`, because moving a capability
-      between milestones is one by that specification's own rule
+      between milestones is one by that specification's own rule.
+      **Done**: all nineteen read against the tree M10 closes on rather than against the gate that
+      parked them — two had moved since, `live-editing` gaining the other half of its bridge at M7
+      and `editor-viewport-and-gizmos` engine-side picking at M8.a. **FIFTEEN CELLS MOVED**
+      (`editor-architecture` and `live-editing` W→S at M5; `project-and-plugins` and eleven M8.b
+      Completes to M11; `developer-workflow-and-just`'s W from M5 to M6) and **FOUR ROWS CLAIMED** —
+      `testing-and-quality` Working at M3, `build-system-and-platforms` at M4,
+      `developer-workflow-and-just` at M6, `thirdparty-dependencies` at M8.b — because their columns
+      were right and their record had never been written. Per-cell evidence in
+      `docs/roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones`;
+      the change is `openspec/changes/audit-closed-milestone-columns/`. The declaration is deleted
+      from `m9.toml` — a declared gap that passes fails the ledger — and the `tier_rank()` crash the
+      same check carries for an unstarted capability is guarded there too. **M11's load goes 48 → 61**
+- [x] 6.6 **`m9:reliable-channel-stalls-under-loss`** — the second M9 gap naming M10 as its closing
+      rung, and the one no task named. An omission corrected rather than new scope.
+      **Done, and it was TWO defects rather than the one M9 guessed at.** M9 read "`abandoned()` has
+      no caller" as the cause; the cause was the replay window. `already_received()` calls anything
+      more than 32 sequences behind the newest arrival a replay — right for an unreliable datagram,
+      wrong for one retransmitted across a 7.5 s horizon, which is about 470 sequences at 60 Hz — so
+      the third retransmit attempt onwards was refused and `next_ordered_` froze for the rest of the
+      session. `ReliabilityChannel::accept_ordered()` now answers from the delivery frontier plus the
+      reorder buffer, which is EXACT rather than conservative, and acknowledges by NAME what
+      `ack_bits` cannot reach; nothing on the wire changed. That took the session from **0 of 4
+      converged at 25 % loss to 3 of 4**. The fourth was the second defect: the default
+      `RetransmitPolicy` spreads ten attempts over longer than the session itself, and no backend
+      exposed `ReliableEndpoint::set_policy()`. Both transports carry `set_retransmit_policy()` now
+      and `samples/09-multiplayer` caps its backoff at two round trips — **4 of 4 at nine seeds in
+      nine**. `abandoned()` has its reader at last, `ConnectionStats::reliable_abandoned`, printed
+      as `session_abandoned_links`: 0 of 8 at 25 %, 4 of 8 at 50 %. Two regression cases, each
+      verified red against a faithful restoration of what it checks. The declaration is deleted from
+      `m9.toml` — a declared gap that passes fails the ledger
 
 ## 7. The artefact — `samples/10-world`
 
@@ -133,19 +186,83 @@ milestone's records should say where it went. See `docs/roadmap/post-m9-tasks.md
       visibility buffer so no downstream pass changed
 - [x] 7b.2 **Regression test** — six runs over overlapping instances, resolve and bin counts required
       to match; verified to fail on the old raster
-- [ ] 7b.3 The remaining residue: exact depth ties broken by traversal append order, 1-3 pixels in
-      921,593. Needs a stable cluster identity in the raster payload rather than the visible index
-- [ ] 7b.4 Tighten `fidelity.py`'s `materials_seen` assertion, which asks only for `> 1` and so
-      never saw this
+- [x] 7b.3 The remaining residue: exact depth ties broken by traversal append order, 1-3 pixels in
+      921,593. Needs a stable cluster identity in the raster payload rather than the visible index.
+      **Done in code.** The raster payload's first word is `instance * cluster_stride + cluster` —
+      the traversal's own DAG mark index — instead of the visible-list slot, and classify, scatter
+      and resolve derive the material from it rather than indexing that list, so no pass after the
+      raster reads a number produced by an atomic append. **IT FITS EXACTLY AND THE ARITHMETIC IS
+      WRITTEN DOWN**: the atomic is 64 bits, 32 of depth key and 32 of payload of which 8 are the
+      triangle, so the identity takes the SAME 24 bits the visible index had — but the scene bound
+      moves from `visible_capacity <= 2^24` to `instance_count * cluster_stride <= 2^24`, which is
+      four times tighter than the 2^26 the traversal's own visit marks allow.
+      `VisbufferPass::initialise` refuses above it by name and a test proves the boundary.
+      **MEASURED**: three identical runs of `cy_fidelity_capture` at 1280x720 now agree on 921,600
+      of 921,600 pixels in all three views; against the old raster the same comparison reports 1
+      shaded pixel, 2-5 triangle pixels and 883,921-886,414 cluster pixels differing.
+      **A SECOND DEFECT FELL OUT**: both `VisbufferPass` and `GpuTraversal` destroyed handles their
+      refused `initialise` had never created — twelve "destroy_buffer() on a stale or never-issued
+      handle" the first time a test destroyed a refused pass. Both destructors skip a null handle
+      and the new test asserts the validation count
+- [x] 7b.4 Tighten `fidelity.py`'s `materials_seen` assertion, which asks only for `> 1` and so
+      never saw this.
+      **Done in code.** Two checks replace the floor of one: the number is compared against
+      `materials_placed`, which the program now computes from every cluster's material plus its
+      instance's offset — the set the scene PLACES, whether drawn or not — and a new act compares
+      coverage, the visible-cluster count and the bin count across every `--repeat` run, which
+      nothing did before because the acts only ever ran on the first. Proved red by dropping one bin
+      on odd-pid runs: `materials_seen took 2 values over 4 runs: 4, 5`, which is the flip itself
 
 ## 8. Records and gates
 
 - [ ] 8.1 `tools/roadmap/milestones/m10.toml`; declare `milestone-m10` in `gates.toml` and raise
       `selftest.MINIMUM_CRITERIA`
 - [ ] 8.2 An `m11-open` criterion using the double-star glob form
-- [ ] 8.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`
-- [ ] 8.4 Move `ci.yml`'s milestone job to `m10` in the same commit that flips the gate green
-- [ ] 8.5 Open the M11 change
+- [x] 8.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`.
+      **Done.** Eight rows to Working (seven from `none`, `vfx-system` from Seed),
+      `diagnostics-profiling-and-crash` and `gameplay-framework` to Complete, and
+      `save-and-persistence` recorded at Working with its Complete cell moved to M11 — its second
+      demotion, with the eleven-piece audit carried into M11's proposal as design.md §4 requires.
+      **`atmosphere-sky-and-clouds` is recorded at Working with `m10:sky-field-round-trip` running
+      and failing against it**, and the argument is written into `status.yaml` and into
+      `capability-matrix.md#where-m10s-tiers-are-thin` rather than left implicit: one requirement of
+      thirteen, and half of that one, against twelve built and measured by five criteria over four
+      suites — and the row does NOT reach Complete at M11 while the gap is open.
+      **Three parked Complete cells moved to M11**, each with a first-hand refutation rather than
+      only an absence of work: nothing in the tree constructs a `gi::SkyTerm` from the atmosphere, so
+      the seam `dependencies.md` cycle 2 is entirely about was never joined; `samples/10-world` has
+      no streaming in it at all; and terrain's navigation contribution is one requirement of sixteen.
+      **M11's load goes 61 → 65.** `ROADMAP.md`'s three false VFX sentences are corrected — the GPU
+      path exists, `device_dispatch_available()` answers true and `DeviceDispatchUnimplemented` no
+      longer exists as a reason — and the sweep found four more of the same kind, all fixed: M9's two
+      gaps that M10 closed still reading as open, M5's paragraph claiming a plan/record divergence the
+      audit closed, M6's gate never recording `developer-workflow-and-just`, and
+      `docs/roadmap/implementing.md`'s "In flight" section still naming **M5.5**, five rungs stale.
+      `docs/roadmap/open-debts.md` regenerated; `just roadmap-test` 214/214, `just roadmap-status`,
+      `just roadmap-debts --check`, `just ci-check` and `just quality-specs` all clean
+- [ ] 8.4 Move `ci.yml`'s milestone job to `m10` in the same commit that flips the gate green.
+      **HALF DONE, AND THE OTHER HALF IS NOT THIS PHASE'S TO DO.** `.github/workflows/ci.yml`'s
+      `milestone` job runs `just roadmap-milestone m10 --ci`, and its comment block records what M10
+      adds: four declared gaps that run and fail by design, two `where = "ci"` criteria that defer to
+      *this job* and still fail there because no leg-comparison job exists, and two `requires = "gpu"`
+      criteria each with a device-free companion. **`tools/roadmap/gates.toml` is deliberately still
+      at `state = "joins-on-close"`**: flipping it asserts the gate is green, and section 9 has not
+      run. Both states were measured rather than assumed — with the gate green and `ci.yml` at `m10`,
+      `just ci-check` exits 0; with the gate green and `ci.yml` back at `m9` it fails naming
+      `milestone-m10`, which is the forcing function this task relies on. **This commit must not land
+      before the gate is green**, because the job runs on every push to `main`
+- [x] 8.5 Open the M11 change.
+      **Done**: `openspec/changes/implement-m11-reach/` — README, proposal and tasks.
+      `m10:m11-open` passes, and was proved red twice (proposal moved away; directory renamed so the
+      glob no longer matches). The proposal carries what M10 hands forward as six running, failing,
+      rung-bearing criteria plus the two questions this host cannot ask, the
+      `save-and-persistence` mis-scoping finding design.md §4 sends here, and the decision M11 cannot
+      avoid: **whether it is one milestone or two**, now that its load is 65 of 76 capabilities with
+      seventeen of them arriving at M10's gate alone. `tasks.md` is a decision list, not an
+      implementation plan, and section 0 has to be answered before the rest can be written honestly.
+      Like `implement-m10-worlds` at the equivalent point, it carries no `specs/` deltas yet, so
+      `openspec validate --changes --strict` reports it as having no delta — the same state M10's
+      change was opened in, and nothing in CI validates changes
 
 ## 9. The gate
 

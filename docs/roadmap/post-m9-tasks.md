@@ -188,8 +188,13 @@ which of these are real**, and that run is now possible for the first time.
 > **verified to fail on the old raster and pass on the new one**. On the artefact's set the run-to-run
 > difference fell from 110-150 pixels to 1-3, and `materials_seen` stopped flipping.
 >
-> The residue is a different thing: exact depth ties between neighbouring clusters, broken by the
-> traversal's atomic append order. Removing it needs a stable cluster identity in the payload.
+> The residue was a different thing: exact depth ties between neighbouring clusters, broken by the
+> traversal's atomic append order. **Closed at M10 (tasks 7b.3 and 7b.4).** The payload's first word
+> is now `instance * cluster_stride + cluster` rather than the visible-list index, so a tie goes to
+> the lower identity on every run; three identical captures now agree on 921,600 of 921,600 pixels
+> in all three views. `fidelity.py` no longer asks only that `materials_seen > 1` — it checks the
+> number against the set the scene places and requires every repeat of the run to agree, which is
+> the assertion that would have caught the 4-to-5 flip.
 
 **Found by rendering the M7 scene for documentation (item 3), not by a gate.** It is a correctness
 defect, not only a determinism one.

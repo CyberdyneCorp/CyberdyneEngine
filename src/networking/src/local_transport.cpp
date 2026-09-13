@@ -264,7 +264,17 @@ Expected<LocalTransport::Link*, Error> LocalTransport::open(PeerId peer,
         unmake(*allocator_, link);
         return fail(ErrorCode::OutOfMemory, "networking: could not register a link");
     }
+    // A link opened after the policy was stated gets it too, so a session does not have to
+    // re-declare its pacing every time a player joins.
+    link->endpoint.set_policy(policy_);
     return link;
+}
+
+void LocalTransport::set_retransmit_policy(const RetransmitPolicy& policy) noexcept {
+    policy_ = policy;
+    for (auto* link : links_) {
+        link->endpoint.set_policy(policy);
+    }
 }
 
 Expected<PeerId, Error> LocalTransport::connect(const char* address) noexcept {
@@ -337,6 +347,11 @@ void LocalTransport::flush(u64 now_ms) noexcept {
         if (link.state == ConnectionState::Disconnected) {
             continue;
         }
+        // Sampled BEFORE anything that can leave early. An abandoned channel collects nothing,
+        // so a reader written after the collection would go quiet at exactly the moment it had
+        // something to say — which is how `abandoned()` came to have no caller in the first place.
+        link.stats.retransmissions = link.endpoint.retransmissions();
+        link.stats.reliable_abandoned = link.endpoint.abandoned();
         outgoing_.clear();
         if (!link.endpoint.collect_outgoing(now_ms, outgoing_)) {
             continue;
@@ -360,7 +375,6 @@ void LocalTransport::flush(u64 now_ms) noexcept {
             link.stats.bytes_out += length;
             cursor += length;
         }
-        link.stats.retransmissions = link.endpoint.retransmissions();
     }
 }
 

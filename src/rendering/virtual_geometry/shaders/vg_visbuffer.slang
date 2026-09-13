@@ -11,11 +11,16 @@
 // TWO WORDS PER PIXEL, AND NO BARYCENTRICS AMONG THEM
 // ================================================================================================
 //
-// A pixel carries the index of the VISIBLE CLUSTER RECORD and the triangle within it, and nothing
-// else. That is enough to identify the surface — the record names the instance and the cluster, the
-// cluster names its page and its geometry — and the barycentrics are RECOVERED in the resolve by
+// A pixel carries a STABLE SURFACE IDENTITY and the triangle within it, and nothing else. That is
+// enough to identify the surface — the identity names the instance and the cluster, the cluster
+// names its page and its geometry — and the barycentrics are RECOVERED in the resolve by
 // projecting the identified triangle and solving for the pixel centre. Storing them would be four
 // more bytes per pixel to save an arithmetic the resolve has to do anyway to get a derivative.
+//
+// The identity is `instance * clusterStride + cluster`, which is the traversal's own DAG mark
+// index. It used to be the index of the visible-cluster record instead, and that index is
+// ATOMIC-APPEND ORDER: it names the same surface by a different number on every run. See the
+// comment on `kTrianglePayloadBits` for why that mattered and what it cost to remove.
 //
 // ================================================================================================
 // THE RASTERISER HERE IS THE COMPUTE ONE, AND THAT IS A STATED SCOPE RATHER THAN A PREFERENCE
@@ -44,6 +49,8 @@
 //   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
 //          -entry vgVisRaster   -stage compute -o vg_vis_raster.spv
 //   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
+//          -entry vgVisUnpack   -stage compute -o vg_vis_unpack.spv
+//   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
 //          -entry vgVisClassify -stage compute -o vg_vis_classify.spv
 //   slangc vg_visbuffer.slang -target spirv -profile spirv_1_5 \
 //          -entry vgVisScan     -stage compute -o vg_vis_scan.spv
@@ -53,7 +60,7 @@
 //          -entry vgVisResolve  -stage compute -o vg_vis_resolve.spv
 //   python3 embed_spirv.py vg_visbuffer_spirv.h \
 //          kVgVisClearSpirv=vg_vis_clear.spv kVgVisPrepareSpirv=vg_vis_prepare.spv \
-//          kVgVisRasterSpirv=vg_vis_raster.spv \
+//          kVgVisRasterSpirv=vg_vis_raster.spv kVgVisUnpackSpirv=vg_vis_unpack.spv \
 //          kVgVisClassifySpirv=vg_vis_classify.spv kVgVisScanSpirv=vg_vis_scan.spv \
 //          kVgVisScatterSpirv=vg_vis_scatter.spv kVgVisResolveSpirv=vg_vis_resolve.spv
 //   clang-format -i vg_visbuffer_spirv.h
@@ -139,7 +146,10 @@ struct VgVisPush
     float positionScale;
     float normalScale;
     float uvScale;
-    uint reserved;
+    // The stride of the SURFACE IDENTITY: `instance * clusterStride + cluster`, where the stride is
+    // the largest cluster count of any asset in the scene. It is `GpuScene::cluster_stride()`, the
+    // same number the traversal uses for its DAG visit marks, so the two name a surface identically.
+    uint clusterStride;
 };
 
 [[vk::push_constant]]
@@ -181,8 +191,26 @@ static const uint kFarDepth = 0xFFFFFFFFu;
 /// a single `InterlockedMin`. Ordering by the packed value orders by depth first, and ties break by
 /// payload — deterministically, rather than by whichever store the memory system retired last.
 ///
-/// The payload is `(visibleIndex << kTrianglePayloadBits) | triangle`. `VisbufferOptions::validate`
-/// refuses a configuration that would not fit, so the packing cannot silently truncate.
+/// THE PAYLOAD IS A STABLE IDENTITY, NOT THE VISIBLE INDEX, and that is the second half of the same
+/// defect. Pairing depth with the payload made "a farther fragment wins" impossible; it left the
+/// case where two fragments tie on the depth key EXACTLY, where the minimum is decided by the
+/// payload alone. The payload used to be `(visibleIndex << 8) | triangle` and `visibleIndex` is the
+/// slot the traversal's `InterlockedAdd` happened to hand out, which permutes run to run — so an
+/// exact tie was broken differently on each run. Measured on samples/07-fidelity at 1280x720: one
+/// to three pixels of 921,593 moved between identical runs.
+///
+/// It is now `(identity << kTrianglePayloadBits) | triangle`, with
+/// `identity = instance * push.clusterStride + cluster` — a pure function of the scene. An exact
+/// tie is now broken towards the lower instance, and towards the lower cluster within it, on every
+/// run and every device.
+///
+/// THE ARITHMETIC, because the substitution is not free. The atomic is 64 bits: 32 of depth key and
+/// 32 of payload, of which 8 are the triangle. That leaves the identity the SAME 24 bits the
+/// visible index had, so the scene bound changes from `visible_capacity <= 2^24` to
+/// `instanceCount * clusterStride <= 2^24`. The traversal's own DAG marks are one word per
+/// (instance, cluster) and it refuses above 2^26, so this bound is four times tighter than the one
+/// already in the tree — `VisbufferPass::initialise` refuses above it by name rather than wrapping
+/// a pixel onto a neighbouring cluster.
 static const uint kTrianglePayloadBits = 8u;
 static const uint kTrianglePayloadMask = (1u << kTrianglePayloadBits) - 1u;
 static const uint64_t kFarPacked = 0xFFFFFFFFFFFFFFFFull;
@@ -203,6 +231,33 @@ uint loadU8(uint byteOffset)
 {
     uint word = payload.Load(byteOffset & ~3u);
     return (word >> ((byteOffset & 3u) * 8u)) & 0xFFu;
+}
+
+/// The surface an identity names, derived rather than looked up.
+///
+/// This is the same arithmetic `vgTraverse` does when it fills a `VgVisible` record — the cluster's
+/// own material plus the instance's offset — so classify, scatter and resolve reach the same answer
+/// the traversal would have written, without reading a list whose ORDER is not reproducible.
+struct VgSurface
+{
+    uint instance;
+    uint cluster;
+    uint material;
+};
+
+VgSurface surfaceFromIdentity(uint identity)
+{
+    // `max(..., 1)` guards a scene with no clusters at all, where the stride is zero and the pass
+    // has nothing to shade anyway. An integer divide by zero is undefined on a device.
+    uint stride = max(push.clusterStride, 1u);
+    VgSurface surface;
+    surface.instance = identity / stride;
+    surface.cluster = identity % stride;
+    VgInstance instance = instances[surface.instance];
+    VgAsset asset = assets[instance.asset];
+    surface.material = clusters[asset.clusterBase + surface.cluster].material +
+                       instance.materialOffset;
+    return surface;
 }
 
 float3 rotateByQuaternion(float4 q, float3 v)
@@ -321,6 +376,9 @@ void vgVisRaster(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID,
     VgCluster cluster = clusters[clusterIndex];
     VgClusterGeometry g = geometry[clusterIndex];
     uint triangles = g.indexCount / 3u;
+    // The visible list is read HERE and nowhere downstream: what a pixel keeps is the identity of
+    // the surface, not the slot this record happens to occupy. See `kTrianglePayloadBits`.
+    uint identity = record.instance * max(push.clusterStride, 1u) + record.cluster;
 
     for (uint triangle = thread.x; triangle < triangles; triangle += 64u)
     {
@@ -385,11 +443,10 @@ void vgVisRaster(uint3 id : SV_DispatchThreadID, uint3 group : SV_GroupID,
                 }
                 uint key = uint(saturate(1.0f - z) * 4294967040.0f);
                 uint pixel = uint(y) * push.width + uint(x);
-                uint payload = (visibleIndex << kTrianglePayloadBits) |
+                uint payload = (identity << kTrianglePayloadBits) |
                                (triangle & kTrianglePayloadMask);
                 uint64_t packed = (uint64_t(key) << 32) | uint64_t(payload);
                 InterlockedMin(depth[pixel], packed);
-
             }
         }
     }
@@ -417,6 +474,7 @@ void vgVisUnpack(uint3 id : SV_DispatchThreadID)
         return;
     }
     uint payload = uint(packed & 0xFFFFFFFFull);
+    // x is the surface identity, y is the triangle within its cluster.
     visbuffer[pixel] = uint2(payload >> kTrianglePayloadBits, payload & kTrianglePayloadMask);
 }
 
@@ -436,7 +494,7 @@ void vgVisClassify(uint3 id : SV_DispatchThreadID)
     {
         return;
     }
-    uint material = visible[sample.x].material;
+    uint material = surfaceFromIdentity(sample.x).material;
     if (material < push.materialCount)
     {
         InterlockedAdd(binCounts[material], 1u);
@@ -492,7 +550,7 @@ void vgVisScatter(uint3 id : SV_DispatchThreadID)
     {
         return;
     }
-    uint material = visible[sample.x].material;
+    uint material = surfaceFromIdentity(sample.x).material;
     if (material >= push.materialCount)
     {
         return;
@@ -530,10 +588,10 @@ void vgVisResolve(uint3 id : SV_DispatchThreadID)
     {
         return;
     }
-    VgVisible record = visible[sample.x];
-    VgInstance instance = instances[record.instance];
+    VgSurface surface = surfaceFromIdentity(sample.x);
+    VgInstance instance = instances[surface.instance];
     VgAsset asset = assets[instance.asset];
-    uint clusterIndex = asset.clusterBase + record.cluster;
+    uint clusterIndex = asset.clusterBase + surface.cluster;
     VgCluster cluster = clusters[clusterIndex];
     VgClusterGeometry g = geometry[clusterIndex];
 

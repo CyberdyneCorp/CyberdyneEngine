@@ -32,3 +32,21 @@ cy_add_test(
     KIND    integration
     SOURCES test_state_hash_coverage.cpp
     DEPENDENCIES cy::runtime cy::scene cy::ecs cy::core-determinism cy::core-values)
+
+# The one registry every producing module declares into. Here rather than in any one module because
+# the defect it exists for lives BETWEEN modules: `foliage` and `weather` each declared the standard
+# `wind` field, differently, and `FieldRegistry::declare()` refuses the second in either order — so
+# a project using both rows failed at startup while both modules' own suites stayed green. M10's
+# gate found it; this is the check that would have. It links every row that declares a field, which
+# is what makes it an integration suite and not a unit one.
+cy_add_test(
+    NAME    standard_fields
+    KIND    integration
+    SOURCES test_standard_fields.cpp
+    DEPENDENCIES
+        cy::environment
+        cy::foliage
+        cy::rendering-sky
+        cy::terrain
+        cy::water
+        cy::weather)

@@ -128,6 +128,12 @@ struct SessionReport {
     u64 datagrams_delivered = 0;
     /// Player-ticks the host reached its deadline with nothing for. A direct consequence of loss.
     u32 substitutions = 0;
+    /// **Links whose reliable channel gave up.** `ReliableEndpoint::abandoned()` raised this signal
+    /// from M9 and nothing read it, which is half of what `m9:reliable-channel-stalls-under-loss`
+    /// declared: a session can stop hearing from its peer and go on playing. It is read here,
+    /// through `ConnectionStats::reliable_abandoned`, on all eight links. Zero is the claim, and a
+    /// non-zero value means the figures below describe a session that was not still connected.
+    u32 abandoned_links = 0;
     u32 host_explosions = 0;
     u64 host_final_hash = 0;
     u32 records_written = 0;
@@ -194,6 +200,8 @@ private:
     [[nodiscard]] bool send_inputs(u64 wall_tick) noexcept;
     [[nodiscard]] bool host_tick(u64 simulated) noexcept;
     void advance_transports(u64 now_ms) noexcept;
+    /// How many of the eight links report a reliable channel that has given up.
+    [[nodiscard]] u32 abandoned_links() const noexcept;
     [[nodiscard]] bool drain_host() noexcept;
     [[nodiscard]] bool broadcast(u64 simulated) noexcept;
     /// Close the tick: take each client's reconciliation for it and push the sample.

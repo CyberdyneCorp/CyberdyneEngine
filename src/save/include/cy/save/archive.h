@@ -75,6 +75,10 @@ struct SaveIdentity {
     AssetId save;
     AssetId campaign;
     u64 session_seed = 0;
+    /// How far the player has got, as the project defines it. Stamped into the manifest and
+    /// compared by `conflict.h`; see `Manifest::progress` for what the engine does and does not
+    /// assume about it.
+    u64 progress = 0;
     /// The cooked content and installed plugin set this save is a delta against.
     assets::ContentHash content_version;
     assets::ContentHash plugin_version;

@@ -1059,7 +1059,23 @@ jobs:
   # not run green, over `m1:four-profiles` — and it moved afterwards, once the per-case budget was
   # normalised against a reference workload and Debug went from sixteen failures to 57/57.
   #
-  # IT SAYS `m9` NOW, AND THAT EDIT LANDED IN THE SAME CHANGE THAT SET `milestone-m9` GREEN in
+  # IT SAYS `m10` NOW, AND THAT EDIT BELONGS IN THE SAME COMMIT THAT SETS `milestone-m10` GREEN in
+  # tools/roadmap/gates.toml — M10 task 8.4, which names both halves. M10 adds sixty-one criteria on
+  # top of M9's — 354 evaluated in all, 293 from the permanent set — of which FOUR are declared
+  # gaps that run and fail by design (`sky-field-round-trip`,
+  # `fields-one-vegetation-potential`, `fields-sampled-on-a-device`, `world-frame-budget`), TWO carry
+  # `where = "ci"` and are reported NOT EVALUATED on a developer's machine — `pcg-regeneration-cross-platform`
+  # and `pcg-gpu-domain-agreement`, AND THIS IS THE JOB THEY DEFER TO — and two carry
+  # `requires = "gpu"` with a device-free companion beside each, so this runner judges the claim
+  # without the device. `--ci` lifts the `where`, and each of those two `run` bodies then looks for
+  # the ONLY shape that could answer it: a job that publishes one leg's digest and compares it with
+  # another's. No such job exists in this file, so they fail here rather than turning green on
+  # arrival — which is M9's `lockstep-cross-platform` lesson kept, and is M11 task 2.1.
+  #
+  # THE PARAGRAPH BELOW IS THE RECORD OF THE EDIT THAT ESTABLISHED THE RULE, at M9, and the rule has
+  # been applied at every milestone since:
+  #
+  # IT SAID `m9` AT M9, AND THAT EDIT LANDED IN THE SAME CHANGE THAT SET `milestone-m9` GREEN in
   # tools/roadmap/gates.toml (task 7.4), which is why the paragraph below still says `m8b`: it is the
   # record of the edit that established the rule, and the rule has been applied at every milestone
   # since. M9 adds forty-nine criteria of which one, `lockstep-cross-platform`, carries
@@ -1114,7 +1130,7 @@ jobs:
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m9 --ci
+        run: just roadmap-milestone m10 --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

@@ -166,6 +166,20 @@ struct Manifest {
     /// The seed the session's random streams were built from.
     u64 session_seed = 0;
 
+    /// How far the player has got, as the project defines it. M10 task 6.2.
+    ///
+    /// The engine never interprets this and only ever compares it. `save-and-persistence` names
+    /// "progress markers" among the logical metadata a local/remote conflict is decided on, and a
+    /// comparison needs an order — so a project folds its own markers (chapter reached, quests
+    /// closed, regions unlocked) into one value that does not decrease within a campaign, and
+    /// `conflict.h` compares it. Zero means a project that declares none, and it is then the other
+    /// markers that decide.
+    ///
+    /// It is written to the manifest ONLY when it is non-zero, so a project that declares no
+    /// progress produces the same bytes it produced before this field existed, and a save written
+    /// by such a build reads back here as zero rather than as a missing required field.
+    u64 progress = 0;
+
     /// The cooked content this save is a delta against, and the plugin set that was installed.
     assets::ContentHash content_version;
     assets::ContentHash plugin_version;

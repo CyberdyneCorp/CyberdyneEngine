@@ -175,6 +175,7 @@ void report_frame(const FrameReport& frame) {
     std::printf("interior_covered=%u\n", frame.interior_covered);
     std::printf("exterior_covered=%u\n", frame.exterior_covered);
     std::printf("materials_seen=%u\n", frame.materials_seen);
+    std::printf("materials_placed=%u\n", frame.materials_placed);
     std::printf("traversal_overflowed=%u\n", frame.overflowed ? 1U : 0U);
     std::printf("levels_exhausted=%u\n", frame.levels_exhausted ? 1U : 0U);
     std::printf("validation_errors=%u\n", frame.validation_errors);

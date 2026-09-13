@@ -151,14 +151,12 @@ int main(int argc, char** argv) {
         shaded.texels[i] =
             0xFF000000U | (grey(206.0F) << 16U) | (grey(222.0F) << 8U) | grey(232.0F);
 
-        // STABLE IDENTITY, not the traversal index. `samples[i].visible` indexes the visible list
-        // in atomic-append order, so coluring by it repaints the whole image on every run and the
-        // picture cannot be regenerated. The (instance, cluster) pair behind it does not move.
-        const u32 slot = capture.samples[i].visible;
-        const u32 identity = slot < capture.visible.size()
-                                 ? ((capture.visible[slot].cluster * 2654435761U) ^
-                                    (capture.visible[slot].instance * 2246822519U))
-                                 : slot;
+        // THE PIXEL'S OWN IDENTITY. This used to look the (instance, cluster) pair up through the
+        // visible list, because `samples[i].visible` was that list's atomic-append index and
+        // colouring by it repainted the whole image on every run. The visibility buffer now carries
+        // `instance * cluster_stride + cluster` directly, so the hash is over the number the pixel
+        // already holds and the list is not consulted at all.
+        const u32 identity = capture.samples[i].surface * 2654435761U;
         clusters.texels[i] = hue(identity >> 11U);
         triangles.texels[i] = hue((capture.samples[i].triangle * 2654435761U) >> 15U);
     }

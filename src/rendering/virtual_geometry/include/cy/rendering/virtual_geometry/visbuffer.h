@@ -8,15 +8,32 @@
 // WHAT A PIXEL CARRIES, AND WHAT IT DOES NOT
 // ================================================================================================
 //
-// Two words: the index of the visible-cluster record, and the triangle within that cluster. The
-// record names the instance and the cluster; the cluster names its page, its material and its
-// geometry. That is "instance identifier, primitive identifier" exactly, and the third thing the
-// requirement asks for — "sufficient information to recover barycentrics" — is satisfied by it
-// being enough to PROJECT the triangle again. `reconstruct_surface()` does that, and so does the
-// resolve shader; the suite compares them.
+// Two words: a stable surface identity, and the triangle within that cluster. The identity names
+// the instance and the cluster; the cluster names its page, its material and its geometry. That is
+// "instance identifier, primitive identifier" exactly, and the third thing the requirement asks
+// for — "sufficient information to recover barycentrics" — is satisfied by it being enough to
+// PROJECT the triangle again. `reconstruct_surface()` does that, and so does the resolve shader;
+// the suite compares them.
 //
 // Storing the barycentrics instead would be four more bytes a pixel to save an arithmetic the
 // resolve has to do anyway, because a derivative needs the projected triangle and not the weights.
+//
+// ================================================================================================
+// WHY THE IDENTITY IS NOT THE INDEX OF THE VISIBLE-CLUSTER RECORD
+// ================================================================================================
+//
+// It was, until the depth/payload race was closed. The raster settles depth and the payload in one
+// 64-bit atomic minimum, so an EXACT tie on the depth key is decided by the payload alone — and a
+// visible-list index is the slot the traversal's `InterlockedAdd` happened to hand out, which
+// permutes between runs of the same frame. One to three pixels of 921,593 moved between identical
+// runs of samples/07-fidelity because of it.
+//
+// `instance * cluster_stride + cluster` does not move. It is the traversal's own DAG mark index,
+// so the two halves of virtual geometry name a surface the same way, and every pass downstream of
+// the raster derives the material from it instead of indexing a list whose order is not
+// reproducible. The cost is a bound: the payload has 24 bits for it, so a scene needs
+// `instance_count * cluster_stride <= kMaxSurfaceIdentity`, which `VisbufferPass::initialise`
+// refuses by name rather than wrapping a pixel onto a neighbouring cluster.
 //
 // ================================================================================================
 // THE CPU HALF IS THE REFERENCE, NOT A FALLBACK
@@ -41,16 +58,42 @@ namespace cy::rendering::vg {
 /// No surface at this pixel.
 inline constexpr u32 kNoSurface = 0xFFFFFFFFU;
 
+/// The widest surface identity the visibility payload packs: 32 bits of payload less the 8 the
+/// triangle takes. A scene whose `instance_count * cluster_stride` reaches it is refused at
+/// `VisbufferPass::initialise`.
+inline constexpr u32 kMaxSurfaceIdentity = 1U << 24U;
+
 /// One pixel of the visibility buffer. Two words, matching `uint2` in `vg_visbuffer.slang`.
 struct VisibilitySample {
-    /// Index into the visible cluster list the traversal produced.
-    u32 visible = kNoSurface;
+    /// The stable surface identity: `instance * cluster_stride + cluster`. NOT an index into the
+    /// visible cluster list — see the note at the top of this file for why that distinction is the
+    /// difference between a frame that reproduces and one that does not.
+    u32 surface = kNoSurface;
     u32 triangle = 0;
 
-    [[nodiscard]] constexpr bool covered() const noexcept { return visible != kNoSurface; }
+    [[nodiscard]] constexpr bool covered() const noexcept { return surface != kNoSurface; }
 };
 static_assert(sizeof(VisibilitySample) == 8,
               "VisibilitySample must match cy/vg/vg_visbuffer.slang");
+
+/// The instance and the cluster an identity names.
+struct SurfaceIdentity {
+    u32 instance = 0;
+    u32 cluster = 0;
+};
+
+/// `cluster_stride` is `GpuScene::cluster_stride()` — the largest cluster count of any asset in the
+/// scene, which is also the stride of the traversal's DAG visit marks.
+[[nodiscard]] constexpr u32 surface_identity(u32 instance, u32 cluster,
+                                             u32 cluster_stride) noexcept {
+    return (instance * (cluster_stride != 0U ? cluster_stride : 1U)) + cluster;
+}
+
+[[nodiscard]] constexpr SurfaceIdentity split_surface_identity(u32 identity,
+                                                               u32 cluster_stride) noexcept {
+    const u32 stride = cluster_stride != 0U ? cluster_stride : 1U;
+    return SurfaceIdentity{identity / stride, identity % stride};
+}
 
 /// What the resolve recovers from an identified primitive.
 struct SurfaceAttributes {
@@ -93,9 +136,11 @@ struct MaterialBins {
     [[nodiscard]] Span<const u32> bin(u32 material) const noexcept;
 };
 
+/// `visible` is read only to learn which material each identity carries — the bins do not depend on
+/// its ORDER, which is what makes this reference comparable to the device's answer at all.
 [[nodiscard]] Status bin_by_material(Span<const VisibilitySample> visbuffer,
-                                     Span<const VisibleCluster> visible, u32 material_count,
-                                     MaterialBins& out) noexcept;
+                                     Span<const VisibleCluster> visible, u32 cluster_stride,
+                                     u32 material_count, MaterialBins& out) noexcept;
 
 // ================================================================================================
 // THE DEVICE PATH
@@ -173,6 +218,8 @@ private:
     VisbufferOptions options_;
     bool initialised_ = false;
     u32 vertex_stride_ = 0;
+    /// `GpuScene::cluster_stride()`, captured at `initialise`: the identity's radix.
+    u32 cluster_stride_ = 0;
     u32 normal_offset_ = 0xFFFFFFFFU;
     u32 uv_offset_ = 0xFFFFFFFFU;
     f32 position_scale_ = 1.0F;

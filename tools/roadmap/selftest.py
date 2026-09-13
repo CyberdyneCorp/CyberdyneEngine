@@ -195,8 +195,11 @@ def test_record_rules(root: Path) -> None:
 # section 6. A floor rather than an equality: a ledger that grows a criterion is a ledger that got
 # better, and one that loses several has quietly stopped covering its milestone. `test_criteria`
 # requires every ledger under milestones/ to appear here, so this table cannot fall behind them.
+# M10's floor was 2 while the spike owned the file — the two questions this host cannot ask — and is
+# raised by task 8.1 to the eleven rows the milestone moves, the substrate every one of them writes
+# into, the artefact, the record and the next rung. It carries 70; the floor is what may not be lost.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
-                    "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 2}
+                    "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 62}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:

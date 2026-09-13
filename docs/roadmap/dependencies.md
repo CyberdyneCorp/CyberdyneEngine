@@ -246,8 +246,8 @@ flowchart TB
     WP3["world-partition · cell payloads"] --> FIELDS
     MC2["material-compiler · environment inputs"] --> TERR
 
-    ATMO --> GI2["rendering-global-illumination → Complete"]
-    NAV2["navigation → Complete"] --> TERR
+    ATMO --> GI2["rendering-global-illumination → Complete at M11"]
+    NAV2["navigation → Complete at M11"] --> TERR
 
     BACKENDS["Metal · D3D12"] --> SHIP["1.0"]
     PORT["porting surface · native backend · mobile"] --> SHIP
@@ -282,6 +282,13 @@ requires tiles to stream through those cells.
 partition's Working tier in **M6**, with no terrain in existence. Terrain implements the contract as
 a payload producer in **M10**. Both directions are satisfied without either waiting on the other.
 
+**The break held and `world-partition-and-streaming`'s Complete cell still moved to M11**, because
+the milestone that was to complete it closed on an artefact with **no streaming in it**:
+`samples/10-world` keeps the whole world resident, meshes every terrain tile at level 0, and reports
+`MeshReport::stitched_vertices` as zero precisely so a reader can see that nothing streamed. Terrain
+produces the payload; the streaming binder `src/terrain/`'s README records as its largest gap is
+still missing, and the sample's README says the artefact does not stand in for it.
+
 ### 2 — Global illumination ↔ atmosphere
 
 `rendering-global-illumination` needs a sky radiance term; `atmosphere-sky-and-clouds` needs the
@@ -289,9 +296,20 @@ far-field illumination the GI scene provides, and aerial perspective needs the d
 integration the renderer settles.
 
 **Break**: an **analytic sky** seeds at **M7**, sufficient for the GI sky term and for the golden
-images. The physical atmosphere, its precomputed tables and volumetric clouds land at **M10**, and
-GI reaches Complete there — which is why `rendering-global-illumination` completes at M10 rather
-than M7.
+images. The physical atmosphere, its precomputed tables and volumetric clouds land at **M10**, which
+is why `rendering-global-illumination` was planned to complete at M10 rather than M7.
+
+**THE ATMOSPHERE LANDED AT M10 AND THE SEAM WAS NEVER JOINED, so GI's Complete cell moved to M11.**
+The break above is sound and the work to close it was simply not done: `gi/lighting.h` still
+describes its two-colour gradient as *"the seam it will replace, not a second sky"*;
+`sky_light.h` carries the three-line adapter and says a composition point writes it; **nothing in
+the tree constructs a `gi::SkyTerm` from the atmosphere**, and neither module links the other —
+`src/rendering/sky/CMakeLists.txt` records the absent dependency on `cy::rendering-gi` as
+deliberate, which is what made the gradient fit measurable without a GI system present and is also
+why nobody was obliged to join the two. M10's closing gate moved the cell rather than let a
+completion the code does not support close silently; the evidence is in
+[where M10's tiers are thin](capability-matrix.md#where-m10s-tiers-are-thin). **Joining it is one
+adapter at one composition point**, and it is M11's.
 
 ### 3 — AI ↔ navigation ↔ world partition
 
@@ -302,6 +320,13 @@ than M7.
 direction that matters. The third edge — density feeding back into streaming priority — is
 **deferred**, recorded in [risks and deferrals](risks.md). It is an optimisation, not a contract,
 and cutting it removes the cycle entirely.
+
+**Terrain's half of the first edge landed at M10 and `navigation`'s Complete cell still moved to
+M11.** `src/terrain/include/cy/terrain/collision.h` produces a `navigation::NavSourceGeometry` from
+the collision representation with its material and slope data — the requirement
+`Environment-driven navigation` names — and terrain's own `CMakeLists.txt` states the boundary: it
+*"creates no body and builds no navmesh"*. That is one requirement of sixteen, and no M10 task named
+this capability at all.
 
 ---
 

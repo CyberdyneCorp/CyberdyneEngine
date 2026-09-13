@@ -50,6 +50,7 @@ real `SIGKILL` against a real directory.
 | `archive.h` | Generations, the five-phase commit, the journal, compaction and retention. |
 | `service.h` | The bounded capture on the calling thread, and the write on the async thread. |
 | `checkpoint.h` | In-memory checkpoints, the memory budget, and the epoch a restore advances. |
+| `conflict.h` | Which of a local and a remote copy of one save to keep, decided on logical metadata — and a type with no timestamp in it, so it cannot be decided on anything else. |
 
 ## Checkpoints are not `SaveKind::Checkpoint` (M9)
 
@@ -100,7 +101,49 @@ estimated: a budget compared against a guess is not a budget.
 * **Encryption is absent, deliberately.** `save-and-persistence` requires that encryption never be
   presented as integrity and that no bespoke cryptography be written. Chunks carry BLAKE3 content
   hashes and the manifest carries theirs; confidentiality is an authenticated-encryption pass over
-  the same objects, and it lands with a key management story rather than before one.
+  the same objects, and it lands with a key management story rather than before one. It also lands
+  with a **dependency**: `thirdparty-dependencies` already names **mbedTLS** (Apache 2.0) as this
+  engine's cryptography library beside BLAKE3, and adopting one "SHALL go through the OpenSpec
+  change flow recording the evaluation against these criteria". M10 added no dependency at all, so
+  this did not land here — see the audit below.
 * **The save inspector and the semantic save diff** are specified and not built. `Manifest` already
   answers size by scope and region and the counts a load reports; the presentation and the diff are
   not this milestone's.
+
+## What Complete needs, audited requirement by requirement at M10's close
+
+`delivery-roadmap` defines **Complete** as *"every requirement in the capability's spec is
+satisfied, every scenario has a corresponding test or documented reason, and the capability's gates
+are in continuous integration"*. M10 task 6.2 planned this row for Complete and named two blockers:
+confidentiality and conflict resolution. **One of the two closed here. Reading the specification
+requirement by requirement against this tree finds six more that no amount of finishing those two
+would have covered** — which is the finding rather than the excuse, and it is why the row is
+recorded at Working for the second consecutive milestone.
+
+| # | Requirement | State | Evidence |
+|---|---|---|---|
+| 1 | A save is the overlay, not a second model | **satisfied in the model, unexercised in engine code** | `Overlay` is the one structure; but the only translation between `world::PersistenceOverlay` and `save::Overlay` in the tree is `Session::to_save_overlay` inside `samples/06-open-world/`, and no module above this one links `cy::save` |
+| 2 | Persistence scopes | satisfied | `identity.h`; `tests/test_overlay.cpp` |
+| 3 | Persistence traits | satisfied | `traits.h`; `tests/test_traits.cpp`, seven cases including the table that "cannot drift apart" |
+| 4 | Persistent identity | **partial** | identities are stable and never derived; `LoadFailure::UnresolvableReference` is declared, **produced by nothing**, and the scenario "references into unloaded regions" has no test — nothing in this module resolves a reference |
+| 5 | Entity deltas and tombstones | satisfied | `tests/test_overlay.cpp`, five cases |
+| 6 | Dirty tracking | **partial** | the model tracks and survives unloading; `SaveService` does not clear the flags it captured — see above |
+| 7 | Saving an unloaded world | satisfied | "residency does not change what a save contains, byte for byte" |
+| 8 | The save journal | satisfied | `tests/test_archive.cpp`, append, replay and compaction |
+| 9 | Consistent snapshots and background writing | **partial** | the behaviour holds and is tested; the MECHANISM the specification names — versioning or copy-on-write of the chunks — is not what `service.cpp` does |
+| 10 | Save container and manifest | satisfied | `tests/test_container.cpp` |
+| 11 | Atomic writes and generations | satisfied | `tests/test_kill_nine.cpp`, a real `SIGKILL` at each of the five phases |
+| 12 | The load pipeline | **partial** | every ingredient exists; the ordered pipeline the requirement lists is assembled in `samples/06-open-world/`, not in the engine, and "apply persistent deltas as cells activate" is `world::CellActivation` over the WORLD's overlay rather than over a loaded save |
+| 13 | Compatibility and migration | satisfied | `tests/test_container.cpp`, migration chains and five structured refusals |
+| 14 | Plugin-owned state | **partial** | per-save inventory, not per-record ownership — see above |
+| 15 | Integrity and confidentiality | **NOT SATISFIED** | integrity is complete; **confidentiality is absent**, and closing it is a dependency decision (mbedTLS) rather than a coding task |
+| 16 | Storage backends and the cloud boundary | **satisfied at M10** | backends were already here; `conflict.h` and its eight cases are task 6.2's half that landed |
+| 17 | Checkpoints and restore | **partial** | memory-only; "in memory **as well as** on storage" is half-built |
+| 18 | Save diagnostics and inspection | **NOT SATISFIED** | there is **no save inspector, no "why is this field in the save", and no semantic diff**. `Manifest::chunk_bytes_in` is one number one of them would need |
+| 19 | Save performance and testing | **partial** | transactional, fuzz and migration testing are all here; the **large-world save benchmark the requirement says the engine "SHALL maintain" does not exist** — `benchmarks/` contains no save entry — and there are no save-as-fixture tests |
+| 20 | Forbidden save patterns | **NOT CHECKABLE** | "each SHALL be checkable" and **nothing checks any of the ten**; today they are a review |
+
+**Nine of the twenty are satisfied. Three are outright unmet — 15, 18 and 20 — and eight more are
+partial, one of which (19) is missing an artefact the requirement says the engine SHALL maintain.**
+Confidentiality is one line of that table. A milestone that plans this row for Complete has to plan
+the other ten as well, and M11's proposal is where that belongs.

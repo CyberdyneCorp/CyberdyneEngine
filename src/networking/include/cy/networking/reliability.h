@@ -31,6 +31,41 @@
 // correct across a wrap — by the sign of the difference in the modular space — because a
 // `>` between two wrapping counters is a bug that appears once every 65 536 datagrams and is
 // impossible to reproduce from a report.
+//
+// ================================================================================================
+// THE ORDERED CHANNEL DOES NOT USE THE REPLAY WINDOW, AND THAT IS A FIX RATHER THAN A SHORTCUT
+// ================================================================================================
+//
+// M9 declared `reliable-channel-stalls-under-loss`: "a reliable-ordered channel stops delivering to
+// the application under sustained heavy loss and nothing detects it: the frontier freezes, the
+// transport keeps delivering, `abandoned()` has no caller". The cause was here, and it was not a
+// missing detector — it was the **replay window being narrower than the retransmission horizon**.
+//
+// `already_received()` treats anything more than `kReplayWindow` (32) sequences behind the newest
+// arrival as seen, because a receiver that can no longer prove it has not already applied a
+// datagram must refuse it. That is right for an unreliable datagram, which is never sent twice. It
+// is wrong for a reliable one, which is sent again and again: at 60 Hz with one reliable datagram a
+// tick, the default `RetransmitPolicy` spreads ten attempts over 7.5 s — about 470 sequences — so
+// the third attempt onwards lands OUTSIDE the window and is called a replay. `next_ordered_` then
+// never advances again, every later datagram piles into the ordering buffer, and the transport goes
+// on delivering while the application hears nothing.
+//
+// An ordered channel does not need a window, because it has an EXACT record of what it has taken:
+// everything strictly older than `next_ordered_` was delivered, and everything from `next_ordered_`
+// up is either held in `reorder_` or has never been seen. `already_taken_ordered()` asks that
+// record, so a retransmission is accepted however late it is, and a genuine replay is still
+// refused — exactly, rather than conservatively.
+//
+// The other half is the acknowledgement. `ack`/`ack_bits` describe 32 sequences, so a receiver that
+// has just accepted one 470 behind the newest cannot say so, and the sender would retransmit until
+// it abandoned the peer. So such a sequence is remembered and acknowledged by NAME, in a bare
+// datagram whose `ack` field is that sequence — which `acknowledge()` already understands, so
+// nothing on the wire changes.
+//
+// **`ReliableUnordered` still uses the window**, and a retransmission of one that arrives more than
+// 32 sequences late is still refused. It has no frontier to be exact against, and no caller in this
+// tree; the signal that it has gone wrong is `abandoned()`, which now reaches the application
+// through `ConnectionStats::reliable_abandoned`.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -70,9 +105,11 @@ void encode_header(const DatagramHeader& header, u8* out) noexcept;
 enum class ReceiveVerdict : u8 {
     /// Handed to the application, now or once ordering allowed it.
     Delivered = 0,
-    /// Already seen. The replay window's answer, and what an attacker's replayed datagram gets.
+    /// Already seen, and what an attacker's replayed datagram gets. The replay window's answer for
+    /// an unreliable datagram; the delivery frontier's exact one for `ReliableOrdered`.
     Duplicate,
-    /// Older than the window, or superseded under `UnreliableSequenced`.
+    /// Superseded under `UnreliableSequenced`. Never `ReliableOrdered`'s answer since M10: an
+    /// ordered sequence older than the frontier has been delivered, which is `Duplicate`.
     TooOld,
     /// Held until the gap before it is filled. `ReliableOrdered` only.
     Buffered,
@@ -113,6 +150,19 @@ public:
 
     /// A bare acknowledgement, for when this side has received something and has nothing to send.
     [[nodiscard]] Status frame_ack(Array<u8>& out) noexcept;
+
+    /// One bare acknowledgement per sequence this side has taken but cannot describe in
+    /// `ack`/`ack_bits` — see the header comment. Each names its sequence in the `ack` field and
+    /// carries no payload. Drains the list, so a lost one is re-recorded by the peer's next
+    /// retransmission rather than remembered forever.
+    [[nodiscard]] Status frame_named_acks(Array<u8>& out) noexcept;
+
+    /// How many sequences are waiting to be acknowledged by name. Zero on a channel whose peer is
+    /// keeping up; non-zero is the measurement that the retransmission horizon has outrun the
+    /// acknowledgement window.
+    [[nodiscard]] u32 named_acks_pending() const noexcept {
+        return static_cast<u32>(named_acks_.size());
+    }
 
     /// Take one arriving datagram, already parsed. Applies the peer's acknowledgement, rejects a
     /// duplicate or a replay, and queues the payload for delivery when it is due.
@@ -170,7 +220,14 @@ private:
     void compact_send_arena() noexcept;
     void compact_delivery_arena() noexcept;
     [[nodiscard]] bool already_received(u16 sequence) const noexcept;
+    /// The ordered channel's exact answer to "have I taken this already?", which needs no window.
+    [[nodiscard]] bool already_taken_ordered(u16 sequence) const noexcept;
+    /// Is `sequence` too far behind the newest arrival for `ack_bits` to describe it?
+    [[nodiscard]] bool beyond_ack_window(u16 sequence) const noexcept;
+    [[nodiscard]] Status note_named_ack(u16 sequence) noexcept;
     void note_received(u16 sequence) noexcept;
+    [[nodiscard]] Status accept_ordered(const DatagramHeader& header, Span<const u8> payload,
+                                        ReceiveVerdict& verdict) noexcept;
     [[nodiscard]] Status queue_for_delivery(u16 sequence, DeliveryMode delivery,
                                             Span<const u8> payload) noexcept;
     [[nodiscard]] Status buffer_for_ordering(u16 sequence, DeliveryMode delivery,
@@ -199,6 +256,11 @@ private:
 
     Array<u8> reorder_arena_;
     Array<Queued> reorder_;
+
+    /// Sequences to acknowledge by name on the next collection. Bounded: the list is drained every
+    /// time the transport advances, and an unbounded one would be a receiver's memory spent on a
+    /// sender that is already in trouble.
+    Array<u16> named_acks_;
 
     u64 retransmissions_ = 0;
     u64 duplicates_ = 0;

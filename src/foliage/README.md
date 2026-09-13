@@ -123,6 +123,17 @@ everywhere is what lets an unloaded region's ecosystem evolve, which is the *"a 
 grown"* scenario; declaring a `potential` link and a recovery rate is what makes a burned forest
 recover rather than be repainted.
 
+And it **declares no other field, `wind` least of all**. It used to: `wind_field_declaration()`
+declared the standard `wind` name `Presentation` "for a world with no weather row", while
+`weather::weather_field_declaration(WeatherField::Wind, …)` declares that same name
+`Authoritative` — and `FieldRegistry::declare()` refuses the second of two different declarations in
+either order, so a project that used both rows failed at startup. `weather-and-wind` is the field's
+named producer ( *"wind affecting projectiles … SHALL be authoritative"* ), so the declaration is
+weather's and foliage reads it: `WindSampler::open()` takes the field it is given, and
+`determinism::may_read()` is what lets a presentation reader sample gameplay's wind. M10's gate
+found it and `tests/integration/test_standard_fields.cpp` is the regression — every field every
+producing module declares, into one registry, both ways round.
+
 ---
 
 ## What is measured, and what is not
@@ -161,6 +172,7 @@ was written for — is the reason this list exists.
 | Wind is prepared per instance | 500 field samples for 10 clusters |
 | An ambiguous spatial match binds to the nearest | an exception silently moves a different tree |
 | The regional state ignores the burn field | a burning forest reports `Normal` |
+| Foliage declares the standard `wind` field again, as the deleted `Presentation` one did | `integration.standard_fields`: `wind` refused in both directions, 2 refusals against 0 |
 
 One of them says something worth recording: `has_surface` is `resolved && !hole`, and **for the
 heightfield source the `!hole` clause alone changes nothing** — `terrain` already reports a hole with

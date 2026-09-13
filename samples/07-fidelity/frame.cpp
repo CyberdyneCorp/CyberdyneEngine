@@ -219,6 +219,23 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
     const auto span = static_cast<f32>(options.frames > 1U ? options.frames - 1U : 1U);
     u32 material_bits = 0;
 
+    // WHAT THE SCENE PLACES, computed before a frame runs so that `materials_seen` has something
+    // true to be compared against. Every cluster of a hierarchy comes from one source material
+    // region, so the set does not depend on which level of detail the traversal chooses.
+    u32 placed_bits = 0;
+    for (const rendering::vg::GeometryInstance& placed : scene.instances) {
+        if (placed.asset >= scene.decoded.size()) {
+            continue;
+        }
+        for (const rendering::vg::Cluster& cluster : scene.decoded[placed.asset].clusters) {
+            const u32 material = cluster.material + placed.material_offset;
+            if (material < visbuffer_options.material_count) {
+                placed_bits |= 1U << material;
+            }
+        }
+    }
+    out.materials_placed = static_cast<u32>(__builtin_popcount(placed_bits));
+
     // The warm-up frames run through the identical path and are then discarded: the device has to
     // do the work to clock up, so skipping them would defeat the purpose. See `warmup_frames`.
     for (u32 frame = 0; frame < options.frames + options.warmup_frames; ++frame) {

@@ -109,21 +109,32 @@ Seven lessons, each found by auditing work that had been reported green:
 
 ## In flight
 
-**M5.5 · Operable.** The editor a person can see and operate, and one an agent can drive. Inserted
-rather than renumbered, because M5's row claimed `editor-ui-ux` at Working while closing on a
-scripted session — the row was wrong when it was written, and `delivery-roadmap` requires an artefact
-that exercises its capabilities *through the entry points a user would use*.
+**Kept current by the closing gate of each milestone.** It said *M5.5 · Operable* until M10's gate,
+five rungs after M5.5 closed — a section about what is happening now is worthless the moment it stops
+being now, which is the same argument `docs/roadmap/open-debts.md` is generated for. That document is
+derived and cannot rot; this one is written by hand and did.
 
-The toolkit question, deferred for five milestones as an implementation detail, is answered:
-**egui + egui_dock over wgpu**, chosen not on the zero-copy criterion — all three candidates passed
-that — but because `dear-imgui-wgpu` gamma-corrects the imported frame, so proving the viewport image
-is the engine's becomes a tolerance rather than an equality, and because Dear ImGui exposes nothing
-to any accessibility tree.
+**M10 · Worlds — closing.** Environment as one substrate with one producer per field. Seven modules
+that did not exist (`src/environment/`, `src/terrain/`, `src/water/`, `src/foliage/`, `src/weather/`,
+`src/pcg/` and the GPU half of `src/vfx/`) plus `src/rendering/sky/` extended in place, and
+`samples/10-world`: one world, seven modules, one simulated day, no content at all — no asset, no mesh
+and no texture — from a seed on the command line.
 
-It also brings `editor-agent-interface` to Working rather than M8. The capability is the loop, not
-the tools: compose a scene, write a gameplay script, build and reload, play, **look**, decide.
+The named risk was **region invalidation in PCG**, and its spike ran at the head of the milestone
+over twenty-four configurations and twelve trials each. The contingency did not fire: partial
+regeneration reproduces a full one exactly, for output and for generated identity both — **in 2 of 24
+configurations**, the two holding all four conditions of `design.md` §1.2 at once. Every configuration
+missing any one of the four diverges, and the dangerous one is a statically-closed invalidation,
+which reproduces *more often than not* (7 of 12) and would have looked sound to a one-edit spike.
 
-Design references are binding: `docs/design/` now carries the identity, the transform gizmo, the
-scene orientation gizmo and the editor scene view. Two things in them are deliberately not followed —
-the active-state red, which collides with red meaning both the X axis and error, and the ban on
-arrows in the orientation widget, which was my error rather than the reference's.
+What the gate refused to claim is on the record rather than in a drawer: `save-and-persistence`
+demoted a **second** time and its Complete cell moved to M11; four declared gaps that run and fail and
+name M11; three Complete cells moved out of M10's column for rows the milestone never examined; and
+the artefact's frame budget missed by seven times, **measured across the cycle rather than asserted at
+one time of day**.
+
+**M11 · Reach — opened, not scoped.** `openspec/changes/implement-m11-reach/`. The 1.0 gate: the same
+project on every supported target from one recipe. Its first task is not code — it is whether M11 is
+one milestone or two. The matrix has said since M6 that M11 is the one milestone that could reasonably
+be split "along a real seam rather than an arbitrary one", and its load has grown from 48 to **65 of
+the 76 capabilities** in two steps at M10's gate alone.

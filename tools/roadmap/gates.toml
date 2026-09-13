@@ -1062,7 +1062,11 @@ milestone = "m9"
 state = "green"
 
 
-# --- M10 -----------------------------------------------------------------------------------------
+# --- The gate M10 — Worlds adds -------------------------------------------------------------------
+#
+# Task 8.1. ONE new gate, and the criteria M10 declares point their `ci_job` at it rather than
+# inventing seventy more permanent gates whose jobs belong to `.github/workflows/ci.yml` — the same
+# arithmetic M7's, M8.a's, M8.b's, M8.c's and M9's ledgers recorded.
 #
 # DECLARED BY THE SPIKE, AT `joins-on-close`, because `tools/roadmap/milestones/m10.toml` exists from
 # task 0.2 onwards and `just roadmap-test` refuses a ledger whose criteria name a CI job that is not
@@ -1070,10 +1074,43 @@ state = "green"
 # runs. `joins-on-close` is the honest state for it, and is what M8.c's and M9's gates carried until
 # their closing changes: the gate is named, it is not yet claimed, and nothing inherits it.
 #
-# IT MUST NOT BECOME `green` HERE. `tools/ci/check_workflows.py` refuses to see this line and
-# ci.yml's `milestone` job apart, so the flip belongs to task 8.4's change, made once
-# `just roadmap-milestone m10` has been run end to end — and the ledger it evaluates is at that
-# point the whole of M10's, not the two criteria the spike opened it with.
+# IT MUST NOT BECOME `green` HERE, AND TASK 8.1 DID NOT MAKE IT SO. `tools/ci/check_workflows.py`
+# refuses to see this line and ci.yml's `milestone` job apart, so the flip belongs to task 8.4's
+# change, made once `just roadmap-milestone m10` has been run end to end. What task 8.1 changed is
+# the LEDGER the line points at: it is no longer the two criteria the spike opened the file with.
+#
+# WHAT IT COSTS WHEN IT IS FLIPPED is M10's own SEVENTY criteria added to the permanent set — 44
+# recipes, 20 commands, 5 committed paths and the tier check — of which the whole evaluation is 353
+# criteria once the permanent set below M10 is merged and deduplicated, 293 of them inherited and 60
+# first declared here. Ten of the seventy COLLAPSE into earlier ledgers because they run identical
+# commands (the static gates and `four-profiles`), which is the flat ledger working as designed.
+#
+# FOUR OF THEM MATTER MORE THAN THE COUNT.
+#
+# **TWO CARRY `where = "ci"` AND NEITHER CARRIES `requires = "gpu"`, DELIBERATELY.**
+# `pcg-regeneration-cross-platform` and `pcg-gpu-domain-agreement` are the two questions the M10
+# spike could not answer on one x86-64 host with one GPU vendor. `requires = "gpu"` would have made
+# the second RUN here and PASS on one driver's floating-point behaviour, which is not the claim —
+# the ledger's own header argues it. In continuous integration neither becomes free: each looks for
+# an upload-then-compare job between two legs, which is M9's `lockstep-cross-platform` lesson kept.
+#
+# **TWO CARRY `requires = "gpu"`, AND EACH HAS A COMPANION THAT NEEDS NO DEVICE** — M8.c's rule,
+# because nothing a milestone claims should be judgeable only on the machines with a GPU in them:
+#
+#   m10:vfx-device    beside m10:vfx-runtime
+#   m10:world-still   beside m10:world-artefact and m10:world-seed-control
+#
+# **AND FOUR ARE DECLARED GAPS**, every one of them closing at M11. They RUN on every evaluation,
+# they PRINT their failure with the rung that must close them, and a declared gap that starts
+# PASSING fails the ledger — so this gate can go green with them open and none of them can outlive
+# itself. Three of the four are one absence seen from three sides: M10 shipped no `.slang` module
+# for an environment field, a terrain material, a water surface, grass expansion or a cloud march.
+#
+#   m10:sky-field-round-trip        the sky computes a cloud shadow and the substrate cannot see it
+#   m10:fields-sampled-on-a-device  no shader samples an environment field
+#   m10:world-frame-budget          the artefact costs ~122 ms a frame against a 16.7 ms budget
+#   m10:fields-one-wind-declaration `wind` is Presentation in cy::foliage and Authoritative in
+#                                   cy::weather, and the two refuse each other in either order
 
 [[gate]]
 id = "milestone-m10"

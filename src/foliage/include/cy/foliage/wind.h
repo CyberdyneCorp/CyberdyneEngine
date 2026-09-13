@@ -160,14 +160,30 @@ private:
     environment::FieldReader reader_;
 };
 
-/// The declaration of the `wind` field as `environment-fields` describes it, for a world that has
-/// no weather row yet.
-///
-/// **FOLIAGE DOES NOT CLAIM IT.** `environment-fields` names `weather-and-wind` as the wind field's
-/// producer, and claiming it here would be exactly the "two systems writing one field" the
-/// substrate refuses. This function DECLARES the field so a world without weather still has one to
-/// read; whoever produces it claims it. A test in `test_wind.cpp` holds that a second claim after
-/// weather's fails, naming both.
-[[nodiscard]] environment::FieldDeclaration wind_field_declaration(f32 cell_metres) noexcept;
+// --- FOLIAGE DOES NOT DECLARE THE `wind` FIELD, AND THE ABSENCE IS THE POINT ---------------------
+//
+// There used to be a `wind_field_declaration()` here, "for a world that has no weather row yet". It
+// declared `environment::fields::kWind` as `Presentation`, while weather declares that same
+// standard name `Authoritative` — `weather_field_declaration(WeatherField::Wind, …)`. And
+// `FieldRegistry::declare()` refuses a second, DIFFERENT declaration of one field in either order,
+// so a project that used both rows failed at startup. M10's gate found it.
+//
+// **THE PRODUCER OF `wind` IS `weather-and-wind`, AND SO IS ITS DECLARATION.** Three requirements
+// settle which of the two is right rather than which came first:
+//
+//   * `weather-and-wind` — "Where weather affects gameplay — visibility affecting detection, WIND
+//     AFFECTING PROJECTILES — that state SHALL be authoritative." A `Presentation` wind cannot be
+//     read by the thing the sentence is about.
+//   * `environment-fields` — "The producer of the wind field is weather-and-wind", and the standard
+//     names exist "so that two rows naming one quantity name one field". Two declarations of one
+//     name is the one case that makes that false.
+//   * weather's own `integration.weather_fields`, which requires `FieldReader::open(wind,
+//     Authoritative)` to succeed — impossible under a `Presentation` declaration.
+//
+// So foliage READS. `WindSampler::open()` above takes the field it was given; it never declares
+// one, and `may_read(Presentation, Authoritative)` is what lets appearance sample gameplay's wind.
+// A world with no weather row declares `wind` itself, the same way it declares any field it
+// produces. `tests/integration/test_standard_fields.cpp` is the regression: every standard field
+// every module declares, into one registry, both orders, all accepted.
 
 }  // namespace cy::foliage

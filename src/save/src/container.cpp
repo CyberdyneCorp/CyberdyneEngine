@@ -44,6 +44,9 @@ constexpr reflect::FieldId kSimulationPoint{10};
 constexpr reflect::FieldId kSessionSeed{11};
 constexpr reflect::FieldId kContentVersion{12};
 constexpr reflect::FieldId kPluginVersion{13};
+/// M10 task 6.2. Written only when non-zero and read as optional, so a manifest written before this
+/// field existed is still a complete manifest rather than one missing a required field.
+constexpr reflect::FieldId kProgress{14};
 }  // namespace manifest_field
 
 namespace chunk_ref_field {
@@ -614,6 +617,8 @@ Status encode_manifest(const Manifest& manifest, Array<u8>& out) noexcept {
         set_u64(record, manifest_field::kSessionSeed, manifest.session_seed),
         set_hash(record, manifest_field::kContentVersion, manifest.content_version),
         set_hash(record, manifest_field::kPluginVersion, manifest.plugin_version),
+        manifest.progress == 0 ? ok()
+                               : set_u64(record, manifest_field::kProgress, manifest.progress),
     };
     for (const Status& step : header) {
         if (!step) {
@@ -694,6 +699,9 @@ Status read_manifest_header(const serialize::ValueRecord& record, Manifest& out)
     out.session_seed = *seed;
     out.content_version = *content;
     out.plugin_version = *plugins;
+    // Optional by construction: absent is zero, which is what every save written before M10 says.
+    const Expected<u64, Error> progress = get_u64(record, manifest_field::kProgress);
+    out.progress = progress ? *progress : 0ULL;
     return ok();
 }
 

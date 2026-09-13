@@ -45,6 +45,29 @@ namespace {
     return delivered;
 }
 
+/// Ingest exactly the datagram in `wire` that carries `sequence`, and report what it was judged to
+/// be. The other datagrams in the buffer are left alone: a case about ONE late retransmission has
+/// to be able to say which datagram it delivered.
+[[nodiscard]] bool ingest_sequence(cy::Array<u8>& wire, ReliableEndpoint& into, cy::u16 sequence,
+                                   ReceiveVerdict& verdict) noexcept {
+    cy::usize cursor = 0;
+    while (cursor + kDatagramHeaderSize <= wire.size()) {
+        DatagramHeader header;
+        const cy::Span<const u8> rest(wire.data() + cursor, wire.size() - cursor);
+        if (!decode_header(rest, header)) {
+            return false;
+        }
+        const cy::usize length = kDatagramHeaderSize + header.payload_size;
+        if (header.sequence == sequence) {
+            ChannelId channel = 0;
+            return into.ingest(cy::Span<const u8>(wire.data() + cursor, length), channel, verdict)
+                .has_value();
+        }
+        cursor += length;
+    }
+    return false;
+}
+
 [[nodiscard]] u32 drain(ReliableEndpoint& endpoint, ChannelId channel) noexcept {
     u32 count = 0;
     cy::Span<const u8> payload;
@@ -145,6 +168,64 @@ CY_TEST_CASE("networking: an ordered channel holds a gap and releases it in orde
     CY_CHECK_GT(deliver(again, receiver, /*drop_index=*/0xFFFF'FFFFU), 0U);
     CY_CHECK_EQ(drain(receiver, 1), 3U);
     CY_CHECK_EQ(receiver.channel(1).buffered(), 0U);
+}
+
+// M10 — THE REGRESSION FOR `m9:reliable-channel-stalls-under-loss`.
+//
+// The gap was not a missing detector. `already_received()` calls anything more than
+// `kReplayWindow` (32) sequences behind the newest arrival a replay, and a reliable datagram's
+// retransmissions run for the whole `RetransmitPolicy` horizon — 7.5 s, about 470 sequences at
+// 60 Hz. So the third attempt onwards was refused, `next_ordered_` froze, and every later datagram
+// piled into the ordering buffer while the transport went on delivering.
+//
+// Thirty-nine is enough to prove it: seven more than `ack_bits` can describe, and the smallest
+// number that tells the window apart from the frontier. With the window restored to the ordered
+// path, the retransmission below comes back `Duplicate`, `drain()` returns 0 and `buffered()` stays
+// at 39 — which is the stall, in one case, at one millisecond.
+CY_TEST_CASE("networking: an ordered retransmission beyond the replay window still fills the gap") {
+    ReliableEndpoint sender(allocator());
+    ReliableEndpoint receiver(allocator());
+    CY_REQUIRE(sender.prepare().has_value());
+    CY_REQUIRE(receiver.prepare().has_value());
+
+    cy::Array<u8> wire(allocator());
+    for (u32 index = 0; index < 40; ++index) {
+        const u8 payload[1] = {static_cast<u8>(index)};
+        CY_REQUIRE(
+            sender.frame(1, DeliveryMode::ReliableOrdered, cy::Span<const u8>(payload, 1), 0, wire)
+                .has_value());
+    }
+
+    // The first is destroyed. The other thirty-nine arrive and none of them may be delivered: the
+    // ordered channel is waiting for sequence 1, and that is the head-of-line block working.
+    CY_CHECK_EQ(deliver(wire, receiver, /*drop_index=*/0), 39U);
+    CY_CHECK_EQ(drain(receiver, 1), 0U);
+    CY_CHECK_EQ(receiver.channel(1).buffered(), 39U);
+
+    // 700 ms later — the third attempt under the default policy, and thirty-nine sequences behind
+    // the newest thing this receiver has seen.
+    cy::Array<u8> again(allocator());
+    CY_REQUIRE(sender.collect_outgoing(700, again).has_value());
+    ReceiveVerdict verdict = ReceiveVerdict::Duplicate;
+    CY_REQUIRE(ingest_sequence(again, receiver, /*sequence=*/1, verdict));
+    CY_CHECK(verdict == ReceiveVerdict::Delivered);
+
+    // THE FRONTIER MOVES. All forty, in order, with nothing left held.
+    CY_CHECK_EQ(drain(receiver, 1), 40U);
+    CY_CHECK_EQ(receiver.channel(1).buffered(), 0U);
+
+    // AND THE SENDER IS TOLD. `ack_bits` reaches back thirty-two, so sequence 1 is acknowledged by
+    // NAME instead — without it the sender retransmits a datagram the peer already has until it
+    // abandons a peer that is in fact listening.
+    CY_CHECK_EQ(receiver.channel(1).named_acks_pending(), 1U);
+    CY_CHECK_EQ(sender.channel(1).unacknowledged(), 40U);
+    cy::Array<u8> acks(allocator());
+    CY_REQUIRE(receiver.collect_outgoing(701, acks).has_value());
+    CY_CHECK_EQ(receiver.channel(1).named_acks_pending(), 0U);
+    CY_CHECK_GT(deliver(acks, sender, 0xFFFF'FFFFU), 0U);
+    // Forty sent; the ordinary acknowledgement clears 40 and the thirty-two before it, and the
+    // named one clears sequence 1. What is left is 2 to 7, which `ack_bits` could not reach either.
+    CY_CHECK_EQ(sender.channel(1).unacknowledged(), 6U);
 }
 
 CY_TEST_CASE("networking: an unreliable-sequenced datagram older than the newest is dropped") {

@@ -9,8 +9,9 @@
 #
 # THREE SUITES, AND THE SPLIT IS THE TAXONOMY'S — ABOUT COST, NOT ABOUT SUBJECT.
 #
-#   save            the model: traits, the overlay, the container, migration and the diagnostics of
-#                   a malformed save. A case here is a handful of records and a few hundred bytes.
+#   save            the model: traits, the overlay, the container, migration, local/remote conflict
+#                   resolution, and the diagnostics of a malformed save. A case here is a handful of
+#                   records and a few hundred bytes.
 #   save_fuzz       the two exhaustive sweeps: a chunk truncated at every length and corrupted at
 #                   every byte. A few hundred decodes each, which is three times the unit budget in
 #                   the debug profile — so it is here rather than shrunk, because the claim is
@@ -54,6 +55,7 @@ function(cy_save_declare_tests)
         KIND unit
         SOURCES
             "${tests_dir}/test_checkpoint.cpp"
+            "${tests_dir}/test_conflict.cpp"
             "${tests_dir}/test_container.cpp"
             "${tests_dir}/test_overlay.cpp"
             "${tests_dir}/test_traits.cpp"

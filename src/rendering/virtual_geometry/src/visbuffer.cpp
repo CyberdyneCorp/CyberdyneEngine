@@ -26,14 +26,15 @@ enum VisPass : u32 {
     kPassCount,
 };
 
-/// The visibility payload is `(visibleIndex << 8) | triangle`, settled with the depth key in one
-/// 64-bit atomic. Both halves are bounded here and in `vg_visbuffer.slang`, and the two must move
+/// The visibility payload is `(identity << 8) | triangle`, settled with the depth key in one 64-bit
+/// atomic. Both halves are bounded here and in `vg_visbuffer.slang`, and the two must move
 /// together.
 enum : u32 {
     kTrianglePayloadBits = 8U,
     kMaxTrianglesPacked = 1U << kTrianglePayloadBits,
-    kMaxVisiblePacked = 1U << (32U - kTrianglePayloadBits),
 };
+static_assert(kMaxSurfaceIdentity == (1U << (32U - kTrianglePayloadBits)),
+              "the identity takes what the triangle leaves of the 32-bit visibility payload");
 
 enum VisBinding : u32 {
     kBindVisible = 0,
@@ -69,7 +70,7 @@ struct VisPush {
     f32 position_scale;
     f32 normal_scale;
     f32 uv_scale;
-    u32 reserved;
+    u32 cluster_stride;
 };
 static_assert(sizeof(VisPush) == 104, "VisPush must match VgVisPush in vg_visbuffer.slang");
 
@@ -118,22 +119,71 @@ Span<const u32> MaterialBins::bin(u32 material) const noexcept {
     return {pixels.data() + first, last - first};
 }
 
+namespace {
+
+/// Identity to material, as a sorted array rather than a direct table.
+///
+/// A direct table would be indexed by identity, which is `instance_count * cluster_stride` words —
+/// up to 64 MiB at the packing's own limit, to answer a question about the few thousand clusters a
+/// view actually contains. This is one entry per VISIBLE cluster, sorted once, binary-searched per
+/// covered pixel. The device does not need it at all: `surfaceFromIdentity` in the shader
+/// re-derives the material from the cluster the identity names, which is what this reference is
+/// checked against.
+class MaterialOfIdentity {
+public:
+    explicit MaterialOfIdentity(Allocator& allocator) noexcept : entries_(allocator) {}
+
+    [[nodiscard]] Status build(Span<const VisibleCluster> visible, u32 cluster_stride) noexcept {
+        if (Status reserved = entries_.reserve(visible.size()); !reserved) {
+            return reserved;
+        }
+        for (const VisibleCluster& record : visible) {
+            const u64 key = surface_identity(record.instance, record.cluster, cluster_stride);
+            if (Status pushed = entries_.push_back((key << 32U) | record.material); !pushed) {
+                return pushed;
+            }
+        }
+        std::sort(entries_.begin(), entries_.end());
+        return ok();
+    }
+
+    /// `kNoSurface` when no visible cluster carries that identity, which is what an out-of-range
+    /// index used to mean and is treated the same way: the pixel is not binned.
+    [[nodiscard]] u32 lookup(u32 identity) const noexcept {
+        const u64 low = static_cast<u64>(identity) << 32U;
+        const auto* found = std::lower_bound(entries_.begin(), entries_.end(), low);
+        if (found == entries_.end() || (*found >> 32U) != identity) {
+            return kNoSurface;
+        }
+        return static_cast<u32>(*found & 0xFFFFFFFFU);
+    }
+
+private:
+    Array<u64> entries_;
+};
+
+}  // namespace
+
 Status bin_by_material(Span<const VisibilitySample> visbuffer, Span<const VisibleCluster> visible,
-                       u32 material_count, MaterialBins& out) noexcept {
+                       u32 cluster_stride, u32 material_count, MaterialBins& out) noexcept {
     if (Status resized = out.counts.resize(material_count); !resized) {
         return resized;
     }
     if (Status resized = out.offsets.resize(material_count + 1U); !resized) {
         return resized;
     }
+    MaterialOfIdentity materials(out.pixels.allocator());
+    if (Status built = materials.build(visible, cluster_stride); !built) {
+        return built;
+    }
     for (u32 index = 0; index < material_count; ++index) {
         out.counts[index] = 0;
     }
     for (const VisibilitySample& sample : visbuffer) {
-        if (!sample.covered() || sample.visible >= visible.size()) {
+        if (!sample.covered()) {
             continue;
         }
-        const u32 material = visible[sample.visible].material;
+        const u32 material = materials.lookup(sample.surface);
         if (material < material_count) {
             ++out.counts[material];
         }
@@ -157,10 +207,10 @@ Status bin_by_material(Span<const VisibilitySample> visbuffer, Span<const Visibl
     }
     for (u32 pixel = 0; pixel < visbuffer.size(); ++pixel) {
         const VisibilitySample& sample = visbuffer[pixel];
-        if (!sample.covered() || sample.visible >= visible.size()) {
+        if (!sample.covered()) {
             continue;
         }
-        const u32 material = visible[sample.visible].material;
+        const u32 material = materials.lookup(sample.surface);
         if (material >= material_count) {
             continue;
         }
@@ -258,18 +308,35 @@ VisbufferPass::VisbufferPass(Allocator& allocator, rhi::Device& device) noexcept
     : allocator_(allocator), device_(device), states_(allocator) {}
 
 VisbufferPass::~VisbufferPass() {
+    // A NULL HANDLE IS NOT DESTROYED. `initialise` refuses several configurations — an asset cooked
+    // at the wrong precision, a scene too large for the surface identity — and returns before it
+    // creates anything, so every handle here is still the zero-generation null. Handing one to
+    // `destroy_buffer` is "a stale or never-issued handle" to the RHI's validation, which is the
+    // right verdict on the wrong question: nothing was issued, so nothing is owed. Twelve of those
+    // were reported the first time a test destroyed a pass whose `initialise` had refused, and the
+    // suite's `validation_errors()` count is what keeps them gone.
     for (const rhi::ComputePipelineHandle pipeline : pipelines_) {
-        device_.destroy_compute_pipeline(pipeline);
+        if (!pipeline.is_null()) {
+            device_.destroy_compute_pipeline(pipeline);
+        }
     }
     for (const rhi::ShaderModuleHandle module : modules_) {
-        device_.destroy_shader_module(module);
+        if (!module.is_null()) {
+            device_.destroy_shader_module(module);
+        }
     }
-    device_.destroy_pipeline_layout(pipeline_layout_);
-    device_.destroy_descriptor_set_layout(set_layout_);
+    if (!pipeline_layout_.is_null()) {
+        device_.destroy_pipeline_layout(pipeline_layout_);
+    }
+    if (!set_layout_.is_null()) {
+        device_.destroy_descriptor_set_layout(set_layout_);
+    }
     for (const rhi::BufferHandle buffer :
          {geometry_, payload_, visbuffer_, depth_, bin_counts_, bin_offsets_, bin_cursor_,
           bin_pixels_, resolved_, vis_args_, staging_, readback_}) {
-        device_.destroy_buffer(buffer);
+        if (!buffer.is_null()) {
+            device_.destroy_buffer(buffer);
+        }
     }
 }
 
@@ -333,6 +400,21 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
     }
     options_ = options;
 
+    // THE IDENTITY MUST FIT. A pixel keeps `instance * cluster_stride + cluster` in the 24 bits the
+    // visibility payload leaves once the triangle has its 8, so a scene with more (instance,
+    // cluster) pairs than that would wrap a pixel onto a neighbouring cluster — the exact class of
+    // bug the stable identity was introduced to remove. The traversal's own DAG marks are one word
+    // per pair and it refuses above 2^26, so this bound is four times tighter and is stated here
+    // rather than discovered as a wrong pixel.
+    cluster_stride_ = scene.cluster_stride();
+    const u64 identities = static_cast<u64>(scene.instances.size()) * cluster_stride_;
+    if (identities > kMaxSurfaceIdentity) {
+        return fail(ErrorCode::InvalidArgument,
+                    "VisbufferPass::initialise: the scene has more (instance, cluster) pairs than "
+                    "the visibility payload's surface identity packs (2^24); raise "
+                    "kTrianglePayloadBits in vg_visbuffer.slang and here together");
+    }
+
     // THE SHADER DECODES SIXTEEN-BIT COMPONENTS, so an asset encoded any other way is refused here
     // rather than decoded wrongly. Every asset in one pass must share an encoding for the same
     // reason: the stride and the attribute offsets are push constants, not per-cluster fields.
@@ -385,7 +467,7 @@ Status VisbufferPass::initialise(const GpuScene& scene, Span<const DecodedAsset*
                 record.payload_offset = running;
                 record.vertex_count = cluster.vertex_count;
                 // THE PACKING'S OTHER HALF. The raster packs `triangle` into 8 bits beside the
-                // visible index, so a cluster carrying 256 triangles or more would wrap onto a
+                // surface identity, so a cluster carrying 256 triangles or more would wrap onto a
                 // neighbour. The cook's policy caps this well below the limit; a cooked asset that
                 // says otherwise is refused rather than rendered wrong.
                 if (cluster.index_count / 3U > kMaxTrianglesPacked) {
@@ -598,6 +680,7 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
     push.position_scale = position_scale_;
     push.normal_scale = normal_scale_;
     push.uv_scale = uv_scale_;
+    push.cluster_stride = cluster_stride_;
     std::memcpy(push_, &push, sizeof(push));
 
     // The descriptor set is rewritten each frame because the traversal's buffers are the ones it
@@ -662,15 +745,9 @@ Status VisbufferPass::record(RenderGraph& graph, const GpuTraversal& traversal,
         import(traversal.visible_buffer(), "vg.visible",
                static_cast<u64>(traversal.visible_capacity()) * sizeof(GpuVisibleCluster), storage);
 
-    // THE PACKING MUST FIT. `vgVisRaster` settles depth and payload in one 64-bit atomic, and the
-    // payload half is `(visibleIndex << 8) | triangle`. That is 24 bits of visible index and 8 of
-    // triangle, so a configuration that outgrows either would silently wrap a pixel onto the wrong
-    // cluster — the exact class of bug the packing was introduced to remove. It is refused instead.
-    if (traversal.visible_capacity() > kMaxVisiblePacked) {
-        return fail(ErrorCode::InvalidArgument,
-                    "vg.vis: visible_capacity exceeds what the visibility payload packs (2^24); "
-                    "raise kTrianglePayloadBits in vg_visbuffer.slang and here together");
-    }
+    // The visible list's capacity is no longer a packing constraint: a pixel keeps a surface
+    // identity rather than an index into that list, and `initialise` bounds the identity space
+    // against the scene. Nothing here needs `traversal.visible_capacity()`.
 
     states_.clear();
     if (Status reserved = states_.reserve(kPassCount); !reserved) {

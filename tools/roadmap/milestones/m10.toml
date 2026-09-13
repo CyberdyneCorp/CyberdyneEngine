@@ -6,19 +6,32 @@
 # that is regenerated and compared — so an intention that cannot be run is a note at the bottom of
 # this file, not a criterion.
 #
-# --- THIS FILE IS OPENED BY THE SPIKE AND FINISHED BY TASK 8.1 ------------------------------------
+# --- THIS FILE WAS OPENED BY THE SPIKE AND IS FINISHED BY TASK 8.1 --------------------------------
 #
-# It carries, at the moment it is written, exactly the two criteria TASK 0.2 owes: the two questions
-# the spike could not answer on this host, declared through the ledger's own `requires`/`where`
-# mechanism rather than written as a sentence somewhere. Every other criterion M10 needs — the
-# substrate's one-producer-per-field refusal, terrain, water, foliage, weather, the atmosphere, the
-# PCG row's four conditions, `vfx-system`'s GPU path, the three rows M9 demoted, `tests/determinism/`
-# and the artefact's frame-budget curve — belongs to task 8.1, which EXTENDS this file and raises
-# `selftest.MINIMUM_CRITERIA["m10"]` from the floor of 2 the spike leaves it at. A later agent that
-# replaces this file rather than adding to it drops the milestone's only honest NOT EVALUATED.
+# It carried, at the moment it was first written, exactly the two criteria TASK 0.2 owed: the two
+# questions the spike could not answer on this host, declared through the ledger's own
+# `requires`/`where` mechanism rather than written as a sentence somewhere. A third was added when
+# M10's own gate ran and refuted one of the claims it was asked to check. **Task 8.1 EXTENDED this
+# file rather than replacing it** — all three of those criteria are still below, in their original
+# words, because replacing the file would have dropped the milestone's only honest NOT EVALUATED and
+# its most expensive finding at the same time. What task 8.1 added is everything else M10 has to be
+# able to fail on: the substrate's one-producer-per-field refusal, terrain, water, foliage, weather,
+# the atmosphere, the PCG row's four conditions, `vfx-system`'s GPU path, `tests/determinism/`, the
+# artefact and its budget curve, the record, and the next rung.
 #
-# `milestone-m10` is not declared in gates.toml yet, and must not be until task 8.1: a green gate
-# with no matching `milestone` job in ci.yml is the pattern gates.toml's own header forbids.
+# ONE EXISTING CRITERION WAS EDITED, AND ONLY ITS `run`. `sky-field-round-trip` was declared with
+# `ctest --output-on-failure`, which prints nothing for a suite that PASSES — and the suite does
+# pass, because the two assertions that would fail are commented out in `test_cloud_shadows.cpp`
+# with a note saying so. So the criterion failed with `the sky round-trip case did not run`: the
+# right verdict reached for the wrong reason, which is a criterion that would go on failing after
+# the gap closed. It now runs the suite under `ctest -V`, reads the `through the store:` line the
+# case prints either way, and fails on the NUMBERS — `lowest` at the declared default and a spread
+# of nothing. Its `describe`, its `known_gap` and its rung are untouched.
+#
+# `milestone-m10` is declared in gates.toml at `state = "joins-on-close"`, which is where it stays:
+# a green gate with no matching `milestone` job in ci.yml is the pattern gates.toml's own header
+# forbids, and flipping it belongs to task 8.4's change together with that job's move. Nothing in
+# this file may be read as having flipped it.
 #
 # --- WHY BOTH OF THESE ARE `where = "ci"` AND NEITHER IS `requires = "gpu"` -----------------------
 #
@@ -39,11 +52,20 @@
 schema = 1
 id = "m10"
 name = "Worlds"
-artefact = "samples/10-world — not built yet. Task 8.1 replaces this line with what the artefact measured."
+artefact = "samples/10-world — one world, seven modules, one simulated day, and no content at all: no asset, no mesh and no texture anywhere in it. From one seed on the command line: a nine-node graph over 576 regions of 64 m producing 9 792 region-evaluations across 9 stages and 2 242 points, whose accepted set becomes 456 FOLIAGE CLUSTERS through `pcg::FoliageOutputAdapter` with no entity anywhere; 49 terrain tiles over three levels from that raster, 2.2 MB resident, 294 912 triangles meshed, elevation -41.2 m to 180.1 m, 0 vertices stitched to a coarser neighbour; a four-cascade spectral ocean, three authoritative bands and one visual-only, at 2.03 m significant height and 79.1 m peak wavelength; 39 032 foliage instances in 561 clusters of four species at 17.3 BYTES AN INSTANCE; 23 fields declared in one substrate and 19 of them claimed by FOUR DIFFERENT PRODUCERS, which is the milestone's whole subject in one line; and 11 264 directions integrated into the atmosphere tables. Then the day: the sun crossing +24.2 deg at noon and -51.7 deg at midnight, a front arriving at 13:19 that drops the temperature from 7.7 C to -6.3 C, takes the wind from 4 m/s to 21.6 m/s and the precipitation from 0.3 mm/h to 31.4 mm/h, and snow accumulating to 2.4 m on the windward probe while the world's centre reads 0.000 m all morning — one westerly's orographic precipitation, from the declared model rather than a painted patch. And task 7.2: a crater stamped through `terrain::TerrainDeltaStore`, recorded into `world::PersistenceOverlay` as one subsystem blob of 2 976 bytes, the delta store CLEARED and the crater verified gone, restored from the overlay alone, and 0 of 289 probes over its footprint disagreeing with the pre-save surface — bit for bit, because a height delta is stored and restored as the same f32 and a tolerance would hide a lossy round trip. Two runs at one seed produce the identical report and the identical still; a different seed produces a different world. WHAT IT COSTS IS THE HONEST HEADLINE: about 122 ms a frame at 960x540 against a 16.7 ms budget, nearly flat across the cycle, and the three largest bands — the substrate re-sampled at every terrain vertex, the cloud march, and water's foam field — are all three of them work a shipping engine would do in a shader. `world-frame-budget` below is that, as a declared gap. And there are NO RIVERS: `cy::water`'s `RiverNetwork` is built and tested and this world has an ocean, a fjord coastline and no river spline in it, which the sample's README says on its own face."
 
 notes = [
-    "This file is the spike's half of M10's ledger. tasks 1-7 and 9 are task 8.1's to declare, and `selftest.MINIMUM_CRITERIA[\"m10\"]` is the floor that forces a deliberate answer to how many exit conditions the milestone has.",
-    "tasks 0.1 and 0.3 — the spike itself and its record in design.md — are not criteria here. A spike's only deliverable is a decision, `docs/roadmap/risks.md` says a spike may not be merged, and the decision is consumed in design.md §1 where the rows that depend on it can read it. What IS checkable is that the four conditions §1.6 names become tests inside `procedural-content-generation`, and those criteria belong to task 4.x and are declared by task 8.1.",
+    "`just roadmap-milestone m10` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "tasks 0.1 and 0.3 — the spike itself and its record in design.md — are not criteria here. A spike's only deliverable is a decision, `docs/roadmap/risks.md` says a spike may not be merged, and the decision is consumed in design.md §1 where the rows that depend on it can read it. What IS checkable is that the four conditions §1.6 names became tests inside `procedural-content-generation`, and `pcg-spike-conditions` is those four tests.",
+    "tasks 8.4 — moving ci.yml's `milestone` job to `m10` is checked by `workflows` above (`just ci-check`), which goes red the moment `milestone-m10` is green above the newest ledger any workflow evaluates. It is the closing change's edit to make, together with flipping gates.toml, and not this file's.",
+    "tasks 8.5 — opening the M11 change is `m11-open` above, which asks only that the change exists. AT THE TIME THIS FILE WAS FINISHED IT FAILS, and it is meant to, exactly as m8c.toml's `m9-open` and m9.toml's `m10-open` did: openspec/changes/ holds `implement-m10-worlds` and no `implement-m11-*`. The next rung IS M11 — `record.MILESTONES` carries m11 after m10 and no further split has been declared.",
+    "tasks 9.x — the gate itself. A milestone cannot make passing its own gate one of the criteria that gate evaluates.",
+    "WHY THE SUITE CRITERIA ARE ONE PER SUITE AND THE CLAIM CRITERIA ARE ONE PER CASE SET. `criteria.fingerprint` collapses declarations that run the same command, so five criteria over `unit.environment` would be reported as ONE check and READ as five — M9's `determinism-core` says the same thing. Where a claim has to be separable from the suite carrying it, the criterion runs the named cases under doctest's `-tc` filter and REQUIRES THE FILTER TO HAVE SELECTED THEM, because a filter that matches nothing exits zero and 'the case was renamed' must not look like 'the case passed'. `one-producer-refused`, `fields-determinism-split`, `pcg-partial-reproduces-full`, `pcg-spike-conditions` and `pcg-override-survives-regeneration` are the five that do it.",
+    "WHY THERE IS NO CTest ENTRY FOR samples/10-world AND NO CRITERION PRETENDS OTHERWISE. The picture needs a graphics device, and `just/run.just`'s own note states the rule: a suite that skipped on every machine without one would be a suite whose failure nobody would notice. So the artefact is split by what each half needs — `world-artefact`, `world-seed-control` and the two budget criteria need NO device and are most of the claim; `world-still` carries `requires = \"gpu\"` and a reason.",
+    "WHY THE TWO ENGINE-OUTPUT PICTURES ARE `kind = \"path\"` AND M9's THREE WERE REGENERATED AND COMPARED. M9's figures are drawn from INTEGER counts, so a fresh run redraws them byte-identically and staleness is detectable. `m10-world.png` is drawn on a DEVICE and `m10-world-budget.png` plots WALL-CLOCK MILLISECONDS — the sample's README measures six captures of one seed spreading 2.3 ms of mean and 6.6 ms of worst frame — so a byte comparison would fail on a different GPU or a busier machine and a tolerance wide enough to survive both would not detect a changed curve either. The determinism claim behind the pictures is checked directly instead, by `world-still` and `world-seed-control`.",
+    "THE THREE ROWS M9 DEMOTED, AND WHY TWO OF THEM ARE NOT RESTATED AS CRITERIA HERE. `m9:breadcrumbs-adopted`, `m9:crash-artefact-paths` and `m9:gameplay-benchmarks` are in the permanent set this ledger inherits and still RUN on every evaluation; what M10 deleted was the `known_gap` marker on each, in the change that closed it, because a declared gap that starts passing fails the ledger. Redeclaring them here with identical `run` strings would collapse into M9's entries and report nothing new. The third row is `save-and-persistence`, which did NOT complete — see `roadmap-tiers`.",
+    "TWO OF M9's DECLARED GAPS NAMED M10 AS THE RUNG THAT CLOSES THEM. ONE IS CLOSED AND ONE IS NOT. `m9:record-matches-plan-history` — four closed milestones' columns claiming nineteen cells the status record does not support — was M10 tasks.md 6.5, and 6.5 audited all nineteen: fifteen cells moved in the capability matrix, four rows were claimed in the record, the criterion PASSES, and its `known_gap` marker is deleted from m9.toml by the same change, because a declared gap that starts passing fails the ledger. `m9:reliable-channel-stalls-under-loss` — a reliable-ordered channel that stops delivering under 25 % loss with nothing noticing — was in no M10 task at all, and closing it was an omission corrected rather than new scope: it is CLOSED, its `known_gap` marker deleted from m9.toml by the same change, and it was two defects rather than the one M9 guessed at — a replay window narrower than the retransmission horizon, and a retransmission horizon longer than the session. Both criteria that named M10 as their closing rung are therefore closed.",
+    "WHAT IS NOT A CRITERION BECAUSE NO MACHINE CAN SETTLE IT. `procedural-content-generation`'s hundred-kilometre standing benchmark with ten million trees is NOT COMMITTED and src/pcg/README.md records it as a declared gap of the row; the derived-data cache is in-process and is not bound to `build-and-packaging`'s artefact store; `classify_parallelism()` reports per-stage parallelism that the evaluator does not dispatch; and the PCG editor tooling is data with no view. Each names the row that owes it in that README, and none is restated here as a criterion that could not fail.",
 ]
 
 # --- Section 0: what the spike could not answer on this host ---------------------------------------
@@ -136,7 +158,1359 @@ id = "sky-field-round-trip"
 describe = "THE SKY COMPUTES A CLOUD SHADOW AND THE SUBSTRATE CANNOT SEE IT. `CloudShadowField::update` reports darkest < 0.5 and brightest > 0.9 over tiles it says it wrote, and `CloudShadowField::sample` returns the declared 1.0 at every point inside `radius_metres`. `atmosphere-sky-and-clouds` requires the shadow to be \"consumed by terrain, foliage, water, and illumination\", which is what reading it through the field is for; today none of them could. Terrain and water round-trip correctly through the same store, so this is the sky's write path and not the substrate's."
 source = "M10 gate, claim 2; openspec/specs/atmosphere-sky-and-clouds/spec.md"
 kind = "command"
-run = "set -o pipefail; out=$(ctest --test-dir \"${CY_BUILD_DIR:-build/dev}\" -R 'render_sky_fields' --output-on-failure 2>&1 || true); echo \"$out\" | grep -q 'through the store' || { echo 'the sky round-trip case did not run'; exit 1; }; echo \"$out\" | grep -oE 'lowest [0-9.]+' | head -1; echo \"$out\" | grep -qE 'lowest (1|1\\.0+)[,.]' && { echo 'the field still reads all-default: the shadow does not reach the store'; exit 1; }; echo 'the cloud shadow reaches the substrate'"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# `-V` AND NOT `--output-on-failure`, AND THAT EDIT IS THE DIFFERENCE BETWEEN A CHECK AND A
+# COINCIDENCE. The case PASSES today — the two assertions that would fail are commented out in
+# test_cloud_shadows.cpp with a note saying they fail — so `--output-on-failure` printed nothing and
+# this criterion failed with "the case did not run": the right verdict for the wrong reason, and one
+# that would go on failing after the gap closed. Under `-V` the `through the store:` line the case
+# prints either way is readable, and the numbers in it are what is judged.
+out="$(ctest --test-dir "$d" -R '^integration.render_sky_fields$' -V 2>&1 || true)"
+line="$(printf '%s\n' "$out" | grep -o 'through the store: .*' | head -1)"
+test -n "$line" || { echo "the sky round-trip case did not run — it has been renamed or deleted"; exit 1; }
+printf '%s\n' "$out" | grep -o 'broken cloud: .*' | head -1
+echo "$line"
+printf '%s\n' "$line" | python3 -c '
+import re, sys
+line = sys.stdin.read()
+found = re.search(r"lowest ([0-9.eE+-]+), highest ([0-9.eE+-]+)", line)
+if not found:
+    sys.exit("the round-trip line no longer reports lowest and highest")
+lowest, highest = float(found.group(1)), float(found.group(2))
+if lowest >= 0.99 or highest - lowest <= 0.01:
+    sys.exit(f"every sample inside the radius reads {lowest} against a declared default of 1.0, "
+             f"with a spread of {highest - lowest}: the producer computes a cloud shadow and "
+             f"nothing readable reaches the substrate")
+print(f"the cloud shadow reaches the substrate: lowest {lowest}, spread {highest - lowest}")
+'
+'''
 known_gap = "the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have caught this asserted only against the producer's own statistics, which is the defect class this project has now hit twice"
 known_gap_closes = "m11"
 ci_job = "milestone-m10"
+
+# ==================================================================================================
+# TASK 8.1 — EVERYTHING BELOW THIS LINE
+# ==================================================================================================
+#
+# --- The static gates: cheap, and they fail first -------------------------------------------------
+#
+# DECLARED WITH THE IDENTICAL STRINGS ELEVEN EARLIER LEDGERS USED, and that is deliberate rather than
+# lazy. `criteria.fingerprint` collapses declarations that run the same command, so each of these
+# COLLAPSES into the earliest ledger that declared it and is reported as `m0:format` rather than
+# `m10:format` — one run, whatever the ladder's length. They are declared anyway, as every ledger
+# since M3 has, because a ledger that does not name the checks its milestone had to satisfy is a
+# ledger nobody can read, and because the `describe` is where this milestone says what those checks
+# had to swallow: seven directories that did not exist, an eighth module half, and a sample that
+# names all seven.
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set this milestone advances — the seven capabilities it takes from nothing or Seed to Working, the eighth it advances from Seed, and the three it was asked to complete"
+source = "tasks 8.3"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained src/environment/, src/terrain/, src/water/, src/foliage/, src/weather/, src/pcg/, src/vfx/gpu/, the atmosphere half of src/rendering/sky/, tests/determinism/ and samples/10-world"
+source = "tasks 8.1"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over seven new directories and a sample that wires all of them together — including the cognitive-complexity limits this project holds systems code to, which a graph compiler and a spectral ocean are exactly the kind of code to breach"
+source = "tasks 8.1"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "THE ENGINE'S LAYER ORDER HOLDS WITH SEVEN NEW MODULES IN IT, AND THAT IS THIS MILESTONE'S ARCHITECTURAL CLAIM RATHER THAN A FORMALITY. `cy::weather` does not link `cy::water`; `cy::water` does not link `cy::terrain`; `cy::pcg` links neither `cy::foliage` nor `cy::ecs`; none of them links the renderer, and `cy::vfx` does not link a device — `cy::vfx-gpu` in src/vfx/gpu/ is where the device is, which is what keeps `integration.vfx` headless. Those absences are what 'one substrate, and the producers that are not allowed to fork it' MEANS, and this is the check that makes them a link-graph fact rather than a paragraph in a README"
+source = "tasks 8.1, design.md §2, engine-architecture"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree. It is what makes task 8.4 checkable: the moment `milestone-m10` goes green above the newest ledger any workflow evaluates, this goes red — which is why gates.toml still says `joins-on-close` and why that line and ci.yml's `milestone` job move in one change"
+source = "tasks 8.4, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifests — which matters here because M10 added NO dependency at all, and `save-and-persistence`'s confidentiality (task 6.2) is the one piece of this milestone that WOULD have needed one, which is a large part of why it did not land"
+source = "tasks 8.1, thirdparty-dependencies"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for eleven rows this milestone moves"
+source = "tasks 8.3"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the drift detection still fires, the ledger is flat, every ledger under milestones/ has a floor recorded — including this one's, raised by task 8.1 from the floor of 2 the spike left it at — and a declared gap that started passing fails"
+source = "tasks 8.1, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+# --- Section 1: the substrate, and the producers that are not allowed to fork it -------------------
+#
+# `environment-fields` is the milestone — design.md §4's first line — and seven of M10's eight rows
+# write into it. Five criteria over it, and they are NOT five names for one `ctest` invocation:
+# `criteria.fingerprint` collapses declarations that run the same command, so a ledger that listed
+# one suite five times would be reported as one check and READ as five. Where a claim needs to be
+# separable from the suite that carries it, the criterion runs the NAMED CASES under `doctest`'s own
+# `-tc` filter and REQUIRES THE FILTER TO HAVE SELECTED THEM — because a filter that matches nothing
+# exits zero, and "the case was renamed" and "the case passed" must not look the same from here.
+
+[[criterion]]
+id = "fields-substrate"
+describe = "THE SUBSTRATE ITSELF: a field's identity is its name and is the same number everywhere forever; a declaration that cannot mean anything is refused by reason; the encoding decides the precision two readers are held to; the layer rule is declared rather than emergent; the SPARSE TILED STORE — an empty region costs nothing and samples the declared default, a sample takes the finest resident level and says which one it was, a category is read exactly because nothing averages it, a volumetric field and a planar one are one code path, a region carries a version and a change names its bounds, a write is visible when it is published and not while it is being made, and an evicted tile gives its bytes back while a guaranteed one refuses. Twenty-nine cases, one suite, one criterion"
+source = "tasks 1.1, environment-fields"
+kind = "recipe"
+run = "just test-unit -R ^unit.environment$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE EXIT CRITERION OF SECTION 1, AND IT IS A REFUSAL RATHER THAN A DIAGNOSTIC.
+#
+# `docs/ROADMAP.md` M10: "a second producer registration fails". design.md §2 says why the shape is
+# a refusal and not a warning — "a diagnostic that fires at runtime has already shipped the defect"
+# — and tasks.md 1.2 says the refusal IS the criterion and must be shown to fail with the check
+# removed. `FieldRegistry::claim()` is where it lives: it records the conflict, names the incumbent
+# AND the challenger in the error's own message, and hands back no token, so the refused producer
+# has nothing to write with. Delete the `if (record->claimed)` block and all three cases go red.
+[[criterion]]
+id = "one-producer-refused"
+describe = "**A SECOND PRODUCER FOR ONE FIELD IS REFUSED, AND THE REFUSAL NAMES BOTH OF THEM.** Three cases, run by name: the second claim fails naming the incumbent and the challenger; the refused producer CANNOT WRITE, because a claim that failed hands back no token and a write needs one; and a claim on an undeclared field or by an unnamed producer is refused too, so the mechanism is not satisfied by refusing everything. The filter's selection is checked, because a `-tc` that matched nothing would exit zero and read as green"
+source = "tasks 1.2, ROADMAP M10 (a second producer registration fails), design.md §2"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+filter='a second producer is refused*,the refused producer cannot write*,a claim on an undeclared field*'
+out="$("$d/cy_test_unit_environment" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the refusal cases FAILED"; exit 1; }
+echo "$out" | tail -4
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the three it names"
+test "${selected:-0}" -eq 3 || { echo "the named refusal cases are not in unit.environment any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# DETERMINISM IS INHERITED RATHER THAN RE-INVENTED — design.md §3 — so what this checks is that the
+# substrate DEFERS to `simulation-and-determinism` rather than growing a second opinion. Two halves,
+# and the second is the one a suite can satisfy vacuously: a gameplay-visible answer that moved when
+# a finer tile streamed in would be a field whose value depends on what the renderer happened to
+# load, which is the defect `gameplay_level` exists to prevent and which no firewall would catch.
+[[criterion]]
+id = "fields-determinism-split"
+describe = "**THE DETERMINISM SPLIT, AND IT IS `simulation-and-determinism`'s MECHANISM AND NOT A SECOND ONE.** Five cases by name: the firewall refuses a gameplay reader of a visual field AT THE OPEN rather than at the sample; configuration validation names the crossing before a frame has run; a gameplay-visible field may not be produced by a GPU pass; a gameplay-visible field's gameplay level must be resident everywhere; and — the half a firewall cannot give — a gameplay-visible sample DOES NOT MOVE when a finer tile streams in, and does not depend on the order tiles arrived in"
+source = "tasks 1.4, design.md §3, simulation-and-determinism"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# `a gameplay-visible field*` deliberately covers two cases — the GPU-production refusal and the
+# resident-everywhere rule — because a doctest filter is comma-separated and several of these case
+# names contain commas of their own.
+filter='the firewall refuses a gameplay reader*,configuration validation names the crossing*,a gameplay-visible field*,a gameplay-visible sample does not move*,the order tiles arrive in does not change*'
+out="$("$d/cy_test_unit_environment" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the determinism-split cases FAILED"; exit 1; }
+echo "$out" | tail -4
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the six it names"
+test "${selected:-0}" -eq 6 || { echo "the named firewall and streaming-invariance cases are not in unit.environment any more"; exit 1; }
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "fields-residency-and-streaming"
+describe = "RESIDENCY AND STREAMING AGAINST `world-partition-and-streaming`'s EXISTING CELLS rather than beside them: a cell's footprint is the tiles over it and the neighbour's row is not; the streamer refuses to attach when nobody has declared the budget; a cell arriving with the field channel brings its tiles and leaving stops asking; a cooked source fills the tiles the policy admits; A BUDGET MAY NOT EVICT THE LEVEL THAT MUST EXIST EVERYWHERE, which is the one eviction rule a gameplay-visible field's determinism rests on; and a tile nobody wants is given back to the policy"
+source = "tasks 1.3, environment-fields, world-partition-and-streaming"
+kind = "recipe"
+run = "just test-integration -R ^integration.environment_streaming$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "fields-gpu-agreement"
+describe = "CPU AND GPU ACCESS TO THE SAME FIELD AGREE, AND THE GPU SIDE IS A SECOND IMPLEMENTATION RATHER THAN THE FIRST ONE CALLED TWICE. `build_field_image()` packs the tile table and the decoder reads the range, the interpolation and the layer rule out of the image's own header and decodes with its own arithmetic — it calls neither `decode_value()` nor `combine_layers()`. Six cases: a quantised scalar, a volumetric vector column by column, a category exactly because neither side does arithmetic on it, both layers reaching the image under the declared rule, the image as a function of the tiles rather than of arrival order, and a buffer that is not a field image refused rather than decoded"
+source = "tasks 1.1, environment-fields (CPU and GPU access)"
+kind = "recipe"
+run = "just test-integration -R ^integration.environment_gpu$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- Section 2: terrain, water, foliage -----------------------------------------------------------
+#
+# Three rows from nothing to Working, and every one of them is a PRODUCER into the substrate as well
+# as a subsystem of its own. The producer half is checked separately from the subsystem half in each
+# case, because M10's own gate found the difference the hard way: suppressing terrain's and water's
+# `publish()` turned their suites red and suppressing the sky's did not, and the difference was that
+# the sky's suite asserted against the producer's own statistics rather than against the store. So
+# `terrain-core` and `water-shoreline` are not two names for "terrain works" — the second is the
+# claim that a consumer can SEE what the first computed.
+
+[[criterion]]
+id = "terrain-core"
+describe = "TERRAIN AS TILED HIERARCHICAL STORAGE, A GEOMETRY SOURCE, AND A PRODUCER OF `soil`. Thirty cases: a tile identity stable, opaque and derived from coordinate and level, with no global grid so an absent region costs nothing and does not fault; a macro tile a decimation of its children sample for sample; material layers with a per-texel bound the cooker names what it dropped and where; frequency separation where which band dominates depends on the footprint; a rule reading an ENVIRONMENT FIELD as a first-class input; deformation classes where a footprint invalidates rendering and a crater invalidates collision and navigation while a structural one is refused naming the representation it needs; queries answering height, normal, slope and material with no physics query, a column carrying more than one surface, a hole that is not a surface, and an unstreamed query answering from the coarsest resident level and SAYING SO; and terrain claiming `soil` with a second producer of it refused naming both"
+source = "tasks 2.1, 2.2, terrain"
+kind = "recipe"
+run = "just test-unit -R ^unit.terrain$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "terrain-authoring"
+describe = "THE MODIFIER STACK, AND EVERY CASE IN IT IS ABOUT SCOPE OR DERIVATION: evaluation is deterministic, so the same stack and the same tile produce the same bytes; inserting erosion BENEATH a sculpt preserves the sculpt and reapplies it above; reordering, disabling and editing all move the derivation key; ONE ROAD EDIT IS SCOPED TO THE TILES ITS STAMP AND DECLARED RADIUS REACH rather than to the world; a road blends into the material and suppresses foliage along its width; an erosion pass reads its declared HALO so the tiling does not show; and a hole modifier cuts the surface, with cooking flattening the stack away"
+source = "tasks 2.2, terrain"
+kind = "recipe"
+run = "just test-integration -R ^integration.terrain_authoring$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "terrain-cook"
+describe = "TERRAIN COOKS THROUGH THE ENGINE'S OWN PIPELINES RATHER THAN BESIDE THEM: a terrain tile becomes VIRTUAL GEOMETRY through the engine's own builder — M8.b's, not a second mesh path; the terrain material compiles LIKE ANY OTHER through the material compiler, with its field reads checked at cook time rather than discovered at runtime; and shading does not scale with the world's layer count, which is what makes a world with fifty material layers in it affordable"
+source = "tasks 2.1, terrain"
+kind = "recipe"
+run = "just test-integration -R ^integration.terrain_cook$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "terrain-geometry"
+describe = "TERRAIN IS A GEOMETRY SOURCE AND A NAVIGATION CONTRIBUTION, not a picture. Six cases, and the first two are the ones a tiled terrain gets wrong: ADJACENT TILES AT ONE LEVEL SHARE THEIR BOUNDARY EXACTLY, WITH NO STITCHING RULE — the crack is arithmetically absent rather than sewn up afterwards — and a fine tile yields to a coarser neighbour exactly onto its edge. Then meshing deterministic and cacheable with an edit moving the key; a hole leaving an opening and the fallback path REPORTING its reduced detail; collision COARSER than rendering, independent of it, and carrying the hole; and the navigation surface derived from collision with declared costs — which is the seam that makes a crater a thing the world is walked over differently afterwards rather than a thing that looks different"
+source = "tasks 2.1, 2.2, terrain, navigation"
+kind = "recipe"
+run = "just test-integration -R ^integration.terrain_geometry$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "terrain-persistence"
+describe = "**DEFORMATION DELTAS THROUGH THE PERSISTENCE OVERLAY, AND A BOUNDED MESSAGE ON THE WIRE.** A mining pit survives a save through `world::PersistenceOverlay` — M6's own mechanism rather than a second one — and a networked terrain change is a bounded message rather than a resend of terrain. Both are `terrain`'s requirements and both are what task 7.2's crater exercises from the artefact's side"
+source = "tasks 2.2, 7.2, terrain, save-and-persistence"
+kind = "recipe"
+run = "just test-integration -R ^integration.terrain_persistence$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "water-core"
+describe = "WATER BODIES, THE DISPLACEMENT CONTRACT, THE SPECTRAL OCEAN, RIVERS, QUERIES AND BUOYANCY — fifty-three cases, and the ones that matter most are the refusals. An ocean, a lake and a river are ONE abstraction with different backends; bodies of equal priority resolve by declaration order STABLY rather than by registration order; a visual-only band moves the rendered surface and not the queried one, the amplitude split is REPORTABLE so the discrepancy is checkable, and a visual band large enough to be felt is a REFUSAL rather than a discrepancy — which is the whole displacement contract, because 'the boat floats on the waves it appears to float on' is otherwise a hope. Plus the cascaded spectrum, fetch and wind, a camera-relative patch that costs the same wherever the camera is, batched hull sampling, wading and swimming derived from depth, and a river network whose forward reference is refused so its shape is not declaration order"
+source = "tasks 2.3, water"
+kind = "recipe"
+run = "just test-unit -R ^unit.water$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "water-shoreline"
+describe = "**WATER IS A PRODUCER INTO THE SUBSTRATE, AND TERRAIN READS BACK WHAT IT WROTE.** Water writes depth, distance, flow and wetness and terrain reads them THROUGH THE STORE; water distance is a distance measured from both sides; a river writes its flow into the field and debris downstream reads it; the gameplay-visible answer does not depend on what streamed; a second producer for wetness is refused naming both; and declaring the wetness owner EXTERNAL lets a project's water row and weather row both produce without a conflict — the escape hatch that keeps one-producer-per-field from being a rule projects have to route around. This is the criterion the sky does not have, and `sky-field-round-trip` below is why that sentence is in this file"
+source = "tasks 2.3, water, environment-fields"
+kind = "recipe"
+run = "just test-integration -R ^integration.water_shoreline$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "water-foam"
+describe = "FOAM IS A FIELD THAT IS ADVECTED AND DECAYS, NOT A TEXTURE THAT IS SCROLLED: a wake persists behind a boat, drifts with the flow and decays; the field is BOUNDED IN MEMORY whatever happens in it; the grid moves in WHOLE CELLS so it does not smear under a drifting camera; a field that cannot be built is refused and an unconfigured one refuses to work; and a source outside the grid is ignored rather than refused. It is also the band the artefact's budget curve names as water's largest cost — its advection and decay touch every cell every tick, measured at 47 ms a frame at 256 cells and shipped at 128"
+source = "tasks 2.3, 7.3, water"
+kind = "recipe"
+run = "just test-integration -R ^integration.water_foam$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "water-streaming"
+describe = "WATER AGAINST `world-partition-and-streaming`'s CELLS, and the cases are the awkward ones rather than the happy path: a continental river is ONE BODY whose runtime data is segmented; a segment straddling two cells survives one of them being evicted; DEACTIVATING A CELL DOES NOT DROP THE WATER A BOAT IS FLOATING ON; a dedicated server keeps the queries and the physics and drops the surfaces; a cell whose footprint holds no water is COUNTED rather than ignored; and a cell nobody declared a footprint for is SKIPPED rather than guessed at"
+source = "tasks 2.3, water, world-partition-and-streaming"
+kind = "recipe"
+run = "just test-integration -R ^integration.water_streaming$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "foliage-core"
+describe = "FOLIAGE INSTANCES THAT ARE NOT ENTITIES — the row's defining claim. Forty-seven cases: a million instances at tens of bytes each rather than hundreds; identity derived and injective over clusters and slots, with a cluster's slots independent of the order placement accepted them; clusters culled before instances so most instances are rejected in bulk; promotion that suppresses the GPU instance rather than drawing the tree twice, is bounded per frame and by a ceiling, is refused for a species with no gameplay surface, and survives a save with its identity unchanged; the interaction field where grass parts around a vehicle with NO PHYSICS BODY PER PLANT and the lowest-priority contributors are dropped DETERMINISTICALLY; the budget ladder that cuts decorative species and leaves tactically important cover standing; and the wind response, per cluster rather than per instance, with four real terms"
+source = "tasks 2.4, foliage"
+kind = "recipe"
+run = "just test-unit -R ^unit.foliage$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "foliage-placement"
+describe = "**DETERMINISTIC PROCEDURAL PLACEMENT, AND THE THREE CASES THAT MAKE IT MEAN SOMETHING.** A region regenerates identically on a second run; SPACING RESOLUTION DOES NOT DEPEND ON THE ORDER OF THE CANDIDATE ARRAY; and ONE REGION GENERATED ALONE EQUALS THAT REGION INSIDE THE WHOLE WORLD, with a region's cluster being its share of a WHOLE-WORLD resolution rather than a locally-resolved patch that happens to tile — which is the property a streamed world needs and the one a per-region generator quietly loses. Plus placement reading terrain's COLUMN so a mesh cliff carries plants, nothing planted on a hole with a hole distinguished from an unresolved sample, an exclusion zone that suppresses and feathers, a rule set refused for each of its own reasons, and provenance recording what a region ACTUALLY read"
+source = "tasks 2.4, foliage"
+kind = "recipe"
+run = "just test-integration -R ^integration.foliage_placement$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "foliage-fields"
+describe = "FOLIAGE IS A PRODUCER OF `vegetation` AND A CONSUMER OF THE REST. A second producer of the vegetation field fails naming both; the field is declared with the properties its two scenarios need; a grown forest appears grown and a depleted one depleted; A FOREST BURNS WITHOUT A SINGLE PER-INSTANCE WRITE, which is what a field-driven ecosystem buys and what a per-instance one cannot; and the determinism firewall REPORTS a placement rule that reads a visual field rather than letting it through"
+source = "tasks 2.4, foliage, environment-fields"
+kind = "recipe"
+run = "just test-integration -R ^integration.foliage_fields$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "foliage-grass"
+describe = "GPU grass expansion: a patch expanded from a compact description rather than stored per blade, with the expansion's arithmetic asserted on the processor — the device half is the declared gap `foliage-shader-absent` names"
+source = "tasks 2.4, foliage"
+kind = "recipe"
+run = "just test-integration -R ^integration.foliage_grass$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "foliage-exceptions"
+describe = "**THE EXCEPTION LAYER — A SAVE RECORDS FIFTY EXCEPTIONS AND NOT A HUNDRED THOUSAND INSTANCES**, which is the only arrangement under which a procedurally placed world is savable at all. Five more cases and every one is about identity surviving a regeneration: an exception BINDS BY IDENTITY across a regeneration of the same seed; a rule change ORPHANS an exception rather than dropping it; TWO EQUALLY GOOD SPATIAL MATCHES ARE AN ORPHAN RATHER THAN A COIN TOSS — the failure design.md §1.4 says is worse than losing the override, refused here rather than papered over; runtime exceptions go through the world's persistence overlay and AUTHORED ones do not; and an added exception survives regeneration and changes the cluster's slots"
+source = "tasks 2.4, foliage, save-and-persistence"
+kind = "recipe"
+run = "just test-integration -R ^integration.foliage_exceptions$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "foliage-streaming"
+describe = "clusters arriving and leaving with the world's cells, independently evictable, with the store's index surviving an eviction"
+source = "tasks 2.4, foliage, world-partition-and-streaming"
+kind = "recipe"
+run = "just test-integration -R ^integration.foliage_streaming$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- Section 3: weather, wind, atmosphere ---------------------------------------------------------
+
+[[criterion]]
+id = "weather-core"
+describe = "CLIMATE, CELLS, WIND AND PRECIPITATION — fifty-five cases, and the shape of the row is in three of them. The weather grid DOES NOT ALIGN with the world partition and still works, so weather is not a second streaming system; weather cost is bounded by the GRID rather than by where the camera is, so a world nobody is looking at still has weather in it; and refinement is bounded with what it refuses DETERMINISTIC. Plus a mountain range across the wind making the windward wet and the lee dry, storms addressed by identity that cost a constant number of bytes and round-trip on the wire, lightning as an event with a position an intensity and a seed and nothing else with two peers agreeing about where it struck, presets arriving on per-property clocks with a transition that is a pure function of the tick, a veering wind taking the short way round, terrain blocking channelling and accelerating the wind, and an explanation that sums to the sample EXACTLY"
+source = "tasks 3.1, 3.2, weather-and-wind"
+kind = "recipe"
+run = "just test-unit -R ^unit.weather$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "weather-fields"
+describe = "**WEATHER IS THE WIND FIELD'S PRODUCER, AND THE TWO WIND FIELDS SIT ON OPPOSITE SIDES OF THE FIREWALL.** `wind` is authoritative and `wind-turbulence` is presentation-only, in one module, declared rather than documented: gameplay may read the wind and MAY NOT read the turbulence, an authoritative reader asking for high frequency is DOWNGRADED rather than given presentation state, and a consumer reads the published state without calling weather at all. Plus every declared field legal, a second producer for one of them refused naming both, a REFUSED CLAIM LEAVING THE REGISTRY AS IT WAS, a project whose water row owns wetness configuring weather to compose the shore instead of fighting it, a publication over the field-update budget DEFERRED rather than trimmed, and rain accumulating into wetness that the sun takes away again"
+source = "tasks 3.1, 3.2, weather-and-wind, environment-fields"
+kind = "recipe"
+run = "just test-integration -R ^integration.weather_fields$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "weather-determinism"
+describe = "A QUALITY TIER CHANGES NO AUTHORITATIVE NUMBER, OVER A THOUSAND TICKS — the one property that makes a weather system safe to have in a simulation two machines have to agree about. Plus two systems from one seed evolving identically, a snapshot carrying the storms and the grid and NOTHING THAT IS DRAWN, the cloud drive being authoritative state that carries no quality tier, and the whole tick reproducible against a live field store rather than against a mock"
+source = "tasks 3.1, 3.2, weather-and-wind, simulation-and-determinism"
+kind = "recipe"
+run = "just test-integration -R ^integration.weather_determinism$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "weather-ecosystem"
+describe = "ECOSYSTEM STATE THAT EVOLVES WHETHER OR NOT A REGION IS RESIDENT: the potential written from the climate with current state recovering toward it, a burned forest that regrows with the scar outliving the grass, ninety days in one call equal to ninety days in ninety calls, terraforming crossing a declared threshold and changing the biome, and drought and deforestation moving DIFFERENT fields rather than one 'health' number"
+source = "tasks 3.2, weather-and-wind"
+kind = "recipe"
+run = "just test-integration -R ^integration.weather_ecosystem$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "sky-core"
+describe = "THE PHYSICAL ATMOSPHERE AND ITS CELESTIAL BODIES — fourteen cases, and the row's whole argument is in two of them: A DIFFERENT PLANET GETS A DIFFERENT SKY FROM ITS COEFFICIENTS ALONE, and aerial perspective comes from THE SAME MODEL as the sky rather than from a second fog. Plus an atmosphere that cannot describe one refused; phase functions normalised; extinction falling with altitude with ozone in a layer; transmittance one at the top and zero through the planet; the sun reddening as it sets because the path lengthens; a composition change as a PARAMETER TRANSITION rather than a preset switch; a stylised distance override that is declared and reaches the physical model rather than replacing it; the sun rising, crossing and setting on the declared clock with the axial tilt as the reason there are seasons; and a moon whose phase is not always the same one. `atmosphere-sky-and-clouds` goes from Seed to Working here and this is the model half of it"
+source = "tasks 3.3, atmosphere-sky-and-clouds"
+kind = "recipe"
+run = "just test-unit -R ^unit.render_sky$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "sky-clouds"
+describe = "VOLUMETRIC CLOUDS, AND THE REFUSALS THAT KEEP THEM AFFORDABLE: a weather map fine enough to be a volume is REFUSED, a hundred-kilometre world's clouds are kilobytes rather than gigabytes, the layer set refuses a ninth layer and a layer with no volume, a cloud shadow declaration that asks for a shadow map is refused, and the reconstruction is a pure function of seed, position and time. Plus the priced tier ladder that changes how the sky is DRAWN and not what the weather IS, reprojection that puts a drifting cloud where the cloud was, history rejected where the weather changed with the reason separable, and a debug view per failure mode"
+source = "tasks 3.3, atmosphere-sky-and-clouds"
+kind = "recipe"
+run = "just test-unit -R ^unit.render_sky_clouds$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "sky-tables"
+describe = "THE ATMOSPHERE IS A LOOKUP AND DRAWING IT INTEGRATES NO ATMOSPHERE: transmittance tabulated, reused, and AGREEING WITH THE MARCH IT REPLACES; multiple scattering a table that can be switched off; the sky view regenerating incrementally as the sun moves; aerial perspective in the engine's own froxel volume rather than a second one; the ground-to-orbit transition one model rather than a band per altitude; and a sun twenty degrees below the horizon lighting nothing"
+source = "tasks 3.3, atmosphere-sky-and-clouds"
+kind = "recipe"
+run = "just test-integration -R ^integration.render_sky_tables$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "sky-composition"
+describe = "WEATHER DRIVES THE SKY AND THE SKY LIGHTS THE SCENE, composed rather than duplicated: coverage drives density and an empty map makes no cloud; a cloud march is lit, BOUNDED, and attributes its cost; the same state drives every tier; when cloud cover thickens THE LIGHT THE SCENE GETS CHANGES; a profile composes with a weather preset rather than restating it; a terraformed world's sky follows; and a pixel can be asked what determined it"
+source = "tasks 3.3, atmosphere-sky-and-clouds, weather-and-wind"
+kind = "recipe"
+run = "just test-integration -R ^integration.render_sky_composition$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "sky-light"
+describe = "THE ATMOSPHERE IS WHERE THE SCENE'S SKY LIGHT COMES FROM, rather than a colour somebody picked: the gradient global illumination consumes the atmosphere's own irradiance, the horizon colour is SOLVED FOR and sampling it instead is measurably worse, the spherical-harmonic projection reconstructs the diffuse term, the table is rebuilt only when something moved and reports that it was, the table agrees with the model it was built from and has no seam, and a day of sun positions produces a term that never goes negative"
+source = "tasks 3.3, atmosphere-sky-and-clouds, rendering-global-illumination"
+kind = "recipe"
+run = "just test-integration -R ^integration.render_sky_light$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- Section 4: procedural content generation -----------------------------------------------------
+#
+# THE MILESTONE'S NAMED RISK, AND THE SPIKE THAT RAN BEFORE IT. `docs/roadmap/risks.md` names region
+# invalidation in PCG as M10's spike, design.md §1 is what it answered, and §1.6 turned the answer
+# into FOUR CONDITIONS the row must satisfy to be allowed caching and spatial invalidation at all.
+# Those four conditions are criteria here — `pcg-spike-conditions` — rather than a paragraph in the
+# design, because §1.6's own sentence is "each is a test before it is prose".
+#
+# AND THE SPIKE'S OWN LESSON IS THE REASON THE CASES ARE NAMED RATHER THAN COUNTED. The spike's first
+# contention meter counted order-dependence in a FULL run, where it is zero by construction, and duly
+# reported "reproduces" for a variant that does not. A suite whose name is asserted and whose cases
+# are not is the same defect one level up.
+
+[[criterion]]
+id = "pcg-core"
+describe = "TYPED DATASETS, THE COMPILED GRAPH, AND THE DERIVED-DATA CACHE — thirty-nine cases. The dataset's own rules: a point set refuses to grow past the capacity it reserved, retain COMPACTS IN PLACE AND KEEPS EACH SURVIVOR'S ORIGINAL SLOT (which is what makes identity survive a filter), a digest covers positions, slots, identities and columns and treats negative zero as zero, an attribute is interned once and refuses a second type. The compiler's refusals and its optimisations: dead nodes eliminated and NAMED, a compute over a constant folded, a chain of filters fused, two reads of one field fused into one sampling, a subgraph inlined twice minting DIFFERENT identities, a scripted node reported as a barrier by name. And the cache: every contribution the specification names moves the derivation key, a field version change moves it and the field ORDER does not, a budgeted program's region is refused by the cache AND THE REFUSAL SAYS WHY"
+source = "tasks 4.1, 4.3, procedural-content-generation"
+kind = "recipe"
+run = "just test-unit -R ^unit.pcg$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "pcg-identity"
+describe = "**STABLE GENERATED IDENTITY**, which `docs/ROADMAP.md` names as an exit criterion and design.md §1.6 makes the fourth condition: identity is a pure function of SEED, NODE, REGION AND SLOT, a node's identity comes from its NAME and not from its position in the graph, the generation stream is separate from the identity derivation, a region key separates negative coordinates from their unsigned twins, derived identities do not collide over a world of regions and slots, and every identity source has a name so a refusal can print the one it refused. §1.4 is the number this has to beat, and the spike's own first attempt — `fold_multiply(region + 1, slot + 1)`, which for small operands is plain multiplication and therefore not injective — is why 'do not collide' is a case and not an assumption"
+source = "tasks 4.2, ROADMAP M10 (stable generated identity), design.md §1.6"
+kind = "recipe"
+run = "just test-integration -R ^integration.pcg_identity$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "pcg-generation"
+describe = "GENERATION, REGIONS AND SPATIAL INVALIDATION — the suite the spike's answer became. Thirteen cases including the budget and cancellation properties that make a generator usable inside a frame: a budgeted run IN STEPS produces exactly what one unbudgeted run produces, and a cancelled run keeps its place and resumes to the same world. Plus a generator not declared for a domain refusing to run in it, a stage that rewrites a shared buffer re-running its consumer wherever it ran, a region naming the change AND the dependency path that reached it, and dilation clamped to the extent with a region set enumerating canonically"
+source = "tasks 4.3, procedural-content-generation"
+kind = "recipe"
+run = "just test-integration -R ^integration.pcg_generation$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE SPIKE'S FINDING, AS A CHECK THAT CAN FAIL. design.md §1.1: a dependency-driven partial
+# regeneration reproduces a full one bit for bit, in every trial, for output AND for identity. If
+# that stops being true, §4's contingency fires and caching and spatial invalidation come OUT of the
+# row — so this is the criterion that stands between the plan and a silent scope change.
+#
+# FOUR CASES, AND THE THIRD AND FOURTH ARE WHAT KEEP THE FIRST TWO HONEST. "Reproduces the full one"
+# is satisfied by a partial regeneration that simply re-ran everything, so the transitive-edge case
+# requires it to evaluate FEWER regions than a full run and MORE than it changed; and a partial
+# regeneration over a world that was never fully generated has to be REFUSED, because a cache that
+# answers from nothing reproduces anything.
+#
+# AND WHAT IT DOES NOT COVER, MEASURED RATHER THAN ASSUMED. Breaking `derive_identity()` so that
+# every even slot in a region shares an identity leaves this criterion GREEN and turns `pcg-identity`
+# and `pcg-override-survives-regeneration` red. That is correct and it is worth writing down: this
+# is a SELF-CONSISTENCY check — two runs of one derivation, compared with each other — so a
+# derivation that is stable and wrong satisfies it perfectly. `pcg-identity` is the criterion that
+# judges the derivation, and reading this one as covering identity QUALITY would be reading a
+# comparison of a thing with itself as a comparison with the truth.
+[[criterion]]
+id = "pcg-partial-reproduces-full"
+describe = "**A PARTIAL REGENERATION REPRODUCES THE FULL ONE, BIT FOR BIT AND IDENTITY FOR IDENTITY** — the spike's measured finding, kept as a running check rather than a recorded number. Four cases by name: two full generations of one seed identical in output and in identity; the partial regeneration reproducing the full one; the transitive edge evaluating fewer regions than a full run AND MORE THAN IT CHANGED, so 're-run everything' cannot satisfy it; and a partial regeneration over a world that was never fully generated REFUSED rather than answered. The filter's selection is checked, because a `-tc` that matched nothing exits zero"
+source = "tasks 0.1, 4.3, design.md §1.1, §4"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+filter='two full generations of one seed are identical*,a partial regeneration reproduces the full one*,the transitive edge evaluates fewer regions*,a partial regeneration over a world that was never fully generated is refused*'
+out="$("$d/cy_test_integration_pcg_generation" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the regeneration cases FAILED — design.md §4's contingency has fired"; exit 1; }
+echo "$out" | tail -4
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the four it names"
+test "${selected:-0}" -eq 4 || { echo "the named regeneration cases are not in integration.pcg_generation any more"; exit 1; }
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE FOUR CONDITIONS §1.6 IMPOSED ON THE ROW, EACH AS THE REFUSAL IT IS MEANT TO BE.
+#
+#   1. invalidation is a fixed point, not a declared radius   — a node observed to read outside its
+#                                                               declared reach is named
+#   2. a node is a pure function of its declared inputs       — reading a sibling's OUTPUT is
+#                                                               refused at graph-compile time
+#   3. an iterative operator declares convergence, not a budget — and a budgeted result is not
+#                                                               cacheable
+#   4. identity derives from stable identifiers                — minting it from traversal order is
+#                                                               refused
+#
+# Three of the four are compile-time refusals in `unit.pcg` and the first is a run-time observation
+# in `integration.pcg_generation`, so this criterion runs both binaries. Deleting any one refusal
+# from the compiler drops the selected count and turns this red without touching a single assertion.
+[[criterion]]
+id = "pcg-spike-conditions"
+describe = "**THE FOUR CONDITIONS THE SPIKE IMPOSED ON THIS ROW, AS TESTS.** A node that reads a sibling's accepted output is REFUSED AND NAMED (condition 2); a node that mints identity from traversal order is refused and named (condition 4); an iterative node with no bound and a cross-region solve with no policy are refused, a relaxation whose halo cannot hold its passes is refused, and a program with a budgeted iterative stage IS NOT CACHEABLE while one with convergence is (condition 3); and what a region was RECORDED TO READ narrows the next dirty set below its declared reach (condition 1 — a fixed point measured rather than a radius declared). design.md §1.6: 'each is a test before it is prose'"
+source = "tasks 0.1, 4.1, 4.3, design.md §1.6"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+compile_filter='a node that reads a sibling*,a node that mints identity from traversal order is refused*,an iterative node with no bound*,a relaxation whose halo cannot hold its passes is refused*,a program with a budgeted iterative stage is not cacheable*'
+out="$("$d/cy_test_unit_pcg" "-tc=$compile_filter" 2>&1)" || { echo "$out"; echo "the graph-compile refusals FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "conditions 2, 3 and 4: ${selected:-0} case(s) selected of the five named"
+test "${selected:-0}" -eq 5 || { echo "a named graph-compile refusal is gone from unit.pcg"; exit 1; }
+reach_filter='what a region was recorded to read narrows the next dirty set*'
+out="$("$d/cy_test_integration_pcg_generation" "-tc=$reach_filter" 2>&1)" || { echo "$out"; echo "the declared-reach case FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "condition 1: ${selected:-0} case(s) selected of the one named"
+test "${selected:-0}" -eq 1 || { echo "the declared-reach case is gone from integration.pcg_generation"; exit 1; }
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE OTHER EXIT CRITERION `docs/ROADMAP.md` NAMES FOR THIS ROW, and design.md §1.4 is the reason it
+# is five cases rather than one: the spike measured that overrides are the thing a regeneration
+# loses, and it found the defect in its OWN identity derivation by looking at this number.
+[[criterion]]
+id = "pcg-override-survives-regeneration"
+describe = "**A HAND-PLACED OVERRIDE SURVIVES REGENERATION OF ITS REGION.** Five cases by name: a moved tree stays moved across a regeneration of its region; a felled tree does not return; a LOCKED instance survives a regeneration that no longer produces it; an override whose instance is gone is reported as an ORPHAN rather than silently rebound to a neighbour — which is the failure mode design.md §1.4 says is worse than losing the override; and a generator version change opens the spatial anchor and REPORTS IT AS A GUESS rather than presenting it as a match"
+source = "tasks 4.2, ROADMAP M10 (a hand-placed override survives regeneration), design.md §1.4"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+filter='a moved tree stays moved across a regeneration of its region*,a felled tree does not return*,a locked instance survives a regeneration that no longer produces it*,an override whose instance is gone is an orphan*,a generator version change opens the spatial anchor*'
+out="$("$d/cy_test_unit_pcg" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the override cases FAILED"; exit 1; }
+echo "$out" | tail -4
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the five it names"
+test "${selected:-0}" -eq 5 || { echo "the named override cases are not in unit.pcg any more"; exit 1; }
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "pcg-adapters"
+describe = "OUTPUT ADAPTERS, AND THE FIRST CASE IS THE ROW'S WHOLE POSITION: **a generated result is not an entity by default.** A whole region becomes ONE foliage cluster in one call; a generated point set becomes terrain MODIFIERS, appended rather than edited; a generator writes a field through the PRODUCER TOKEN ITS CALLER HOLDS, so one-producer-per-field is not routed around by generating into a field; a second adapter for one target is refused; and a terrain-backed spatial query answers in batches with a hole that is not a surface. This is what keeps `cy::pcg` from linking `cy::foliage` or `cy::ecs` — the absence `layering` above turns into a link-graph fact, and the artefact into a world with 39 032 plants and no entity in it"
+source = "tasks 4.3, procedural-content-generation, foliage"
+kind = "recipe"
+run = "just test-integration -R ^integration.pcg_adapters$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "pcg-scale"
+describe = "THE DATASET AT A MILLION POINTS, AND WHAT IT IS ALLOWED TO ALLOCATE: a million points after ONE reserve allocate nothing further; a filter over a million points COMPACTS IN PLACE, allocating nothing; and provenance switched off holds nothing at all rather than holding a smaller amount. It is NOT `procedural-content-generation`'s hundred-kilometre standing benchmark with ten million trees — that is not committed, src/pcg/README.md records it as a declared gap of the row, and this criterion deliberately does not read as if it were"
+source = "tasks 4.1, procedural-content-generation"
+kind = "recipe"
+run = "just test-integration -R ^integration.pcg_scale$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- Section 5: `vfx-system` to Working -----------------------------------------------------------
+#
+# M8.c built the asset model, the IR, the compiler, the shared simulation world, the scheduler, the
+# budget controller and the determinism firewall's producer side, and its closing gate moved the
+# Working cell here rather than claim it over an ABSENT GPU COMPUTE PATH. So the cell is the GPU
+# half, and the criteria are shaped the way M8.c shaped its own: **the device criterion has a
+# companion that needs no device**, so nothing this milestone claims about VFX is judgeable only on a
+# machine with a GPU — `vfx-device` beside `vfx-runtime`, exactly as `m8c:vfx-device` sat beside
+# `m8c:vfx-runtime`.
+#
+# AND `cy::vfx` STILL DOES NOT LINK A DEVICE. `cy::vfx-gpu` is a separate module under src/vfx/gpu/,
+# which is what keeps `integration.vfx` headless and is checked by `layering` above rather than
+# asserted here.
+
+[[criterion]]
+id = "vfx-values"
+describe = "THE VALUE MODEL, THE BUDGET CONTROLLER AND THE EVENT CHANNELS — seventeen cases and the unit half of `cy::vfx`, unchanged since M8.c and declared here because this is the milestone that claims the row. The quantisation half is what makes a GPU-resident layout real: a tolerance of zero never quantises, the smallest encoding whose step fits the tolerance is chosen, an encoding that cannot represent the range reports a step of ZERO rather than a small one, and a quantised attribute READS BACK QUANTISED. The controller half: over budget the least important class is reduced first and Critical last, Critical survives at its floor with the reserved minimum reported, hysteresis moves nothing between the thresholds, and pinned mode REPORTS the excess and corrects nothing"
+source = "tasks 5.1, vfx-system"
+kind = "recipe"
+run = "just test-unit -R ^unit.vfx_values$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "vfx-compiler"
+describe = "THE EFFECT COMPILER — seventeen cases, and one of them is M10's business rather than M8.c's: **wind is the SHARED FIELD and there is no VFX-owned wind model**, which is `environment-fields`' whole argument arriving in a module that could easily have grown its own gust. Plus the cook key identical over two cooks and moved by one edit, attribute liveness that does not allocate what is never read, constant folding and kernel fusion, a generated unit that imports nothing and declares what it uses, two emitters from one asset producing identical kernel digests, a project registering its own data interface with no compiler change, a CPU-path effect using a GPU-only interface FAILING TO COOK and naming the interface, and the CPU path DECLARED rather than fallen into — an effect that declared it is not counted as a fallback"
+source = "tasks 5.1, vfx-system"
+kind = "recipe"
+run = "just test-integration -R ^integration.vfx_compiler$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "vfx-runtime"
+describe = "**THE RENDERER KINDS BEYOND `Sprite` AND `Mesh`, AND THE RUNTIME THEY PUBLISH THROUGH — twenty-eight cases with no device in the link closure.** A renderer kind is declared by the emitter and survives the cook, and a publication whose kind is not its own is refused. Then each of the six new kinds asserted on the thing that makes it that kind rather than a sprite: a RIBBON chain broken mid-chain TERMINATES rather than connecting across the gap; a BEAM meets both of its endpoints however much it sags; a TRAIL is exactly as long as the history that exists; a DECAL projects along the particle's velocity where it has one; a VOLUME thins rather than shrinking as its particle fades; and a motion vector is suppressed on the frame a particle spawns and after a kill. Plus the budget controller holding a target under overload with Critical surviving, and readback that has at least one frame of latency and is DEFERRED rather than truncated when it is over budget"
+source = "tasks 5.3, vfx-system"
+kind = "recipe"
+run = "just test-integration -R ^integration.vfx$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE GPU HALF, ON A REAL DEVICE, AND IT IS THE CELL. Six cases, and three of them are the exact
+# sentences M8.c could not claim: state RESIDENT in GPU buffers advancing the same population the CPU
+# executor does; population and dispatch size coming FROM THE DEVICE rather than from this process,
+# which is what "indirect dispatch driven by GPU-maintained counts" means and is not satisfiable by a
+# dispatch sized on the host; the GPU sort ordering the live list back to front with the lever
+# removing it; and async compute used where the device HAS a queue, with turning it off changing
+# nothing about the result.
+[[criterion]]
+id = "vfx-device"
+describe = "**PARTICLE STATE RESIDENT IN GPU BUFFERS, INDIRECT DISPATCH DRIVEN BY GPU-MAINTAINED COUNTS, ASYNC COMPUTE WHERE THE DEVICE EXPOSES A QUEUE, AND THE GPU SORT BEHIND `BudgetLevers::sorted`** — on a device, through `cy::vfx-gpu`. Six cases: the device advances the same population the CPU executor does; population and dispatch size come from the DEVICE and not from this process; the particle-count lever bounds the population the device holds; the cap reduces a block that is ALREADY FULL and not only one that is filling; the GPU sort orders the live list back to front and the lever removes it; async compute is used where the device has a queue and turning it off changes nothing. Its companion `vfx-runtime` above needs no device, so the row is not judgeable only where a GPU is"
+source = "tasks 5.1, 5.2, ROADMAP M10, vfx-system"
+kind = "recipe"
+run = "just test-render -R ^render.vfx_gpu$"
+requires = "gpu"
+reason = "particle state resident in GPU buffers and a dispatch sized by the device cannot be measured on a machine with no device, and must not be reported as passing there — `vfx-runtime` is the companion that needs none"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- Section 6: `tests/determinism/` stops being empty ---------------------------------------------
+#
+# M9's OWN GATE FOUND THE DIRECTORY EMPTY. `tests/CMakeLists.txt` says in as many words that the
+# determinism kind "joins them at M9", `testing-and-quality` gives the row a location and a 10 s
+# budget, and M9 put its determinism cases in `unit` and `integration` instead — a defensible reading
+# of a taxonomy whose other rows are graded by COST, which left the one row graded by SUBJECT with
+# nothing in it. Three criteria, and the third is the one that stops the kind from quietly emptying
+# again: a taxonomy row nobody counts is a taxonomy row that can go back to zero.
+
+[[criterion]]
+id = "determinism-golden-replay"
+describe = "**A GOLDEN REPLAY WITH COMMITTED HASHES, WHICH NOTHING IN THIS TREE DID BEFORE M10.** `src/replay/tests/test_bitexact.cpp` records and replays in one process, so a change in the simulation moves BOTH SIDES of its comparison at once and cannot notice. Three cases against bytes committed under `tests/determinism/golden/`: a session recorded TODAY encodes to the committed bytes; the committed replay reproduces the committed state hash AT EVERY TICK rather than at the end; and a replay from a build this one cannot reproduce is REFUSED rather than replayed, which is the difference between a golden file and a trap. It drives the engine's own `sim.h` — a real world, four participants, one command producer each, real state codecs — because a committed hash of a fixture invented in the test directory proves that addition is stable"
+source = "tasks 6.4, testing-and-quality, simulation-and-determinism"
+kind = "recipe"
+run = "just test-determinism -R ^determinism.golden_replay$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "determinism-fuzzing-and-saves"
+describe = "REPLAY AND SAVE FUZZING AND THE TRANSACTIONAL SAVE TESTS, in the row `testing-and-quality` puts them in. The replay fuzzer's three cases are about what a reader must never do: a truncated replay is refused AT EVERY TRUNCATION with a reason; a corrupted byte NEVER yields a different log accepted as this one; and a file that is not a replay at all is reported Corrupt rather than as a mismatch — `classify()`'s rule from M9, fuzzed rather than asserted. Beside them the save fuzzer and `save_kill_nine`, the two suites written at M6 as `integration` and MOVED into this kind rather than copied here, because a module's suites are declared from the module in this tree and a second copy is a copy that drifts"
+source = "tasks 6.4, testing-and-quality, save-and-persistence"
+kind = "command"
+# THREE ANCHORED INVOCATIONS AND NOT ONE ALTERNATION, AND THAT IS M6's LESSON RATHER THAN A STYLE
+# CHOICE. `just`'s `*args` is interpolated TEXTUALLY into `bash -c`, so `-R 'a|b|c'` reaches bash
+# with the pipes live; four of m6.toml's criteria were written that way, reported `exit 2` in 0.0 s
+# having run no test, and sat in two permanent gates and a CI job for a milestone.
+# `selftest.test_just_arguments` is the lint that now refuses it, and it refused this line first.
+run = "just test-determinism -R ^determinism.replay_fuzz$ && just test-determinism -R ^determinism.save_fuzz$ && just test-determinism -R ^determinism.save_kill_nine$"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# AND THE COUNT, BECAUSE THE DEFECT THIS REPAIRS WAS AN EMPTY DIRECTORY THAT NOBODY'S CHECK NOTICED.
+# `just test-determinism` over a kind with no suites in it is GREEN — `ctest` with a label nothing
+# carries exits zero — which is precisely how the row stayed empty from M9 to M10 with a permanent
+# gate running `test-all` the whole time. This criterion asks the taxonomy how many suites the kind
+# has, and deleting them all turns it red instead of turning it quiet.
+[[criterion]]
+id = "determinism-kind-populated"
+describe = "**THE DETERMINISM KIND HAS SUITES IN IT, AND THAT IS A CHECK RATHER THAN AN OBSERVATION.** `ctest` with a label nothing carries exits ZERO, so `just test-determinism` was green for the whole of M9 over an empty directory and no gate said a word. This counts the suites carrying the `determinism` label and requires at least four — the golden replay, the replay fuzzer, the save fuzzer and the kill-nine transactional test that `testing-and-quality`'s row enumerates"
+source = "tasks 6.4, testing-and-quality, delivery-roadmap"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+suites=$(ctest --test-dir "$d" -L determinism -N 2>/dev/null | sed -nE 's/^ *Test +#[0-9]+: (.*)$/\1/p')
+count=$(printf '%s\n' "$suites" | grep -c . || true)
+echo "$count suite(s) carry the determinism label:"
+printf '  %s\n' $suites
+test "$count" -ge 4 || { echo "the determinism kind has fewer suites than testing-and-quality's row enumerates — a kind that empties is a kind that goes green by running nothing"; exit 1; }
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- Section 7: the artefact — samples/10-world ---------------------------------------------------
+#
+# ONE PROGRAM IN WHICH THE SEVEN THINGS M10 BUILT ARE WIRED TO EACH OTHER rather than each to its own
+# suite, and it is the first target in the repository that names all seven. There is no CTest entry
+# for it and that is deliberate: the picture needs a graphics device, and a suite that skipped on
+# every machine without one would be a suite whose failure nobody would notice. So the artefact is
+# checked the way `just capture-virtual-geometry` is — by criteria a person and a gate can run, split
+# by what each needs.
+#
+#   world-artefact       needs NO device. Generate, cook, claim, place, simulate, and the crater that
+#                        round-trips through the persistence overlay. This is the part that can run
+#                        anywhere, and it is most of the claim.
+#   world-seed-control   the negative control, and it is what makes the one above a measurement: the
+#                        same seed twice gives the same world, and a DIFFERENT seed gives a different
+#                        one. A capture that was accidentally constant would look exactly like a
+#                        capture that was correct — the sample's own README says so and this is the
+#                        check behind that sentence.
+#   world-still          needs a device. Two runs at one seed draw the byte-identical still.
+#   world-budget-curve   task 7.3's curve, measured across the cycle rather than asserted at one
+#                        time of day.
+#   world-frame-budget   and the honest verdict on it, which is a DECLARED GAP: it does not hold one.
+
+[[criterion]]
+id = "world-artefact"
+describe = "**THE WORLD, WITH NO DEVICE AND NO CONTENT AT ALL** — no asset, no mesh and no texture anywhere in this artefact; the world is the seed. `cy::pcg` generates over regions, `cy::pcg-adapters` turns the accepted points into foliage CLUSTERS rather than entities, `cy::terrain` cooks the raster into tiles over three levels and CLAIMS `soil`, `cy::water` floats a spectral ocean and claims `water-depth`, `water-distance`, `water-flow` and `water-shore-wetness`, `cy::weather` builds a climate over terrain's own elevation and claims `wind`, `temperature`, `wetness`, `snow-depth` and fourteen more, `cy::foliage` READS the substrate and terrain's surface back out and plants tens of thousands, and `cy::rendering::sky` integrates the atmosphere. Then task 7.2: a crater stamped through `terrain::TerrainDeltaStore`, recorded into `world::PersistenceOverlay` as a subsystem blob, THE DELTA STORE CLEARED AND THE CRATER VERIFIED GONE, restored from the overlay alone, and every probe over its footprint compared bit for bit against the surface as it stood before the save. The program EXITS NON-ZERO if a probe disagrees or if none was compared, so this criterion is checking a check"
+source = "tasks 7.1, 7.2, ROADMAP M10"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+out="$("$d/samples/10-world/cy_sample_world" --headless --seconds 4 --fps 4 --seed 0x10C0FFEE 2>&1)" || {
+    echo "$out"; echo "the world did not build, or the persistence round trip failed"; exit 1; }
+echo "$out"
+echo "$out" | grep -q "=== the world, as its producers reported it ===" || {
+    echo "the producers' report is not in the output: it has been removed or renamed"; exit 1; }
+# `fields` rather than `weather`: the substrate's own line is where weather's work shows up in this
+# report — 23 fields declared and 19 claimed by four different producers — and the hour lines below
+# it carry the wind, the temperature and the snow. A module that stopped producing would drop the
+# claimed count, which is the number this asks for.
+for module in pcg terrain water foliage fields sky; do
+    echo "$out" | grep -qE "^  $module " || { echo "$module reported nothing: it is no longer in this world"; exit 1; }
+done
+# THE NUMBER IS `%u claimed` AND NOTHING ELSE ON THAT LINE IS MEASURED: the word "four" beside it
+# is a literal in the sample's own format string rather than a count of producers, so a criterion
+# that matched on it would be asserting a constant. What is asked for is a claimed count above zero
+# — a substrate every producer forgot to claim into would print `23 declared, 0 claimed`.
+echo "$out" | grep -qE "^  fields +[0-9]+ declared, [1-9][0-9]* claimed" || {
+    echo "no producer claimed a field: the substrate is declared and empty"; exit 1; }
+echo "$out" | grep -q "m10 task 7.2: a crater that survives a save" || {
+    echo "the persistence act is not in the output"; exit 1; }
+echo "$out" | grep -qE "and 0 of [1-9][0-9]* probes over the crater disagree" || {
+    echo "the crater did not round-trip bit for bit, or no probe was compared"; exit 1; }
+echo "seven modules reported, and the crater round-tripped with every probe agreeing"
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE NEGATIVE CONTROL, AND IT IS THE REASON THE CRITERION ABOVE IS A MEASUREMENT.
+#
+# M9's `multiplayer-control` is the shape and design.md §1.6's sentence is the reason: "a check that
+# cannot fail is not a check". A world that was accidentally CONSTANT — a generator whose seed reached
+# nothing — would satisfy "two runs agree" perfectly and would satisfy nothing else. So both
+# directions, in one criterion: the same seed reproduces the world, and a different seed does not.
+#
+# WALL-CLOCK MILLISECONDS ARE NORMALISED OUT AND NOTHING ELSE IS. The report prints how long each
+# stage took, which is this host's number rather than this world's; every other figure — region and
+# point counts, the program digest, tile counts, bytes resident, triangles, plants placed, the
+# crater's depths and probe counts, the sky's integrated directions — is compared verbatim.
+[[criterion]]
+id = "world-seed-control"
+describe = "**THE WORLD IS THE SEED, AND NOTHING ELSE — IN BOTH DIRECTIONS.** Two runs at one seed produce the identical report, figure for figure, with wall-clock milliseconds normalised out and nothing else touched; and a run at a DIFFERENT seed produces a different one. The second half is what makes the first a measurement rather than a tautology: a generator whose seed reached nothing would pass 'two runs agree' and fail nothing, which is precisely the accident a capture cannot be distinguished from by looking at it"
+source = "tasks 7.1, design.md §1.6 (a check that cannot fail is not a check)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+# TWO NORMALISATIONS, AND THE SECOND ONE IS A FINDING THIS CRITERION MADE ON ITS FIRST RUN. Wall
+# clock is this host's number rather than this world's, so `123.4 ms` goes. And the budget line
+# names WHICH FRAME WAS WORST — `(frame 1, sun +3.8 deg)` — which is chosen by the wall clock too:
+# two runs of one seed duly picked frame 1 and frame 0 and the criterion reported "the world is not
+# the seed" over a difference that is entirely the machine's. Both are normalised; every other
+# figure, and there are dozens, is compared verbatim.
+strip_timings() { sed -E 's/[0-9]+(\.[0-9]+)? ms/<ms>/g; s/\(frame [0-9]+, sun [-+0-9.]+ deg\)/(worst frame <n>)/g'; }
+# BOTH SEEDS ARE VALID HEXADECIMAL AND THAT IS NOT A DETAIL. `--seed` refuses a value it cannot
+# parse and exits 2; the sample's report then goes nowhere, the file is EMPTY, and an empty file
+# differs from a populated one — so a mistyped control seed would make the negative half of this
+# criterion pass by comparing a world against nothing. It is the exact shape of false green this
+# criterion exists to refuse, so each run is required to have produced a report.
+world() {
+    "$d/samples/10-world/cy_sample_world" --headless --seconds 2 --fps 2 --seed "$2" \
+        > "$work/$1.raw" || { cat "$work/$1.raw"; echo "the run at seed $2 did not complete"; exit 1; }
+    strip_timings < "$work/$1.raw" > "$work/$1.txt"
+    grep -q "the world, as its producers reported it" "$work/$1.txt" || {
+        echo "the run at seed $2 produced no report"; exit 1; }
+}
+world a 0x5EED
+world b 0x5EED
+world other 0x0FFBEEF
+if ! diff "$work/a.txt" "$work/b.txt"; then
+    echo "two runs at one seed disagree: the world is not the seed"; exit 1
+fi
+figures=$(grep -cE '[0-9]' "$work/a.txt")
+echo "two runs at seed 0x5EED agree on all $figures figure-bearing lines"
+if diff -q "$work/a.txt" "$work/other.txt" > /dev/null; then
+    echo "A DIFFERENT SEED PRODUCED THE IDENTICAL WORLD: the seed reaches nothing and the agreement above means nothing"
+    exit 1
+fi
+echo "a different seed produced a different world ($(diff "$work/a.txt" "$work/other.txt" | grep -c '^<') line(s) differ)"
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "world-still"
+describe = "**THE PICTURE IS A FUNCTION OF THE SEED TOO.** Two runs at one seed draw the byte-identical still on a device — which is the claim the committed `m10-world.png` rests on, and the one thing the headless criteria above cannot reach because they draw nothing. The still is written to a temporary path rather than over the committed file: a criterion that rewrote the artefact it is checking would always agree with itself"
+source = "tasks 7.1, 7.4"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+# `--frames` AS WELL AS `--still`, AND THAT IS NOT BELT AND BRACES. `main.cpp` opens the graphics
+# device only when `--frames` is given — `wants_pictures = !options.frames.empty() && !headless` —
+# so `--still` ON ITS OWN RUNS THE WHOLE WORLD, WRITES NOTHING AND EXITS ZERO WITHOUT SAYING SO.
+# This criterion was written that way first and reported "there is no device here after all" on a
+# machine that has one. Four frames at 640x360 is a few megabytes, which is why the take is short.
+for run in a b; do
+    mkdir -p "$work/$run"
+    "$d/samples/10-world/cy_sample_world" --frames "$work/$run" --still "$work/$run.png" \
+        --seconds 2 --fps 2 --width 640 --height 360 --seed 0x5EED > "$work/$run.log" 2>&1 || {
+        tail -20 "$work/$run.log"; echo "the take failed"; exit 1; }
+    test -s "$work/$run.png" || { tail -20 "$work/$run.log"; echo "no still was drawn: no graphics device answered"; exit 1; }
+done
+one=$(sha256sum "$work/a.png" | cut -d" " -f1)
+two=$(sha256sum "$work/b.png" | cut -d" " -f1)
+echo "$one"
+echo "$two"
+test "$one" = "$two" || { echo "two runs at one seed drew different pictures"; exit 1; }
+grep -E "vulkan validation errors" "$work/a.log" || true
+echo "two runs at one seed drew the byte-identical still"
+'''
+requires = "gpu"
+reason = "the still is drawn on a graphics device; on a machine with none the program reports which device it did not find and writes no frames, which must not read as a pass"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# TASK 7.3's OWN WORD IS "CURVE", AND IT IS THERE BECAUSE A MAXIMUM PRINTED IN A LOG IS EXACTLY THE
+# ASSERTION THAT TASK IS WRITTEN TO REFUSE. This criterion checks that the measurement EXISTS and has
+# the shape the task asks for — every frame, per producer, across a full day/night cycle with the sun
+# actually crossing the horizon in it. Whether the curve is any GOOD is the criterion after it, and
+# separating the two is the whole point: the measurement is real and the verdict is bad.
+[[criterion]]
+id = "world-budget-curve"
+describe = "**THE ENVIRONMENT DEMO'S FRAME BUDGET IS MEASURED AS A CURVE ACROSS THE CYCLE, NOT ASSERTED AT ONE TIME OF DAY.** `--budget <csv>` writes every frame's cost per producer; this requires the CSV to be a curve rather than a population — many rows, one per frame — to carry a per-producer column for each of the seven modules, and to cover a full day/night cycle with the sun genuinely above the horizon in some rows and below it in others. A summary line printed at noon would satisfy none of those"
+source = "tasks 7.3, ROADMAP M10"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+"$d/samples/10-world/cy_sample_world" --headless --seconds 8 --fps 8 --seed 0x5EED \
+    --budget "$work/budget.csv" > "$work/run.log" 2>&1 || { tail -20 "$work/run.log"; exit 1; }
+head -2 "$work/budget.csv"
+python3 - "$work/budget.csv" <<'CHECK'
+import csv, sys
+rows = list(csv.DictReader(open(sys.argv[1], newline="")))
+if len(rows) < 32:
+    sys.exit(f"the budget has {len(rows)} row(s): that is a sample, not a curve across a cycle")
+columns = set(rows[0])
+sun = next((name for name in columns if "sun" in name.lower()), "")
+if not sun:
+    sys.exit(f"no column reports the sun's elevation, so nothing says this is a CYCLE: {sorted(columns)}")
+elevations = [float(row[sun]) for row in rows]
+if max(elevations) <= 0.0 or min(elevations) >= 0.0:
+    sys.exit(f"the sun never crosses the horizon over the take ({min(elevations):.1f} to "
+             f"{max(elevations):.1f} deg): this is a time of day, not a cycle")
+# NOT `pcg`: generation runs once, before the take, and a per-frame column for it would be a
+# column of zeros. Its cost is in the build report the artefact prints instead.
+missing = [name for name in ("terrain", "water", "weather", "foliage", "sky")
+           if not any(name in column.lower() for column in columns)]
+if missing:
+    sys.exit(f"the curve attributes no cost to {', '.join(missing)}: "
+             f"a per-frame total is not a per-producer curve. Columns: {sorted(columns)}")
+# BY PRIORITY AND NOT BY COLUMN ORDER, AND THIS CRITERION GOT IT WRONG FIRST. The CSV's first
+# column is `frame` — the frame INDEX — and a search that accepted the first of
+# ("frame_ms", "frame", "total_ms") to appear in the header duly reported "frame cost 0.0 to
+# 63.0 ms" over a take of 64 frames. A cost column resolved to a counter is a measurement of
+# nothing that looks exactly like a measurement.
+frame = next((name for name in ("frame_ms", "total_ms", "frame") if name in columns), "")
+costs = [float(row[frame]) for row in rows] if frame else []
+print(f"{len(rows)} frames, {len(columns)} columns, sun from {min(elevations):.1f} to "
+      f"{max(elevations):.1f} deg"
+      + (f"; frame cost {min(costs):.1f} to {max(costs):.1f} ms" if costs else ""))
+CHECK
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE VERDICT, AND IT IS A DECLARED GAP RATHER THAN A MISSING CRITERION.
+#
+# tasks.md 7.3 asks the environment demo to HOLD its frame budget across a full day/night cycle. It
+# does not: about 122 ms mean and about 145 ms worst at 960x540, seven times a 60 Hz budget, nearly
+# flat across the cycle. The three largest bands are the substrate re-sampled at every terrain vertex
+# (63.0 ms — four `sample_deterministic()` calls at each of 152 000 vertices, every frame), the cloud
+# march (23.2 ms — 6 384 `compose_sky()` calls a frame) and water's foam field, and ALL THREE ARE
+# WORK A SHIPPING ENGINE WOULD DO IN A SHADER. They are the same three GPU debts six of M10's module
+# READMEs record against their own rows, which is why the rung that closes this is the rung that
+# writes `cy/field.slang` and a sky shader rather than a rung that optimises this loop.
+#
+# It is declared rather than omitted for `m8c:steam-audio-configures`' reason, and rather than
+# softened into "the budget is measured" for M6's: a milestone that quietly restates a requirement it
+# did not meet is doing the thing this ledger exists to prevent. `world-budget-curve` above is the
+# measurement and passes; this is the budget and fails.
+[[criterion]]
+id = "world-frame-budget"
+describe = "**THE ENVIRONMENT DEMO HOLDS ITS FRAME BUDGET ACROSS A FULL DAY/NIGHT CYCLE — AND IT DOES NOT.** Measured rather than asserted, which is what makes this a number instead of an opinion. With a device drawing, `just capture-world` at 960x540 measures about 122 ms mean and 145 ms worst; this criterion runs HEADLESS, so the submit-and-wait band is absent and it measures about 106 ms mean and 116 ms worst — SEVEN TIMES a 16.7 ms 60 Hz frame either way, which is the point. The three largest bands come out in the same order in both: the substrate re-sampled at every terrain vertex at 63.0 ms, the cloud march at 23.2 ms and water's foam field at 12.0 ms. The curve is nearly flat across the cycle and the only band that knows the time of day is the cloud march. This criterion asks for the worst frame of the take to be inside 16.7 ms and prints what it actually was, with the three bands beside it"
+source = "tasks 7.3, ROADMAP M10 (the environment demo holds its frame budget)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+"$d/samples/10-world/cy_sample_world" --headless --seconds 8 --fps 8 --seed 0x5EED \
+    --budget "$work/budget.csv" > "$work/run.log" 2>&1 || { tail -20 "$work/run.log"; exit 1; }
+grep -A 3 "task 7.3" "$work/run.log" || true
+python3 - "$work/budget.csv" <<'CHECK'
+import csv, sys
+BUDGET_MS = 1000.0 / 60.0
+rows = list(csv.DictReader(open(sys.argv[1], newline="")))
+# BY PRIORITY AND NOT BY COLUMN ORDER: the CSV's first column is `frame`, the frame INDEX, and
+# taking the first match in header order made this report the mean and maximum of a counter —
+# 31.5 ms and 63.0 ms over a 64-frame take — which is a number-shaped nothing. `frame_ms` first.
+frame = next((name for name in ("frame_ms", "total_ms") if name in rows[0]), "")
+if not frame:
+    sys.exit(f"no column reports the frame's cost: {sorted(rows[0])}")
+costs = sorted(float(row[frame]) for row in rows)
+mean = sum(costs) / len(costs)
+worst = costs[-1]
+# `producers_ms` is excluded because it is the SUM of the bands beside it: including it would
+# report the total as the largest band and say nothing about where the time goes.
+bands = {name: sum(float(row[name]) for row in rows) / len(rows)
+         for name in rows[0] if name.endswith("_ms") and name not in (frame, "producers_ms")}
+top = sorted(bands.items(), key=lambda pair: -pair[1])[:3]
+print(f"{len(rows)} frames: {mean:.1f} ms mean, {worst:.1f} ms worst, against a {BUDGET_MS:.1f} ms "
+      f"budget — {worst / BUDGET_MS:.1f}x over at the worst frame")
+print("  the three largest bands: " + ", ".join(f"{name} {value:.1f} ms" for name, value in top))
+sys.exit(0 if worst <= BUDGET_MS else 1)
+CHECK
+'''
+known_gap = "the environment demo costs about 122 ms a frame against a 16.7 ms budget, and the three bands that make it are the substrate re-sampled at every terrain vertex, the cloud march and water's foam field — all three of them work a shipping engine would do in a shader. M10 shipped no `.slang` module for an environment field, a terrain material, a water surface, grass expansion or a cloud march, and six of its module READMEs record that gap against their own rows. This closes when those shaders exist, not by optimising the CPU loop"
+known_gap_closes = "m11"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# --- The committed pictures -----------------------------------------------------------------------
+#
+# RULE 14, AND EACH ONE SAYS WHICH KIND IT IS ON ITS OWN FACE — M8.c's gate found that a picture which
+# does not say whether it is engine output or a drawing gets read as whichever of the two is more
+# flattering.
+#
+# WHY THESE ARE `kind = "path"` AND M9's THREE WERE REGENERATED AND COMPARED. M9's figures are drawn
+# from INTEGER counts — byte counts, rollback depths, substituted inputs — so a fresh run redraws
+# them byte-identically and staleness is detectable. M10's two engine-output figures are not of that
+# kind: `m10-world.png` is drawn ON A DEVICE, and `m10-world-budget.png` plots WALL-CLOCK
+# MILLISECONDS from this host, which the sample's own README measures as moving 2.3 ms of mean and
+# 6.6 ms of worst frame between six captures of one seed. A byte comparison would fail on a different
+# GPU or a busier machine, and a pixel tolerance wide enough to survive both would not detect a
+# changed curve either. So the determinism claim behind the picture is checked directly instead —
+# `world-still` above compares two fresh stills to each other on whatever device is present, and
+# `world-seed-control` compares the whole report — and these three criteria check that the committed
+# files are there. Saying which half is covered is better than a comparison that pretends.
+[[criterion]]
+id = "screenshot-world"
+describe = "THE ARTEFACT'S STILL: a generated world at 10:21, terrain shaded by soil and wetness and vegetation the substrate carries, a spectral ocean, snow on the windward hills and not on the ones behind them, and a cloud deck weather drives. ENGINE OUTPUT, drawn on a device by `just capture-world` from nothing but a seed — and the straight-edged slabs in the sky are the honest artefact of a 6 384-direction dome rather than a per-pixel cloud march, which the sample's README says on its own face"
+source = "tasks 7.4"
+kind = "path"
+path = "docs/design/images/m10-world.png"
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "screenshot-world-budget"
+describe = "the budget curve across the full cycle, per producer, per frame. ENGINE OUTPUT — every point is a number the run measured — and it is the picture of `world-frame-budget`'s declared gap: three bands that a shader would delete standing seven times over a 60 Hz frame"
+source = "tasks 7.3, 7.4"
+kind = "path"
+path = "docs/design/images/m10-world-budget.png"
+ci_job = "milestone-m10"
+
+[[criterion]]
+id = "screenshot-pcg-spike-matrix"
+describe = "the PCG spike's reproduction matrix: 24 configurations over 12 trials, partial regeneration against full, for output and for generated identity. A DIAGRAM rather than engine output, and design.md §1 labels it one — the spike lives outside this repository and `docs/roadmap/risks.md` says a spike may not be merged, so the matrix is the decision's record and not a regenerable figure"
+source = "tasks 0.3, design.md §1"
+kind = "path"
+path = "docs/design/images/m10-pcg-spike-matrix.png"
+ci_job = "milestone-m10"
+
+# THE VIDEO, AND IT IS A CRITERION BECAUSE IT IS THE HALF OF THE ARTEFACT A STILL CANNOT CARRY. A
+# single frame of a world is a single frame of a world; what M10 claims is that the sun crosses it, a
+# front moves through it, snow settles on the windward slope and thaws on the lee, the sea follows
+# the wind weather published and the trees lean with the same field. `just run.just`'s own comment
+# says exactly that, and a committed file nothing names is a file whose deletion nothing notices —
+# which is the finding M9's gate made about its seventh picture.
+[[criterion]]
+id = "video-world"
+describe = "THE TAKE: one simulated day at 1280x720, encoded from frames the sample wrote, because the sun crossing the world and a front moving through it are not things a still carries. ENGINE OUTPUT, from `just capture-world`, from nothing but a seed"
+source = "tasks 7.1, 7.4"
+kind = "path"
+path = "docs/design/videos/m10-world.mp4"
+ci_job = "milestone-m10"
+
+# --- What this milestone knows it did not finish ---------------------------------------------------
+#
+# FOUR DECLARED GAPS, counting `sky-field-round-trip` above and `world-frame-budget` before it. Each
+# RUNS on every evaluation, each PRINTS its failure with the rung that must close it, and a declared
+# gap that starts PASSING fails the ledger — so none of them can outlive itself. They are declared
+# rather than deleted for `m8c:steam-audio-configures`' reason: a milestone that quietly dropped a
+# requirement is repeating exactly what these gates keep finding.
+#
+# THREE OF THE FOUR ARE THE SAME GAP SEEN FROM THREE SIDES, and saying so is more useful than filing
+# them as three unrelated pieces of work. M10 shipped no `.slang` module for an environment field, a
+# terrain material, a water surface, grass expansion or a cloud march. That is why the substrate is
+# re-sampled at 152 000 terrain vertices on the processor every frame, why the sky is a 6 384-
+# direction dome rather than a per-pixel march, and why the artefact costs 122 ms a frame. The fourth
+# — `fields-one-vegetation-potential` — is unrelated and is a configuration defect rather than a
+# missing shader.
+#
+# THE FOURTH USED TO BE `fields-one-wind-declaration` AND IT IS CLOSED. The standard `wind` field had
+# two mutually exclusive declarations; `weather-and-wind` is the field's named producer, so foliage's
+# was deleted and foliage reads. The criterion is still below with its `known_gap` removed, pointed
+# at the regression that repair brought with it — `tests/integration/test_standard_fields.cpp`, every
+# field every producing module declares, into one registry, both ways round. THAT TEST FOUND A SECOND
+# PAIR IMMEDIATELY: `vegetation-potential`, declared `UNorm8`/`Static`/`Persistent` by foliage and
+# `UNorm16`/`SlowlyVarying`/`Authoritative` by weather's ecosystem half, refusing each other in
+# either order exactly as `wind` did. It is NOT the same repair — `wind` had a producer two
+# specifications name, while this pair is two rows' answers to "what does vegetation recover toward"
+# — so it is declared rather than decided here.
+
+# FOUND BY M10's OWN CLOSING GATE AND CLOSED IN THE SAME MILESTONE — WHICH IS WHY THIS CRITERION IS
+# STILL HERE AND NO LONGER CARRIES A `known_gap`.
+#
+# `environment-fields` lists the standard field names for one stated reason — "they are listed so
+# that two rows naming `wetness` name one field" — and `FieldRegistry::declare()` enforces it: an
+# identical re-declaration is accepted and a DIFFERENT one is refused, because widening a range or
+# changing an encoding changes what every already-stored byte means. A classification is in that
+# comparison, and it has to be: `wind` being authoritative in one module and presentation-only in
+# another is not a formatting difference, it is two different answers to "may gameplay read this".
+#
+# TWO MODULES ANSWERED IT DIFFERENTLY AND ONE OF THEM WAS WRONG. `foliage::wind_field_declaration()`
+# declared `environment::fields::kWind` as `SimulationClass::Presentation`, "for a world that has no
+# weather row yet"; `weather::weather_field_declaration(WeatherField::Wind, …)` declares the same
+# field `SimulationClass::Authoritative`. Three requirements settle it for weather, and none of them
+# is about which module came first: `weather-and-wind`'s "where weather affects gameplay — visibility
+# affecting detection, WIND AFFECTING PROJECTILES — that state SHALL be authoritative";
+# `environment-fields` naming `weather-and-wind` as the wind field's producer; and weather's own
+# passing `integration.weather_fields`, which requires `FieldReader::open(wind, Authoritative)` to
+# succeed and cannot under a presentation declaration. **So foliage's declaration is deleted and
+# foliage READS.** src/foliage/include/cy/foliage/wind.h carries the reasoning in the space it left,
+# and `unit.foliage` now links `cy::weather` to take the field from the row that produces it rather
+# than declaring a second copy in a fixture.
+#
+# WHY NOTHING CAUGHT IT, AND WHAT DOES NOW. No target in the tree declared both: each module's suite
+# links one of the two, and samples/10-world links both but takes `wind` from weather and never
+# called foliage's factory. The defect was a SEAM between two modules, which is the class a
+# per-module suite is structurally unable to see — so the repair brought a regression with it,
+# `tests/integration/test_standard_fields.cpp`. It links every row that declares a field, registers
+# each through the entry point a project calls, reads each module's declarations back out of its own
+# registry rather than restating them, and declares the lot into one registry BOTH WAYS ROUND.
+#
+# THE FIRST THING THAT TEST DID WAS FIND A SECOND PAIR. `fields-one-vegetation-potential` below is
+# it, declared as a gap rather than repaired here, and the reason is in its own note.
+[[criterion]]
+id = "fields-one-wind-declaration"
+describe = "**EVERY DECLARATION OF A STANDARD FIELD NAME, FROM EVERY MODULE THAT MAKES ONE, INTO ONE REGISTRY, IN EITHER ORDER — ALL ACCEPTED.** `foliage::wind_field_declaration()` declared `environment::fields::kWind` Presentation while `weather::weather_field_declaration(WeatherField::Wind, …)` declares it Authoritative, and `FieldRegistry::declare()` refuses the second of two DIFFERENT declarations in either order — so a project that used `cy::foliage` and `cy::weather` together failed at startup, and no per-module suite could see it because no target in the tree declared both. `weather-and-wind` is the field's producer by its own requirement, by `environment-fields` and by weather's own passing test, so foliage's declaration is gone and foliage reads. The check registers terrain, water, weather, foliage and sky into one registry forwards and backwards and judges the number of refused standard names, which is a number the suite measures rather than a word it prints"
+source = "M10 gate and its repair; environment-fields (the standard field names), foliage, weather-and-wind"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# `-V` AND NOT `--output-on-failure`, for `sky-field-round-trip`'s reason two hundred lines above:
+# the line this judges is printed by a case that PASSES, and `--output-on-failure` prints nothing
+# for a suite that passes.
+#
+# AND THE SUITE'S EXIT CODE IS DELIBERATELY NOT WHAT IS JUDGED. Its second case asserts the state of
+# `fields-one-vegetation-potential` — the declared gap below — so that suite goes red on the day
+# that gap CLOSES. Reading the count off the `standard fields:` line keeps this criterion about the
+# standard names and nothing else; the line is printed whether the case passed or failed.
+out="$(ctest --test-dir "$d" -R '^integration.standard_fields$' -V 2>&1 || true)"
+line="$(printf '%s\n' "$out" | grep -o 'standard fields: .*' | head -1)"
+test -n "$line" || { echo "the standard-field composition case did not run — it has been renamed or deleted"; exit 1; }
+echo "$line"
+printf '%s\n' "$out" | grep -oE "the standard field '[a-z-]+' is declared by .*" | head -5
+printf '%s\n' "$line" | python3 -c '
+import re, sys
+line = sys.stdin.read()
+found = re.search(r"([0-9]+) declaration\(s\) of ([0-9]+) standard name\(s\), refused ([0-9]+)", line)
+if not found:
+    sys.exit("the summary line no longer reports declarations, names and refusals")
+declarations, names, refused = (int(found.group(index)) for index in (1, 2, 3))
+if names < 8:
+    sys.exit(f"only {names} of the twelve standard names are declared by any module: a composition "
+             f"this thin would accept every declaration for want of a second one")
+if refused:
+    sys.exit(f"{refused} declaration(s) of a standard field name were refused: two modules declare "
+             f"one standard field differently, and a project using both rows fails at startup")
+print(f"{declarations} declaration(s) of {names} standard name(s) compose in one registry, "
+      f"both ways round, with none refused")
+'
+'''
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE PAIR THE WIND REPAIR'S OWN REGRESSION TEST FOUND ON ITS FIRST RUN.
+#
+# `vegetation-potential` is not a standard name — neither `environment::fields` nor any
+# specification lists it — so it is two MODULE-PRIVATE namespaces colliding, which is the same
+# defect one layer down. `foliage::vegetation_potential_declaration()` declares it `UNorm8`,
+# `Static`, one level, `Persistent`, as the potential its own `vegetation` field recovers toward;
+# `weather::weather_field_declaration(WeatherField::VegetationPotential, …)` declares it `UNorm16`,
+# `SlowlyVarying`, three levels, `Authoritative`, as the potential `vegetation-density` recovers
+# toward. No configuration reconciles them and each refuses the other, so `FoliageSystem::
+# register_producer()` and `WeatherFields::declare()` cannot both run against one registry with the
+# ecosystem half on.
+#
+# WHY IT IS DECLARED HERE RATHER THAN REPAIRED. The `wind` pair had an answer written down three
+# times over — a named producer and a requirement about projectiles. This pair does not. Behind it
+# is a larger question the two rows have never been asked together: foliage's `vegetation` is the
+# density its placement actually achieved and weather's `vegetation-density` is the ecosystem state
+# that drives placement, and `weather-and-wind`'s "weather and environment SHALL maintain macro
+# ecosystem state as fields — vegetation density …" says which row owns the ecosystem. Whether those
+# are one quantity with two names — and therefore whether foliage should be producing a vegetation
+# field at all — is a modelling decision across two rows, and a gate-closing phase is the wrong place
+# to take it quietly.
+[[criterion]]
+id = "fields-one-vegetation-potential"
+describe = "**`vegetation-potential` HAS TWO MUTUALLY EXCLUSIVE DECLARATIONS AND A PROJECT USING `cy::foliage` AND `cy::weather` STILL FAILS AT STARTUP.** foliage declares it UNorm8/Static/one level/Persistent as the potential its own `vegetation` field recovers toward; weather's ecosystem half declares it UNorm16/SlowlyVarying/three levels/Authoritative as the potential `vegetation-density` recovers toward. `FieldRegistry::declare()` refuses the second in either order. The check runs the same composition the criterion above does and requires NO refusal anywhere in it, not merely none among the standard names"
+source = "M10 close; tests/integration/test_standard_fields.cpp; environment-fields, foliage, weather-and-wind"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+out="$(ctest --test-dir "$d" -R '^integration.standard_fields$' -V 2>&1 || true)"
+line="$(printf '%s\n' "$out" | grep -o 'composition: .*' | head -1)"
+test -n "$line" || { echo "the whole-composition case did not run — it has been renamed or deleted"; exit 1; }
+echo "$line"
+printf '%s\n' "$line" | python3 -c '
+import re, sys
+line = sys.stdin.read()
+found = re.search(r"refused forwards ([0-9]+), backwards ([0-9]+)", line)
+if not found:
+    sys.exit("the composition line no longer reports refusals in both directions")
+forwards, backwards = int(found.group(1)), int(found.group(2))
+if forwards or backwards:
+    sys.exit(f"{forwards} refused declaring forwards and {backwards} backwards: two modules declare "
+             f"one field differently and the substrate refuses the second, so a project that "
+             f"registers both rows fails at startup")
+print("every field every producing module declares composes in one registry, both ways round")
+'
+'''
+known_gap = "`vegetation-potential` is declared UNorm8/Static/Persistent by `cy::foliage` and UNorm16/SlowlyVarying/Authoritative by `cy::weather`'s ecosystem half, and `FieldRegistry::declare()` refuses the second in either order — so a project that registers both rows' producers fails at startup, which is the `wind` defect again one namespace down. Closing it means deciding whether foliage's realised `vegetation` density and weather's ecosystem `vegetation-density` are one quantity — `weather-and-wind` gives the ecosystem to weather — and then one of the two declarations, or one of the two producers, goes away"
+known_gap_closes = "m11"
+timeout_s = 7200
+ci_job = "milestone-m10"
+
+# THE OTHER HALF OF `environment-fields`' "CPU AND GPU ACCESS", AND src/environment/README.md SAYS SO
+# IN ITS OWN WORDS: "`environment-fields`' 'CPU and GPU access' requirement is therefore
+# HALF-DISCHARGED here, and the half that is missing is the device."
+#
+# `fields-gpu-agreement` above is real and is not this: it packs the tile table into the buffer layout
+# `gpu.h` fixes and decodes it with a SECOND implementation that calls neither `decode_value()` nor
+# `combine_layers()`, which is evidence rather than one implementation called twice. What it does not
+# do is run that decode on a device. No `.slang` module samples an environment field anywhere in this
+# tree, which is why the artefact re-samples the substrate at 152 000 terrain vertices ON THE
+# PROCESSOR every frame and why `world-frame-budget` above is 63 ms of one band.
+[[criterion]]
+id = "fields-sampled-on-a-device"
+describe = "**AN ENVIRONMENT FIELD IS SAMPLED IN A SHADER, AND NO SHADER IN THIS TREE SAMPLES ONE.** `environment-fields` requires CPU and GPU access to the same field; `gpu.h` fixes and documents the buffer layout and `integration.environment_gpu` proves the decode agrees — on the processor, twice. The device half needs a `.slang` module written against that layout, bound through the GPU scene, and measured against a real device, and it does not exist. Six of M10's module READMEs record the same absence against their own rows: no shader for an environment field, a terrain material, a water surface, grass expansion or a cloud march. The check looks for a shader module that reads the field buffer"
+source = "tasks 1.1, environment-fields (CPU and GPU access), src/environment/README.md"
+kind = "command"
+run = '''
+set -eo pipefail
+shaders=$(grep -rl "FieldImageHeader\|field_image\|kFieldImage" --include='*.slang' src/ 2>/dev/null || true)
+count=$(printf '%s' "$shaders" | grep -c . || true)
+echo "$count .slang module(s) sample an environment field: ${shaders:-none}"
+if [ "$count" -eq 0 ]; then
+    echo "  the buffer layout is fixed and tested on the processor and nothing on a device reads it,"
+    echo "  so 'CPU and GPU access to the same field' is half-discharged. It is also the largest"
+    echo "  single band in samples/10-world's frame: 63 ms of substrate re-sampled per terrain"
+    echo "  vertex, which a field sampler in a shader deletes rather than reduces."
+fi
+test "$count" -gt 0
+'''
+known_gap = "no `.slang` module samples an environment field, so `environment-fields`' CPU-and-GPU-access requirement is discharged on the processor only. It is the same gap that makes the artefact cost 122 ms a frame and the same gap six of M10's module READMEs record against terrain materials, water surfaces, grass expansion and the cloud march. Closing it is `cy/field.slang` written against the layout `gpu.h` already fixes, bound through the GPU scene, and measured against a device"
+known_gap_closes = "m11"
+ci_job = "milestone-m10"
+
+# --- Section 8: the record, the tiers, and the next rung -------------------------------------------
+
+# TASK 8.2, AND THE DOUBLE-STAR GLOB IS THE POINT. m6.toml's own comment says why: a change lives at
+# `openspec/changes/<name>/` while it is open and at `openspec/changes/archive/<date>-<name>/` once
+# it closes, so a pattern that only matched an open change would turn red on the day the next
+# milestone closed — which is the one day this criterion should be most satisfied. `**` matches both
+# depths.
+#
+# AT THE TIME THIS FILE WAS WRITTEN IT FAILS, AND IT IS MEANT TO, exactly as m8c.toml's `m9-open` and
+# m9.toml's `m10-open` did before it: `openspec/changes/` holds `implement-m10-worlds` and no
+# `implement-m11-*`. Task 8.5 is what closes it. The next rung IS M11 — `record.MILESTONES` carries
+# m11 after m10 and no further split has been declared — and it is the rung that owns the platform
+# matrix, which is where three of this file's own gaps point.
+[[criterion]]
+id = "m11-open"
+describe = "the change for the next rung exists — open, or closed and archived — so the ladder continues deliberately. That rung is M11, which `record.MILESTONES` already carries after m10, and which this milestone hands four things: `sky-field-round-trip`, `fields-one-vegetation-potential`, `world-frame-budget` and the two questions this host cannot ask"
+source = "tasks 8.5, delivery-roadmap"
+kind = "path"
+path = "openspec/changes/**/*m11*/proposal.md"
+ci_job = "milestone-m10"
+
+# THE CHECK M9's GATE ADDED, POINTED AT THIS MILESTONE'S OWN COLUMN, AND IT IS NOT MILESTONE-SPECIFIC
+# IN SHAPE. `plan-consistency` compares the plan documents WITH EACH OTHER and they agree;
+# `roadmap-record` compares the record with `openspec/specs/`; `roadmap-tiers` compares the record
+# with the rows this ledger names. Nothing compared THE COLUMN WITH THE RECORD until M9 wrote this,
+# and the six cells it found had been parked in M9's column since the plan was first drawn.
+#
+# THE M10 COLUMN HAS THE SAME SHAPE OF CELL IN IT. Besides the eleven rows this milestone proposed,
+# it carries Complete cells for `navigation`, `rendering-global-illumination` and
+# `world-partition-and-streaming` — three rows M10 never proposed, never touched and never audited.
+# This criterion is what refuses to let them close silently: either the work is done and the record
+# says so, or the cells move, and both are deliberate acts rather than an omission nobody noticed.
+[[criterion]]
+id = "record-matches-plan"
+describe = "**EVERY TIER THE M10 COLUMN OF THE CAPABILITY MATRIX CLAIMS IS A TIER THE STATUS RECORD SUPPORTS.** The comparison no check made before M9's gate wrote it, pointed at this milestone's column — which carries not only the eleven rows M10 proposed but Complete cells for `navigation`, `rendering-global-illumination` and `world-partition-and-streaming`, three rows this milestone never examined. A cell that outlives its evidence is how a plan comes to claim more than a tree contains, and this is the check that makes moving one a deliberate act"
+source = "tasks 8.3, 9.4, delivery-roadmap"
+kind = "command"
+run = '''
+python3 - <<'CHECK'
+import sys
+sys.path.insert(0, "tools/roadmap")
+import plan, record
+
+matrix = plan.read_matrix()
+recorded = {e.capability: e for e in record.load()}
+short = []
+cells = 0
+for capability, columns in sorted(matrix.cells.items()):
+    planned = columns.get("m10")
+    if planned is None:
+        continue
+    cells += 1
+    have = recorded.get(capability)
+    tier = have.tier if have else "none"
+    # `plan.TIERS` IS ("seed", "working", "complete") AND DOES NOT CARRY "none", so ranking an
+    # unrecorded capability raises rather than reporting. M9 declared this check with
+    # `plan.tier_rank(tier)` reached unconditionally and never met the case, because every
+    # capability in its column was already recorded at some tier. SEVEN OF M10's ARE AT `none`
+    # UNTIL TASK 8.3 WRITES THEM, so the unrecorded case is the normal one here and a criterion
+    # that raised a ValueError would be failing for a reason that is about this script.
+    if have is None or tier not in plan.TIERS:
+        short.append(f"  {capability}: the M10 column plans {planned} and the record holds "
+                     f"nothing yet")
+    elif plan.tier_rank(tier) < plan.tier_rank(planned):
+        short.append(f"  {capability}: the M10 column plans {planned} and the record holds {tier}"
+                     + (f" from {have.milestone}" if have.milestone else ""))
+print(f"the M10 column carries {cells} cell(s); {len(short)} of them exceed the status record")
+for line in short:
+    print(line)
+sys.exit(1 if short else 0)
+CHECK
+'''
+ci_job = "milestone-m10"
+
+# THE TIER FLOOR, AND THE ONE ROW THIS MILESTONE WAS ASKED TO COMPLETE AND DID NOT.
+#
+# M10's row planned EIGHT cells to Working and THREE to Complete. The eight landed. Of the three:
+#
+#   diagnostics-profiling-and-crash  COMPLETE. Both of M9's declared gaps were closed here and the
+#                                    declarations DELETED from m9.toml in the change that closed
+#                                    them — `CY_BREADCRUMB` adopted at `Simulation::step`,
+#                                    `Simulation::run_stage`, `AssetSystemImpl::publish`,
+#                                    `CellActivation::publish` and `SaveService::perform_write`,
+#                                    each asserted by its own module's suite; and a module table
+#                                    captured at install time through `dl_iterate_phdr` so a produced
+#                                    crash artefact carries a basename and an offset rather than the
+#                                    build machine's path. `m9:breadcrumbs-adopted` and
+#                                    `m9:crash-artefact-paths` are in the permanent set this ledger
+#                                    inherits and still run, which is why they are not restated here.
+#   gameplay-framework               COMPLETE. `m9:gameplay-benchmarks` closed the same way:
+#                                    `benchmarks/gameplay/` with five committed thresholds over the
+#                                    five rows of the specification's table a measurement can speak
+#                                    to, the two it cannot named in `bench_gameplay.cpp` with the
+#                                    reason, and the frame-time fraction the table's last sentence
+#                                    asks for in benchmarks/README.md.
+#   save-and-persistence             **NOT COMPLETE, AND THIS IS ITS SECOND DEMOTION.** tasks.md 6.2
+#                                    is unticked: confidentiality over the existing container needs a
+#                                    vetted AEAD, which is a dependency decision through
+#                                    `thirdparty-dependencies` rather than a coding task, and
+#                                    conflict resolution is unstarted. design.md §4 wrote down in
+#                                    advance what a second demotion of the same row means — "the row
+#                                    is mis-scoped rather than late… that is a finding about the
+#                                    plan, and it belongs in the next milestone's proposal rather
+#                                    than in its gate" — so it is recorded here at `working`, and the
+#                                    finding travels to M11's proposal.
+#
+# Eleven rows, ten of them where the plan said they would be. The eleventh is named rather than
+# claimed thin, which is the practice every gate since M5 has kept.
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this milestone's exit tiers: SEVEN capabilities from nothing or Seed to Working, an eighth — `vfx-system` — advanced from Seed on the GPU compute path M8.c deferred here, and of the three rows M9 demoted, two completed and ONE DEMOTED A SECOND TIME. `save-and-persistence` is recorded at Working, not Complete: task 6.2 is unticked, its confidentiality half is a vetted-AEAD dependency decision and its conflict resolution is unstarted. design.md §4 says what a second demotion means and it is said here rather than absorbed"
+source = "tasks 8.3, ROADMAP M10, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m10"
+
+[criterion.expect_tiers]
+environment-fields = "working"
+terrain = "working"
+water = "working"
+foliage = "working"
+weather-and-wind = "working"
+atmosphere-sky-and-clouds = "working"
+procedural-content-generation = "working"
+vfx-system = "working"
+diagnostics-profiling-and-crash = "complete"
+gameplay-framework = "complete"
+save-and-persistence = "working"
+
+# --- The whole tree, in every profile -------------------------------------------------------------
+#
+# THE IDENTICAL STRING ELEVEN EARLIER LEDGERS USED. `criteria.fingerprint` collapses declarations
+# that do the same work, so declaring it here COLLAPSES all of them into one run of it, reported as
+# `m1:four-profiles`. That is the whole point of the flat ledger and the reason this string must not
+# be "improved" here.
+#
+# WHAT IT HAS TO SWALLOW AT THIS MILESTONE: seven new modules, an eighth module half that is only
+# declared when a rendering backend is, a determinism test kind that did not exist, and a sample
+# whose link line names all seven modules and whose Vulkan backend is a LINK-TIME choice rather than
+# a compile-time one — so `-D CY_RENDERER_VULKAN=OFF` still builds it, still runs the whole world
+# headless, and still has to pass.
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each — including src/environment/, src/terrain/, src/water/, src/foliage/, src/weather/, src/pcg/, src/vfx/gpu/, tests/determinism/ and samples/10-world. M8.c's gate found its artefact red in Debug because nobody had looked; this milestone's artefact is a world whose every reported figure is a count or a digest rather than a timing, precisely so that the four profiles have to agree about it"
+source = "tasks 9.1"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"

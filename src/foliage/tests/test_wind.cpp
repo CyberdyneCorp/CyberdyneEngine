@@ -6,6 +6,7 @@
 #include <cy/environment/field.h>
 #include <cy/environment/store.h>
 #include <cy/foliage/wind.h>
+#include <cy/weather/fields.h>
 
 #include "fixtures.h"
 
@@ -23,13 +24,36 @@ using cy::foliage::resolve_wind_detail;
 using cy::foliage::species_id;
 using cy::foliage::SpeciesLibrary;
 using cy::foliage::VertexParameters;
-using cy::foliage::wind_field_declaration;
 using cy::foliage::WindDetail;
 using cy::foliage::WindDisplacement;
 using cy::foliage::WindSampler;
 using cy::foliage::WindTuning;
 
 namespace {
+
+/// The `wind` field as the engine declares it — WEATHER'S DECLARATION, reached by linking
+/// `cy::weather` into this suite on purpose.
+///
+/// `environment-fields` names `weather-and-wind` as the producer of `wind` and lists the standard
+/// names "so that two rows naming one quantity name one field". Foliage used to carry a second,
+/// `Presentation` declaration of the same name for worlds with no weather row, and the two refused
+/// each other at `FieldRegistry::declare()` in either order — M10's gate found it, and
+/// tests/integration/test_standard_fields.cpp is the regression. A fixture that declared its own
+/// copy here would put that second declaration straight back, so this suite reads the one the
+/// producer declares. Foliage reading an `Authoritative` field as `Presentation` is
+/// `determinism::may_read()`'s first row.
+///
+/// The options carry this suite's geometry and nothing else: 128 m macro cells, so each cluster of
+/// `build_row()` sits on its own lattice point, and the four vertical cells `write_gust()` fills.
+[[nodiscard]] cy::environment::FieldDeclaration wind_declaration() noexcept {
+    cy::weather::WeatherFieldOptions options;
+    options.local_cell_metres = 8.0F;
+    options.regional_cell_metres = 32.0F;
+    options.macro_cell_metres = 128.0F;
+    options.wind_vertical_cells = 4;
+    options.wind_vertical_metres = 25.0F;
+    return cy::weather::weather_field_declaration(cy::weather::WeatherField::Wind, options);
+}
 
 /// A world with a declared wind field, a producer, and a gust somewhere in it.
 struct WindWorld {
@@ -41,7 +65,7 @@ struct WindWorld {
         : registry(test::allocator()), fields(test::allocator(), registry, test::partition()) {}
 
     [[nodiscard]] cy::Status open() noexcept {
-        if (cy::Status declared = registry.declare(wind_field_declaration(16.0F)); !declared) {
+        if (cy::Status declared = registry.declare(wind_declaration()); !declared) {
             return declared;
         }
         auto claimed = registry.claim(cy::environment::field_id(cy::environment::fields::kWind),
@@ -131,12 +155,12 @@ struct WindWorld {
 
 }  // namespace
 
-CY_TEST_CASE("foliage declares the wind field but does not claim it") {
-    // `environment-fields` names `weather-and-wind` as the wind field's producer. Foliage declaring
-    // it AND claiming it would be exactly the "two systems writing one field" the substrate exists
-    // to refuse — so it declares and reads, and the refusal below is what says so.
+CY_TEST_CASE("foliage neither declares nor claims the wind field") {
+    // `environment-fields` names `weather-and-wind` as the wind field's producer, and foliage
+    // neither declares it (the declaration below is weather's, and it is the only one in the tree)
+    // nor claims it. The refusal is what says so.
     cy::environment::FieldRegistry registry(test::allocator());
-    CY_REQUIRE(registry.declare(wind_field_declaration(16.0F)).has_value());
+    CY_REQUIRE(registry.declare(wind_declaration()).has_value());
     const auto wind = cy::environment::field_id(cy::environment::fields::kWind);
 
     auto weather = registry.claim(wind, "weather.wind", cy::environment::ProducerKind::System);

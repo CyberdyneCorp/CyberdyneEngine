@@ -84,7 +84,13 @@ struct FrameReport {
     u64 visible_clusters = 0;
     u32 interior_covered = 0;
     u32 exterior_covered = 0;
+    /// Bins that received at least one pixel over the whole run.
     u32 materials_seen = 0;
+    /// Bins the SCENE PLACES — every cluster's material plus its instance's offset, over every
+    /// instance, whether it was drawn or not. `materials_seen` is checked against this rather than
+    /// against "more than one": the visibility buffer's depth/payload race showed up as this number
+    /// flipping between 4 and 5 across identical runs, and a floor of one never saw it.
+    u32 materials_placed = 0;
     bool overflowed = false;
     bool levels_exhausted = false;
 };
@@ -99,10 +105,10 @@ struct Capture {
         : samples(allocator), resolved(allocator), visible(allocator) {}
     Array<rendering::vg::VisibilitySample> samples;
     Array<Vec4> resolved;
-    /// The traversal's visible list for the same frame. A sample's `visible` is an index INTO this,
-    /// and that index is traversal order — which is atomic append order and therefore differs run
-    /// to run. The stable identity of a patch is the (instance, cluster) pair found here, so any
-    /// picture that must be reproducible has to colour by that rather than by the index.
+    /// The traversal's visible list for the same frame, kept for a caller that wants the cluster
+    /// records themselves. A sample does NOT index it: `VisibilitySample::surface` is the stable
+    /// `instance * cluster_stride + cluster` identity, which is what makes a picture coloured by a
+    /// pixel's cluster reproducible. This list's ORDER is still atomic-append order.
     Array<rendering::vg::VisibleCluster> visible;
 };
 

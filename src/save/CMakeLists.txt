@@ -40,6 +40,7 @@ cy_add_module(
     SOURCES
         src/archive.cpp
         src/checkpoint.cpp
+        src/conflict.cpp
         src/container.cpp
         src/identity.cpp
         src/overlay.cpp

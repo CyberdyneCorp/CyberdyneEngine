@@ -5,6 +5,7 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/replay/crash.h>
 
+#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -68,6 +69,28 @@ template <class T>
 template <class T>
 [[nodiscard]] Span<const u8> encode(const T& value) noexcept {
     return {reinterpret_cast<const u8*>(&value), sizeof(T)};
+}
+
+/// WHAT THIS SESSION ASKS OF THE RELIABILITY LAYER, derived from its own conditions rather than
+/// chosen. The default `RetransmitPolicy` waits 100 ms, doubles to a second and gives up after ten
+/// attempts — a 7.5 s recovery horizon, which is LONGER THAN THIS WHOLE SESSION. At 25 % loss a
+/// datagram unlucky five times running is therefore still waiting when the match ends, and the
+/// client holding the gap never converges: `m9:reliable-channel-stalls-under-loss`'s second half,
+/// measured here at three seeds in six before the policy was stated.
+///
+/// So the backoff is capped at TWO ROUND TRIPS instead of at a second. Ten attempts then span
+/// 100 + 200 x 8 = 1.7 s, which fits inside the drain this session already runs, and the chance of
+/// losing all ten at 25 % is one in a million per datagram instead of one in a thousand at five.
+[[nodiscard]] net::RetransmitPolicy session_retransmit_policy(
+    const SessionOptions& options) noexcept {
+    // A floor of two ticks, because a perfect network would otherwise ask for a round trip of zero
+    // and retransmit everything on every advance.
+    const u32 round_trip_ms = std::max<u32>((options.latency_ms * 2) + options.jitter_ms,
+                                            static_cast<u32>(kTickMillis) * 2);
+    net::RetransmitPolicy policy;
+    policy.initial_timeout_ms = round_trip_ms;
+    policy.maximum_timeout_ms = round_trip_ms * 2;
+    return policy;
 }
 
 [[nodiscard]] bool same_intent(const MoveIntent& left, const MoveIntent& right) noexcept {
@@ -469,6 +492,8 @@ bool NetworkedSession::build() noexcept {
     if (host_transport_ == nullptr) {
         return false;
     }
+    const net::RetransmitPolicy policy = session_retransmit_policy(options_);
+    host_transport_->set_retransmit_policy(policy);
 
     static const char* const kNames[kPlayers] = {"player-0", "player-1", "player-2", "player-3"};
     for (u32 player = 0; player < kPlayers; ++player) {
@@ -482,6 +507,7 @@ bool NetworkedSession::build() noexcept {
         if (transport == nullptr || !client_transports_.push_back(transport)) {
             return false;
         }
+        transport->set_retransmit_policy(policy);
         auto* client =
             make<Client>(session_allocator(), player, options_, manifest_, *transport, host_id_);
         if (client == nullptr || !clients_.push_back(client) || !client->build()) {
@@ -529,6 +555,18 @@ void NetworkedSession::on_host_effect(void* user, u64 kind, u64 instance) noexce
         ++self->host_explosions_;
         (void)self->recorder_.record_effect(kind, instance);
     }
+}
+
+u32 NetworkedSession::abandoned_links() const noexcept {
+    // BOTH DIRECTIONS OF ALL FOUR LINKS. The host's reliable broadcast is the one that can stall,
+    // but a session that only asked the sender would not notice a client whose own endpoint had
+    // given up, and "nobody was looking" is the failure this counter exists to end.
+    u32 total = 0;
+    for (u32 player = 0; player < kPlayers; ++player) {
+        total += host_transport_->stats(client_ids_[player]).reliable_abandoned ? 1U : 0U;
+        total += client_transports_[player]->stats(host_id_).reliable_abandoned ? 1U : 0U;
+    }
+    return total;
 }
 
 void NetworkedSession::advance_transports(u64 now_ms) noexcept {
@@ -706,6 +744,7 @@ bool NetworkedSession::run() noexcept {
     built_ = false;
 
     report_.ticks_simulated = options_.ticks;
+    report_.abandoned_links = abandoned_links();
     report_.datagrams_offered = network_.offered();
     report_.datagrams_dropped = network_.dropped();
     report_.datagrams_duplicated = network_.duplicated();

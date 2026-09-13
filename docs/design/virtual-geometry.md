@@ -67,20 +67,43 @@ makes:
 the triangles have reached pixel size — which is the regime the whole cluster hierarchy exists to
 make affordable.*
 
-## What these images do not show
+## These images are reproducible exactly
 
-They are reproducible to **one to three pixels in 921,593** (0.0003%), not exactly. Where two
-surfaces tie on the depth key exactly — neighbouring clusters meeting on a shared edge — the winner
-is broken by the traversal's append order, which is atomic and permutes between runs. Removing that
-residue needs a stable cluster identity in the raster payload rather than the visible index.
+Three identical runs of `cy_fidelity_capture` at 1280x720, threshold 1 px, compared pixel for pixel:
 
-It used to be **110 to 150 pixels**, and that was a different and worse thing: `vgVisRaster` settled
-depth with an atomic and then wrote the payload as a separate, unordered store, so a *farther*
-surface could take a pixel simply by storing last. Depth and payload are now one 64-bit atomic, and
-[`test_visbuffer.cpp`](../../src/rendering/virtual_geometry/tests/test_visbuffer.cpp) renders one
-frame six times and requires the resolve and the bin counts to match — it fails on the old raster.
-That defect was found by making these pictures.
+| View | Differing pixels of 921,600 |
+|---|---|
+| shaded — the resolved world normal | **0** |
+| clusters — one colour per cluster | **0** |
+| triangles — one colour per triangle | **0** |
 
-For the same reason the capture colours clusters by the stable `(instance, cluster)` pair rather
-than by the visibility sample's `visible` index: that index is traversal *append* order, which
-differs every run and repaints the entire image.
+That took two fixes, and both were found by making these pictures rather than by a gate.
+
+**First, depth and the payload were two unordered writes.** `vgVisRaster` settled depth with an
+atomic and then stored `visbuffer[pixel]` separately, so a *farther* surface could take a pixel
+simply by storing last: **110 to 150 pixels** moved between identical runs. They are one 64-bit
+atomic minimum now — the depth key in the high half, the payload in the low half.
+
+**Then an exact tie was still broken by append order.** Where two surfaces tie on the depth key
+exactly, the 64-bit minimum is decided by the payload alone, and the payload carried the index of
+the traversal's visible-cluster record — the slot an `InterlockedAdd` handed out, which permutes run
+to run. That left **one pixel** moving in the shaded view and **two to five** in the triangle view,
+and it repainted **883,921 to 886,414 pixels** of the cluster view, because the number a pixel held
+named the same cluster differently on each run.
+
+The payload's first word is now `instance * cluster_stride + cluster` — the traversal's own DAG mark
+index, a pure function of the scene — and every pass after the raster derives the material from it
+instead of indexing that list. An exact tie goes to the lower instance, and to the lower cluster
+within it, on every run.
+
+[`test_visbuffer.cpp`](../../src/rendering/virtual_geometry/tests/test_visbuffer.cpp) holds both:
+one case renders a stack of overlapping instances six times and requires the resolve and the bin
+counts to match, and one builds four *coincident pairs* of instances — every fragment tying exactly
+with its twin's — and requires the visibility buffer itself to be bit-identical across six runs,
+with the lower-identity twin winning every contested pixel. Against the old raster the second
+reports 605 to 714 pixels won by the wrong twin and 1,825 to 2,001 visibility samples differing
+between runs.
+
+The cost is a bound rather than a cost in pixels: the payload gives the identity 24 bits, so a scene
+needs `instance_count * cluster_stride` at or below 2^24 — four times tighter than the 2^26 the
+traversal's own visit marks allow. `VisbufferPass::initialise` refuses above it by name.

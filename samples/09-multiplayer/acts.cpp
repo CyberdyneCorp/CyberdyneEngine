@@ -123,6 +123,7 @@ bool report_session(NetworkedSession& session, const Artefacts& artefacts) noexc
     emit("session_datagrams_duplicated", report.datagrams_duplicated);
     emit("session_datagrams_delivered", report.datagrams_delivered);
     emit("session_substitutions", report.substitutions);
+    emit("session_abandoned_links", report.abandoned_links);
     emit("session_rollbacks", report.rollbacks());
     emit("session_duplicate_effects", report.duplicate_effects());
     emit("session_converged_clients", report.converged_clients());

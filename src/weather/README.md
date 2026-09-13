@@ -50,6 +50,14 @@ authoritative state" are one mechanism rather than two that compete. `test_wind.
 equality bit for bit, and `test_determinism.cpp` measures it again across a thousand ticks with the
 presentation levers at their extremes.
 
+**And this module is the only place `wind` is declared.** `cy::foliage` used to declare the same
+standard name `Presentation`, which `FieldRegistry::declare()` refuses against this one in either
+order — so a project using both rows failed at startup and no per-module suite could see it.
+`environment-fields` names `weather-and-wind` as the field's producer and this requirement makes it
+authoritative, so foliage reads what is published here.
+`tests/integration/test_standard_fields.cpp` composes every producing module's declarations into one
+registry and is what keeps it that way.
+
 ### 2. Contributions go into the TARGET, never onto the state
 
 A storm's wind added to a cell after every relaxation step is **amplified by the reciprocal of the

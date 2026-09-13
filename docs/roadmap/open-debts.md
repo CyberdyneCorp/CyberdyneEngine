@@ -21,9 +21,10 @@ The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.
 
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
-| M9 | `record-matches-plan-history` | **M10** | four milestones closed with Complete cells in their own columns that the status record does not support, and no check compared the two until M9's gate wrote one. M9 repaired its own column; auditin… |
-| M9 | `reliable-channel-stalls-under-loss` | **M10** | a reliable-ordered channel stops delivering to the application under sustained heavy loss and nothing detects it: the frontier freezes, the transport keeps delivering, `abandoned()` has no caller, … |
+| M10 | `fields-one-vegetation-potential` | **M11** | `vegetation-potential` is declared UNorm8/Static/Persistent by `cy::foliage` and UNorm16/SlowlyVarying/Authoritative by `cy::weather`'s ecosystem half, and `FieldRegistry::declare()` refuses the se… |
+| M10 | `fields-sampled-on-a-device` | **M11** | no `.slang` module samples an environment field, so `environment-fields`' CPU-and-GPU-access requirement is discharged on the processor only. It is the same gap that makes the artefact cost 122 ms … |
 | M10 | `sky-field-round-trip` | **M11** | the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have… |
+| M10 | `world-frame-budget` | **M11** | the environment demo costs about 122 ms a frame against a 16.7 ms budget, and the three bands that make it are the substrate re-sampled at every terrain vertex, the cloud march and water's foam fie… |
 | M8.c | `steam-audio-configures` | **M11** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
 | M9 | `lockstep-cross-platform` | **M11** | this host has one architecture and one operating system, and no continuous-integration job compares a state hash between two of them. The legs exist — ci.yml's build and test matrices are six, incl… |
 
@@ -33,26 +34,7 @@ A capability the plan promised by a milestone that has **closed**, which the sta
 holds lower. This is where a demotion shows up: seven consecutive gates have demoted a row
 rather than accept a claim, and each one is a piece of work the plan still expects.
 
-| Capability | Planned | Recorded | Promised by |
-|---|---|---|---|
-| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | complete | **working** | M8.b |
-| [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | working | **seed** | M4 |
-| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | complete | **working** | M8.b |
-| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | complete | **working** | M8.b |
-| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | working | **seed** | M5 |
-| [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | working | **seed** | M5 |
-| [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | complete | **working** | M8.b |
-| [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | complete | **working** | M8.b |
-| [`live-editing`](../../openspec/specs/live-editing/spec.md) | complete | **seed** | M8.b |
-| [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | complete | **working** | M8.b |
-| [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | complete | **working** | M5 |
-| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | complete | **working** | M8.b |
-| [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | complete | **working** | M8.b |
-| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | complete | **working** | M8.b |
-| [`shader-system`](../../openspec/specs/shader-system/spec.md) | complete | **working** | M8.b |
-| [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | complete | **working** | M8.b |
-| [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | working | **seed** | M3 |
-| [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | working | **seed** | M8.b |
+Nothing behind plan: every closed milestone's promised tiers are met.
 
 ## 3. What each milestone said it did not close
 

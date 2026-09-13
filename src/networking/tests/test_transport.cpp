@@ -181,6 +181,136 @@ CY_TEST_CASE("networking: a reliable message survives five per cent loss") {
     CY_CHECK_GT(pair.client.stats(pair.server_id).retransmissions, u64{0});
 }
 
+// M10 — `m9:reliable-channel-stalls-under-loss`, AT THE TRANSPORT RATHER THAN AT THE CHANNEL.
+//
+// The case above sends its ten datagrams in one breath, so the receiver's sequence space never
+// moves far enough for the replay window to matter, and that is exactly why it passed all through
+// M9 while the four-player session froze at 25 % loss. SUSTAINED traffic is the condition: one
+// reliable-ordered datagram every 16 ms for three hundred ticks, which is what `samples/09` does
+// and what takes a retransmission more than thirty-two sequences behind the newest arrival.
+//
+// The claim is the frontier: every one of the three hundred arrives, in order, and the link never
+// reports that it gave up. Before the fix this delivered a few dozen and then nothing — for ever,
+// silently, while `network.delivered()` went on climbing.
+CY_TEST_CASE(
+    "networking: a reliable-ordered channel keeps its frontier under sustained heavy loss") {
+    NetworkConditions harsh;
+    harsh.latency_ms = 40;
+    harsh.jitter_ms = 20;
+    harsh.loss_percent = 25;
+    Pair pair(0x0910'C0FFULL);
+    pair.network.set_conditions(harsh);
+    CY_REQUIRE(pair.link());
+
+    constexpr u32 kTicks = 300;
+    constexpr u64 kTickMs = 16;
+    u32 delivered = 0;
+    u32 expected = 0;
+
+    for (u32 tick = 0; tick < kTicks; ++tick) {
+        const u64 now = static_cast<u64>(tick) * kTickMs;
+        pair.server.advance(now);
+        pair.client.advance(now);
+        // The tick's own number, so an out-of-order delivery is a wrong value rather than a count
+        // that happens to add up.
+        const u8 payload[2] = {static_cast<u8>(tick & 0xFFU), static_cast<u8>((tick >> 8) & 0xFFU)};
+        CY_REQUIRE(pair.server
+                       .send(pair.client_id, 1, DeliveryMode::ReliableOrdered,
+                             cy::Span<const u8>(payload, 2))
+                       .has_value());
+        Datagram datagram;
+        while (pair.client.receive(datagram)) {
+            if (datagram.channel != 1) {
+                continue;
+            }
+            CY_REQUIRE_EQ(datagram.bytes.size(), cy::usize{2});
+            const u32 value =
+                static_cast<u32>(datagram.bytes[0]) | (static_cast<u32>(datagram.bytes[1]) << 8);
+            CY_CHECK_EQ(value, expected);
+            ++expected;
+            ++delivered;
+        }
+        Datagram back;
+        while (pair.server.receive(back)) {
+        }
+    }
+
+    // Ten seconds past the last send: longer than the whole retransmission horizon, so what has not
+    // arrived by here is not going to.
+    for (u64 now = kTicks * kTickMs; now <= (kTicks * kTickMs) + 10000; now += kTickMs) {
+        pair.server.advance(now);
+        pair.client.advance(now);
+        Datagram datagram;
+        while (pair.client.receive(datagram)) {
+            if (datagram.channel != 1) {
+                continue;
+            }
+            CY_REQUIRE_EQ(datagram.bytes.size(), cy::usize{2});
+            const u32 value =
+                static_cast<u32>(datagram.bytes[0]) | (static_cast<u32>(datagram.bytes[1]) << 8);
+            CY_CHECK_EQ(value, expected);
+            ++expected;
+            ++delivered;
+        }
+        Datagram back;
+        while (pair.server.receive(back)) {
+        }
+    }
+
+    CY_CHECK_EQ(delivered, kTicks);
+    // The conditions were real: a case that delivered everything because nothing was lost would
+    // prove nothing about the retransmit path.
+    CY_CHECK_GT(pair.network.dropped(), u64{0});
+    CY_CHECK_GT(pair.server.stats(pair.client_id).retransmissions, u64{0});
+    // `abandoned()`'s reader. Zero here and non-zero would mean the figures above describe a link
+    // that had already given up.
+    CY_CHECK_FALSE(pair.server.stats(pair.client_id).reliable_abandoned);
+    CY_CHECK_FALSE(pair.client.stats(pair.server_id).reliable_abandoned);
+}
+
+// M10 — THE SECOND HALF OF `m9:reliable-channel-stalls-under-loss`.
+//
+// The default policy's ten attempts span 7.5 s, which is longer than the four-player session it was
+// meant to carry: a datagram unlucky five times running was still waiting when the match ended, and
+// the client holding the gap never converged. `ReliableEndpoint::set_policy()` could have said so
+// and no backend exposed it. This case is that route, as a count rather than as an API that
+// compiles: twenty milliseconds and four attempts against a network that drops everything.
+//
+// With `set_retransmit_policy()` made a no-op the defaults apply, the first retransmission is due
+// at 100 ms rather than 20, and both numbers below go red — one retransmission instead of three,
+// and a link that has not given up.
+CY_TEST_CASE("networking: a session can pace retransmission for its own round trip") {
+    NetworkConditions blackout;
+    blackout.loss_percent = 100;  // Nothing arrives, so what is counted is the pacing alone.
+    Pair pair(0x0BAD'0BADULL);
+    pair.network.set_conditions(blackout);
+
+    RetransmitPolicy brisk;
+    brisk.initial_timeout_ms = 20;
+    brisk.maximum_timeout_ms = 20;
+    brisk.maximum_attempts = 4;
+    pair.client.set_retransmit_policy(brisk);
+    CY_REQUIRE(pair.link());
+
+    CY_REQUIRE(
+        pair.client
+            .send(pair.server_id, 2, DeliveryMode::ReliableOrdered, cy::Span<const u8>(kMessage, 8))
+            .has_value());
+
+    for (u64 now = 0; now <= 200; now += 10) {
+        pair.client.advance(now);
+        pair.server.advance(now);
+        Datagram datagram;
+        while (pair.server.receive(datagram)) {
+        }
+    }
+    // Four attempts, less the original send.
+    CY_CHECK_EQ(pair.client.stats(pair.server_id).retransmissions, u64{3});
+    // And the peer is declared unreachable rather than retried for ever — the signal that had no
+    // reader until `ConnectionStats` carried it.
+    CY_CHECK(pair.client.stats(pair.server_id).reliable_abandoned);
+}
+
 CY_TEST_CASE("networking: an unauthenticated peer receives nothing") {
     Pair pair(0x1111'2222ULL);
     pair.client.require_authentication(true);

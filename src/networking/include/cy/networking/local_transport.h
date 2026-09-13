@@ -133,6 +133,18 @@ public:
     /// `networking-and-replication` — "Authentication before admission": with this set, a link
     /// stays in `Authenticating` and carries no application payload until `admit()` says so.
     void require_authentication(bool required) noexcept { authentication_required_ = required; }
+
+    /// **How this transport paces retransmission**, applied to every link, open or yet to open.
+    ///
+    /// The default `RetransmitPolicy` caps its backoff at a second and gives up after ten attempts,
+    /// which is a 7.5 s recovery horizon. That is a reasonable shape for an internet-scale
+    /// conversation and a poor one for a 60 Hz session over a 120 ms round trip: nine tenths of the
+    /// horizon is spent idle, and a datagram unlucky five times running is still waiting when the
+    /// match ends. `m9:reliable-channel-stalls-under-loss` was two defects, and this is the second
+    /// — an application that knows its own tick rate and round-trip time could not say so, because
+    /// `ReliableEndpoint::set_policy()` had no route through any backend. It has one here.
+    void set_retransmit_policy(const RetransmitPolicy& policy) noexcept;
+
     [[nodiscard]] Status admit(PeerId peer) noexcept;
 
     [[nodiscard]] PeerId self() const noexcept { return self_; }
@@ -161,6 +173,7 @@ private:
     PeerId self_;
     Array<Link*> links_;
     Array<u8> outgoing_;
+    RetransmitPolicy policy_{};
     u32 drain_link_ = 0;
     u32 drain_channel_ = 0;
     u64 now_ms_ = 0;

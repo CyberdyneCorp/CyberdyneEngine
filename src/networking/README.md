@@ -107,6 +107,24 @@ half that is a security property. So `reliability.h` is one implementation over 
 datagram substrate and both backends compose it. That is also what makes the in-process test a real
 test of retransmission and duplicate rejection rather than a test of a simplification.
 
+**M10 correction — the replay window is not the ordered channel's record.** M9 closed with
+`m9:reliable-channel-stalls-under-loss`: a reliable-ordered channel stopped delivering under 25 %
+loss and nothing noticed. It was two defects. The first was here. `already_received()` calls
+anything more than 32 sequences behind the newest arrival a replay, which is right for an unreliable
+datagram and wrong for one that is retransmitted for 7.5 s — about 470 sequences at 60 Hz. So a
+retransmission of the hole was refused and `next_ordered_` froze for the rest of the session. The
+ordered channel now answers from its own frontier (`already_taken_ordered()`), which is exact rather
+than conservative, and acknowledges by NAME — a bare datagram whose `ack` field is the sequence —
+what `ack_bits` cannot reach back to. Nothing on the wire changed. `ReliableUnordered` still uses
+the window and still has no frontier to be exact against; nothing in this tree sends on it.
+
+The second defect was that `ReliableEndpoint::set_policy()` had no route through any backend, so a
+session could not say that its round trip was 120 ms and its match 5 s long. Both transports now
+carry `set_retransmit_policy()`, and `ConnectionStats::reliable_abandoned` gives `abandoned()` the
+reader it never had — sampled before anything in `flush()` that can leave early, because an
+abandoned channel collects nothing and a reader written after the collection goes quiet exactly when
+it has something to say.
+
 ### 3. A delta is against what the peer **acknowledged**, never against the last send
 
 Deltaing against the last send is one array instead of two and is wrong the first time a packet is

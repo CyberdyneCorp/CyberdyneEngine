@@ -731,7 +731,7 @@ ci_job = "milestone-m9"
 
 [[criterion]]
 id = "record-matches-plan-history"
-describe = "FOUR CLOSED MILESTONES' COLUMNS CLAIM NINETEEN CELLS THE STATUS RECORD DOES NOT SUPPORT, THIRTEEN OF THEM COMPLETE. The same comparison `record-matches-plan` makes for M9, made for every milestone whose gate is already green: M8.b's column alone claims twelve Completes — `rendering-architecture`, `shader-system`, `material-compiler`, `core-memory-and-containers` and eight more — and the record holds every one of them at Working. M9 repaired its own column by moving six cells to M11; it did not audit four earlier milestones, and claiming them silently would be the very thing this criterion exists to catch"
+describe = "NO CLOSED MILESTONE'S COLUMN CLAIMS A TIER THE STATUS RECORD DOES NOT SUPPORT. The same comparison `record-matches-plan` makes for M9, made for every milestone whose gate is already green. It found NINETEEN cells over four milestones, thirteen of them Complete — M8.b's column alone claimed twelve — and it was a declared gap until M10 task 6.5 audited all nineteen against the code and moved or claimed each one: fifteen cells moved, four rows were recorded at the tier their column already claimed. The declaration is gone and the check remains, because the direction that matters now is the next column that outlives its evidence"
 source = "tasks 7.6, 8.4, delivery-roadmap"
 kind = "command"
 run = '''
@@ -754,7 +754,14 @@ for rung in matrix.milestones:
             continue
         have = recorded.get(capability)
         tier = have.tier if have else "none"
-        if have is None or plan.tier_rank(tier) < plan.tier_rank(planned):
+        # `plan.TIERS` IS ("seed", "working", "complete") AND DOES NOT CARRY "none", so ranking a
+        # capability the record holds at `none` RAISES. It never fired while this criterion was a
+        # declared gap, because every capability in a closed column was recorded at some tier; it
+        # would fire the first time a closed milestone's column planned a cell for a row that had
+        # not started. M10's copy of this check carries the same guard and found it the same way.
+        if have is None or tier not in plan.TIERS:
+            short.append((rung, capability, planned, tier))
+        elif plan.tier_rank(tier) < plan.tier_rank(planned):
             short.append((rung, capability, planned, tier))
 by_rung = {}
 for rung, capability, planned, tier in short:
@@ -765,8 +772,6 @@ for rung, entries in sorted(by_rung.items()):
 sys.exit(1 if short else 0)
 CHECK
 '''
-known_gap = "four milestones closed with Complete cells in their own columns that the status record does not support, and no check compared the two until M9's gate wrote one. M9 repaired its own column; auditing M3's, M4's, M5's and M8.b's is a record correction against `delivery-roadmap` — the same shape as the two M8.c's gate handed forward — and it is work for a milestone that can examine those rows rather than for the gate that found them"
-known_gap_closes = "m10"
 ci_job = "milestone-m9"
 
 # THE ONE FINDING OF M9'S ADVERSARIAL PASS THAT IS IN THE ENGINE RATHER THAN IN THE CHECKING.
@@ -800,7 +805,7 @@ ci_job = "milestone-m9"
 # trigger, because nothing asks whether the peer is still being caught up at all.
 [[criterion]]
 id = "reliable-channel-stalls-under-loss"
-describe = "A RELIABLE-ORDERED CHANNEL UNDER 25 % LOSS STOPS DELIVERING AND NOTHING NOTICES. The four-player session converges at 0 % and at 8 %; at 25 % no client's frontier ever advances past tick 54, at 180 ticks and at 900 alike, while the transport goes on delivering twelve thousand datagrams. `ReliableEndpoint::abandoned()` is the signal that would say so and has no caller outside its own module, and resynchronisation has no trigger. This criterion runs the session at 25 % and asks for four converged clients"
+describe = "A RELIABLE-ORDERED CHANNEL SURVIVES 25 % LOSS, AND A CHANNEL THAT GIVES UP SAYS SO. At M9 the four-player session converged at 0 % and at 8 % and at 25 % no client's frontier ever advanced past tick 54, while the transport went on delivering twelve thousand datagrams — a DECLARED GAP until M10 found two causes and fixed both. The replay window (32 sequences) was narrower than the retransmission horizon (about 470 at 60 Hz), so a retransmission of the hole was called a replay and `next_ordered_` froze: the ordered channel now answers from its own frontier instead, and acknowledges by name what `ack_bits` cannot reach. And the default policy's ten attempts span 7.5 s, longer than the session itself, so a datagram unlucky five times running was still waiting when the match ended: `set_retransmit_policy()` now carries a session's own pacing to the endpoint, and this one caps its backoff at two round trips. `ReliableEndpoint::abandoned()` has the reader it never had — `ConnectionStats::reliable_abandoned`, which the sample prints as `session_abandoned_links`. This criterion runs the session at 25 % and asks for four converged clients"
 source = "tasks 8.3, networking-and-replication, replay-and-rollback"
 kind = "command"
 run = '''
@@ -808,15 +813,15 @@ set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
 out="$("$d/samples/09-multiplayer/cy_sample_multiplayer" --only session --ticks 180 --loss 25 2>&1)"
-echo "$out" | grep -E "session_(datagrams_offered|datagrams_delivered|converged_clients|duplicate_effects) = |client0_frontier = "
+echo "$out" | grep -E "session_(datagrams_offered|datagrams_delivered|converged_clients|duplicate_effects|abandoned_links) = |client0_frontier = "
 converged=$(echo "$out" | sed -n 's/^session_converged_clients = //p')
 duplicated=$(echo "$out" | sed -n 's/^session_duplicate_effects = //p')
 test "$duplicated" -eq 0 || { echo "the side-effect ledger let $duplicated effect(s) play twice"; exit 1; }
-echo "$converged of 4 clients converged at 25 % loss; the ledger suppressed every duplicate effect at every loss rate measured"
+abandoned=$(echo "$out" | sed -n 's/^session_abandoned_links = //p')
+test -n "$abandoned" || { echo "the session did not report session_abandoned_links; abandoned() has lost its reader again"; exit 1; }
+echo "$converged of 4 clients converged at 25 % loss; $abandoned of 8 links reported a reliable channel that gave up; the ledger suppressed every duplicate effect at every loss rate measured"
 test "$converged" -eq 4
 '''
-known_gap = "a reliable-ordered channel stops delivering to the application under sustained heavy loss and nothing detects it: the frontier freezes, the transport keeps delivering, `abandoned()` has no caller, and resynchronisation is never triggered. The session holds at the 8 % the artefact uses and at 0 %; it does not at 25 %. Closing it is a reader for the signal the module already raises, and a resync path behind it"
-known_gap_closes = "m10"
 ci_job = "milestone-m9"
 
 [[criterion]]

@@ -65,15 +65,52 @@ At 180 ticks, seed `0x0910C0FF`, 40 ms latency with 20 ms jitter, 8 % loss, 2 % 
 5 % reordering:
 
 ```
-3,346 datagrams offered, 276 destroyed, 73 duplicated
+3,348 datagrams offered, 276 destroyed, 73 duplicated
 95 inputs substituted by the host
 271 rollbacks over 1,530 re-simulated ticks across four clients
 936 effects offered, 630 suppressed by the ledger, 306 played, 0 played twice
-4 of 4 clients converged on the host's state hash
+4 of 4 clients converged on the host's state hash, 0 of 8 links gave up on a reliable channel
 990 records, one log, replayed to the identical RecordLog::hash and the identical state hash
 a divergence injected at tick 123 narrowed to entity 4294967298, Health.shield
 a 720-record crash ring covering ticks 49 to 179, re-simulated to the hash it carries
 ```
+
+## At 25 % loss, which is where M9 left a gap
+
+`m9:reliable-channel-stalls-under-loss` ran this same program at `--loss 25` and got **none of four
+clients converged**, with every client's authoritative frontier frozen — at tick 54, 84, 1 and 26 —
+while the transport went on delivering. M10 closed it, and it was two defects rather than one.
+
+The frontier froze because the reliability layer's replay window (32 sequences) is narrower than a
+reliable datagram's retransmission horizon (about 470 sequences at 60 Hz), so the third retransmit
+attempt onwards was refused as a replay — see `src/networking/README.md`. Fixing that alone took the
+session from 0 of 4 to 3 of 4. The remaining client was the second defect: the default
+`RetransmitPolicy` spreads ten attempts over 7.5 s, which is longer than this whole session, so a
+datagram unlucky five times running was still waiting when the match ended. Three seeds in six
+carried one such client.
+
+So the session now **states its own pacing** — `session_retransmit_policy()` caps the backoff at two
+round trips instead of at a second, derived from `SessionOptions` rather than chosen — and
+`LocalTransport::set_retransmit_policy()` carries it to every link. Nine seeds in nine converge 4 of
+4 at 25 % loss.
+
+`session_abandoned_links` is the reader `ReliableEndpoint::abandoned()` never had. It counts, over
+all eight directed links, the ones whose reliable channel exhausted its attempts, and it is the
+figure that tells "it diverged" apart from "it stopped being connected":
+
+| conditions | converged | abandoned links |
+|---|---|---|
+| 180 ticks, 0 % loss | 4 of 4 | 0 of 8 |
+| 180 ticks, 8 % loss (the artefact) | 4 of 4 | 0 of 8 |
+| 180 ticks, 25 % loss | 4 of 4 | 0 of 8 |
+| 180 ticks, 40 % loss | 4 of 4 | 1 of 8 |
+| 900 ticks, 25 % loss | 4 of 4 | 1 of 8 |
+| 180 ticks, 50 % loss | 3 of 4 | 4 of 8 |
+
+The last three rows are the point of the counter: at 50 % loss the session degrades, and it says so
+rather than printing a hash that happens to differ. A non-zero count with four converged clients —
+the 40 % and 900-tick rows — means a link gave up on a datagram whose *acknowledgement* was what
+went missing, which is worth reporting and is not yet a session that has failed.
 
 ## The pictures
 

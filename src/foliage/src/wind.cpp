@@ -189,36 +189,4 @@ Expected<WindPrepareReport, Error> WindSampler::prepare(const SpeciesLibrary& li
     return report;
 }
 
-environment::FieldDeclaration wind_field_declaration(f32 cell_metres) noexcept {
-    environment::FieldDeclaration declaration;
-    declaration.name = environment::fields::kWind;
-    declaration.unit = "m/s";
-    declaration.semantics =
-        "air velocity, world axes; produced by weather-and-wind and read by foliage, particles and "
-        "water so that all three agree about one gust";
-    declaration.type = environment::FieldType::Vec3;
-    declaration.encoding = environment::FieldEncoding::F32;
-    declaration.interpolation = environment::FieldInterpolation::Linear;
-    declaration.cadence = environment::FieldCadence::PerFrame;
-    declaration.production = environment::FieldProduction::Cpu;
-    declaration.range_min = -60.0F;
-    declaration.range_max = 60.0F;
-    declaration.levels[static_cast<u32>(environment::FieldResidency::Macro)] =
-        environment::FieldLevel{cell_metres * 8.0F, true};
-    declaration.levels[static_cast<u32>(environment::FieldResidency::Regional)] =
-        environment::FieldLevel{cell_metres, false};
-    // Volumetric: wind above a treeline is not wind inside it. `environment-fields` names wind as
-    // the one standard field that is not planar, and this is that declaration.
-    declaration.vertical_cells = 4;
-    declaration.vertical_metres = 25.0F;
-    declaration.vertical_origin_metres = 0.0F;
-    declaration.layer_rule = environment::FieldLayerRule::Add;
-    // Presentation: foliage deformation, particle advection and water ripple are appearance.
-    // Gameplay that wants wind reads a gameplay-visible field a project declares; this one is
-    // firewalled by `determinism::may_read()` and that is deliberate.
-    declaration.classification = determinism::SimulationClass::Presentation;
-    declaration.gameplay_level = environment::FieldResidency::Macro;
-    return declaration;
-}
-
 }  // namespace cy::foliage

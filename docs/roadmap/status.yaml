@@ -11,6 +11,156 @@
 # The planned path of each capability through the milestone ladder is in
 # capability-matrix.md; this file records what is actually true today.
 
+# --- M10's tiers: eight rows advanced, two completed, one demoted a second time, four cells moved --
+#
+# EIGHT ROWS ADVANCE HERE AND SEVEN OF THEM CAME FROM NOTHING. `environment-fields`, `terrain`,
+# `water`, `foliage`, `weather-and-wind` and `procedural-content-generation` were all recorded at
+# `none` with no directory in src/ when this milestone opened; `atmosphere-sky-and-clouds` was at
+# Seed from M7 and `vfx-system` at Seed from M8.c. Each is at Working because its own criteria in
+# tools/roadmap/milestones/m10.toml run suites over shipped code, not because the milestone's row in
+# the plan said so.
+#
+#   vfx-system   seed -> working  M8C -> M10. M8.c's gate refused Working over an absent GPU compute
+#                path and moved the cell here, naming the file and the function. `src/vfx/gpu/` is
+#                that path: particle state resident in device buffers, indirect dispatch driven by
+#                GPU-maintained counts, async compute where the device exposes a queue, the GPU sort
+#                behind `BudgetLevers::sorted`, and the renderer kinds beyond Sprite and Mesh.
+#                `cy::vfx` stays device-free so `integration.vfx` stays headless, which is why the
+#                claim is split across a device-free criterion and a device one.
+#
+# TWO OF THE THREE ROWS M9 DEMOTED COMPLETE HERE, AND EACH BECAUSE THE CRITERION THAT BLOCKED IT
+# WENT GREEN rather than because the gate re-read the specification and felt better about it:
+#
+#   diagnostics-profiling-and-crash  working -> complete  M9 -> M10. Both of M9's declared gaps are
+#                                    closed and their declarations DELETED from m9.toml in the
+#                                    change that closed them, because a declared gap that starts
+#                                    passing fails the ledger. `CY_BREADCRUMB` is adopted at the five
+#                                    boundaries the specification names — `Simulation::step`,
+#                                    `Simulation::run_stage`, `AssetSystemImpl::publish`,
+#                                    `CellActivation::publish`, `SaveService::perform_write` — each
+#                                    asserted by its own module's suite; and a produced crash
+#                                    artefact carries a basename and an offset from a module table
+#                                    captured at install time rather than the build machine's paths.
+#   gameplay-framework               working -> complete  M8B -> M10. `m9:gameplay-benchmarks` closed
+#                                    the same way: `benchmarks/gameplay/` carries five committed
+#                                    thresholds over the five rows of the specification's table a
+#                                    measurement can speak to, and `bench_gameplay.cpp` names the two
+#                                    it cannot and why.
+#
+# AND THE THIRD IS DEMOTED A SECOND TIME. `save-and-persistence` STAYS AT WORKING, M6, and its
+# Complete cell moves from M10 to M11. Half of task 6.2 landed — conflict resolution over the logical
+# metadata the specification names, on a `SaveSummary` that has no timestamp field in it, so "SHALL
+# NOT be decided by file modification timestamps" is enforced by the type rather than by a
+# convention. The other half did not: confidentiality needs a vetted AEAD, `thirdparty-dependencies`
+# names mbedTLS as this engine's cryptography library and requires adoption to go through the
+# OpenSpec change flow, and M10 added no dependency at all. A requirement-by-requirement audit then
+# found the bill is larger than the two blockers M9 named: of twenty requirements, NINE SATISFIED,
+# THREE UNMET and EIGHT PARTIAL, with the per-row evidence in src/save/README.md. design.md §4 wrote
+# down in advance what a second demotion of one row means — the row is MIS-SCOPED RATHER THAN LATE,
+# and that is a finding for M11's proposal rather than for M10's gate, where it is now carried.
+#
+# THE SKY IS AT WORKING WITH A DECLARED, FAILING GAP AGAINST IT, AND THE REASON IS WRITTEN HERE
+# BECAUSE IT IS A JUDGEMENT. `m10:sky-field-round-trip` runs, fails, and names M11: the cloud shadow
+# field is computed by a producer that reports writing tiles with darkest < 0.5, and
+# `CloudShadowField::sample` returns the declared 1.0 at all twenty-five points inside
+# `radius_metres`. Terrain and water round-trip through the same store, so it is the sky's write
+# path. No consumer reads the field either — `grep -rn CloudShadow` outside src/rendering/sky/
+# returns nothing — so "consumed by terrain, foliage, water, and illumination" has zero consumers as
+# well as no readable producer.
+#
+# That is one requirement of thirteen, and it is half of one: the mechanism half of `Cloud shadows`
+# ("the coarse field rather than virtual shadow pages") is met and enforced by an absent
+# dependency — src/rendering/sky/CMakeLists.txt does not link cy::rendering-shadows, so there is no
+# expression in the module that can allocate a shadow page — and the budget-lever half is met and
+# counted. The twelve other requirements are built and MEASURED: five green criteria over five
+# suites cover the physical atmosphere and its four tables, aerial perspective in the engine's own
+# froxel volume, celestial bodies on a declared clock, sky composition, cloud representation and
+# rendering, volumetric integration, planetary scale, environment profiles, the quality tiers, the
+# diagnostics and the sky as a light. The tier ladder's Working is "the requirements a real project
+# depends on are satisfied … optional and advanced requirements may be outstanding", and a project's
+# sky is depended on for the sky, the sun and moon, aerial perspective and the sky light — all of
+# which this row delivers — while cloud shadows darken a surface that is already lit.
+#
+# Recording it at Seed instead would say M10 did nothing for this row, which is false; recording it
+# at Complete would be the failure the whole apparatus exists to catch. Working with a running,
+# failing, rung-bearing gap is the same shape `audio` carries for `m8c:steam-audio-configures` and
+# `simulation-and-determinism` for `m9:lockstep-cross-platform`. WHAT THIS RECORD DOES NOT SAY is
+# that the gap is optional: if `sky-field-round-trip` is still open at M11 then this row does not
+# reach Complete there, because the ledger will not let a declared gap be quietly deleted and will
+# not let a passing one keep its declaration.
+#
+# FOUR COMPLETE CELLS MOVED OUT OF THE M10 COLUMN, and only one of them was M10's own row. The other
+# three — `navigation`, `rendering-global-illumination` and `world-partition-and-streaming` — were
+# parked in this column before M10 was written and this milestone never proposed, touched or audited
+# any of them. `m9:record-matches-plan`, pointed at M10's own column, is the check that refused to
+# let them close silently. The evidence per cell is in
+# docs/roadmap/capability-matrix.md#where-m10s-tiers-are-thin; in short, each has a first-hand
+# refutation rather than only an absence of work:
+#
+#   rendering-global-illumination  Cycle 2 of docs/roadmap/dependencies.md is the whole reason this
+#                                  cell was at M10: an analytic sky seeds at M7 and "the physical
+#                                  atmosphere … lands at M10, and GI reaches Complete there". The
+#                                  atmosphere landed and THE SEAM WAS NEVER JOINED. `gi/lighting.h`
+#                                  still says its two-colour sky "is the seam it will replace, not a
+#                                  second sky"; nothing in the tree constructs a `gi::SkyTerm` from
+#                                  `sky_light.h`'s gradient, and neither module links the other.
+#   world-partition-and-streaming  The milestone whose column claimed this Complete closed on an
+#                                  artefact with NO STREAMING IN IT: samples/10-world keeps the whole
+#                                  world resident, meshes every terrain tile at level 0, and reports
+#                                  `stitched_vertices` as zero precisely so a reader can see it.
+#   navigation                     Terrain's contribution is real — `collision.h` produces a
+#                                  `navigation::NavSourceGeometry` from the collision representation
+#                                  — and it is one of sixteen requirements. Terrain "creates no body
+#                                  and builds no navmesh", in its own CMakeLists' words, and no M10
+#                                  task names this capability.
+
+# --- M10's record audit: nineteen cells over four closed milestones, and the four rows it claims ---
+#
+# M9's gate added `record-matches-plan`, ran the same comparison over every milestone whose gate was
+# already green, and found NINETEEN cells those columns claim that this file does not support —
+# thirteen of them Complete. It declared the finding as `m9:record-matches-plan-history` rather than
+# claim the rows. M10 task 6.5 is the audit that closed it: every one of the nineteen was read
+# against the tree M10 closes on, FIFTEEN CELLS MOVED in the capability matrix, and FOUR ROWS ARE
+# CLAIMED HERE. The evidence per cell is in docs/roadmap/capability-matrix.md#m10s-record-audit-nineteen-cells-over-four-closed-milestones
+# and the change is openspec/changes/audit-closed-milestone-columns/, because moving a capability
+# between milestones is an OpenSpec change against `delivery-roadmap` by that specification's rule.
+#
+# THE FOUR ROWS BELOW MOVED IN THIS FILE, AND ALL FOUR ARE CORRECTIONS RATHER THAN ADVANCES — the
+# same shape as M8.a's `physics` correction, and for the same reason: the `milestone` field means
+# "the milestone at which this tier became true", so each names the rung its own evidence sits at,
+# verified against that rung's commit rather than against today's tree alone. Each had been recorded
+# at `seed` since the milestone that seeded it while its matrix column claimed Working at a milestone
+# whose task list never mentioned it — so no gate ever advanced it, and no gate ever refused to.
+#
+#   testing-and-quality          seed -> working  M0 -> M3.  At M3's closing commit: cy_add_test
+#                                carrying the taxonomy's per-case budgets and CTest labels, the
+#                                unit, integration, smoke and render suites, golden images,
+#                                benchmarks/ with a committed baseline and per-benchmark tolerances,
+#                                and sanitize, sanitize-nightly, quality, specs, generated, identity
+#                                and profiles jobs in CI. Complete stays at M11: swift-format, the
+#                                licence-header check, the spelling check and the undocumented-symbol
+#                                gate do not exist, and the three acceptance scenarios are unwritten.
+#   build-system-and-platforms   seed -> working  M0 -> M4.  Four profiles that mean the same thing
+#                                in every toolchain, feature options, dependency management from the
+#                                manifest, code generation, the compiler matrix — and at M4 the Swift
+#                                toolchain integration the requirement names, which is the rung at
+#                                which this build system first had to serve a second toolchain.
+#   developer-workflow-and-just  seed -> working  M0 -> M6.  Every category of the required recipe
+#                                surface does something from M6. At M5 the whole Content category
+#                                was `_not-implemented` stubs, which is why the W cell moved from
+#                                M5 to M6 rather than being claimed where it stood.
+#   thirdparty-dependencies      seed -> working  M0 -> M8B. The manifest carries every field the
+#                                requirement lists, for fifteen dependencies at M8.b and seventeen
+#                                today, with deps/host-tools.toml for build-time tooling that is
+#                                never linked, THIRD_PARTY.md generated from both, optional
+#                                dependencies feature-gated with a test that proves a disabled
+#                                feature fetches, builds and links nothing, and the editor's Rust
+#                                crates under the same governance from M6.
+#
+# NO ROW MOVED DOWN IN THIS FILE, and that is the point worth stating: the audit moved PLAN cells,
+# not recorded tiers. Fifteen cells in four columns claimed more than the tree holds; the record
+# already said so, and it is the plan that now agrees with it.
+
 # --- M8.a's amendment: two rows the plan marked Complete are still Working, and one row moved -----
 #
 # M8.a planned TWO capabilities reaching Complete. Its closing gate checked both against the code and
@@ -228,9 +378,9 @@ capabilities:
     milestone: M8B
     change: implement-m8b-systems
   gameplay-framework:
-    tier: working
-    milestone: M8B
-    change: implement-m8b-systems
+    tier: complete
+    milestone: M10
+    change: implement-m10-worlds
   gameplay-abilities-and-effects:
     tier: working
     milestone: M8B
@@ -268,33 +418,33 @@ capabilities:
     milestone: M6
     change: implement-m6-scale
   environment-fields:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   procedural-content-generation:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   weather-and-wind:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   atmosphere-sky-and-clouds:
-    tier: seed
-    milestone: M7
-    change: implement-m7-fidelity
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   terrain:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   foliage:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   water:
-    tier: none
-    milestone: null
-    change: null
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   native-abi:
     tier: complete
     milestone: M5
@@ -380,9 +530,9 @@ capabilities:
     milestone: M8B
     change: implement-m8b-systems
   vfx-system:
-    tier: seed
-    milestone: M8C
-    change: implement-m8c-spectacle
+    tier: working
+    milestone: M10
+    change: implement-m10-worlds
   physics:
     tier: working
     milestone: M8A
@@ -468,25 +618,25 @@ capabilities:
     milestone: null
     change: null
   build-system-and-platforms:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
-  developer-workflow-and-just:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
-  testing-and-quality:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
-  diagnostics-profiling-and-crash:
     tier: working
-    milestone: M9
-    change: implement-m9-integrity
+    milestone: M4
+    change: implement-m4-playable
+  developer-workflow-and-just:
+    tier: working
+    milestone: M6
+    change: implement-m6-scale
+  testing-and-quality:
+    tier: working
+    milestone: M3
+    change: implement-m3-first-light
+  diagnostics-profiling-and-crash:
+    tier: complete
+    milestone: M10
+    change: implement-m10-worlds
   thirdparty-dependencies:
-    tier: seed
-    milestone: M0
-    change: implement-m0-ground
+    tier: working
+    milestone: M8B
+    change: implement-m8b-systems
   delivery-roadmap:
     tier: working
     milestone: M0

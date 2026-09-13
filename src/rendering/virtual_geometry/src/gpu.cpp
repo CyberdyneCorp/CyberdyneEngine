@@ -136,20 +136,35 @@ GpuTraversal::~GpuTraversal() {
     // is still in flight — `rhi-and-render-graph` requires a resource destroyed during frame N to
     // be released only after frame N's fence. That is what makes `test_gpu_teardown.cpp`'s
     // destroy-under-load loop a test of the module rather than of the caller's patience.
+    //
+    // A NULL HANDLE IS NOT DESTROYED, for the reason `VisbufferPass::~VisbufferPass` gives at
+    // length: `initialise` refuses a scene that needs more marks, queue entries or visible slots
+    // than the options allow, and returns before creating anything. Same shape, same fix, so that
+    // one of the two is not a trap the other has already been through.
     for (const rhi::ComputePipelineHandle pipeline :
          {reset_, instance_cull_, prepare_[0], prepare_[1], traverse_[0], traverse_[1]}) {
-        device_.destroy_compute_pipeline(pipeline);
+        if (!pipeline.is_null()) {
+            device_.destroy_compute_pipeline(pipeline);
+        }
     }
     for (const rhi::ShaderModuleHandle module : modules_) {
-        device_.destroy_shader_module(module);
+        if (!module.is_null()) {
+            device_.destroy_shader_module(module);
+        }
     }
-    device_.destroy_pipeline_layout(pipeline_layout_);
-    device_.destroy_descriptor_set_layout(set_layout_);
+    if (!pipeline_layout_.is_null()) {
+        device_.destroy_pipeline_layout(pipeline_layout_);
+    }
+    if (!set_layout_.is_null()) {
+        device_.destroy_descriptor_set_layout(set_layout_);
+    }
     for (const rhi::BufferHandle buffer :
          {clusters_, cluster_triangles_, instances_, assets_, roots_, children_, page_table_,
           queue_a_, queue_b_, counters_, dispatch_args_, visible_, requests_, visited_, staging_,
           readback_}) {
-        device_.destroy_buffer(buffer);
+        if (!buffer.is_null()) {
+            device_.destroy_buffer(buffer);
+        }
     }
 }
 

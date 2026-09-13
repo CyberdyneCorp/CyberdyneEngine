@@ -25,10 +25,10 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | **1 — Foundations** | | | | | | | |  | | | | | | | |
 | [`engine-architecture`](../../openspec/specs/engine-architecture/spec.md) | 10 |  | S | W |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`core-type-system`](../../openspec/specs/core-type-system/spec.md) | 13 |  | W |  |  |  | **C** |  |  |  |  |   |     |  |  |  | M5 |
-| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |       |       |     | **C** |     |  |  |  | M8.b |
+| [`core-memory-and-containers`](../../openspec/specs/core-memory-and-containers/spec.md) | 16 |  | W |  |  |  |  |  |       |       |     |  |     |  |  | **C** | M11 |
 | [`core-math`](../../openspec/specs/core-math/spec.md) | 10 |  | W |  | **C** |  |  |  |  |  |  |   |     |  |  |  | M3 |
 | [`core-jobs-and-concurrency`](../../openspec/specs/core-jobs-and-concurrency/spec.md) | 16 |  | W |  |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
-| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |       |       |     | **C** |     |  |  |  | M8.b |
+| [`core-assets-and-io`](../../openspec/specs/core-assets-and-io/spec.md) | 10 |  | S | W |  |  |  |  |       |       |     |  |     |  |  | **C** | M11 |
 | [`core-platform-abstraction`](../../openspec/specs/core-platform-abstraction/spec.md) | 7 | S |  |  |  | W |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | **2 — World model** | | | | | | | |  | | | | | | | |
 | [`ecs-core`](../../openspec/specs/ecs-core/spec.md) | 12 |  |  | W |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
@@ -38,12 +38,12 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | 20 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | 22 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | 31 |  |  |  |  |  |  |  |  |  |     |     | W |  |  | **C** | M11 |
-| [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | 23 |  |  |  |  | W |  |  |  |  |     | **C** |     |  |  |  | M8.b |
+| [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | 23 |  |  |  |  | W |  |  |  |  |     |  |     |  |  | **C** | M11 |
 | [`camera-system`](../../openspec/specs/camera-system/spec.md) | 28 |  |  |  |  | S |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | 20 |  |  | S |  | W |  |  |  |  |  |   |     | W |  | **C** | M11 |
 | [`replay-and-rollback`](../../openspec/specs/replay-and-rollback/spec.md) | 21 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
-| [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | 20 |  |  |  |  |  |  |  | W |  |  |   |     | | **C** |  | M10 |
-| [`world-partition-and-streaming`](../../openspec/specs/world-partition-and-streaming/spec.md) | 32 |  |  |  |  |  |  |  | W |  |  |   |     |  | **C** |  | M10 |
+| [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | 20 |  |  |  |  |  |  |  | W |  |  |   |     | |  | **C** | M11 |
+| [`world-partition-and-streaming`](../../openspec/specs/world-partition-and-streaming/spec.md) | 32 |  |  |  |  |  |  |  | W |  |  |   |     |  |  | **C** | M11 |
 | [`environment-fields`](../../openspec/specs/environment-fields/spec.md) | 12 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
 | [`procedural-content-generation`](../../openspec/specs/procedural-content-generation/spec.md) | 22 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
 | [`weather-and-wind`](../../openspec/specs/weather-and-wind/spec.md) | 16 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
@@ -53,54 +53,54 @@ indicator of size, not of effort: `denoising` has 6 requirements and is harder t
 | [`water`](../../openspec/specs/water/spec.md) | 17 |  |  |  |  |  |  |  |  |  |  |   |     |  | W | **C** | M11 |
 | **3 — Scripting** | | | | | | | |  | | | | | | | |
 | [`native-abi`](../../openspec/specs/native-abi/spec.md) | 11 |  |  |  |  | W | **C** |  |  |  |  |   |     |  |  |  | M5 |
-| [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 12 |  |  |  |  | W |  |  |  |  |     | **C** |     |  |  |  | M8.b |
+| [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | 12 |  |  |  |  | W |  |  |  |  |     |  |     |  |  | **C** | M11 |
 | **4 — Rendering** | | | | | | | |  | | | | | | | |
 | [`rhi-and-render-graph`](../../openspec/specs/rhi-and-render-graph/spec.md) | 12 |  |  |  | W |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
-| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  |       |     | **C** |     |  |  |  | M8.b |
-| [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | 9 |  |  |  | S |  |  |  | W |       |     | **C** |     |  |  |  | M8.b |
+| [`rendering-architecture`](../../openspec/specs/rendering-architecture/spec.md) | 16 |  |  |  | W |  |  |  |  |       |     |  |     |  |  | **C** | M11 |
+| [`rendering-culling-and-lod`](../../openspec/specs/rendering-culling-and-lod/spec.md) | 9 |  |  |  | S |  |  |  | W |       |     |  |     |  |  | **C** | M11 |
 | [`virtual-geometry`](../../openspec/specs/virtual-geometry/spec.md) | 26 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`virtual-texturing`](../../openspec/specs/virtual-texturing/spec.md) | 16 |  |  |  |  |  |  |  | W | **C** |  |   |     |  |  |  | M7 |
 | [`virtual-shadows`](../../openspec/specs/virtual-shadows/spec.md) | 20 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`residency`](../../openspec/specs/residency/spec.md) | 8 |  |  |  |  |  |  |  | W | **C** |  |   |     |  |  |  | M7 |
 | [`rendering-forward-clustered`](../../openspec/specs/rendering-forward-clustered/spec.md) | 11 |  |  |  | W |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
-| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  |       |     | **C** |     |  |  |  | M8.b |
+| [`shader-system`](../../openspec/specs/shader-system/spec.md) | 13 |  |  |  | W |  |  |  |  |       |     |  |     |  |  | **C** | M11 |
 | [`rendering-materials-and-shading`](../../openspec/specs/rendering-materials-and-shading/spec.md) | 9 |  |  |  | W |  |  |  |  | **C** |  |   |     |  |  |  | M7 |
-| [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W |     | **C** |     |  |  |  | M8.b |
+| [`material-compiler`](../../openspec/specs/material-compiler/spec.md) | 21 |  |  |  |  |  |  |  |  | W |     |  |     |  |  | **C** | M11 |
 | [`rendering-lighting-and-shadows`](../../openspec/specs/rendering-lighting-and-shadows/spec.md) | 13 |  |  |  | S |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
-| [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 29 |  |  |  |  |  |  |  |  | W |  |   |     |  | **C** |  | M10 |
+| [`rendering-global-illumination`](../../openspec/specs/rendering-global-illumination/spec.md) | 29 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`denoising`](../../openspec/specs/denoising/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`ray-tracing-infrastructure`](../../openspec/specs/ray-tracing-infrastructure/spec.md) | 6 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`rendering-post-processing`](../../openspec/specs/rendering-post-processing/spec.md) | 15 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
 | [`temporal-rendering`](../../openspec/specs/temporal-rendering/spec.md) | 8 |  |  |  |  |  |  |  |  | W |  |   |     |  |  | **C** | M11 |
-| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |       |  |     | **C** |     |  |  |  | M8.b |
+| [`rendering-geometry-and-resources`](../../openspec/specs/rendering-geometry-and-resources/spec.md) | 11 |  |  |  | W |  |  |  |       |  |     |  |     |  |  | **C** | M11 |
 | [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | 11 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`vfx-system`](../../openspec/specs/vfx-system/spec.md) | 26 |  |  |  |  |  |  |  |  |  |     |     | S |  | W | **C** | M11 |
 | **5 — Simulation** | | | | | | | |  | | | | | | | |
 | [`physics`](../../openspec/specs/physics/spec.md) | 16 |  |  |  |  | W |  |  |  |  | W |   |     |  |  | **C** | M11 |
 | [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | 30 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ai-system`](../../openspec/specs/ai-system/spec.md) | 19 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |     | W |     |  | **C** |  | M10 |
+| [`navigation`](../../openspec/specs/navigation/spec.md) | 16 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | 9 |  |  |  |  |  |  |  |  |  |     |     | S |  |  | **C** | M11 |
 | [`audio`](../../openspec/specs/audio/spec.md) | 19 |  |  |  |  | S |  |  |  |  |     | W |     |  |  | **C** | M11 |
 | **6 — Content and tooling** | | | | | | | |  | | | | | | | |
 | [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | 10 |  |  |  |  |  | S |  |  |  |     | W |     |  |  | **C** | M11 |
 | [`ui-system`](../../openspec/specs/ui-system/spec.md) | 25 |  |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
-| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 15 |  |  |  |  |  | W |  |       |  | W | **C** |     |  |  |  | M8.b |
+| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | 15 |  |  |  |  |  | W |  |       |  | W |  |     |  |  | **C** | M11 |
 | [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | 18 |  |  |  |  |  | S | W |  |  |  |   |     |  |  | **C** | M11 |
-| [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | 13 |  |  |  |  |  | W |  |  |  |  |   |     |  |  | **C** | M11 |
+| [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | 13 |  |  |  |  |  | S |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | 12 |  |  |  |  |  | W |  |  |  | W |   |     |  |  | **C** | M11 |
 | [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | 16 |  |  |  |  |  | W |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | 17 |  |  |  |  |  | S | W |  |  |  |   |     |  |  | **C** | M11 |
-| [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  |  |       |     | **C** |     |  |  |  | M8.b |
+| [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | 13 |  |  |  |  |  | W |  |  |       |     |  |     |  |  | **C** | M11 |
 | [`editor-visual-language`](../../openspec/specs/editor-visual-language/spec.md) | 22 |  |  |  |  |  | S | W |  |  |  |   |     |  |  | **C** | M11 |
-| [`live-editing`](../../openspec/specs/live-editing/spec.md) | 11 |  |  |  |  |  | W |  |  |  |     | **C** |     |  |  |  | M8.b |
-| [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | 11 | S | W |  |  |  | **C** |  |  |  |  |   |     |  |  |  | M5 |
+| [`live-editing`](../../openspec/specs/live-editing/spec.md) | 11 |  |  |  |  |  | S |  |  |  |     |  |     |  |  | **C** | M11 |
+| [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | 11 | S | W |  |  |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`build-and-packaging`](../../openspec/specs/build-and-packaging/spec.md) | 19 |  |  |  |  |  |  |  | W |  |  |   |     |  |  | **C** | M11 |
 | **7 — Systems and process** | | | | | | | |  | | | | | | | |
 | [`networking-and-replication`](../../openspec/specs/networking-and-replication/spec.md) | 26 |  |  |  |  |  |  |  |  |  |  |   |     | W |  | **C** | M11 |
 | [`xr-support`](../../openspec/specs/xr-support/spec.md) | 8 |  |  |  | ◇ |  |  |  |  |  |  |   |     |  |  |  | deferred |
 | [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | 13 | S |  |  |  | W |  |  |  |  |  |   |     |  |  | **C** | M11 |
-| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | 15 | S |  |  |  |  | W |  |  |  |  |   |     |  |  | **C** | M11 |
+| [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | 15 | S |  |  |  |  |  |  | W |  |  |   |     |  |  | **C** | M11 |
 | [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | 12 | S |  |  | W |  |  |  |  |  |  |   |     |  |  | **C** | M11 |
 | [`diagnostics-profiling-and-crash`](../../openspec/specs/diagnostics-profiling-and-crash/spec.md) | 18 | S |  |  |  |  | W |  |  |  |  |   |     | W | **C** |  | M10 |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | 9 | S |  |  |  |  |  |  |  |  |     | W |     |  |  | **C** | M11 |
@@ -119,7 +119,7 @@ that gap is entirely the second and third backends. Everything else about it is 
 which is the point: the abstraction is validated against one working implementation before a second
 is attempted.
 
-**Thirty-six capabilities reach Complete at M11, and that is the definition of 1.0.** Not "the engine is
+**Sixty-five capabilities reach Complete at M11, and that is the definition of 1.0.** Not "the engine is
 finished" — the specifications will keep changing — but "no capability is in a state its
 specification did not intend".
 
@@ -136,16 +136,16 @@ otherwise-complete capabilities is listed in [risks and deferrals](risks.md).
 | **M2** · World | 6 | 0 | — |
 | **M3** · First light | 10 | 1 | `core-math` |
 | **M4** · Playable | 10 | 0 | — |
-| **M5** · Authorable | 16 | 4 | `core-type-system`, `native-abi`, `project-and-plugins`, `scene-graph-and-nodes` |
+| **M5** · Authorable | 14 | 3 | `core-type-system`, `native-abi`, `scene-graph-and-nodes` |
 | **M5.5** · Operable | 3 | 0 | — |
-| **M6** · Scale | 6 | 0 | — |
+| **M6** · Scale | 7 | 0 | — |
 | **M7** · Fidelity | 13 | 3 | `rendering-materials-and-shading`, `residency`, `virtual-texturing` |
 | **M8.a** · Authorable | 5 | 0 | — |
-| **M8.b** · Systems | 25 | 13 | `asset-import-pipeline`, `core-assets-and-io`, `core-memory-and-containers`, `editor-viewport-and-gizmos`, `input-and-actions`, `live-editing`, `material-compiler`, `rendering-architecture`, `rendering-culling-and-lod`, `rendering-geometry-and-resources`, `serialization-and-prefabs`, `shader-system`, `swift-scripting` |
+| **M8.b** · Systems | 13 | 1 | `serialization-and-prefabs` |
 | **M8.c** · Spectacle | 3 | 0 | — |
 | **M9** · Integrity | 4 | 0 | — |
-| **M10** · Worlds | 14 | 6 | `diagnostics-profiling-and-crash`, `gameplay-framework`, `navigation`, `rendering-global-illumination`, `save-and-persistence`, `world-partition-and-streaming` |
-| **M11** · Reach | 48 | 48 | everything remaining |
+| **M10** · Worlds | 10 | 2 | `diagnostics-profiling-and-crash`, `gameplay-framework` |
+| **M11** · Reach | 65 | 65 | everything remaining |
 
 M5.5's load is three, and small on purpose: it is a **repair milestone**. `implement-m5b-operable`
 inserted it because M5 claimed `editor-ui-ux` at Working while closing on a script that could not
@@ -190,29 +190,29 @@ build failure rather than a discovery.
 
 <!-- BEGIN generated by `just roadmap-status` — do not edit between these markers -->
 
-As of M9 69 capabilities have left `—`, and 8 have reached Complete.
+As of M10 75 capabilities have left `—`, and 10 have reached Complete.
 
-- **Complete (8)**: `core-math`, `core-type-system`, `native-abi`,
-  `rendering-materials-and-shading`, `residency`, `scene-graph-and-nodes`,
-  `serialization-and-prefabs`, `virtual-texturing`.
-- **Working (52)**: `ai-system`, `animation-and-skinning`, `asset-import-pipeline`, `audio`,
-  `build-and-packaging`, `camera-system`, `core-assets-and-io`, `core-jobs-and-concurrency`,
-  `core-memory-and-containers`, `core-platform-abstraction`, `delivery-roadmap`, `denoising`,
-  `diagnostics-profiling-and-crash`, `ecs-core`, `editor-agent-interface`,
-  `editor-documents-and-transactions`, `editor-rust-application`, `editor-ui-ux`,
-  `editor-viewport-and-gizmos`, `editor-visual-language`, `engine-architecture`,
-  `gameplay-abilities-and-effects`, `gameplay-framework`, `input-and-actions`, `material-compiler`,
-  `navigation`, `networking-and-replication`, `physics`, `project-and-plugins`,
-  `ray-tracing-infrastructure`, `rendering-2d`, `rendering-architecture`,
-  `rendering-culling-and-lod`, `rendering-forward-clustered`, `rendering-geometry-and-resources`,
+- **Complete (10)**: `core-math`, `core-type-system`, `diagnostics-profiling-and-crash`,
+  `gameplay-framework`, `native-abi`, `rendering-materials-and-shading`, `residency`,
+  `scene-graph-and-nodes`, `serialization-and-prefabs`, `virtual-texturing`.
+- **Working (62)**: `ai-system`, `animation-and-skinning`, `asset-import-pipeline`,
+  `atmosphere-sky-and-clouds`, `audio`, `build-and-packaging`, `build-system-and-platforms`,
+  `camera-system`, `core-assets-and-io`, `core-jobs-and-concurrency`, `core-memory-and-containers`,
+  `core-platform-abstraction`, `delivery-roadmap`, `denoising`, `developer-workflow-and-just`,
+  `ecs-core`, `editor-agent-interface`, `editor-documents-and-transactions`,
+  `editor-rust-application`, `editor-ui-ux`, `editor-viewport-and-gizmos`, `editor-visual-language`,
+  `engine-architecture`, `environment-fields`, `foliage`, `gameplay-abilities-and-effects`,
+  `input-and-actions`, `material-compiler`, `navigation`, `networking-and-replication`, `physics`,
+  `procedural-content-generation`, `project-and-plugins`, `ray-tracing-infrastructure`,
+  `rendering-2d`, `rendering-architecture`, `rendering-culling-and-lod`,
+  `rendering-forward-clustered`, `rendering-geometry-and-resources`,
   `rendering-global-illumination`, `rendering-lighting-and-shadows`, `rendering-post-processing`,
   `replay-and-rollback`, `rhi-and-render-graph`, `save-and-persistence`,
   `sequencing-and-cinematics`, `shader-system`, `simulation-and-determinism`, `swift-scripting`,
-  `temporal-rendering`, `text-and-fonts`, `ui-system`, `virtual-geometry`, `virtual-shadows`,
-  `visual-scripting`, `world-partition-and-streaming`.
-- **Seed (9)**: `atmosphere-sky-and-clouds`, `build-system-and-platforms`,
-  `developer-workflow-and-just`, `editor-architecture`, `live-editing`, `ml-inference`,
-  `testing-and-quality`, `thirdparty-dependencies`, `vfx-system`.
+  `temporal-rendering`, `terrain`, `testing-and-quality`, `text-and-fonts`,
+  `thirdparty-dependencies`, `ui-system`, `vfx-system`, `virtual-geometry`, `virtual-shadows`,
+  `visual-scripting`, `water`, `weather-and-wind`, `world-partition-and-streaming`.
+- **Seed (3)**: `editor-architecture`, `live-editing`, `ml-inference`.
 
 <!-- END generated -->
 
@@ -365,6 +365,133 @@ Three cells were filled: `editor-ui-ux`'s **W** moved out of M5 into M5.5 and it
 one place the plan changed rather than being corrected — the proposal argues that the agent loop is
 most valuable *while* the engine is being built.
 
+## Where M10's tiers are thin
+
+The M10 row of [the roadmap](../ROADMAP.md#m10--worlds) named **eight** capabilities reaching
+Working, and the proposal added **three more reaching Complete** — the rows M9 demoted. The M10
+column of this matrix carried **fourteen** cells, because three further rows had had their Complete
+cell parked here since the plan was first drawn. **What M10 actually did is seven Workings from
+nothing, one Working from Seed, and two Completes.** One of the three rows it was asked to complete
+is demoted a second time; the three parked cells were moved to M11 by the closing gate.
+
+`m9:record-matches-plan` is the check that made all four of those movements deliberate rather than
+quiet. M9's gate wrote it after finding six parked cells in its own column; M10's ledger restates it
+pointed at this column, and its own comment says why: *"either the work is done and the record says
+so, or the cells move, and both are deliberate acts rather than an omission nobody noticed"*.
+
+### The eight that advanced, and what each is measured by
+
+Seven of the eight had no directory in `src/` when this milestone opened and are recorded at
+`none` in the milestone before it. None of them is at Working because the plan's row said so: each
+carries its own criteria in `tools/roadmap/milestones/m10.toml`, running suites over shipped code.
+
+| Capability | From | What the tier rests on |
+|---|---|---|
+| `environment-fields` | — | `src/environment/`: the sparse tiled store, **one producer per field refused at registration by name**, the determinism split, residency and streaming, and CPU/GPU agreement. Five criteria, and the refusal is shown to fail with the check removed |
+| `terrain` | — | `src/terrain/`: tiled hierarchical storage, terrain as a geometry source, material layers, deformation classes through the persistence overlay, collision, the navigation contribution, HLOD and the modifier stack. Five criteria |
+| `water` | — | `src/water/`: bodies, the displacement contract, a four-cascade spectral ocean, shoreline, foam, queries and buoyancy. Four criteria. `RiverNetwork` is built and tested and the artefact contains no river |
+| `foliage` | — | `src/foliage/`: instances that are not entities at 17.3 bytes apiece, clusters, promotion, deterministic placement, GPU grass, wind response, the interaction field and the budget. Six criteria |
+| `weather-and-wind` | — | `src/weather/`: climate and weather cells, environment sampling, **the standard `wind` field**, precipitation, wetness and snow, storms, presets and transitions, ecosystem state and the firewall. Four criteria |
+| `procedural-content-generation` | — | `src/pcg/`: typed datasets, compiled graphs, execution domains, deterministic derivation, stable generated identity, regions and spatial invalidation, caching, output adapters and provenance. Seven criteria, four of which are the spike's four conditions made into tests |
+| `atmosphere-sky-and-clouds` | Seed, M7 | `src/rendering/sky/`, extended rather than duplicated: five new headers, five new translation units, four new dependencies, four new suites. Five criteria — and one declared gap, below |
+| `vfx-system` | Seed, M8.c | `src/vfx/gpu/`: the GPU compute dispatch M8.c's gate refused Working over, naming the file and the function. `cy::vfx` stays device-free, so the claim is split across a device-free criterion and a device one |
+
+### `atmosphere-sky-and-clouds` at Working with a failing gap against it, and why that is the honest cell
+
+**`m10:sky-field-round-trip` runs, fails, and names M11.** `CloudShadowField::update` reports writing
+tiles whose darkest value is below 0.5; `CloudShadowField::sample` returns the declared default of
+1.0 at all twenty-five points inside `radius_metres`. Terrain and water round-trip through the same
+`FieldStore`, and both suites go red when their own `publish()` is suppressed, so this is the sky's
+write path rather than the substrate's. **And no consumer reads the field either**: `CloudShadow`
+appears nowhere outside `src/rendering/sky/`, so *"consumed by terrain, foliage, water, and
+illumination"* has no consumers as well as no readable producer.
+
+That is one requirement of thirteen, and half of that one. The other half of `Cloud shadows` is met
+and enforced structurally rather than by review — `src/rendering/sky/CMakeLists.txt` does not link
+`cy::rendering-shadows`, so no expression in the module can allocate a virtual shadow page, and
+`cloud_shadow_declaration()` refuses a cell below 64 m for the same reason — and the requirement's
+third sentence, resolution and update rate as budget levers, is implemented and counted.
+
+**The twelve other requirements are built and measured**, by five criteria over five suites: the
+physical atmosphere with no colour constant in it, its four precomputed tables, aerial perspective in
+the engine's own froxel volume, celestial bodies on a declared clock, sky composition, cloud
+representation and rendering, volumetric integration, planetary scale from two metres to four hundred
+kilometres, environment profiles, the quality tiers, the diagnostics, and the sky as a light. Two
+defects were found and fixed with the regression test beside each: a sky that glowed at midnight, and
+a `remap01` over a descending interval that made every cloud in the engine zero.
+
+Working is *"the requirements a real project depends on are satisfied … optional and advanced
+requirements may be outstanding"*. A project depends on this row for the sky, the sun and the moon,
+aerial perspective and the sky light, and gets all four; cloud shadows darken a surface that is
+already lit. Recording the row at Seed would say M10 did nothing for it, which is false. Recording it
+at Complete would be the failure this apparatus exists to catch. Working beside a running, failing,
+rung-bearing gap is the shape `audio` carries for `m8c:steam-audio-configures` and
+`simulation-and-determinism` for `m9:lockstep-cross-platform`.
+
+**What this cell does not say is that the gap is optional.** If `sky-field-round-trip` is still open
+at M11 this row does not reach Complete there, and the ledger enforces both halves: an open gap keeps
+failing, and a gap that starts *passing* fails the ledger until its declaration is deleted.
+
+### `save-and-persistence` is demoted a second time, and its Complete cell moves from M10 to M11
+
+M9's gate demoted this row and named two blockers. **Half of one of them landed.** Conflict
+resolution is `src/save/include/cy/save/conflict.h`, deciding between a local and a remote copy on
+the logical metadata the specification names — generation, campaign identity, simulation point,
+progress marker, content version — on a `SaveSummary` that **has no timestamp field in it**, so
+*"SHALL NOT be decided by file modification timestamps"* is enforced by the type rather than by a
+convention someone has to keep. `Manifest::progress` is written only when non-zero, so a save written
+before the field existed still decodes.
+
+**Confidentiality did not land**, and the reason is a scoping decision rather than a limit of the
+machine: `thirdparty-dependencies` names mbedTLS as this engine's cryptography library and requires
+adopting a dependency to go through the OpenSpec change flow with the evaluation recorded, which is a
+change of its own rather than one to open inside a closing gate. M10 added no dependency at all.
+
+**And the audit found the bill is larger than the two blockers M9 named.** Read requirement by
+requirement against this tree, `save-and-persistence`'s twenty requirements come out **nine
+satisfied, three unmet and eight partial**, with the per-row evidence in `src/save/README.md`. The
+three unmet are integrity and confidentiality; save diagnostics and inspection, where nothing answers
+"why is this field in the save" and there is no semantic diff; and forbidden save patterns, of whose
+ten *"each SHALL be checkable"* and none is checked. Among the partials is the large-world save
+benchmark the requirement says the engine *"SHALL maintain"*, which `benchmarks/` does not contain.
+
+`design.md` §4 wrote down in advance what a second demotion of one row means: **the row is
+mis-scoped rather than late**, and that is a finding about the plan which belongs in the next
+milestone's proposal rather than in this gate. It is carried into
+`openspec/changes/implement-m11-reach/proposal.md` rather than left in a tasks file.
+
+### The three parked Complete cells, and the first-hand reason each one moved
+
+`navigation`, `rendering-global-illumination` and `world-partition-and-streaming` carried **C** in
+the M10 column for rows this milestone never proposed, never touched and never audited — no M10 task
+names any of the three. That alone would be enough to move them, and each also has a specific
+refutation rather than only an absence of work.
+
+- **`rendering-global-illumination` → M11.** [Cycle 2](dependencies.md#2--global-illumination--atmosphere)
+  is the entire reason this cell was at M10: an analytic sky seeds at M7, and *"the physical
+  atmosphere, its precomputed tables and volumetric clouds land at M10, and GI reaches Complete
+  there"*. **The atmosphere landed and the seam was never joined.**
+  `src/rendering/gi/include/cy/rendering/gi/lighting.h` still describes its two-colour gradient as
+  *"the seam it will replace, not a second sky"*; `sky_light.h` carries the three-line adapter and
+  says a composition point writes it; **nothing in the tree constructs a `gi::SkyTerm` from the
+  atmosphere**, and neither module links the other. One requirement of twenty-nine — `Sky and
+  atmosphere` — is the one the cycle was about, and it is the one still open.
+- **`world-partition-and-streaming` → M11.** The milestone whose column claimed this Complete closed
+  on an artefact with **no streaming in it**: `samples/10-world` keeps the whole world resident,
+  meshes every terrain tile at level 0, and reports `MeshReport::stitched_vertices` as zero precisely
+  so a reader can see that nothing streamed. The sample's own README says the streaming binder
+  `src/terrain/`'s README records as its largest gap is still missing and that the artefact does not
+  stand in for it.
+- **`navigation` → M11.** Terrain's contribution is real and is this milestone's work:
+  `src/terrain/include/cy/terrain/collision.h` produces a `navigation::NavSourceGeometry` from the
+  collision representation with its material and slope data. That is one requirement of sixteen —
+  `Environment-driven navigation` — and terrain's own `CMakeLists.txt` states the boundary: it
+  *"creates no body and builds no navmesh"*. Nothing else in the row was examined here.
+
+**M11's load goes 61 → 65**, on top of the 48 → 61 that M10's record audit of the four earlier closed
+columns already moved onto it. That is the split-M11 argument seventeen cells stronger than the plan
+carried at M9, and it is stated here rather than absorbed.
+
 ## Where M9's tiers are thin
 
 The M9 row of [the roadmap](../ROADMAP.md#m9--integrity) named **six** capabilities, four of them
@@ -434,7 +561,20 @@ completion that did not happen.
   resynchronises from a snapshot" therefore has no trigger. It is the third armed-and-unread
   mechanism this milestone has met, after the determinism firewall it armed and the breadcrumb ring
   it declared. The row stays at Working because Working is "the requirements a real project depends
-  on", and the gap closes at M10.
+  on".
+
+  **M10 CLOSED IT, AND IT WAS TWO DEFECTS RATHER THAN THE ONE M9 GUESSED AT.** The frozen frontier
+  was the replay window: `already_received()` calls anything more than 32 sequences behind the
+  newest arrival a replay, and a reliable datagram's retransmissions run for the whole policy
+  horizon — about 470 sequences at 60 Hz — so the third attempt onwards was refused as a replay and
+  `next_ordered_` could never advance. The ordered channel now answers from its own frontier, which
+  is exact and needs no window, and acknowledges by name what `ack_bits` cannot reach. That alone
+  took the session from none converged to three of four; the fourth was the second defect, which is
+  that the default `RetransmitPolicy` spreads ten attempts over 7.5 s — longer than the session it
+  was carrying — and no backend exposed `ReliableEndpoint::set_policy()` for an application to say
+  otherwise. Both transports do now, and `samples/09-multiplayer` caps its backoff at two round
+  trips. `abandoned()` has its reader at last: `ConnectionStats::reliable_abandoned`, printed as
+  `session_abandoned_links`, which is zero at 25 % loss and four of eight at 50 %.
 
 - **`diagnostics-profiling-and-crash` → Working, not Complete.** Rolling capture, the crash
   artefact, source-location privacy and reproduction artefacts landed. Two requirements did not.
@@ -470,6 +610,88 @@ Complete**, and is declared as the gap `m9:record-matches-plan-history`, closing
 column alone claims twelve Completes — `rendering-architecture`, `shader-system`,
 `material-compiler`, `core-memory-and-containers` among them — that the record holds at Working.
 Auditing those rows belongs to a milestone that can examine them, not to the gate that found them.
+
+## M10's record audit: nineteen cells over four closed milestones
+
+**`m9:record-matches-plan-history` was a declared gap, it named nineteen cells, and this is the
+audit that closed it.** M9's gate added `record-matches-plan` — the comparison between a milestone's
+own matrix column and [the status record](status.yaml) — ran the same comparison over every
+milestone whose gate was already green, and found nineteen cells the record does not support,
+thirteen of them Complete. It declared the finding rather than claiming the rows, because auditing
+M3's, M4's, M5's and M8.b's columns is work for a milestone that can examine them. M10 task 6.5 is
+that milestone, and `openspec/changes/audit-closed-milestone-columns/` is the change the
+[roadmap's own rule](../../openspec/specs/delivery-roadmap/spec.md) requires for moving a capability
+between milestones.
+
+**Each of the nineteen was read against the tree that M10 closes on, not against the gate that
+parked it.** Two of them had moved: `live-editing` gained the other half of its bridge at M7 and
+`editor-viewport-and-gizmos` gained engine-side picking at M8.a, and both are recorded below with
+what they gained before what they still lack. **Fifteen cells moved and four rows were claimed** —
+four rows whose columns were right and whose record had simply never been written, which is the
+other way a plan and a record drift apart and the one no previous gate had looked for.
+
+### The fifteen cells that moved, and the evidence for each
+
+**M5 — four cells.** All four were already argued by M5's own gate in
+[where M5's tiers are thin](#where-m5s-tiers-are-thin); what that gate did not do is move the cells
+with the record, and this is the half it left.
+
+| Cell | Moves to | What the tree says today |
+|---|---|---|
+| `editor-architecture` **W** | **S** at M5 | The three play modes are not exposed: `grep -rniI 'SeparateProcess\|RemoteDevice\|InEditor' src/ editor/ tools/` returns nothing. No specialised editor exists — the three panel kinds the interface defines are `hierarchy`, `viewport` and `content-browser`, and `chrome.rs` reserves a `CentreLower` region for "the active specialised editor: script graph, animation, materials, sequencing" that nothing fills. Project creation from templates, project settings, the build-and-deployment client, the debugger and the frame profiler have no implementation — `profiler` exists as a docking-layout panel identifier and nothing draws one. Undo/redo and the generated inspector are Working-grade, which is why the row is Seed and not nothing |
+| `live-editing` **W** | **S** at M5 | The bridge now has both sides — `src/runtime/editor_bridge/` binds an `AF_UNIX` socket, which is exactly what M5's gate recorded as missing — and that is real ground. Two requirements still have no implementation anywhere in the tree: **Live edit policy** (`grep -rniI 'LiveEditPolicy\|ReinitializeComponent\|RecreateEntity\|RestartWorld' src/ editor/ tools/` returns nothing) and **Play modes**, the same grep as the row above. A capability with no per-field policy and no play modes is Seed |
+| `project-and-plugins` **C** | **C** at M11 | Four of eleven requirements — Plugins, Plugin lifecycle, Plugin resolution and lockfile, Trust tiers for extensions — have no implementation: `find src tools -iname '*plugin*'` returns one layercheck fixture. Unchanged since M5's gate wrote the same sentence |
+| `developer-workflow-and-just` **W** | **W** at M6 | At M5 the whole **Content** category of the required recipe surface was `_not-implemented` stubs — `git show 412c955:just/content.just` is five recipes that refuse. The stubs were removed at M6 (`ec8d087`), which is the milestone at which every category the requirement names does something. The record claims Working there, below |
+
+**M8.b — eleven Complete cells, and none of them is a row M8.b proposed, touched or audited.** Six
+of the eleven were parked there by M7's gate, which moved them out of M7 rather than claim them;
+M8.b's gate did not re-read them. They move to **M11**, which is the rung M9's gate moved its own six
+parked cells to and the only rung left.
+
+| Cell | What is unmet, on this tree |
+|---|---|
+| `asset-import-pipeline` | glTF refuses skins and animations by name (`gltf.cpp:940`), `MeshData` carries no joint or weight array, `decode_image` reads Targa and names the decoder PNG and JPEG would need (`texture.cpp:438`), there is no BC7 or ASTC encoder, no USD, and no virtual-geometry cooking |
+| `core-assets-and-io` | `AssetSystem::reload` returns `NotImplemented` for an asset served from a cooked package (`asset_system.cpp:1190`), and "Development file serving" has no transport: `RemoteFileProvider`'s only implementation in the tree is `FakeHost` in `tests/test_vfs.cpp` |
+| `core-memory-and-containers` | "Memory diagnostics" requires attribution by domain, type, thread, world cell and asset. `MemoryAttributionScope` still has no producer outside `src/core/memory/` — the four files that name it are its own header, source, test and README |
+| `editor-viewport-and-gizmos` | Engine-side picking is real since M8.a wired `cy::render::pick_ray` into the hosted runtime, which is what M7's gate said was missing. "View modes and debug visualisation" is not: the editor's `ViewMode` enum carries nineteen entries, the requirement names eight more — virtual-geometry clusters, lightmap and GI probes, virtual-texture feedback and residency, virtual-shadow pages, physics colliders, navigation data, audio emitters, streaming region state — and `viewmode.rs` lists them in its own header as absent |
+| `input-and-actions` | "Input assets and cooking" requires actions, contexts, bindings, processors and triggers to be authored as assets and cooked. Nothing authors or cooks one: there is no input asset kind, no importer and no cook step, and the module's README says the tables are built in code |
+| `material-compiler` | "Node previews use the real compiler" requires previewable graph nodes generated through the runtime compiler. There is no material graph in the editor to preview |
+| `shader-system` | "Visual material editor" requires a node-graph material editor that is a front end onto the material compiler, able to show every lowering stage. `cy_material` shows every stage on a command line; the editor has no material graph panel |
+| `rendering-architecture` | "Subsystem controllers SHALL report their measured cost to the arbiter" has no instance under `src/`: `SubsystemController` is named only by `samples/07-fidelity/`. M10 moved the needle — `src/foliage/` and `src/rendering/sky/` link `cy::rendering-arbiter` and `declare_to_arbiter()` publishes a priced ladder — and a declaration is not a controller reporting a measurement |
+| `rendering-culling-and-lod` | `GpuCullPass::upload` still refuses `kGpuCullOcclusion` (`cull_pass.cpp:380`) because no hierarchical depth buffer exists on the device, and cluster-granular occlusion for virtual geometry has no implementation |
+| `rendering-geometry-and-resources` | The GPU skin pass refuses dual quaternion skinning by name (`skin_dispatch.cpp:58`) because `PoseWorld` publishes matrices, and blend shapes are not applied in it (`skin_pass.h:60`) though the specification requires them "in the same compute pass as skinning" |
+| `swift-scripting` | No shipping configuration — the static, whole-module half of the two the specification requires is untried. The Swift toolchain version is not pinned anywhere, though the requirement asks for a pin "per engine release and verified in CI". `@Node(path)` resolves to nil, the tree callbacks are declared and not driven, and there is no chunk source. All of it is in `bindings/swift/README.md` under its own heading |
+
+`live-editing`'s Complete cell is the twelfth and moves with its M5 cell, above.
+
+### The four rows that were claimed, because the column was right and the record was never written
+
+These are the other direction, and the reason the criterion compares tiers rather than counting
+demotions. Each had been recorded at **Seed** since the milestone that seeded it, and each had a
+column claiming Working at a milestone whose task list never mentioned it — so no gate ever advanced
+it and no gate ever refused to. The tier below is what the tree holds; the milestone is the rung at
+which it became true, verified against that rung's own commit rather than assumed.
+
+| Row | Recorded | Why, and what Complete still waits on |
+|---|---|---|
+| `testing-and-quality` | **working**, M3 | At M3's closing commit: `cy_add_test` carrying the taxonomy's per-case budgets and CTest labels, the unit, integration, smoke and render suites, golden images, `benchmarks/` with a committed baseline and per-benchmark tolerances, and `sanitize`, `sanitize-nightly`, `quality`, `specs`, `generated`, `identity` and `profiles` jobs in CI. Complete stays at M11: `swift-format`, the licence-header check, the spelling check and the undocumented-symbol gate do not exist, and the three acceptance scenarios — strategy stress, control handover, headless server — are unwritten |
+| `build-system-and-platforms` | **working**, M4 | Four profiles that mean the same thing in every toolchain, feature options, dependency management driven from the manifest, code generation, the compiler matrix — and at M4 the Swift toolchain integration the requirement names, which is the rung at which the build system had to serve a second toolchain. Complete stays at M11: distribution artefacts and cross-compilation to a second platform |
+| `developer-workflow-and-just` | **working**, M6 | Every category of the required recipe surface does something from M6: Environment, Build, Run, Test, Quality, Generate, Content, Diagnose, Roadmap, Maintenance, Release. Before M6 the Content category refused. Complete stays at M11, with the targets a release and a second platform bring |
+| `thirdparty-dependencies` | **working**, M8.b | The manifest carries every field the requirement lists, for fifteen dependencies at M8.b and seventeen today, with `deps/host-tools.toml` for build-time tooling that is never linked; `THIRD_PARTY.md` is generated from both; optional dependencies are feature-gated with a test that proves a disabled feature fetches, builds and links nothing; and from M6 the editor's Rust crates are under the same governance. Complete stays at M11: about half the intended set is not integrated and the runtime exposes no attribution API |
+
+### What the audit costs the plan, said out loud
+
+**M11's load went from 48 to 61.** Thirteen Complete cells moved onto the last rung, which already
+carried "everything remaining", and the note under [milestone load](#milestone-load) — that M11 is
+the one milestone that could reasonably be split — is now thirteen cells more true than it was.
+Moving a cell forward is not closing it; it is moving a claim to a column that has not been audited
+yet, and on the last rung there is nowhere further to move one.
+
+**M8.b's column went from 25 advanced and 13 completing to 13 and 1.** The milestone built eleven
+capabilities to Working and completed `serialization-and-prefabs`; the other twelve Completes were
+cells the plan had parked in its column, some of them since the matrix was first drawn. That is the
+shape this check exists to find, and it is worth naming that the count of what M8.b *did* has not
+changed by one row.
 
 ## Where M8.a's tiers are thin
 

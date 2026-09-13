@@ -131,6 +131,16 @@ struct ConnectionStats {
     u64 datagrams_dropped = 0;
     u64 datagrams_duplicate = 0;
     u64 retransmissions = 0;
+    /// **A reliable datagram on this link exhausted its retransmission attempts.** The peer is
+    /// unreachable for it, and the ordered channel carrying it can never advance again, so a
+    /// session that keeps playing is a session that has silently stopped hearing from its peer.
+    ///
+    /// `ReliableEndpoint::abandoned()` has raised this since M9 and nothing read it —
+    /// `m9:reliable-channel-stalls-under-loss` named that as half the gap. It is reported here
+    /// because the policy behind it is the session's, not the transport's: a shipping game drops
+    /// the peer, a tool retries the handshake, and a transport that chose for them would be a
+    /// transport with an opinion about gameplay.
+    bool reliable_abandoned = false;
 };
 
 /// What a transport provides against the four security obligations.

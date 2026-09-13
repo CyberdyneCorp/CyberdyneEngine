@@ -87,6 +87,17 @@ public:
     /// handshake it has already seen.
     [[nodiscard]] Expected<PeerId, Error> accept(const UdpAddress& address) noexcept;
 
+    /// **How this transport paces retransmission**, applied to every link, open or yet to open.
+    ///
+    /// The default `RetransmitPolicy` caps its backoff at a second and gives up after ten attempts,
+    /// which is a 7.5 s recovery horizon. That is a reasonable shape for an internet-scale
+    /// conversation and a poor one for a 60 Hz session over a 120 ms round trip: nine tenths of the
+    /// horizon is spent idle, and a datagram unlucky five times running is still waiting when the
+    /// match ends. `m9:reliable-channel-stalls-under-loss` was two defects, and this is the second
+    /// — an application that knows its own tick rate and round-trip time could not say so, because
+    /// `ReliableEndpoint::set_policy()` had no route through any backend. It has one here.
+    void set_retransmit_policy(const RetransmitPolicy& policy) noexcept;
+
     [[nodiscard]] u32 link_count() const noexcept { return static_cast<u32>(links_.size()); }
     [[nodiscard]] u64 datagrams_sent() const noexcept { return sent_; }
     [[nodiscard]] u64 datagrams_received() const noexcept { return received_; }
@@ -118,6 +129,7 @@ private:
     Allocator* allocator_;
     Array<Link*> links_;
     Array<u8> outgoing_;
+    RetransmitPolicy policy_{};
     Array<u8> inbound_;
     int socket_ = -1;
     u16 bound_port_ = 0;

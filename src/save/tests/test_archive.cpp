@@ -1,6 +1,7 @@
 // Generations, the journal, retention and the transactional guarantee. Tasks 6.2 and 6.4.
 
 #include <cy/save/archive.h>
+#include <cy/save/conflict.h>
 #include <cy/save/storage.h>
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
@@ -9,6 +10,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string_view>
 
 using namespace cy;
@@ -402,4 +404,72 @@ CY_TEST_CASE("a filesystem archive round-trips an unloaded region") {
     CY_CHECK_EQ(read.region_count(), 3U);
     CY_CHECK_EQ(revives_of(read, kQuarry, entity(10)), 5U);
     CY_CHECK_EQ(read.find_entry(kSummit, entity(20))->kind, EntryKind::Tombstone);
+}
+
+CY_TEST_CASE("a conflict is decided on meaning, not on which file was written last") {
+    // `save-and-persistence` — "Storage backends and the cloud boundary": conflict resolution
+    // "SHALL use logical metadata ... and SHALL NOT be decided by file modification timestamps".
+    //
+    // Two real save directories, written in the order that makes the WRONG answer the tempting one:
+    // the device that played further is written FIRST, so its files are the older ones on disk, and
+    // the device that is behind on every marker is written SECOND and is therefore the newest thing
+    // in the filesystem. A resolver that reached for a modification time would answer "keep local"
+    // here, and the metadata says the opposite.
+    cy::test::TempDir remote_dir("save_conflict_remote");
+    cy::test::TempDir local_dir("save_conflict_local");
+    CY_REQUIRE(remote_dir.valid());
+    CY_REQUIRE(local_dir.valid());
+
+    SaveIdentity ahead = identity();
+    ahead.progress = 40;
+    SaveIdentity behind = identity();
+    behind.progress = 12;
+
+    // The remote copy: played further, saved twice, and written to disk first.
+    FilesystemBackend remote_store;
+    CY_REQUIRE(remote_store.open(remote_dir.path().c_str()).has_value());
+    SaveArchive remote_archive(test_allocator());
+    CY_REQUIRE(remote_archive.open(remote_store).has_value());
+    Overlay remote_state(test_allocator());
+    populate(remote_state);
+    remote_state.set_simulation_point(11000);
+    CY_REQUIRE(remote_archive.commit(remote_state, ahead).has_value());
+    CY_REQUIRE(remote_archive.commit(remote_state, ahead).has_value());
+
+    // The local copy: an older point in the same campaign, and the newest bytes on this machine.
+    FilesystemBackend local_store;
+    CY_REQUIRE(local_store.open(local_dir.path().c_str()).has_value());
+    SaveArchive local_archive(test_allocator());
+    CY_REQUIRE(local_archive.open(local_store).has_value());
+    Overlay local_state(test_allocator());
+    populate(local_state);
+    local_state.set_simulation_point(9000);
+    CY_REQUIRE(local_archive.commit(local_state, behind).has_value());
+
+    // The inversion this case rests on, asserted rather than assumed: the copy that must LOSE is
+    // the one the filesystem calls newest.
+    const std::filesystem::path local_pointer = std::filesystem::path(local_dir.path()) / "current";
+    const std::filesystem::path remote_pointer =
+        std::filesystem::path(remote_dir.path()) / "current";
+    CY_REQUIRE(std::filesystem::exists(local_pointer));
+    CY_REQUIRE(std::filesystem::exists(remote_pointer));
+    CY_CHECK(std::filesystem::last_write_time(local_pointer) >=
+             std::filesystem::last_write_time(remote_pointer));
+
+    // A conflict decision reads manifests, and a manifest names no chunk it has to read.
+    Manifest local_manifest(test_allocator());
+    Manifest remote_manifest(test_allocator());
+    LoadReport report;
+    const Expected<u32, Error> local_generation = local_archive.active_generation();
+    const Expected<u32, Error> remote_generation = remote_archive.active_generation();
+    CY_REQUIRE(local_generation.has_value());
+    CY_REQUIRE(remote_generation.has_value());
+    CY_REQUIRE(local_archive.read_manifest(*local_generation, local_manifest, report).has_value());
+    CY_REQUIRE(
+        remote_archive.read_manifest(*remote_generation, remote_manifest, report).has_value());
+
+    const ConflictResolution resolution = resolve_conflict(local_manifest, remote_manifest);
+    CY_CHECK_EQ(resolution.outcome, ConflictOutcome::KeepRemote);
+    CY_CHECK_EQ(remote_manifest.progress, 40ULL);
+    CY_CHECK_EQ(local_manifest.progress, 12ULL);
 }
