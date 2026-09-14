@@ -197,7 +197,7 @@ public:
 
     [[nodiscard]] usize size() const noexcept { return x_.size(); }
     [[nodiscard]] usize capacity() const noexcept { return capacity_; }
-    [[nodiscard]] bool empty() const noexcept { return x_.size() == 0; }
+    [[nodiscard]] bool empty() const noexcept { return x_.empty(); }
 
     [[nodiscard]] f32 x(usize index) const noexcept { return x_[index]; }
     [[nodiscard]] f32 y(usize index) const noexcept { return y_[index]; }

@@ -11,10 +11,6 @@ namespace cy::water {
 
 namespace {
 
-[[nodiscard]] f32 clamp01(f32 value) noexcept {
-    return (value < 0.0F) ? 0.0F : ((value > 1.0F) ? 1.0F : value);
-}
-
 [[nodiscard]] Vec3 exponential(const Vec3& coefficient, f32 thickness) noexcept {
     return Vec3{std::exp(-coefficient.x * thickness), std::exp(-coefficient.y * thickness),
                 std::exp(-coefficient.z * thickness)};
@@ -55,7 +51,7 @@ WaterSurfaceClosure build_closure(const WaterOptics& optics, const Vec3& normal,
                                   f32 column_thickness) noexcept {
     WaterSurfaceClosure closure;
     closure.normal = normal;
-    closure.foam = clamp01(foam_coverage);
+    closure.foam = math::saturate(foam_coverage);
     // Foam is rough, and a wake that kept the water's own roughness reads as polished plastic. The
     // 0.6 is the roughness of a broken, air-filled surface; the blend is linear in coverage.
     closure.roughness = math::lerp(optics.roughness, 0.6F, closure.foam);
@@ -149,10 +145,7 @@ UnderwaterState underwater_state(const WaterOptics& optics, f64 surface_height, 
     } else {
         state.submerged_fraction = state.camera_submerged ? 1.0F : 0.0F;
     }
-    state.submerged_fraction =
-        (state.submerged_fraction < 0.0F)
-            ? 0.0F
-            : ((state.submerged_fraction > 1.0F) ? 1.0F : state.submerged_fraction);
+    state.submerged_fraction = math::saturate(state.submerged_fraction);
 
     const f32 clamped_depth = (depth < 0.0F) ? 0.0F : depth;
     state.extinction = optics.absorption + optics.scattering;

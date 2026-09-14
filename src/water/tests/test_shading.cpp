@@ -12,7 +12,6 @@
 
 #include "fixtures.h"
 
-namespace test = cy::water::test;
 using cy::water::CausticTier;
 using cy::water::ReflectionBudget;
 using cy::water::ReflectionSource;

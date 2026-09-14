@@ -305,8 +305,8 @@ struct ForestGraph {
 [[nodiscard]] inline AuthoredStamp hill(i32 region_x, i32 region_z, f64 radius = 40.0,
                                         f32 amount = 30.0F) noexcept {
     AuthoredStamp stamp;
-    stamp.x = static_cast<f64>(region_x) * kRegionMetres + kRegionMetres * 0.5;
-    stamp.z = static_cast<f64>(region_z) * kRegionMetres + kRegionMetres * 0.5;
+    stamp.x = (static_cast<f64>(region_x) * kRegionMetres) + (kRegionMetres * 0.5);
+    stamp.z = (static_cast<f64>(region_z) * kRegionMetres) + (kRegionMetres * 0.5);
     stamp.radius = radius;
     stamp.amount = amount;
     stamp.node = node_identity(kStampNode);

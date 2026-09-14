@@ -47,7 +47,7 @@ i64 RegionSet::index_of(const RegionCoord& region) const noexcept {
     if (!extent_.contains(region)) {
         return -1;
     }
-    return (static_cast<i64>(region.z) - extent_.min_z) * extent_.width() +
+    return ((static_cast<i64>(region.z) - extent_.min_z) * extent_.width()) +
            (static_cast<i64>(region.x) - extent_.min_x);
 }
 

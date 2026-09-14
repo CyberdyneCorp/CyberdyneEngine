@@ -103,7 +103,7 @@ DerivationKey derivation_key(u64 program_digest, u32 generator_version, u64 seed
 }
 
 u64 CachedRegion::bytes() const noexcept {
-    return points.bytes() + stage_digests.capacity() * sizeof(u64) + sizeof(CachedRegion);
+    return points.bytes() + (stage_digests.capacity() * sizeof(u64)) + sizeof(CachedRegion);
 }
 
 Expected<const CachedRegion*, Error> RegionCache::store(DerivationKey key,

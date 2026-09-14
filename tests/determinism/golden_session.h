@@ -36,9 +36,12 @@
 #include <cy/replay/session.h>
 #include <cy/test/test.h>
 
+#include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -155,6 +158,56 @@ struct GoldenHashes {
     std::vector<cy::u64> hashes;
 };
 
+/// `literal` matched at `cursor` and stepped over. `cursor` is left where it was on a mismatch, so
+/// the caller can try the next shape.
+[[nodiscard]] inline bool take_literal(const char*& cursor, const char* literal) noexcept {
+    const cy::usize length = std::strlen(literal);
+    if (std::strncmp(cursor, literal, length) != 0) {
+        return false;
+    }
+    cursor += length;
+    return true;
+}
+
+/// One unsigned integer taken off the front of `cursor` in `base`, with the conversion CHECKED.
+///
+/// This is `std::strtoull` and not `std::sscanf` because sscanf cannot report a conversion error:
+/// it answers the same 1 for `ticks 120`, for `ticks 120 and then some`, and for a value that
+/// overflowed `unsigned long long` — and that last one is undefined behaviour, not a large number.
+/// A hashes file that parsed loosely is a comparison in test_golden_replay.cpp made against an
+/// expectation nobody wrote, which is the same vacuous pass an unparseable file would be.
+[[nodiscard]] inline bool take_u64(const char*& cursor, int base, cy::u64& out) noexcept {
+    // strtoull of its own accord skips leading whitespace and accepts a sign, so "-1" would read as
+    // 18446744073709551615. This format writes neither, so neither is accepted.
+    if (std::isxdigit(static_cast<unsigned char>(*cursor)) == 0) {
+        return false;
+    }
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long long value = std::strtoull(cursor, &end, base);
+    if (end == cursor || errno == ERANGE) {
+        return false;
+    }
+    cursor = end;
+    out = static_cast<cy::u64>(value);
+    return true;
+}
+
+/// `line` read as `<prefix><number>` with nothing left over.
+[[nodiscard]] inline bool scan_field(const std::string& line, const char* prefix, int base,
+                                     cy::u64& value) noexcept {
+    const char* cursor = line.c_str();
+    return take_literal(cursor, prefix) && take_u64(cursor, base, value) && *cursor == '\0';
+}
+
+/// `line` read as `<tick> <hash>` with nothing left over.
+[[nodiscard]] inline bool scan_tick(const std::string& line, cy::u64& tick,
+                                    cy::u64& hash) noexcept {
+    const char* cursor = line.c_str();
+    return take_u64(cursor, 10, tick) && take_literal(cursor, " ") && take_u64(cursor, 16, hash) &&
+           *cursor == '\0';
+}
+
 [[nodiscard]] inline GoldenHashes parse_hashes(const std::string& text) {
     GoldenHashes parsed;
     cy::usize start = 0;
@@ -165,21 +218,32 @@ struct GoldenHashes {
         if (line.empty() || line[0] == '#') {
             continue;
         }
-        unsigned long long first = 0;
-        unsigned long long second = 0;
-        if (std::sscanf(line.c_str(), "records %llu", &first) == 1) {
+        cy::u64 first = 0;
+        cy::u64 second = 0;
+        if (scan_field(line, "records ", 10, first)) {
+            // Not truncated into the u32 silently: a count that does not fit is a damaged file, and
+            // test_golden_replay.cpp compares `golden.size()` against this.
+            if (first > std::numeric_limits<cy::u32>::max()) {
+                return GoldenHashes{};
+            }
             parsed.records = static_cast<cy::u32>(first);
-        } else if (std::sscanf(line.c_str(), "log-hash %llx", &first) == 1) {
-            parsed.log_hash = static_cast<cy::u64>(first);
-        } else if (std::sscanf(line.c_str(), "ticks %llu", &first) == 1) {
+        } else if (scan_field(line, "log-hash ", 16, first)) {
+            parsed.log_hash = first;
+        } else if (scan_field(line, "ticks ", 10, first)) {
+            // A file with N tick lines is at least N bytes long, so a larger count is damage rather
+            // than a long session — and reserving on it would be a bad_alloc out of a test helper,
+            // which reads as a broken harness instead of as a broken artefact.
+            if (first > text.size()) {
+                return GoldenHashes{};
+            }
             parsed.hashes.reserve(static_cast<cy::usize>(first));
-        } else if (std::sscanf(line.c_str(), "%llu %llx", &first, &second) == 2) {
+        } else if (scan_tick(line, first, second)) {
             // The tick is the index, checked rather than assumed: a file whose lines were reordered
             // would otherwise compare a tick against another tick's hash and pass.
             if (first != parsed.hashes.size()) {
                 return GoldenHashes{};
             }
-            parsed.hashes.push_back(static_cast<cy::u64>(second));
+            parsed.hashes.push_back(second);
         }
     }
     return parsed;

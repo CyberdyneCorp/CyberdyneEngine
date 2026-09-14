@@ -194,7 +194,7 @@ Status FieldStreaming::materialise_guaranteed(Adopted& adopted, const FieldDecla
     load_buffer_.clear();
     const bool cooked = adopted.loader != nullptr &&
                         adopted.loader(adopted.user, address, load_buffer_).has_value();
-    const Status inserted =
+    Status inserted =
         cooked ? store_->insert_tile(adopted.token, address, load_buffer_.span(),
                                      /*guaranteed=*/true)
                : store_->insert_default_tile(adopted.token, address, /*guaranteed=*/true);
@@ -374,19 +374,18 @@ Status FieldStreaming::collect_wanted() noexcept {
             return appended;
         }
     }
-    std::sort(wanted_.begin(), wanted_.end(),
-              [](const TileAddress& a, const TileAddress& b) noexcept {
-                  if (!(a.field == b.field)) {
-                      return a.field.value < b.field.value;
-                  }
-                  if (a.level != b.level) {
-                      return a.level < b.level;
-                  }
-                  if (a.z != b.z) {
-                      return a.z < b.z;
-                  }
-                  return a.x < b.x;
-              });
+    std::ranges::sort(wanted_, [](const TileAddress& a, const TileAddress& b) noexcept {
+        if (!(a.field == b.field)) {
+            return a.field.value < b.field.value;
+        }
+        if (a.level != b.level) {
+            return a.level < b.level;
+        }
+        if (a.z != b.z) {
+            return a.z < b.z;
+        }
+        return a.x < b.x;
+    });
     return ok();
 }
 

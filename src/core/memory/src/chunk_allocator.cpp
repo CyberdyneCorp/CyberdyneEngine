@@ -9,7 +9,11 @@ namespace cy {
 ChunkAllocator::ChunkAllocator(MemoryDomain domain, AllocationTag tag, usize chunk_bytes,
                                usize chunk_alignment) noexcept
     : Allocator(domain, tag), chunk_bytes_(chunk_bytes), chunk_alignment_(chunk_alignment) {
-    CY_ASSERT_MSG(chunk_bytes >= sizeof(FreeNode), "a chunk must hold a free-list link");
+    // The size is taken into a local rather than written inside the assertion: with assertions
+    // compiled out, `CY_ASSERT_MSG` wraps its expression in `sizeof` to leave it unevaluated, and a
+    // `sizeof` inside that is a `sizeof(sizeof(...))` nobody meant to write.
+    constexpr usize link_bytes = sizeof(FreeNode);
+    CY_ASSERT_MSG(chunk_bytes >= link_bytes, "a chunk must hold a free-list link");
     CY_ASSERT_MSG(is_power_of_two(chunk_alignment), "chunk alignment must be a power of two");
 }
 

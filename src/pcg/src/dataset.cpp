@@ -218,8 +218,8 @@ Status PointSet::retain(Span<const u8> keep) noexcept {
             identities_[out] = identities_[index];
             for (Column& column : columns_) {
                 const u32 width = attribute_bytes(column.type);
-                std::memcpy(column.data.data() + out * width, column.data.data() + index * width,
-                            width);
+                std::memcpy(column.data.data() + (out * width),
+                            column.data.data() + (index * width), width);
             }
         }
         ++out;
@@ -268,7 +268,7 @@ f32 PointSet::get_f32(AttributeId id, usize index) const noexcept {
         return 0.0F;
     }
     f32 value = 0.0F;
-    std::memcpy(&value, column->data.data() + index * sizeof(f32), sizeof(f32));
+    std::memcpy(&value, column->data.data() + (index * sizeof(f32)), sizeof(f32));
     return value;
 }
 
@@ -277,7 +277,7 @@ void PointSet::set_f32(AttributeId id, usize index, f32 value) noexcept {
     if (column == nullptr || index >= capacity_) {
         return;
     }
-    std::memcpy(column->data.data() + index * sizeof(f32), &value, sizeof(f32));
+    std::memcpy(column->data.data() + (index * sizeof(f32)), &value, sizeof(f32));
 }
 
 i32 PointSet::get_i32(AttributeId id, usize index) const noexcept {
@@ -286,7 +286,7 @@ i32 PointSet::get_i32(AttributeId id, usize index) const noexcept {
         return 0;
     }
     i32 value = 0;
-    std::memcpy(&value, column->data.data() + index * sizeof(i32), sizeof(i32));
+    std::memcpy(&value, column->data.data() + (index * sizeof(i32)), sizeof(i32));
     return value;
 }
 
@@ -295,7 +295,7 @@ void PointSet::set_i32(AttributeId id, usize index, i32 value) noexcept {
     if (column == nullptr || index >= capacity_) {
         return;
     }
-    std::memcpy(column->data.data() + index * sizeof(i32), &value, sizeof(i32));
+    std::memcpy(column->data.data() + (index * sizeof(i32)), &value, sizeof(i32));
 }
 
 u64 PointSet::get_u64(AttributeId id, usize index) const noexcept {
@@ -304,7 +304,7 @@ u64 PointSet::get_u64(AttributeId id, usize index) const noexcept {
         return 0;
     }
     u64 value = 0;
-    std::memcpy(&value, column->data.data() + index * sizeof(u64), sizeof(u64));
+    std::memcpy(&value, column->data.data() + (index * sizeof(u64)), sizeof(u64));
     return value;
 }
 
@@ -313,11 +313,11 @@ void PointSet::set_u64(AttributeId id, usize index, u64 value) noexcept {
     if (column == nullptr || index >= capacity_) {
         return;
     }
-    std::memcpy(column->data.data() + index * sizeof(u64), &value, sizeof(u64));
+    std::memcpy(column->data.data() + (index * sizeof(u64)), &value, sizeof(u64));
 }
 
 u64 PointSet::bytes() const noexcept {
-    u64 total = static_cast<u64>(capacity_) * (3 * sizeof(f32) + sizeof(u32) + sizeof(u64));
+    u64 total = static_cast<u64>(capacity_) * ((3 * sizeof(f32)) + sizeof(u32) + sizeof(u64));
     for (const Column& column : columns_) {
         total += column.data.size();
     }
@@ -375,7 +375,7 @@ Expected<PointSet, Error> PointSet::clone(usize extra_capacity) const noexcept {
         if (Status sized = (*slot)->data.resize(room * attribute_bytes(column.type)); !sized) {
             return make_unexpected(sized.error());
         }
-        if (column.data.size() != 0) {
+        if (!column.data.empty()) {
             std::memcpy((*slot)->data.data(), column.data.data(), column.data.size());
         }
     }
@@ -452,7 +452,7 @@ f32 Raster::at(AttributeId id, u32 x, u32 z) const noexcept {
     if (channel == nullptr || x >= edge_ || z >= edge_) {
         return 0.0F;
     }
-    return channel->values[static_cast<usize>(z) * edge_ + x];
+    return channel->values[(static_cast<usize>(z) * edge_) + x];
 }
 
 void Raster::set(AttributeId id, u32 x, u32 z, f32 value) noexcept {
@@ -460,7 +460,7 @@ void Raster::set(AttributeId id, u32 x, u32 z, f32 value) noexcept {
     if (channel == nullptr || x >= edge_ || z >= edge_) {
         return;
     }
-    channel->values[static_cast<usize>(z) * edge_ + x] = value;
+    channel->values[(static_cast<usize>(z) * edge_) + x] = value;
 }
 
 Span<const f32> Raster::values(AttributeId id) const noexcept {

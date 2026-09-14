@@ -21,14 +21,25 @@ namespace {
 using determinism::RandomStream;
 
 [[nodiscard]] f32 smooth_step(f32 t) noexcept {
-    return t * t * (3.0F - 2.0F * t);
+    return t * t * (3.0F - (2.0F * t));
 }
 
-/// A lattice value from a counter-based stream. Offset so that a negative lattice coordinate in a
-/// halo is still a distinct subject rather than aliasing a positive one.
+/// A lattice value from a counter-based stream.
+///
+/// The bias is part of the hash input and stays for that reason alone. It does NOT separate
+/// negative coordinates from positive ones — widening to `u64` already does that, injectively — so
+/// removing it would buy nothing and move every digest in the module.
+///
+/// The widening happens BEFORE the addition, and that is the point of writing it this way. Done in
+/// `int`, `lx + kLatticeBias` is signed overflow, and so undefined behaviour, for any lattice
+/// coordinate above `INT_MAX - kLatticeBias` — reachable at planet scale, where a high octave's
+/// `wx * frequency` is in the billions. Widening first is exact for every input the `int` form did
+/// not overflow on, so no digest moves.
 [[nodiscard]] f32 lattice_value(const RandomStream& stream, i32 lx, i32 lz) noexcept {
-    return stream.unit_float(generation_point(), static_cast<u64>(lx + (1 << 20)),
-                             static_cast<u64>(lz + (1 << 20)));
+    constexpr i64 kLatticeBias = 1 << 20;
+    return stream.unit_float(generation_point(),
+                             static_cast<u64>(static_cast<i64>(lx) + kLatticeBias),
+                             static_cast<u64>(static_cast<i64>(lz) + kLatticeBias));
 }
 
 /// Value noise at absolute world coordinates. A pure function of position, so two regions agree on
@@ -45,19 +56,32 @@ using determinism::RandomStream;
     const f32 v10 = lattice_value(stream, lx + 1, lz);
     const f32 v01 = lattice_value(stream, lx, lz + 1);
     const f32 v11 = lattice_value(stream, lx + 1, lz + 1);
-    const f32 top = v00 + (v10 - v00) * tx;
-    const f32 bottom = v01 + (v11 - v01) * tx;
-    return top + (bottom - top) * tz;
+    const f32 top = v00 + ((v10 - v00) * tx);
+    const f32 bottom = v01 + ((v11 - v01) * tx);
+    return top + ((bottom - top) * tz);
 }
 
 [[nodiscard]] u32 clamp_cell(i32 value) noexcept {
     if (value < 0) {
         return 0;
     }
-    if (value >= static_cast<i32>(kRegionCells)) {
+    if (std::cmp_greater_equal(value, kRegionCells)) {
         return kRegionCells - 1;
     }
     return static_cast<u32>(value);
+}
+
+/// The neighbour's own edge cell for a coordinate that stepped one cell outside this region: off
+/// the low edge lands on the neighbour's high edge and the other way round. A coordinate already
+/// inside is its own answer, which is what keeps the caller's in-range case free.
+[[nodiscard]] u32 neighbour_edge_cell(i32 value) noexcept {
+    if (value < 0) {
+        return kRegionCells - 1;
+    }
+    if (std::cmp_greater_equal(value, kRegionCells)) {
+        return 0;
+    }
+    return clamp_cell(value);
 }
 
 /// The mean of a raster channel. The region's macro summary, and deliberately a projection of the
@@ -122,7 +146,7 @@ void FlatSpatialQuery::surface_batch(Span<const f64> x, Span<const f64> z,
 
 u64 RegionState::bytes() const noexcept {
     return raster.bytes() + candidates.bytes() + accepted.bytes() + provenance.bytes() +
-           sizeof(outflow) + stage_digests.capacity() * sizeof(u64);
+           sizeof(outflow) + (stage_digests.capacity() * sizeof(u64));
 }
 
 namespace {
@@ -304,8 +328,8 @@ RegionCoord Generator::region_of(const GenerationContext& context, f64 x, f64 z)
 
 void Generator::region_origin(const GenerationContext& context, const RegionCoord& region, f64& x,
                               f64& z) const noexcept {
-    x = context.origin_x + static_cast<f64>(region.x) * program_.region_metres();
-    z = context.origin_z + static_cast<f64>(region.z) * program_.region_metres();
+    x = context.origin_x + (static_cast<f64>(region.x) * program_.region_metres());
+    z = context.origin_z + (static_cast<f64>(region.z) * program_.region_metres());
 }
 
 const RegionSet* Generator::changed_at(u8 stage) const noexcept {
@@ -322,12 +346,12 @@ struct EvalArgs {
     const Program& program;
     const GenerationContext& context;
     const Stage& stage;
-    u8 stage_index;
+    u8 stage_index = 0;
     RegionCoord region;
-    f64 origin_x;
-    f64 origin_z;
-    f64 cell_metres;
-    u64 seed;
+    f64 origin_x = 0.0;
+    f64 origin_z = 0.0;
+    f64 cell_metres = 0.0;
+    u64 seed = 0;
     GenerationWorld& world;
     ReadLedger& reads;
     Array<f64>& query_x;
@@ -361,8 +385,8 @@ void eval_noise(const EvalArgs& args, RegionState& state) noexcept {
     const u32 octaves = args.stage.params.count == 0 ? 1U : args.stage.params.count;
     for (u32 cz = 0; cz < kRegionCells; ++cz) {
         for (u32 cx = 0; cx < kRegionCells; ++cx) {
-            const f64 wx = args.origin_x + (static_cast<f64>(cx) + 0.5) * args.cell_metres;
-            const f64 wz = args.origin_z + (static_cast<f64>(cz) + 0.5) * args.cell_metres;
+            const f64 wx = args.origin_x + ((static_cast<f64>(cx) + 0.5) * args.cell_metres);
+            const f64 wz = args.origin_z + ((static_cast<f64>(cz) + 0.5) * args.cell_metres);
             f32 total = 0.0F;
             f32 amplitude = args.stage.params.amplitude;
             f64 frequency = static_cast<f64>(args.stage.params.frequency);
@@ -373,7 +397,7 @@ void eval_noise(const EvalArgs& args, RegionState& state) noexcept {
                 amplitude *= 0.5F;
                 frequency *= 2.0;
             }
-            values[static_cast<usize>(cz) * kRegionCells + cx] = total;
+            values[(static_cast<usize>(cz) * kRegionCells) + cx] = total;
         }
     }
 }
@@ -396,7 +420,7 @@ void eval_noise(const EvalArgs& args, RegionState& state) noexcept {
     const environment::FieldId field{args.stage.params.field};
     for (u32 cz = 0; cz < kRegionCells; ++cz) {
         for (u32 cx = 0; cx < kRegionCells; ++cx) {
-            const usize at = static_cast<usize>(cz) * kRegionCells + cx;
+            const usize at = (static_cast<usize>(cz) * kRegionCells) + cx;
             if (args.context.fields == nullptr) {
                 // No store bound: the value is the field's declared default everywhere, which is
                 // exactly what the substrate returns for a region nothing has produced. A generator
@@ -406,8 +430,8 @@ void eval_noise(const EvalArgs& args, RegionState& state) noexcept {
                 continue;
             }
             const world::WorldVec3d position{
-                args.origin_x + (static_cast<f64>(cx) + 0.5) * args.cell_metres, 0.0,
-                args.origin_z + (static_cast<f64>(cz) + 0.5) * args.cell_metres};
+                args.origin_x + ((static_cast<f64>(cx) + 0.5) * args.cell_metres), 0.0,
+                args.origin_z + ((static_cast<f64>(cz) + 0.5) * args.cell_metres)};
             // The DETERMINISTIC path, always. A generated world is authoritative state — a save, a
             // replay and a peer all have to agree on it — and `sample()` walks levels finest-first,
             // so its answer depends on what streamed. `environment`'s own rule is that which path a
@@ -430,9 +454,9 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
     }
     for (u32 cz = 0; cz < kRegionCells; ++cz) {
         for (u32 cx = 0; cx < kRegionCells; ++cx) {
-            const usize at = static_cast<usize>(cz) * kRegionCells + cx;
-            const f64 wx = args.origin_x + (static_cast<f64>(cx) + 0.5) * args.cell_metres;
-            const f64 wz = args.origin_z + (static_cast<f64>(cz) + 0.5) * args.cell_metres;
+            const usize at = (static_cast<usize>(cz) * kRegionCells) + cx;
+            const f64 wx = args.origin_x + ((static_cast<f64>(cx) + 0.5) * args.cell_metres);
+            const f64 wz = args.origin_z + ((static_cast<f64>(cz) + 0.5) * args.cell_metres);
             f32 total = at < input.size() ? input[at] : 0.0F;
             for (const AuthoredStamp& stamp : args.context.stamps) {
                 if (!(stamp.node == args.stage.identity) || stamp.radius <= 0.0) {
@@ -440,7 +464,7 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
                 }
                 const f64 dx = wx - stamp.x;
                 const f64 dz = wz - stamp.z;
-                const f64 distance = std::sqrt(dx * dx + dz * dz);
+                const f64 distance = std::sqrt((dx * dx) + (dz * dz));
                 if (distance >= stamp.radius) {
                     continue;
                 }
@@ -459,8 +483,8 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
     const i32 cells = static_cast<i32>(kRegionCells);
     i32 rx = args.region.x + (gx >= 0 ? gx / cells : (gx - cells + 1) / cells);
     i32 rz = args.region.z + (gz >= 0 ? gz / cells : (gz - cells + 1) / cells);
-    i32 lx = gx - (rx - args.region.x) * cells;
-    i32 lz = gz - (rz - args.region.z) * cells;
+    i32 lx = gx - ((rx - args.region.x) * cells);
+    i32 lz = gz - ((rz - args.region.z) * cells);
     const RegionCoord neighbour{rx, rz, args.region.level};
     const RegionState* source = args.world.find(neighbour);
     if (source == nullptr) {
@@ -493,7 +517,7 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
     const i32 halo = static_cast<i32>(args.stage.iteration_bound);
     const i32 halo_regions =
         static_cast<i32>((args.stage.iteration_bound + kRegionCells - 1) / kRegionCells);
-    const i32 span = static_cast<i32>(kRegionCells) + 2 * halo;
+    const i32 span = static_cast<i32>(kRegionCells) + (2 * halo);
     Array<f32>& window = args.query_f;
     Array<f32>& next = args.query_g;
     if (Status sized = window.resize(static_cast<usize>(span) * static_cast<usize>(span)); !sized) {
@@ -504,7 +528,7 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
     }
     for (i32 wz = 0; wz < span; ++wz) {
         for (i32 wx = 0; wx < span; ++wx) {
-            window[static_cast<usize>(wz) * static_cast<usize>(span) + static_cast<usize>(wx)] =
+            window[(static_cast<usize>(wz) * static_cast<usize>(span)) + static_cast<usize>(wx)] =
                 sample_world_cell(args, source, wx - halo, wz - halo);
         }
     }
@@ -525,11 +549,11 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
         for (i32 wz = 1; wz < span - 1; ++wz) {
             for (i32 wx = 1; wx < span - 1; ++wx) {
                 const usize at =
-                    static_cast<usize>(wz) * static_cast<usize>(span) + static_cast<usize>(wx);
+                    (static_cast<usize>(wz) * static_cast<usize>(span)) + static_cast<usize>(wx);
                 const f32 neighbours = window[at - 1] + window[at + 1] +
                                        window[at - static_cast<usize>(span)] +
                                        window[at + static_cast<usize>(span)];
-                next[at] = window[at] + rate * (0.25F * neighbours - window[at]);
+                next[at] = window[at] + (rate * ((0.25F * neighbours) - window[at]));
             }
         }
         for (usize index = 0; index < window.size(); ++index) {
@@ -539,8 +563,9 @@ void eval_stamp(const EvalArgs& args, RegionState& state) noexcept {
     const Span<f32> values = state.raster.values_mutable(args.stage.output);
     for (u32 cz = 0; cz < kRegionCells; ++cz) {
         for (u32 cx = 0; cx < kRegionCells; ++cx) {
-            values[static_cast<usize>(cz) * kRegionCells + cx] =
-                window[static_cast<usize>(static_cast<i32>(cz) + halo) * static_cast<usize>(span) +
+            values[(static_cast<usize>(cz) * kRegionCells) + cx] =
+                window[(static_cast<usize>(static_cast<i32>(cz) + halo) *
+                        static_cast<usize>(span)) +
                        static_cast<usize>(static_cast<i32>(cx) + halo)];
         }
     }
@@ -558,7 +583,7 @@ void gather_inflow(const EvalArgs& args, f32* water) noexcept {
         }
         const u32 opposite = (side + 2) % kRegionSides;
         for (u32 pos = 0; pos < kRegionCells; ++pos) {
-            const f32 delivered = source->outflow[opposite * kRegionCells + pos];
+            const f32 delivered = source->outflow[(opposite * kRegionCells) + pos];
             if (delivered <= 0.0F) {
                 continue;
             }
@@ -576,7 +601,7 @@ void gather_inflow(const EvalArgs& args, f32* water) noexcept {
             if (side == 3) {
                 cx = 0;
             }
-            water[static_cast<usize>(cz) * kRegionCells + cx] += delivered;
+            water[(static_cast<usize>(cz) * kRegionCells) + cx] += delivered;
         }
     }
 }
@@ -602,18 +627,18 @@ struct FlowTarget {
 [[nodiscard]] FlowTarget lowest_neighbour(const EvalArgs& args, Span<const f32> height,
                                           AttributeId source, i32 cx, i32 cz) noexcept {
     FlowTarget target;
-    f32 best = height[static_cast<usize>(cz) * kRegionCells + static_cast<usize>(cx)];
+    f32 best = height[(static_cast<usize>(cz) * kRegionCells) + static_cast<usize>(cx)];
     for (u32 side = 0; side < kRegionSides; ++side) {
         const i32 tx = cx + kSideDx[side];
         const i32 tz = cz + kSideDz[side];
-        const bool inside = tx >= 0 && tz >= 0 && tx < static_cast<i32>(kRegionCells) &&
-                            tz < static_cast<i32>(kRegionCells);
+        const bool inside = tx >= 0 && tz >= 0 && std::cmp_less(tx, kRegionCells) &&
+                            std::cmp_less(tz, kRegionCells);
         if (inside) {
             const f32 candidate =
-                height[static_cast<usize>(tz) * kRegionCells + static_cast<usize>(tx)];
+                height[(static_cast<usize>(tz) * kRegionCells) + static_cast<usize>(tx)];
             if (candidate < best) {
                 best = candidate;
-                target = FlowTarget{tz * static_cast<i32>(kRegionCells) + tx, -1};
+                target = FlowTarget{(tz * static_cast<i32>(kRegionCells)) + tx, -1};
             }
             continue;
         }
@@ -624,10 +649,8 @@ struct FlowTarget {
         if (other == nullptr) {
             continue;
         }
-        const u32 ex = clamp_cell(tx < 0 ? static_cast<i32>(kRegionCells) - 1
-                                         : (tx >= static_cast<i32>(kRegionCells) ? 0 : tx));
-        const u32 ez = clamp_cell(tz < 0 ? static_cast<i32>(kRegionCells) - 1
-                                         : (tz >= static_cast<i32>(kRegionCells) ? 0 : tz));
+        const u32 ex = neighbour_edge_cell(tx);
+        const u32 ez = neighbour_edge_cell(tz);
         const f32 candidate = other->raster.at(source, ex, ez);
         if (candidate < best) {
             best = candidate;
@@ -680,8 +703,7 @@ void order_by_height(Span<const f32> height, u32* order) noexcept {
     order_by_height(height, order);
 
     f32 leaving[kRegionSides * kRegionCells] = {};
-    for (u32 index = 0; index < kRegionCellCount; ++index) {
-        const u32 cell = order[index];
+    for (const u32 cell : order) {
         const i32 cx = static_cast<i32>(cell % kRegionCells);
         const i32 cz = static_cast<i32>(cell / kRegionCells);
         const f32 total = 1.0F + water[cell];
@@ -693,10 +715,10 @@ void order_by_height(Span<const f32> height, u32* order) noexcept {
         } else if (target.side >= 0) {
             const u32 pos = (target.side == 1 || target.side == 3) ? static_cast<u32>(cz)
                                                                    : static_cast<u32>(cx);
-            leaving[static_cast<u32>(target.side) * kRegionCells + pos] += total;
+            leaving[(static_cast<usize>(target.side) * kRegionCells) + pos] += total;
         }
     }
-    for (usize index = 0; index < kRegionSides * kRegionCells; ++index) {
+    for (usize index = 0; index < usize{kRegionSides} * kRegionCells; ++index) {
         state.outflow[index] = leaving[index];
     }
     return ok();
@@ -719,7 +741,7 @@ void eval_compute(const EvalArgs& args, RegionState& state) noexcept {
         }
         const f32 addend = index < second.size() ? second[index] * args.stage.params.second
                                                  : args.stage.params.second;
-        values[index] = base * args.stage.params.value + addend;
+        values[index] = (base * args.stage.params.value) + addend;
     }
 }
 
@@ -764,10 +786,10 @@ namespace {
     u32 produced = 0;
     for (u64 slot = 0; slot < args.stage.params.count; ++slot) {
         const f32 x =
-            stream.unit_float(generation_point(), 0, slot * 4 + 0) * static_cast<f32>(span);
+            stream.unit_float(generation_point(), 0, (slot * 4) + 0) * static_cast<f32>(span);
         const f32 z =
-            stream.unit_float(generation_point(), 0, slot * 4 + 1) * static_cast<f32>(span);
-        const f32 roll = stream.unit_float(generation_point(), 0, slot * 4 + 2);
+            stream.unit_float(generation_point(), 0, (slot * 4) + 1) * static_cast<f32>(span);
+        const f32 roll = stream.unit_float(generation_point(), 0, (slot * 4) + 2);
         const f32 density = raster_at_local(state, density_channel, x, z, args.cell_metres);
         if (roll >= density) {
             if (provenance == ProvenanceMode::On) {
@@ -938,15 +960,15 @@ struct SpacingVerdict {
             if (other == nullptr) {
                 continue;
             }
-            const f64 other_x = args.origin_x + static_cast<f64>(dx) * rules.span;
-            const f64 other_z = args.origin_z + static_cast<f64>(dz) * rules.span;
+            const f64 other_x = args.origin_x + (static_cast<f64>(dx) * rules.span);
+            const f64 other_z = args.origin_z + (static_cast<f64>(dz) * rules.span);
             for (usize slot = 0; slot < other->candidates.size(); ++slot) {
                 if (other->candidates.get_u64(rules.priority, slot) <= mine) {
                     continue;  // ties and lower priorities never win; priority is a 64-bit draw
                 }
                 const f64 ddx = other_x + static_cast<f64>(other->candidates.x(slot)) - wx;
                 const f64 ddz = other_z + static_cast<f64>(other->candidates.z(slot)) - wz;
-                if (ddx * ddx + ddz * ddz < rules.spacing_squared) {
+                if ((ddx * ddx) + (ddz * ddz) < rules.spacing_squared) {
                     return SpacingVerdict{true, GeneratedId{other->candidates.identity(slot)},
                                           neighbour};
                 }

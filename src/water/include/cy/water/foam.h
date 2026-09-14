@@ -78,7 +78,7 @@ public:
 
     /// Lay foam down. Positions outside the grid are ignored rather than refused: a source at the
     /// far end of a river is not an error, it is simply not near the focus.
-    [[nodiscard]] Status deposit(const FoamDeposit& deposit, f32 seconds) noexcept;
+    [[nodiscard]] Status deposit(const FoamDeposit& source, f32 seconds) noexcept;
 
     /// Advect by a velocity field and decay. `velocity_at` is the water's velocity at a position —
     /// the wave orbital velocity offshore and the river's flow in a channel — supplied as a

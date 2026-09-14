@@ -4,7 +4,9 @@
 
 #include <cy/core/math/scalar.h>
 
+#include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace cy::water {
 
@@ -110,7 +112,7 @@ Status WaterSystem::drive_ocean_from_wind(WaterBodyId body, const Vec3& wind_mps
         params.wind_speed_mps = 0.5F;
     } else {
         params.wind_direction_degrees =
-            std::atan2(wind_mps.z, wind_mps.x) * (180.0F / 3.14159265358979F);
+            std::atan2(wind_mps.z, wind_mps.x) * (180.0F / std::numbers::pi_v<f32>);
     }
     // The seed is the model's own, so a change of wind changes the sea's STATE and not its
     // identity: the same wave trains, re-weighted, rather than a different ocean.
@@ -383,9 +385,7 @@ ShorelineInputs WaterSystem::shoreline_inputs() const noexcept {
             continue;
         }
         const AmplitudeSplit split = amplitude_split(state.model);
-        if (split.authoritative_metres > run_up) {
-            run_up = split.authoritative_metres;
-        }
+        run_up = std::max(run_up, split.authoritative_metres);
     }
     inputs.run_up_metres = (run_up > 0.0F) ? (run_up * 2.0F) : 1.0F;
     return inputs;
@@ -426,12 +426,8 @@ Status WaterSystem::set_mean_level(WaterBodyId body, f64 level) noexcept {
 
     WaterBodyDesc desc = record->desc;
     desc.mean_level = level;
-    if (level < desc.bounds.min_y) {
-        desc.bounds.min_y = level;
-    }
-    if (level > desc.bounds.max_y) {
-        desc.bounds.max_y = level;
-    }
+    desc.bounds.min_y = std::min(desc.bounds.min_y, level);
+    desc.bounds.max_y = std::max(desc.bounds.max_y, level);
     // The registry owns the description, so the change goes through it rather than through a
     // pointer into its storage: `WaterRegistry::bodies()` hands out a const span for exactly that
     // reason, and a water system that wrote through it would be a second owner of the same record.

@@ -205,7 +205,7 @@ usize animation_count(const ImportResult& result) {
     usize count = 0;
     for (const SubAsset& produced : result.assets()) {
         const std::string_view name = produced.view();
-        count += name.rfind("animation/", 0) == 0 ? 1U : 0U;
+        count += name.starts_with("animation/") ? 1U : 0U;
     }
     return count;
 }
@@ -353,6 +353,9 @@ CY_TEST_CASE("fbx: turning animation off names the drop, in a sentence that surv
 
     const ImportDiagnostic* skipped = diagnostic(result, "skipped-rig");
     CY_REQUIRE(skipped != nullptr);
+    // Non-null by the REQUIRE above; the analyzer does not model the harness's abort, and doctest's
+    // expression decomposition hides the comparison so no constraint reaches `skipped`.
+    // NOLINTNEXTLINE(clang-analyzer-core.NonNullParamChecker)
     const std::string_view detail(skipped->detail);
     CY_CHECK(detail.find("animation") != std::string_view::npos);
     // The sentence this replaces was 230 bytes against a 192-byte capacity, so its last clause had

@@ -24,7 +24,6 @@ using cy::water::WaterPayload;
 using cy::water::WaterRegistry;
 using cy::water::WaterSegmentKey;
 using cy::water::WaterStreaming;
-using cy::water::WaterStreamingReport;
 
 namespace {
 

@@ -2,9 +2,11 @@
 
 #include <cy/pcg/foliage_adapter.h>
 
+#include <cy/core/math/scalar.h>
 #include <cy/terrain/stack.h>
 
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace cy::pcg {
@@ -30,12 +32,14 @@ Status FoliageOutputAdapter::emit(const EmitContext& context, const PointSet& po
     bounds.min_y = 0.0F;
     bounds.max_y = 0.0F;
     for (usize index = 0; index < points.size(); ++index) {
-        bounds.min_y = index == 0
-                           ? points.y(index)
-                           : (points.y(index) < bounds.min_y ? points.y(index) : bounds.min_y);
-        bounds.max_y = index == 0
-                           ? points.y(index)
-                           : (points.y(index) > bounds.max_y ? points.y(index) : bounds.max_y);
+        const f32 y = points.y(index);
+        if (index == 0) {
+            bounds.min_y = y;
+            bounds.max_y = y;
+            continue;
+        }
+        bounds.min_y = math::min(bounds.min_y, y);
+        bounds.max_y = math::max(bounds.max_y, y);
     }
     // A zero-height cluster would quantise every instance's y to one value; a metre of headroom
     // costs nothing and keeps the encode meaningful for a flat region.
@@ -64,7 +68,7 @@ Status FoliageOutputAdapter::emit(const EmitContext& context, const PointSet& po
         // stream would be a second source of procedural variation outside the graph.
         const u64 identity = points.identity(index);
         const f32 yaw = static_cast<f32>(identity & 0xFFFFULL) * (6.2831853F / 65536.0F);
-        const f32 scale = 0.75F + static_cast<f32>((identity >> 16U) & 0xFFULL) / 1024.0F;
+        const f32 scale = 0.75F + (static_cast<f32>((identity >> 16U) & 0xFFULL) / 1024.0F);
         const u8 variation = static_cast<u8>((identity >> 24U) & 0xFFULL);
         if (Status added = builder.add(species, position, yaw, scale, variation, 0, 0.0F, 0.0F,
                                        foliage::InstanceFlags{});
@@ -141,7 +145,8 @@ void TerrainSpatialQuery::slope_batch(Span<const f64> x, Span<const f64> z,
         // Radians, because that is what `SpatialQuery` declares. `terrain` answers in degrees, and
         // converting here rather than changing either interface keeps each module's own unit its
         // own — a mismatch that is converted at the seam is a mismatch nobody has to remember.
-        out[index] = sample.resolved ? sample.slope_degrees * (3.14159265F / 180.0F) : 0.0F;
+        out[index] =
+            sample.resolved ? sample.slope_degrees * (std::numbers::pi_v<f32> / 180.0F) : 0.0F;
     }
 }
 

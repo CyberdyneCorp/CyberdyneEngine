@@ -3,6 +3,8 @@
 
 #include <cy/water/river.h>
 
+#include <cy/core/math/scalar.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -47,19 +49,15 @@ constexpr f32 kMinChannelSize = 0.01F;
     return a + ((b - a) * t);
 }
 
-[[nodiscard]] f32 clamp01(f32 value) noexcept {
-    return (value < 0.0F) ? 0.0F : ((value > 1.0F) ? 1.0F : value);
-}
-
 /// The bed's shape across the channel. `u` is the lateral offset as a fraction of the half width.
 ///
 /// A natural channel is parabolic — deepest at the thalweg, zero at the banks — and a canal is a
 /// box. `squareness` interpolates between them, which is what `RiverControlPoint::bed_profile`
 /// means as one number: everything that consumes a bed profile wants a depth at a lateral offset.
 [[nodiscard]] f32 bed_profile(f32 u, f32 squareness) noexcept {
-    const f32 clamped = clamp01(std::fabs(u));
+    const f32 clamped = math::saturate(std::fabs(u));
     const f32 parabolic = 1.0F - (clamped * clamped);
-    return lerp_f32(parabolic, 1.0F, clamp01(squareness));
+    return lerp_f32(parabolic, 1.0F, math::saturate(squareness));
 }
 
 }  // namespace
@@ -92,7 +90,7 @@ Expected<u32, Error> RiverNetwork::add_section(const RiverSectionDesc& desc) noe
     Authored authored(*allocator_);
     authored.name = (desc.name == nullptr) ? "" : desc.name;
     authored.joins_section = desc.joins_section;
-    authored.joins_at = clamp01(desc.joins_at);
+    authored.joins_at = math::saturate(desc.joins_at);
     for (const RiverControlPoint& point : desc.points) {
         if (Status pushed = authored.points.push_back(point); !pushed) {
             return make_unexpected(pushed.error());
@@ -243,9 +241,9 @@ void derive_geometry(Span<RiverVertex> vertices, f32& length) noexcept {
 /// it: a reach that is authored turbulent stays turbulent when it is straight.
 void apply_turbulence(Span<RiverVertex> vertices) noexcept {
     for (RiverVertex& vertex : vertices) {
-        const f32 bend = clamp01(std::fabs(vertex.curvature) * vertex.width * 2.0F) * 0.5F;
-        const f32 drop = clamp01(std::max(vertex.gradient, 0.0F) * 12.0F) * 0.8F;
-        vertex.turbulence = clamp01(vertex.turbulence + bend + drop);
+        const f32 bend = math::saturate(std::fabs(vertex.curvature) * vertex.width * 2.0F) * 0.5F;
+        const f32 drop = math::saturate(std::max(vertex.gradient, 0.0F) * 12.0F) * 0.8F;
+        vertex.turbulence = math::saturate(vertex.turbulence + bend + drop);
     }
 }
 
@@ -285,8 +283,7 @@ Status RiverNetwork::resolve_junctions(RiverBuildReport& report) noexcept {
         section.tributary_discharge = 0.0F;
     }
 
-    for (usize index = 0; index < sections_.size(); ++index) {
-        RiverSection& tributary = sections_[index];
+    for (RiverSection& tributary : sections_) {
         if (tributary.joins_section == kNoSection) {
             continue;
         }
@@ -300,9 +297,8 @@ Status RiverNetwork::resolve_junctions(RiverBuildReport& report) noexcept {
         RiverVertex& mouth = vertices_[tributary.first_vertex + tributary.vertex_count - 1];
         const f64 correction = target - mouth.position.y;
         const auto magnitude = static_cast<f32>(std::fabs(correction));
-        if (magnitude > report.largest_junction_correction) {
-            report.largest_junction_correction = magnitude;
-        }
+        report.largest_junction_correction =
+            std::max(report.largest_junction_correction, magnitude);
 
         // Blended back up the tributary over its last stretch rather than applied at the mouth
         // alone: a step at the last vertex would be a waterfall of exactly the authoring error.
@@ -354,8 +350,8 @@ void RiverNetwork::propagate_discharge() noexcept {
             return;
         }
     }
-    std::stable_sort(order.begin(), order.end(),
-                     [&depth](u32 a, u32 b) noexcept { return depth[a] > depth[b]; });
+    std::ranges::stable_sort(order,
+                             [&depth](u32 a, u32 b) noexcept { return depth[a] > depth[b]; });
 
     for (const u32 index : order) {
         const RiverSection& section = sections_[index];
@@ -388,9 +384,7 @@ void RiverNetwork::apply_continuity(RiverBuildReport& report) noexcept {
             }
             if (head_speed > 1e-4F) {
                 const f32 ratio = vertex.speed / head_speed;
-                if (ratio > report.largest_narrowing_ratio) {
-                    report.largest_narrowing_ratio = ratio;
-                }
+                report.largest_narrowing_ratio = std::max(report.largest_narrowing_ratio, ratio);
             }
         }
         Span<RiverVertex> span(vertices_.data() + section.first_vertex, section.vertex_count);
@@ -434,7 +428,7 @@ RiverNetwork::Projection RiverNetwork::project(const RiverSection& section,
         const f64 px = at.x - from.position.x;
         const f64 pz = at.z - from.position.z;
         f64 blend = ((px * ax) + (pz * az)) / length_squared;
-        blend = (blend < 0.0) ? 0.0 : ((blend > 1.0) ? 1.0 : blend);
+        blend = math::clamp(blend, 0.0, 1.0);
         const f64 dx = px - (ax * blend);
         const f64 dz = pz - (az * blend);
         const auto lateral = static_cast<f32>(std::sqrt((dx * dx) + (dz * dz)));
@@ -490,7 +484,7 @@ Vec3 RiverNetwork::deflect(const world::WorldVec3d& at, Vec3 velocity) const noe
         // obstacle's tangent so the river carries the same discharge past it.
         const f32 falloff =
             1.0F - ((distance - obstacle.radius) / std::max(obstacle.influence, 1e-3F));
-        const f32 weight = clamp01(falloff);
+        const f32 weight = math::saturate(falloff);
         const f32 inward = dot(velocity, outward);
         if (inward < 0.0F) {
             const Vec3 removed = outward * (inward * weight);

@@ -13,7 +13,6 @@ using cy::water::BodyProblem;
 using cy::water::WaterBackend;
 using cy::water::WaterBodyDesc;
 using cy::water::WaterBodyId;
-using cy::water::WaterBodyType;
 using cy::water::WaterRegistry;
 using cy::water::WaterSystem;
 

@@ -28,6 +28,8 @@
 
 #include <cy/pcg/execute.h>
 
+#include <cmath>
+
 #include "fixtures.h"
 
 using cy::pcg::DirtyCause;
@@ -450,4 +452,67 @@ CY_TEST_CASE(
     cy::Expected<RunProgress, cy::Error> progress = generator->step(0xFFFFFFFFU);
     CY_REQUIRE(progress.has_value());
     CY_CHECK(progress->outcome == RunOutcome::Complete);
+}
+
+CY_TEST_CASE("a world far from the origin generates values, not a wrapped hash subject") {
+    // REGRESSION for a latent defect found by the clang-tidy sweep and confirmed by hand
+    // (bugprone-misplaced-widening-cast at src/pcg/src/execute.cpp). `lattice_value()` biased the
+    // lattice coordinate by 2^20 before widening it to the u64 the counter-based stream is keyed
+    // on, and the addition was therefore performed in `int`. For any lattice coordinate above
+    // INT_MAX - 2^20 that is SIGNED OVERFLOW — undefined behaviour — in the function that feeds the
+    // noise hash, and where it wrapped the stream was keyed on 18446744071562132896 instead of
+    // 2147548576. A different subject is a different height for that cell.
+    //
+    // THE ORIGIN BELOW IS NOT ARBITRARY. The noise node draws three octaves at 1/96, 1/48 and 1/24,
+    // and the lattice coordinate is floor(world_x * frequency). 51 516 000 000 m puts the THIRD
+    // octave at 2 146 500 000 — past the INT_MAX - 2^20 = 2 146 435 071 where the `int` form
+    // overflows — while leaving the first two, and the `f64` -> `i32` cast every octave makes, well
+    // inside range. Move the constant and the case stops covering anything.
+    //
+    // WHAT MAKES IT RED. Under `just test-sanitize --sanitizer undefined` the pre-fix evaluator
+    // aborts in this case and in no other, because no other case in the module reaches the band.
+    // An ordinary build cannot see the difference — the wrapped key is still a key, so the run is
+    // still self-consistent — which is precisely why the band needed a case of its own rather than
+    // a wider assertion somewhere else.
+    constexpr cy::f64 kFarOrigin = 51'516'000'000.0;
+    constexpr cy::i32 kFarEdge = 2;
+
+    const FlatSpatialQuery surface;
+    GenerationContext context = test::context_of(kSeed, surface);
+    context.origin_x = kFarOrigin;
+    context.origin_z = kFarOrigin;
+
+    GenerationWorld first(test::allocator(), test::extent_of(kFarEdge));
+    cy::Expected<Generator, cy::Error> a = test::make_generator(first);
+    CY_REQUIRE(a.has_value());
+    CY_REQUIRE(a->generate_all(ExecutionDomain::Cook, context).has_value());
+
+    GenerationWorld second(test::allocator(), test::extent_of(kFarEdge));
+    cy::Expected<Generator, cy::Error> b = test::make_generator(second);
+    CY_REQUIRE(b.has_value());
+    CY_REQUIRE(b->generate_all(ExecutionDomain::Cook, context).has_value());
+
+    CY_CHECK_EQ(test::regions_disagreeing(first, second), 0u);
+    CY_CHECK_EQ(test::world_digest(first), test::world_digest(second));
+
+    // And the result is a height field rather than garbage: every cell finite and inside the
+    // amplitude the graph declared, summed over three octaves that halve.
+    const cy::pcg::RegionState* state = first.find(RegionCoord{0, 0, 0});
+    CY_REQUIRE(state != nullptr);
+    cy::pcg::AttributeId noise_output;
+    for (const cy::pcg::Stage& stage : a->program().stages()) {
+        if (stage.kind == cy::pcg::NodeKind::Noise) {
+            noise_output = stage.output;
+        }
+    }
+    CY_REQUIRE(noise_output.is_valid());
+    const cy::Span<const cy::f32> height = state->raster.values(noise_output);
+    CY_REQUIRE_FALSE(height.empty());
+    for (const cy::f32 value : height) {
+        CY_CHECK(std::isfinite(value));
+        CY_CHECK(value >= 0.0F);
+        // 48 + 24 + 12 = 84 is the sum of the three octave amplitudes. The bound is loose on
+        // purpose: the claim is "a height field", not a re-derivation of the spectrum.
+        CY_CHECK(value <= 96.0F);
+    }
 }

@@ -109,7 +109,11 @@ public:
 
     template <class K>
     [[nodiscard]] Span<K> keys_as() noexcept {
-        CY_ASSERT_MSG(sizeof(K) == layout_->key_size(), "key type does not match the layout");
+        // The size is taken into a local rather than written inside the assertion: with assertions
+        // compiled out, `CY_ASSERT_MSG` wraps its expression in `sizeof` to leave it unevaluated,
+        // and a `sizeof` inside that is a `sizeof(sizeof(...))` nobody meant to write.
+        constexpr usize key_bytes = sizeof(K);
+        CY_ASSERT_MSG(key_bytes == layout_->key_size(), "key type does not match the layout");
         return Span<K>(static_cast<K*>(keys()), count());
     }
 
@@ -124,7 +128,9 @@ public:
     /// forward, with no per-row indirection and no lookup.
     template <class T>
     [[nodiscard]] Span<T> column_as(u32 index) noexcept {
-        CY_ASSERT_MSG(sizeof(T) == layout_->column_size(index),
+        // A local for the same reason as in `keys_as`.
+        constexpr usize column_bytes = sizeof(T);
+        CY_ASSERT_MSG(column_bytes == layout_->column_size(index),
                       "column type does not match the layout");
         return Span<T>(static_cast<T*>(column(index)), count());
     }

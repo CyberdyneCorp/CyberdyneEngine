@@ -144,8 +144,9 @@ int main(int argc, char** argv) {
         // evaluates, so the picture is the resolve's own answer rather than a re-derivation.
         const Vec4 n =
             i < capture.resolved.size() ? capture.resolved[i] : Vec4{0.5F, 0.5F, 1.0F, 0.0F};
-        const f32 lambert = std::abs(((n.x * 2.0F - 1.0F) * 0.35F) + ((n.y * 2.0F - 1.0F) * 0.72F) +
-                                     ((n.z * 2.0F - 1.0F) * 0.60F));
+        const f32 lambert =
+            std::abs((((n.x * 2.0F) - 1.0F) * 0.35F) + (((n.y * 2.0F) - 1.0F) * 0.72F) +
+                     (((n.z * 2.0F) - 1.0F) * 0.60F));
         const f32 lit = 0.16F + (0.84F * lambert);
         const auto grey = [lit](f32 tint) { return static_cast<u32>(lit * tint) & 0xFFU; };
         shaded.texels[i] =

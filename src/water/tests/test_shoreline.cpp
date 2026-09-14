@@ -29,7 +29,6 @@ using cy::environment::FieldRegistry;
 using cy::environment::FieldResidency;
 using cy::environment::FieldStore;
 using cy::water::WaterFieldOptions;
-using cy::water::WaterFields;
 using cy::water::WaterSystem;
 using cy::water::WetnessOwner;
 

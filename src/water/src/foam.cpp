@@ -5,6 +5,7 @@
 #include <cy/core/math/scalar.h>
 
 #include <cmath>
+#include <utility>
 
 namespace cy::water {
 
@@ -12,10 +13,6 @@ namespace {
 
 [[nodiscard]] i64 floor_cell(f64 value, f32 cell_metres) noexcept {
     return static_cast<i64>(std::floor(value / static_cast<f64>(cell_metres)));
-}
-
-[[nodiscard]] f32 clamp01(f32 value) noexcept {
-    return (value < 0.0F) ? 0.0F : ((value > 1.0F) ? 1.0F : value);
 }
 
 }  // namespace
@@ -51,16 +48,16 @@ Status FoamField::configure(const FoamParams& params) noexcept {
 }
 
 f32* FoamField::cell(i32 x, i32 z) noexcept {
-    if (x < 0 || z < 0 || static_cast<u32>(x) >= params_.resolution ||
-        static_cast<u32>(z) >= params_.resolution) {
+    if (x < 0 || z < 0 || std::cmp_greater_equal(x, params_.resolution) ||
+        std::cmp_greater_equal(z, params_.resolution)) {
         return nullptr;
     }
     return &coverage_[(static_cast<usize>(z) * params_.resolution) + static_cast<usize>(x)];
 }
 
 const f32* FoamField::cell(i32 x, i32 z) const noexcept {
-    if (x < 0 || z < 0 || static_cast<u32>(x) >= params_.resolution ||
-        static_cast<u32>(z) >= params_.resolution) {
+    if (x < 0 || z < 0 || std::cmp_greater_equal(x, params_.resolution) ||
+        std::cmp_greater_equal(z, params_.resolution)) {
         return nullptr;
     }
     return &coverage_[(static_cast<usize>(z) * params_.resolution) + static_cast<usize>(x)];
@@ -147,9 +144,9 @@ Status FoamField::deposit(const FoamDeposit& source, f32 seconds) noexcept {
                 if (radius_cells <= 0.0F || distance > radius_cells) {
                     continue;
                 }
-                falloff = clamp01(1.0F - (distance / radius_cells));
+                falloff = math::saturate(1.0F - (distance / radius_cells));
             }
-            *target = clamp01(*target + (source.rate * seconds * falloff));
+            *target = math::saturate(*target + (source.rate * seconds * falloff));
         }
     }
     return ok();

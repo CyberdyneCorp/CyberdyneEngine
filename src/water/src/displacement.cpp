@@ -9,7 +9,9 @@
 
 #include <cy/core/determinism/random.h>
 
+#include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace cy::water {
 
@@ -62,11 +64,11 @@ struct Train {
     const determinism::SimulationPoint origin{};
     // A direction offset in [-spread, +spread] and a phase in [0, 2pi). Two draws at two sample
     // indices of one substream, so neither depends on how many the other took.
-    const f32 offset = (stream.unit_float(origin, 0, 0) * 2.0F - 1.0F) * band.spread_degrees;
-    const f32 radians = (band.direction_degrees + offset) * (3.14159265358979F / 180.0F);
+    const f32 offset = ((stream.unit_float(origin, 0, 0) * 2.0F) - 1.0F) * band.spread_degrees;
+    const f32 radians = (band.direction_degrees + offset) * (std::numbers::pi_v<f32> / 180.0F);
     train.dir_x = std::cos(radians);
     train.dir_z = std::sin(radians);
-    train.phase = stream.unit_float(origin, 0, 1) * (2.0F * 3.14159265358979F);
+    train.phase = stream.unit_float(origin, 0, 1) * (2.0F * std::numbers::pi_v<f32>);
     return train;
 }
 
@@ -98,7 +100,7 @@ struct TrainAccumulator {
 
 void accumulate(TrainAccumulator& into, const Train& train, f32 steepness, f64 x, f64 z,
                 f64 time) noexcept {
-    const f32 k = (2.0F * 3.14159265358979F) / train.wavelength;
+    const f32 k = (2.0F * std::numbers::pi_v<f32>) / train.wavelength;
     // Deep-water dispersion. See the header note on why this relation and not a shallow one.
     const f32 omega = std::sqrt(kGravity * k);
 
@@ -188,9 +190,7 @@ Displacement evaluate_displacement(const DisplacementModel& model, BandSelection
     // so a consumer can weight foam by it rather than threshold it.
     const f32 jacobian = ((1.0F + sum.dxdx) * (1.0F + sum.dzdz)) - (sum.dxdz * sum.dzdx);
     result.breaking = (jacobian >= 1.0F) ? 0.0F : (1.0F - jacobian);
-    if (result.breaking > 1.0F) {
-        result.breaking = 1.0F;
-    }
+    result.breaking = std::min(result.breaking, 1.0F);
     result.trains = sum.trains;
     return result;
 }
@@ -206,9 +206,8 @@ AmplitudeSplit amplitude_split(const DisplacementModel& model) noexcept {
         }
         split.visual_metres += band.amplitude;
         ++split.visual_bands;
-        if (band.amplitude > split.largest_visual_band_metres) {
-            split.largest_visual_band_metres = band.amplitude;
-        }
+        split.largest_visual_band_metres =
+            std::max(split.largest_visual_band_metres, band.amplitude);
     }
     return split;
 }

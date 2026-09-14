@@ -18,7 +18,6 @@
 namespace test = cy::water::test;
 using cy::water::BandAuthority;
 using cy::water::BandSelection;
-using cy::water::DisplacementModel;
 using cy::water::OceanParams;
 using cy::water::OceanReport;
 using cy::water::OceanSurface;

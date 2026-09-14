@@ -32,7 +32,7 @@ const RejectionRecord* RegionProvenance::why_nothing_here(f32 x, f32 z, f32 radi
     for (const RejectionRecord& record : rejected_) {
         const f32 dx = record.position_x - x;
         const f32 dz = record.position_z - z;
-        const f32 distance = dx * dx + dz * dz;
+        const f32 distance = (dx * dx) + (dz * dz);
         // Strictly nearer, and ties broken by the SLOT rather than by array order — two rejected
         // candidates at the same distance must give one answer whatever order they were recorded
         // in, or "why is nothing here" would answer differently after a regeneration that changed
@@ -49,8 +49,8 @@ const RejectionRecord* RegionProvenance::why_nothing_here(f32 x, f32 z, f32 radi
 }
 
 u64 RegionProvenance::bytes() const noexcept {
-    return accepted_.capacity() * sizeof(ProvenanceRecord) +
-           rejected_.capacity() * sizeof(RejectionRecord);
+    return (accepted_.capacity() * sizeof(ProvenanceRecord)) +
+           (rejected_.capacity() * sizeof(RejectionRecord));
 }
 
 // --- The profiler -----------------------------------------------------------------------------

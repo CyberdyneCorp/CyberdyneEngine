@@ -71,7 +71,7 @@ public:
         if (!take(length)) {
             return {};
         }
-        return std::string(reinterpret_cast<const char*>(data_.data() + at_ - length), length);
+        return {reinterpret_cast<const char*>(data_.data() + at_ - length), length};
     }
 
     /// Refuse a count that could not possibly fit in what is left, BEFORE reserving for it. A

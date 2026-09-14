@@ -24,7 +24,6 @@ using cy::environment::FieldResidency;
 using cy::environment::FieldStore;
 using cy::environment::FieldStreaming;
 using cy::environment::FieldStreamingReport;
-using cy::environment::FieldValue;
 using cy::environment::ProducerKind;
 using cy::environment::ProducerToken;
 using cy::environment::TileAddress;
@@ -274,9 +273,10 @@ CY_TEST_CASE("a budget may not evict the level that must exist everywhere") {
     // Room for twenty tiles: the sixteen guaranteed macro ones and four more. The cell below wants
     // seventeen fine tiles on top of that, so the budget is what decides how many of them survive —
     // and the sixteen are not among the candidates.
+    const cy::u64 bytes_per_tile = FieldStore::tile_bytes(moisture);
     CY_REQUIRE(server
                    .register_subsystem(cy::residency::Subsystem::WorldCells,
-                                       world_cells_policy(20U * FieldStore::tile_bytes(moisture)))
+                                       world_cells_policy(20 * bytes_per_tile))
                    .has_value());
     cy::world::CellEventQueue events(test::allocator());
     FieldStreaming streaming(test::allocator(), store, server);
@@ -329,9 +329,10 @@ CY_TEST_CASE("a tile nobody wants is given back to the policy") {
 
     cy::residency::ResidencyServer server(test::allocator());
     // Room for eight tiles; two cells want thirty-four between them.
+    const cy::u64 bytes_per_tile = FieldStore::tile_bytes(moisture);
     CY_REQUIRE(server
                    .register_subsystem(cy::residency::Subsystem::WorldCells,
-                                       world_cells_policy(8U * FieldStore::tile_bytes(moisture)))
+                                       world_cells_policy(8 * bytes_per_tile))
                    .has_value());
     cy::world::CellEventQueue events(test::allocator());
     FieldStreaming streaming(test::allocator(), store, server);

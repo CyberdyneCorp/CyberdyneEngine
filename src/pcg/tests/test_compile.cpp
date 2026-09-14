@@ -35,7 +35,6 @@
 using cy::pcg::CompileDiagnostic;
 using cy::pcg::CompileProblem;
 using cy::pcg::CompileReport;
-using cy::pcg::DeterminismLevel;
 using cy::pcg::DomainMask;
 using cy::pcg::ExecutionDomain;
 using cy::pcg::GenerationBudget;

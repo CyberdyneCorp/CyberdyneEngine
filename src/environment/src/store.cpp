@@ -3,6 +3,8 @@
 
 #include <cy/environment/store.h>
 
+#include <cy/core/math/scalar.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -22,12 +24,14 @@ namespace {
     return static_cast<i64>(std::floor(value));
 }
 
-[[nodiscard]] i64 clamp_i64(i64 value, i64 low, i64 high) noexcept {
-    return (value < low) ? low : ((value > high) ? high : value);
-}
-
-[[nodiscard]] f32 clamp_f32(f32 value, f32 low, f32 high) noexcept {
-    return (value < low) ? low : ((value > high) ? high : value);
+/// The vertical blend weight of tap `dy`. A field one cell deep has no vertical axis to blend along
+/// and its single tap carries the whole sample; written as a function rather than as a conditional
+/// inside a conditional so that the one-tap case reads as the special case it is.
+[[nodiscard]] f32 vertical_weight(u32 taps, u32 dy, f32 fy) noexcept {
+    if (taps == 1) {
+        return 1.0F;
+    }
+    return (dy == 0) ? (1.0F - fy) : fy;
 }
 
 /// The counters `FieldDiagnostics` reports. Best-effort: a diagnostic that could fail a sample
@@ -88,26 +92,32 @@ void encode_value(const FieldDeclaration& declaration, const FieldValue& value,
                 break;
             }
             case FieldEncoding::UNorm8: {
-                const f32 unit = clamp_f32((raw - declaration.range_min) / span, 0.0F, 1.0F);
+                const f32 unit = math::saturate((raw - declaration.range_min) / span);
                 // Round to nearest rather than truncate: truncation biases every stored value
                 // downward by half a quantum, which is visible where a field's whole range is one.
-                const auto quantised = static_cast<u8>(unit * 255.0F + 0.5F);
+                // `math::saturate` above has already put `unit` in [0, 1], so the truncated +0.5 is
+                // exact round-half-up here; the check's failure mode is a negative input, which
+                // cannot reach this line.
+                // NOLINTNEXTLINE(bugprone-incorrect-roundings)
+                const auto quantised = static_cast<u8>((unit * 255.0F) + 0.5F);
                 slot[0] = quantised;
                 break;
             }
             case FieldEncoding::UNorm16: {
-                const f32 unit = clamp_f32((raw - declaration.range_min) / span, 0.0F, 1.0F);
-                const auto quantised = static_cast<u16>(unit * 65535.0F + 0.5F);
+                const f32 unit = math::saturate((raw - declaration.range_min) / span);
+                // Rounded, and non-negative by `math::saturate`, exactly as the UNorm8 case above.
+                // NOLINTNEXTLINE(bugprone-incorrect-roundings)
+                const auto quantised = static_cast<u16>((unit * 65535.0F) + 0.5F);
                 std::memcpy(slot, &quantised, sizeof(u16));
                 break;
             }
             case FieldEncoding::Uint8: {
-                const auto quantised = static_cast<u8>(clamp_f32(raw, 0.0F, 255.0F));
+                const auto quantised = static_cast<u8>(math::clamp(raw, 0.0F, 255.0F));
                 slot[0] = quantised;
                 break;
             }
             case FieldEncoding::Uint16: {
-                const auto quantised = static_cast<u16>(clamp_f32(raw, 0.0F, 65535.0F));
+                const auto quantised = static_cast<u16>(math::clamp(raw, 0.0F, 65535.0F));
                 std::memcpy(slot, &quantised, sizeof(u16));
                 break;
             }
@@ -186,9 +196,9 @@ Expected<FieldChangeQueue::ConsumerId, Error> FieldChangeQueue::add_consumer(con
     }
     // Ordered by the declared key, so a dispatcher walking `consumers()` runs them in the order the
     // configuration states rather than the order they registered in.
-    std::stable_sort(
-        consumers_.begin(), consumers_.end(),
-        [](const Consumer& a, const Consumer& b) noexcept { return a.order < b.order; });
+    std::ranges::stable_sort(consumers_, [](const Consumer& a, const Consumer& b) noexcept {
+        return a.order < b.order;
+    });
     return consumer.id;
 }
 
@@ -234,7 +244,7 @@ void FieldChangeQueue::compact() noexcept {
     if (removable == 0) {
         return;
     }
-    const usize count = static_cast<usize>(removable);
+    const auto count = static_cast<usize>(removable);
     for (usize index = count; index < changes_.size(); ++index) {
         changes_[index - count] = changes_[index];
     }
@@ -443,7 +453,7 @@ Status FieldStore::tiles_of(FieldId field, FieldResidency level,
     }
     // Address order, so that a GPU image built from this list is byte-identical between two runs
     // that made the same tiles resident in a different order. Streaming order is not content.
-    std::sort(out.begin(), out.end(), [](const TileAddress& a, const TileAddress& b) noexcept {
+    std::ranges::sort(out, [](const TileAddress& a, const TileAddress& b) noexcept {
         if (a.layer != b.layer) {
             return a.layer < b.layer;
         }
@@ -522,7 +532,7 @@ FieldValue FieldStore::read_lattice_point(const FieldDeclaration& declaration,
     // clamped to the resident tile's own edge — see this file's header note: never a fault, never a
     // blend against a default that happens to be next door.
     const i64 span = static_cast<i64>(kTileCells);
-    const i64 j = clamp_i64(gj, 0, static_cast<i64>(declaration.vertical_cells) - 1);
+    const i64 j = math::clamp(gj, i64{0}, static_cast<i64>(declaration.vertical_cells) - 1);
     i64 tx = floor_div(gi, span);
     i64 tz = floor_div(gk, span);
     const Tile* tile = &centre;
@@ -537,8 +547,8 @@ FieldValue FieldStore::read_lattice_point(const FieldDeclaration& declaration,
             tz = centre_address.z;
         }
     }
-    const i64 lx = clamp_i64(gi - (tx * span), 0, span - 1);
-    const i64 lz = clamp_i64(gk - (tz * span), 0, span - 1);
+    const i64 lx = math::clamp(gi - (tx * span), i64{0}, span - 1);
+    const i64 lz = math::clamp(gk - (tz * span), i64{0}, span - 1);
     const u32 offset = lattice_offset(declaration, static_cast<u32>(lx), static_cast<u32>(j),
                                       static_cast<u32>(lz));
     return decode_value(declaration, tile->data.data() + offset);
@@ -575,7 +585,7 @@ FieldStore::LayerSample FieldStore::sample_layer(const FieldDeclaration& declara
     const u32 vertical_taps = (declaration.vertical_cells > 1) ? 2 : 1;
     FieldValue accumulated;
     for (u32 dy = 0; dy < vertical_taps; ++dy) {
-        const f32 wy = (vertical_taps == 1) ? 1.0F : ((dy == 0) ? (1.0F - lattice.fy) : lattice.fy);
+        const f32 wy = vertical_weight(vertical_taps, dy, lattice.fy);
         for (u32 dz = 0; dz < 2; ++dz) {
             const f32 wz = (dz == 0) ? (1.0F - lattice.fz) : lattice.fz;
             for (u32 dx = 0; dx < 2; ++dx) {

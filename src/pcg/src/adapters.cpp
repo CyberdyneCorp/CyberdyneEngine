@@ -39,7 +39,7 @@ Status OutputRegistry::register_adapter(OutputAdapter& adapter) noexcept {
             return sized;
         }
     }
-    const usize index = static_cast<usize>(adapter.target());
+    const auto index = static_cast<usize>(adapter.target());
     if (slots_[index] != nullptr && slots_[index] != &adapter) {
         // Two adapters writing one representation is the same defect `environment-fields` refuses
         // for a second producer, one level up — and the refusal names both, for the same reason.
@@ -53,7 +53,7 @@ Status OutputRegistry::register_adapter(OutputAdapter& adapter) noexcept {
 }
 
 OutputAdapter* OutputRegistry::find(OutputTarget target) const noexcept {
-    const usize index = static_cast<usize>(target);
+    const auto index = static_cast<usize>(target);
     if (index >= slots_.size()) {
         return nullptr;
     }
@@ -125,9 +125,10 @@ Status FieldOutputAdapter::emit(const EmitContext& context, const PointSet& poin
         const i32 span = static_cast<i32>(std::ceil(radius_ / cell_metres));
         for (i32 dz = -span; dz <= span; ++dz) {
             for (i32 dx = -span; dx <= span; ++dx) {
-                const f64 lx = wx + static_cast<f64>(dx) * cell_span;
-                const f64 lz = wz + static_cast<f64>(dz) * cell_span;
-                const f32 distance = std::sqrt(static_cast<f32>(dx * dx + dz * dz)) * cell_metres;
+                const f64 lx = wx + (static_cast<f64>(dx) * cell_span);
+                const f64 lz = wz + (static_cast<f64>(dz) * cell_span);
+                const f32 distance =
+                    std::sqrt(static_cast<f32>((dx * dx) + (dz * dz))) * cell_metres;
                 if (distance > radius_) {
                     continue;
                 }
@@ -144,7 +145,7 @@ Status FieldOutputAdapter::emit(const EmitContext& context, const PointSet& poin
                 const f64 tile_z = static_cast<f64>(address.z) * tile_metres;
                 const u32 cx = static_cast<u32>((lx - tile_x) / cell_span);
                 const u32 cz = static_cast<u32>((lz - tile_z) / cell_span);
-                const f32 falloff = radius_ > 0.0F ? 1.0F - distance / radius_ : 1.0F;
+                const f32 falloff = radius_ > 0.0F ? 1.0F - (distance / radius_) : 1.0F;
                 if (Status written = writer->set(address, cx % environment::kTileCells, 0,
                                                  cz % environment::kTileCells,
                                                  environment::FieldValue::scalar(value_ * falloff));

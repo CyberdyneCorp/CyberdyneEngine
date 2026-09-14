@@ -12,7 +12,6 @@ using cy::environment::FieldEncoding;
 using cy::environment::FieldInterpolation;
 using cy::environment::FieldLevel;
 using cy::environment::FieldRegistry;
-using cy::environment::FieldResidency;
 using cy::environment::FieldType;
 using cy::environment::validate_declaration;
 namespace test = cy::environment::test;

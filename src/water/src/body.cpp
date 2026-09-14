@@ -141,6 +141,33 @@ BodyProblem validate_body(const WaterBodyDesc& desc) noexcept {
     return BodyProblem::None;
 }
 
+namespace {
+
+/// The code a refusal carries. A mapping rather than a ladder of conditionals, and exhaustive so
+/// that a problem added to the enumeration is a compile error here rather than an `InvalidArgument`
+/// nobody chose.
+[[nodiscard]] ErrorCode code_of(BodyProblem problem) noexcept {
+    switch (problem) {
+        case BodyProblem::DuplicateName:
+            return ErrorCode::AlreadyExists;
+        // Not a description anybody got wrong: the backend the specification's own table declares
+        // Planned or Deferred is not here yet.
+        case BodyProblem::BackendPlanned:
+        case BodyProblem::BackendDeferred:
+            return ErrorCode::NotImplemented;
+        case BodyProblem::None:
+        case BodyProblem::NoName:
+        case BodyProblem::EmptyBounds:
+        case BodyProblem::LevelOutsideBounds:
+        case BodyProblem::NonPositiveDensity:
+        case BodyProblem::NonPositiveSegment:
+            break;
+    }
+    return ErrorCode::InvalidArgument;
+}
+
+}  // namespace
+
 WaterRegistry::WaterRegistry(Allocator& allocator) noexcept
     : allocator_(&allocator), records_(allocator) {}
 
@@ -164,12 +191,7 @@ Expected<WaterBodyId, Error> WaterRegistry::add(const WaterBodyDesc& desc) noexc
                       water_backend_name(desc.backend),
                       backend_status_name(backend_status(desc.backend)), body_problem_name(problem),
                       seam);
-        const ErrorCode code =
-            (problem == BodyProblem::DuplicateName) ? ErrorCode::AlreadyExists
-            : (problem == BodyProblem::BackendPlanned || problem == BodyProblem::BackendDeferred)
-                ? ErrorCode::NotImplemented
-                : ErrorCode::InvalidArgument;
-        return make_unexpected(Error{code, refusal_, 0});
+        return make_unexpected(Error{code_of(problem), refusal_, 0});
     }
 
     WaterBodyRecord record;
@@ -253,10 +275,13 @@ Status WaterRegistry::bodies_at(const world::WorldVec3d& at,
             return pushed;
         }
     }
-    std::stable_sort(hits.begin(), hits.end(),
-                     [](const WaterBodyRecord* a, const WaterBodyRecord* b) noexcept {
-                         return outranks(*a, *b);
-                     });
+    // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order): the comparator
+    // dereferences and orders by `outranks`, so no pointer VALUE is ever compared; `stable_sort`
+    // breaks a remaining tie by position in `hits`, which is the order of `records_`. The result is
+    // a function of the registry's contents alone.
+    std::ranges::stable_sort(hits, [](const WaterBodyRecord* a, const WaterBodyRecord* b) noexcept {
+        return outranks(*a, *b);
+    });
     for (const WaterBodyRecord* record : hits) {
         if (Status pushed = out.push_back(record->id); !pushed) {
             return pushed;

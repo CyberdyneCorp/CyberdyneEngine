@@ -6,7 +6,7 @@
 // not exist anywhere in the tree before this file.
 //
 // ================================================================================================
-// THREE CASES, AND EACH ONE FAILS FOR A DIFFERENT REASON
+// FOUR CASES, AND EACH ONE FAILS FOR A DIFFERENT REASON
 // ================================================================================================
 //
 //   the bytes      A session recorded today encodes to the committed file, byte for byte. This is
@@ -21,6 +21,10 @@
 //   the refusal    A golden file from a build this one cannot claim to reproduce is REFUSED with a
 //                  reason, rather than replayed to a mismatch that reads like a regression. That is
 //                  what makes the two cases above distinguishable from a stale artefact.
+//   the parser     A DAMAGED hashes file is read as damaged. "the hashes" is only as strong as the
+//                  expectation it parses, and a parser that turns `records 606 and then some` into
+//                  606 is a parser that would turn a corrupted artefact into a weaker check that
+//                  still passes.
 //
 // ================================================================================================
 // HOW A DELIBERATE BEHAVIOUR CHANGE IS MADE
@@ -78,6 +82,13 @@ namespace {
 
 [[nodiscard]] std::string as_text(const cy::Array<cy::u8>& bytes) {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+/// A well-formed one-tick hashes file with `records`' value substituted, so the cases below differ
+/// in exactly one field and a difference in what comes back is a difference in how it was read.
+[[nodiscard]] std::string hashes_text(const std::string& records_value) {
+    return "records " + records_value +
+           "\nlog-hash 0000000000000001\nticks 1\n0 000000000000002a\n";
 }
 
 }  // namespace
@@ -176,4 +187,34 @@ CY_TEST_CASE("golden: a replay from a build this one cannot reproduce is refused
     const cy::replay::CompatibilityVerdict same =
         cy::replay::classify(recorded, cy::replay_test::manifest(), window);
     CY_CHECK(same.verdict == cy::replay::Compatibility::Reproducible);
+}
+
+CY_TEST_CASE("golden: the hashes parser reports a number it could not read, not one it invented") {
+    const GoldenHashes control = parse_hashes(hashes_text("606"));
+    CY_CHECK_EQ(control.records, 606U);
+    CY_CHECK_EQ(control.log_hash, u64{1});
+    CY_REQUIRE(control.hashes.size() == 1U);
+    CY_CHECK_EQ(control.hashes[0], u64{42});
+
+    // Every one of these read as a plausible `records` under the `std::sscanf` this parser
+    // replaced, because sscanf answers a conversion it could not make exactly as it answers one it
+    // could: trailing text was dropped, `-1` wrapped to 4294967295, and an overflow of
+    // `unsigned long long` was undefined behaviour that this implementation happened to saturate.
+    // None of them now sets the field, so "the hashes" compares 0 against the log's real record
+    // count and fails where it used to pass against a number nobody wrote.
+    CY_CHECK_EQ(parse_hashes(hashes_text("606 and then some")).records, 0U);
+    CY_CHECK_EQ(parse_hashes(hashes_text("-1")).records, 0U);
+    CY_CHECK_EQ(parse_hashes(hashes_text("99999999999999999999999")).records, 0U);
+    // 2^32 fits `unsigned long long` and did NOT fit the u32 it was cast into, so this one was
+    // truncated rather than dropped. A count that does not fit is damage, and damage empties the
+    // whole result rather than weakening one field of it.
+    CY_CHECK(parse_hashes(hashes_text("4294967296")).hashes.empty());
+
+    // A hash that overflows is dropped the same way, which leaves the tick count short of
+    // `kGoldenTicks` and trips the REQUIRE in "the hashes".
+    CY_CHECK(parse_hashes("ticks 1\n0 fffffffffffffffff\n").hashes.empty());
+
+    // And the strictness that was already here is unchanged: a file whose tick lines were reordered
+    // is refused outright rather than compared tick against another tick's hash.
+    CY_CHECK(parse_hashes("ticks 2\n1 000000000000002a\n0 000000000000002b\n").hashes.empty());
 }

@@ -70,7 +70,7 @@ public:
             return 0;
         }
         cy::terrain::SurfaceSample sample;
-        sample.height = static_cast<cy::f32>(x * 0.1 + z * 0.05);
+        sample.height = static_cast<cy::f32>((x * 0.1) + (z * 0.05));
         sample.slope_degrees = 30.0F;
         sample.resolved = true;
         // A HOLE past x = 500, so "a hole is not a surface" has something to be true of.
@@ -144,7 +144,7 @@ CY_TEST_CASE("a whole region becomes one foliage cluster, in one call") {
     const RegionCoord region{0, 0, 0};
     const cy::pcg::RegionState* state = world.find(region);
     CY_REQUIRE(state != nullptr);
-    const cy::u32 before = static_cast<cy::u32>(state->accepted.size());
+    const auto before = static_cast<cy::u32>(state->accepted.size());
     CY_REQUIRE(world.demote(region));
     const cy::pcg::RegionState* after = world.find(region);
     CY_REQUIRE(after != nullptr);

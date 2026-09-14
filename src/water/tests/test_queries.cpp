@@ -147,7 +147,7 @@ CY_TEST_CASE("a hull is sampled at forty points in one batched call") {
     WaterSample samples[40];
     for (cy::u32 index = 0; index < 40; ++index) {
         positions[index] =
-            cy::world::WorldVec3d{static_cast<cy::f64>(index) * 0.5 - 10.0, -0.2, 3.0};
+            cy::world::WorldVec3d{(static_cast<cy::f64>(index) * 0.5) - 10.0, -0.2, 3.0};
     }
     CY_REQUIRE(system
                    .query_many(cy::Span<const cy::world::WorldVec3d>(positions, 40),

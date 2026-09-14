@@ -48,7 +48,7 @@ namespace {
     RiverControlPoint branch[3];
     for (cy::u32 index = 0; index < 3; ++index) {
         branch[index].position =
-            cy::world::WorldVec3d{100.0, tributary_level - static_cast<cy::f64>(index) * 0.5,
+            cy::world::WorldVec3d{100.0, tributary_level - (static_cast<cy::f64>(index) * 0.5),
                                   20.0 + (static_cast<cy::f64>(index) * 40.0)};
         branch[index].width = 6.0F;
         branch[index].depth = 1.0F;

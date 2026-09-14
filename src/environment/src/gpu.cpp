@@ -43,8 +43,26 @@ namespace {
     return static_cast<i32>(std::floor(value));
 }
 
+/// The vertical blend weight of tap `dy`, as the store's own sampler computes it — a field one cell
+/// deep has no vertical axis to blend along, so its single tap carries the whole sample.
+[[nodiscard]] f32 vertical_weight(u32 taps, u32 dy, f32 fy) noexcept {
+    if (taps == 1U) {
+        return 1.0F;
+    }
+    return (dy == 0) ? (1.0F - fy) : fy;
+}
+
+/// Written as two guards rather than as nested conditionals, the form `math::clamp` settled on for
+/// the same reason. Kept local, and not replaced by that function, because the point of this file
+/// is that every function a shader would have to write is written here.
 [[nodiscard]] i32 clamp_i32(i32 value, i32 low, i32 high) noexcept {
-    return (value < low) ? low : ((value > high) ? high : value);
+    if (value < low) {
+        return low;
+    }
+    if (high < value) {
+        return high;
+    }
+    return value;
 }
 
 /// The header, as the sampler reads it. A struct of locals rather than a cast over the buffer,
@@ -266,8 +284,7 @@ void read_image_point(Span<const u32> words, const ImageHeader& header, const Im
     f32 accumulated[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     const u32 vertical_taps = (header.vertical_cells > 1) ? 2U : 1U;
     for (u32 dy = 0; dy < vertical_taps; ++dy) {
-        const f32 wy =
-            (vertical_taps == 1U) ? 1.0F : ((dy == 0) ? (1.0F - lattice.fy) : lattice.fy);
+        const f32 wy = vertical_weight(vertical_taps, dy, lattice.fy);
         for (u32 dz = 0; dz < 2; ++dz) {
             const f32 wz = (dz == 0) ? (1.0F - lattice.fz) : lattice.fz;
             for (u32 dx = 0; dx < 2; ++dx) {

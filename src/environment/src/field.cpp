@@ -220,8 +220,7 @@ namespace {
 [[nodiscard]] DeclarationProblem level_problem(const FieldDeclaration& declaration) noexcept {
     f32 previous = 0.0F;
     bool any = false;
-    for (u32 level = 0; level < kFieldResidencyCount; ++level) {
-        const FieldLevel& entry = declaration.levels[level];
+    for (const FieldLevel& entry : declaration.levels) {
         if (!entry.declared()) {
             continue;
         }
@@ -304,8 +303,7 @@ namespace {
             return false;
         }
     }
-    return !(a.potential.value != b.potential.value ||
-             a.recovery_per_second != b.recovery_per_second);
+    return a.potential.value == b.potential.value && a.recovery_per_second == b.recovery_per_second;
 }
 
 }  // namespace

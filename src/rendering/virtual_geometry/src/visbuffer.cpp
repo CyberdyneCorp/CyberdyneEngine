@@ -143,7 +143,7 @@ public:
                 return pushed;
             }
         }
-        std::sort(entries_.begin(), entries_.end());
+        std::ranges::sort(entries_);
         return ok();
     }
 
@@ -151,7 +151,7 @@ public:
     /// index used to mean and is treated the same way: the pixel is not binned.
     [[nodiscard]] u32 lookup(u32 identity) const noexcept {
         const u64 low = static_cast<u64>(identity) << 32U;
-        const auto* found = std::lower_bound(entries_.begin(), entries_.end(), low);
+        const auto* found = std::ranges::lower_bound(entries_, low);
         if (found == entries_.end() || (*found >> 32U) != identity) {
             return kNoSurface;
         }

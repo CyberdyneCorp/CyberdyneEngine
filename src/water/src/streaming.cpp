@@ -16,17 +16,17 @@ namespace {
     switch (payload) {
         case WaterPayload::Surface:
             // The generated surface mesh: the largest single payload, and the one a server drops.
-            return 256U * 1024U;
+            return u64{256} * 1024U;
         case WaterPayload::Foam:
-            return 64U * 1024U;
+            return u64{64} * 1024U;
         case WaterPayload::Physics:
-            return 32U * 1024U;
+            return u64{32} * 1024U;
         case WaterPayload::Shoreline:
-            return 16U * 1024U;
+            return u64{16} * 1024U;
         case WaterPayload::Query:
-            return 8U * 1024U;
+            return u64{8} * 1024U;
         case WaterPayload::Audio:
-            return 4U * 1024U;
+            return u64{4} * 1024U;
         case WaterPayload::kCount:
             break;
     }

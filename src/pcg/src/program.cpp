@@ -474,9 +474,12 @@ void fold_constants(const Graph& graph, Span<const u32> order, Array<Working>& w
         }
         if (node.kind == NodeKind::Compute) {
             const f32 base = source.params.value;
-            node.params.value = nodes[index].params.invert
-                                    ? (base != 0.0F ? 1.0F / base : 0.0F)
-                                    : base * nodes[index].params.value + nodes[index].params.second;
+            // A reciprocal of zero is zero rather than an infinity, which is the same answer the
+            // evaluator gives: the fold must not be able to disagree with the node it replaces.
+            const f32 reciprocal = base != 0.0F ? 1.0F / base : 0.0F;
+            node.params.value = nodes[index].params.invert ? reciprocal
+                                                           : (base * nodes[index].params.value) +
+                                                                 nodes[index].params.second;
             node.kind = NodeKind::Constant;
             report.folded += 1;
         } else if (node.kind == NodeKind::Smooth) {
@@ -553,7 +556,7 @@ void project_attributes(const Graph& graph, Span<const u32> order, const Array<W
         }
         bool read = false;
         for (const GraphNode& consumer : nodes) {
-            const usize consumer_index = static_cast<usize>(&consumer - nodes.data());
+            const auto consumer_index = static_cast<usize>(&consumer - nodes.data());
             if (!working[consumer_index].live) {
                 continue;
             }

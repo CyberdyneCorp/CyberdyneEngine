@@ -3,12 +3,13 @@
 #include <cy/water/ocean.h>
 
 #include <cmath>
+#include <numbers>
 
 namespace cy::water {
 
 namespace {
 
-constexpr f32 kPi = 3.14159265358979F;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 /// Angular frequency of a deep-water wave of this wavelength. The dispersion relation
 /// `displacement.h` synthesises with, spelled once here so the spectrum and the surface agree about

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace cy::water {
@@ -172,7 +173,7 @@ Status WaterFields::claim(environment::FieldRegistry& registry,
     // here can say it better.
     struct Claim {
         environment::FieldId field;
-        environment::ProducerToken* token;
+        environment::ProducerToken* token = nullptr;
     };
     const Claim claims[4] = {{depth_, &depth_token_},
                              {distance_, &distance_token_},
@@ -256,9 +257,7 @@ struct Chamfer {
 
 void WaterFields::relax(usize target, usize source, f32 step) noexcept {
     const f32 candidate = points_[source].distance + step;
-    if (candidate < points_[target].distance) {
-        points_[target].distance = candidate;
-    }
+    points_[target].distance = std::min(points_[target].distance, candidate);
 }
 
 void WaterFields::sweep_forward(u32 width, u32 height, f32 straight, f32 diagonal) noexcept {
@@ -317,14 +316,12 @@ void WaterFields::sweep_distances(u32 width, u32 height, f32 cell_metres) noexce
 
     // A two-pass chamfer transform. The diagonal step costs sqrt(2) cells, which is what keeps a
     // distance field from being a Manhattan distance wearing a metre label.
-    const Chamfer chamfer{cell_metres, cell_metres * 1.41421356F};
+    const Chamfer chamfer{cell_metres, cell_metres * std::numbers::sqrt2_v<f32>};
     sweep_forward(width, height, chamfer.straight, chamfer.diagonal);
     sweep_backward(width, height, chamfer.straight, chamfer.diagonal);
 
     for (ShorePoint& point : points_) {
-        if (point.distance > far_distance) {
-            point.distance = far_distance;
-        }
+        point.distance = std::min(point.distance, far_distance);
     }
 }
 

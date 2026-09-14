@@ -69,18 +69,21 @@ bool profile_retains(CookProfile profile, assets::AssetKind kind,
     if (sub_asset_name.starts_with(kCollisionSubAssetPrefix)) {
         return true;
     }
+    // The three kinds a dedicated server keeps. One branch, because they share one answer; the
+    // reason differs per kind and is named here rather than by giving each an identical body.
+    //
+    // Prefab and Scene: the hierarchy is gameplay data — it is what spawns, what collides and what
+    // the navigation mesh is built over.
+    //
+    // Animation: skeletons and clips, which `CookProfile::DedicatedServer` names in its own words —
+    // "the animation data gameplay depends on". A server authoritative over movement integrates
+    // root motion out of a clip and resolves a hit against a bone, and both read the joint indices
+    // a skeleton numbers. M8.d: before step 7 produced one, this case could not fire, and the table
+    // said nothing about a kind no importer emitted.
     switch (kind) {
         case assets::AssetKind::Prefab:
         case assets::AssetKind::Scene:
-            // The hierarchy is gameplay data: it is what spawns, what collides and what the
-            // navigation mesh is built over.
-            return true;
         case assets::AssetKind::Animation:
-            // Skeletons and clips, which `CookProfile::DedicatedServer` names in its own words —
-            // "the animation data gameplay depends on". A server authoritative over movement
-            // integrates root motion out of a clip and resolves a hit against a bone, and both read
-            // the joint indices a skeleton numbers. M8.d: before step 7 produced one, this case
-            // could not fire, and the table said nothing about a kind no importer emitted.
             return true;
         default:
             return false;

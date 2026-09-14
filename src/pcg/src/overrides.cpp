@@ -80,7 +80,7 @@ inline constexpr usize kNoPoint = ~usize{0};
         }
         const f64 dx = origin_x + static_cast<f64>(points.x(index)) - record.anchor_x;
         const f64 dz = origin_z + static_cast<f64>(points.z(index)) - record.anchor_z;
-        const f64 squared = dx * dx + dz * dz;
+        const f64 squared = (dx * dx) + (dz * dz);
         // Strictly nearer, ties broken by the candidate's SLOT, so the answer is a function of the
         // point set rather than of the order it happened to be built in.
         const bool nearer =
@@ -441,11 +441,11 @@ u64 PersistentDelta::encoded_bytes() const noexcept {
     // two hundred exceptions".
     constexpr u64 kHeaderBytes = sizeof(u64) + sizeof(u32) + sizeof(u64);
     constexpr u64 kRecordBytes = sizeof(u64) +               // identity
-                                 sizeof(u8) * 2 +            // op, origin
-                                 sizeof(f64) * 6 +           // anchor and position
-                                 sizeof(u32) * 2 +           // variant, version
+                                 (sizeof(u8) * 2) +          // op, origin
+                                 (sizeof(f64) * 6) +         // anchor and position
+                                 (sizeof(u32) * 2) +         // variant, version
                                  sizeof(u16) + sizeof(f32);  // attribute, value
-    return kHeaderBytes + kRecordBytes * exceptions.size();
+    return kHeaderBytes + (kRecordBytes * exceptions.size());
 }
 
 Status collect_persistent(const OverrideLayer& layer, u64 seed, u32 version, u64 program_digest,

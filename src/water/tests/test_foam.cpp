@@ -78,7 +78,7 @@ CY_TEST_CASE("the foam field is bounded in memory whatever happens in it") {
     params.cell_metres = 1.0F;
     CY_REQUIRE(field.configure(params).has_value());
     const cy::u64 bytes = field.bytes();
-    CY_CHECK_EQ(bytes, static_cast<cy::u64>(32u * 32u * 2u * sizeof(cy::f32)));
+    CY_CHECK_EQ(bytes, cy::u64{32} * 32U * 2U * sizeof(cy::f32));
 
     // A hundred wakes, a thousand advections and a focus dragged across a kilometre: the field is
     // the same size afterwards, because its size is a function of the resolution alone.
