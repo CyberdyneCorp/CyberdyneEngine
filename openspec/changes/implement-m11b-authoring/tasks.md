@@ -207,6 +207,16 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       argument defaulting to `in-editor`, and `cy_editor_viewport::play::PlayMode` is the editor's
       mirror of the same three spellings. Suite: `cy_test_integration_editor_play`, 5 cases, 88
       assertions. Criteria `m11b:play-modes-exist` and `m11b:play-mode-round-trip` both green.
+      **AND A REGRESSION THIS FOUND AND FIXED**: the first version of the protocol change added the
+      `mode` word to the Rust side only, so the runtime's `Playing` answer was one field short of
+      what the editor decodes — the editor's session dropped the connection and `smoke.authoring`
+      failed two acts later with *"the engine's world is not empty after the undos"*.
+      `src/runtime/editor_bridge/` now reads the mode on a `Play` (empty when an older editor sends
+      none) and writes it on a `Playing`, `samples/05b-editor-window/runtime` refuses an unavailable
+      mode by name and carries the chosen one into `PlayConfiguration`, and two cases in
+      `unit.editor_bridge` check the **fields** of both messages rather than only their tags — which
+      is why the suite's existing "two languages, one wire" case did not catch it. Both were mutated
+      and both went red.
       **A mode that is not available refuses by name** (task 0.5)
 - [x] 3.2 **DONE, AND IT IS A COMPILER RATHER THAN A FIELD.** `src/gameplay/live/` — `cy::gameplay-live`:
       `LiveEditPolicy` with all six of the specification's outcomes, `derived_policy_for` deriving

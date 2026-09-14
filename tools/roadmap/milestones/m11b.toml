@@ -315,7 +315,17 @@ fills=$(grep -rniIl "CentreLower" editor/crates/ 2>/dev/null | grep -v "/target/
 count=$(printf '%s' "$fills" | grep -c . || true)
 echo "$count file(s) reference the CentreLower region: ${fills:-none}"
 test "$count" -ge 3
-ctest --test-dir "${CY_BUILD_DIR:-build/dev}" -R '^unit.render_sky$' --output-on-failure
+# WHAT WAS HERE AND WHY IT IS GONE. This criterion ran `ctest -R '^unit.render_sky$'` — the sky
+# renderer's suite, which has nothing to do with a specialised editor and would have gone red for a
+# reason no reader of this criterion could act on, or green while telling them nothing. That is the
+# sibling of the six checks this project has shipped that could not fail: a criterion whose passing
+# leg measures something else is not evidence about its own subject.
+#
+# It is NOT replaced with an executing leg here, and the criterion stays RED until one is written,
+# because the thing to execute does not exist yet: `CentreLower` is referenced by one file
+# (`cy-editor-visual/src/chrome.rs`, which reserves the region) and nothing fills it. Whoever writes
+# section 3.3 owns the replacement, and the grep above is a placeholder that must not outlive them —
+# three files naming a region is satisfied by three comments.
 '''
 ci_job = "milestone-m11b"
 

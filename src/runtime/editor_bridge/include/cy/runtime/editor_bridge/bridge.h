@@ -123,6 +123,13 @@ struct EditorRequest {
     /// BY NAME, and a `u8` that fell through a `switch` would be silently treated as the closest
     /// one. `cy::gameplay::play_state_of` is what refuses it.
     Span<const u8> payload;
+    /// `Play` only: the MODE's name, by the same argument and in the same form. M11.b task 3.1.
+    ///
+    /// `in-editor`, `separate-process` or `remote-device`, and `cy::gameplay::play_mode_of` is what
+    /// refuses a word this build does not know. Empty when the editor sent none, which is an editor
+    /// older than this field; a host reading it should treat empty as `in-editor`, which is what
+    /// the editor has always meant when it did not say.
+    Span<const u8> mode;
 };
 
 /// The runtime's end of the editor's control socket.
@@ -179,7 +186,12 @@ public:
     /// FORCE, which may not be the one asked for: a runtime that refused to enter play answers with
     /// "editing" and a `detail` that says why, rather than with a silence the editor would have to
     /// interpret as either a refusal or a lost connection.
-    [[nodiscard]] Status send_playing(u64 request, const char* state, const char* detail) noexcept;
+    /// `mode` is the mode now in force — and it is **never a mode other than the one asked for**.
+    /// A runtime that cannot honour a mode refuses the request; answering with a different mode
+    /// would be the silent fallback `live-editing` forbids, and the editor would have no way to
+    /// tell it from success. It is carried anyway, so the editor can NOTICE a disagreement.
+    [[nodiscard]] Status send_playing(u64 request, const char* state, const char* mode,
+                                      const char* detail) noexcept;
 
     /// Offer the editor a camera that frames what this runtime is holding. **Once per session.**
     ///

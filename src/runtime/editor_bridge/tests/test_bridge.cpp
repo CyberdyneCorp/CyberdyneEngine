@@ -22,6 +22,7 @@
 #include <cstdio>
 
 #include <cstring>
+#include <string_view>
 
 using cy::u32;
 using cy::u64;
@@ -64,6 +65,22 @@ void text(cy::Array<u8>& out, const char* value) {
     little_endian(bytes, 3, 4);
     for (u32 index = 0; index < 3; ++index) {
         CY_REQUIRE(bytes.push_back(static_cast<u8>(marker + index)));
+    }
+    return bytes;
+}
+
+/// `Message::Play`, as the editor encodes it: the state's word and then the MODE's word.
+///
+/// Written out here rather than derived from the bridge's own decoder, because the whole point of
+/// this fixture is to be the OTHER side's spelling. `mode == nullptr` writes no mode word at all,
+/// which is what an editor built before M11.b sends.
+[[nodiscard]] cy::Array<u8> play(u64 request, const char* state, const char* mode) {
+    cy::Array<u8> bytes;
+    CY_REQUIRE(bytes.push_back(15));
+    little_endian(bytes, request, 8);
+    text(bytes, state);
+    if (mode != nullptr) {
+        text(bytes, mode);
     }
     return bytes;
 }
@@ -335,4 +352,95 @@ CY_TEST_CASE("an editor that goes away is noticed rather than written to for eve
     }
     CY_CHECK_FALSE(session.bridge().connected());
     CY_CHECK_FALSE(session.bridge().send_pong(1));
+}
+
+CY_TEST_CASE(
+    "a play carries the mode beside the state, and an editor that sends none is not broken") {
+    // M11.b task 3.1, AND THE REGRESSION THIS CASE EXISTS FOR.
+    //
+    // `Message::Play` gained a `mode` word when the three play modes landed, and the first version
+    // of that change added the field to the Rust protocol and not to this decoder. The wire still
+    // framed correctly, so nothing errored here — but the runtime's ANSWER was then one field short
+    // of what the editor's `Message::Playing` decodes, the editor's session failed to decode it and
+    // dropped the connection, and `smoke.authoring` failed two acts later with "the engine's world
+    // is not empty after the undos". A field added to a wire format on one side only is exactly the
+    // defect this suite's "two languages, one wire" case was written for, and it did not catch this
+    // one because it checks tags rather than fields. This case checks the fields.
+    Session session;
+    EditorRequest request;
+
+    const cy::Array<u8> with_mode = play(7, "playing", "separate-process");
+    session.send({&with_mode});
+    CY_REQUIRE(session.next(request));
+    CY_CHECK(request.kind == EditorMessage::Play);
+    CY_CHECK_EQ(request.request, 7U);
+    CY_CHECK(std::string_view(reinterpret_cast<const char*>(request.payload.data()),
+                              request.payload.size()) == "playing");
+    CY_CHECK(std::string_view(reinterpret_cast<const char*>(request.mode.data()),
+                              request.mode.size()) == "separate-process");
+
+    // AN EDITOR OLDER THAN THE FIELD. The two ends are versioned rather than lock-stepped, so a
+    // `Play` with no mode word decodes with an empty mode rather than failing — which a host reads
+    // as `in-editor`, the mode the editor has always meant when it did not say.
+    const cy::Array<u8> without_mode = play(8, "editing", nullptr);
+    session.send({&without_mode});
+    CY_REQUIRE(session.next(request));
+    CY_CHECK(request.kind == EditorMessage::Play);
+    CY_CHECK_EQ(request.request, 8U);
+    CY_CHECK(request.mode.empty());
+    CY_CHECK(session.bridge().connected());
+}
+
+CY_TEST_CASE("the answer to a play carries four fields in the order the editor decodes them") {
+    // The other half of the same regression. `send_playing` writes request, state, mode, detail,
+    // and `cy_editor_protocol::Message::Playing` reads exactly those four in exactly that order.
+    // The case decodes the frame BYTE BY BYTE with the editor's own reading rather than with the
+    // bridge's, because a reader shared with the writer would agree with it by construction.
+    Session session;
+    const cy::Array<u8> message = hello(1, 0);
+    session.send({&message});
+    EditorRequest request;
+    CY_REQUIRE(session.next(request));
+    CY_REQUIRE(session.bridge().send_welcome(1, 0, "cy_editor_window_runtime"));
+    CY_REQUIRE(session.bridge().send_playing(11, "playing", "in-editor", "2 entities, 2 bodies"));
+
+    u8 buffer[512] = {};
+    const ssize_t read = ::recv(session.editor(), buffer, sizeof(buffer), 0);
+    CY_REQUIRE(read > 0);
+
+    // Skip the welcome frame, then read the playing one.
+    cy::usize offset = 0;
+    u32 length = 0;
+    std::memcpy(&length, buffer + offset, 4);
+    offset += 8 + length;
+    CY_REQUIRE(offset + 8 <= static_cast<cy::usize>(read));
+    std::memcpy(&length, buffer + offset, 4);
+    u32 expected = 0;
+    std::memcpy(&expected, buffer + offset + 4, 4);
+    CY_REQUIRE(offset + 8 + length <= static_cast<cy::usize>(read));
+    CY_CHECK_EQ(EditorBridge::checksum(cy::Span<const u8>{buffer + offset + 8, length}), expected);
+
+    const u8* body = buffer + offset + 8;
+    cy::usize at = 0;
+    CY_CHECK_EQ(body[at], static_cast<u8>(EditorMessage::Playing));
+    at += 1;
+    u64 answered = 0;
+    std::memcpy(&answered, body + at, 8);
+    at += 8;
+    CY_CHECK_EQ(answered, 11U);
+
+    // Three length-prefixed words, in order.
+    const char* wanted[3] = {"playing", "in-editor", "2 entities, 2 bodies"};
+    for (const char* word : wanted) {
+        u32 width = 0;
+        CY_REQUIRE(at + 4 <= length);
+        std::memcpy(&width, body + at, 4);
+        at += 4;
+        CY_REQUIRE(at + width <= length);
+        CY_CHECK(std::string_view(reinterpret_cast<const char*>(body + at), width) == word);
+        at += width;
+    }
+    // AND NOTHING AFTER THEM. A fifth field appended on this side and not read on the other is the
+    // same defect in the opposite direction.
+    CY_CHECK_EQ(at, static_cast<cy::usize>(length));
 }

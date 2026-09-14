@@ -288,6 +288,11 @@ struct Host {
     physics::PhysicsServer* physics = nullptr;
     /// What the sessions did, for the report. Cumulative across presses of play, because a session
     /// that left something behind would show up in the SECOND one.
+    /// The mode the current or most recent session was asked for. M11.b task 3.1.
+    ///
+    /// Held on the host rather than read back out of the session, because the answer to a `Play`
+    /// that never reached a session — no world open, a refused state — still has to name a mode.
+    gameplay::PlayMode play_mode = gameplay::PlayMode::InEditor;
     u64 play_sessions = 0;
     u64 play_ticks = 0;
     u64 play_bodies = 0;
@@ -545,7 +550,23 @@ void apply_transaction(Host& host, const runtime::EditorRequest& request) noexce
     (void)host.bridge->send_applied(request.request, request.frame, request.payload);
 }
 
-/// Enter, pause or leave play. M8.a tasks 5.1 and 5.2.
+/// The mode the editor asked for, or `InEditor` when it named none.
+///
+/// An editor built before M11.b sends a `Play` with no mode word, and the two ends are versioned
+/// rather than lock-stepped — so an empty mode is read as `in-editor`, which is the mode the editor
+/// has always meant when it did not say. A NON-EMPTY word this build does not know is a different
+/// thing and is refused by name; see `answer_play`.
+[[nodiscard]] Expected<gameplay::PlayMode, Error> requested_mode(
+    const runtime::EditorRequest& request) noexcept {
+    if (request.mode.empty()) {
+        return gameplay::PlayMode::InEditor;
+    }
+    const std::string_view named(reinterpret_cast<const char*>(request.mode.data()),
+                                 request.mode.size());
+    return gameplay::play_mode_of(named);
+}
+
+/// Enter, pause or leave play. M8.a tasks 5.1 and 5.2; the mode is M11.b task 3.1.
 ///
 /// THE ANSWER IS ALWAYS THE STATE NOW IN FORCE, never a silence. A runtime that ignored a play it
 /// could not honour would leave the editor showing "PLAYING" over a world that is not moving, which
@@ -558,26 +579,50 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
         (void)host.bridge->send_playing(
             request.request,
             host.play == nullptr ? "editing" : gameplay::play_state_name(host.play->state()),
-            wanted.error().message);
+            gameplay::play_mode_name(host.play_mode), wanted.error().message);
         return;
     }
+
+    // THE MODE, AND IT IS REFUSED BY NAME RATHER THAN REPLACED. `live-editing`: *"Selecting a mode
+    // that is not available SHALL refuse, naming the mode and the reason. It SHALL NOT fall back to
+    // another mode."* Two refusals live here — a word this build does not know, and a mode this
+    // build cannot run — and neither of them starts anything.
+    const Expected<gameplay::PlayMode, Error> mode = requested_mode(request);
+    if (!mode) {
+        (void)host.bridge->send_playing(
+            request.request,
+            host.play == nullptr ? "editing" : gameplay::play_state_name(host.play->state()),
+            gameplay::play_mode_name(host.play_mode), mode.error().message);
+        return;
+    }
+    const gameplay::PlayModeAvailability availability =
+        gameplay::availability_of(*mode, gameplay::play_mode_support());
+    if (!availability.available) {
+        (void)host.bridge->send_playing(
+            request.request,
+            host.play == nullptr ? "editing" : gameplay::play_state_name(host.play->state()),
+            gameplay::play_mode_name(host.play_mode), availability.reason);
+        return;
+    }
+
     if (host.play == nullptr) {
         // No world, so nothing to simulate. `--world` is what makes a play session possible at all,
         // and saying so is more useful than reporting a state that would be a lie.
         (void)host.bridge->send_playing(
-            request.request, "editing",
+            request.request, "editing", gameplay::play_mode_name(*mode),
             "this runtime has no world open; start it with --project and --world");
         return;
     }
+    host.play_mode = *mode;
 
     char detail[192] = {};
     switch (*wanted) {
         case gameplay::PlayState::Playing: {
             if (host.play->state() == gameplay::PlayState::Paused) {
                 if (Status resumed = host.play->resume(); !resumed) {
-                    (void)host.bridge->send_playing(request.request,
-                                                    gameplay::play_state_name(host.play->state()),
-                                                    resumed.error().message);
+                    (void)host.bridge->send_playing(
+                        request.request, gameplay::play_state_name(host.play->state()),
+                        gameplay::play_mode_name(host.play_mode), resumed.error().message);
                     return;
                 }
                 (void)std::snprintf(detail, sizeof(detail), "resumed");
@@ -590,8 +635,12 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
             gameplay::PlayConfiguration configuration;
             configuration.physics = host.physics;
             configuration.body_capacity = kWorldCapacity * 2;
+            // The mode the editor asked for, carried into the session so that `enter` refuses one
+            // this build cannot run rather than this function having to remember to.
+            configuration.mode = host.play_mode;
             if (Status entered = host.play->enter(configuration); !entered) {
                 (void)host.bridge->send_playing(request.request, "editing",
+                                                gameplay::play_mode_name(host.play_mode),
                                                 entered.error().message);
                 return;
             }
@@ -633,7 +682,7 @@ void answer_play(Host& host, const runtime::EditorRequest& request) noexcept {
         }
     }
     (void)host.bridge->send_playing(request.request, gameplay::play_state_name(host.play->state()),
-                                    detail);
+                                    gameplay::play_mode_name(host.play_mode), detail);
 }
 
 void serve_editor(Host& host) noexcept {

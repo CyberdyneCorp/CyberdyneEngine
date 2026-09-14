@@ -38,6 +38,8 @@ cy_add_module(
                         cy::physics-bridge cy::scene cy::scene-serialization
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 
-if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
-    add_subdirectory(tests)
-endif()
+# NO tests/ DIRECTORY HERE, deliberately. Both suites that exercise this module live in
+# `src/gameplay/play/tests/` — `integration.editor_live_edit` drives a live edit against a play
+# session, and a suite for it here would need the session, the physics server and the same fixture
+# world. `play/tests/CMakeLists.txt` says why they are declared from there rather than from
+# `tests/integration/`.

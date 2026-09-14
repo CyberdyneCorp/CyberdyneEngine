@@ -180,9 +180,21 @@ private:
                    reader.byte_span(out.payload);
         case static_cast<u8>(EditorMessage::Play):
             out.kind = EditorMessage::Play;
-            // The state's name lands in `payload`, because a length-prefixed string and a
-            // length-prefixed byte string are the same three lines on the wire. See the field.
-            return reader.u64_value(out.request) && reader.byte_span(out.payload);
+            // The state's name lands in `payload` and the mode's in `mode`, because a
+            // length-prefixed string and a length-prefixed byte string are the same three lines on
+            // the wire. See the fields.
+            //
+            // THE MODE IS OPTIONAL ON THE WIRE, not because the protocol is loose but because an
+            // editor built before M11.b sends a `Play` without one, and the two ends are versioned
+            // rather than lock-stepped. A missing mode leaves `mode` empty, which a host reads as
+            // `in-editor` — the mode the editor has always meant when it did not say.
+            if (!reader.u64_value(out.request) || !reader.byte_span(out.payload)) {
+                return false;
+            }
+            if (!reader.byte_span(out.mode)) {
+                out.mode = {};
+            }
+            return true;
         default:
             // A tag this build does not know is REPORTED rather than closing the connection: the
             // editor is entitled to be newer, and a message a runtime cannot answer is a missing
@@ -522,7 +534,8 @@ Status EditorBridge::send_rejected(u64 request, const char* reason, const char* 
     return send(outgoing_.span());
 }
 
-Status EditorBridge::send_playing(u64 request, const char* state, const char* detail) noexcept {
+Status EditorBridge::send_playing(u64 request, const char* state, const char* mode,
+                                  const char* detail) noexcept {
     Writer writer(outgoing_);
     if (Status written = writer.u8_value(static_cast<u8>(EditorMessage::Playing)); !written) {
         return written;
@@ -531,6 +544,11 @@ Status EditorBridge::send_playing(u64 request, const char* state, const char* de
         return written;
     }
     if (Status written = writer.text(state); !written) {
+        return written;
+    }
+    // The mode, between the state and the detail, in the order
+    // `cy_editor_protocol::Message::Playing` decodes them. M11.b task 3.1.
+    if (Status written = writer.text(mode); !written) {
         return written;
     }
     if (Status written = writer.text(detail); !written) {

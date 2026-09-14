@@ -18,16 +18,35 @@ directory is where it is registered.
 
 | CTest name | what it runs |
 |------------|--------------|
+| `unit.editor_documents` | **a node has a name**, on the ENGINE's side of the format and the operation stream. M11.b task 4.1 |
 | `smoke.editor_session` | the whole M5 artefact: `samples/05-editor-session/session.py` |
 | `integration.editor_session_selftest` | the driver's own negative cases, which require its two load-bearing assertions to fail when they should |
 
-Both are declared from `samples/05-editor-session/CMakeLists.txt` rather than from a `CMakeLists.txt`
-of their own added by `tests/CMakeLists.txt`, and the reason is ownership rather than taste: the
-change that landed this directory does not own `tests/CMakeLists.txt`. `samples/04-character` uses
-the same arrangement for `smoke.character_sample`, for a different reason — ordering — and its
-comment argues the shape. Whoever next edits `tests/CMakeLists.txt` should add
-`add_subdirectory(editor)` and move the two declarations into a `CMakeLists.txt` here; it is a
-lateral move and nothing else changes.
+`unit.editor_documents` is declared from the `CMakeLists.txt` beside this file, which
+`tests/CMakeLists.txt` now adds. **The other two are still declared from
+`samples/05-editor-session/CMakeLists.txt`** and were deliberately left there: the change that
+landed them is archived, moving a test declaration risks a suite that silently stops being
+registered, and M11.b's business was the suite above. `samples/04-character` uses the same
+arrangement for `smoke.character_sample`, for a different reason — ordering — and its comment argues
+the shape.
+
+### Why a C++ suite about the EDITOR's document model
+
+Most of the editor's tests are Cargo's, and the Rust half of "a node has a name" is there —
+`cy_editor_documents::{content,document,transaction}`, `cy_editor_services::worldfile`,
+`cy_editor_viewmodels::hierarchy`. What cannot be written there is the half this suite is about: the
+**engine** reads the same `.cyworld` and applies the same operation stream, so a name that existed
+only in the editor would be a name the runtime drops on the first save. That is the shape of the
+defect `worldfile.h`'s header was written to close for *identity*, and a name would have repeated
+it. Two readers of one format need a test on each side, or they agree until one of them changes.
+
+### Where the binary lands, because it looks like a typo
+
+`build/<dir>/tests/editor/cy_test_unit_editor_documents`, not `build/<dir>/`. A suite declared from
+under `tests/` is created in that subdirectory's scope and its binary lands beside its
+`CMakeLists.txt`; a suite declared **deferred** from `src/**/tests/` is created in the top-level
+scope and lands at the root. Both conventions are in this tree, `m11a.toml` already spells three
+criteria the first way, and `m11b.toml`'s `a-node-has-a-name` spells this one.
 
 ## When they are not registered, and why that is not a skip
 
