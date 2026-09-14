@@ -8,7 +8,7 @@ a view over records that are already maintained for their own reasons rather tha
 place to keep up to date, because a hand-written list of unfinished work goes stale exactly
 when it matters most — at the moment a milestone closes and somebody adds to it.
 
-Closed milestones: M0, M1, M2, M3, M4, M5, M5.5, M6, M7, M8.a, M8.b, M8.c, M9.
+Closed milestones: M0, M1, M2, M3, M4, M5, M5.5, M6, M7, M8.a, M8.b, M8.c, M9, M10.
 
 ## 1. Declared gaps
 

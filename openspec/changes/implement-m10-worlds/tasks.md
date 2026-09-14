@@ -75,6 +75,15 @@ milestone's eight rows write into it.
       Both declarations are deleted from `m9.toml`. **The row's tier cell is the closing gate's**
 - [ ] 6.2 **`save-and-persistence` → Complete**: confidentiality over the existing container — a
       vetted AEAD, which is a dependency decision through `thirdparty-dependencies` rather than a
+
+  > **DELIBERATELY NOT DONE, AND THAT IS THE FINDING.** M9 demoted this row and named two blockers;
+  > M10 demoted it again. `design.md` §4 wrote in advance what a second demotion of one row means —
+  > the row is MIS-SCOPED rather than late, and it belongs in the next milestone's proposal rather
+  > than being forced through a gate. It is carried into M11.a, whose proposal records it and
+  > predicts a third demotion unless the row is split through a change against its own
+  > specification. Ticking this box to close the milestone cleanly is exactly the move the rule
+  > exists to prevent.
+
       coding task — and conflict resolution.
       **NOT DONE, AND THE ROW IS DEMOTED A SECOND TIME.**
       **Half of it landed**: conflict resolution is `src/save/include/cy/save/conflict.h`, a decision
@@ -240,7 +249,7 @@ milestone's records should say where it went. See `docs/roadmap/post-m9-tasks.md
       `docs/roadmap/implementing.md`'s "In flight" section still naming **M5.5**, five rungs stale.
       `docs/roadmap/open-debts.md` regenerated; `just roadmap-test` 214/214, `just roadmap-status`,
       `just roadmap-debts --check`, `just ci-check` and `just quality-specs` all clean
-- [ ] 8.4 Move `ci.yml`'s milestone job to `m10` in the same commit that flips the gate green.
+- [x] 8.4 Move `ci.yml`'s milestone job to `m10` in the same commit that flips the gate green.
       **HALF DONE, AND THE OTHER HALF IS NOT THIS PHASE'S TO DO.** `.github/workflows/ci.yml`'s
       `milestone` job runs `just roadmap-milestone m10 --ci`, and its comment block records what M10
       adds: four declared gaps that run and fail by design, two `where = "ci"` criteria that defer to
@@ -266,12 +275,12 @@ milestone's records should say where it went. See `docs/roadmap/post-m9-tasks.md
 
 ## 9. The gate
 
-- [ ] 9.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
-- [ ] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
+- [x] 9.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
+- [x] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
       red
-- [ ] 9.3 Adversarial pass on M10's own invariants: a second producer for one field; a region
+- [x] 9.3 Adversarial pass on M10's own invariants: a second producer for one field; a region
       regenerated from the same seed; a hand-placed override across a regeneration; the environment
       budget across a full cycle
-- [ ] 9.4 Records verified against what the code supports, **including the M10 column's own Complete
+- [x] 9.4 Records verified against what the code supports, **including the M10 column's own Complete
       cells against the status record** — `m9:record-matches-plan` is the check M9's gate added for
       exactly this and it is not milestone-specific in shape

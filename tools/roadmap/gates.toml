@@ -1144,7 +1144,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m10"
 class = "milestone"
 milestone = "m10"
-state = "joins-on-close"
+state = "green"
 
 
 # --- The gates M11's five rungs add ----------------------------------------------------------------
