@@ -55,13 +55,37 @@ function(cy_weather_declare_tests)
         KIND unit
         SOURCES
             "${cy_weather_tests_dir}/test_climate.cpp"
-            "${cy_weather_tests_dir}/test_cells.cpp"
             "${cy_weather_tests_dir}/test_wind.cpp"
-            "${cy_weather_tests_dir}/test_sampling.cpp"
             "${cy_weather_tests_dir}/test_precipitation.cpp"
             "${cy_weather_tests_dir}/test_storms.cpp"
             "${cy_weather_tests_dir}/test_presets.cpp"
             "${cy_weather_tests_dir}/test_diagnostics.cpp"
+        DEPENDENCIES cy::weather)
+
+    # test_cells.cpp IS AN INTEGRATION SUITE, and the harness said so before anybody did. Five of its
+    # eight cases step a whole weather grid, and the budget guard reported three of them over the unit
+    # kind's 1 ms on an IDLE host: 1.672 ms, 1.458 ms and 1.993 ms. That is not a regression and the
+    # guard's own message names the mechanism -- its clock is the case's CPU time, which counts
+    # SECONDS rather than cycles, so a governor that idles at 800 MHz inflates every measurement and
+    # an idle machine is the instrument's worst case. Measured here: the same cases cost 0.48 to
+    # 1.67 ms boosted and about three times that idle, so `unit.weather` failed 8 runs in 25 on a
+    # machine doing nothing.
+    #
+    # `testing-and-quality`'s taxonomy answers it: "a test this expensive [belongs] in the next suite
+    # up -- move it, or make it cheaper". Stepping a grid is what these cases are FOR, so they move.
+    # The integration kind's budget is 1 s, a thousand times the headroom, and the cases are unchanged.
+    cy_add_test(
+        NAME weather_cells
+        KIND integration
+        SOURCES
+            "${cy_weather_tests_dir}/test_cells.cpp"
+            # test_sampling.cpp joins it for the same reason and by the same measurement: its
+            # 'macro and gameplay never disagree about what macro reports' case was the ONE case
+            # still over the unit budget after test_cells.cpp moved -- 5 failures in 40 runs on an
+            # idle machine, at 1.130 ms against 1.000 ms. It sits beside two cases that each take
+            # four thousand samples and compare them against the same samples taken one at a time,
+            # which is integration work by the taxonomy's own description whatever the clock does.
+            "${cy_weather_tests_dir}/test_sampling.cpp"
         DEPENDENCIES cy::weather)
 
     cy_add_test(

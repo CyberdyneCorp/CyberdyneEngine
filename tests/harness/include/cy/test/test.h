@@ -121,6 +121,10 @@ private:
     const char* file_;
     int line_;
     unsigned long long budget_ns_;
+    /// The budget as DECLARED, before the process-start calibration scaled it. Kept so that an
+    /// apparent overrun can be re-checked against a scale measured beside the case rather than in
+    /// the first microseconds of the process — see `second_opinion_scale` in budget.cpp.
+    unsigned long long declared_ns_;
     unsigned long long started_contended_ns_;
     unsigned long long started_cpu_ns_;
     unsigned long long started_wall_ns_;

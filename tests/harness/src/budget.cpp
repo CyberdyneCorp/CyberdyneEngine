@@ -200,6 +200,31 @@ double resolve_scale() {
 
 }  // namespace
 
+/// A SECOND OPINION, taken only when a case has apparently blown its budget.
+///
+/// `budget_scale()` caches `resolve_scale()` in a function-local static, so the calibration is
+/// measured ONCE, in the first microseconds of the process. That is the wrong moment on a machine
+/// whose governor has not settled: the three reference samples run while the core is still boosted
+/// from process launch, the ratio comes out at or below 1.0 and clamps, and then the cases run at
+/// 800 MHz against a budget calibrated at full clock. Measured on this project's own host,
+/// `unit.weather` failed 8 runs in 25 WHILE THE MACHINE WAS IDLE, reporting the same case at
+/// 1.130 ms against a 1.000 ms budget in one run and at 1.672 ms against 1.371 ms in another --
+/// two different budgets for one binary, which is the calibration moving rather than the code.
+///
+/// So an overrun is re-measured before it is believed. The reference workload is taken again, NOW,
+/// adjacent to the case that just ran and under the same clock, and the case is only reported over
+/// budget if it is still over against that. A real regression is still over; a governor artefact is
+/// not. It costs nothing on the passing path, because nothing calls this unless a case looks late.
+///
+/// An explicit `CY_TEST_BUDGET_SCALE` is never re-measured: somebody who pinned the scale meant it.
+[[nodiscard]] double second_opinion_scale() {
+    const char* override_value = std::getenv("CY_TEST_BUDGET_SCALE");
+    if (override_value != nullptr && *override_value != '\0') {
+        return budget_scale();
+    }
+    return kDefaultScale * measured_scale();
+}
+
 double budget_scale() {
     static const double scale = resolve_scale();
     return scale;
@@ -346,6 +371,7 @@ BudgetGuard::BudgetGuard(const char* name, unsigned long long budget_ns, const c
       file_(file),
       line_(line),
       budget_ns_(scaled_budget(budget_ns)),
+      declared_ns_(budget_ns),
       started_contended_ns_(contended_now_ns()),
       started_cpu_ns_(cpu_now_ns()),
       started_wall_ns_(steady_now_ns()) {}
@@ -358,8 +384,21 @@ BudgetGuard::~BudgetGuard() {
     const std::uint64_t cpu_ns = cpu_now_ns() - started_cpu_ns_;
     const std::uint64_t contended = contended_now_ns() - started_contended_ns_;
 
+    // THE RE-CHECK. See `second_opinion_scale`: the calibration is taken once at process start and
+    // a governor that settles afterwards makes every later case look late. Re-measure now, beside
+    // the case that just ran, and let the larger of the two budgets stand.
+    unsigned long long budget_ns = budget_ns_;
+    if (cpu_ns > budget_ns && declared_ns_ != 0) {
+        const double fresh = second_opinion_scale();
+        const auto rebuilt =
+            static_cast<unsigned long long>(static_cast<double>(declared_ns_) * fresh);
+        if (rebuilt > budget_ns) {
+            budget_ns = rebuilt;
+        }
+    }
+
     char message[640];
-    if (cpu_ns > budget_ns_) {
+    if (cpu_ns > budget_ns) {
         std::snprintf(
             message, sizeof(message),
             "over budget: '%s' spent %.3f ms of CPU (%llu ns) against a budget of %.3f ms "
@@ -370,12 +409,12 @@ BudgetGuard::~BudgetGuard() {
             "boosted-clock figure, so an IDLE machine is this instrument's worst case. Check the "
             "margin with CY_TEST_BUDGET_SCALE=0.5 before believing a regression.",
             name_, static_cast<double>(cpu_ns) / 1e6, static_cast<unsigned long long>(cpu_ns),
-            static_cast<double>(budget_ns_) / 1e6, budget_ns_, static_cast<double>(wall_ns) / 1e6);
+            static_cast<double>(budget_ns) / 1e6, budget_ns, static_cast<double>(wall_ns) / 1e6);
         DOCTEST_ADD_FAIL_CHECK_AT(file_, line_, message);
         return;
     }
 
-    const unsigned long long ceiling = stall_ceiling(budget_ns_);
+    const unsigned long long ceiling = stall_ceiling(budget_ns);
     const StallVerdict verdict =
         kHaveCpuClock ? stall_verdict(wall_ns, contended, ceiling) : StallVerdict::Fine;
     if (verdict == StallVerdict::Fine) {
