@@ -150,8 +150,23 @@ constexpr double kNominalReferenceNs = 900000.0;
 /// three configurations that are compiled the way a shipped game is. `four-profiles` runs all four.
 constexpr double kUnoptimisedAllowance = 4.0;
 
-/// The median of three, because the calibration is itself a measurement and the thing it is
-/// measuring is variance.
+/// THE SLOWEST OF THREE, not the median, and the reason is the instrument's own worst case.
+///
+/// This calibration exists to answer "how fast is this machine right now", and its clock counts CPU
+/// SECONDS rather than cycles — so a core at 800 MHz makes every case look three times more
+/// expensive than the same core at boost. The guard's own message says an IDLE machine is therefore
+/// the worst case, and measurement agreed: `unit.weather` failed 8 runs in 25 on a machine doing
+/// nothing, and `unit.foliage` carries three cases that cost 1.21 to 1.75 ms against a 1 ms budget
+/// even at full clock.
+///
+/// A MEDIAN HIDES EXACTLY THE SAMPLE THAT MATTERS. The three samples run back to back in a few
+/// milliseconds at process start, while the core is still boosted from launch; if one of them
+/// catches the governor settling, the median discards it as noise and the budget is set at the
+/// boosted clock the cases will not get. Taking the slowest keeps it: a budget that is generous on
+/// a down-clocked machine is the correct failure direction, because the alternative is a suite that
+/// goes red for being run somewhere quiet.
+///
+/// It cannot make a budget tighter than the reference, because the ratio still floors at 1.0.
 [[nodiscard]] double measured_scale() {
     std::uint64_t samples[3] = {};
     for (auto& sample : samples) {
@@ -166,14 +181,15 @@ constexpr double kUnoptimisedAllowance = 4.0;
     if (samples[0] > samples[1]) {
         std::swap(samples[0], samples[1]);
     }
-    const auto median = static_cast<double>(samples[1]);
-    if (median <= 0.0) {
+    // samples[] is sorted ascending by the three swaps above; [2] is the slowest.
+    const auto slowest = static_cast<double>(samples[2]);
+    if (slowest <= 0.0) {
         return 1.0;  // no usable clock; the unscaled budget is the honest fallback
     }
     // NEVER BELOW 1.0. A machine faster than the reference does not earn a tighter budget than the
     // one the suite was written against — tightening a budget nobody asked to tighten is how a
     // check starts failing for being run somewhere good.
-    const double ratio = median / kNominalReferenceNs;
+    const double ratio = slowest / kNominalReferenceNs;
     const double machine = ratio < 1.0 ? 1.0 : ratio;
 #if defined(CY_UNOPTIMISED)
     return machine * kUnoptimisedAllowance;

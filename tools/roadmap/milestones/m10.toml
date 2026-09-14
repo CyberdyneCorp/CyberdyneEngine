@@ -1579,7 +1579,7 @@ kind = "command"
 # "`four-profiles` is declared by several ledgers and evaluated once", which is `plan-consistency`
 # above. The editor half is real and is kept: it is `four-profiles-editor` below, as its own
 # criterion, because that is how a milestone adds a check without forking one it inherited.
-run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
 timeout_s = 28800
 ci_job = "profiles"
 

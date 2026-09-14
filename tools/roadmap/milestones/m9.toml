@@ -1056,6 +1056,6 @@ id = "four-profiles"
 describe = "all four profiles build clean and just test-all is green in each — including src/replay/, src/networking/ and the four-player artefact. CY_NETWORKING defaults ON, as `delivery-roadmap` requires of a capability at Working, and `networking-option-off` above is the other direction"
 source = "tasks 8.1"
 kind = "command"
-run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
 timeout_s = 28800
 ci_job = "profiles"
