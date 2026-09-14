@@ -3,6 +3,7 @@
 #include <cy/core/math/quat.h>
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/scope.h>
+#include <cy/import/clip_record.h>
 
 #include <ufbx.h>
 
@@ -207,39 +208,12 @@ Status import_fbx_animations(const ufbx_scene& scene, const FbxClipOptions& opti
 namespace cy::import {
 namespace {
 
-// --- The write side, and why it lives BEHIND the guard rather than beside the reader -------------
+// --- The write side lives in `src/clip_record.cpp` -----------------------------------------------
 //
-// `read_cooked_clip` is declared unconditionally, because a tool that inspects a package must be
-// able to read a clip out of one whether or not THIS build can author a clip. Writing is the other
-// way round: nothing without `cy::animation::Clip` can produce the quantised form these helpers
-// serialise, so a build configured with `-D CY_ANIMATION=OFF` compiles them into a translation unit
-// that never calls them — which `-Werror=unused-function` correctly refuses. Keeping them here is
-// what makes this file's claim to compile in both configurations true rather than intended.
-
-void put_u16(Array<u8>& out, u16 value) noexcept {
-    for (u32 shift = 0; shift < 2; ++shift) {
-        (void)out.push_back(static_cast<u8>((value >> (shift * 8U)) & 0xFFU));
-    }
-}
-
-void put_u32(Array<u8>& out, u32 value) noexcept {
-    for (u32 shift = 0; shift < 4; ++shift) {
-        (void)out.push_back(static_cast<u8>((value >> (shift * 8U)) & 0xFFU));
-    }
-}
-
-void put_f32(Array<u8>& out, f32 value) noexcept {
-    u32 bits = 0;
-    std::memcpy(&bits, &value, sizeof(bits));
-    put_u32(out, bits);
-}
-
-void put_text(Array<u8>& out, std::string_view text) noexcept {
-    put_u32(out, static_cast<u32>(text.size()));
-    for (const char letter : text) {
-        (void)out.push_back(static_cast<u8>(letter));
-    }
-}
+// It was here until M11.b, when glTF became the second format to reach step 8. A second writer
+// beside the first is the failure `model.h` exists to prevent, restated for clips: the same
+// animation exported in two formats would cook to two different records. `cy/import/clip_record.h`
+// carries the argument and the bytes; this file authors the `Clip` and calls it.
 
 [[nodiscard]] std::string_view view_of(const ufbx_string& text) noexcept {
     return {text.data, text.length};
@@ -477,51 +451,6 @@ void build_joint_table(const ufbx_scene& scene, Span<const std::string_view> sup
     return animation::kInvalidJoint;
 }
 
-/// Write the compressed clip as the cooked payload.
-///
-/// THE JOINT NAMES RIDE WITH IT and the reason is in `fbx_clip.h`: a track addresses a joint by
-/// index, `AnimationRig::bind` checks only counts, and a clip bound to the wrong rig drives the
-/// wrong bones in silence. The names are what a loader can check or rebind by.
-[[nodiscard]] Status write_cooked_clip(const animation::Clip& clip, const JointTable& table,
-                                       Array<u8>& out) noexcept {
-    put_u32(out, kCookedClipVersion);
-    put_text(out, clip.name().text());
-    put_f32(out, clip.duration());
-    put_u32(out, static_cast<u32>(clip.loop_mode()));
-    put_f32(out, clip.sample_rate_hint());
-    put_u32(out, clip.root_motion_joint());
-
-    put_u32(out, static_cast<u32>(table.names.size()));
-    for (const std::string_view joint : table.names) {
-        put_text(out, joint);
-    }
-
-    put_u32(out, clip.track_count());
-    for (const animation::TrackDesc& track : clip.tracks()) {
-        put_u32(out, static_cast<u32>(track.kind));
-        put_u32(out, static_cast<u32>(track.interpolation));
-        put_u32(out, track.joint);
-        put_u32(out, track.constant ? 1U : 0U);
-        put_u32(out, track.first_key);
-        put_u32(out, track.key_count);
-        put_f32(out, track.range_min.x);
-        put_f32(out, track.range_min.y);
-        put_f32(out, track.range_min.z);
-        put_f32(out, track.range_max.x);
-        put_f32(out, track.range_max.y);
-        put_f32(out, track.range_max.z);
-    }
-
-    put_u32(out, static_cast<u32>(clip.keys().size()));
-    for (const animation::PackedKey& key : clip.keys()) {
-        put_f32(out, key.time);
-        for (const u16 component : key.c) {
-            put_u16(out, component);
-        }
-    }
-    return ok();
-}
-
 /// Everything one stack becomes, or the reason it became nothing.
 struct StackOutcome {
     bool produced = false;
@@ -588,7 +517,10 @@ struct StackOutcome {
     if (options.root_motion == "root-joint") {
         clip.set_root_motion_joint(root_motion_joint_of(clip, table));
     }
-    if (Status written = write_cooked_clip(clip, table, outcome.payload); !written) {
+    if (Status written = write_cooked_clip(
+            clip, Span<const std::string_view>(table.names.data(), table.names.size()),
+            outcome.payload);
+        !written) {
         return written;
     }
     outcome.produced = true;

@@ -36,7 +36,7 @@
 //          -entry conventionVertex -stage vertex   -o conventions_vertex.spv
 //   slangc conventions.slang -target spirv -profile spirv_1_5 \
 //          -entry conventionFragment -stage fragment -o conventions_fragment.spv
-//   python3 embed_spirv.py conventions_spirv.h \
+//   python3 embed_spirv.py --source conventions.slang conventions_spirv.h \
 //          kConventionVertexSpirv=conventions_vertex.spv \
 //          kConventionFragmentSpirv=conventions_fragment.spv
 //   clang-format -i conventions_spirv.h

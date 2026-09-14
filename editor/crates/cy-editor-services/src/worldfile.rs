@@ -458,7 +458,25 @@ pub fn write_world(document: &Document) -> String {
             .parent
             .and_then(|parent| index.get(&parent))
             .map_or_else(|| "-".to_string(), ToString::to_string);
-        let _ = writeln!(out, "node {position} {parent} {}", quote(&state.layer));
+        // `node <position> <parent> "<layer>" "<name>"`. THE NAME IS A FIFTH WORD RATHER THAN A
+        // REUSE OF THE FOURTH: the layer field held the only name a `.cyworld` could carry before
+        // this, and `samples/05b-editor-window` shows what that cost — three objects in three
+        // one-node layers. A file written before the name existed has four words and reads with an
+        // empty name, so an old world opens; it gains the fifth word the first time it is saved.
+        // The name word is OMITTED when there is no name, so a world written before a node had one
+        // round-trips byte for byte rather than gaining an empty word on every line. The engine's
+        // writer does the same thing for the same reason — see `write_node_section` in
+        // `src/scene/serialization/src/worldfile.cpp`, whose output this must match exactly.
+        if state.name.is_empty() {
+            let _ = writeln!(out, "node {position} {parent} {}", quote(&state.layer));
+        } else {
+            let _ = writeln!(
+                out,
+                "node {position} {parent} {} {}",
+                quote(&state.layer),
+                quote(&state.name)
+            );
+        }
         write_components(state, &mut out);
     }
     out
@@ -516,6 +534,14 @@ pub struct LoadReport {
     pub nodes: usize,
     /// Components restored onto them.
     pub components: usize,
+    /// Whether the file put its node **names** in the layer field.
+    ///
+    /// `editor-documents-and-transactions` requires that "a document that encodes a name in the
+    /// layer field SHALL be reported rather than accepted". Reported and not refused: refusing
+    /// would make every world written before a node had a name unopenable, and the one thing worse
+    /// than a world that reads its names out of the wrong field is a world that cannot be opened to
+    /// move them. See [`layers_used_as_names`] for what the shape is.
+    pub layers_used_as_names: bool,
 }
 
 /// Load a world's text into `document`.
@@ -539,6 +565,7 @@ pub fn load(text: &str, document: &mut Document, actor: Actor) -> Result<LoadRep
     };
     let content = Content::read(&lines[1..], &map)?;
     report.nodes = content.nodes.len();
+    report.layers_used_as_names = layers_used_as_names(&content.nodes);
     report.components = content.nodes.iter().map(|node| node.components.len()).sum();
 
     document.with_transaction("Open world", actor, |document| content.apply(document))?;
@@ -554,6 +581,7 @@ pub fn load(text: &str, document: &mut Document, actor: Actor) -> Result<LoadRep
 struct ParsedNode {
     parent: Option<usize>,
     layer: String,
+    name: String,
     components: Vec<(TypeId, Vec<(FieldId, Value)>)>,
 }
 
@@ -601,10 +629,36 @@ impl Content {
                     after: node.layer.clone(),
                 })?;
             }
+            if !node.name.is_empty() {
+                document.record(cy_editor_documents::Operation::SetName {
+                    node: id,
+                    before: String::new(),
+                    after: node.name.clone(),
+                })?;
+            }
             created.push(id);
         }
         Ok(())
     }
+}
+
+/// Whether a file's layers are being used as node names.
+///
+/// The shape, and it is the one `samples/05b-editor-window` had: more than one node, not one of
+/// them named, every node in a layer, and every layer holding exactly one node. A layer whose only
+/// member is one node is not grouping anything — it is a name with nowhere else to go. A world that
+/// genuinely has one node per layer for two nodes is possible and would be reported here; that is
+/// the trade a heuristic makes, and it is reported rather than refused for exactly that reason.
+fn layers_used_as_names(nodes: &[ParsedNode]) -> bool {
+    if nodes.len() < 2 || nodes.iter().any(|node| !node.name.is_empty()) {
+        return false;
+    }
+    if nodes.iter().any(|node| node.layer.is_empty()) {
+        return false;
+    }
+    let distinct: std::collections::BTreeSet<&str> =
+        nodes.iter().map(|node| node.layer.as_str()).collect();
+    distinct.len() == nodes.len()
 }
 
 fn read_node(line: &Line) -> Result<ParsedNode> {
@@ -615,6 +669,8 @@ fn read_node(line: &Line) -> Result<ParsedNode> {
     Ok(ParsedNode {
         parent,
         layer: line.word(3).to_string(),
+        // Absent in a file written before a node had a name; `Line::word` answers "" past the end.
+        name: line.word(4).to_string(),
         components: Vec::new(),
     })
 }
@@ -799,6 +855,93 @@ mod tests {
         // And it round-trips: reading what was written gives a document that writes the same bytes.
         let again = loaded(&first);
         assert_eq!(write_world(&again), first);
+    }
+
+    /// Three nodes, two of them sharing a layer and all three named. The shape the requirement
+    /// asks for, against `NAMES_IN_THE_LAYER_FIELD` below which is the shape the tree had.
+    const NAMED_IN_TWO_LAYERS: &str = concat!(
+        "cyworld 1\n",
+        "type 1 runtime \"Transform\"\n",
+        "  field 1 vec3 \"translation\" \"Where it is.\"\n",
+        "node 0 - \"set\" \"Pillar\"\n",
+        "node 1 - \"set\" \"Crate\"\n",
+        "node 2 - \"props\" \"Marker\"\n",
+    );
+
+    const NAMES_IN_THE_LAYER_FIELD: &str = concat!(
+        "cyworld 1\n",
+        "type 1 runtime \"Transform\"\n",
+        "  field 1 vec3 \"translation\" \"Where it is.\"\n",
+        "node 0 - \"Pillar\"\n",
+        "node 1 - \"Crate\"\n",
+        "node 2 - \"Marker\"\n",
+    );
+
+    fn names_of(document: &Document) -> Vec<String> {
+        authored_order(document.content())
+            .into_iter()
+            .filter_map(|node| document.content().node(node))
+            .map(|state| state.name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_node_name_and_its_layer_round_trip_as_separate_values() {
+        let document = loaded(NAMED_IN_TWO_LAYERS);
+        assert_eq!(names_of(&document), ["Pillar", "Crate", "Marker"]);
+        let layers: Vec<String> = authored_order(document.content())
+            .into_iter()
+            .filter_map(|node| document.content().node(node))
+            .map(|state| state.layer.clone())
+            .collect();
+        assert_eq!(layers, ["set", "set", "props"]);
+        assert_eq!(write_world(&document), NAMED_IN_TWO_LAYERS);
+    }
+
+    #[test]
+    fn a_world_written_before_a_node_had_a_name_round_trips_unchanged() {
+        // The name word is omitted where there is no name, so the four-word form every `.cyworld`
+        // in this tree carried until M11.b is written back exactly. Without that the first open of
+        // any old world would be a whole-file diff.
+        let document = loaded(NAMES_IN_THE_LAYER_FIELD);
+        assert_eq!(names_of(&document), ["", "", ""]);
+        assert_eq!(write_world(&document), NAMES_IN_THE_LAYER_FIELD);
+    }
+
+    #[test]
+    fn a_world_that_put_its_names_in_the_layer_field_is_reported() {
+        // "a document that encodes a name in the layer field SHALL be reported rather than
+        // accepted" — reported, and still loaded, because opening it is the only way to move them.
+        let mut document = Document::new("worlds/city.cyworld");
+        let report = load(
+            NAMES_IN_THE_LAYER_FIELD,
+            &mut document,
+            Actor::human("designer"),
+        )
+        .unwrap();
+        assert!(report.layers_used_as_names);
+        assert_eq!(report.nodes, 3);
+
+        let mut named = Document::new("worlds/city.cyworld");
+        let clean = load(NAMED_IN_TWO_LAYERS, &mut named, Actor::human("designer")).unwrap();
+        assert!(
+            !clean.layers_used_as_names,
+            "a world with names in the name field is not the defect"
+        );
+
+        // And the negative that actually discriminates: two unnamed nodes SHARING a layer. A layer
+        // with two members is grouping something, so it is not a name with nowhere to go — the
+        // check must not fire on it, or every world with a layer per region would be reported.
+        let shared = concat!(
+            "cyworld 1\n",
+            "type 1 runtime \"Transform\"\n",
+            "  field 1 vec3 \"translation\" \"Where it is.\"\n",
+            "node 0 - \"set\"\n",
+            "node 1 - \"set\"\n",
+        );
+        let mut grouped = Document::new("worlds/city.cyworld");
+        let grouped_report = load(shared, &mut grouped, Actor::human("designer")).unwrap();
+        assert!(!grouped_report.layers_used_as_names);
     }
 
     #[test]

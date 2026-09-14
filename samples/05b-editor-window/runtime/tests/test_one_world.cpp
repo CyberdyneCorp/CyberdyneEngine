@@ -228,6 +228,7 @@ CY_TEST_CASE("a node the editor deleted leaves the frame") {
     deleted.byte(0);       // no parent
     deleted.number(0, 4);  // no children
     deleted.text("");      // the layer
+    deleted.text("");      // the author-given name, which M11.b added between the two
     deleted.byte(0);       // no prefab
     deleted.number(0, 4);  // no components
     deleted.number(0, 4);  // no overrides

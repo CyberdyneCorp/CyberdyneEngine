@@ -37,6 +37,7 @@
 
 pub mod hierarchy;
 pub mod inspector;
+pub mod source_control;
 pub mod status;
 
 pub use hierarchy::{HierarchyRow, HierarchyViewModel};

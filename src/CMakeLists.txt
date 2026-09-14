@@ -12,6 +12,11 @@ add_subdirectory(core)
 # has to change when they move.
 add_subdirectory(core/serialize)
 add_subdirectory(core/determinism)
+# core/plugins is layer 0 too and belongs in the list above with the others; it is read HERE rather
+# than there because it depends on cy::core-serialize for the manifest's text form, and that module
+# is itself registered from this file. When the two lines above move into src/core/CMakeLists.txt
+# this line moves with them, after them.
+add_subdirectory(core/plugins)
 
 # M2's own layers. ecs/ is layer 1 and scene/ is layer 4; scene/ reads its own serialization/
 # subdirectory, so the four M2 modules are declared by these three lines.

@@ -418,6 +418,22 @@ void multiply_by_prime(EditorId& value) noexcept {
         return make_unexpected(interned.error());
     }
     world.nodes()[*created].layer = *interned;
+    // THE NAME IS A FIFTH WORD AND IT IS OPTIONAL ON READ. A world written before a node had a name
+    // has four words, and it opens with every node unnamed rather than being refused; it gains the
+    // fifth word the first time it is written. Absence is tested against `count()` rather than left
+    // to `word_unquoted`, which reports a missing word as an unquoted one.
+    if (line.count() > 4) {
+        Array<char> unescaped_name(world.allocator());
+        const Expected<std::string_view, Error> name = line.word_unquoted(4, unescaped_name);
+        if (!name) {
+            return make_unexpected(name.error());
+        }
+        const Expected<WorldText, Error> interned_name = world.intern(*name);
+        if (!interned_name) {
+            return make_unexpected(interned_name.error());
+        }
+        world.nodes()[*created].name = *interned_name;
+    }
     return ok();
 }
 
@@ -699,6 +715,40 @@ void World::reidentify() noexcept {
 
 // --- reading and writing ------------------------------------------------------------------------
 
+bool layers_used_as_names(const World& world) noexcept {
+    u32 live = 0;
+    for (const WorldNode& node : world.nodes()) {
+        if (!node.live) {
+            continue;
+        }
+        live += 1;
+        // A named node settles it: whoever wrote this file had somewhere to put a name.
+        if (node.name.length != 0 || node.layer.length == 0) {
+            return false;
+        }
+    }
+    if (live < 2) {
+        return false;
+    }
+    // Every layer distinct over `live` nodes means every layer holds exactly one, which is a layer
+    // grouping nothing. Quadratic, over a file that is read once and whose node count is the
+    // editor's own: an index here would be a second structure to keep in step for no measured gain.
+    for (usize outer = 0; outer < world.nodes().size(); ++outer) {
+        if (!world.nodes()[outer].live) {
+            continue;
+        }
+        for (usize inner = outer + 1; inner < world.nodes().size(); ++inner) {
+            if (!world.nodes()[inner].live) {
+                continue;
+            }
+            if (world.text(world.nodes()[outer].layer) == world.text(world.nodes()[inner].layer)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 Expected<WorldReadReport, Error> read_world(std::string_view text, std::string_view asset_path,
                                             World& out, WorldReadReport* report) {
     if (Status named = out.set_path(asset_path); !named) {
@@ -758,6 +808,12 @@ Expected<WorldReadReport, Error> read_world(std::string_view text, std::string_v
             return make_unexpected(handled.error());
         }
     }
+    for (const WorldNode& node : out.nodes()) {
+        if (node.name.length != 0) {
+            counted.named += 1;
+        }
+    }
+    counted.layers_used_as_names = layers_used_as_names(out);
     if (report != nullptr) {
         *report = counted;
     }
@@ -872,6 +928,16 @@ namespace {
         }
         if (Status quoted = writer.word_quoted(world.text(node.layer)); !quoted) {
             return quoted;
+        }
+        // THE NAME WORD IS OMITTED WHEN THERE IS NO NAME, and that is what keeps this module's
+        // "byte-identical on a round trip" contract true for every world written before a node had
+        // a name. Reading is the inverse: a four-word line is a node with no name. Writing `""`
+        // unconditionally would have rewritten every `.cyworld` in the tree the first time it was
+        // opened, which is a whole-file diff in exchange for nothing.
+        if (node.name.length != 0) {
+            if (Status quoted = writer.word_quoted(world.text(node.name)); !quoted) {
+                return quoted;
+            }
         }
         if (Status ended = writer.end_line(); !ended) {
             return ended;

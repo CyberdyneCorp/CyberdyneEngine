@@ -64,6 +64,13 @@ pub struct RuntimeMirror {
     document: Option<Revision>,
     /// How many transactions have been sent, for a report and for a test.
     sent: u64,
+    /// And how many of those were scheduled for a tick boundary because the world was playing.
+    ///
+    /// Counted separately because the two are different claims and the difference is the one M11.b
+    /// closes: before this rung every transaction was sent `OnArrival`, so this number could only
+    /// ever have been zero. A test that reads it is reading whether an edit reached a PLAYING world
+    /// rather than whether an edit was sent.
+    sent_at_a_tick_boundary: u64,
     /// How many layouts have been taken, ditto.
     accepted: u64,
     /// Whether the runtime's one-time view suggestion has been taken.
@@ -98,6 +105,12 @@ impl RuntimeMirror {
     #[must_use]
     pub const fn forwarded_transactions(&self) -> u64 {
         self.sent
+    }
+
+    /// How many of those were scheduled for a tick boundary — that is, reached a playing world.
+    #[must_use]
+    pub const fn forwarded_at_a_tick_boundary(&self) -> u64 {
+        self.sent_at_a_tick_boundary
     }
 
     /// How many published layouts have been taken.
@@ -207,13 +220,26 @@ impl RuntimeMirror {
         }
         self.quiet_reason = None;
         if let Some(document) = document {
-            self.forward(runtime, document);
+            // THE VIEWPORT'S PLAY STATE DECIDES WHEN THE EDIT LANDS. M11.b task 3.2.
+            //
+            // Until now this was hard-coded `OnArrival` with a comment beside it saying *"a playing
+            // world would want `AtTickBoundary`, and the editor is what knows which"* — and the
+            // consequence was larger than a scheduling tag: `AtTickBoundary` was constructed in
+            // exactly one place in the whole tree, a protocol round-trip unit test, so **no edit had
+            // ever reached a playing world**. `PlayState::applies_on_arrival` is the editor knowing
+            // which, and it has existed since M8.a with nothing asking it.
+            let when = if viewport.play.applies_on_arrival() {
+                ApplyWhen::OnArrival
+            } else {
+                ApplyWhen::AtTickBoundary
+            };
+            self.forward(runtime, document, when);
         }
         self.request_gizmo(runtime, viewport, identities);
     }
 
     /// Send whatever the document committed or undid since the last look.
-    fn forward(&mut self, runtime: &RuntimeSession, document: &Document) {
+    fn forward(&mut self, runtime: &RuntimeSession, document: &Document, when: ApplyWhen) {
         let history = document.history();
         let entries = history.entries();
         let cursor = history.cursor();
@@ -241,7 +267,7 @@ impl RuntimeMirror {
         // are undone, newest first, each as its own inverse.
         if cursor < self.cursor {
             for index in (cursor..self.cursor.min(entries.len())).rev() {
-                self.send(runtime, &entries[index].inverse());
+                self.send(runtime, &entries[index].inverse(), when);
             }
             self.forwarded = self.forwarded.min(cursor);
         }
@@ -251,21 +277,25 @@ impl RuntimeMirror {
         // here.
         if self.forwarded < cursor {
             for entry in &entries[self.forwarded..cursor.min(entries.len())] {
-                self.send(runtime, entry);
+                self.send(runtime, entry, when);
             }
         }
         self.forwarded = cursor.min(entries.len());
         self.cursor = cursor;
     }
 
-    fn send(&mut self, runtime: &RuntimeSession, transaction: &Transaction) {
+    fn send(&mut self, runtime: &RuntimeSession, transaction: &Transaction, when: ApplyWhen) {
         let mut writer = cy_editor_core::codec::Writer::new();
         transaction.encode(&mut writer);
-        // `OnArrival`: an authoring world is not simulating, so the runtime applies it now and
-        // renders on demand. A playing world would want `AtTickBoundary`, and the editor is what
-        // knows which — see `ApplyWhen`.
-        if runtime.apply(writer.finish(), ApplyWhen::OnArrival).is_ok() {
+        // `when` is the caller's, decided from the play state in `sync`. An authoring world is not
+        // simulating, so the runtime applies the change now and renders on demand; a playing world
+        // applies it between ticks, because a change landing halfway through a simulation step is
+        // a world that was never in either state — see `ApplyWhen`.
+        if runtime.apply(writer.finish(), when).is_ok() {
             self.sent += 1;
+            if when == ApplyWhen::AtTickBoundary {
+                self.sent_at_a_tick_boundary += 1;
+            }
         }
     }
 

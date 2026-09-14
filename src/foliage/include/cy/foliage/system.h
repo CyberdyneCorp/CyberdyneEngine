@@ -64,6 +64,21 @@ inline constexpr const char* kVegetationField = "vegetation";
 /// Its potential: the vegetation this piece of world would carry given time. The substrate's
 /// `potential` link points at it, and the recovery rate on the current field is what closes the
 /// gap.
+///
+/// **FOLIAGE READS THIS FIELD AND DOES NOT DECLARE IT.** `weather-and-wind` — "Ecosystem state" —
+/// gives the MACRO ecosystem to weather: "Weather and environment SHALL maintain macro ecosystem
+/// state as fields — vegetation density, biomass, forest age, soil health, burn fraction, moisture
+/// ... evolving toward BIOME POTENTIAL". `environment-fields` — "Potential and current state" —
+/// requires the two to be DISTINCT fields: the potential "derives from slow inputs", the current
+/// state "reflects what events have left". So the potential is the ecosystem's and belongs to
+/// `cy::weather`; what foliage owns is the realised current state, `kVegetationField` below.
+///
+/// Until M11.a this module declared the potential as well — Scalar/UNorm8/Static/`Persistent`
+/// against weather's UNorm16/SlowlyVarying/`Authoritative` — and `FieldRegistry::declare()` refuses
+/// the second in either order, so a project registering both rows' producers FAILED AT STARTUP.
+/// That was `m10:fields-one-vegetation-potential`, and it is the `wind` defect one namespace down:
+/// a public factory a project was invited to call, agreeing with nothing. The name stays here
+/// because foliage still names the field it reads; the declaration is weather's.
 inline constexpr const char* kVegetationPotentialField = "vegetation-potential";
 
 /// The declaration of `vegetation` as foliage produces it: how much plant life a position carries,
@@ -76,11 +91,6 @@ inline constexpr const char* kVegetationPotentialField = "vegetation-potential";
 /// the thing that lets an unloaded region's ecosystem evolve.
 [[nodiscard]] environment::FieldDeclaration vegetation_field_declaration(
     f32 macro_cell_metres, f32 recovery_per_second) noexcept;
-
-/// The potential field's declaration. Static, because what a place COULD support changes when the
-/// world is authored and not while it is played.
-[[nodiscard]] environment::FieldDeclaration vegetation_potential_declaration(
-    f32 macro_cell_metres) noexcept;
 
 /// `foliage` — "Regional environmental state": "normal, wet, dry, burning, burned, snow-covered".
 /// The specification's own six, in its order.
@@ -215,6 +225,9 @@ public:
 
     [[nodiscard]] bool produces_vegetation() const noexcept { return token_.valid(); }
     [[nodiscard]] environment::FieldId vegetation() const noexcept { return vegetation_; }
+    /// The field `vegetation` recovers toward. Foliage READS it — see `kVegetationPotentialField`
+    /// — so this is the identifier of somebody else's field, and `produces_vegetation()` above has
+    /// no counterpart for it on purpose.
     [[nodiscard]] environment::FieldId vegetation_potential() const noexcept { return potential_; }
 
 private:

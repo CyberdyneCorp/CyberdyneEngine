@@ -62,6 +62,14 @@ pub struct NodeState {
     pub children: Vec<NodeId>,
     /// The layer the node belongs to.
     pub layer: String,
+    /// The **author-given name**, empty when the author has not given one.
+    ///
+    /// `editor-documents-and-transactions` requires a name that is neither the node's identity nor
+    /// its grouping: renaming addresses nothing, and two nodes may share a layer and differ by
+    /// name. It is a separate field for exactly that reason — before it existed the only place an
+    /// authored world could put a name was the layer, and `samples/05b-editor-window` did, which
+    /// put three objects in three one-node layers.
+    pub name: String,
     /// The prefab this node is an instance of, when it is one.
     pub prefab: Option<String>,
     /// Its components and their fields.
@@ -94,6 +102,11 @@ impl NodeState {
             writer.u128(child.as_u128());
         }
         writer.text(&self.layer);
+        // AFTER THE LAYER AND BEFORE THE PREFAB, and the position is a wire contract:
+        // `src/scene/serialization/src/world_transaction.cpp`'s `read_node_state` reads the same
+        // order. A field appended at the end would have been cheaper to add and would have left
+        // the engine reading a prefab flag out of the middle of a name.
+        writer.text(&self.name);
         match &self.prefab {
             Some(prefab) => {
                 writer.u8(1);
@@ -131,6 +144,7 @@ impl NodeState {
             children.push(NodeId::from_u128(reader.u128()?));
         }
         let layer = reader.text()?;
+        let name = reader.text()?;
         let prefab = if reader.u8()? == 1 {
             Some(reader.text()?)
         } else {
@@ -157,6 +171,7 @@ impl NodeState {
             parent,
             children,
             layer,
+            name,
             prefab,
             components,
             overrides,
@@ -357,9 +372,13 @@ impl DocumentContent {
                 };
                 Ok(())
             }
-            Operation::SetLayer { node, after, .. } => {
-                self.state_mut(*node)?.layer.clone_from(after);
-                Ok(())
+            // A layer change and a rename are one shape — a string on a node — and they are
+            // dispatched together so that `apply_inner` stays inside the crate's own function-length
+            // limit. A rename is deliberately NOT structural (`Operation::is_structural`): nothing
+            // downstream of a name has to be rebuilt, which is what makes one applicable to a
+            // running world.
+            Operation::SetLayer { node, after, .. } | Operation::SetName { node, after, .. } => {
+                self.set_text(operation, *node, after)
             }
             Operation::SetAssetReference {
                 node,
@@ -382,6 +401,18 @@ impl DocumentContent {
             // name — without this crate pretending to understand a terrain stroke.
             Operation::Domain { .. } => Ok(()),
         }
+    }
+
+    /// The layer or the name, whichever `operation` names.
+    fn set_text(&mut self, operation: &Operation, node: NodeId, after: &str) -> Result<()> {
+        let state = self.state_mut(node)?;
+        let field = match operation {
+            Operation::SetName { .. } => &mut state.name,
+            _ => &mut state.layer,
+        };
+        field.clear();
+        field.push_str(after);
+        Ok(())
     }
 
     fn insert_node(&mut self, node: NodeId, state: NodeState) -> Result<()> {
@@ -517,6 +548,36 @@ mod tests {
 
     fn token() -> WriteToken {
         WriteToken::issue(1)
+    }
+
+    #[test]
+    fn a_node_states_name_survives_the_codec_in_the_position_the_engine_reads_it() {
+        // A DELETE CARRIES THE WHOLE NODE STATE, so a name that did not survive `NodeState::encode`
+        // would be a name that undo of a delete silently dropped — and, worse, the engine reads the
+        // same record: `read_node_state` in `src/scene/serialization/src/world_transaction.cpp`
+        // takes the name from immediately after the layer, so a name moved or omitted here makes
+        // the engine read the PREFAB FLAG out of the middle of a string.
+        //
+        // The position is pinned as well as the value, because a symmetric move — writing and
+        // reading the name somewhere else — is invisible to a round trip and breaks the other side.
+        let mut state = NodeState::empty(None);
+        state.layer = "set".to_string();
+        state.name = "Pillar".to_string();
+
+        let mut writer = Writer::new();
+        state.encode(&mut writer);
+        let bytes = writer.finish();
+        let restored = NodeState::decode(&mut Reader::new(&bytes)).unwrap();
+        assert_eq!(restored.name, "Pillar");
+        assert_eq!(restored.layer, "set");
+
+        // The layer, then the name, then the prefab flag. Read positionally, as the engine reads it.
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(reader.u8().unwrap(), 0, "no parent");
+        assert_eq!(reader.u32().unwrap(), 0, "no children");
+        assert_eq!(reader.text().unwrap(), "set", "the layer comes first");
+        assert_eq!(reader.text().unwrap(), "Pillar", "then the name");
+        assert_eq!(reader.u8().unwrap(), 0, "then the prefab flag");
     }
 
     #[test]

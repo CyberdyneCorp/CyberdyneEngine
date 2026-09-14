@@ -13,17 +13,27 @@
 // cache and for fetch, generate an LOD chain to configured targets, generate collision from the
 // naming convention, and produce the hierarchy.
 //
-// Steps 7, 8 and 9 — skeletons with bone LOD and profile remapping, animations with error-bounded
-// compression and retargeting, and material extraction as separately editable assets — are NOT
-// here. `animation-and-skinning` reaches Working at M8 and there is nothing to import a skeleton
-// INTO before it; producing one now would mean inventing a runtime representation that the
-// capability then has to keep or break. Skinned attributes (`JOINTS_0`, `WEIGHTS_0`) are read and
-// reported as a diagnostic naming what was skipped, so a project importing a character learns that
-// its rig did not come through rather than discovering it in the editor.
+// STEPS 7 AND 8 ARRIVED AT M11.b, and what they replaced is worth stating because the sentence that
+// stood here for six milestones was a refusal: "there is nothing to import a skeleton INTO before
+// M8". There has been since M8.b, and M8.d built both steps for FBX. This importer now reads
+// `skins` into the same `ImportedSkeleton` record (`cy/import/fbx_skeleton.h`), `JOINTS_0` and
+// `WEIGHTS_0` into `MeshData::skin`, and `animations` into `cy::animation::Clip` through the same
+// quantised codec and the same cooked record (`cy/import/clip_record.h`) — so one character
+// exported as glTF and as FBX cooks to one skeleton and one clip rather than two of each.
 //
-// FBX via ufbx and USD as a tool-time-only importer are likewise absent, for the same reason as
-// meshoptimizer: the dependency is not integrated at M5. The interface they slot into is
-// `Importer`, and nothing about adding them touches this file.
+// TWO NUMBERINGS, AND THE MAP BETWEEN THEM, is the part of step 7 that is glTF's alone. A skin owns
+// a `joints` array and a mesh's `JOINTS_0` addresses a SLOT in it; `Skeleton::add_joint` refuses a
+// parent index that is not smaller than the child's and glTF requires no such ordering, nor does it
+// require a skin to list the ancestors its bind poses depend on. So the cooked record is built by a
+// hierarchy walk and every influence is remapped through `GltfRig::slot_to_joint`. Getting it wrong
+// is not a crash: it is a character whose left arm moves when its right leg does.
+//
+// Step 9 — material extraction as separately editable assets — remains absent, and so do morph
+// targets, whose channels are counted and named rather than dropped in silence.
+//
+// USD as a tool-time-only importer is absent, for the same reason as meshoptimizer: the dependency
+// is not integrated. The interface it slots into is `Importer`, and nothing about adding it touches
+// this file.
 //
 // --- THE TWO COOKED PAYLOADS ---------------------------------------------------------------------
 //
@@ -54,7 +64,12 @@
 namespace cy::import {
 
 /// The cooked mesh payload's format version. Moved when the layout changes.
-inline constexpr u32 kCookedMeshVersion = 1;
+///
+/// 2 at M11.b: a cooked mesh may now carry a skin binding per vertex (`MeshAttributes::Skin`). The
+/// version moves rather than the bit being added silently, because a reader of version 1 computes
+/// its payload length from the attribute set and would accept a version-2 skinned mesh as a
+/// truncated one — an error with a misleading message instead of a refusal.
+inline constexpr u32 kCookedMeshVersion = 2;
 
 /// Which attribute arrays a cooked mesh carries, after its positions.
 enum class MeshAttributes : u32 {
@@ -63,6 +78,8 @@ enum class MeshAttributes : u32 {
     TexCoords = 1U << 1U,
     TexCoords2 = 1U << 2U,
     Tangents = 1U << 3U,
+    /// Four joint indices and four weights per vertex: `MeshData::skin`. M11.b.
+    Skin = 1U << 4U,
 };
 
 [[nodiscard]] constexpr MeshAttributes operator|(MeshAttributes a, MeshAttributes b) noexcept {

@@ -70,6 +70,40 @@ agents is the answer and its provenance, not the question again. It is also reco
 is not asked for it either** — the two rungs were both pointed at it and only one of them needs to
 look.
 
+### 1.5 The spike's answer, and the budget reconciled against what it actually spent
+
+**One world model and three transports. The refutation was not spent.** Recorded here rather than
+re-derived, the way M8.b's IR spike, M9's determinism spike and M10's invalidation spike were.
+
+`PlayMode` is a **table beside `PlaySession`** — `src/gameplay/play/include/cy/gameplay/play/mode.h`
+— and not a second session type. `PlayConfiguration::mode` is the only thing that differs between the
+three, and `tests/test_editor_play.cpp`'s `drive()` reads the mode nowhere else in its body. The case
+*"a world plays in each of the three modes, and the same command stream drives them"* runs one
+authored world through one sequence of calls in each mode and compares the simulated result: thirty
+ticks and the sphere's height agree to 1e-6 across all three, and the height moved from 4.0 to 2.66,
+so the comparison is over a simulation rather than over three copies of an initial placement.
+
+**The middle row of §1.3's budget was spent**: a declared per-mode capability set,
+`PlayModeCapabilities`, queried by `PlaySession::step_frame`/`step_tick` and mirrored in Rust by
+`PlayMode::can_step_frame`. Exactly one capability differs between the modes and it differs by
+**transport**, which is what `live-editing` permits locality to be: `RemoteDevice` cannot step a
+single *frame*, because an encoded stream's frames are not individually addressable. A tick step is a
+message rather than a picture, so every mode keeps it. The enumeration of per-mode differences is
+therefore one entry long and is reviewable at a glance, which is what the budget asked for.
+
+**And the silent fallback was refused in both directions.** `PlaySession::enter` consults
+`availability_of()` before it snapshots the document, so a refusal cannot leave a half-built session
+behind; the editor resolves the mode in `Editor::set_play` before the badge moves, so a word it does
+not know never reaches the socket. Both refusals were mutated — a fallback to `InEditor` in C++, an
+`unwrap_or_default()` in Rust — and both made their tests go red, with the restores md5-verified.
+
+**What §1.2 predicted is confirmed and is one line wider than stated.** `EncodedStream` is declared
+on the Rust side *and* on the C++ side and implemented on neither, so the blocker is not that the
+remote transport is unnamed. `RemoteDevice` is therefore declared **absent with the rung it is due
+at** rather than written off, and availability is a function of `PlayModeSupport` rather than a
+constant — the suite flips `frame_encoder`, watches the same mode become available, flips it back and
+watches it refuse. A refusal that cannot be made to stop refusing is untested.
+
 ## 2. Three rows arrive here at Seed and are asked for Complete, which is two tiers in one rung
 
 `editor-architecture` (13 requirements) and `live-editing` (11) have been at Seed since M5;

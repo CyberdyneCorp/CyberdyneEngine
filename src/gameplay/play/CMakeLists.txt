@@ -37,6 +37,7 @@ cy_add_module(
     ALIAS cy::gameplay-play
     TYPE STATIC
     SOURCES
+        src/mode.cpp
         src/session.cpp
         src/spawn.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"

@@ -255,6 +255,20 @@ struct SkeletonImportOptions {
 /// it. A table keyed on the literal `mixamorig:` would match nothing at all.
 [[nodiscard]] u16 humanoid_joint_of(std::string_view joint_name) noexcept;
 
+/// The first bone level of detail at which a joint with this name is dropped; `kBoneLodLevels`
+/// means never.
+///
+/// DECLARED HERE DESPITE THE FILE'S NAME, and so is `humanoid_joint_of` above it: both are name
+/// heuristics with nothing FBX about them, and M11.b made glTF the second format to reach step 7.
+/// A second copy of either in `gltf.cpp` is the failure `model.h` exists to prevent — the same
+/// character exported in two formats would get two bone-LOD tables and two humanoid profiles.
+///
+/// The rule, stated once: fingers, twist joints and `_End` chain terminators leave at level 1, and
+/// everything else survives every level. Dropping a head, a toe or a clavicle at some level is a
+/// judgement about a particular game's camera distances, and an importer that made it silently
+/// would be authoring level-of-detail policy from a file name.
+[[nodiscard]] u8 joint_bone_lod(std::string_view joint_name) noexcept;
+
 }  // namespace cy::import
 
 #endif  // CY_IMPORT_FBX_SKELETON_H

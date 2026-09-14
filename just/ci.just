@@ -21,6 +21,13 @@ ci-check *args:
     python3 tools/ci/test_env_doctor.py {{args}}
     echo "==> recipes     invariants a gate downstream of a recipe depends on"
     python3 tools/ci/test_recipes.py {{args}}
+    # M11.a section 4. The cross-leg comparator is the only thing between "two architectures agreed"
+    # and a green tick over nothing: `m9:lockstep-cross-platform` was declared a gap rather than a
+    # `where = "ci"` criterion precisely because a single-leg suite would have satisfied the latter.
+    # Its refusals are checked here, with negative fixtures, for the same reason check_workflows'
+    # are: a rule that stopped firing looks exactly like a tree with nothing wrong in it.
+    echo "==> cross-leg   the digest comparator's refusals, against fixtures that must not pass"
+    python3 tools/ci/test_cross_leg_digests.py {{args}}
 
 # List the jobs of every workflow and the recipes each one invokes. The gate set, from the source.
 ci-jobs:

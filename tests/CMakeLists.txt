@@ -109,6 +109,10 @@ endfunction()
 
 add_subdirectory(harness)
 add_subdirectory(unit)
+# editor/ was a README and two entries declared from a sample until M11.b, which is when the first
+# suite whose subject is an editor claim the ENGINE has to hold up needed a home. Its README says
+# what is here and what is deliberately still declared elsewhere.
+add_subdirectory(editor)
 add_subdirectory(integration)
 add_subdirectory(smoke)
 # render/ was empty until M3, which is the milestone its README named. It holds section 5's

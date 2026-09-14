@@ -25,13 +25,21 @@ pub struct HierarchyRow {
     pub has_children: bool,
     /// What a person reads on the row.
     ///
-    /// A node has no name in the document model — identity is a `NodeId` and nothing else, which is
-    /// deliberate — so the label is the node's **kind**: the name of the first component it carries
-    /// that has data. That is the same definition
-    /// [`SelectionSummary`](cy_editor_interface::SelectionSummary) uses, so the outliner and the
-    /// inspector's header say the same word about the same node, and a node with no components
-    /// reads as `Node` in the engine's own vocabulary rather than as an identifier.
+    /// The node's **author-given name** where it has one, and its **kind** where it has not — the
+    /// name of the first component it carries that has data, falling back to `Node`.
+    /// `editor-documents-and-transactions` requires exactly that fallback: "the outliner SHALL
+    /// label a row with it, falling back to the node's kind only where a node has no name".
+    ///
+    /// The kind half is the same definition
+    /// [`SelectionSummary`](cy_editor_interface::SelectionSummary) uses, so an unnamed node reads
+    /// the same word in the outliner and in the inspector's header.
     pub label: String,
+    /// Whether [`HierarchyRow::label`] is the node's own name rather than its kind.
+    ///
+    /// Two rows may legitimately read the same *kind*; two rows reading the same *name* is the
+    /// defect the requirement's first scenario names, and a check cannot tell them apart from the
+    /// label alone.
+    pub named: bool,
 }
 
 /// The hierarchy panel's presentation state.
@@ -152,6 +160,7 @@ impl HierarchyViewModel {
                 continue;
             };
             let label = label_of(document, state);
+            let named = !state.name.is_empty();
             // A filtered outliner shows the matches, flattened. Keeping the depth would draw
             // indentation against ancestors that are not on screen, which reads as a broken tree
             // rather than as a filtered one; and expansion is left untouched so clearing the filter
@@ -164,6 +173,7 @@ impl HierarchyViewModel {
                     selected: selection.nodes().any(|selected| selected == node),
                     has_children: !state.children.is_empty(),
                     label,
+                    named,
                 });
             }
             // A filter searches the whole tree, not the part that happens to be expanded — an
@@ -178,8 +188,12 @@ impl HierarchyViewModel {
     }
 }
 
-/// The node's kind: the first component it carries that has fields, or `Node`.
+/// The node's name, or — where it has none — its kind: the first component it carries that has
+/// fields, or `Node`.
 fn label_of(document: &Document, state: &cy_editor_documents::content::NodeState) -> String {
+    if !state.name.is_empty() {
+        return state.name.clone();
+    }
     state
         .components
         .keys()
@@ -207,6 +221,74 @@ mod tests {
             })
             .unwrap();
         (editor, root, child)
+    }
+
+    #[test]
+    fn two_nodes_of_one_kind_are_distinguishable_in_the_outliner() {
+        // "WHEN an author creates two nodes carrying the same first component and names them
+        // differently THEN the hierarchy SHALL show two rows bearing the two names, and a check
+        // SHALL fail if two distinct nodes are indistinguishable in the outliner."
+        //
+        // THE DEFECT THIS CATCHES SHIPPED. M8.a's own screenshot of the editor showed two authored
+        // objects as two outliner rows BOTH READING `Transform`, because the label was the node's
+        // kind and the document model had nowhere to put a name.
+        let mut editor = Editor::default();
+        let id = editor.open_document("worlds/city.cyworld").unwrap();
+        let document = editor.documents.get_mut(id).unwrap();
+        let transform = document.schema_mut().declare_type("Transform", false);
+        let translation = document
+            .schema_mut()
+            .declare_field(
+                transform,
+                "translation",
+                cy_editor_core::value::ValueKind::Vec3,
+                "where it is",
+            )
+            .unwrap();
+        document
+            .with_transaction("Build", Actor::human("designer"), |document| {
+                for name in ["Pillar", "Crate"] {
+                    let node = document.create_node(None)?;
+                    document.add_component(
+                        node,
+                        transform,
+                        vec![(translation, cy_editor_core::value::Value::Vec3([0.0; 3]))],
+                    )?;
+                    document.set_name(node, name)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+
+        let mut hierarchy = HierarchyViewModel::new();
+        hierarchy.refresh(&editor);
+        let labels: Vec<&str> = hierarchy
+            .rows()
+            .iter()
+            .map(|row| row.label.as_str())
+            .collect();
+        assert_eq!(labels, ["Pillar", "Crate"]);
+        assert!(hierarchy.rows().iter().all(|row| row.named));
+
+        // The check the scenario asks for, stated as one assertion: no two rows read the same word.
+        let distinct: std::collections::BTreeSet<&str> = labels.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            labels.len(),
+            "two distinct nodes are indistinguishable in the outliner"
+        );
+    }
+
+    #[test]
+    fn an_unnamed_node_falls_back_to_its_kind() {
+        // "falling back to the node's kind only where a node has no name" — the fallback is the
+        // requirement's, not a convenience, because an unnamed node reading as an identifier is
+        // worse than one reading as what it is.
+        let (editor, ..) = editor_with_a_tree();
+        let mut hierarchy = HierarchyViewModel::new();
+        hierarchy.refresh(&editor);
+        assert_eq!(hierarchy.rows()[0].label, "Node");
+        assert!(!hierarchy.rows()[0].named);
     }
 
     #[test]

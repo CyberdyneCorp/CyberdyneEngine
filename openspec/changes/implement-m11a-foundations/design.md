@@ -46,8 +46,106 @@ reports the cost honestly and the *cross-vendor* half is section 4's job, not se
 | The band recovers and the answers **disagree** | The sampler is the work and the *agreement* is the criterion. `environment-fields` does not reach Complete on a sampler that is fast and wrong, and the rung's schedule absorbs a correctness problem it has not budgeted |
 | The band does **not** recover | **The 122 ms figure is not a shader problem and every estimate in this rung is wrong.** The five world rows stop being "large but well understood", §5's contingency fires, and the rung is re-scoped around whatever the measurement says the cost actually is — before section 2 starts, not at the gate |
 
-The answer, and the numbers behind it, are written back into this section the way M10's design §1
-consumed its spike, so that no row downstream re-derives them.
+### 1.4 THE ANSWER — measured, and §1.3's first row
+
+`~/cyberdyne-spikes/m11a-field-spike/`, `bash run.sh`, `RESULT.txt`. **The band recovers by between
+540x and 680x and the two answers agree inside every field's declared precision.** §2 is ordinary
+engineering and this rung's twelve rows are as scoped. The numbers, so that no row downstream
+re-derives them — and the device column is a RANGE because four full runs put it at 0.121, 0.145,
+0.150 and 0.121 ms while the `store` column moved only between 80.96 and 81.90, which is GPU clock
+behaviour rather than measurement error. **Carry the conservative end.**
+
+| path — 153 664 vertices x 4 fields, NVIDIA RTX 5060, driver 580.95.05 | ms | ns a sample |
+|---|---|---|
+| `sample_deterministic()` per vertex per field — **the shipped loop** | 81.90 | 133.2 |
+| `sample_many_deterministic()` — the batched call `environment-fields` already requires | 74.83 | 121.7 |
+| `sample_field_image()` on the processor — the shader's algorithm, no store | 37.20 | 60.5 |
+| the same algorithm in `field.slang`, dispatched | **0.110 – 0.145** | 0.18 – 0.24 |
+| the whole band — the four samples **and** the colour — as one shader | **0.121 – 0.150** | 0.20 – 0.24 |
+
+Calibration, because a reconstruction that is measuring something else is worse than no
+measurement: `run.sh` runs `samples/10-world --headless` and reads `terrain_shade_ms` out of its own
+budget CSV. This host measures the shipped band at **62.54 ms over 608 000 samples, 102.9 ns a
+sample**; the spike's own `store` path is 133.2 ns, **1.30x**, and the spike exits 2 rather than
+print a ratio if it leaves a factor of 2.5.
+
+**THE BAND IS NOT MOSTLY ARITHMETIC, AND THAT CHANGES WHAT §2 IS BUYING.** Decomposed: per-sample
+bookkeeping 8.6%, the store's indirection over the flat buffer 45.9%, the arithmetic itself 45.4%.
+So a CPU-side rescue reaches about half the band and no further — which means §7's "no CPU-side
+rescue" is not only a rule about honesty, it is also the only arithmetic that works. And the 250x
+to 340x the device gives on the *same algorithm over the same bytes* is what `cy/field.slang` is worth,
+separably from the other two.
+
+**THE AGREEMENT, AND WHERE IT COMES FROM.** Every comparison is bit-exact or it is a difference; no
+tolerance is applied before reporting.
+
+| | bit-identical | worst |
+|---|---|---|
+| `store` vs device | 23.29% | 77 ulp, 8.77e-05 |
+| `store` vs `sample_field_image` — **both on the processor** | 24.16% | 77 ulp, 8.58e-05 |
+| `sample_field_image` vs device | 76.58% | **3 ulp**, 2.29e-05 |
+
+The device is **not** the source of the disagreement: the two processor-side samplers already differ
+by the same 77 ulp, for the reason `src/environment/tests/test_gpu.cpp` states in its own header —
+the store blends in f64 world coordinates and the image sampler in f32 image-local ones. Against the
+bound the specification actually sets, "the same value **within the field's declared precision**",
+every field passes with 20x to 51x of margin: `water-distance` 8.77e-05 against 3.91e-03, `wetness`
+7.75e-07 against 1.53e-05, `snow-depth` 1.19e-06 against 6.10e-05, `vegetation-density` 5.96e-07
+against 1.53e-05. **§1.3's second row does not fire.**
+
+**AND THE BAND ALONE DOES NOT REACH THE BUDGET, WHICH IS THE NUMBER §2 IS SCOPED AGAINST.**
+Arithmetic over the same headless take the calibration uses, because "the band recovers" and "the
+frame fits" are different claims and this rung is judged on the second:
+
+| | ms | against 16.7 |
+|---|---|---|
+| the headless frame as M10 ships it | 105.25 | **6.3x over** |
+| minus the substrate re-sample — what the spike measured | 42.74 | **2.6x over** |
+| minus the cloud march | 19.54 | 1.2x over |
+| minus water's foam field | **7.36** | inside, 9.3 ms of headroom |
+
+All three bands have to move; what remains after them — weather 1.50 ms, the ocean patch 5.08 ms,
+foliage 0.78 ms — fits with 9.3 ms to spare. So the spike licenses **§2's whole shape** and not only
+§2.3, and §2.4 and §2.5 are load-bearing rather than follow-on: a rung that ported the substrate and
+stopped would hold an artefact at 42.7 ms and a gap still red.
+
+**WHAT §2 MUST BUILD DIFFERENTLY BECAUSE OF THIS, and none of it was in the plan:**
+
+1. **The readback decides everything, and it is not the dispatch.** Reading 153 664 x 4 values back
+   through a `HOST_COHERENT` mapping costs **20.2 ms** — more than the band it replaced — and
+   through a `HOST_CACHED` staging buffer filled by a device copy, **0.30 ms**. 67x, for a choice of
+   memory type. §2.3's shipping shader writes its colour into device-local memory and the vertex
+   shader reads it there; any consumer that needs the answer on the processor takes the cached
+   staging path or it has not moved the band, it has moved it and paid for it twice.
+2. **Where the f64 subtraction happens is now a measured decision rather than a convention.**
+   `gpu.h` says it "happens here, once, on the CPU". The spike measured the other arrangement: the
+   shader's own f32 subtraction lands on a different representable number for **13.7% of positions**,
+   and the result is still inside every field's declared precision — but with 35x of margin on a
+   1536 m world, which will not survive a continental one. `cy/field.slang` SHALL take a position
+   already made local, and the GPU scene SHALL carry it; the licence the measurement grants is too
+   narrow to spend.
+3. **`cy/field.slang`'s own suite owes a volumetric case.** The spike's four fields are all planar,
+   so `vertical_weight()` returns exactly 1.0 and the vertical tap never varies. Reassociating the
+   bilinear weight produced a byte-identical report — the mutation could not fail. Weather's `wind`
+   is Vec3/F32 with four vertical cells and is the case that would discriminate.
+4. **`World::shade_terrain()` does not use the batched call the specification requires.** That is a
+   second, smaller defect in the same loop, worth 7.9% on its own and worth naming in §2.6's
+   "a CPU optimisation that reaches 16.7 ms closes nothing" — because it does not reach it.
+
+**What the spike could not answer here**, through the ledger's own mechanism rather than as a
+sentence: one host with one GPU vendor is one driver's floating-point behaviour.
+`m11a:field-device-agrees-with-cpu` already carries `requires = "gpu"` with a device-free companion
+and `m10:pcg-gpu-domain-agreement` already carries `where = "ci"` with the reason. §4 owns the
+cross-leg half. And the spike measured a **compute dispatch**, not a terrain material inside a draw;
+it says nothing about the cloud march or the foam field, which are a per-pixel march and an advected
+grid carried between frames — it licenses scoping them, not their estimates.
+
+**The spike found two defects in itself**, both recorded beside the fixes in its `README.md` because
+both looked exactly like failures of the thing being measured: it first delivered the position the
+way `gpu.h` forbids and read the resulting 99-ulp disagreement as the device's; and its
+"agreement produced by absence" refusal counted variety over all four fields together, so the
+mutation that makes the content constant **ran to completion and reported a speed-up** — one live
+field hiding three dead ones. Both were found by mutating the finished report, not by reading it.
 
 ## 2. Why this rung exists at all, and what decides its boundary
 

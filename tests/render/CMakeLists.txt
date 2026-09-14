@@ -95,6 +95,24 @@ function(cy_render_declare_tests)
     # this directory on the include path — the sources are compiled from the top-level binary
     # directory, so a relative include finds nothing without it.
     target_include_directories(cy_test_render_conventions PRIVATE "${cy_render_tests_dir}")
+
+    # THE ENVIRONMENT FIELD ON A DEVICE. `m10:fields-sampled-on-a-device` measured the number of
+    # `.slang` modules sampling an environment field at zero; `cy/field.slang` is the module and this
+    # is the suite that runs it on a graphics device against `sample_field_image()` over the same
+    # bytes. KIND render for the reason every suite in this directory is: it needs a device, and the
+    # render taxonomy's budget and timeout are the ones written for a suite that talks to a GPU.
+    #
+    # It lives here rather than in src/environment/tests/ because `cy::environment` is a layer-2
+    # module that may not name the renderer or a device. A suite under tests/ is layer 7 and may name
+    # anything, which is what keeps `just quality-layers` green with a device-side field sampler in
+    # the tree — the invariant m11a.toml's `layering` criterion exists to hold.
+    cy_add_test(
+        NAME environment_field
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_field_device.cpp"
+        DEPENDENCIES cy::environment cy::rhi cy::rhi-null cy::rhi-vulkan cy::world)
+    # For "device.h" and "shaders/field_probe_spirv.h", as the conventions suite above.
+    target_include_directories(cy_test_render_environment_field PRIVATE "${cy_render_tests_dir}")
 endfunction()
 
 cy_render_declare_tests()

@@ -261,6 +261,20 @@ pub enum Message {
         request: RequestId,
         /// The state the editor wants: `editing`, `playing` or `paused`.
         state: String,
+        /// WHERE the runtime is to run it: `in-editor`, `separate-process` or `remote-device`.
+        /// M11.b task 3.1.
+        ///
+        /// A word beside the state's word, and for the same reason: a fourth mode added on one side
+        /// and not the other must be refused BY NAME rather than falling through a match to the
+        /// closest one. The engine's `cy::gameplay::play_mode_of` is the far end that refuses it.
+        ///
+        /// Until M11.b this field did not exist and neither did the concept:
+        /// `HostingMode{NoRuntime, Embedded, Hosted}` is the editor's only locality axis and
+        /// `cy-editor-sdk/src/host.rs` documents `Hosted` as *"the engine in a separate process **or**
+        /// on a remote device"* — which collapses the two modes the specification separates. Adding
+        /// the field is a protocol change, and it is safe because `Hello`/`Welcome` already carry the
+        /// ABI version and `Refused` already rejects a mismatch.
+        mode: String,
     },
     /// What the runtime's play session is doing now, and what it did.
     ///
@@ -272,6 +286,11 @@ pub enum Message {
         request: RequestId,
         /// The state now in force, which may not be the one asked for when the runtime refused.
         state: String,
+        /// The mode now in force. **Never a mode other than the one asked for**: a runtime that
+        /// could not honour the request refuses it rather than answering with a different mode, so
+        /// this field disagreeing with the request is a defect rather than a fallback. It is carried
+        /// anyway, because that is what lets the editor NOTICE the disagreement.
+        mode: String,
         /// One line for a person: how many entities and bodies the session built, or why not.
         detail: String,
     },
@@ -465,19 +484,26 @@ impl Message {
     /// different halves of the editor.
     fn write_play(&self, writer: &mut Writer) -> bool {
         match self {
-            Message::Play { request, state } => {
+            Message::Play {
+                request,
+                state,
+                mode,
+            } => {
                 writer.u8(15);
                 writer.u64(request.as_u64());
                 writer.text(state);
+                writer.text(mode);
             }
             Message::Playing {
                 request,
                 state,
+                mode,
                 detail,
             } => {
                 writer.u8(16);
                 writer.u64(request.as_u64());
                 writer.text(state);
+                writer.text(mode);
                 writer.text(detail);
             }
             _ => return false,
@@ -563,10 +589,12 @@ impl Message {
             15 => Message::Play {
                 request: RequestId::from_raw(reader.u64()?),
                 state: reader.text()?,
+                mode: reader.text()?,
             },
             16 => Message::Playing {
                 request: RequestId::from_raw(reader.u64()?),
                 state: reader.text()?,
+                mode: reader.text()?,
                 detail: reader.text()?,
             },
             14 => Message::ViewSuggested {
@@ -676,10 +704,12 @@ mod tests {
             Message::Play {
                 request: RequestId::from_raw(14),
                 state: "playing".into(),
+                mode: "separate-process".into(),
             },
             Message::Playing {
                 request: RequestId::from_raw(14),
                 state: "playing".into(),
+                mode: "separate-process".into(),
                 detail: "2 entities, 2 bodies".into(),
             },
         ];
@@ -696,11 +726,30 @@ mod tests {
         let asked = Message::Play {
             request: RequestId::from_raw(1),
             state: "rewinding".into(),
+            mode: "in-editor".into(),
         };
         let back = Message::decode(&asked.encode()).unwrap();
         assert_eq!(back, asked);
         match back {
             Message::Play { state, .. } => assert_eq!(state, "rewinding"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_play_mode_the_runtime_does_not_know_is_carried_as_a_word_too() {
+        // M11.b task 3.1. The same argument as the state above, one field along: `remote-device`
+        // and `console-over-the-road` are both words on the wire, and the far end refuses the one it
+        // does not know BY NAME rather than reading it as the closest mode.
+        let asked = Message::Play {
+            request: RequestId::from_raw(2),
+            state: "playing".into(),
+            mode: "console-over-the-road".into(),
+        };
+        let back = Message::decode(&asked.encode()).unwrap();
+        assert_eq!(back, asked);
+        match back {
+            Message::Play { mode, .. } => assert_eq!(mode, "console-over-the-road"),
             other => panic!("{other:?}"),
         }
     }
@@ -727,6 +776,7 @@ mod tests {
             Message::Playing {
                 request: RequestId::from_raw(5),
                 state: "editing".into(),
+                mode: "in-editor".into(),
                 detail: String::new(),
             }
             .request(),
@@ -736,6 +786,7 @@ mod tests {
             Message::Play {
                 request: RequestId::from_raw(5),
                 state: "playing".into(),
+                mode: "in-editor".into(),
             }
             .request(),
             None

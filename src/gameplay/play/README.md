@@ -2,7 +2,9 @@
 
 `SpawnService`, and `PlaySession`: the authored world simulated, and put back exactly.
 
-**Governed by**: `gameplay-framework` (→ Seed at M8.a). Section 5 of the M8.a tasks.
+**Governed by**: `gameplay-framework` (→ Seed at M8.a), and — since M11.b — the *Play modes*
+requirement that `editor-architecture` and `live-editing` both carry. Section 5 of the M8.a tasks and
+section 3.1 of M11.b's.
 
 ## Why this is a separate target from `cy::gameplay`
 
@@ -22,7 +24,37 @@ the module above keeps its short list unchanged. `cy::servers-input` is not here
 | | |
 |---|---|
 | `spawn.h` | `SpawnRequest`, three policies, reservation, spawn points as metadata, batch spawning |
-| `session.h` | `PlaySession`: `enter`, `tick`, `pause`, `resume`, `stop`, and the report |
+| `session.h` | `PlaySession`: `enter`, `tick`, `pause`, `resume`, `step_tick`, `step_frame`, `stop`, and the report |
+| `mode.h` | `PlayMode`, its per-mode capabilities, and the refusal an unavailable mode produces |
+
+## The three play modes, and the one rule that makes them worth naming
+
+`live-editing` and `editor-architecture` name `InEditor`, `SeparateProcess` and `RemoteDevice`, and
+say what they are not: *"locality SHALL be an optimisation of transport, not a different
+architecture."* Until M11.b no code in this tree named any of the three, which is most of why
+`editor-architecture` sat at Seed from M5. `mode.h` is the table, and `PlayConfiguration::mode`
+carries the choice into a session.
+
+**One world model, three transports, and it is measured rather than argued.**
+`tests/test_editor_play.cpp` drives one authored world through one command stream in each of the
+three modes and compares the simulated result. A second world model could not produce agreement by
+accident.
+
+**A mode that is not available refuses BY NAME and starts nothing.** `RemoteDevice` is unavailable in
+every configuration of this tree because nothing encodes a frame — `EncodedStream` is declared on
+both sides of the viewport transport and implemented on neither — so `enter()` refuses before it
+snapshots the document, and the message names the mode and the missing part. `PlayModeAvailability`
+also carries the rung the mode is due at, so "not yet" is a recorded decision rather than the absence
+of a check.
+
+Availability is a function of `PlayModeSupport` rather than a constant, and that is the point: the
+suite flips `frame_encoder` and watches the same mode become available, then flips it back and
+watches it refuse. A refusal that cannot be made to stop refusing is untested.
+
+**A capability is queried, not discovered by trying.** `capabilities_of` declares what each mode can
+be asked to do, and the one thing that differs — `RemoteDevice` cannot step a single *frame*, because
+an encoded stream's frames are not individually addressable — differs by transport. A tick step is a
+message rather than a picture, so every mode keeps it.
 
 ## `stop()` restores exactly, and here is how that is kept rather than claimed
 
@@ -84,3 +116,12 @@ nothing else changes.
   the thing that would join them.
 * **Time domains.** The session runs one `SimulationClock` in `FixedStep`. Pausing is a state on the
   session rather than a per-domain policy.
+
+## What the play modes ask for that is not here
+
+* **`RemoteDevice` has no transport**, and the mode says so rather than pretending. See above: the
+  refusal names `EncodedStream` and the rung it is due at. When an encoder lands, the only thing that
+  changes is what fills in `PlayModeSupport`.
+* **`SeparateProcess` is a session, not yet a launcher.** The mode is available and the live bridge
+  already crosses a real socket, but *starting and supervising* a second runtime process is
+  `build-and-packaging`'s and is M11.d's. `PlayModeSupport::runtime_launcher` is where that lands.

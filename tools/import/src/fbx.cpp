@@ -250,6 +250,99 @@ struct SourceAttributes {
     bool uvs = false;
 };
 
+/// One mesh's skin, resolved against step 7's joint numbering. M11.b task 6.1.
+///
+/// UNTIL M11.b THIS FILE PARSED EVERY CLUSTER AND DROPPED IT. `ufbx` reads `skin_deformers` as a
+/// matter of course — `Walking.fbx` carries 65 clusters — and `MeshData` had no joint or weight
+/// array to put them in, so the only trace of a rig in a cooked mesh was the `skipped-rig` warning
+/// beside it. `samples/09b-animated-character` says so in its own header: it DERIVES its skin
+/// weights from vertex height because the import could not supply them.
+///
+/// A cluster addresses a bone NODE and the cooked record numbers joints in its own walk order, so
+/// the two are joined by the one identity they share — the node's name, which is what step 7 stores
+/// — and never by an ordering either derived for itself.
+struct MeshSkin {
+    const ufbx_skin_deformer* deformer = nullptr;
+    /// Cluster index to cooked joint index, or -1 for a cluster whose bone the skeleton dropped.
+    std::vector<i32> joint_of_cluster;
+    /// Clusters that resolved to no joint. Their weight is redistributed over the ones that did,
+    /// which is what keeps a partially-dropped bone LOD from shrinking a vertex to the origin.
+    u32 unresolved_clusters = 0;
+
+    [[nodiscard]] bool usable() const noexcept {
+        return deformer != nullptr && !joint_of_cluster.empty();
+    }
+};
+
+/// Resolve a mesh's first skin deformer against the skeleton step 7 produced.
+[[nodiscard]] MeshSkin resolve_mesh_skin(const ufbx_mesh& source,
+                                         const ImportedSkeleton& skeleton) {
+    MeshSkin skin;
+    if (skeleton.joints.empty() || source.skin_deformers.count == 0) {
+        return skin;
+    }
+    // THE FIRST DEFORMER AND NOT A MERGE OF ALL OF THEM. A mesh with two skins is a mesh two rigs
+    // deform, which a cooked mesh's four influences cannot express; the caller reports the rest by
+    // count rather than this function inventing a blend.
+    skin.deformer = source.skin_deformers.data[0];
+    skin.joint_of_cluster.assign(skin.deformer->clusters.count, -1);
+    for (usize index = 0; index < skin.deformer->clusters.count; ++index) {
+        const ufbx_skin_cluster* cluster = skin.deformer->clusters.data[index];
+        if (cluster == nullptr || cluster->bone_node == nullptr) {
+            ++skin.unresolved_clusters;
+            continue;
+        }
+        const i32 joint = skeleton.find(view_of(cluster->bone_node->name));
+        skin.joint_of_cluster[index] = joint;
+        skin.unresolved_clusters += joint < 0 ? 1U : 0U;
+    }
+    return skin;
+}
+
+/// The four heaviest influences of one source vertex, renormalised.
+///
+/// ufbx sorts a vertex's weights by decreasing weight, so the first four ARE the heaviest and this
+/// takes a prefix rather than sorting again. A fifth influence is dropped, which is what
+/// `kSkinInfluences` costs and what `mesh.h` says the importer must report.
+[[nodiscard]] SkinInfluence influence_of(const MeshSkin& skin, u32 vertex,
+                                         u32& out_dropped) noexcept {
+    SkinInfluence influence;
+    if (vertex >= skin.deformer->vertices.count) {
+        influence.weights[0] = 1.0f;
+        return influence;
+    }
+    const ufbx_skin_vertex& entry = skin.deformer->vertices.data[vertex];
+    usize taken = 0;
+    f32 total = 0.0f;
+    for (u32 slot = 0; slot < entry.num_weights; ++slot) {
+        const ufbx_skin_weight& weight = skin.deformer->weights.data[entry.weight_begin + slot];
+        const i32 joint = weight.cluster_index < skin.joint_of_cluster.size()
+                              ? skin.joint_of_cluster[weight.cluster_index]
+                              : -1;
+        if (joint < 0) {
+            continue;  // A cluster whose bone the skeleton dropped; its weight is redistributed.
+        }
+        if (taken == kSkinInfluences) {
+            ++out_dropped;
+            continue;
+        }
+        influence.joints[taken] = static_cast<u16>(joint);
+        influence.weights[taken] = static_cast<f32>(weight.weight);
+        total += influence.weights[taken];
+        ++taken;
+    }
+    if (total > 0.0f) {
+        for (f32& weight : influence.weights) {
+            weight /= total;
+        }
+    } else {
+        // A vertex no cluster reaches is rigidly bound to joint 0 rather than left weightless: a
+        // weightless vertex collapses to the origin the moment the mesh is skinned.
+        influence.weights[0] = 1.0f;
+    }
+    return influence;
+}
+
 /// Append one corner of one triangle as a vertex, with whatever attributes the source carries.
 ///
 /// FBX stores attributes PER CORNER: a cube's eight positions become twenty-four index entries,
@@ -257,8 +350,8 @@ struct SourceAttributes {
 /// corner, and `finish_mesh`'s weld is what brings it back — the same welder the glTF path runs, so
 /// a cube exported to both formats produces one vertex count rather than two.
 [[nodiscard]] Status append_corner(const FbxState& state, const ufbx_mesh& source,
-                                   const SourceAttributes& attributes, u32 index,
-                                   MeshData& out) noexcept {
+                                   const SourceAttributes& attributes, const MeshSkin& skin,
+                                   u32 index, u32& out_dropped, MeshData& out) noexcept {
     const auto vertex = static_cast<u32>(out.positions.size());
     if (Status pushed = out.positions.push_back(
             to_vec3(ufbx_get_vertex_vec3(&source.vertex_position, index)) * state.scale);
@@ -279,13 +372,25 @@ struct SourceAttributes {
             return pushed;
         }
     }
+    if (skin.usable()) {
+        // FBX stores attributes per CORNER and skin weights per VERTEX, so the binding is looked up
+        // through `vertex_indices` — the corner-to-vertex map — rather than by the corner index.
+        // Using the corner index here would bind a cube's twenty-four corners to eight vertices'
+        // worth of weights and read past the end of the rest.
+        const u32 source_vertex = source.vertex_indices.data[index];
+        if (Status pushed = out.skin.push_back(influence_of(skin, source_vertex, out_dropped));
+            !pushed) {
+            return pushed;
+        }
+    }
     return out.indices.push_back(vertex);
 }
 
 /// Append one material part's faces, triangulated, as a run of indices.
 [[nodiscard]] Status append_part(const FbxState& state, const ufbx_mesh& source,
-                                 const SourceAttributes& attributes, const ufbx_mesh_part* part,
-                                 std::vector<u32>& corners, MeshData& out) noexcept {
+                                 const SourceAttributes& attributes, const MeshSkin& skin,
+                                 const ufbx_mesh_part* part, std::vector<u32>& corners,
+                                 u32& out_dropped, MeshData& out) noexcept {
     const usize face_count = part != nullptr ? part->num_faces : source.num_faces;
     for (usize at = 0; at < face_count; ++at) {
         const u32 face_index = part != nullptr ? part->face_indices.data[at] : static_cast<u32>(at);
@@ -295,7 +400,8 @@ struct SourceAttributes {
         }
         const u32 triangles = ufbx_triangulate_face(corners.data(), corners.size(), &source, face);
         for (u32 corner = 0; corner < triangles * 3; ++corner) {
-            if (Status appended = append_corner(state, source, attributes, corners[corner], out);
+            if (Status appended = append_corner(state, source, attributes, skin, corners[corner],
+                                                out_dropped, out);
                 !appended) {
                 return appended;
             }
@@ -307,7 +413,7 @@ struct SourceAttributes {
 /// One FBX mesh, de-indexed into the engine's parallel-array form and split into sections by
 /// material.
 [[nodiscard]] Status build_mesh(const FbxState& state, const ufbx_mesh& source,
-                                MeshData& out) noexcept {
+                                const MeshSkin& skin, u32& out_dropped, MeshData& out) noexcept {
     SourceAttributes attributes;
     attributes.normals = source.vertex_normal.exists;
     attributes.uvs = source.vertex_uv.exists;
@@ -324,7 +430,8 @@ struct SourceAttributes {
         const auto first_index = static_cast<u32>(out.indices.size());
         const ufbx_mesh_part* part =
             source.material_parts.count > 0 ? &source.material_parts.data[part_index] : nullptr;
-        if (Status appended = append_part(state, source, attributes, part, corners, out);
+        if (Status appended =
+                append_part(state, source, attributes, skin, part, corners, out_dropped, out);
             !appended) {
             return appended;
         }
@@ -380,7 +487,10 @@ OptionsSchema fbx_options() noexcept {
 ImporterInfo FbxImporter::info() const noexcept {
     ImporterInfo info;
     info.name = "fbx";
-    info.version = 1;
+    // 2 at M11.b: a skinned mesh now carries its joint bindings, which it did not before — every
+    // cluster was parsed and dropped. The cooked mesh record moved to version 2 with it, so every
+    // FBX re-cooks, which is what a version is for.
+    info.version = 2;
     info.extensions = Span<const std::string_view>(kExtensions);
     info.produces = Span<const assets::AssetKind>(kProduces);
     info.description =
@@ -597,61 +707,6 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
     }
     // --- end of step 8.
 
-    // --- What this import STILL did not produce, named rather than implied.
-    //
-    // THE CONDITION THIS REPLACES NEVER FIRED FOR THE FILE THAT NEEDED IT. It read
-    // `anim_stacks.count > 1` — strictly greater than one — beside two `!= 0`s, so a file with
-    // exactly ONE animation stack, no skin and no blend shape satisfied none of its three
-    // disjuncts and got no diagnostic at all. That is precisely the shape of an animation-only
-    // export from a character library: it imported to a prefab, in silence, with the animation the
-    // artist exported dropped and nobody told. A skinned character warned only incidentally,
-    // because it also carried a skin.
-    //
-    // It is also computed from what this import ACTUALLY produced rather than from what the format
-    // can hold, which is the second half of the same fix: warning that animation was skipped in a
-    // build that just imported four clips would be a diagnostic nobody could act on, and one a
-    // reader learns to ignore. Skins and blend shapes are genuinely absent; animation is named only
-    // when the file has some and none came through AND nothing more specific has already said why —
-    // a stack that animates nothing, a rig over the joint cap, a bake that failed and a build
-    // without the clip codec each report themselves, by name.
-    {
-        const bool skipped_skins = scene->skin_deformers.count != 0;
-        const bool skipped_blend_shapes = scene->blend_deformers.count != 0;
-        const bool skipped_animation = kFbxClipsAvailable && scene->anim_stacks.count != 0 &&
-                                       clips.clips == 0 && clips.constant_stacks == 0 &&
-                                       !clips.too_many_joints;
-        std::string what;
-        const auto name_one = [&what](std::string_view item) {
-            what += what.empty() ? "" : ", ";
-            what += item;
-        };
-        if (skipped_skins) {
-            name_one("skins");
-        }
-        if (skipped_blend_shapes) {
-            name_one("blend shapes");
-        }
-        if (skipped_animation) {
-            name_one("animation");
-        }
-        if (!what.empty()) {
-            // Measured against `ImportDiagnostic::kDetailCapacity`, which the sentence this
-            // replaces overran by 38 bytes — so its last clause, "Meshes and materials came
-            // through", had never reached a report.
-            char detail[ImportDiagnostic::kDetailCapacity] = {};
-            (void)std::snprintf(detail, sizeof(detail),
-                                "this file carries %s, which this import did not produce; "
-                                "everything else in it came through",
-                                what.c_str());
-            if (Status reported = out.report(ImportSeverity::Warning, "skipped-rig", detail,
-                                             request.source.view());
-                !reported) {
-                ufbx_free_scene(scene);
-                return reported;
-            }
-        }
-    }
-
     // --- 9. Materials.
     std::vector<std::string> material_names;
     for (usize index = 0; index < scene->materials.count; ++index) {
@@ -678,6 +733,11 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
     // mesh and the node that names a collider is not read until step 10.
     std::vector<MeshData> built_meshes;
     std::vector<std::string> mesh_names;
+    // Step 7's half that lives on the mesh, counted so the report can name what it cost. M11.b.
+    u32 skinned_meshes = 0;
+    u32 dropped_influences = 0;
+    u32 unresolved_clusters = 0;
+    u32 extra_skins = 0;
     for (usize index = 0; index < scene->meshes.count; ++index) {
         const ufbx_mesh& source = *scene->meshes.data[index];
         mesh_names.push_back(names.unique("mesh/", view_of(source.name), index));
@@ -687,7 +747,14 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
         }
 
         MeshData built;
-        if (Status assembled = build_mesh(state, source, built); !assembled) {
+        const MeshSkin skin = resolve_mesh_skin(source, skeleton);
+        skinned_meshes += skin.usable() ? 1U : 0U;
+        unresolved_clusters += skin.unresolved_clusters;
+        extra_skins += source.skin_deformers.count > 1
+                           ? static_cast<u32>(source.skin_deformers.count - 1)
+                           : 0U;
+        if (Status assembled = build_mesh(state, source, skin, dropped_influences, built);
+            !assembled) {
             ufbx_free_scene(scene);
             return assembled;
         }
@@ -767,6 +834,112 @@ Status FbxImporter::import(const ImportRequest& request, ImportResult& out) noex
     // as a corrupted node name in a file with more than a handful of nodes.
     for (usize index = 0; index < nodes.size(); ++index) {
         nodes[index].name = node_names[index];
+    }
+
+    // MOVED BELOW THE MESH LOOP AT M11.b, and the move is the point. This block is computed from
+    // what this import ACTUALLY produced, and from M11.b what it produces includes the skin
+    // bindings the mesh loop reads — so computing it before that loop ran would have reported every
+    // skinned file as one whose skins were skipped. It stays one block rather than two so that a
+    // reader looking for "what did this import drop" finds one answer.
+    // --- What this import STILL did not produce, named rather than implied.
+    //
+    // THE CONDITION THIS REPLACES NEVER FIRED FOR THE FILE THAT NEEDED IT. It read
+    // `anim_stacks.count > 1` — strictly greater than one — beside two `!= 0`s, so a file with
+    // exactly ONE animation stack, no skin and no blend shape satisfied none of its three
+    // disjuncts and got no diagnostic at all. That is precisely the shape of an animation-only
+    // export from a character library: it imported to a prefab, in silence, with the animation the
+    // artist exported dropped and nobody told. A skinned character warned only incidentally,
+    // because it also carried a skin.
+    //
+    // It is also computed from what this import ACTUALLY produced rather than from what the format
+    // can hold, which is the second half of the same fix: warning that animation was skipped in a
+    // build that just imported four clips would be a diagnostic nobody could act on, and one a
+    // reader learns to ignore. Skins and blend shapes are genuinely absent; animation is named only
+    // when the file has some and none came through AND nothing more specific has already said why —
+    // a stack that animates nothing, a rig over the joint cap, a bake that failed and a build
+    // without the clip codec each report themselves, by name.
+    {
+        // SKINS ARE NO LONGER AMONG THEM. M11.b gave `MeshData` a joint and weight array and this
+        // importer fills it, so a skin is named here only when there was one and no mesh carried
+        // it — which happens when step 7 produced no skeleton to resolve the clusters against.
+        const bool skipped_skins = scene->skin_deformers.count != 0 && skinned_meshes == 0;
+        const bool skipped_blend_shapes = scene->blend_deformers.count != 0;
+        const bool skipped_animation = kFbxClipsAvailable && scene->anim_stacks.count != 0 &&
+                                       clips.clips == 0 && clips.constant_stacks == 0 &&
+                                       !clips.too_many_joints;
+        std::string what;
+        const auto name_one = [&what](std::string_view item) {
+            what += what.empty() ? "" : ", ";
+            what += item;
+        };
+        if (skipped_skins) {
+            name_one("skins");
+        }
+        if (skipped_blend_shapes) {
+            name_one("blend shapes");
+        }
+        if (skipped_animation) {
+            name_one("animation");
+        }
+        // What the skin import itself cost, named in its own diagnostics rather than folded into
+        // the sentence above: each of these is a number an artist can act on, and "skins were
+        // skipped" is not what happened to any of them.
+        if (dropped_influences != 0) {
+            char detail[ImportDiagnostic::kDetailCapacity] = {};
+            (void)std::snprintf(detail, sizeof(detail),
+                                "%u vertex binding(s) named more than %u joints; the heaviest %u "
+                                "were kept and renormalised",
+                                dropped_influences, static_cast<u32>(kSkinInfluences),
+                                static_cast<u32>(kSkinInfluences));
+            if (Status reported = out.report(ImportSeverity::Warning, "skin-influences-reduced",
+                                             detail, request.source.view());
+                !reported) {
+                ufbx_free_scene(scene);
+                return reported;
+            }
+        }
+        if (unresolved_clusters != 0) {
+            char detail[ImportDiagnostic::kDetailCapacity] = {};
+            (void)std::snprintf(detail, sizeof(detail),
+                                "%u skin cluster(s) deform through a node the skeleton does not "
+                                "carry; their weight was redistributed over the joints that remain",
+                                unresolved_clusters);
+            if (Status reported = out.report(ImportSeverity::Warning, "skin-cluster-unresolved",
+                                             detail, request.source.view());
+                !reported) {
+                ufbx_free_scene(scene);
+                return reported;
+            }
+        }
+        if (extra_skins != 0) {
+            char detail[ImportDiagnostic::kDetailCapacity] = {};
+            (void)std::snprintf(detail, sizeof(detail),
+                                "%u additional skin deformer(s) were not imported; a cooked mesh "
+                                "carries one binding per vertex, so the first skin was used",
+                                extra_skins);
+            if (Status reported = out.report(ImportSeverity::Warning, "mesh-has-several-skins",
+                                             detail, request.source.view());
+                !reported) {
+                ufbx_free_scene(scene);
+                return reported;
+            }
+        }
+        if (!what.empty()) {
+            // Measured against `ImportDiagnostic::kDetailCapacity`, which the sentence this
+            // replaces overran by 38 bytes — so its last clause, "Meshes and materials came
+            // through", had never reached a report.
+            char detail[ImportDiagnostic::kDetailCapacity] = {};
+            (void)std::snprintf(detail, sizeof(detail),
+                                "this file carries %s, which this import did not produce; "
+                                "everything else in it came through",
+                                what.c_str());
+            if (Status reported = out.report(ImportSeverity::Warning, "skipped-rig", detail,
+                                             request.source.view());
+                !reported) {
+                ufbx_free_scene(scene);
+                return reported;
+            }
+        }
     }
 
     // --- 6. Collision, from the source mesh and never from a level of detail.

@@ -142,6 +142,22 @@ has started.
   this row would not mean it is late either** — it would mean the row should be split through a
   change against its own specification, and that decision belongs in this rung rather than in a
   fourth gate.
+- **The re-scope was performed, and it did NOT find a split.** Task 6.8 asks for one if the evidence
+  supports it, and read against the tree the evidence supports a carve-out and a correction instead.
+  The carve-out is requirement 15: confidentiality is a **dependency adoption with a key-management
+  policy attached**, not engineering inside this capability, and `specs/save-and-persistence/` in
+  this change records it as deferred with a named re-entry point so that the row stops being demoted
+  for it. The correction is requirement 14: `src/save/README.md`'s audit says per-record plugin
+  ownership *"needs the module registry that arrives with `project-and-plugins`"*, and **that claim
+  is stale** — `identity/manifest.toml` already carries a `module` for every type it has issued an
+  identifier to, so the mapping is committed and the work is ordinary engineering rather than a wait
+  on another capability. Every other requirement left open is ordinary engineering inside or
+  immediately above `src/save/`; splitting the row would move requirements between documents without
+  moving one line of work, which is renaming a debt rather than scoping it. **What was actually
+  mis-scoped is now visible**: two milestones planned this row Complete on the strength of two named
+  blockers, and nobody read it requirement by requirement until M10's close found eleven pieces. The
+  re-scope is that the bar is itemised — twenty requirements, one deferred with a re-entry point,
+  nineteen either satisfied or named — rather than that the row is two rows.
 - **`m9:lockstep-cross-platform` is not a code question, it is a runner question.** This host has one
   operating system and one GPU vendor; every leg the comparison job compares is a leg nobody here can
   reproduce. The job either publishes digests that agree or it publishes digests that disagree, and

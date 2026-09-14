@@ -30,6 +30,22 @@ may not appear above the backends.
 | `cy/globals.slang` | the global parameter block at set 0, binding 0 |
 | `cy/view.slang` | the per-view constants at set 1, in camera-relative space |
 | `cy/fullscreen.slang` | the full-screen triangle and a tonemapping resolve over it |
+| `cy/field.slang` | an environment field, sampled from the buffer layout `cy/environment/gpu.h` fixes, through the GPU scene's bindless table at set 0, binding 3 |
+| `cy/terrain_shade.slang` | the four substrate samples a terrain vertex takes, and the colour they produce |
+| `cy/cloud_shadow.slang` | the cloud shadow field read as an attenuation of direct sunlight |
+
+**The last three are M11.a's, and they are why `m10:fields-sampled-on-a-device` is closed.** That
+criterion measured the number of modules in this directory that sampled an environment field at
+ZERO, which is also why `samples/10-world` re-sampled the substrate at 152 000 terrain vertices on
+the processor every frame. `cy/field.slang` is written against `sample_field_image()` expression for
+expression — the comparison between them is bit-exact and `render.environment_field` runs it on a
+device — and the two consumers below it are the shapes the requirement names: a terrain material and
+a reader of the sky's cloud shadow.
+
+**Every module here is compiled by something.** `smoke.material_slang`'s last case compiles
+`cy.field`, `cy.terrain_shade` and `cy.cloud_shadow` through the engine's own Slang front end against
+the staged tree, because a module nothing compiles is a file rather than a shader — which is exactly
+what the grep-shaped half of `m10:fields-sampled-on-a-device` would have accepted.
 
 ## Three conventions these files keep
 

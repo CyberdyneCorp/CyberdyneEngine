@@ -19,7 +19,8 @@
 // A chart boundary is a discontinuity in the parameterisation, so a vertex that sits on one needs a
 // different UV per chart it belongs to. xatlas therefore returns its own vertex list, each entry
 // carrying an `xref` back to the input vertex it was split from. This file rebuilds the whole mesh
-// from that list: positions, normals, UV0 and tangents are copied through the xref, UV2 comes from
+// from that list: positions, normals, UV0, tangents and skin bindings are copied through the
+// xref, UV2 comes from
 // the atlas, and the index list is xatlas's own. `MeshData::sections` are recovered by mapping each
 // output triangle back to the input triangle it came from — xatlas preserves face order within a
 // mesh, so that mapping is the identity, and it is asserted rather than assumed.
@@ -221,6 +222,12 @@ Expected<Uv2Report, Error> generate_uv2(MeshData& mesh, const Uv2Options& option
         return make_unexpected(remapped.error());
     }
     if (Status remapped = remap_attribute(mesh.tangents, xref, rebuilt.tangents); !remapped) {
+        return make_unexpected(remapped.error());
+    }
+    // A chart boundary splits a vertex; the two halves are the same vertex of the same rig, so the
+    // binding is copied rather than recomputed. Without this line an unwrapped skinned mesh loses
+    // its rig at exactly the seams a lightmap put in it.
+    if (Status remapped = remap_attribute(mesh.skin, xref, rebuilt.skin); !remapped) {
         return make_unexpected(remapped.error());
     }
     rebuilt.uv2 = std::move(unwrapped);

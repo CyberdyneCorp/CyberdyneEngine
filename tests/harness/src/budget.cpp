@@ -408,9 +408,7 @@ BudgetGuard::~BudgetGuard() {
         const double fresh = second_opinion_scale();
         const auto rebuilt =
             static_cast<unsigned long long>(static_cast<double>(declared_ns_) * fresh);
-        if (rebuilt > budget_ns) {
-            budget_ns = rebuilt;
-        }
+        budget_ns = std::max(budget_ns, rebuilt);
     }
 
     char message[640];

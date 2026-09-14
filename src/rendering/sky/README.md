@@ -132,10 +132,26 @@ granularities because a cell that changed and a state that changed fail differen
 
 * **NO SHADER, AND NO DEVICE.** Everything here is CPU. The cloud march, the tables and the radiance
   map are the algorithms a shader will implement, measured against each other and against the model;
-  no `.slang` module accompanies them and no agreement against a real device is claimed. In
-  particular `cy/field.slang` — which `src/environment/`'s README says is owed by "the renderer-facing
-  row that first samples a field in a shader" — is **not** written here: the cloud shadow field is
-  sampled on the CPU through `environment::FieldStore`, so this row does not discharge that debt.
+  no `.slang` module accompanies them and no agreement against a real device is claimed. `cy/field.slang`
+  — which `src/environment/`'s README said was owed by "the renderer-facing row that first samples a
+  field in a shader" — **was written at M11.a and is not this row's**, and it brought
+  `cy/cloud_shadow.slang` with it: the one line every consumer of this field wants, `saturate`d and
+  applied to the direct term only. What is still CPU here is the PRODUCER — `CloudShadowField::update`
+  marches the reconstruction on the processor and writes tiles — and the cloud march itself, which is
+  23.2 ms of `m10:world-frame-budget` and is still open.
+
+* **THE ROUND TRIP WAS NOT WHERE ITS GAP SAID IT WAS.** `m10:sky-field-round-trip` recorded that
+  `update` reported writing tiles darker than 0.5 while `sample` returned the declared 1.0 at all
+  twenty-five points inside `radius_metres`, and concluded that the sky's WRITE PATH was broken.
+  It was not. Reading every cell the producer writes back through `FieldStore::sample_at()` resolves
+  1024 of 1024 regional cells and 256 of 256 macro cells, and the darkest reads 0.0039 against a
+  producer report of 0.0041 — one `UNorm8` quantum apart. What was wrong was the TEST'S SAMPLING
+  POSITIONS: a five-by-five grid 256 m about the origin, over ground that is genuinely in full sun
+  under that weather, because the cloud map's cells are 1000 m across and the mean over everything
+  written is 0.974. Twenty-five samples of lit ground read 1.0 whether the field was published or
+  not, which is why suppressing `publish()` did not move them. `test_cloud_shadows.cpp` now reads
+  back every cell at both levels and compares the extremes with the producer's own `stats()`; both
+  halves go red when `publish()` is suppressed.
 * **The lighting integral's cloud term is a hemispherical mean.** `compose_sky_lighting()` measures
   the clouds' effect over twelve probes and applies one attenuation plus one addition. It is right in
   magnitude — thicker cover gives less irradiance — and wrong in DIRECTION: a cloud bank on one

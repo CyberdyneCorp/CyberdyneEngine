@@ -74,10 +74,13 @@
 #include <cy/core/memory/ownership.h>
 #include <cy/ecs/system.h>
 #include <cy/ecs/world.h>
+#include <cy/gameplay/play/mode.h>
 #include <cy/gameplay/play/spawn.h>
 #include <cy/physics/bridge.h>
 #include <cy/scene/serialization/worldfile.h>
 #include <cy/scene/tree.h>
+
+#include <string_view>
 
 namespace cy::gameplay {
 
@@ -98,12 +101,27 @@ enum class PlayState : u8 {
 
 /// What a session needs that it does not own.
 struct PlayConfiguration {
+    /// Where this session's runtime runs. M11.b task 3.1.
+    ///
+    /// The mode is a property of the SESSION rather than of the caller, because `enter` is where a
+    /// mode that is not available has to be refused: a request that reached `build()` and then
+    /// discovered it could not have a transport would already have spawned a world. See
+    /// `cy/gameplay/play/mode.h` for why availability is a query about the build rather than a
+    /// constant, and `enter`'s own comment for the refusal.
+    PlayMode mode = PlayMode::InEditor;
+    /// What this build can do, which is what decides whether `mode` is available. Supplied rather
+    /// than read inside `enter` so that a test can ask for the OTHER answer and watch the refusal
+    /// go the other way — a refusal that cannot be made to stop refusing is untested.
+    PlayModeSupport support = play_mode_support();
     /// The solver. Required, and NOT created here: which backend a project simulates with is the
     /// host's decision, exactly as it is for `cy::physics::PhysicsBridge`.
     physics::PhysicsServer* physics = nullptr;
     /// The rate the simulation clock runs at.
     determinism::TickRate rate;
     Vec3 gravity{0.0F, -9.81F, 0.0F};
+    /// Frames per second, as an exact rational, for `step_frame`. Separate from `rate` because a
+    /// frame and a tick are different units and a session may be asked to step either.
+    determinism::TickRate frame_rate{60, 1};
     /// How many bodies the physics world is sized for. A world with more nodes than this still
     /// enters play; the bodies beyond it are refused by the server, counted, and named.
     u32 body_capacity = 1024;
@@ -115,6 +133,15 @@ struct PlayConfiguration {
 
 /// What one session did.
 struct PlayReport {
+    /// The mode this session entered in. Reported rather than remembered by the caller, because a
+    /// report read out of a log is the only record of which mode produced it.
+    PlayMode mode = PlayMode::InEditor;
+    /// Ticks run by an explicit step rather than by the host's loop. A session driven only by
+    /// `step_tick`/`step_frame` has `ticks == stepped_ticks`; the two differing is how a reader
+    /// tells a stepped session from a running one.
+    u64 stepped_ticks = 0;
+    /// Frames advanced by `step_frame`.
+    u64 stepped_frames = 0;
     /// Entities spawned from the authored world's live nodes.
     u32 entities = 0;
     /// Nodes that carried a body component the bridge could act on.
@@ -167,6 +194,36 @@ public:
     [[nodiscard]] Status pause() noexcept;
     [[nodiscard]] Status resume() noexcept;
 
+    /// Advance exactly one simulation tick, while paused. M11.b task 3.1.
+    ///
+    /// `live-editing` requires *"pause, single frame step, and single simulation tick step in every
+    /// mode where the runtime permits"*, and M11.b's delta makes "where the runtime permits"
+    /// answerable by a query: this refuses, naming the mode, when
+    /// `capabilities_of(mode).step_tick` is false, rather than stepping anyway or silently doing
+    /// nothing.
+    ///
+    /// Refused when the session is not paused. Stepping a running simulation would race the host's
+    /// own loop, and a step that quietly became "one extra tick this frame" is not a step.
+    [[nodiscard]] Status step_tick() noexcept;
+
+    /// Advance exactly one frame's worth of simulation, while paused.
+    ///
+    /// A frame is `PlayConfiguration::frame_rate` of a second, and the ticks it contains are
+    /// computed from the two rational rates rather than assumed to be one: at a 60 Hz tick rate and
+    /// a 30 Hz frame rate a frame is two ticks, and a step that ran one would be a frame step in
+    /// name only. At least one tick always runs, so a frame faster than the tick rate steps the
+    /// simulation rather than standing still.
+    [[nodiscard]] Status step_frame() noexcept;
+
+    /// How many ticks one frame contains at this session's configured rates. Zero outside a
+    /// session. Public because the editor shows it beside the step buttons.
+    [[nodiscard]] u32 ticks_per_frame() const noexcept;
+
+    /// The mode this session is in, and what it can be asked to do. Queried rather than assumed:
+    /// see `step_tick`.
+    [[nodiscard]] PlayMode mode() const noexcept { return mode_; }
+    [[nodiscard]] PlayModeCapabilities capabilities() const noexcept;
+
     /// Leave play, restoring the authored world exactly. Idempotent.
     [[nodiscard]] Status stop() noexcept;
 
@@ -179,6 +236,47 @@ public:
     [[nodiscard]] const determinism::SimulationClock& clock() const noexcept { return clock_; }
     /// The entity an authored node's identity is simulating as, or a null entity.
     [[nodiscard]] ecs::Entity entity_for(u64 identity) const noexcept;
+
+    /// The configuration this session entered with, so a restart can re-enter with the same one.
+    /// Meaningless outside a session.
+    [[nodiscard]] const PlayConfiguration& configuration() const noexcept { return configuration_; }
+
+    // --- What a live edit needs, and nothing more ------------------------------------------------
+    //
+    // M11.b task 3.2. `cy::gameplay::live::LiveEditCompiler` translates an authoring change into a
+    // runtime delta and then has to APPLY it, and two of the six policies — `ReinitializeComponent`
+    // and `RecreateEntity` — are operations only the code that built the simulation can perform.
+    // They are exposed here rather than reimplemented there, because a second implementation of
+    // "build this node's physics from the authored world" would be a second place for the two to
+    // disagree.
+
+    /// Rebuild the physics components of one simulated node from the authored world.
+    ///
+    /// What `ReinitializeComponent` costs for the components a play session creates: the collider
+    /// and body components are removed and re-added from what the `.cyworld` says NOW, and the
+    /// bridge recreates the solver body on its next sync. The entity, its identity and its place in
+    /// the scene tree are untouched.
+    ///
+    /// Refused when no live node carries `identity`, rather than succeeding over nothing.
+    [[nodiscard]] Status reinitialize_physics(u64 identity) noexcept;
+
+    /// Destroy and respawn the entity simulating one authored node, keeping its identity.
+    ///
+    /// What `RecreateEntity` means: *"the entity is recreated, preserving identity"*. The authored
+    /// node's identity is the identity; the `ecs::Entity` behind it is a new one, which is how a
+    /// caller can tell a recreate from a reinitialise without being told.
+    [[nodiscard]] Status recreate_entity(u64 identity) noexcept;
+
+    /// The world `stop()` will restore, as text.
+    ///
+    /// `stop()` puts the authored world back to the bytes it had at `enter()`. An authoring edit
+    /// made DURING play is an edit to the document, so restoring the pre-play bytes over it would
+    /// discard a designer's work — which is why the restore target is readable and replaceable
+    /// rather than private. `cy::gameplay::live` applies an authoring change to this text as well
+    /// as to the running world, and `restored_exactly` keeps its exact meaning: the bytes at
+    /// `stop()` equal the bytes the authoring state implies.
+    [[nodiscard]] std::string_view restore_target() const noexcept;
+    [[nodiscard]] Status set_restore_target(std::string_view text) noexcept;
 
 private:
     /// One authored node, its entity, and the placement it had before play.
@@ -195,6 +293,13 @@ private:
     [[nodiscard]] Status attach_physics(const scene::serialization::WorldNode& node,
                                         ecs::Entity entity) noexcept;
     [[nodiscard]] Status publish_placements() noexcept;
+    /// The `simulated_` entry for an authored identity, or null.
+    [[nodiscard]] Simulated* simulated_for(u64 identity) noexcept;
+    /// Remove the physics components this session added to an entity, if any.
+    [[nodiscard]] Status detach_physics(ecs::Entity entity) noexcept;
+    /// One fixed step, whatever the state. `tick()` and the two step entry points share it so that
+    /// a stepped tick and a looped one cannot drift apart.
+    [[nodiscard]] Status advance_one() noexcept;
     void release() noexcept;
 
     scene::serialization::World* authored_;
@@ -207,6 +312,7 @@ private:
     UniquePtr<ecs::Schedule> schedule_;
     physics::PhysicsComponents components_;
     physics::PhysicsServer* server_ = nullptr;
+    PlayConfiguration configuration_;
     physics::WorldHandle physics_world_;
     determinism::SimulationClock clock_;
     const scene::serialization::AuthoringSchema* schema_ = nullptr;
@@ -217,6 +323,8 @@ private:
     Array<char> rewritten_;
 
     PlayState state_ = PlayState::Editing;
+    PlayMode mode_ = PlayMode::InEditor;
+    determinism::TickRate frame_rate_{60, 1};
     PlayReport report_;
 };
 

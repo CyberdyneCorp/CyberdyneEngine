@@ -18,7 +18,7 @@ use cy_editor_core::problem::{Problem, Result};
 use cy_editor_documents::Document;
 use cy_editor_documents::selection::Selection;
 use cy_editor_sdk::HostingMode;
-use cy_editor_viewport::play::PlayState;
+use cy_editor_viewport::play::{PlayMode, PlayState};
 
 use crate::assets::AssetImportService;
 use crate::documents::DocumentService;
@@ -63,6 +63,13 @@ pub struct Editor {
     /// the reason every other one is here: which importer ran, what it produced and what the cache
     /// said are things a panel shows and an agent asks about.
     pub imports: AssetImportService,
+    /// Where the runtime runs a play session. M11.b task 3.1.
+    ///
+    /// The runtime's, not a viewport's — two viewports showing frames from two machines would be
+    /// two runtimes — so it is held once here beside the services rather than on `ViewportState`
+    /// where `PlayState` lives. It is `pub` for the same reason the services are: a panel shows the
+    /// badge and an agent asks about it.
+    pub play_mode: PlayMode,
     /// Who the editor believes is acting. Attribution, not authorisation.
     actor: Actor,
     /// The directories the invocation in progress may touch, and the scope that says so.
@@ -97,6 +104,9 @@ impl Editor {
         }
         Self {
             documents,
+            // `InEditor` by default, which is the mode this editor has always been in without being
+            // able to name it. See `PlayMode`: there is no "unset" and no nearest-match.
+            play_mode: PlayMode::default(),
             selection: SelectionService::new(),
             workspace: Workspace::new(),
             notifications: NotificationService::new(),
@@ -400,7 +410,22 @@ impl cy_editor_commands::ProjectHost for Editor {
         ))
     }
 
-    fn set_play(&mut self, state: &str) -> Result<String> {
+    fn set_play(&mut self, state: &str, mode: &str) -> Result<String> {
+        // THE MODE IS RESOLVED BEFORE ANYTHING CHANGES, and a word this build does not know is
+        // refused by name. M11.b task 3.1 and `specs/live-editing/`'s first scenario: *"the request
+        // SHALL fail naming the mode and the reason, and no other mode SHALL start"*. Resolving it
+        // first is what makes the second half true — a refusal after the badge was set would have
+        // started something.
+        let wanted_mode = PlayMode::from_name(mode).ok_or_else(|| {
+            Problem::new(
+                format!("play in {mode:?}"),
+                "there is no such play mode in this build",
+            )
+            .with_remedy(
+                "the modes are: in-editor, separate-process, remote-device. A mode that is not \
+                 available is refused rather than replaced with another one.",
+            )
+        })?;
         let wanted = match state {
             "playing" => PlayState::Playing,
             "paused" => PlayState::Paused,
@@ -414,10 +439,12 @@ impl cy_editor_commands::ProjectHost for Editor {
             }
         };
         // Every viewport, because play is a property of the runtime rather than of a panel: two
-        // viewports showing different play states would be two runtimes.
+        // viewports showing different play states would be two runtimes. The mode is the runtime's
+        // for the same reason, and is held once here rather than per viewport.
         for viewport in self.viewports.all_mut().iter_mut() {
             viewport.play = wanted;
         }
+        self.play_mode = wanted_mode;
 
         // AND THE RUNTIME, WHICH IS WHAT M8.a ADDS. Until now this function set a badge and told
         // the engine nothing: pressing play changed a word in the corner of the viewport and
@@ -428,7 +455,7 @@ impl cy_editor_commands::ProjectHost for Editor {
         // (`crate::runtime`'s header argues it at length) and a designer switching to play in one
         // is doing an ordinary thing; what must not happen is the editor claiming that something is
         // simulating when nothing is. So the sentence says which of the two happened.
-        let hosted = match self.runtime.play(state) {
+        let hosted = match self.runtime.play(state, wanted_mode) {
             Ok(request) => format!(" — asked the runtime (request {})", request.as_u64()),
             Err(problem) => {
                 self.notifications.post(Notification::info(format!(
@@ -441,8 +468,9 @@ impl cy_editor_commands::ProjectHost for Editor {
         };
 
         Ok(format!(
-            "{} — {}{hosted}",
+            "{} ({}) — {}{hosted}",
             wanted.badge(),
+            wanted_mode.badge(),
             wanted
                 .persistence(cy_editor_viewport::play::Persistence::default())
                 .statement()
@@ -456,6 +484,10 @@ impl cy_editor_commands::ProjectHost for Editor {
             PlayState::Paused => "paused",
         }
         .to_string()
+    }
+
+    fn play_mode(&self) -> String {
+        self.play_mode.name().to_string()
     }
 }
 

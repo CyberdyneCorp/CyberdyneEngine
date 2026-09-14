@@ -309,3 +309,66 @@ CY_TEST_CASE("the emitter's output WITHOUT the prelude does not compile, and nam
     CY_CHECK(diagnostics.has_errors());
     print_diagnostics(diagnostics);
 }
+
+CY_TEST_CASE(
+    "the environment field sampler and its consumers compile against the standard library") {
+    // THE ONLY PLACE IN THE TREE THAT COMPILES THE STAGED STANDARD LIBRARY THROUGH THE ENGINE'S OWN
+    // FRONT END, which is why a module belonging to another row is checked from this suite. A
+    // `.slang` module nothing compiles is a file: `m10:fields-sampled-on-a-device` was satisfied
+    // the moment `cy/field.slang` existed, and "it exists" is not "it is a shader".
+    //
+    // THREE MODULES, AND THE TWO CONSUMERS ARE THE POINT. `cy.field` alone would compile happily
+    // with a signature nothing could call; `cy.terrain_shade` is the substrate half of the 63.0 ms
+    // band `m10:world-frame-budget` names, and `cy.cloud_shadow` is the reader
+    // `atmosphere-sky-and-clouds` requires the cloud shadow field to have. Both import `cy.field`,
+    // so this case fails if the sampler's own interface moves under them.
+    //
+    // The ANSWER's correctness is `render.environment_field`'s, which runs this sampler on a device
+    // against `sample_field_image()` over the same bytes. What this case adds is that a build with
+    // a Slang front end refuses a standard library that does not parse — on every machine, with no
+    // GPU in it.
+    CY_REQUIRE(shader::slang::slang_available());
+    StandardLibrary library;
+    SlangHandle slang;
+
+    // The probe's entry point is the one `compiles()` asks the compiler for, and the body calls
+    // every public entry of the three modules rather than merely importing them: an import that is
+    // never used is resolved and not type-checked through.
+    static constexpr const char* kProbe = R"(
+import cy.field;
+import cy.terrain_shade;
+import cy.cloud_shadow;
+
+[[vk::binding(0, 3)]] RWStructuredBuffer<float> cyFieldProbeOut;
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyMaterialProbe(uint3 thread : SV_DispatchThreadID)
+{
+    CyTerrainFields fields;
+    fields.waterDistance = 0u;
+    fields.wetness = 1u;
+    fields.snowDepth = 2u;
+    fields.vegetation = 3u;
+    const CyTerrainSubstrate substrate = cyTerrainSampleSubstrate(fields, 1.0, 2.0, 3.0);
+    const float3 colour =
+        cyTerrainShade(cyTerrainDefaultPalette(), substrate, 0.2, 50.0, 900.0);
+    const float3 lit = cyCloudShadowAttenuate(colour, 4u, 1.0, 2.0, 3.0);
+    const CyFieldSample direct = cyFieldSampleScene(5u, 1.0, 2.0, 3.0);
+    cyFieldProbeOut[thread.x] =
+        lit.x + lit.y + lit.z + direct.value.x + (direct.resolved ? 1.0 : 0.0) +
+        cyCloudShadowAt(4u, 1.0, 2.0, 3.0);
+}
+)";
+
+    shader::DiagnosticLog diagnostics(current_allocator());
+    u32 words = 0;
+    const bool ok = compiles(library, slang, "cy.field_probe", kProbe, diagnostics, words);
+    if (!ok) {
+        print_diagnostics(diagnostics);
+    }
+    CY_REQUIRE(ok);
+    CY_CHECK_GT(words, 5U);
+    std::printf("cy.field + cy.terrain_shade + cy.cloud_shadow compiled to %u SPIR-V words\n",
+                words);
+}

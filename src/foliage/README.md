@@ -123,7 +123,19 @@ everywhere is what lets an unloaded region's ecosystem evolve, which is the *"a 
 grown"* scenario; declaring a `potential` link and a recovery rate is what makes a burned forest
 recover rather than be repainted.
 
-And it **declares no other field, `wind` least of all**. It used to: `wind_field_declaration()`
+And it **declares no other field — not `vegetation-potential`, and `wind` least of all**.
+
+It declared the potential until M11.a, Scalar/UNorm8/`Static`/`Persistent`, against
+`cy::weather`'s UNorm16/`SlowlyVarying`/`Authoritative` — so a project that registered both rows'
+producers failed at startup, which was `m10:fields-one-vegetation-potential`. Two requirements
+settle it and neither is about foliage: `weather-and-wind`'s *Ecosystem state* gives weather the
+macro ecosystem "evolving toward **biome potential**", and `environment-fields`' *Potential and
+current state* requires the two to be **distinct** fields. So the potential is the ecosystem's,
+foliage's realised `vegetation` is the current state, and foliage **consumes** the potential —
+`declare_consumption()` declares the read. The `potential` link on `vegetation` is unchanged; what
+went away is a second answer to what the field IS.
+
+`wind` had the same shape one milestone earlier. It used to: `wind_field_declaration()`
 declared the standard `wind` name `Presentation` "for a world with no weather row", while
 `weather::weather_field_declaration(WeatherField::Wind, …)` declares that same name
 `Authoritative` — and `FieldRegistry::declare()` refuses the second of two different declarations in

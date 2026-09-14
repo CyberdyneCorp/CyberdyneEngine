@@ -14,7 +14,17 @@
 //     the wind field is weather-and-wind", and weather's own `integration.weather_fields`, which
 //     needs `FieldReader::open(wind, Authoritative)` to succeed. Foliage now READS; its declaration
 //     is gone, and src/foliage/include/cy/foliage/wind.h records why in the space it left.
-//   * `vegetation-potential` — FOUND BY THIS SUITE, still open, and reported by name below.
+//   * `vegetation-potential` — FOUND BY THIS SUITE, and closed at M11.a.
+//     `foliage::vegetation_potential_declaration()` declared it UNorm8/Static/`Persistent` while
+//     `weather::weather_field_declaration(WeatherField::VegetationPotential, …)` declares it
+//     UNorm16/SlowlyVarying/`Authoritative`. Two requirements settle it for weather —
+//     `weather-and-wind`'s "Ecosystem state", which gives the macro ecosystem and what it evolves
+//     toward to weather, and `environment-fields`' "Potential and current state", which requires
+//     the two to be distinct fields. Foliage now READS; its declaration is gone, and
+//     src/foliage/include/cy/foliage/system.h records why in the space it left. **THIS SUITE WENT
+//     RED THE DAY THAT LANDED, ON PURPOSE**: its two cases asserted the KNOWN state — one refusal
+//     forwards and one backwards — so the answer arriving is a failure until the assertion is
+//     updated to the answer. It is, below, and the counts are zero.
 //
 // **THE DECLARATIONS ARE NOT WRITTEN OUT HERE.** Each module is registered through the entry point
 // a project calls, and what it declared is read back out of its own registry — so a field a module
@@ -123,11 +133,8 @@ using RegisterFn = cy::Status (*)(FieldRegistry&) noexcept;
         !registered) {
         return registered;
     }
-    if (cy::Status declared =
-            registry.declare(cy::foliage::vegetation_potential_declaration(kMacroCellMetres));
-        !declared) {
-        return declared;
-    }
+    // `vegetation_potential_declaration()` USED TO BE CALLED HERE and is gone from the module: the
+    // potential is weather's, and foliage declares only the current state. See the case below.
     return registry.declare(
         cy::foliage::vegetation_field_declaration(kMacroCellMetres, kRecoveryPerSecond));
 }
@@ -223,25 +230,30 @@ struct Declared {
     return cy::ok();
 }
 
-/// THE ONE NAME TWO MODULES STILL DISAGREE ABOUT, and the reason this suite names it rather than
-/// asserting "no refusals" and going red.
+/// THE NAME TWO MODULES USED TO DISAGREE ABOUT, kept as a constant because it is still the thing
+/// this suite is watching.
 ///
-/// `foliage::vegetation_potential_declaration()` declares it `UNorm8`, `Static`, one level,
-/// `Persistent`; `weather::weather_field_declaration(WeatherField::VegetationPotential, …)`
+/// `foliage::vegetation_potential_declaration()` declared it `UNorm8`, `Static`, one level,
+/// `Persistent`; `weather::weather_field_declaration(WeatherField::VegetationPotential, ...)`
 /// declares it `UNorm16`, `SlowlyVarying`, three levels, `Authoritative`. No configuration
-/// reconciles them, so a project that registers both rows fails at startup exactly as the `wind`
-/// pair did. It is NOT the same fix: `wind` had a producer named by two specifications, while this
-/// pair is two modules' answers to "what does vegetation recover toward" — weather's ecosystem
-/// potential, and the potential of foliage's own realised instance density — and deciding whether
-/// those are one quantity is a modelling decision across two rows rather than a repair.
+/// reconciled them, so a project that registered both rows failed at startup exactly as the `wind`
+/// pair did — `m10:fields-one-vegetation-potential`.
 ///
-/// Declared as `m10:fields-one-vegetation-potential`, closing at M11. **WHEN IT CLOSES THIS SUITE
-/// GOES RED**, and the fix is to require no refusals at all rather than to move this string.
+/// **IT IS CLOSED, AND THE FIX WAS A MODELLING DECISION RATHER THAN A REPAIR.**
+/// `weather-and-wind`'s *Ecosystem state* gives the macro ecosystem — including what it evolves
+/// toward — to weather; `environment-fields`' *Potential and current state* requires potential and
+/// current state to be DISTINCT fields. So the potential is weather's, foliage's realised
+/// `vegetation` is the current state, and foliage CONSUMES the potential rather than declaring it.
+/// `foliage::vegetation_potential_declaration()` no longer exists.
+///
+/// The two cases above now require ZERO refusals in both directions. This constant survives so the
+/// case below can name the field it is composing, and because a suite that deleted the name would
+/// stop being able to say which quantity it was about.
 /// An ARRAY and not a `const char*`, which is not a style choice: this build does not define
 /// `DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING`, so a pointer reaches `CY_TEST_MESSAGE` through
 /// doctest's pointer stringifier and the summary line reports an ADDRESS. The first run of this
 /// suite printed `0x62b70e186254` where the field's name belongs.
-constexpr char kKnownDisagreement[] = "vegetation-potential";
+constexpr char kVegetationPotential[] = "vegetation-potential";
 
 }  // namespace
 
@@ -299,8 +311,7 @@ CY_TEST_CASE("the standard fields have one declaration between all the modules t
 
 CY_TEST_CASE("every producing module's fields coexist in one registry, in either order") {
     // The whole composition, not just the standard half: a project registers all five of these and
-    // must get a registry, not a refusal. Everything refused is named, and the one name that is
-    // still refused is the declared gap `kKnownDisagreement` explains.
+    // must get a registry, not a refusal. Everything refused is named, and nothing should be.
     cy::Array<Declared> entries(allocator());
     CY_REQUIRE(collect(entries).has_value());
 
@@ -309,30 +320,25 @@ CY_TEST_CASE("every producing module's fields coexist in one registry, in either
     CY_REQUIRE(declare_all(entries, true, forwards).has_value());
     CY_REQUIRE(declare_all(entries, false, backwards).has_value());
 
-    const auto unexpected_in = [](const cy::Array<const char*>& run) {
-        cy::u32 unexpected = 0;
+    // NO EXEMPTION LIST. Until M11.a this lambda excused `vegetation-potential`, because two
+    // modules declared it differently and the suite asserted the KNOWN state; the count below was
+    // 1 and 1. `m10:fields-one-vegetation-potential` is closed — foliage consumes the potential
+    // instead of declaring it — so every refusal is now a failure and the counts are zero.
+    const auto refusals_in = [](const cy::Array<const char*>& run) {
         for (const char* name : run.span()) {
-            if (std::strcmp(name, kKnownDisagreement) != 0) {
-                ++unexpected;
-                const Printable field(name);
-                CY_TEST_FAIL_CHECK("'" << field.text
-                                       << "' is declared differently by two modules: a project "
-                                          "using both rows fails at startup, in either order");
-            }
+            const Printable field(name);
+            CY_TEST_FAIL_CHECK("'" << field.text
+                                   << "' is declared differently by two modules: a project "
+                                      "using both rows fails at startup, in either order");
         }
-        return unexpected;
+        return static_cast<cy::u32>(run.size());
     };
-    CY_CHECK_EQ(unexpected_in(forwards) + unexpected_in(backwards), 0u);
-
-    // The known one, reported rather than hidden — and reported as a count so that a second field
-    // joining it is a red test rather than a longer log line.
-    CY_CHECK_EQ(forwards.size(), 1u);
-    CY_CHECK_EQ(backwards.size(), 1u);
+    CY_CHECK_EQ(refusals_in(forwards) + refusals_in(backwards), 0u);
+    CY_CHECK_EQ(forwards.size(), 0u);
+    CY_CHECK_EQ(backwards.size(), 0u);
     CY_TEST_MESSAGE("composition: ", entries.size(), " declaration(s) from ",
                     sizeof(kModules) / sizeof(kModules[0]), " module(s); refused forwards ",
-                    forwards.size(), ", backwards ", backwards.size(),
-                    "; the only disagreement is '", kKnownDisagreement,
-                    "' (m10:fields-one-vegetation-potential)");
+                    forwards.size(), ", backwards ", backwards.size());
 }
 
 CY_TEST_CASE(
@@ -362,4 +368,78 @@ CY_TEST_CASE(
     CY_REQUIRE(weather.declare(resolved, without_accumulation).has_value());
     cy::water::WaterFields water(allocator());
     CY_CHECK(water.declare(resolved, owned).has_value());
+}
+
+CY_TEST_CASE(
+    "both producers register in both directions, and vegetation-potential has one declaration") {
+    // `m10:fields-one-vegetation-potential`, as the case that would have caught it and now holds it
+    // shut. The two cases above compose FIVE modules and would report this failure as one refusal
+    // among many; this one composes exactly the pair that disagreed, so a reader of a red run
+    // learns which two rows are at odds without reading a list.
+    //
+    // BOTH DIRECTIONS, because `FieldRegistry::declare()` keeps the first declaration and refuses
+    // the second: a fix that worked in one order would be a fix to the order, and the order a
+    // project registers its producers in is not something the engine gets to require.
+    for (int direction = 0; direction < 2; ++direction) {
+        const bool weather_first = direction == 0;
+        FieldRegistry registry(allocator());
+        const cy::Status first =
+            weather_first ? register_weather(registry) : register_foliage(registry);
+        CY_CHECK(first.has_value());
+        const cy::Status second =
+            weather_first ? register_foliage(registry) : register_weather(registry);
+        // THE SECOND REGISTRATION IS THE WHOLE CASE. `declare()` keeps the first declaration and
+        // refuses a different second one, so this is the call that failed before M11.a — in either
+        // order, because each module was the refused one when it went second.
+        CY_CHECK(second.has_value());
+
+        // ONE declaration of the potential, and it is weather's: UNorm16, three levels, macro
+        // resident everywhere. Counting is what makes this a check rather than a restatement of
+        // "both registrations returned ok" — a foliage that declared the potential identically to
+        // weather's would also start, and would still be two rows owning one quantity.
+        cy::u32 declarations = 0;
+        const FieldDeclaration* potential = nullptr;
+        for (const FieldRecord& record : registry.records()) {
+            if (std::strcmp(record.declaration.name, kVegetationPotential) == 0) {
+                ++declarations;
+                potential = &record.declaration;
+            }
+        }
+        CY_CHECK_EQ(declarations, 1u);
+        // CHECK-then-`continue` and not REQUIRE, because this build compiles doctest with
+        // `DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS`: a failed REQUIRE reports and KEEPS
+        // GOING, so the dereference below would turn a red case into a SIGSEGV and the summary
+        // would name a crash instead of the disagreement. Verified by mutation — foliage's old
+        // declaration put back — which is how the crash was found.
+        if (potential == nullptr) {
+            CY_TEST_FAIL_CHECK("no module declared 'vegetation-potential' at all");
+            continue;
+        }
+        CY_CHECK(potential->encoding == cy::environment::FieldEncoding::UNorm16);
+        CY_CHECK(potential->classification == cy::determinism::SimulationClass::Authoritative);
+        CY_CHECK(potential->cadence == cy::environment::FieldCadence::SlowlyVarying);
+
+        // And foliage's own field is still foliage's, so this is one declaration removed rather
+        // than one module silenced.
+        const FieldDeclaration* vegetation = nullptr;
+        for (const FieldRecord& record : registry.records()) {
+            if (std::strcmp(record.declaration.name, cy::foliage::kVegetationField) == 0) {
+                vegetation = &record.declaration;
+            }
+        }
+        if (vegetation == nullptr) {
+            CY_TEST_FAIL_CHECK("foliage declared no 'vegetation' field");
+            continue;
+        }
+        CY_CHECK(vegetation->encoding == cy::environment::FieldEncoding::UNorm8);
+        // The recovery link still points at the potential weather declares: foliage reads it, which
+        // is the half of the decision that is not a deletion.
+        CY_CHECK(vegetation->potential == cy::environment::field_id(kVegetationPotential));
+
+        // The ORDER is printed, because a reader of a red run needs to know which of the two
+        // directions failed and the loop index alone does not say it.
+        const Printable order(weather_first ? "weather then foliage" : "foliage then weather");
+        CY_TEST_MESSAGE(order.text, ": ", registry.records().size(),
+                        " field(s), one 'vegetation-potential'");
+    }
 }

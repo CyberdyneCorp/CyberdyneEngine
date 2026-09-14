@@ -484,6 +484,27 @@ impl Document {
         })
     }
 
+    /// Give a node an author-given name, inside the open transaction.
+    ///
+    /// The before value is read from the document rather than taken from the caller, for the same
+    /// reason [`Document::set_field`] reads it: a caller that passed the wrong one would produce an
+    /// undo that silently restored a different name. `editor-documents-and-transactions` asks for
+    /// exactly that — "undo of the rename SHALL restore the previous name rather than recreating
+    /// the node" — and recreating is what a rename modelled as delete-plus-create would do.
+    pub fn set_name(&mut self, node: NodeId, name: impl Into<String>) -> Result<()> {
+        let before = self
+            .content
+            .node(node)
+            .ok_or_else(|| Problem::not_found("that node"))?
+            .name
+            .clone();
+        self.record(Operation::SetName {
+            node,
+            before,
+            after: name.into(),
+        })
+    }
+
     /// Delete a node, recording what it was so that undo restores it exactly.
     pub fn delete_node(&mut self, node: NodeId) -> Result<()> {
         let was = self
@@ -526,6 +547,90 @@ mod tests {
             })
             .unwrap();
         (document, node, transform, position)
+    }
+
+    #[test]
+    fn a_rename_changes_the_name_and_nothing_a_reference_addresses() {
+        // "WHEN a node is renamed THEN every operation, reference and journal entry addressing it
+        // SHALL still address it, and undo of the rename SHALL restore the previous name rather
+        // than recreating the node."
+        let (mut document, node, transform, position) = city();
+        let actor = Actor::human("designer");
+        document
+            .with_transaction("Rename", actor, |document| document.set_name(node, "Lamp"))
+            .unwrap();
+
+        assert_eq!(document.content().node(node).unwrap().name, "Lamp");
+        // The identity is unchanged, so what addressed the node still addresses it.
+        assert!(document.content().node(node).is_some());
+        assert!(
+            document
+                .content()
+                .field(node, transform, position)
+                .is_some()
+        );
+
+        document.undo().unwrap();
+        assert_eq!(
+            document.content().node(node).unwrap().name,
+            "",
+            "undo restores the previous name"
+        );
+        assert!(
+            document.content().node(node).is_some(),
+            "and does not recreate the node under a new identity"
+        );
+        assert!(
+            document
+                .content()
+                .field(node, transform, position)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_rename_is_not_a_structural_change() {
+        // A name has nothing downstream of it to rebuild, which is what lets a live-editing policy
+        // apply one to a running world without waiting for a tick boundary.
+        assert!(
+            !Operation::SetName {
+                node: NodeId::from_u128(1),
+                before: String::new(),
+                after: "Lamp".to_string(),
+            }
+            .is_structural()
+        );
+    }
+
+    #[test]
+    fn a_name_and_a_layer_are_separate_values() {
+        // "a node's name SHALL NOT determine or be determined by its layer, and two nodes SHALL be
+        // able to share a layer and differ by name."
+        let (mut document, first, ..) = city();
+        let actor = Actor::human("designer");
+        let second = document
+            .with_transaction("Build", actor, |document| {
+                let second = document.create_node(None)?;
+                document.set_name(first, "Pillar")?;
+                document.set_name(second, "Crate")?;
+                document.record(Operation::SetLayer {
+                    node: first,
+                    before: String::new(),
+                    after: "set".to_string(),
+                })?;
+                document.record(Operation::SetLayer {
+                    node: second,
+                    before: String::new(),
+                    after: "set".to_string(),
+                })?;
+                Ok(second)
+            })
+            .unwrap();
+
+        let first_state = document.content().node(first).unwrap();
+        let second_state = document.content().node(second).unwrap();
+        assert_eq!(first_state.layer, second_state.layer);
+        assert_ne!(first_state.name, second_state.name);
     }
 
     #[test]

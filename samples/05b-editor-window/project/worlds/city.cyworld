@@ -14,17 +14,17 @@ type 5 runtime "NodeState"
 type 6 runtime "SceneRef"
   field 8 int "scene" ""
 type 7 runtime "WorldTransform"
-node 0 - "Pillar"
+node 0 - "set" "Pillar"
   component 3
     field 3 0 0 0 1
     field 4 0 0 0
     field 5 1 1 1
-node 1 - "Crate"
+node 1 - "set" "Crate"
   component 3
     field 3 0 0 0 1
     field 4 3 0 -2
     field 5 1 1 1
-node 2 - "Marker"
+node 2 - "props" "Marker"
   component 3
     field 3 0 0 0 1
     field 4 -3 0 2

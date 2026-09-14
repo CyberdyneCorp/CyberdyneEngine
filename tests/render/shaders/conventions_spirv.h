@@ -1,5 +1,5 @@
 #pragma once
-// Compiled SPIR-V for the convention probe. GENERATED — do not edit by hand.
+// Compiled SPIR-V for conventions.slang. GENERATED — do not edit by hand.
 //
 // Produced by tests/render/shaders/embed_spirv.py from conventions.slang; that file's header
 // comment carries the exact slangc invocation. Checked in rather than compiled by the build because

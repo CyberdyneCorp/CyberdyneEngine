@@ -207,6 +207,37 @@ count=$(printf '%s' "$impl" | grep -c . || true)
 echo "$count file(s) implement a source-control provider:"
 printf '%s\n' "${impl:-  none — the seven hits in the tree are comments}"
 test "$count" -ge 2
+# THE GREP ALONE COULD NEVER FAIL FOR THE RIGHT REASON, so it is the first half and not the check.
+# Two files naming a symbol is satisfied by two comments, which is exactly the state this criterion
+# was declared over — M10's audit found seven hits and every one of them was a comment or a remedy
+# string. The cases below EXECUTE the provider interface: the null provider's refusals, a provider
+# that has no exclusive locking refusing rather than doing nothing, a provider swapped underneath a
+# caller that named neither, and the panel that greys out what the provider cannot do. Each is
+# named, so a case deleted or renamed fails here rather than quietly reducing what is checked.
+#
+# AND THE COUNT IS CHECKED, because `cargo test -- --exact <a name that is not there>` FILTERS TO
+# ZERO AND EXITS 0. Verified by running it: a criterion that named five cases and found none would
+# have reported success. So each leg asserts how many actually ran.
+cd editor
+ran() {
+    out="$("$@" 2>&1)" || { echo "$out"; return 1; }
+    echo "$out" | grep -E '^test result:' | tail -1
+    printf '%s' "$out" | sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' | tail -1
+}
+passed=$(ran cargo test -p cy-editor-services --lib -- --exact \
+    source_control::tests::the_null_provider_answers_unversioned_and_refuses_everything_else \
+    source_control::tests::a_provider_without_exclusive_locking_refuses_rather_than_doing_nothing \
+    source_control::tests::git_check_out_refuses_because_git_has_no_such_concept \
+    source_control::tests::the_editor_never_names_a_provider_and_switching_one_changes_nothing_else \
+    source_control::tests::git_reads_a_real_repository | tail -1)
+echo "the provider cases: ${passed:-0} of the 5 named ran"
+test "${passed:-0}" -eq 5 || { echo "a case this criterion names is gone — renamed, deleted, or the filter is stale"; exit 1; }
+passed=$(ran cargo test -p cy-editor-viewmodels --lib -- --exact \
+    source_control::tests::the_panel_greys_out_locking_against_a_provider_that_has_none \
+    source_control::tests::the_panel_works_against_no_source_control_at_all \
+    source_control::tests::switching_the_provider_changes_the_panel_and_nothing_else | tail -1)
+echo "the panel cases: ${passed:-0} of the 3 named ran"
+test "${passed:-0}" -eq 3 || { echo "a case this criterion names is gone — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11b"
 
@@ -256,7 +287,13 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_editor_documents"
+# `$d/tests/editor/...` and not `$d/...`: a suite declared from under `tests/` is created in that
+# subdirectory's scope and its binary lands beside its CMakeLists, while a suite declared DEFERRED
+# from `src/**/tests/` is created in the top-level scope and lands at the root. Both conventions are
+# in this tree and m11a.toml already spells three criteria the first way — `$d/tests/render/...`,
+# `$d/tests/integration/...`, `$d/tests/determinism/...`. Written out because the path looks like a
+# typo until you know that.
+binary="$d/tests/editor/cy_test_unit_editor_documents"
 test -x "$binary" || { echo "no $binary — the suite unit.editor_documents does not exist"; exit 1; }
 filter='a node has a name*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
@@ -389,7 +426,18 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-pattern='^(unit.gameplay|unit.ai|unit.animation|unit.camera_system|unit.navigation|unit.physics|unit.cy_sequencing|unit.ui|unit.cy_text|unit.rendering_2d)$'
+# ONE SUITE PER ROW THE `describe` NAMES, SPELLED AS CTEST REGISTERS IT.
+#
+# CORRECTED AT M11.b, AND THE CORRECTION IS THE POINT. Four of the ten names this criterion was
+# written with have never existed: `unit.gameplay`, `unit.physics`, `unit.cy_sequencing` and
+# `unit.cy_text` (the last two are MODULE target names, not suite names; the suites are
+# `unit.sequencing` and `unit.text`, and `cy_add_test` names a suite `<kind>.<NAME>`). A fifth row
+# the describe names — abilities and effects — had no suite in the pattern at all. So the criterion
+# could only ever fail with "a suite this criterion names is not registered", which is a RED FOR THE
+# WRONG REASON and reads exactly like a red for the right one. The ten below were read out of
+# `ctest -N` rather than guessed, and the count check still goes red the day one is renamed or
+# deleted — which is the only thing this half of the criterion is for.
+pattern='^(unit\.ability_core|unit\.ai|unit\.animation|unit\.camera_system|unit\.navigation|unit\.physics_server|unit\.sequencing|unit\.ui|unit\.text|unit\.rendering_2d)$'
 registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
 echo "$registered of 10 suite(s) match $pattern"
 test "$registered" -ge 10 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }

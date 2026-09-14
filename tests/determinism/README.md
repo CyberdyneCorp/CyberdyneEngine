@@ -16,6 +16,36 @@ directory forward; M10 task 6.4 is where it is repaired.
 |---|---|
 | `determinism.golden_replay` | A recorded session with **committed hashes**, replayed. `golden/toy-session-v1.cyreplay` is the log; `golden/toy-session-v1.hashes` is the state hash after every one of its 120 ticks. Nothing in the tree did this before: `src/replay/tests/test_bitexact.cpp` records and replays in one process, so a simulation that started doing something else moves both sides of its comparison at once and it stays green. |
 | `determinism.replay_fuzz` | `read_log()` over a replay truncated at every length and corrupted at every byte. The invariant is two-sided — either refused **with a reason**, or accepted as a log that hashes to exactly what was written — because a reader that refused everything would satisfy the one-sided version. |
+| `determinism.cross_leg` | **M11.a.** The digest one continuous-integration leg publishes for another leg to compare, and the five checks that make it worth comparing. It is the publisher half of the one job three criteria look for — `m9:lockstep-cross-platform`, `m10:pcg-regeneration-cross-platform` and `m10:pcg-gpu-domain-agreement` — and it computes its numbers out of the engine's own pieces: the golden session above, and the forest graph `src/pcg/tests/test_determinism.cpp` already compares between two runs on ONE host. |
+
+## The cross-leg comparison, which is the one thing a single leg cannot do
+
+Every other suite in this directory asks whether the engine agrees with its own committed
+expectations. None of them asks whether **two architectures agree with each other**, and neither did
+any job in `ci.yml`: its six legs ran independently. That is why `m9:lockstep-cross-platform` was a
+**declared gap** rather than a `where = "ci"` criterion — `where = "ci"` would have made it PASS in
+continuous integration, satisfied by a single-leg suite, which is the defect the practice exists to
+catch.
+
+```
+just test-determinism --publish-digest cross-leg-digests/<leg>.digest   # one leg, in CI
+just test-determinism --compare-legs --pcg --digests cross-leg-digests  # the comparison
+```
+
+The comparator is `tools/ci/cross_leg_digests.py` and **what it refuses is its whole value**: one
+leg, several legs of one architecture, a leg that could not name its own architecture, a digest that
+is zero, a digest over an empty workload, and a schema it does not understand each exit **2** —
+refused, never passed. A disagreement exits **1** with every leg's number printed beside its
+architecture, because a disagreement is a finding rather than a failure to hide. Fifteen negative
+fixtures hold that in `tools/ci/test_cross_leg_digests.py`, run by `just ci-check`.
+
+The architecture compared is the one the **binary** detected, never the workflow's label for the
+leg, so two runners of one architecture cannot be made into two by naming them differently.
+
+**What this does not answer**, said here rather than left to be assumed: `cy::pcg::ExecutionDomain`
+is Editor, Cook, Runtime, Streaming and Dynamic — there is **no GPU execution domain in this tree**
+— and no hosted runner has a device, so `m10:pcg-gpu-domain-agreement` stays open. The last case in
+`test_cross_leg.cpp` asserts that no domain names a device, and goes red the day one is added.
 
 ## What is declared from elsewhere, and runs in this kind
 

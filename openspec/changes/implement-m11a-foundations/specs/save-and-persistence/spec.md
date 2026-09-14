@@ -74,6 +74,37 @@ the translation, and a project SHALL invoke it rather than reproduce it.
 - **THEN** the ordered pipeline and the overlay translation SHALL come from the engine, and removing
   the project's own code SHALL NOT remove the ability to load
 
+### Requirement: Plugin-owned state
+Saved records SHALL identify the **owning module or plugin** of the types they contain.
+
+Loading a save whose required plugin is absent SHALL produce a structured error naming the plugin
+and version, not a partial load.
+
+Where a plugin is optional and policy permits, its state MAY be **preserved opaquely** so that
+re-enabling it restores that state rather than having lost it.
+
+**The owning module SHALL be read from the identity manifest rather than re-derived.**
+`identity/manifest.toml` already carries a `module` for every type it has ever issued an identifier
+to, and `core-type-system` makes that manifest the source of truth for type identity. A second
+type-to-module map inside the save container would be a fork of the identity record, and a fork of
+the identity record is the failure mode tombstones exist to prevent. This is recorded because the
+capability's own audit named a different, absent source — "the module registry that arrives with
+`project-and-plugins`" — and that claim is stale: the mapping is committed and the work is ordinary
+engineering rather than a wait on another capability.
+
+#### Scenario: A missing plugin is named
+- **WHEN** a save requires an absent plugin
+- **THEN** the error SHALL name the plugin and its version rather than reporting corruption
+
+#### Scenario: Optional state survives
+- **WHEN** an optional plugin is disabled and later re-enabled
+- **THEN** its preserved state SHALL be restored if policy allowed preservation
+
+#### Scenario: Ownership is not a second registry
+- **WHEN** a record's owning module is resolved
+- **THEN** it SHALL come from the identity manifest, and the save container SHALL NOT maintain its
+  own type-to-module table
+
 ### Requirement: Forbidden save patterns
 The following SHALL NOT appear, and each SHALL be checkable:
 

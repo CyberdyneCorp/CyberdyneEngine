@@ -17,7 +17,11 @@ out to the formatter itself, because the formatter's version is pinned by the bu
 a second place that chose one would be a second place to keep in step.
 
 Usage:
-    embed_spirv.py <output.h> <name>=<module.spv> [<name>=<module.spv> ...]
+    embed_spirv.py [--source <file.slang>] <output.h> <name>=<module.spv> [<name>=<module.spv> ...]
+
+`--source` names the Slang file in the generated header's own preamble. It defaults to
+conventions.slang, which is what this script wrote for before a second probe joined the directory: a
+generated header that names the wrong source sends its next reader to the wrong slangc invocation.
 """
 
 import pathlib
@@ -25,16 +29,16 @@ import struct
 import sys
 
 HEADER = """#pragma once
-// Compiled SPIR-V for the convention probe. GENERATED — do not edit by hand.
+// Compiled SPIR-V for {source}. GENERATED — do not edit by hand.
 //
-// Produced by tests/render/shaders/embed_spirv.py from conventions.slang; that file's header comment
+// Produced by tests/render/shaders/embed_spirv.py from {source}; that file's header comment
 // carries the exact slangc invocation. Checked in rather than compiled by the build because the
 // render suite must run in a build with NO shader compiler at all — which is every Profile and
 // Shipping build, and any build configured with -DCY_SHADER_SLANG=OFF.
 
 #include <cy/core/base/types.h>
 
-namespace cy::render_test {
+namespace cy::render_test {{
 
 """
 
@@ -44,9 +48,21 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(__doc__)
         return 2
 
-    out = pathlib.Path(argv[1])
-    body = [HEADER]
-    for pair in argv[2:]:
+    arguments = argv[1:]
+    source = "conventions.slang"
+    if arguments and arguments[0] == "--source":
+        if len(arguments) < 2:
+            sys.stderr.write(__doc__)
+            return 2
+        source = arguments[1]
+        arguments = arguments[2:]
+    if len(arguments) < 2:
+        sys.stderr.write(__doc__)
+        return 2
+
+    out = pathlib.Path(arguments[0])
+    body = [HEADER.format(source=source)]
+    for pair in arguments[1:]:
         name, _, path = pair.partition("=")
         data = pathlib.Path(path).read_bytes()
         if len(data) % 4 != 0:
@@ -61,7 +77,7 @@ def main(argv: list[str]) -> int:
         body.append("};\n\n")
     body.append("}  // namespace cy::render_test\n")
     out.write_text("".join(body))
-    print(f"wrote {out} — {len(argv) - 2} module(s)")
+    print(f"wrote {out} — {len(arguments) - 1} module(s)")
     return 0
 
 

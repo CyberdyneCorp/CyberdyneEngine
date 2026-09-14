@@ -33,13 +33,14 @@ namespace {
 constexpr std::string_view kExtensions[] = {".test"};
 constexpr cy::assets::AssetKind kProduces[] = {cy::assets::AssetKind::Mesh};
 
-ImporterInfo info() noexcept {
+ImporterInfo info(ModelImportStepSet steps = kHierarchyModelSteps) noexcept {
     ImporterInfo declared;
     declared.name = "test";
     declared.version = 3;
     declared.extensions = cy::Span<const std::string_view>(kExtensions);
     declared.produces = cy::Span<const cy::assets::AssetKind>(kProduces);
     declared.description = "A stand-in importer that exists to be keyed.";
+    declared.steps = steps;
     return declared;
 }
 
@@ -64,8 +65,8 @@ ImportRequest request(CookProfile profile = CookProfile::Client) {
     return made;
 }
 
-DerivationKey key_of(const ImportRequest& made) {
-    auto key = import_derivation_key(info(), OptionsSchema{}, made, source());
+DerivationKey key_of(const ImportRequest& made, ModelImportStepSet steps = kHierarchyModelSteps) {
+    auto key = import_derivation_key(info(steps), OptionsSchema{}, made, source());
     CY_REQUIRE(key.has_value());
     return key.value();
 }
@@ -75,6 +76,7 @@ DerivationKey key_of(const ImportRequest& made) {
 DerivationKey rebuilt(bool with_toolchain) {
     DerivationKeyBuilder builder;
     builder.producer(DerivedKind::Import, info().name, info().version);
+    builder.number("steps", info().steps);
     if (with_toolchain) {
         cy::assets::current_toolchain().contribute(builder);
     }
@@ -104,6 +106,32 @@ CY_TEST_CASE("import key: the toolchain is in it") {
 
 CY_TEST_CASE("import key: the toolchain this binary reports is the one that reaches the key") {
     CY_CHECK(cy::assets::toolchain_is_complete(cy::assets::current_toolchain()));
+}
+
+CY_TEST_CASE("import key: what the cooker could not do is in it") {
+    // M11.b, `asset-import-pipeline` — "What a cook could not do is part of its derivation key":
+    // "A cache entry produced by a build that lacked a step SHALL NOT satisfy a request from a
+    // build that has it", and "a test SHALL fail if the key is unchanged by it".
+    //
+    // THE FAILURE THIS IS THE REGRESSION FOR IS SILENT BY CONSTRUCTION. `ImporterInfo::steps` is
+    // the set of model-import steps THIS BUILD of an importer reaches, and until M11.b it reached
+    // only the import report. So a cache populated by a build configured with `-D CY_ANIMATION=OFF`
+    // — which removes the clip codec and therefore step 8 — served its artefacts to a build that
+    // had one: the cache hit, the build was fast, and the character came back without its
+    // animation.
+    constexpr auto with_animations = static_cast<ModelImportStepSet>(
+        kHierarchyModelSteps | step_bit(ModelImportStep::Animations));
+    CY_CHECK(key_of(request(), kHierarchyModelSteps) != key_of(request(), with_animations));
+
+    // And a step REMOVED separates them too, in the direction that actually happened: the same
+    // importer built without its skeleton step must not answer for one built with it.
+    constexpr auto without_skeletons =
+        static_cast<ModelImportStepSet>(kHierarchyModelSteps & ~step_bit(ModelImportStep::Prefab));
+    CY_CHECK(key_of(request(), kHierarchyModelSteps) != key_of(request(), without_skeletons));
+
+    // The claim is about the STEPS and not about anything else moving with them: two keys built
+    // from the same step set agree.
+    CY_CHECK(key_of(request(), with_animations) == key_of(request(), with_animations));
 }
 
 CY_TEST_CASE("import key: the cook profile still separates two cooks of one source") {

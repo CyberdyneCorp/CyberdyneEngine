@@ -316,6 +316,10 @@ i32 ImportedSkeleton::find(std::string_view joint_name) const noexcept {
     return -1;
 }
 
+u8 joint_bone_lod(std::string_view joint_name) noexcept {
+    return bone_lod_of(strip_namespace(joint_name));
+}
+
 u16 humanoid_joint_of(std::string_view joint_name) noexcept {
     const std::string_view stripped = strip_namespace(joint_name);
     for (const HumanoidName& entry : kHumanoidNames) {

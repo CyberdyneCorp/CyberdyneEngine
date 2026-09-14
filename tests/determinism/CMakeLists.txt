@@ -57,5 +57,29 @@ cy_add_test(
     DEPENDENCIES cy::replay
     DEFINITIONS CY_DETERMINISM_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
 
+# M11.a section 4: the publisher half of the one job that answers three criteria. It reaches into
+# src/pcg/tests/ for the SECOND reason this directory reaches into src/replay/tests/ — a digest is
+# worth exactly as much as the generation it digests, and `fixtures.h`'s forest graph is the one
+# src/pcg/tests/test_determinism.cpp already compares between two runs ON ONE HOST. Publishing a
+# different graph would make the two measurements incomparable, which is the whole point of the
+# comparison.
+set(cy_pcg_fixture_dir "${CMAKE_SOURCE_DIR}/src/pcg/tests")
+if(NOT EXISTS "${cy_pcg_fixture_dir}/fixtures.h")
+    message(FATAL_ERROR
+        "tests/determinism: the generation fixture is not at ${cy_pcg_fixture_dir}/fixtures.h. The "
+        "cross-leg digest publishes the digest of the forest graph src/pcg/tests/test_determinism.cpp "
+        "compares between two runs — if that file moved, point this at its new home rather than "
+        "growing a second graph here.")
+endif()
+
+cy_add_test(
+    NAME    cross_leg
+    KIND    determinism
+    SOURCES test_cross_leg.cpp
+    DEPENDENCIES cy::replay cy::pcg
+    DEFINITIONS CY_DETERMINISM_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+
 target_include_directories(cy_test_determinism_golden_replay PRIVATE "${cy_replay_fixture_dir}")
 target_include_directories(cy_test_determinism_replay_fuzz PRIVATE "${cy_replay_fixture_dir}")
+target_include_directories(cy_test_determinism_cross_leg
+                           PRIVATE "${cy_replay_fixture_dir}" "${cy_pcg_fixture_dir}")

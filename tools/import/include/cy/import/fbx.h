@@ -42,13 +42,21 @@
 // quantised codec, so an FBX carrying a take now produces it rather than dropping it silently. Step
 // 9 — material extraction as separately editable assets — remains absent.
 //
-// SKINNED MESH VERTICES ARE THE HOLE THAT REMAINS, and it is worth naming here rather than in a
-// roadmap file: a skeleton and its clips import, but `MeshData` still carries no joint-index or
-// joint-weight arrays and `write_cooked_mesh` has no attribute bit for them. So the rig arrives and
-// the vertices are not bound to it. A project skinning an imported character has to supply weights
-// from somewhere else, which is exactly what `samples/09b-animated-character` does and says it
-// does. An FBX carrying one still reports a diagnostic naming what was skipped, so this is learned
-// at import rather than discovered in the editor.
+// SKINNED MESH VERTICES WERE THE HOLE THAT REMAINED, AND M11.b CLOSED IT. Through M8.d a skeleton
+// and its clips imported while `MeshData` carried no joint-index or joint-weight arrays and
+// `write_cooked_mesh` had no attribute bit for them — so ufbx parsed every skin cluster, this file
+// read none of them, and the rig arrived with nothing bound to it. `Walking.fbx` alone lost 65
+// clusters that way, which is why `samples/09b-animated-character` DERIVES its weights from vertex
+// height and says so.
+//
+// `MeshData::skin` is that array, and `resolve_mesh_skin` in src/fbx.cpp is what fills it: each
+// cluster is resolved to a cooked joint by the bone node's NAME — the one identity step 7 and the
+// mesh share — and each vertex keeps the four heaviest influences, renormalised. What that costs is
+// reported rather than implied: a fifth influence dropped, a cluster whose bone the skeleton does
+// not carry, and a mesh deformed by more than one skin each have their own diagnostic.
+//
+// Step 9 — material extraction as separately editable assets — remains absent, and so do blend
+// shapes, which are still named in the `skipped-rig` report.
 //
 // USD remains absent. `asset-import-pipeline` makes it "an optional, tool-time-only importer" and
 // `thirdparty-dependencies` calls OpenUSD "a large dependency, so editor and cooker only"; it is

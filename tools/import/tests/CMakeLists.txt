@@ -66,6 +66,19 @@ function(cy_import_declare_tests)
         SOURCES "${tests_dir}/test_gltf.cpp"
         DEPENDENCIES cy::import)
 
+    # `asset_import_gltf` is the suite for glTF's steps 7 and 8 — skins, skeletons and animation
+    # clips — which this importer refused by name until M11.b. It is separate from `import_gltf`
+    # rather than folded into it because it links `cy::animation`: the clip half can only be
+    # asserted where the codec that compressed it exists, and `import_gltf` must keep building in a
+    # `-D CY_ANIMATION=OFF` configuration. Integration for the reasons above — the documents are
+    # parsed, welded, optimised, compressed and read back, and one case imports the same file twice
+    # to compare every byte. M11.b task 6.1.
+    cy_add_test(
+        NAME asset_import_gltf
+        KIND integration
+        SOURCES "${tests_dir}/test_gltf_rig.cpp"
+        DEPENDENCIES cy::import)
+
     # `import_fbx` is integration for the same reason `import_gltf` is: ufbx parses a real document
     # and the mesh is then welded, tangent-generated and optimised, and the determinism case imports
     # the same file twice to compare every byte. That is over the unit taxonomy's millisecond in the

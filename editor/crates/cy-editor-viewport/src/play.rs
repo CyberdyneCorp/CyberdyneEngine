@@ -88,6 +88,103 @@ impl PlayState {
     }
 }
 
+/// WHERE the runtime runs a play session. M11.b task 3.1.
+///
+/// --- WHY THIS IS NOT `HostingMode` ---------------------------------------------------------------
+///
+/// `cy_editor_sdk::HostingMode` names `NoRuntime`, `Embedded` and `Hosted`, and its own
+/// documentation says `Hosted` is *"the engine in a separate process **or** on a remote device"* —
+/// so the editor's only locality axis deliberately collapses the two modes `editor-architecture` and
+/// `live-editing` deliberately separate. This is that second axis, and the two are orthogonal: a
+/// `Hosted` editor can be running any of the three modes below, and `NoRuntime` is running none.
+///
+/// --- AND WHY THERE IS NO `Fallback` ---------------------------------------------------------------
+///
+/// `specs/live-editing/` (M11.b): *"Selecting a mode that is not available SHALL refuse, naming the
+/// mode and the reason. It SHALL NOT fall back to another mode."* There is therefore no method here
+/// that answers "the nearest available mode", and [`PlayMode::from_name`] returns `None` for a word
+/// it does not know rather than a default — a `RemoteDevice` request that quietly ran `InEditor`
+/// would be a green result over a feature that does not exist.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PlayMode {
+    /// A runtime world in the editor's hosted runtime process. Fast iteration.
+    ///
+    /// **Not in the editor's own process.** `live-editing` is explicit that no play mode runs there,
+    /// because the editor is a separate Rust application; `InEditor` denotes iteration speed and
+    /// shared runtime state.
+    #[default]
+    InEditor,
+    /// A second runtime process, so that editor-only state cannot mask a defect.
+    SeparateProcess,
+    /// A runtime on another machine: a console, a phone, a tablet.
+    RemoteDevice,
+}
+
+impl PlayMode {
+    /// Every mode the editor can ask for, in the order the specification lists them.
+    pub const ALL: [PlayMode; 3] = [
+        PlayMode::InEditor,
+        PlayMode::SeparateProcess,
+        PlayMode::RemoteDevice,
+    ];
+
+    /// The word the protocol carries. **The same spelling `cy::gameplay::play_mode_name` writes**,
+    /// and the two are pinned to each other by a test on each side — the arrangement `.cyprim` and
+    /// the body type names already use across this boundary.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            PlayMode::InEditor => "in-editor",
+            PlayMode::SeparateProcess => "separate-process",
+            PlayMode::RemoteDevice => "remote-device",
+        }
+    }
+
+    /// The mode a word names, or `None`. See the type's own documentation for why there is no
+    /// nearest-match.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<PlayMode> {
+        PlayMode::ALL.into_iter().find(|mode| mode.name() == name)
+    }
+
+    /// What the viewport shows beside the play badge, so that a designer looking at a frame knows
+    /// which machine produced it.
+    #[must_use]
+    pub const fn badge(self) -> &'static str {
+        match self {
+            PlayMode::InEditor => "IN EDITOR",
+            PlayMode::SeparateProcess => "SEPARATE PROCESS",
+            PlayMode::RemoteDevice => "REMOTE DEVICE",
+        }
+    }
+
+    /// Whether this mode can be asked to advance exactly one frame.
+    ///
+    /// The one capability that differs between the modes, and it differs by TRANSPORT rather than by
+    /// architecture: a remote runtime's frames arrive encoded and are not individually addressable.
+    /// `live-editing` allows exactly that — *"locality SHALL be an optimisation of transport"* —
+    /// and M11.b's delta requires the difference be **queried** rather than discovered by trying.
+    /// The engine answers the same question in `cy::gameplay::capabilities_of`.
+    #[must_use]
+    pub const fn can_step_frame(self) -> bool {
+        !matches!(self, PlayMode::RemoteDevice)
+    }
+
+    /// Whether this mode can be asked to advance exactly one simulation tick. A tick is a message
+    /// rather than a picture, so every mode can.
+    #[must_use]
+    pub const fn can_step_tick(self) -> bool {
+        true
+    }
+
+    /// Whether editor-only state is absent from the runtime, so editor-specific behaviour cannot
+    /// mask a defect. `live-editing`'s "Standalone behaviour is honest".
+    #[must_use]
+    pub const fn isolates_editor_state(self) -> bool {
+        !matches!(self, PlayMode::InEditor)
+    }
+}
+
 /// What becomes of an edit made while the runtime is playing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Persistence {
@@ -295,5 +392,35 @@ mod tests {
         assert!(Persistence::Authoring.reaches_the_document());
         assert!(Persistence::PromoteOnExit.reaches_the_document());
         assert!(!Persistence::RuntimeOnly.reaches_the_document());
+    }
+
+    #[test]
+    fn every_play_mode_round_trips_its_own_word_and_an_unknown_one_is_refused() {
+        // M11.b task 3.1. The words are the wire's, and the far end refuses a word it does not know
+        // rather than reading it as the closest mode. `cy::gameplay::play_mode_of` is that far end,
+        // and `src/gameplay/play/tests/test_editor_play.cpp` holds the same three strings — so a
+        // spelling that drifted on one side fails a test on both.
+        for mode in PlayMode::ALL {
+            assert_eq!(PlayMode::from_name(mode.name()), Some(mode));
+            assert!(!mode.badge().is_empty());
+        }
+        assert_eq!(PlayMode::from_name("console"), None);
+        assert_eq!(PlayMode::from_name(""), None);
+        assert_eq!(PlayMode::from_name("Hosted"), None);
+    }
+
+    #[test]
+    fn the_capability_that_differs_by_mode_differs_by_transport() {
+        // Queried rather than discovered by trying, and the same answers the engine gives.
+        assert!(PlayMode::InEditor.can_step_frame());
+        assert!(PlayMode::SeparateProcess.can_step_frame());
+        assert!(!PlayMode::RemoteDevice.can_step_frame());
+        for mode in PlayMode::ALL {
+            assert!(mode.can_step_tick(), "{mode:?}");
+        }
+        // And the point of each of the two non-default modes.
+        assert!(!PlayMode::InEditor.isolates_editor_state());
+        assert!(PlayMode::SeparateProcess.isolates_editor_state());
+        assert!(PlayMode::RemoteDevice.isolates_editor_state());
     }
 }

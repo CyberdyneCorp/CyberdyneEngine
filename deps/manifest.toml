@@ -439,6 +439,53 @@ justification = "Voxelising source geometry and extracting walkable convex regio
 # touch safely while three other agents were building. It is written down instead, in full, so the
 # change that makes it is a morning's work against a known answer rather than a rediscovery.
 
+# --- M11.a: THE MEASUREMENT RE-RUN, AND WHY THIS IS STILL NOT A TASK TICK -------------------------
+#
+# `m8c:steam-audio-configures` names M11.a as the rung that closes it. M11.a RE-RAN THE EXPERIMENT
+# rather than quoting M8.c's paragraph, on this host, on 2026-09-14, and every number above still
+# holds:
+#
+#   * `-D CY_AUDIO_STEAM_AUDIO=ON` configures the engine, fetches `steam_audio` at the pin above and
+#     then FAILS at upstream's `core/CMakeLists.txt:235`, `find_package(PFFFT)` — the first of the
+#     four required dependencies, exactly as recorded. IPP and FFTS disable themselves cleanly on
+#     the way there, which is the half of M8.b's report that was wrong and stays wrong.
+#   * `-fabi-version=6` still blocks BOTH pinned compilers, reduced to two lines each:
+#     `g++ (Ubuntu 13.3.0) -std=gnu++14 -fabi-version=6 -c '#include <future>'` exits 2 inside
+#     libstdc++'s `unique_ptr.h`, and `clang++ 18.1.3` exits 1 with "unknown argument". Without the
+#     flag, the same g++ line exits 0.
+#   * Upstream's `core/build/dependencies.json` at the pinned commit still lists flatbuffers with
+#     `"tool": true` and `"programs": [["flatc"]]`, so `flatc` is built and then RUN.
+#
+# WHAT CLOSING IT COSTS, STATED AS THE FOUR THINGS IT CHANGES rather than as "integration work", so
+# that the next attempt can be scoped instead of rediscovered:
+#
+#   1. FOUR NEW `[[dependency]]` ENTRIES — pffft, zlib, libmysofa, flatbuffers — and
+#      `thirdparty-dependencies` requires an adoption to go "through the OpenSpec change flow
+#      recording the evaluation against these criteria". Four adoptions is four evaluations.
+#   2. A FIELD THIS SCHEMA DOES NOT HAVE. `flatc` is neither a library the build links nor a host
+#      prerequisite already on the machine: it is built from source and then executed during the
+#      build. `cy_validate_dependency_manifest()` has no field for that and
+#      `cmake/dependencies.cmake` has no place to run one.
+#   3. A PATCH MECHANISM THAT DOES NOT EXIST. `FetchContent_Declare` in cmake/dependencies.cmake
+#      takes no `PATCH_COMMAND`, and deleting upstream's `-fabi-version=6` line is a patch —
+#      "recorded as a file with a description", which is the specification's own requirement and a
+#      second schema field.
+#   4. CACHE-VARIABLE PLUMBING EVERY OTHER DEPENDENCY WOULD THEN SHARE A CONFIGURE WITH. Valve's
+#      Find modules look in `${CMAKE_HOME_DIRECTORY}/deps/<name>/`, which under `add_subdirectory`
+#      is THIS repository's deps/ directory, so PFFFT_*, MySOFA_*, ZLIB_* and FlatBuffers_EXECUTABLE
+#      must be pre-set to build-tree paths before the `add_subdirectory`, with `add_dependencies()`
+#      ordering the four builds.
+#
+# AND THE BACKEND IS A FIFTH THING. `SteamAudioBackend::simulate` returns `NotImplemented`; closing
+# `m11a:steam-audio-simulates` needs the body written against `iplSimulatorRunDirect` /
+# `iplSimulatorRunReflections` AND a `unit.audio_acoustics` case named "steam audio simulates" for
+# that criterion to select. Neither exists.
+#
+# So the honest outcome remains what M8.c recorded: a measured deferral with a re-entry point, and
+# the re-entry point is a change of its own against `thirdparty-dependencies`, not a line in a rung's
+# task list. A Complete cell over a backend that returns `NotImplemented` is the outcome M11.a
+# refuses.
+
 [[dependency]]
 name = "steam_audio"
 version = "4.8.1"

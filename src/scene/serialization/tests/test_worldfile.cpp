@@ -382,6 +382,7 @@ CY_TEST_CASE("undoing a create removes the node again") {
     undo.u8_value(0);   // no parent
     undo.u32_value(0);  // no children
     undo.text("");      // the layer
+    undo.text("");      // the author-given name
     undo.u8_value(0);   // no prefab
     undo.u32_value(0);  // no components
     undo.u32_value(0);  // no overrides

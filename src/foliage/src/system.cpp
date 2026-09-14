@@ -45,28 +45,6 @@ environment::FieldDeclaration vegetation_field_declaration(f32 macro_cell_metres
     return declaration;
 }
 
-environment::FieldDeclaration vegetation_potential_declaration(f32 macro_cell_metres) noexcept {
-    environment::FieldDeclaration declaration;
-    declaration.name = kVegetationPotentialField;
-    declaration.unit = "fraction";
-    declaration.semantics =
-        "the vegetation this position would carry given time; what the current state recovers "
-        "toward, so a burned forest is still forest country";
-    declaration.type = environment::FieldType::Scalar;
-    declaration.encoding = environment::FieldEncoding::UNorm8;
-    declaration.interpolation = environment::FieldInterpolation::Linear;
-    declaration.cadence = environment::FieldCadence::Static;
-    declaration.production = environment::FieldProduction::Cpu;
-    declaration.range_min = 0.0F;
-    declaration.range_max = 1.0F;
-    declaration.default_value = environment::FieldValue::scalar(1.0F);
-    declaration.levels[static_cast<u32>(environment::FieldResidency::Macro)] =
-        environment::FieldLevel{macro_cell_metres, true};
-    declaration.classification = determinism::SimulationClass::Persistent;
-    declaration.gameplay_level = environment::FieldResidency::Macro;
-    return declaration;
-}
-
 const char* regional_state_name(RegionalState state) noexcept {
     switch (state) {
         case RegionalState::Normal:
@@ -171,12 +149,14 @@ FoliageSystem::FoliageSystem(Allocator& allocator, const SpeciesLibrary& library
 Status FoliageSystem::register_producer(environment::FieldRegistry& registry,
                                         const char* producer_name, f32 macro_cell_metres,
                                         f32 recovery_per_second) noexcept {
-    // The potential is declared first, so the current field's `potential` link resolves to a field
-    // the registry knows about. Nothing claims it here: it is cooked, and a cooker is its producer.
-    if (Status declared = registry.declare(vegetation_potential_declaration(macro_cell_metres));
-        !declared) {
-        return declared;
-    }
+    // ONLY THE CURRENT STATE. `vegetation-potential` is the ecosystem's field and `cy::weather`
+    // declares it — see `kVegetationPotentialField` in system.h for the two requirements that
+    // settle it. Declaring it here as well was `m10:fields-one-vegetation-potential`: two
+    // encodings of one quantity, and a project registering both rows' producers refused to start.
+    //
+    // `declare()` does not require a `potential` link to resolve, so a project with no weather gets
+    // a `vegetation` field that simply does not recover — which is what `advance_recovery()`
+    // already reports, by name, rather than something this module has to pre-empt.
     if (Status declared =
             registry.declare(vegetation_field_declaration(macro_cell_metres, recovery_per_second));
         !declared) {
@@ -237,7 +217,12 @@ Status FoliageSystem::declare_consumption(environment::FieldRegistry& registry,
             return declared;
         }
     }
-    return ok();
+    // AND THE POTENTIAL FOLIAGE NO LONGER DECLARES. `vegetation` recovers toward
+    // `vegetation-potential` and `cy::weather` owns that field, so this module is a CONSUMER of it
+    // — which is the half `m10:fields-one-vegetation-potential` leaves behind once the duplicate
+    // declaration is gone. `declare_once()` skips a field no module in this project declared, so a
+    // world without weather is not forced to acquire one.
+    return declare_once(potential_);
 }
 
 Expected<MaterialisedRegion, Error> FoliageSystem::materialise(const GenerationContext& context,

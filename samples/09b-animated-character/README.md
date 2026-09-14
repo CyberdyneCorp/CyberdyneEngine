@@ -36,19 +36,26 @@ derived by the render graph, with synchronisation validation on and its error co
 
 ## What it does NOT demonstrate — read this before quoting the video
 
-**The skin weights are not the artist's.** `tools/import/`'s `MeshData` has no joint-index or
-joint-weight arrays and `write_cooked_mesh` has no attribute bit for them, so the cooked mesh this
-program reads says nothing about which bone moves which vertex. `Walking.fbx` carries exactly that
-information — one skin deformer, 65 clusters, up to six influences per vertex — and the import
-pipeline drops it, which its own `skipped-rig` diagnostic says out loud. `derive_influences` in
-`character.cpp` therefore binds the mesh itself, by distance to each bone's segment, and the program
-prints `skin  DERIVED, NOT IMPORTED` above the numbers. Everything downstream of that is the engine's
-real path — the same `VertexStream::Skin` layout, the same dispatch, the same bone matrices. What is
-substituted is the SOURCE of the weights and nothing else.
+**The skin weights were not the artist's until M11.b, and the program says which it used.** Through
+M10, `tools/import/`'s `MeshData` had no joint-index or joint-weight arrays and `write_cooked_mesh`
+had no attribute bit for them, so the cooked mesh this program read said nothing about which bone
+moves which vertex. `Walking.fbx` carries exactly that information — one skin deformer, 65 clusters,
+up to six influences per vertex — and the import pipeline dropped it, which its own `skipped-rig`
+diagnostic said out loud. `derive_influences` in `character.cpp` therefore bound the mesh itself, by
+distance to each bone's segment.
 
-The visible cost is at the hips: a distance bind has no notion of which limb a vertex belongs to, so
-where two limbs are close in the T-pose a few vertices take weight from the wrong leg and stretch
-between them during the run.
+M11.b task 6.1 gave `MeshData` those arrays and taught both model importers to fill them, so this
+program now prefers the file's own bindings and prints **`skin  IMPORTED`** above the numbers; it
+falls back to `derive_influences` and prints **`skin  DERIVED, NOT IMPORTED`** when the cooked mesh
+carries none, which is what an older cache entry is. The fallback is kept rather than deleted
+because deleting it would turn a stale cache entry into a character-shaped explosion instead of a
+line of text. Everything downstream is the engine's real path either way — the same
+`VertexStream::Skin` layout, the same dispatch, the same bone matrices.
+
+The visible cost of the fallback is at the hips: a distance bind has no notion of which limb a
+vertex belongs to, so where two limbs are close in the T-pose a few vertices take weight from the
+wrong leg and stretch between them during the run. **The video in this directory was captured with
+the derived bind**, so that artefact is in it; a re-capture on an imported skin should not have it.
 
 **The character does not travel.** All four Mixamo exports are in-place takes, with the root's
 horizontal motion removed at export, so it runs on the spot. Nothing here fakes a forward velocity to

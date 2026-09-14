@@ -1,11 +1,23 @@
 #include <cy/import/gltf.h>
 
 #include <cy/core/assets/hash.h>
+#include <cy/core/math/matrix.h>
 #include <cy/core/math/scalar.h>
+#include <cy/core/memory/scope.h>
+#include <cy/import/clip_record.h>
+#include <cy/import/fbx_skeleton.h>
 #include <cy/import/json.h>
+
+#ifdef CY_IMPORT_ANIMATION
+// The definition, which `cy/import/clip_record.h` only forward-declares — see the note there for
+// why a public header may not include it.
+#    include <cy/animation/clip.h>
+#endif
 #include <cy/import/model.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 #include <string>
@@ -23,6 +35,11 @@ void put_u32(Array<u8>& out, u32 value) noexcept {
     }
 }
 
+void put_u16(Array<u8>& out, u16 value) noexcept {
+    (void)out.push_back(static_cast<u8>(value & 0xFFU));
+    (void)out.push_back(static_cast<u8>((value >> 8U) & 0xFFU));
+}
+
 void put_f32(Array<u8>& out, f32 value) noexcept {
     u32 bits = 0;
     std::memcpy(&bits, &value, sizeof(bits));
@@ -35,6 +52,10 @@ void put_f32(Array<u8>& out, f32 value) noexcept {
         value |= static_cast<u32>(data[index]) << (index * 8U);
     }
     return value;
+}
+
+[[nodiscard]] u16 get_u16(const u8* data) noexcept {
+    return static_cast<u16>(static_cast<u16>(data[0]) | static_cast<u16>(data[1] << 8U));
 }
 
 [[nodiscard]] f32 get_f32(const u8* data) noexcept {
@@ -178,11 +199,65 @@ constexpr OptionSpec kGltfOptions[] = {
     {"collision-mode", OptionType::Enumeration, OptionValue::of_enumeration("convex"),
      "What a collision node produces: nothing, a convex hull, or the triangle mesh as it stands.",
      Span<const std::string_view>(kCollisionChoices), 0.0, 0.0},
+    // --- Steps 7 and 8. M11.b task 6.1.
+    //
+    // EVERY ONE OF THEM CHANGES THE COOKED BYTES, which is why each is a declared option rather
+    // than a constant somebody tunes later: `options.h` calls a setting that changes the output and
+    // cannot reach the derivation key the one defect a cook cache cannot survive. They are spelled
+    // exactly as `kFbxAnimationOptions` spells them, so a project that re-exports a character in
+    // the other format keeps its settings — which is the reason `model.h` exists.
+    {"import-skins",
+     OptionType::Bool,
+     OptionValue::of_bool(true),
+     "Whether to produce a skeleton and to carry each vertex's joint bindings into the cooked "
+     "mesh. Off imports the same file as a static model, which is what a background prop exported "
+     "from a rigged scene wants.",
+     {},
+     0.0,
+     0.0},
+    {"import-animations",
+     OptionType::Bool,
+     OptionValue::of_bool(true),
+     "Whether to produce animation clips from the file's animations. Turning meshes and materials "
+     "off and leaving this on is the fast path for animation iteration.",
+     {},
+     0.0,
+     0.0},
+    {"animation-sample-rate",
+     OptionType::Float,
+     OptionValue::of_float(30.0),
+     "The clip's own sample rate hint. glTF stores keys at the times the exporter wrote them and "
+     "this importer resamples nothing, so unlike the FBX path this figure does not move a key — it "
+     "is what a consumer is told the clip was authored at.",
+     {},
+     1.0,
+     240.0},
+    {"animation-translation-tolerance-mm",
+     OptionType::Float,
+     OptionValue::of_float(0.1),
+     "How far, in millimetres, the curve fit may deviate from the authored translation. The codec "
+     "then quantises what the fit kept and adds its own error on top, so the figure the import "
+     "report names is MEASURED against the authored keys and can exceed this one.",
+     {},
+     0.0001,
+     100.0},
+    {"animation-rotation-tolerance-degrees",
+     OptionType::Float,
+     OptionValue::of_float(0.1),
+     "How far, in degrees, the curve fit may deviate from the authored rotation. Quantising a "
+     "rotation to four 16-bit components costs about a twentieth of a degree by itself, so the "
+     "measured worst case sits a little above this number.",
+     {},
+     0.0001,
+     45.0},
 };
 
 constexpr std::string_view kExtensions[] = {".gltf", ".glb"};
+// `Animation` carries the skeleton and the clips both, which is the kind M8.d chose for the FBX
+// path and the reason `fbx_skeleton.h` gives for it: a sub-asset NAME prefix tells a skeleton from
+// a clip, and an `AssetKind` is persistent in a way a prefix is not.
 constexpr assets::AssetKind kProduces[] = {assets::AssetKind::Mesh, assets::AssetKind::Material,
-                                           assets::AssetKind::Prefab};
+                                           assets::AssetKind::Prefab, assets::AssetKind::Animation};
 
 // --- glTF component types ------------------------------------------------------------------------
 
@@ -481,9 +556,12 @@ Status write_cooked_mesh(const MeshData& mesh, Array<u8>& out) noexcept {
     if (!mesh.tangents.empty()) {
         attributes = attributes | MeshAttributes::Tangents;
     }
+    if (!mesh.skin.empty()) {
+        attributes = attributes | MeshAttributes::Skin;
+    }
 
     if (Status reserved =
-            out.reserve(out.size() + 32 + (mesh.vertex_count() * 48) + (mesh.indices.size() * 4));
+            out.reserve(out.size() + 32 + (mesh.vertex_count() * 72) + (mesh.indices.size() * 4));
         !reserved) {
         return reserved;
     }
@@ -529,6 +607,16 @@ Status write_cooked_mesh(const MeshData& mesh, Array<u8>& out) noexcept {
         put_f32(out, tangent.z);
         put_f32(out, tangent.w);
     }
+    // Joints then weights, both per vertex, in the slot order the influence holds them. Indices
+    // are 16-bit because `kMaxSkeletonJoints` is 256 and a pose mask cannot address more.
+    for (const SkinInfluence& influence : mesh.skin) {
+        for (const u16 joint : influence.joints) {
+            put_u16(out, joint);
+        }
+        for (const f32 weight : influence.weights) {
+            put_f32(out, weight);
+        }
+    }
     for (const u32 index : mesh.indices) {
         put_u32(out, index);
     }
@@ -536,6 +624,28 @@ Status write_cooked_mesh(const MeshData& mesh, Array<u8>& out) noexcept {
         put_u32(out, section.first_index);
         put_u32(out, section.index_count);
         put_u32(out, section.material);
+    }
+    return ok();
+}
+
+/// Read `count` elements through `read`, appending each to `out` and advancing `cursor`.
+///
+/// EXTRACTED AT M11.b, when the skin binding made `read_cooked_mesh` the sixth copy of one loop.
+/// Six copies of "for each vertex, decode, advance the cursor, push, check" is six places for the
+/// cursor arithmetic to be wrong in, and the last one added put the function over this tree's
+/// complexity band for a parser. The shape is now stated once and the element decode is what
+/// differs, which is the only thing that ever did.
+template <class T, class Read>
+[[nodiscard]] Status read_elements(Span<const u8> payload, usize& cursor, usize count, usize stride,
+                                   Read read, Array<T>& out) noexcept {
+    if (Status reserved = out.reserve(count); !reserved) {
+        return reserved;
+    }
+    for (usize index = 0; index < count; ++index) {
+        if (Status pushed = out.push_back(read(payload.data() + cursor)); !pushed) {
+            return pushed;
+        }
+        cursor += stride;
     }
     return ok();
 }
@@ -558,6 +668,7 @@ Status read_cooked_mesh(Span<const u8> payload, MeshData& out) noexcept {
     needed += has(attributes, MeshAttributes::TexCoords) ? vertices * 8 : 0;
     needed += has(attributes, MeshAttributes::TexCoords2) ? vertices * 8 : 0;
     needed += has(attributes, MeshAttributes::Tangents) ? vertices * 16 : 0;
+    needed += has(attributes, MeshAttributes::Skin) ? vertices * kSkinInfluences * 6 : 0;
     needed += indices * 4;
     needed += sections * 12;
     if (payload.size() != needed) {
@@ -567,53 +678,49 @@ Status read_cooked_mesh(Span<const u8> payload, MeshData& out) noexcept {
 
     out.clear();
     usize cursor = kHeaderBytes;
-    for (usize index = 0; index < vertices; ++index) {
-        const Vec3 position{get_f32(payload.data() + cursor), get_f32(payload.data() + cursor + 4),
-                            get_f32(payload.data() + cursor + 8)};
-        cursor += 12;
-        if (Status pushed = out.positions.push_back(position); !pushed) {
-            return pushed;
+    const auto vec3_at = [](const u8* at) noexcept {
+        return Vec3{get_f32(at), get_f32(at + 4), get_f32(at + 8)};
+    };
+    const auto vec2_at = [](const u8* at) noexcept { return Vec2{get_f32(at), get_f32(at + 4)}; };
+    const auto vec4_at = [](const u8* at) noexcept {
+        return Vec4{get_f32(at), get_f32(at + 4), get_f32(at + 8), get_f32(at + 12)};
+    };
+    const auto influence_at = [](const u8* at) noexcept {
+        SkinInfluence influence;
+        for (usize slot = 0; slot < kSkinInfluences; ++slot) {
+            influence.joints[slot] = get_u16(at + (slot * 2));
+            influence.weights[slot] = get_f32(at + (kSkinInfluences * 2) + (slot * 4));
         }
+        return influence;
+    };
+
+    // The arrays in the order `write_cooked_mesh` wrote them. An attribute the header does not
+    // claim contributes nothing and advances the cursor by nothing, which is why the count rather
+    // than the block is what the flag controls.
+    if (Status read = read_elements(payload, cursor, vertices, 12, vec3_at, out.positions); !read) {
+        return read;
     }
-    if (has(attributes, MeshAttributes::Normals)) {
-        for (usize index = 0; index < vertices; ++index) {
-            const Vec3 normal{get_f32(payload.data() + cursor),
-                              get_f32(payload.data() + cursor + 4),
-                              get_f32(payload.data() + cursor + 8)};
-            cursor += 12;
-            if (Status pushed = out.normals.push_back(normal); !pushed) {
-                return pushed;
-            }
-        }
+    const usize normals = has(attributes, MeshAttributes::Normals) ? vertices : 0;
+    if (Status read = read_elements(payload, cursor, normals, 12, vec3_at, out.normals); !read) {
+        return read;
     }
-    if (has(attributes, MeshAttributes::TexCoords)) {
-        for (usize index = 0; index < vertices; ++index) {
-            const Vec2 uv{get_f32(payload.data() + cursor), get_f32(payload.data() + cursor + 4)};
-            cursor += 8;
-            if (Status pushed = out.uvs.push_back(uv); !pushed) {
-                return pushed;
-            }
-        }
+    const usize uvs = has(attributes, MeshAttributes::TexCoords) ? vertices : 0;
+    if (Status read = read_elements(payload, cursor, uvs, 8, vec2_at, out.uvs); !read) {
+        return read;
     }
-    if (has(attributes, MeshAttributes::TexCoords2)) {
-        for (usize index = 0; index < vertices; ++index) {
-            const Vec2 uv{get_f32(payload.data() + cursor), get_f32(payload.data() + cursor + 4)};
-            cursor += 8;
-            if (Status pushed = out.uv2.push_back(uv); !pushed) {
-                return pushed;
-            }
-        }
+    const usize uv2 = has(attributes, MeshAttributes::TexCoords2) ? vertices : 0;
+    if (Status read = read_elements(payload, cursor, uv2, 8, vec2_at, out.uv2); !read) {
+        return read;
     }
-    if (has(attributes, MeshAttributes::Tangents)) {
-        for (usize index = 0; index < vertices; ++index) {
-            const Vec4 tangent{
-                get_f32(payload.data() + cursor), get_f32(payload.data() + cursor + 4),
-                get_f32(payload.data() + cursor + 8), get_f32(payload.data() + cursor + 12)};
-            cursor += 16;
-            if (Status pushed = out.tangents.push_back(tangent); !pushed) {
-                return pushed;
-            }
-        }
+    const usize tangents = has(attributes, MeshAttributes::Tangents) ? vertices : 0;
+    if (Status read = read_elements(payload, cursor, tangents, 16, vec4_at, out.tangents); !read) {
+        return read;
+    }
+    const usize skin = has(attributes, MeshAttributes::Skin) ? vertices : 0;
+    if (Status read =
+            read_elements(payload, cursor, skin, kSkinInfluences * 6, influence_at, out.skin);
+        !read) {
+        return read;
     }
     for (usize index = 0; index < indices; ++index) {
         if (Status pushed = out.indices.push_back(get_u32(payload.data() + cursor)); !pushed) {
@@ -745,17 +852,28 @@ ImporterInfo GltfImporter::info() const noexcept {
     // `model.h`'s shared writer, and the schema gained four options. Every glTF
     // re-cooks, which is exactly what a version is for.
     info.name = "gltf";
-    info.version = 2;
+    // 3 at M11.b: skins, skeletons and animations import, the cooked mesh carries a skin binding,
+    // and the cooked mesh record moved to version 2. Every glTF re-cooks, which is what a version
+    // is for.
+    info.version = 3;
     info.extensions = Span<const std::string_view>(kExtensions);
     info.produces = Span<const assets::AssetKind>(kProduces);
     info.description =
         "Imports a glTF 2.0 file — .gltf or .glb — into cooked meshes with levels of detail, "
         "materials, collision proxies from a naming convention, and the node hierarchy the cook "
         "step turns into a prefab.";
-    // The eight of the ten model-import steps this build reaches. 7 and 8 — skeletons and
-    // animations — are absent for the reason gltf.h states at length, and the report NAMES them
-    // rather than warning about them. M8.a task 3.3.
-    info.steps = kHierarchyModelSteps;
+    // NINE OR TEN OF THE TEN, AND THE SET IS A PROPERTY OF THE BUILD. M11.b task 6.1 added steps
+    // 7 and 8 to this importer; step 8 needs `cy::animation`'s clip codec, which
+    // `-D CY_ANIMATION=OFF` removes, so a build without it reaches nine and says so. `info.steps`
+    // participates in the derivation key, so a cache entry written by a build that could not
+    // compress a clip is not served to one that can — which is the spec delta this rung carries
+    // ("What a cook could not do is part of its derivation key").
+    info.steps = static_cast<ModelImportStepSet>(kHierarchyModelSteps |
+                                                 step_bit(ModelImportStep::Skeletons));
+#ifdef CY_IMPORT_ANIMATION
+    info.steps =
+        static_cast<ModelImportStepSet>(info.steps | step_bit(ModelImportStep::Animations));
+#endif
     return info;
 }
 
@@ -773,6 +891,12 @@ struct ImportState {
     bool z_up = false;
     bool import_meshes = true;
     bool import_materials = true;
+    /// Steps 7 and 8. M11.b task 6.1.
+    bool import_skins = true;
+    bool import_animations = true;
+    f32 animation_sample_rate = 30.0f;
+    f32 animation_translation_tolerance_mm = 0.1f;
+    f32 animation_rotation_tolerance_degrees = 0.1f;
     /// Everything the shared steps read. See model.h: the two model importers declare these under
     /// the same option names on purpose, so a project that re-exports a model in the other format
     /// keeps its settings.
@@ -793,6 +917,699 @@ struct ImportState {
 [[nodiscard]] Vec3 direction_to_engine(const ImportState& state, Vec3 value) noexcept {
     return state.z_up ? Vec3{value.x, value.z, -value.y} : value;
 }
+
+// --- Steps 7 and 8: skins, skeletons and animation clips -----------------------------------------
+//
+// `asset-import-pipeline` — "Model import", step 7 ("Import skeletons, derive bone LOD levels, and
+// remap to a `SkeletonProfile` if configured") and step 8 ("Import animation clips, resample or
+// preserve keys per configuration, and compress with error bounds").
+//
+// UNTIL M11.b THIS IMPORTER REFUSED BOTH BY NAME. A file carrying `skins` or `animations` got one
+// `skipped-rig` warning saying "animation-and-skinning reaches Working at M8 and there is nothing
+// to import a skeleton into", and its rig was dropped. There has been something to import into
+// since M8.b, and M8.d built the FBX half of these two steps; this is the glTF half, written over
+// the SAME records — `ImportedSkeleton` from cy/import/fbx_skeleton.h and the cooked clip writer
+// from cy/import/clip_record.h. That is `model.h`'s argument applied to rigs: one character
+// exported as FBX and as glTF must cook to one skeleton record and one clip record, or every
+// downstream `AssetId` rebinds when an artist changes exporter.
+//
+// WHAT THE JOINT INDICES MEAN, AND WHY THERE ARE TWO NUMBERINGS. A glTF skin owns a `joints` array
+// and a mesh's `JOINTS_0` addresses a SLOT in it. `Skeleton::add_joint` refuses a parent index that
+// is not strictly smaller than the child's, and glTF requires no such ordering of `joints` — nor
+// does it require a skin to list the ancestors whose transforms its joints' bind poses depend on.
+// So the cooked skeleton is built by a depth-first walk that puts a parent first and that includes
+// every ancestor, and `GltfRig::slot_to_joint` is the map from the file's numbering to the
+// record's. Every influence read from a mesh goes through it. Getting this wrong is not a crash: it
+// is a character whose left arm moves when its right leg does.
+
+/// The stem of a source path: the file's own name without its directory or its extension.
+///
+/// It is what an artist typed when they exported the file, and — see `fbx_clip.h` — it is the only
+/// thing in a character-library export that distinguishes one animation from another, since every
+/// one of them may carry the exporter's own name.
+[[nodiscard]] std::string_view stem_of_path(std::string_view path) noexcept {
+    const usize slash = path.find_last_of("/\\");
+    std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);
+    const usize dot = name.rfind('.');
+    return dot == std::string_view::npos ? name : name.substr(0, dot);
+}
+
+/// A joint the walk emitted, and the two numberings it joins.
+struct GltfRig {
+    ImportedSkeleton skeleton;
+    /// glTF node index to cooked joint index, or -1 for a node that is not a joint.
+    std::vector<i32> joint_of_node;
+    /// Per glTF skin, the slot-to-joint map its meshes' `JOINTS_0` is remapped through.
+    std::vector<std::vector<u16>> slot_to_joint;
+    /// The joint names, in cooked order, as a clip's record carries them.
+    std::vector<std::string_view> joint_names;
+    /// True when a skin drove the walk. False means the table was derived from the node hierarchy
+    /// so that an animation-only file — a camera move, a prop, a door — still imports, which is the
+    /// fallback `fbx_clip.h` describes and for the same reason.
+    bool from_skins = false;
+    /// Set when the rig addresses more joints than a pose mask holds. Nothing is produced then.
+    bool too_many_joints = false;
+};
+
+/// The part of a joint name after the last ':'. `fbx_skeleton.cpp`'s rule, restated here because
+/// glTF exporters carry the same namespaces through — a Mixamo rig round-tripped to glTF is still
+/// `mixamorig:Hips`.
+[[nodiscard]] std::string_view strip_joint_namespace(std::string_view name) noexcept {
+    const usize colon = name.rfind(':');
+    return colon == std::string_view::npos ? name : name.substr(colon + 1);
+}
+
+/// The parent of every node, by node index, or -1.
+///
+/// glTF states parentage on the PARENT — a node lists its `children` — so the inverse is built
+/// once here. A node named as a child by two parents keeps the first, which is the only
+/// deterministic answer to a malformed file.
+void build_node_parents(const JsonDocument& json, JsonRef node_array,
+                        std::vector<i32>& out) noexcept {
+    const usize count = json.size(node_array);
+    out.assign(count, -1);
+    for (usize index = 0; index < count; ++index) {
+        const JsonRef children = json.member(json.at(node_array, index), "children");
+        for (usize slot = 0; slot < json.size(children); ++slot) {
+            const i64 child = json.integer_or(json.at(children, slot), -1);
+            if (child >= 0 && std::cmp_less(child, count) && out[static_cast<usize>(child)] < 0) {
+                out[static_cast<usize>(child)] = static_cast<i32>(index);
+            }
+        }
+    }
+}
+
+/// The roots to walk from: the scene's nodes when there is a scene, every parentless node
+/// otherwise. The same rule step 10 uses, so the two walks cannot disagree about what a root is.
+void gltf_walk_roots(const JsonDocument& json, JsonRef root, const std::vector<i32>& parents,
+                     std::vector<i32>& out) {
+    out.clear();
+    const JsonRef scenes = json.member(root, "scenes");
+    const auto scene_index = static_cast<usize>(json.integer_or(json.member(root, "scene"), 0));
+    const JsonRef scene_roots = json.member(json.at(scenes, scene_index), "nodes");
+    for (usize index = 0; index < json.size(scene_roots); ++index) {
+        out.push_back(static_cast<i32>(json.integer_or(json.at(scene_roots, index), -1)));
+    }
+    if (!out.empty()) {
+        return;
+    }
+    for (usize index = 0; index < parents.size(); ++index) {
+        if (parents[index] < 0) {
+            out.push_back(static_cast<i32>(index));
+        }
+    }
+}
+
+/// Mark every node any skin lists as a joint, and every ancestor of one.
+///
+/// THE ANCESTORS ARE NOT OPTIONAL. An ancestor's transform is part of its descendants' bind pose,
+/// so a skeleton that dropped it would place the whole rig somewhere else — `fbx_skeleton.h` states
+/// the same rule for the same reason. A skin whose `joints` array already lists them adds nothing.
+[[nodiscard]] bool mark_skin_joints(const JsonDocument& json, JsonRef root,
+                                    const std::vector<i32>& parents, std::vector<bool>& marked) {
+    marked.assign(parents.size(), false);
+    const JsonRef skins = json.member(root, "skins");
+    bool any = false;
+    for (usize index = 0; index < json.size(skins); ++index) {
+        const JsonRef joints = json.member(json.at(skins, index), "joints");
+        for (usize slot = 0; slot < json.size(joints); ++slot) {
+            i64 node = json.integer_or(json.at(joints, slot), -1);
+            while (node >= 0 && std::cmp_less(node, parents.size()) &&
+                   !marked[static_cast<usize>(node)]) {
+                marked[static_cast<usize>(node)] = true;
+                any = true;
+                node = parents[static_cast<usize>(node)];
+            }
+        }
+    }
+    return any;
+}
+
+/// One joint's rest placement, in its parent's space.
+///
+/// A glTF node's own TRS IS the bind pose: the specification requires the joint nodes to be in
+/// their rest placement, and `inverseBindMatrices` is the derived global inverse of exactly that.
+/// Reading the TRS rather than inverting the matrices is the choice `fbx_skeleton.h` made and for
+/// its reason — it is the identical field step 10 reads for the node table, so the skeleton and the
+/// hierarchy cannot disagree about where a joint is. A file whose two disagree is REPORTED rather
+/// than silently preferred one way: see `check_inverse_bind`.
+[[nodiscard]] Transform joint_bind_local(const JsonDocument& json, JsonRef source_node,
+                                         const ImportState& state) noexcept {
+    Transform bind;
+    const JsonRef matrix = json.member(source_node, "matrix");
+    if (json.size(matrix) == 16) {
+        Vec3 columns[3];
+        for (usize column = 0; column < 3; ++column) {
+            columns[column] =
+                Vec3{static_cast<f32>(json.number_or(json.at(matrix, (column * 4) + 0), 0.0)),
+                     static_cast<f32>(json.number_or(json.at(matrix, (column * 4) + 1), 0.0)),
+                     static_cast<f32>(json.number_or(json.at(matrix, (column * 4) + 2), 0.0))};
+        }
+        bind.scale = Vec3{length(columns[0]), length(columns[1]), length(columns[2])};
+        bind.rotation = Quat::from_basis(normalized_or(columns[0], Vec3{1, 0, 0}),
+                                         normalized_or(columns[1], Vec3{0, 1, 0}),
+                                         normalized_or(columns[2], Vec3{0, 0, 1}));
+        bind.translation =
+            to_engine(state, Vec3{static_cast<f32>(json.number_or(json.at(matrix, 12), 0.0)),
+                                  static_cast<f32>(json.number_or(json.at(matrix, 13), 0.0)),
+                                  static_cast<f32>(json.number_or(json.at(matrix, 14), 0.0))});
+        return bind;
+    }
+    const JsonRef translation = json.member(source_node, "translation");
+    bind.translation =
+        to_engine(state, Vec3{static_cast<f32>(json.number_or(json.at(translation, 0), 0.0)),
+                              static_cast<f32>(json.number_or(json.at(translation, 1), 0.0)),
+                              static_cast<f32>(json.number_or(json.at(translation, 2), 0.0))});
+    const JsonRef rotation = json.member(source_node, "rotation");
+    bind.rotation = Quat{static_cast<f32>(json.number_or(json.at(rotation, 0), 0.0)),
+                         static_cast<f32>(json.number_or(json.at(rotation, 1), 0.0)),
+                         static_cast<f32>(json.number_or(json.at(rotation, 2), 0.0)),
+                         static_cast<f32>(json.number_or(json.at(rotation, 3), 1.0))};
+    const JsonRef node_scale = json.member(source_node, "scale");
+    bind.scale = Vec3{static_cast<f32>(json.number_or(json.at(node_scale, 0), 1.0)),
+                      static_cast<f32>(json.number_or(json.at(node_scale, 1), 1.0)),
+                      static_cast<f32>(json.number_or(json.at(node_scale, 2), 1.0))};
+    return bind;
+}
+
+/// Walk the hierarchy depth first, parent before child, emitting every marked node as a joint.
+///
+/// Deterministic by construction: roots in the scene's own order, children in the file's own order.
+/// Nothing here reads a container whose ordering the format leaves open.
+void walk_gltf_joints(const JsonDocument& json, JsonRef root, const std::vector<bool>& marked,
+                      const std::vector<i32>& parents,
+                      const std::vector<std::string_view>& node_names, const ImportState& state,
+                      GltfRig& rig) {
+    const JsonRef node_array = json.member(root, "nodes");
+    rig.joint_of_node.assign(parents.size(), -1);
+    std::vector<i32> roots;
+    gltf_walk_roots(json, root, parents, roots);
+
+    std::vector<i32> stack;
+    for (usize index = roots.size(); index > 0; --index) {
+        stack.push_back(roots[index - 1]);
+    }
+    while (!stack.empty()) {
+        const i32 node = stack.back();
+        stack.pop_back();
+        if (node < 0 || std::cmp_greater_equal(node, parents.size())) {
+            continue;
+        }
+        const auto at = static_cast<usize>(node);
+        if (marked[at]) {
+            const i32 parent_node = parents[at];
+            const i32 parent_joint =
+                parent_node >= 0 ? rig.joint_of_node[static_cast<usize>(parent_node)] : -1;
+            ImportedJoint joint;
+            joint.name = std::string(node_names[at]);
+            joint.parent = parent_joint;
+            joint.bind_local = joint_bind_local(json, json.at(node_array, at), state);
+            joint.dropped_at = joint_bone_lod(joint.name);
+
+            const auto index = static_cast<i32>(rig.skeleton.joints.size());
+            // FIRST IN WALK ORDER WINS, exactly as the FBX walk decides it: a rig with two nodes
+            // named `LeftHand` has one of them playing the part, and which one is decided by the
+            // file's hierarchy rather than by whichever the loop reached last.
+            const u16 standard = humanoid_joint_of(joint.name);
+            if (standard != kUnmappedHumanoidJoint && rig.skeleton.humanoid.resolve(standard) < 0) {
+                rig.skeleton.humanoid.map(standard, index);
+            }
+            rig.joint_of_node[at] = index;
+            rig.skeleton.joints.push_back(std::move(joint));
+        }
+        const JsonRef children = json.member(json.at(node_array, at), "children");
+        for (usize child = json.size(children); child > 0; --child) {
+            stack.push_back(static_cast<i32>(json.integer_or(json.at(children, child - 1), -1)));
+        }
+    }
+}
+
+/// Make the bone levels nested subsets, which `Skeleton::finalize()` refuses a skeleton for not
+/// being. One forward pass suffices precisely because the joints are parent-before-child.
+void clamp_gltf_bone_levels(ImportedSkeleton& skeleton) noexcept {
+    for (usize index = 0; index < skeleton.joints.size(); ++index) {
+        const i32 parent = skeleton.joints[index].parent;
+        if (parent >= 0) {
+            const u8 limit = skeleton.joints[static_cast<usize>(parent)].dropped_at;
+            skeleton.joints[index].dropped_at = std::min(skeleton.joints[index].dropped_at, limit);
+        }
+    }
+}
+
+/// How far a joint's derived global bind pose is from the inverse the file supplied, as the largest
+/// absolute departure of `global * inverseBind` from the identity.
+///
+/// A CHECK RATHER THAN A CONVERSION, and the distinction is the point. glTF's own specification
+/// makes the node TRS and `inverseBindMatrices` two statements of one fact, so on a well-formed
+/// file this number is a rounding error. When it is not — a rig exported in a posed state, a tool
+/// that baked one and not the other — the rig this importer produces is not the rig the file meant,
+/// and the import must SAY so. Silently preferring either source is how a character comes in with
+/// its arms in the wrong place and no diagnostic anywhere.
+[[nodiscard]] f32 inverse_bind_deviation(const Mat4& global, const Mat4& inverse_bind) noexcept {
+    const Mat4 product = global * inverse_bind;
+    f32 worst = 0.0f;
+    for (usize row = 0; row < 4; ++row) {
+        for (usize column = 0; column < 4; ++column) {
+            const f32 expected = row == column ? 1.0f : 0.0f;
+            const f32 departure = std::abs(product.at(row, column) - expected);
+            worst = departure > worst ? departure : worst;
+        }
+    }
+    return worst;
+}
+
+/// Build the file's one skeleton, its slot maps and its joint-name table.
+///
+/// ONE SKELETON PER FILE AND NOT ONE PER SKIN, which is the shape the FBX importer already has: a
+/// character with a separate skin for its body and its coat is one rig, and two records would be
+/// two rigs a clip could only be bound to one of. Each skin keeps its own slot map into that one
+/// record.
+///
+/// Fills `rig` whether or not a sub-asset is emitted, so step 8 can index its tracks against the
+/// same joint numbering.
+[[nodiscard]] Status build_gltf_rig(const JsonDocument& json, JsonRef root,
+                                    const ImportState& state,
+                                    const std::vector<std::string_view>& node_names,
+                                    const std::vector<i32>& parents, ImportResult& out,
+                                    std::string_view source_path, GltfRig& rig) noexcept {
+    std::vector<bool> marked;
+    rig.from_skins = mark_skin_joints(json, root, parents, marked);
+    if (!rig.from_skins) {
+        // NO SKIN IS NOT AN ERROR. An animation-only export — a camera move, a prop, a door — has
+        // no rig and still has motion worth importing, so the table is every node. It is the
+        // fallback `fbx_clip.h` describes, and it is what keeps step 8 honest when step 7 declines
+        // to produce a skeleton.
+        marked.assign(parents.size(), true);
+    }
+    walk_gltf_joints(json, root, marked, parents, node_names, state, rig);
+    if (rig.skeleton.joints.empty()) {
+        return ok();
+    }
+    if (rig.skeleton.joints.size() >= kMaxSkeletonJoints) {
+        // `graph::pose::kMaxJoints` is a fixed `u64[4]` mask, so a rig over the cap could never be
+        // bound to a pose. Truncating a hierarchy silently is worse than not importing it.
+        rig.too_many_joints = true;
+        rig.skeleton.joints.clear();
+        rig.joint_of_node.assign(parents.size(), -1);
+        char detail[ImportDiagnostic::kDetailCapacity] = {};
+        (void)std::snprintf(detail, sizeof(detail),
+                            "this rig addresses more joints than a pose mask holds, so neither a "
+                            "skeleton nor any animation was imported from it");
+        return out.report(ImportSeverity::Warning, "rig-too-large", detail, source_path);
+    }
+    clamp_gltf_bone_levels(rig.skeleton);
+
+    // `Root` answers with the first root joint when the rig has no dedicated one, which is the case
+    // a Mixamo hierarchy is — its hips ARE the root. `SkeletonProfile` allows two standard joints
+    // to resolve to one, which is why this is a side table rather than a field.
+    if (rig.skeleton.humanoid.resolve(0) < 0) {
+        for (usize index = 0; index < rig.skeleton.joints.size(); ++index) {
+            if (rig.skeleton.joints[index].parent < 0) {
+                rig.skeleton.humanoid.map(0, static_cast<i32>(index));
+                break;
+            }
+        }
+    }
+
+    rig.joint_names.reserve(rig.skeleton.joints.size());
+    for (const ImportedJoint& joint : rig.skeleton.joints) {
+        rig.joint_names.emplace_back(joint.name);
+    }
+
+    const JsonRef skins = json.member(root, "skins");
+    rig.slot_to_joint.resize(json.size(skins));
+    for (usize index = 0; index < json.size(skins); ++index) {
+        const JsonRef joints = json.member(json.at(skins, index), "joints");
+        std::vector<u16>& slots = rig.slot_to_joint[index];
+        slots.reserve(json.size(joints));
+        for (usize slot = 0; slot < json.size(joints); ++slot) {
+            const i64 node = json.integer_or(json.at(joints, slot), -1);
+            const i32 joint = node >= 0 && std::cmp_less(node, rig.joint_of_node.size())
+                                  ? rig.joint_of_node[static_cast<usize>(node)]
+                                  : -1;
+            // A slot naming a node the walk never reached — a joint outside every scene — binds to
+            // joint 0 rather than out of range. It cannot happen in a well-formed file, and the
+            // alternative to a defined answer is a read past the end of a pose.
+            slots.push_back(joint >= 0 ? static_cast<u16>(joint) : u16{0});
+        }
+    }
+    return ok();
+}
+
+/// One inverse bind matrix out of a `MAT4` accessor's floats, column-major as glTF writes them.
+///
+/// `scale` is the importer's own option, which multiplies every translation: the file's matrix is
+/// in the file's units and the derived bind pose is in the scaled ones, so the comparison has to
+/// bring them into the same space or every scaled import would report a disagreement.
+[[nodiscard]] Mat4 inverse_bind_at(const std::vector<f32>& values, usize slot, f32 scale) noexcept {
+    Mat4 matrix;
+    for (usize column = 0; column < 4; ++column) {
+        for (usize row = 0; row < 4; ++row) {
+            matrix.at(row, column) = values[(slot * 16) + (column * 4) + row];
+        }
+    }
+    for (usize row = 0; row < 3; ++row) {
+        matrix.at(row, 3) *= scale;
+    }
+    return matrix;
+}
+
+/// Compare every skin's `inverseBindMatrices` against the bind pose the walk derived, and report
+/// the worst departure when it is past what float arithmetic explains.
+[[nodiscard]] Status check_inverse_bind(const JsonDocument& json, JsonRef root,
+                                        const Document& document, const ImportState& state,
+                                        const GltfRig& rig, ImportResult& out,
+                                        std::string_view source_path) noexcept {
+    if (rig.skeleton.joints.empty()) {
+        return ok();
+    }
+    // The global bind of every joint, composed once from the parent-before-child order.
+    std::vector<Mat4> global(rig.skeleton.joints.size());
+    for (usize index = 0; index < rig.skeleton.joints.size(); ++index) {
+        const ImportedJoint& joint = rig.skeleton.joints[index];
+        const Mat4 local = joint.bind_local.to_matrix();
+        global[index] = joint.parent < 0 ? local : global[static_cast<usize>(joint.parent)] * local;
+    }
+
+    const JsonRef skins = json.member(root, "skins");
+    const JsonRef accessors = json.member(root, "accessors");
+    f32 worst = 0.0f;
+    std::string_view worst_joint;
+    for (usize index = 0; index < json.size(skins) && index < rig.slot_to_joint.size(); ++index) {
+        const JsonRef matrices = json.member(json.at(skins, index), "inverseBindMatrices");
+        if (matrices == JsonDocument::kNone) {
+            continue;  // Defined to be identity, which says nothing to compare against.
+        }
+        Expected<std::vector<f32>, Error> values = read_accessor_floats(
+            document, json.at(accessors, static_cast<usize>(json.integer_or(matrices, -1))));
+        if (!values) {
+            continue;
+        }
+        const std::vector<u16>& slots = rig.slot_to_joint[index];
+        for (usize slot = 0; slot < slots.size(); ++slot) {
+            if (((slot + 1) * 16) > values.value().size()) {
+                break;
+            }
+            const Mat4 inverse_bind = inverse_bind_at(values.value(), slot, state.scale);
+            const f32 deviation = inverse_bind_deviation(global[slots[slot]], inverse_bind);
+            if (deviation > worst) {
+                worst = deviation;
+                worst_joint = rig.skeleton.joints[slots[slot]].name;
+            }
+        }
+    }
+
+    // A thousandth is two orders of magnitude above what composing a dozen 32-bit transforms costs
+    // and two orders below anything an eye can see, so it separates arithmetic from disagreement
+    // rather than splitting either.
+    constexpr f32 kBindTolerance = 1.0e-3f;
+    if (worst <= kBindTolerance) {
+        return ok();
+    }
+    char detail[ImportDiagnostic::kDetailCapacity] = {};
+    (void)std::snprintf(detail, sizeof(detail),
+                        "inverse bind matrices disagree with the joint transforms by %.4f at "
+                        "'%.40s'; the rig came from the transforms",
+                        static_cast<f64>(worst), std::string(worst_joint).c_str());
+    return out.report(ImportSeverity::Warning, "bind-pose-disagrees", detail, source_path);
+}
+
+#ifdef CY_IMPORT_ANIMATION
+
+/// What step 8 produced, measured rather than estimated.
+struct GltfClipReport {
+    u32 animations = 0;
+    u32 clips = 0;
+    u32 constant = 0;
+    u32 tracks = 0;
+    u32 keys_before = 0;
+    u32 keys_after = 0;
+    f32 worst_translation_mm = 0.0f;
+    f32 worst_rotation_degrees = 0.0f;
+    /// Channels targeting something this import has no joint index for — motion it DROPPED, and
+    /// the number that must never be non-zero without a diagnostic.
+    u32 unmapped_channels = 0;
+    /// Channels targeting `weights`: morph-target animation, which no step of this importer reads.
+    u32 morph_channels = 0;
+};
+
+/// One channel's samples, read out of its sampler.
+struct GltfSampler {
+    std::vector<f32> times;
+    std::vector<f32> values;
+    /// Components per key: 3 for translation and scale, 4 for rotation.
+    u32 lanes = 0;
+    animation::Interpolation interpolation = animation::Interpolation::Linear;
+    /// True for CUBICSPLINE, whose output holds an in-tangent, the value and an out-tangent per
+    /// key. Only the value is read: `Interpolation::Cubic` stores linear between the keys the
+    /// fitter keeps and carries no tangent, which `clip.h` states as a limitation of the codec
+    /// rather than of the format. The tolerance is measured against the authored keys either way,
+    /// so a cubic track simply keeps more of them.
+    bool cubic = false;
+};
+
+[[nodiscard]] bool read_gltf_sampler(const JsonDocument& json, const Document& document,
+                                     JsonRef accessors, JsonRef sampler, u32 lanes,
+                                     GltfSampler& out) noexcept {
+    Expected<std::vector<f32>, Error> times = read_accessor_floats(
+        document,
+        json.at(accessors, static_cast<usize>(json.integer_or(json.member(sampler, "input"), -1))));
+    Expected<std::vector<f32>, Error> values = read_accessor_floats(
+        document, json.at(accessors,
+                          static_cast<usize>(json.integer_or(json.member(sampler, "output"), -1))));
+    if (!times || !values || times.value().empty()) {
+        return false;
+    }
+    const std::string_view mode = json.string_or(json.member(sampler, "interpolation"), "LINEAR");
+    out.cubic = mode == "CUBICSPLINE";
+    out.lanes = lanes;
+    if (mode == "STEP") {
+        out.interpolation = animation::Interpolation::Step;
+    } else if (out.cubic) {
+        out.interpolation = animation::Interpolation::Cubic;
+    } else {
+        out.interpolation =
+            lanes == 4 ? animation::Interpolation::Spherical : animation::Interpolation::Linear;
+    }
+    const usize stride = out.cubic ? usize{3} * lanes : usize{lanes};
+    if (values.value().size() < times.value().size() * stride) {
+        return false;
+    }
+    out.times = std::move(times.value());
+    out.values = std::move(values.value());
+    return true;
+}
+
+/// The key at `index`, with CUBICSPLINE's tangents stepped over.
+[[nodiscard]] Vec4 gltf_sampler_value(const GltfSampler& sampler, usize index) noexcept {
+    const usize stride = sampler.cubic ? usize{3} * sampler.lanes : usize{sampler.lanes};
+    const usize at = (index * stride) + (sampler.cubic ? sampler.lanes : usize{0});
+    Vec4 value{0.0f, 0.0f, 0.0f, 0.0f};
+    for (usize lane = 0; lane < sampler.lanes; ++lane) {
+        value[lane] = sampler.values[at + lane];
+    }
+    return value;
+}
+
+/// Author one channel onto the clip.
+///
+/// THE ORDER IS FORCED BY THE CLIP, not chosen: `Clip::add_key` refuses any track but the
+/// last-added one, because every track's keys live in one shared array. So a track is opened and
+/// filled before the next is opened.
+[[nodiscard]] Status author_gltf_channel(const GltfSampler& sampler, animation::TrackKind kind,
+                                         u16 joint, const ImportState& state,
+                                         animation::Clip& clip) noexcept {
+    Expected<u32, Error> track = clip.add_joint_track(kind, joint, sampler.interpolation);
+    if (!track) {
+        return make_unexpected(track.error());
+    }
+    f32 previous = -1.0f;
+    for (usize index = 0; index < sampler.times.size(); ++index) {
+        // Keys must arrive in increasing time order, and a source that repeats a time would make
+        // the codec's segment search ambiguous. A repeated or decreasing key is dropped rather
+        // than nudged, because nudging invents a keyframe nobody authored.
+        const f32 time = sampler.times[index];
+        if (index != 0 && time <= previous) {
+            continue;
+        }
+        previous = time;
+        Vec4 value = gltf_sampler_value(sampler, index);
+        if (kind == animation::TrackKind::Translation) {
+            const Vec3 converted = to_engine(state, Vec3{value.x, value.y, value.z});
+            value = Vec4{converted.x, converted.y, converted.z, 0.0f};
+        }
+        if (Status added = clip.add_key(track.value(), time, value); !added) {
+            return added;
+        }
+    }
+    return ok();
+}
+
+/// Import every animation in the file as its own `Animation` sub-asset.
+[[nodiscard]] Status import_gltf_animations(const JsonDocument& json, JsonRef root,
+                                            const Document& document, const ImportState& state,
+                                            const GltfRig& rig, std::string_view source_path,
+                                            SubAssetNames& names, ImportResult& out,
+                                            GltfClipReport& report) noexcept {
+    const JsonRef animations = json.member(root, "animations");
+    report.animations = static_cast<u32>(json.size(animations));
+    if (report.animations == 0 || rig.skeleton.joints.empty()) {
+        return ok();
+    }
+    const JsonRef accessors = json.member(root, "accessors");
+    const std::string_view stem = stem_of_path(source_path);
+
+    for (usize index = 0; index < json.size(animations); ++index) {
+        const JsonRef source = json.at(animations, index);
+        const JsonRef channels = json.member(source, "channels");
+        const JsonRef samplers = json.member(source, "samplers");
+
+        animation::Clip clip(current_allocator());
+        const std::string_view declared = json.string_or(json.member(source, "name"), "");
+        // ONE ANIMATION TAKES THE FILE'S OWN STEM, SEVERAL TAKE THEIR OWN NAMES — the rule
+        // `fbx_clip.h` sets and for its reason: a library export names every clip the same thing,
+        // and the file name is what the artist actually chose.
+        const std::string_view clip_name =
+            report.animations == 1 || declared.empty() ? stem : declared;
+        clip.set_name(Name::intern(clip_name));
+
+        // CHANNELS ARE GROUPED BY JOINT BEFORE ANY IS AUTHORED. `add_key` refuses any track but the
+        // last opened one, and glTF fixes no ordering on `channels` — a file that interleaves two
+        // joints' translations would otherwise import one key each and drop the rest, in silence.
+        struct JointChannels {
+            u16 joint = 0;
+            i32 translation = -1;
+            i32 rotation = -1;
+            i32 scale = -1;
+        };
+        std::vector<JointChannels> per_joint;
+        f32 duration = 0.0f;
+        for (usize slot = 0; slot < json.size(channels); ++slot) {
+            const JsonRef channel = json.at(channels, slot);
+            const JsonRef target = json.member(channel, "target");
+            const i64 node = json.integer_or(json.member(target, "node"), -1);
+            const std::string_view path = json.string_or(json.member(target, "path"), "");
+            if (path == "weights") {
+                ++report.morph_channels;
+                continue;
+            }
+            const i32 joint = node >= 0 && std::cmp_less(node, rig.joint_of_node.size())
+                                  ? rig.joint_of_node[static_cast<usize>(node)]
+                                  : -1;
+            if (joint < 0) {
+                ++report.unmapped_channels;
+                continue;
+            }
+            JointChannels* entry = nullptr;
+            for (JointChannels& candidate : per_joint) {
+                if (candidate.joint == static_cast<u16>(joint)) {
+                    entry = &candidate;
+                    break;
+                }
+            }
+            if (entry == nullptr) {
+                per_joint.push_back(JointChannels{static_cast<u16>(joint), -1, -1, -1});
+                entry = &per_joint.back();
+            }
+            const auto sampler_index =
+                static_cast<i32>(json.integer_or(json.member(channel, "sampler"), -1));
+            if (path == "translation") {
+                entry->translation = sampler_index;
+            } else if (path == "rotation") {
+                entry->rotation = sampler_index;
+            } else if (path == "scale") {
+                entry->scale = sampler_index;
+            }
+        }
+
+        const auto author = [&](i32 sampler_index, animation::TrackKind kind, u16 joint,
+                                u32 lanes) noexcept -> Status {
+            if (sampler_index < 0) {
+                return ok();
+            }
+            GltfSampler sampler;
+            if (!read_gltf_sampler(json, document, accessors,
+                                   json.at(samplers, static_cast<usize>(sampler_index)), lanes,
+                                   sampler)) {
+                return ok();
+            }
+            duration = sampler.times.back() > duration ? sampler.times.back() : duration;
+            return author_gltf_channel(sampler, kind, joint, state, clip);
+        };
+        for (const JointChannels& entry : per_joint) {
+            if (Status authored =
+                    author(entry.translation, animation::TrackKind::Translation, entry.joint, 3);
+                !authored) {
+                return authored;
+            }
+            if (Status authored =
+                    author(entry.rotation, animation::TrackKind::Rotation, entry.joint, 4);
+                !authored) {
+                return authored;
+            }
+            if (Status authored = author(entry.scale, animation::TrackKind::Scale, entry.joint, 3);
+                !authored) {
+                return authored;
+            }
+        }
+        if (clip.track_count() == 0) {
+            continue;
+        }
+        // A clip whose duration is zero divides by it when a time is wrapped, so a single-key
+        // animation gets one sample period rather than nothing.
+        clip.set_duration(duration > 0.0f ? duration : 1.0f / state.animation_sample_rate);
+        clip.set_sample_rate_hint(state.animation_sample_rate);
+
+        animation::CompressionSettings settings;
+        settings.translation_tolerance_mm = state.animation_translation_tolerance_mm;
+        settings.rotation_tolerance_degrees = state.animation_rotation_tolerance_degrees;
+        if (Status compressed = clip.compress(settings); !compressed) {
+            return compressed;
+        }
+        const animation::CompressionReport& measured = clip.report();
+        if (measured.tracks == measured.constant_tracks) {
+            // Every track collapsed to one key: this animation animates nothing within the
+            // tolerances this import declared. Reported, never dropped in silence.
+            ++report.constant;
+            if (Status reported =
+                    out.report(ImportSeverity::Info, "constant-animation",
+                               "every track of this animation holds one value for its whole "
+                               "length, so it animates nothing and produced no clip",
+                               clip_name);
+                !reported) {
+                return reported;
+            }
+            continue;
+        }
+
+        Array<u8> payload;
+        if (Status written = write_cooked_clip(
+                clip, Span<const std::string_view>(rig.joint_names.data(), rig.joint_names.size()),
+                payload);
+            !written) {
+            return written;
+        }
+        const std::string name = names.unique("animation/", clip_name, index);
+        if (Status added = out.add(assets::AssetKind::Animation, name, std::move(payload), false);
+            !added) {
+            return added;
+        }
+        ++report.clips;
+        report.tracks += measured.tracks;
+        report.keys_before += measured.keys_before;
+        report.keys_after += measured.keys_after;
+        report.worst_translation_mm = measured.worst_translation_mm > report.worst_translation_mm
+                                          ? measured.worst_translation_mm
+                                          : report.worst_translation_mm;
+        report.worst_rotation_degrees =
+            measured.worst_rotation_degrees > report.worst_rotation_degrees
+                ? measured.worst_rotation_degrees
+                : report.worst_rotation_degrees;
+    }
+    return ok();
+}
+
+#endif  // CY_IMPORT_ANIMATION
 
 }  // namespace
 
@@ -820,9 +1637,17 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
     Expected<OptionValue, Error> lod_error = option("lod-error-bound");
     Expected<OptionValue, Error> collision_suffix = option("collision-suffix");
     Expected<OptionValue, Error> collision_mode = option("collision-mode");
+    Expected<OptionValue, Error> skins_option = option("import-skins");
+    Expected<OptionValue, Error> animations_option = option("import-animations");
+    Expected<OptionValue, Error> sample_rate = option("animation-sample-rate");
+    Expected<OptionValue, Error> translation_tolerance =
+        option("animation-translation-tolerance-mm");
+    Expected<OptionValue, Error> rotation_tolerance =
+        option("animation-rotation-tolerance-degrees");
     if (!scale || !up || !meshes || !materials || !weld_tolerance || !smoothing || !tangents ||
         !optimise_option || !overdraw || !lightmap || !density || !padding || !lod_count ||
-        !lod_ratio || !lod_error || !collision_suffix || !collision_mode) {
+        !lod_ratio || !lod_error || !collision_suffix || !collision_mode || !skins_option ||
+        !animations_option || !sample_rate || !translation_tolerance || !rotation_tolerance) {
         return fail(ErrorCode::Internal, "the glTF importer's own option schema is inconsistent");
     }
     state.scale = static_cast<f32>(scale.value().as_float());
@@ -842,6 +1667,13 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
     state.build.lod_error_bound = static_cast<f32>(lod_error.value().as_float());
     state.build.collision_suffix = collision_suffix.value().as_text();
     state.build.collision_mode = collision_mode.value().as_text();
+    state.import_skins = skins_option.value().as_bool();
+    state.import_animations = animations_option.value().as_bool();
+    state.animation_sample_rate = static_cast<f32>(sample_rate.value().as_float());
+    state.animation_translation_tolerance_mm =
+        static_cast<f32>(translation_tolerance.value().as_float());
+    state.animation_rotation_tolerance_degrees =
+        static_cast<f32>(rotation_tolerance.value().as_float());
 
     // --- 1. Parse.
     std::string_view json_text;
@@ -936,17 +1768,56 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
         }
     }
 
-    // --- Report what is read and skipped, once, rather than per primitive.
-    if (json.size(json.member(root, "skins")) != 0 ||
-        json.size(json.member(root, "animations")) != 0) {
+    // --- 7. The skeleton. It runs BEFORE the meshes because a mesh's `JOINTS_0` addresses a slot
+    // in its skin's own `joints` array, and the cooked record numbers joints differently — see the
+    // section header on `GltfRig` for why the two numberings exist. `rig.slot_to_joint` is what
+    // joins them, and it has to exist before the first influence is read.
+    const JsonRef rig_nodes = json.member(root, "nodes");
+    const usize rig_node_count = json.size(rig_nodes);
+    std::vector<std::string_view> rig_node_names;
+    rig_node_names.reserve(rig_node_count);
+    for (usize index = 0; index < rig_node_count; ++index) {
+        rig_node_names.push_back(
+            json.string_or(json.member(json.at(rig_nodes, index), "name"), ""));
+    }
+    std::vector<i32> rig_parents;
+    build_node_parents(json, rig_nodes, rig_parents);
+
+    /// The skin each glTF mesh is deformed by, taken from the nodes that draw it, or -1.
+    ///
+    /// A mesh drawn by two nodes with two different skins is a file this importer cannot represent
+    /// — the engine's mesh carries one binding per vertex — so the FIRST is kept and the conflict
+    /// is named rather than silently resolved.
+    std::vector<i32> skin_of_mesh(json.size(json.member(root, "meshes")), -1);
+    bool conflicting_skins = false;
+    for (usize index = 0; index < rig_node_count; ++index) {
+        const JsonRef source_node = json.at(rig_nodes, index);
+        const i64 mesh = json.integer_or(json.member(source_node, "mesh"), -1);
+        const i64 skin = json.integer_or(json.member(source_node, "skin"), -1);
+        if (mesh < 0 || skin < 0 || std::cmp_greater_equal(mesh, skin_of_mesh.size())) {
+            continue;
+        }
+        i32& slot = skin_of_mesh[static_cast<usize>(mesh)];
+        conflicting_skins = conflicting_skins || (slot >= 0 && slot != static_cast<i32>(skin));
+        slot = slot >= 0 ? slot : static_cast<i32>(skin);
+    }
+    if (conflicting_skins) {
         if (Status reported = out.report(
-                ImportSeverity::Warning, "skipped-rig",
-                "this file carries skins or animations, which this build does not import: "
-                "animation-and-skinning reaches Working at M8 and there is nothing to import a "
-                "skeleton into before it. Meshes and materials came through.",
+                ImportSeverity::Warning, "mesh-shared-between-skins",
+                "a mesh in this file is drawn by nodes with different skins; a cooked mesh carries "
+                "one binding per vertex, so the first skin was used for all of them",
                 request.source.view());
             !reported) {
             return reported;
+        }
+    }
+
+    GltfRig rig;
+    if (state.import_skins || state.import_animations) {
+        if (Status built = build_gltf_rig(json, root, state, rig_node_names, rig_parents, out,
+                                          request.source.view(), rig);
+            !built) {
+            return built;
         }
     }
 
@@ -1082,6 +1953,23 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
             const std::vector<f32> normals = read_optional("NORMAL");
             const std::vector<f32> uvs = read_optional("TEXCOORD_0");
             const std::vector<f32> uv2 = read_optional("TEXCOORD_1");
+            // Step 7's half that lives on the mesh. `JOINTS_0` is an unsigned byte or short
+            // accessor and `WEIGHTS_0` a float or a normalised integer one; `read_accessor_floats`
+            // already handles both, including glTF's normalisation rule.
+            const bool want_skin = state.import_skins && !rig.skeleton.joints.empty();
+            const std::vector<f32> joint_slots =
+                want_skin ? read_optional("JOINTS_0") : std::vector<f32>{};
+            const std::vector<f32> joint_weights =
+                want_skin ? read_optional("WEIGHTS_0") : std::vector<f32>{};
+            const bool has_skin = joint_slots.size() == vertex_count * kSkinInfluences &&
+                                  joint_weights.size() == vertex_count * kSkinInfluences;
+            const std::vector<u16>* slot_map = nullptr;
+            if (has_skin) {
+                const i32 skin = skin_of_mesh[index];
+                if (skin >= 0 && std::cmp_less(skin, rig.slot_to_joint.size())) {
+                    slot_map = &rig.slot_to_joint[static_cast<usize>(skin)];
+                }
+            }
             // Attribute arrays must stay one-to-one with positions, so a primitive that supplies an
             // attribute for some vertices and not others is padded rather than left ragged — which
             // `MeshData::validate` would otherwise refuse for the whole mesh.
@@ -1117,6 +2005,47 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
                     }
                 } else if (!built.uv2.empty()) {
                     if (Status pushed = built.uv2.push_back(Vec2{0.0f, 0.0f}); !pushed) {
+                        return pushed;
+                    }
+                }
+                if (has_skin) {
+                    SkinInfluence influence;
+                    f32 total = 0.0f;
+                    for (usize lane = 0; lane < kSkinInfluences; ++lane) {
+                        const auto skin_slot =
+                            static_cast<usize>(joint_slots[(vertex * kSkinInfluences) + lane]);
+                        // Through the slot map, never straight: the file's slot and the cooked
+                        // joint index are two numberings and confusing them is a character whose
+                        // left arm moves when its right leg does.
+                        influence.joints[lane] = slot_map != nullptr && skin_slot < slot_map->size()
+                                                     ? (*slot_map)[skin_slot]
+                                                     : static_cast<u16>(skin_slot);
+                        influence.weights[lane] = joint_weights[(vertex * kSkinInfluences) + lane];
+                        total += influence.weights[lane];
+                    }
+                    // RENORMALISED, because glTF only recommends that the four sum to one and a
+                    // quantised WEIGHTS_0 accessor rounds away from it by construction. A vertex
+                    // whose weights sum to 0.997 shrinks towards the origin under skinning, which
+                    // reads as a seam rather than as a weight problem.
+                    if (total > 0.0f) {
+                        for (f32& weight : influence.weights) {
+                            weight /= total;
+                        }
+                    } else {
+                        // No influence at all binds the vertex rigidly to the joint its first slot
+                        // names, which is what a cooked mesh's skinning path can actually draw.
+                        influence.weights[0] = 1.0f;
+                    }
+                    if (Status pushed = built.skin.push_back(influence); !pushed) {
+                        return pushed;
+                    }
+                } else if (!built.skin.empty()) {
+                    // A primitive with no binding inside a mesh that has one: bound rigidly to the
+                    // first joint rather than left ragged, which `MeshData::validate` would refuse
+                    // for the whole mesh. The same padding rule the attributes above follow.
+                    SkinInfluence influence;
+                    influence.weights[0] = 1.0f;
+                    if (Status pushed = built.skin.push_back(influence); !pushed) {
                         return pushed;
                     }
                 }
@@ -1182,6 +2111,9 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
         if (!built.uv2.empty() && built.uv2.size() != built.positions.size()) {
             built.uv2.clear();
         }
+        if (!built.skin.empty() && built.skin.size() != built.positions.size()) {
+            built.skin.clear();
+        }
 
         // --- 3, 2 and 4: generate what is missing, weld, then optimise. 5: the level-of-detail
         // chain. Both are `model.h`'s, shared with the FBX importer so that one mesh exported in
@@ -1196,6 +2128,115 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
 
         built_meshes.back() = std::move(built);
     }
+
+    // --- 7, continued: emit the skeleton, and 8: the clips.
+    //
+    // AFTER THE MESHES because the sub-asset names come from `names`, which numbers every
+    // sub-asset this import produces, and a skeleton that took its name before the meshes would
+    // renumber every one of them — re-minting `AssetId`s that a project has already bound.
+    if (!rig.skeleton.joints.empty() && state.import_skins) {
+        std::string_view stem;
+        for (const ImportedJoint& joint : rig.skeleton.joints) {
+            if (joint.parent < 0) {
+                stem = strip_joint_namespace(joint.name);
+                break;
+            }
+        }
+        rig.skeleton.name = names.unique(kSkeletonSubAssetPrefix, stem, 0);
+        Array<u8> skeleton_payload;
+        if (Status written = write_cooked_skeleton(rig.skeleton, skeleton_payload); !written) {
+            return written;
+        }
+        if (Status added = out.add(assets::AssetKind::Animation, rig.skeleton.name,
+                                   std::move(skeleton_payload), false);
+            !added) {
+            return added;
+        }
+        if (Status checked =
+                check_inverse_bind(json, root, document, state, rig, out, request.source.view());
+            !checked) {
+            return checked;
+        }
+        char detail[ImportDiagnostic::kDetailCapacity] = {};
+        (void)std::snprintf(
+            detail, sizeof(detail), "%u joint(s), %u of the 22 standard humanoid joints mapped",
+            static_cast<u32>(rig.skeleton.joints.size()), rig.skeleton.humanoid.mapped_count());
+        if (Status reported = out.report(ImportSeverity::Info, "imported-skeleton", detail,
+                                         request.source.view());
+            !reported) {
+            return reported;
+        }
+    }
+
+#ifdef CY_IMPORT_ANIMATION
+    GltfClipReport clips;
+    if (state.import_animations && !rig.too_many_joints) {
+        if (Status imported = import_gltf_animations(json, root, document, state, rig,
+                                                     request.source.view(), names, out, clips);
+            !imported) {
+            return imported;
+        }
+    }
+    // "the achieved compression ratio and worst-case error SHALL be reported", and the numbers are
+    // MEASURED by the codec against the authored keys rather than estimated from the settings.
+    if (clips.clips != 0) {
+        char detail[ImportDiagnostic::kDetailCapacity] = {};
+        (void)std::snprintf(detail, sizeof(detail),
+                            "%u clip(s), %u tracks, %u keys from %u authored; worst error %.3f mm "
+                            "and %.3f degrees",
+                            clips.clips, clips.tracks, clips.keys_after, clips.keys_before,
+                            static_cast<f64>(clips.worst_translation_mm),
+                            static_cast<f64>(clips.worst_rotation_degrees));
+        if (Status reported = out.report(ImportSeverity::Info, "imported-animation", detail,
+                                         request.source.view());
+            !reported) {
+            return reported;
+        }
+    }
+    if (clips.unmapped_channels != 0) {
+        char detail[ImportDiagnostic::kDetailCapacity] = {};
+        (void)std::snprintf(detail, sizeof(detail),
+                            "%u animation channel(s) target something outside this file's joint "
+                            "table, so their motion was not imported",
+                            clips.unmapped_channels);
+        if (Status reported = out.report(ImportSeverity::Warning, "unmapped-animation", detail,
+                                         request.source.view());
+            !reported) {
+            return reported;
+        }
+    }
+    if (clips.morph_channels != 0) {
+        // Morph targets are step 9's neighbour and no step of this importer reads them. Named,
+        // because a file whose facial animation vanished without a word is the silent drop this
+        // whole section exists to end.
+        char detail[ImportDiagnostic::kDetailCapacity] = {};
+        (void)std::snprintf(detail, sizeof(detail),
+                            "%u animation channel(s) drive morph target weights, which this "
+                            "importer does not read; everything else in them came through",
+                            clips.morph_channels);
+        if (Status reported = out.report(ImportSeverity::Warning, "skipped-morph-targets", detail,
+                                         request.source.view());
+            !reported) {
+            return reported;
+        }
+    }
+#else
+    // `-D CY_ANIMATION=OFF` removed src/animation/ from the build, so there is no clip codec to
+    // compress with and step 8 was NOT REACHED. `asset-import-pipeline` draws exactly that line: a
+    // step skipped for that reason is not a warning about the file and SHALL NOT be reported as
+    // one. `info.steps` says the same thing to the derivation key.
+    if (state.import_animations && json.size(json.member(root, "animations")) != 0) {
+        if (Status reported = out.report(
+                ImportSeverity::Info, "animation-runtime-absent",
+                "this build was configured with CY_ANIMATION=OFF, so there is no clip codec to "
+                "compress with and step 8 was not reached; the animations in this file were read "
+                "by nothing",
+                request.source.view());
+            !reported) {
+            return reported;
+        }
+    }
+#endif
 
     // --- 10. The hierarchy.
     std::vector<ImportedNode> nodes;

@@ -216,6 +216,14 @@ public:
     u32 parent = kNoParent;
     /// The authoring layer, a slice of `World::text()`.
     WorldText layer;
+    /// The **author-given name**, a slice of `World::text()`. Empty where the node has none.
+    ///
+    /// `editor-documents-and-transactions` requires a name that is neither the node's identity nor
+    /// its grouping. Both halves matter here: `identity` is what a transaction addresses and a
+    /// rename does not move it, and `layer` is where a name used to have to go because there was
+    /// nowhere else — `samples/05b-editor-window` put `"Pillar"`, `"Crate"` and `"Marker"` in the
+    /// layer field and therefore put three objects in three one-node layers.
+    WorldText name;
     /// Whether the node still exists. A delete does not compact the array, because every other
     /// node's index is a parent reference and compaction would rewrite them all.
     bool live = true;
@@ -351,6 +359,14 @@ struct WorldReadReport {
     u32 fields = 0;
     u32 nodes = 0;
     u32 components = 0;
+    /// How many nodes carried an author-given name.
+    u32 named = 0;
+    /// Whether the file put its node NAMES in the layer field.
+    ///
+    /// `editor-documents-and-transactions`: *"a document that encodes a name in the layer field
+    /// SHALL be reported rather than accepted"*. Reported and not refused — see
+    /// `layers_used_as_names` for the shape and for why refusing would be the worse answer.
+    bool layers_used_as_names = false;
 };
 
 /// Read a `.cyworld`.
@@ -369,6 +385,19 @@ struct WorldReadReport {
 /// editor wrote: floats are the shortest text that parses back to the same bits, lists are written
 /// in the order they were read, and nothing here writes a timestamp, a path or a pointer.
 [[nodiscard]] Status write_world(const World& world, Array<char>& out) noexcept;
+
+/// Whether a world's layers are being used as node names.
+///
+/// The shape, and it is the one `samples/05b-editor-window` had before this rung: more than one
+/// live node, not one of them named, every node in a layer, and every layer holding exactly one
+/// node. A layer whose only member is one node groups nothing — it is a name with nowhere else to
+/// go.
+///
+/// Reported rather than refused, and the reason is asymmetric: a world genuinely built with one
+/// node per layer is possible and would be reported here, which costs a diagnostic; refusing would
+/// make every world written before a node had a name unopenable, and the only way to move a name
+/// out of the layer field is to open the world.
+[[nodiscard]] bool layers_used_as_names(const World& world) noexcept;
 
 /// Match the file's declared names against the engine's own schema.
 ///

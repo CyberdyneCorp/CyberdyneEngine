@@ -19,6 +19,7 @@
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_protocol::{ApplyWhen, Message, RequestId, Session, SessionEvent, SessionState};
 use cy_editor_sdk::HostingMode;
+use cy_editor_viewport::play::PlayMode;
 
 use crate::notifications::{Notification, NotificationService};
 
@@ -157,7 +158,18 @@ impl RuntimeSession {
     /// and the refusal is the interesting half: an editor with no engine attached can still switch
     /// its own badge (which [`crate::editor::Editor::set_play`] does), but it must not claim
     /// anything is simulating.
-    pub fn play(&self, state: &str) -> Result<RequestId> {
+    /// `mode` says WHERE the runtime is to run it. M11.b task 3.1.
+    ///
+    /// The mode is sent on every play message rather than only on the one that enters play, because
+    /// the runtime's session is the thing that carries it and a pause or a stop that omitted it
+    /// would leave the two ends disagreeing about which machine is simulating.
+    ///
+    /// **A mode this editor does not know is refused here, by name, and nothing is sent.** That is
+    /// `specs/live-editing/`'s first scenario: a request for a mode with no implementation must fail
+    /// naming the mode, and no other mode may start. The engine refuses again at its own end — two
+    /// refusals rather than one, because the editor's knows the word is wrong and the engine's knows
+    /// the build cannot do it, and they are different facts.
+    pub fn play(&self, state: &str, mode: PlayMode) -> Result<RequestId> {
         let session = self.session.as_ref().ok_or_else(|| {
             Problem::new(
                 format!("switch the runtime to {state}"),
@@ -171,6 +183,7 @@ impl RuntimeSession {
         session.send(&Message::Play {
             request,
             state: state.to_string(),
+            mode: mode.name().to_string(),
         })?;
         Ok(request)
     }

@@ -18,8 +18,10 @@
 # resolving to a stale copy somebody left in the build directory.
 set(CY_SHADER_STDLIB_MODULES
     cy/brdf.slang
+    cy/cloud_shadow.slang
     cy/cluster.slang
     cy/color.slang
+    cy/field.slang
     cy/fullscreen.slang
     cy/globals.slang
     cy/frame.slang
@@ -30,6 +32,7 @@ set(CY_SHADER_STDLIB_MODULES
     cy/particle.slang
     cy/sampling.slang
     cy/shadow.slang
+    cy/terrain_shade.slang
     cy/tonemap.slang
     cy/view.slang)
 

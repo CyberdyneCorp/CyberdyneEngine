@@ -368,6 +368,66 @@ Character::Character(Allocator& allocator_in) noexcept
       indices(allocator_in),
       influences(allocator_in) {}
 
+Status convert_influences(Span<const import::SkinInfluence> influences, u32 joint_count,
+                          Array<render::geometry::GpuSkinInfluence>& out,
+                          SkinReport& report) noexcept {
+    if (Status sized = out.resize(influences.size()); !sized) {
+        return sized;
+    }
+    std::vector<bool> used(joint_count, false);
+    report.vertices = static_cast<u32>(influences.size());
+    report.imported = true;
+    report.worst_bind_distance = 0.0F;
+
+    for (usize vertex = 0; vertex < influences.size(); ++vertex) {
+        const import::SkinInfluence& influence = influences[vertex];
+        u8 indices[4] = {0, 0, 0, 0};
+        u8 bytes[4] = {0, 0, 0, 0};
+        // Largest remainder, so the four bytes sum to 255 exactly. Four independent roundings of a
+        // partition of one sum to 254 or 256 about half the time, and `skin_dispatch.h` calls a
+        // stream that does not sum to 255 a content defect the dispatch faithfully reproduces.
+        f32 remainder[4] = {0.0F, 0.0F, 0.0F, 0.0F};
+        u32 assigned = 0;
+        for (u32 lane = 0; lane < 4U; ++lane) {
+            if (influence.joints[lane] > 0xFFU) {
+                return fail(ErrorCode::OutOfRange,
+                            "a joint index past 255, which VertexStream::Skin's one-byte bone "
+                            "index cannot address");
+            }
+            indices[lane] = static_cast<u8>(influence.joints[lane]);
+            const f32 scaled = influence.weights[lane] * 255.0F;
+            const f32 floored = std::floor(scaled);
+            bytes[lane] = static_cast<u8>(floored);
+            remainder[lane] = scaled - floored;
+            assigned += bytes[lane];
+        }
+        while (assigned < 255U) {
+            u32 best = 0;
+            for (u32 lane = 1; lane < 4U; ++lane) {
+                best = remainder[lane] > remainder[best] ? lane : best;
+            }
+            if (bytes[best] == 0xFFU) {
+                break;
+            }
+            ++bytes[best];
+            ++assigned;
+            remainder[best] = -1.0F;
+        }
+        for (u32 lane = 0; lane < 4U; ++lane) {
+            if (bytes[lane] != 0 && influence.joints[lane] < joint_count) {
+                used[influence.joints[lane]] = true;
+            }
+        }
+        out[vertex] = render::geometry::skin_influence(indices, bytes);
+    }
+
+    report.bones_used = 0;
+    for (const bool bone_used : used) {
+        report.bones_used += bone_used ? 1U : 0U;
+    }
+    return ok();
+}
+
 Status derive_influences(const animation::Skeleton& skeleton, Span<const Vec3> vertices,
                          Array<render::geometry::GpuSkinInfluence>& out,
                          SkinReport& report) noexcept {
@@ -438,6 +498,16 @@ namespace {
     }
     if (Status sized = out.indices.resize(mesh.indices.size()); !sized) {
         return sized;
+    }
+    // The artist's bindings, when the cooked mesh has them. Kept rather than converted here
+    // because the conversion needs the skeleton's joint count, and the skeleton is built later.
+    if (mesh.skin.size() == mesh.positions.size()) {
+        if (Status sized = out.imported_skin.resize(mesh.skin.size()); !sized) {
+            return sized;
+        }
+        for (usize vertex = 0; vertex < mesh.skin.size(); ++vertex) {
+            out.imported_skin[vertex] = mesh.skin[vertex];
+        }
     }
     for (usize vertex = 0; vertex < mesh.positions.size(); ++vertex) {
         out.positions[vertex] = mesh.positions[vertex];
@@ -635,10 +705,19 @@ Status load_character(Allocator& allocator, const CharacterSources& sources,
         out.clips[index] = std::move(baked);
     }
 
-    // --- The skin. See the header comment: the weights are derived, not imported.
-    if (Status bound =
-            derive_influences(out.skeleton, out.positions.span(), out.influences, out.skin);
-        !bound) {
+    // --- The skin. The artist's weights when the cooked mesh carries them — which it has since
+    // M11.b taught both model importers to fill `MeshData::skin` — and the derived bind when it
+    // does not, which is what an older cache entry is. Never in silence either way: `imported`
+    // reaches the printed report.
+    if (!out.imported_skin.empty()) {
+        if (Status bound = convert_influences(out.imported_skin.span(), out.skeleton.joint_count(),
+                                              out.influences, out.skin);
+            !bound) {
+            return bound;
+        }
+    } else if (Status bound =
+                   derive_influences(out.skeleton, out.positions.span(), out.influences, out.skin);
+               !bound) {
         return bound;
     }
     out.skin.triangles = static_cast<u32>(out.indices.size() / 3U);

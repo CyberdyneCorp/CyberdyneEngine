@@ -322,6 +322,37 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_round_trips_through_the_codec() {
+        // The operation stream is the one encoding of an edit — the journal's, live editing's and
+        // the engine's — so a new operation that did not survive the codec would be a rename the
+        // runtime never hears about. `src/scene/serialization/src/world_transaction.cpp` reads tag
+        // 12 from the other side; this is the half that pins the tag on this one.
+        let node = NodeId::in_document(document(), 1);
+        let rename = Operation::SetName {
+            node,
+            before: "Crate".to_string(),
+            after: "Barrel".to_string(),
+        };
+        let original = transaction("Rename", vec![rename.clone()], None);
+
+        let mut writer = Writer::new();
+        original.encode(&mut writer);
+        let bytes = writer.finish();
+        let mut reader = Reader::new(&bytes);
+        let restored = Transaction::decode(&mut reader).unwrap();
+        assert_eq!(restored, original);
+
+        assert_eq!(
+            rename.inverse(),
+            Operation::SetName {
+                node,
+                before: "Barrel".to_string(),
+                after: "Crate".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn an_inverse_reverses_both_the_operations_and_their_order() {
         let first = NodeId::in_document(document(), 1);
         let second = NodeId::in_document(document(), 2);

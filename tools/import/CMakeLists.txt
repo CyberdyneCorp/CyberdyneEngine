@@ -51,6 +51,7 @@ cy_add_module(
     ALIAS cy::import
     TYPE STATIC
     SOURCES
+        src/clip_record.cpp
         src/fbx.cpp
         src/fbx_clip.cpp
         src/fbx_skeleton.cpp

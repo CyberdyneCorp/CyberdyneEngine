@@ -169,6 +169,10 @@ Status MeshData::validate() const noexcept {
     if (!uv2.empty() && uv2.size() != count) {
         return fail(ErrorCode::InvalidArgument, "the mesh has a uv2 count unlike its vertices");
     }
+    if (!skin.empty() && skin.size() != count) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the mesh has a skin influence count unlike its vertices");
+    }
     if (!tangents.empty() && tangents.size() != count) {
         return fail(ErrorCode::InvalidArgument, "the mesh has a tangent count unlike its vertices");
     }
@@ -214,6 +218,7 @@ void MeshData::clear() noexcept {
     uvs.clear();
     uv2.clear();
     tangents.clear();
+    skin.clear();
     indices.clear();
     sections.clear();
 }
@@ -257,6 +262,14 @@ Expected<usize, Error> weld(MeshData& mesh, const WeldOptions& options) noexcept
             if (!mesh.uvs.empty() &&
                 length(mesh.uvs[index] - mesh.uvs[candidate]) > options.uv_tolerance) {
                 continue;  // a texture seam
+            }
+            if (!mesh.skin.empty() && !(mesh.skin[index] == mesh.skin[candidate])) {
+                // A RIG SEAM, and it is the argument the texture seam above makes: two vertices in
+                // one place bound to different joints are two vertices, and merging them gives one
+                // of the two surfaces the other's motion. There is no tolerance on this one — a
+                // weight is a blend factor rather than a measurement, and two bindings are either
+                // the same binding or they are not.
+                continue;
             }
             found = candidate;
             break;
@@ -313,6 +326,11 @@ Expected<usize, Error> weld(MeshData& mesh, const WeldOptions& options) noexcept
         }
         if (!mesh.tangents.empty()) {
             if (Status pushed = welded.tangents.push_back(mesh.tangents[original]); !pushed) {
+                return make_unexpected(pushed.error());
+            }
+        }
+        if (!mesh.skin.empty()) {
+            if (Status pushed = welded.skin.push_back(mesh.skin[original]); !pushed) {
                 return make_unexpected(pushed.error());
             }
         }
@@ -402,6 +420,11 @@ Status generate_normals(MeshData& mesh, f32 smoothing_angle_degrees) noexcept {
                 }
                 if (!mesh.uv2.empty()) {
                     if (Status pushed = built.uv2.push_back(mesh.uv2[vertex]); !pushed) {
+                        return pushed;
+                    }
+                }
+                if (!mesh.skin.empty()) {
+                    if (Status pushed = built.skin.push_back(mesh.skin[vertex]); !pushed) {
                         return pushed;
                     }
                 }
@@ -705,6 +728,11 @@ Status optimise_vertex_fetch(MeshData& mesh) noexcept {
         }
         if (!mesh.tangents.empty()) {
             if (Status pushed = built.tangents.push_back(mesh.tangents[original]); !pushed) {
+                return pushed;
+            }
+        }
+        if (!mesh.skin.empty()) {
+            if (Status pushed = built.skin.push_back(mesh.skin[original]); !pushed) {
                 return pushed;
             }
         }
@@ -1087,6 +1115,11 @@ Expected<SimplifyReport, Error> simplify(MeshData& mesh, const SimplifyOptions& 
         }
         if (!mesh.tangents.empty()) {
             if (Status pushed = built.tangents.push_back(mesh.tangents[vertex]); !pushed) {
+                return pushed;
+            }
+        }
+        if (!mesh.skin.empty()) {
+            if (Status pushed = built.skin.push_back(mesh.skin[vertex]); !pushed) {
                 return pushed;
             }
         }

@@ -48,6 +48,42 @@
 
 namespace cy::import {
 
+/// How many joints one vertex may be bound to.
+///
+/// Four, because that is what every cooked vertex layout in this tree can carry and what glTF's
+/// `JOINTS_0`/`WEIGHTS_0` pair holds. A source that binds a vertex to more is reduced to the four
+/// heaviest and renormalised by the importer that read it, and the importer REPORTS the reduction —
+/// `asset-import-pipeline` requires an import to name what it dropped, and a fifth influence
+/// discarded in silence is a vertex that swims away from its neighbours at exactly one pose.
+inline constexpr usize kSkinInfluences = 4;
+
+/// One vertex's skin binding: the joints that move it and how much each of them does.
+///
+/// `asset-import-pipeline` — "Model import", step 7 imports the skeleton and this is the half of it
+/// that lives on the MESH. Until M11.b `MeshData` carried neither array, so `gltf.cpp` refused
+/// skins by name and `fbx.cpp` parsed every skin cluster and dropped it — Walking.fbx's 65 of them
+/// — which is why `samples/09b-animated-character` DERIVED its weights from vertex height instead
+/// of importing them.
+///
+/// The joint index is into the SKELETON the mesh was rigged against, never into anything this file
+/// knows about, so `MeshData::validate` can check the array's length and not its contents. A weight
+/// of zero with any joint index is the inert entry an unused slot carries.
+struct SkinInfluence {
+    u16 joints[kSkinInfluences] = {0, 0, 0, 0};
+    f32 weights[kSkinInfluences] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    /// Whether two bindings are the same binding. Used by `weld`, where two vertices in one place
+    /// bound to different joints are two vertices — the same argument a UV seam makes.
+    [[nodiscard]] bool operator==(const SkinInfluence& other) const noexcept {
+        for (usize slot = 0; slot < kSkinInfluences; ++slot) {
+            if (joints[slot] != other.joints[slot] || weights[slot] != other.weights[slot]) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
 /// One contiguous run of indices drawn with one material. The importer splits by material here
 /// rather than producing one mesh per material, so that a model with eight materials is one vertex
 /// buffer and eight draws instead of eight of everything.
@@ -75,6 +111,13 @@ struct MeshData {
     Array<Vec2> uv2;
     /// `xyz` is the tangent and `w` the handedness. See the convention note at the top.
     Array<Vec4> tangents;
+    /// One skin binding per vertex, or empty when the mesh is not skinned.
+    ///
+    /// Carried through every step below exactly as the other per-vertex attributes are: a split
+    /// duplicates it, a fetch reorder permutes it, and a collapse keeps the surviving vertex's own
+    /// binding rather than averaging two — averaging a binding across a collapse is how an elbow
+    /// acquires a little of the opposite shoulder.
+    Array<SkinInfluence> skin;
     /// Triangles, three indices each.
     Array<u32> indices;
     Array<MeshSection> sections;

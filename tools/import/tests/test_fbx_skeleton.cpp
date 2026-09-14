@@ -20,13 +20,16 @@
 // name the bones, a namespaced joint vocabulary and a real bind pose.
 
 #include <cy/animation/skeleton.h>
+#include <cy/core/math/scalar.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/import/animation_bridge.h>
 #include <cy/import/fbx.h>
 #include <cy/import/fbx_skeleton.h>
+#include <cy/import/gltf.h>
 #include <cy/test/test.h>
 
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -122,6 +125,109 @@ std::string rig_document(const std::vector<Bone>& bones) {
         text += "\n";
     }
     text += "}\n";
+    return text;
+}
+
+/// The five bones the skinned fixture rigs to. Five rather than four because one of its vertices
+/// names FIVE influences, which is the case `kSkinInfluences` exists to bound.
+std::vector<Bone> skin_bones() {
+    return {
+        {"rig:Hips", -1, 0.0, 100.0, 0.0},    {"rig:Spine", 0, 0.0, 20.0, 0.0},
+        {"rig:LeftHand", 1, 30.0, 10.0, 0.0}, {"rig:LeftHandIndex1", 2, 5.0, 0.0, 0.0},
+        {"rig:Head", 1, 0.0, 30.0, 0.0},
+    };
+}
+
+/// One cluster of the skinned fixture: which bone it deforms through, and which vertices it moves.
+struct Cluster {
+    /// An index into `skin_bones()`.
+    usize bone;
+    std::vector<usize> vertices;
+    std::vector<double> weights;
+};
+
+/// The clusters, DELIBERATELY IN AN ORDER THE SKELETON DOES NOT SHARE.
+///
+/// The skeleton record numbers joints by a hierarchy walk — Hips 0, Spine 1, LeftHand 2,
+/// LeftHandIndex1 3, Head 4 — and this file lists its clusters leaf first. An importer that used a
+/// cluster's own index as the joint index therefore gets every binding wrong, which is the defect
+/// this ordering exists to catch: on a fixture whose two orders agreed it would pass.
+std::vector<Cluster> skin_clusters() {
+    return {
+        {3, {2, 3}, {1.0, 0.15}},  // LeftHandIndex1 -> joint 3
+        {0, {0, 3}, {1.0, 0.3}},   // Hips           -> joint 0
+        {1, {1, 3}, {0.5, 0.25}},  // Spine          -> joint 1
+        {2, {1, 3}, {0.5, 0.2}},   // LeftHand       -> joint 2
+        {4, {3}, {0.1}},           // Head           -> joint 4
+    };
+}
+
+/// A bone hierarchy with a FOUR-VERTEX, TWO-POLYGON mesh skinned to it. M11.b task 6.1.
+///
+/// WHAT THIS EXISTS FOR. `fbx.cpp` read `skin_deformers` from the day ufbx was integrated and had
+/// nowhere to put them: `MeshData` carried no joint or weight array, so every cluster was parsed
+/// and dropped — 65 of them in `Walking.fbx` — and the only trace was a `skipped-rig` warning.
+/// M11.b gave the mesh those arrays. `Walking.fbx` is optional (it lives outside the repository and
+/// the cases that use it skip when it is absent), so the FBX skin path needs a fixture that is
+/// always there, and this is it.
+///
+/// TWO POLYGONS AND NOT ONE, which is not decoration. FBX stores attributes per CORNER and skin
+/// weights per VERTEX, so a binding is looked up through `vertex_indices`. On a single triangle the
+/// corner index and the vertex index are the same three numbers and an importer that confused them
+/// would pass; a quad's second triangle re-uses two of the first's vertices, so they differ.
+///
+/// The four vertices are the four cases: rigid to the first cluster's bone, a half-and-half blend,
+/// rigid to a bone whose cluster index is not its joint index, and one named by all FIVE clusters.
+std::string skinned_document() {
+    std::string text = rig_document(skin_bones());
+    const std::vector<Cluster> clusters = skin_clusters();
+
+    std::string objects =
+        "\tGeometry: 4000, \"Geometry::Body\", \"Mesh\" {\n"
+        "\t\tVertices: *12 {\n\t\t\ta: 0,0,0,100,0,0,0,100,0,100,100,0\n\t\t}\n"
+        "\t\tPolygonVertexIndex: *6 {\n\t\t\ta: 0,1,-3,2,1,-4\n\t\t}\n"
+        "\t\tGeometryVersion: 124\n"
+        "\t}\n"
+        "\tModel: 4100, \"Model::Body\", \"Mesh\" {\n\t\tVersion: 232\n\t}\n"
+        "\tDeformer: 5000, \"Deformer::Skin\", \"Skin\" {\n"
+        "\t\tVersion: 101\n\t\tLink_DeformAcuracy: 50\n\t}\n";
+    std::string connections =
+        "\tC: \"OO\",4100,0\n"
+        "\tC: \"OO\",4000,4100\n"
+        "\tC: \"OO\",5000,4000\n";
+    for (usize index = 0; index < clusters.size(); ++index) {
+        const std::string id = std::to_string(5001 + index);
+        objects += "\tDeformer: " + id + ", \"SubDeformer::Cluster" + std::to_string(index) +
+                   "\", \"Cluster\" {\n"
+                   "\t\tVersion: 100\n\t\tUserData: \"\", \"\"\n";
+        objects +=
+            "\t\tIndexes: *" + std::to_string(clusters[index].vertices.size()) + " {\n\t\t\ta: ";
+        for (usize slot = 0; slot < clusters[index].vertices.size(); ++slot) {
+            objects += (slot == 0 ? "" : ",") + std::to_string(clusters[index].vertices[slot]);
+        }
+        objects += "\n\t\t}\n";
+        objects +=
+            "\t\tWeights: *" + std::to_string(clusters[index].weights.size()) + " {\n\t\t\ta: ";
+        for (usize slot = 0; slot < clusters[index].weights.size(); ++slot) {
+            objects += (slot == 0 ? "" : ",") + std::to_string(clusters[index].weights[slot]);
+        }
+        objects += "\n\t\t}\n";
+        objects +=
+            "\t\tTransform: *16 {\n\t\t\ta: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\n\t\t}\n"
+            "\t\tTransformLink: *16 {\n\t\t\ta: 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1\n\t\t}\n"
+            "\t}\n";
+        connections += "\tC: \"OO\"," + id + ",5000\n";
+        connections +=
+            "\tC: \"OO\"," + std::to_string(2000 + clusters[index].bone) + "," + id + "\n";
+    }
+    objects += "}\n";
+    connections += "}\n";
+    // The connection block ends the document and the object block ends just before it. Replacing
+    // from the end means a change to the bone writer above does not move either splice point.
+    const usize connections_end = text.rfind("}\n");
+    text.replace(connections_end, 2, connections);
+    const usize objects_end = text.rfind("}\n", connections_end - 1);
+    text.replace(objects_end, 2, objects);
     return text;
 }
 
@@ -491,5 +597,185 @@ CY_TEST_CASE("fbx skeleton: an animation-only Mixamo export carries the same rig
     CY_CHECK_EQ(record.humanoid.mapped_count(), u32{22});
     for (usize index = 0; index < record.joints.size(); ++index) {
         CY_REQUIRE(record.joints[index].parent < static_cast<i32>(index));
+    }
+}
+
+// --- The half of step 7 that lives on the mesh. M11.b task 6.1. ----------------------------------
+
+namespace {
+
+/// The cooked render mesh of an import, or null.
+const SubAsset* find_mesh(const ImportResult& result) {
+    for (const SubAsset& asset : result.assets()) {
+        if (asset.kind == cy::assets::AssetKind::Mesh && asset.view().starts_with("mesh/")) {
+            return &asset;
+        }
+    }
+    return nullptr;
+}
+
+MeshData mesh_of(const SubAsset& produced) {
+    MeshData mesh;
+    CY_REQUIRE(
+        read_cooked_mesh(cy::Span<const u8>(produced.payload.data(), produced.payload.size()), mesh)
+            .has_value());
+    return mesh;
+}
+
+/// The binding of the vertex at `(x, y)` in METRES, found by position rather than by index: the
+/// weld, the cache reorder and the fetch reorder all permute the buffer, and an assertion by index
+/// would pass on a mesh whose bindings had all been swapped.
+const SkinInfluence* binding_at(const MeshData& mesh, f32 x, f32 y) {
+    for (usize index = 0; index < mesh.vertex_count(); ++index) {
+        if (cy::math::nearly_equal(mesh.positions[index].x, x, 1e-4f) &&
+            cy::math::nearly_equal(mesh.positions[index].y, y, 1e-4f)) {
+            return &mesh.skin[index];
+        }
+    }
+    return nullptr;
+}
+
+/// The joint index a weighted slot names, or -1 when the slot is unused.
+i32 joint_of_weight(const SkinInfluence& influence, f32 weight) {
+    for (usize slot = 0; slot < kSkinInfluences; ++slot) {
+        if (cy::math::nearly_equal(influence.weights[slot], weight, 1e-4f)) {
+            return static_cast<i32>(influence.joints[slot]);
+        }
+    }
+    return -1;
+}
+
+f32 weight_sum(const SkinInfluence& influence) {
+    f32 total = 0.0f;
+    for (const f32 weight : influence.weights) {
+        total += weight;
+    }
+    return total;
+}
+
+}  // namespace
+
+CY_TEST_CASE("fbx skin: a cluster's weights reach the cooked mesh, on the right vertex") {
+    // WHAT THIS IS THE REGRESSION FOR. Before M11.b this importer read every skin cluster and threw
+    // it away, because `MeshData` had no joint or weight array — `samples/09b-animated-character`
+    // derives its weights from vertex height for exactly that reason.
+    const ImportResult result = import_document(skinned_document());
+    CY_CHECK(!result.has_errors());
+
+    const SubAsset* produced = find_mesh(result);
+    CY_REQUIRE(produced != nullptr);
+    const MeshData mesh = mesh_of(*produced);
+    CY_REQUIRE_EQ(mesh.vertex_count(), usize{4});
+    CY_REQUIRE_EQ(mesh.skin.size(), mesh.vertex_count());
+
+    // The document is in centimetres — `UnitScaleFactor` is 1 — so a metre position is a hundredth
+    // of the number the fixture writes.
+    //
+    // Vertex 0 is rigid to cluster 1, which deforms through `rig:Hips` — joint 0 of the walk order,
+    // and NOT 1, which is the cluster's own index.
+    const SkinInfluence* rigid = binding_at(mesh, 0.0f, 0.0f);
+    CY_REQUIRE(rigid != nullptr);
+    CY_CHECK_EQ(rigid->joints[0], u16{0});
+    CY_CHECK_NEAR(rigid->weights[0], 1.0f, 1e-5);
+
+    // Vertex 2 is rigid to cluster 0, which deforms through `rig:LeftHandIndex1` — joint 3. This is
+    // the vertex that tells a cluster index from a joint index, and it is also the SECOND
+    // triangle's first corner, which is what tells a corner index from a vertex index.
+    const SkinInfluence* leaf = binding_at(mesh, 0.0f, 1.0f);
+    CY_REQUIRE(leaf != nullptr);
+    CY_CHECK_EQ(leaf->joints[0], u16{3});
+    CY_CHECK_NEAR(leaf->weights[0], 1.0f, 1e-5);
+
+    // Vertex 1 is the blend: half through `rig:Spine` (joint 1) and half through `rig:LeftHand`
+    // (joint 2), from clusters 2 and 3.
+    const SkinInfluence* blended = binding_at(mesh, 1.0f, 0.0f);
+    CY_REQUIRE(blended != nullptr);
+    CY_CHECK_NEAR(weight_sum(*blended), 1.0f, 1e-5);
+    const bool spine = joint_of_weight(*blended, 0.5f) == 1 || blended->joints[1] == 1;
+    CY_CHECK(spine);
+    CY_CHECK(blended->joints[0] != blended->joints[1]);
+
+    // And the refusal this rung removed: a skinned file no longer reports that its skins were
+    // skipped.
+    for (const ImportDiagnostic& diagnostic : result.diagnostics()) {
+        if (std::string_view(diagnostic.code) == "skipped-rig") {
+            const bool names_skins =
+                std::string_view(diagnostic.detail).find("skins") != std::string_view::npos;
+            CY_CHECK(!names_skins);
+        }
+    }
+}
+
+CY_TEST_CASE("fbx skin: a fifth influence is dropped, the rest renormalised, and it is reported") {
+    // `kSkinInfluences` is four, which is what every cooked vertex layout in this tree carries. A
+    // vertex named by five clusters keeps the four heaviest — ufbx sorts a vertex's weights by
+    // decreasing weight, so the prefix IS the heaviest four — and they are renormalised, because a
+    // vertex whose weights sum to 0.9 shrinks towards the origin under skinning. That reads as a
+    // seam rather than as a weight problem, which is why the reduction is also a diagnostic.
+    const ImportResult result = import_document(skinned_document());
+    const SubAsset* produced = find_mesh(result);
+    CY_REQUIRE(produced != nullptr);
+    const MeshData mesh = mesh_of(*produced);
+
+    const SkinInfluence* crowded = binding_at(mesh, 1.0f, 1.0f);
+    CY_REQUIRE(crowded != nullptr);
+    // The five authored weights are 0.3, 0.25, 0.2, 0.15 and 0.1; the smallest goes and the other
+    // four are scaled by 1/0.9. Without the renormalisation this sums to 0.9.
+    CY_CHECK_NEAR(weight_sum(*crowded), 1.0f, 1e-4);
+    CY_CHECK_NEAR(crowded->weights[0], 0.3f / 0.9f, 1e-4);
+    CY_CHECK_NEAR(crowded->weights[3], 0.15f / 0.9f, 1e-4);
+    // `rig:Head` is joint 4 and carried the dropped 0.1, so no slot names it.
+    for (const u16 joint : crowded->joints) {
+        CY_CHECK(joint != 4);
+    }
+
+    bool reported = false;
+    for (const ImportDiagnostic& diagnostic : result.diagnostics()) {
+        reported = reported || std::string_view(diagnostic.code) == "skin-influences-reduced";
+    }
+    CY_CHECK(reported);
+}
+
+CY_TEST_CASE("fbx skin: every joint a binding names is one the skeleton record carries") {
+    // The two numberings — the file's cluster order and the skeleton record's walk order — are
+    // joined by the bone node's NAME and by nothing else. An importer that used the cluster index
+    // as the joint index is a character whose arm moves when its leg does.
+    const ImportResult result = import_document(skinned_document());
+    const SubAsset* skeleton_asset = find_skeleton(result);
+    CY_REQUIRE(skeleton_asset != nullptr);
+    const ImportedSkeleton record = skeleton_of(*skeleton_asset);
+    CY_REQUIRE_EQ(record.joints.size(), usize{5});
+
+    const SubAsset* produced = find_mesh(result);
+    CY_REQUIRE(produced != nullptr);
+    const MeshData mesh = mesh_of(*produced);
+    CY_REQUIRE(!mesh.skin.empty());
+    for (const SkinInfluence& influence : mesh.skin) {
+        for (usize slot = 0; slot < kSkinInfluences; ++slot) {
+            if (influence.weights[slot] <= 0.0f) {
+                continue;
+            }
+            CY_REQUIRE(influence.joints[slot] < record.joints.size());
+            const std::string& name = record.joints[influence.joints[slot]].name;
+            const bool named_by_a_cluster = std::string_view(name).starts_with("rig:");
+            CY_CHECK(named_by_a_cluster);
+        }
+    }
+}
+
+CY_TEST_CASE("fbx skin: a skinned import is byte-identical when it is run twice") {
+    // `asset-import-pipeline` requires byte-identical output for identical input, and the cooked
+    // mesh grew an attribute this milestone. A weight ordering that depended on a pointer would
+    // make every cook cache miss.
+    const std::string document = skinned_document();
+    const ImportResult first = import_document(document);
+    const ImportResult second = import_document(document);
+    CY_REQUIRE_EQ(first.assets().size(), second.assets().size());
+    for (usize index = 0; index < first.assets().size(); ++index) {
+        CY_REQUIRE_EQ(first.assets()[index].payload.size(), second.assets()[index].payload.size());
+        CY_CHECK_EQ(
+            std::memcmp(first.assets()[index].payload.data(), second.assets()[index].payload.data(),
+                        first.assets()[index].payload.size()),
+            0);
     }
 }

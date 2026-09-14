@@ -62,6 +62,37 @@ function(cy_gameplay_play_declare_tests)
         SOURCES "${tests_dir}/test_play.cpp"
         DEPENDENCIES ${backends}
         DEFINITIONS ${backend_definitions})
+
+    # --- M11.b: the three play modes, and a live edit that reaches the world they carry ----------
+    #
+    # `editor_play`      integration. The three modes driven by ONE command stream, the refusal a
+    #                    mode that is not available produces, and stepping. Its name is the editor's
+    #                    rather than the module's because the requirement is the editor's: `Play
+    #                    modes` is one requirement in `editor-architecture` and `live-editing`, and
+    #                    `m11b:play-mode-round-trip` names this binary.
+    #
+    # `editor_live_edit` integration. A field edited while a world is playing, under each of the six
+    #                    policies. Links `cy::gameplay-live` — a test consumes the engine rather than
+    #                    sitting in it, so a suite under play/ may link the module above it.
+    #
+    # BOTH ARE DECLARED HERE RATHER THAN IN tests/integration/, and the reason is mechanical as well
+    # as conceptual: a suite declared in `tests/integration/` lands at `tests/integration/` in the
+    # build tree, and one declared through this deferred function lands at the build root, which is
+    # where the milestone ledger's criteria look for a binary. The conceptual half is that both are
+    # about a play session — the modes are its transport and the live edit is a change reaching it —
+    # so the module that owns the session owns their suites.
+    cy_add_test(
+        NAME editor_play
+        KIND integration
+        SOURCES "${tests_dir}/test_editor_play.cpp"
+        DEPENDENCIES cy::gameplay-play cy::physics-reference cy::scene cy::scene-serialization)
+
+    cy_add_test(
+        NAME editor_live_edit
+        KIND integration
+        SOURCES "${tests_dir}/test_editor_live_edit.cpp"
+        DEPENDENCIES cy::gameplay-live cy::gameplay-play cy::physics-reference cy::scene
+                     cy::scene-serialization)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gameplay_play_declare_tests)

@@ -228,6 +228,10 @@ enum class ValueTag : u8 {
         (void)reader.u128_value();
     }
     const std::string_view layer = reader.text_value();
+    // The author-given name, written by `NodeState::encode` immediately after the layer. Read here
+    // rather than at the end of the record because that is where the editor writes it — see the
+    // capitalised note at that field in `cy_editor_documents::content`.
+    const std::string_view name = reader.text_value();
     if (reader.u8_value() == 1) {
         (void)reader.text_value();  // the prefab this node instantiates
     }
@@ -244,6 +248,11 @@ enum class ValueTag : u8 {
             return false;
         }
         node.layer = *interned;
+        const Expected<WorldText, Error> interned_name = world.intern(name);
+        if (!interned_name) {
+            return false;
+        }
+        node.name = *interned_name;
     }
     for (u32 which = 0; which < components && reader.ok(); ++which) {
         WorldComponent component(world.allocator());
@@ -313,6 +322,7 @@ enum class OperationTag : u8 {
     SetLayer = 9,
     SetAssetReference = 10,
     Domain = 11,
+    SetName = 12,
 };
 
 [[nodiscard]] bool apply_create(Reader& reader, World& world, TransactionReport& report) noexcept {
@@ -501,6 +511,32 @@ enum class OperationTag : u8 {
     return true;
 }
 
+/// A rename. `Operation::SetName`, tag 12.
+///
+/// It is applied like a layer change and unlike a field change, because a name is not a component's
+/// field: a node with no components still has one, so there is nothing to create it on.
+[[nodiscard]] bool apply_set_name(Reader& reader, World& world,
+                                  TransactionReport& report) noexcept {
+    const EditorId node = reader.u128_value();
+    (void)reader.text_value();
+    const std::string_view after = reader.text_value();
+    if (!reader.ok()) {
+        return false;
+    }
+    const u32 index = locate(world, node);
+    if (index == WorldNode::kNoParent) {
+        report.unknown_nodes += 1;
+        return true;
+    }
+    const Expected<WorldText, Error> interned = world.intern(after);
+    if (!interned) {
+        return false;
+    }
+    world.nodes()[index].name = *interned;
+    report.applied += 1;
+    return true;
+}
+
 [[nodiscard]] bool apply_set_reference(Reader& reader, World& world,
                                        TransactionReport& report) noexcept {
     const EditorId node = reader.u128_value();
@@ -588,6 +624,8 @@ enum class OperationTag : u8 {
         }
         case OperationTag::SetLayer:
             return apply_set_layer(reader, world, report);
+        case OperationTag::SetName:
+            return apply_set_name(reader, world, report);
         case OperationTag::SetAssetReference:
             return apply_set_reference(reader, world, report);
         case OperationTag::Domain: {

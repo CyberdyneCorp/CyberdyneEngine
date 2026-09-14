@@ -36,8 +36,79 @@ test-render *args:
 # taxonomy graded by SUBJECT rather than by cost — a golden replay is a ten-second case because a
 # session is ten seconds long, not because somebody let it grow. It joined the taxonomy at M10; see
 # tests/determinism/CMakeLists.txt for why it was empty until then.
+# THREE MODES, AND TWO OF THEM ARE THE CROSS-LEG JOB. M11.a section 4.
+#
+#   just test-determinism                          the suite, as every other graduated recipe
+#   just test-determinism --publish-digest <path>  one leg computes its state digest and writes it
+#   just test-determinism --compare-legs [--pcg]   every downloaded leg's digest, compared
+#
+# `ci.yml`'s matrices already run six legs independently; nothing published a digest and nothing
+# downloaded one to compare, which is why `m9:lockstep-cross-platform` is a declared gap and
+# `m10:pcg-regeneration-cross-platform` and `m10:pcg-gpu-domain-agreement` are reported NOT
+# EVALUATED. The publish and compare halves are two modes of ONE recipe rather than two recipes,
+# because `developer-workflow-and-just` requires the local and remote invocations to be the same
+# code path and the comparison is the half a developer cannot run without the publications.
+#
+# The comparison is `tools/ci/cross_leg_digests.py`, and everything it refuses to call an agreement
+# is listed at the top of that file. The publication is `determinism.cross_leg`, which is a case in
+# this very suite: publishing is a side effect of a test that also CHECKS what it published, so a
+# leg cannot publish a digest nothing verified.
 test-determinism *args:
-    @just _ctest determinism {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    publish=""
+    compare=0
+    forwarded=()
+    compare_args=()
+    argv=({{args}})
+    i=0
+    while (( i < ${#argv[@]} )); do
+        case "${argv[i]}" in
+            --publish-digest)   i=$((i + 1)); publish="${argv[i]:-}" ;;
+            --publish-digest=*) publish="${argv[i]#*=}" ;;
+            --compare-legs)     compare=1 ;;
+            --digests)          i=$((i + 1)); compare_args+=(--dir "${argv[i]:-}") ;;
+            --digests=*)        compare_args+=(--dir "${argv[i]#*=}") ;;
+            --pcg)              compare_args+=(--pcg) ;;
+            --gpu-domain)       compare_args+=(--gpu-domain) ;;
+            *)                  forwarded+=("${argv[i]}") ;;
+        esac
+        i=$((i + 1))
+    done
+
+    # The comparison reads files and runs no engine code, so it neither builds nor needs a build —
+    # on a leg that only downloads digests there is nothing to build.
+    if [ "${compare}" -eq 1 ]; then
+        # `${array[@]+"${array[@]}"}` and not `"${array[@]:-}"`: under `set -u` the latter expands an
+        # EMPTY array to one empty argument, and `just test-determinism --compare-legs` with no
+        # further flags then reaches the comparator as an unparseable argument. That is the exact
+        # invocation `m11a:lockstep-agrees-across-architectures` runs.
+        exec python3 tools/ci/cross_leg_digests.py ${compare_args[@]+"${compare_args[@]}"}
+    fi
+
+    if [ -n "${publish}" ]; then
+        # Absolute, because CTest runs a suite in its own binary directory: a relative path here
+        # would put the digest somewhere the uploading step does not look, and a job that uploaded
+        # nothing would then look exactly like a job whose leg agreed.
+        case "${publish}" in
+            /*) ;;
+            *)  publish="${PWD}/${publish}" ;;
+        esac
+        mkdir -p "$(dirname "${publish}")"
+        export CY_CROSS_LEG_DIGEST_OUT="${publish}"
+        just _ctest determinism -R '^determinism\.cross_leg$' ${forwarded[@]+"${forwarded[@]}"}
+        test -s "${publish}" || {
+            echo "determinism.cross_leg passed and wrote nothing to ${publish}." >&2
+            echo "A leg that publishes an empty digest is a leg the comparison cannot see." >&2
+            exit 1
+        }
+        echo "==> published this leg's digest to ${publish}"
+        cat "${publish}"
+        exit 0
+    fi
+
+    just _ctest determinism ${forwarded[@]+"${forwarded[@]}"}
 
 # Every suite: unit, integration, smoke, render, determinism, and anything registered outside them.
 # What CI runs.

@@ -178,7 +178,27 @@ Status PlaySession::enter(const PlayConfiguration& configuration) noexcept {
         return fail(ErrorCode::InvalidArgument,
                     "play: a session needs a physics server; which backend is the host's decision");
     }
+
+    // THE REFUSAL, AND IT IS THE FIRST THING THAT HAPPENS. M11.b task 0.5:
+    // *"A mode that is selected and not implemented must refuse by name. A `RemoteDevice` request
+    // that quietly runs `InEditor` is a green test over a feature that does not exist."*
+    //
+    // Before the snapshot, before the world, before the solver — a session that built a world and
+    // then discovered it had no transport would have to tear one down, and a tear-down is exactly
+    // the path along which a fallback gets written. The message is the availability's own `reason`,
+    // which names the mode, and the `due` rung rides in `system_code`'s place as part of the
+    // message rather than being dropped: see mode.cpp for why both are string literals.
+    const PlayModeAvailability availability =
+        availability_of(configuration.mode, configuration.support);
+    if (!availability.available) {
+        return fail(ErrorCode::Unavailable, availability.reason);
+    }
+
     report_ = PlayReport{};
+    report_.mode = configuration.mode;
+    configuration_ = configuration;
+    mode_ = configuration.mode;
+    frame_rate_ = configuration.frame_rate;
     schema_ = configuration.schema;
 
     if (Status built = build(configuration); !built) {
@@ -422,6 +442,10 @@ Status PlaySession::tick() noexcept {
         // machine in every caller.
         return ok();
     }
+    return advance_one();
+}
+
+Status PlaySession::advance_one() noexcept {
     clock_.advance();
     if (Status ran = schedule_->run_serial(ecs::Stage::Physics); !ran) {
         return ran;
@@ -436,6 +460,138 @@ Status PlaySession::tick() noexcept {
     }
     report_.ticks = clock_.tick();
     return publish_placements();
+}
+
+// --- What a live edit needs ----------------------------------------------------------------------
+//
+// See session.h: these two are exposed so that `cy::gameplay::live` does not have to reimplement
+// "build this node's physics from the authored world" and then disagree with this file about it.
+
+PlaySession::Simulated* PlaySession::simulated_for(u64 identity) noexcept {
+    for (Simulated& entry : simulated_) {
+        if (entry.identity == identity) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+Status PlaySession::detach_physics(ecs::Entity entity) noexcept {
+    // Removed in the reverse of the order they were added, and a component the entity does not have
+    // is not an error: a node may carry a collider and no body, or neither.
+    //
+    // `report_.colliders` is decremented HERE rather than adjusted by the caller, because
+    // `attach_physics` is what increments it and the two belong together — a counter maintained at
+    // one end and corrected at the other is how a report drifts.
+    if (world_->has(entity, components_.collider) && report_.colliders > 0) {
+        --report_.colliders;
+    }
+    const ecs::ComponentTypeId ids[4] = {components_.rigid_body, components_.static_body,
+                                         components_.kinematic_body, components_.collider};
+    for (const ecs::ComponentTypeId id : ids) {
+        if (!world_->has(entity, id)) {
+            continue;
+        }
+        if (Status removed = world_->remove(entity, id); !removed) {
+            return removed;
+        }
+    }
+    return ok();
+}
+
+Status PlaySession::reinitialize_physics(u64 identity) noexcept {
+    if (state_ == PlayState::Editing || !world_) {
+        return fail(ErrorCode::Unavailable,
+                    "play: a component can only be reinitialised inside a session");
+    }
+    Simulated* entry = simulated_for(identity);
+    if (entry == nullptr) {
+        // Refused rather than succeeding over nothing: a reinitialise that found no node and
+        // returned ok() would report a policy applied that was not.
+        return fail(ErrorCode::NotFound,
+                    "play: no live node in this session carries that authored identity");
+    }
+    if (Status detached = detach_physics(entry->entity); !detached) {
+        return detached;
+    }
+    if (Status attached = attach_physics(authored_->nodes()[entry->node], entry->entity);
+        !attached) {
+        return attached;
+    }
+    // The bridge notices the components on its next sync; ask for one now so a caller that reads
+    // `report().bodies` immediately after sees the world it just asked for.
+    if (Status synced = bridge_->sync(); !synced) {
+        return synced;
+    }
+    report_.bodies = bridge_->tracked_bodies();
+    return ok();
+}
+
+Status PlaySession::recreate_entity(u64 identity) noexcept {
+    if (state_ == PlayState::Editing || !world_) {
+        return fail(ErrorCode::Unavailable,
+                    "play: an entity can only be recreated inside a session");
+    }
+    Simulated* entry = simulated_for(identity);
+    if (entry == nullptr) {
+        return fail(ErrorCode::NotFound,
+                    "play: no live node in this session carries that authored identity");
+    }
+    const u32 node_index = entry->node;
+    const Transform before = entry->before;
+
+    if (Status detached = detach_physics(entry->entity); !detached) {
+        return detached;
+    }
+    if (Status destroyed = tree_->destroy_node(tree_->node(entry->entity)); !destroyed) {
+        return destroyed;
+    }
+    // Drop the stale row and build a new one, rather than patching the entity in place: the entry
+    // carries the PRE-PLAY placement that `stop()` restores, and reusing it is how the identity
+    // survives an operation that replaces everything else about the node.
+    const auto position = static_cast<usize>(entry - simulated_.data());
+    simulated_.erase(position);
+
+    if (Status spawned = spawn_authored(authored_->nodes()[node_index], node_index); !spawned) {
+        return spawned;
+    }
+    Simulated& fresh = simulated_[simulated_.size() - 1];
+    fresh.before = before;  // the restore target is the pre-play placement, not the current one
+    if (Status attached = attach_physics(authored_->nodes()[node_index], fresh.entity); !attached) {
+        return attached;
+    }
+    if (Status propagated =
+            scene::propagate(*tree_, scene::PropagationPhase::Simulation, nullptr, nullptr);
+        !propagated) {
+        return propagated;
+    }
+    if (Status synced = bridge_->sync(); !synced) {
+        return synced;
+    }
+    report_.bodies = bridge_->tracked_bodies();
+    return ok();
+}
+
+std::string_view PlaySession::restore_target() const noexcept {
+    return {snapshot_.data(), snapshot_.size()};
+}
+
+Status PlaySession::set_restore_target(std::string_view text) noexcept {
+    if (state_ == PlayState::Editing) {
+        return fail(ErrorCode::Unavailable, "play: there is no restore target outside a session");
+    }
+    if (text.empty()) {
+        // An empty restore target would make `stop()` write an empty world over the document,
+        // which is the loss this whole mechanism exists to prevent.
+        return fail(ErrorCode::InvalidArgument,
+                    "play: the restore target is the authored world's text and cannot be empty");
+    }
+    snapshot_.clear();
+    if (Status appended = snapshot_.append(Span<const char>(text.data(), text.size())); !appended) {
+        return appended;
+    }
+    report_.restored_length_before = snapshot_.size();
+    return ok();
 }
 
 Status PlaySession::publish_placements() noexcept {
@@ -469,6 +625,81 @@ Status PlaySession::resume() noexcept {
         return fail(ErrorCode::Unavailable, "play: nothing is paused");
     }
     state_ = PlayState::Playing;
+    return ok();
+}
+
+PlayModeCapabilities PlaySession::capabilities() const noexcept {
+    return capabilities_of(mode_);
+}
+
+u32 PlaySession::ticks_per_frame() const noexcept {
+    if (state_ == PlayState::Editing) {
+        return 0;
+    }
+    // ticks per frame = (tick rate) / (frame rate), both exact rationals, so the division is one
+    // cross-multiplication and nothing rounds until the end. At 60/1 ticks against 30/1 frames this
+    // is 2, and at 60/1 against 60/1 it is 1 — the case everything else in this engine assumes and
+    // which is therefore the one a bug here would hide behind.
+    const determinism::TickRate ticks = clock_.rate();
+    const determinism::TickRate frames = frame_rate_;
+    if (frames.numerator == 0 || ticks.denominator == 0) {
+        return 1;
+    }
+    const u64 numerator = static_cast<u64>(ticks.numerator) * frames.denominator;
+    const u64 denominator = static_cast<u64>(ticks.denominator) * frames.numerator;
+    if (denominator == 0) {
+        return 1;
+    }
+    const u64 per_frame = numerator / denominator;
+    // At least one: a frame rate above the tick rate is a legitimate configuration and a step that
+    // ran zero ticks would be a button that does nothing.
+    return per_frame == 0 ? 1U : static_cast<u32>(per_frame);
+}
+
+// --- Stepping ------------------------------------------------------------------------------------
+//
+// `live-editing`: *"Play mode SHALL support pause, single frame step, and single simulation tick
+// step in every mode where the runtime permits."* M11.b's delta makes "where the runtime permits" a
+// QUERY rather than something a caller discovers by trying, so both entry points ask
+// `capabilities_of` and refuse by name when the answer is no. A capability that was silently
+// ignored would be the same defect as a mode that silently fell back.
+
+Status PlaySession::step_tick() noexcept {
+    if (state_ != PlayState::Paused) {
+        return fail(ErrorCode::Unavailable,
+                    "play: a step is only meaningful while paused — a step into a running "
+                    "simulation is one extra tick, not a step");
+    }
+    if (!capabilities_of(mode_).step_tick) {
+        return fail(ErrorCode::Unsupported,
+                    "play: this mode does not support a single simulation tick step");
+    }
+    if (Status advanced = advance_one(); !advanced) {
+        return advanced;
+    }
+    ++report_.stepped_ticks;
+    return ok();
+}
+
+Status PlaySession::step_frame() noexcept {
+    if (state_ != PlayState::Paused) {
+        return fail(ErrorCode::Unavailable,
+                    "play: a step is only meaningful while paused — a step into a running "
+                    "simulation is one extra frame, not a step");
+    }
+    if (!capabilities_of(mode_).step_frame) {
+        // The one capability that differs by mode, and it differs by transport: a remote runtime's
+        // frames arrive encoded and are not individually addressable. See capabilities_of().
+        return fail(ErrorCode::Unsupported, "play: this mode does not support a single frame step");
+    }
+    const u32 per_frame = ticks_per_frame();
+    for (u32 index = 0; index < per_frame; ++index) {
+        if (Status advanced = advance_one(); !advanced) {
+            return advanced;
+        }
+        ++report_.stepped_ticks;
+    }
+    ++report_.stepped_frames;
     return ok();
 }
 

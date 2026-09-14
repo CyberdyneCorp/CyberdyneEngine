@@ -150,6 +150,7 @@ fn nodes_of(operation: &Operation) -> Vec<NodeId> {
         | Operation::InstantiatePrefab { node, .. }
         | Operation::SetOverride { node, .. }
         | Operation::SetLayer { node, .. }
+        | Operation::SetName { node, .. }
         | Operation::SetAssetReference { node, .. } => vec![*node],
         Operation::Domain { node, .. } => node.iter().copied().collect(),
     }

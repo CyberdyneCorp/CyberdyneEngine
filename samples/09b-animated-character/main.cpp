@@ -239,12 +239,20 @@ void print_sources(const Character& character) noexcept {
 }
 
 void print_skin(const SkinReport& skin) noexcept {
-    std::printf(
-        "\n  skin  DERIVED, NOT IMPORTED — see samples/09b-animated-character/character.h\n");
+    // WHICH SOURCE THE WEIGHTS CAME FROM IS THE FIRST LINE, because a picture of a skinned
+    // character looks the same either way and the report is the only place a reader can tell. M11.b
+    // gave `MeshData` joint and weight arrays and taught both model importers to fill them; the
+    // derived bind stays as the fallback for a cooked mesh that predates the format version.
+    std::printf(skin.imported
+                    ? "\n  skin  IMPORTED — the artist's weights, out of the file\n"
+                    : "\n  skin  DERIVED, NOT IMPORTED — the cooked mesh carried no bindings; see "
+                      "samples/09b-animated-character/character.h\n");
     std::printf("    vertices=%u triangles=%u bones given weight=%u\n", skin.vertices,
                 skin.triangles, skin.bones_used);
-    std::printf("    worst distance from a vertex to its nearest bone: %.1f mm\n",
-                static_cast<f64>(skin.worst_bind_distance * 1000.0F));
+    if (!skin.imported) {
+        std::printf("    worst distance from a vertex to its nearest bone: %.1f mm\n",
+                    static_cast<f64>(skin.worst_bind_distance * 1000.0F));
+    }
     std::printf("    mesh bounds  (%.3f %.3f %.3f) to (%.3f %.3f %.3f)\n",
                 static_cast<f64>(skin.mesh_min.x), static_cast<f64>(skin.mesh_min.y),
                 static_cast<f64>(skin.mesh_min.z), static_cast<f64>(skin.mesh_max.x),

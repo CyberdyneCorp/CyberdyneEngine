@@ -376,6 +376,20 @@ Expected<assets::DerivationKey, Error> import_derivation_key(
     // call site: "The derivation key SHALL include the source content, the importer and processor
     // versions, the import settings, the target platform, and the cook profile."
     builder.producer(assets::DerivedKind::Import, info.name, info.version);
+    // WHAT THE COOKER COULD NOT DO IS PART OF THE KEY, NOT A NOTE BESIDE IT. M11.b.
+    //
+    // `ImporterInfo::steps` is the set of model-import steps this BUILD of this importer reaches,
+    // and until now it reached only the import report. So a cache populated by a build with no
+    // clip codec — `-D CY_ANIMATION=OFF`, which removes step 8 — served its artefacts to a build
+    // that had one: the cache hit, the build was fast, and the character came back without its
+    // animation. The failure is silent by construction, which is why the delta spec this rung
+    // carries makes it a requirement rather than a diagnostic: "a cache entry produced by a build
+    // that lacked a step SHALL NOT satisfy a request from a build that has it."
+    //
+    // It is `number` rather than `flag` or `text` because the set is a bitmask and every bit is a
+    // step; a non-model importer leaves it zero, which is a value like any other and costs it one
+    // fixed contribution rather than a different key.
+    builder.number("steps", info.steps);
     toolchain.contribute(builder);
     builder.source("source", source_hash)
         .text("variant", request.variant.view())

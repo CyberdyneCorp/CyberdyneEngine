@@ -325,13 +325,23 @@ pub trait ProjectHost {
 
     /// Enter, pause or leave play. The values are `playing`, `paused` and `editing`.
     ///
+    /// `mode` says WHERE the runtime is to run it — `in-editor`, `separate-process` or
+    /// `remote-device`, the three `editor-architecture` and `live-editing` both name. M11.b task
+    /// 3.1.
+    ///
     /// # Errors
     ///
-    /// When the value is not one of the three.
-    fn set_play(&mut self, state: &str) -> Result<String>;
+    /// When the state is not one of the three, or when `mode` is a word this build does not know.
+    /// **A mode it does not know is refused by name rather than replaced with the default**: a
+    /// request for remote play that quietly ran in-editor would be a green result over a feature
+    /// that does not exist, which `specs/live-editing/` forbids in so many words.
+    fn set_play(&mut self, state: &str, mode: &str) -> Result<String>;
 
     /// Where the runtime is: `editing`, `playing` or `paused`.
     fn play_state(&self) -> String;
+
+    /// Which mode it is in: `in-editor`, `separate-process` or `remote-device`.
+    fn play_mode(&self) -> String;
 }
 
 /// A viewport's own controls, addressed by name.

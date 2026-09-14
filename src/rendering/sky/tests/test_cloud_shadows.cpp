@@ -175,48 +175,94 @@ CY_TEST_CASE("cloud shadows: an update writes the field, and a storm darkens the
 
     // And it is READ THROUGH THE SUBSTRATE, so terrain, foliage, water and illumination all get the
     // same number rather than each deriving one.
-    // A GRID INSIDE THE RADIUS, not a diagonal out of it. The earlier version of this walked
-    // (step*128, 0, step*128) for step in [-3, 3], and at step 3 that is 543 m from the centre
-    // against a 512 m `radius_metres` — outside everything the update wrote. Sampling a line also
-    // makes a miss indistinguishable from lit ground.
+    //
+    // ============================================================================================
+    // WHAT `m10:sky-field-round-trip` ACTUALLY WAS, WHICH IS NOT WHAT ITS TEXT SAID
+    // ============================================================================================
+    //
+    // The gap said the producer wrote tiles the substrate could not read back: `update()` reported
+    // darkest < 0.5 and `sample()` returned the declared 1.0 at all twenty-five points inside
+    // `radius_metres`, so it was recorded as a defect in the sky's WRITE PATH. It is not. Walking
+    // every cell centre the producer wrote and reading each one back through
+    // `FieldStore::sample_at()` resolves 1024 of 1024 regional cells and 256 of 256 macro cells,
+    // and the darkest of them is 0.11 at (960, -1600). The store had the shadow all along.
+    //
+    // What was wrong was THIS CASE'S SAMPLING POSITIONS. It read a five-by-five grid at 128 m
+    // spacing about the origin — 256 m in each direction — and that patch of ground is genuinely in
+    // full sun under this weather: the cloud map's cells are 1000 m across, the shadow ray lands
+    // about 600 m downwind of the sample, and the mean over everything written is 0.974. Twenty-
+    // five samples of lit ground read 1.0 whether the field was published or not, which is why
+    // suppressing `publish()` did not move them. A round trip measured where nothing was written
+    // is the same defect one level up as a producer checked against its own statistics.
+    //
+    // So the check below reads back EVERY CELL THE PRODUCER WROTE, at both levels, and compares the
+    // extremes with what the producer reported. A grid of tiles wider than the radius is walked and
+    // unresolved samples are skipped, so this does not re-derive `update()`'s own tile arithmetic
+    // and agree with it by construction — the store is asked which cells it holds.
+    const auto read_back_level = [&store](cy::environment::FieldResidency level, f32 cell_metres,
+                                          f32& lowest, f32& highest) -> u32 {
+        u32 resolved = 0;
+        const auto span = static_cast<cy::i32>(cy::environment::kTileCells);
+        for (cy::i32 tile_z = -2; tile_z <= 1; ++tile_z) {
+            for (cy::i32 tile_x = -2; tile_x <= 1; ++tile_x) {
+                for (cy::i32 local_z = 0; local_z < span; ++local_z) {
+                    for (cy::i32 local_x = 0; local_x < span; ++local_x) {
+                        // CELL CENTRES. A linear sample at a cell centre has a fractional
+                        // coordinate of exactly zero, so it reads ONE lattice point and the
+                        // comparison below is against the stored byte rather than against a blend
+                        // of four of them.
+                        const double at_x = (static_cast<double>((tile_x * span) + local_x) + 0.5) *
+                                            static_cast<double>(cell_metres);
+                        const double at_z = (static_cast<double>((tile_z * span) + local_z) + 0.5) *
+                                            static_cast<double>(cell_metres);
+                        const cy::environment::FieldSample sampled = store.sample_at(
+                            cloud_shadow_field_id(), WorldVec3d{at_x, 0.0, at_z}, level);
+                        if (!sampled.resolved) {
+                            continue;
+                        }
+                        ++resolved;
+                        const f32 value = sampled.value.x();
+                        CY_CHECK_GE(value, 0.0F);
+                        CY_CHECK_LE(value, 1.0F);
+                        lowest = cy::math::min(lowest, value);
+                        highest = cy::math::max(highest, value);
+                    }
+                }
+            }
+        }
+        return resolved;
+    };
+
     f32 lowest = 1.0F;
     f32 highest = 0.0F;
-    u32 sampled_count = 0;
-    for (cy::i32 zs = -2; zs <= 2; ++zs) {
-        for (cy::i32 xs = -2; xs <= 2; ++xs) {
-            const f32 sampled = CloudShadowField::sample(
-                store,
-                WorldVec3d{static_cast<double>(xs) * 128.0, 0.0, static_cast<double>(zs) * 128.0});
-            CY_CHECK_GE(sampled, 0.0F);
-            CY_CHECK_LE(sampled, 1.0F);
-            lowest = cy::math::min(lowest, sampled);
-            highest = cy::math::max(highest, sampled);
-            ++sampled_count;
-        }
-    }
+    const u32 regional = read_back_level(cy::environment::FieldResidency::Regional,
+                                         test_quality().regional_cell_metres, lowest, highest);
+    const u32 macro = read_back_level(cy::environment::FieldResidency::Macro,
+                                      test_quality().macro_cell_metres, lowest, highest);
+    const u32 sampled_count = regional + macro;
     CY_TEST_MESSAGE("through the store: ", sampled_count, " samples, lowest ", lowest, ", highest ",
                     highest);
-    CY_CHECK_GE(highest, lowest);
 
-    // AND THE FIELD MUST ACTUALLY CARRY A SHADOW. The four assertions above — in range, ordered,
-    // and a default far away — are every one of them satisfied by a field nobody ever wrote to,
-    // because the declared default is 1.0 and 1.0 is in range and equals itself. M10's gate proved
-    // it: with `CloudShadowField::update`'s publish suppressed the producer computed everything,
-    // wrote nothing, and this case stayed green. So assert the thing that distinguishes a published
-    // field from an empty one — that somewhere under the cloud the sun is measurably blocked. THESE
-    // TWO ASSERTIONS ARE THE ONES THAT BELONG HERE, AND THEY FAIL TODAY:
-    //     CY_CHECK_LT(lowest, 0.99F);
-    //     CY_CHECK_GT(highest - lowest, 0.01F);
-    // Twenty-five samples inside the 512 m radius all return exactly 1.0 — the declared default —
-    // while `stats()` above reports a real shadow (darkest < 0.5, brightest > 0.9, tiles written).
-    // So the producer computes a shadow and nothing readable reaches the store. It is sky-specific:
-    // terrain's and water's suites both go red when their `publish()` is suppressed, so the
-    // substrate's write path is sound.
-    //
-    // It is declared as `m10:sky-field-round-trip` in tools/roadmap/milestones/m10.toml rather than
-    // left as a red suite, because the ledger enforces both halves — an open gap keeps failing, and
-    // a gap that starts PASSING fails the ledger and must be deleted. Restore the two lines above
-    // when it closes; they are the check, and this comment is only where it is parked.
+    // NOTHING RESOLVED IS THE PUBLISH FAILURE, and it is asserted before the values are, because a
+    // field nobody published answers the declared 1.0 at every position and a check that only
+    // looked at the numbers could not tell that apart from a cloudless sky.
+    CY_CHECK_GT(regional, 0U);
+    CY_CHECK_GT(macro, 0U);
+
+    // AND THE FIELD CARRIES THE SHADOW THE PRODUCER SAYS IT COMPUTED. `stats()` is the producer's
+    // own account of what it wrote; these two lines are the substrate's account of the same thing,
+    // and they are the round trip. A quantum of `UNorm8` is 1/255, which is the whole of the
+    // difference the encoding is allowed to introduce — so the tolerance is the encoding's and not
+    // a number chosen until the test passed.
+    constexpr f32 kQuantum = 1.0F / 255.0F;
+    CY_CHECK_NEAR(lowest, sky.stats().darkest, kQuantum);
+    CY_CHECK_NEAR(highest, sky.stats().brightest, kQuantum);
+
+    // The two assertions the gap was declared for, now that they are measured where the shadow is.
+    // They are what distinguishes a published field from an empty one: the declared default is 1.0,
+    // and every other assertion in this case is satisfied by a field nobody ever wrote to.
+    CY_CHECK_LT(lowest, 0.99F);
+    CY_CHECK_GT(highest - lowest, 0.01F);
     CY_CHECK_GE(highest, lowest);
 
     // A sample far outside the written radius returns the declared default — FULL SUN — rather than

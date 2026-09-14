@@ -26,7 +26,16 @@ abandoning a row.
       foundation is thin. **This is recorded here so the rung does not spend a spike re-asking a
       question the previous milestone's audit already answered**, and so that M11.a is not asked for
       it either
-- [ ] 0.2 **The spike proper: can one hosted runtime carry `InEditor`, `SeparateProcess` and
+- [x] 0.2 **MEASURED, AND THE ANSWER IS ONE WORLD MODEL AND THREE TRANSPORTS.** `PlayMode` is a
+      table beside `PlaySession` (`src/gameplay/play/include/cy/gameplay/play/mode.h`), not a second
+      session type: `PlayConfiguration::mode` is the only thing that changes between the three, and
+      `tests/test_editor_play.cpp`'s `drive()` reads the mode nowhere else. The case *"a world plays
+      in each of the three modes, and the same command stream drives them"* runs ONE authored world
+      through ONE sequence of calls in each mode and compares the simulated result: 30 ticks and the
+      sphere's height agree to 1e-6 across all three, and the height moved (4.0 → 2.66), so the
+      comparison is over a simulation rather than over three copies of an initial placement. A second
+      world model could not produce that agreement by accident. The original question follows:
+      **The spike proper: can one hosted runtime carry `InEditor`, `SeparateProcess` and
       `RemoteDevice` without a second world model?** `live-editing` says *"Locality SHALL be an
       optimisation of transport, not a different architecture"* and *"no play mode runs in the editor
       process"*; `HostingMode::Hosted` is already the production default and the M5.5 live-bridge
@@ -34,7 +43,12 @@ abandoning a row.
       runtime frame. So the architecture question is **not** whether out-of-process is affordable —
       that is measured — it is whether the three modes are three transports over one world model or
       three world models. Measure it; do not reason about it
-- [ ] 0.3 **The three facts the spike has to start from, each verified rather than assumed.**
+- [x] 0.3 **All three verified.** (a) and (b) were confirmed at source level by the rung's spike;
+      (c) is now confirmed from both ends and is *stronger* than stated — `EncodedStream` is declared
+      on the Rust side (`cy_editor_viewport::transport::TransportKind`) AND on the C++ side
+      (`ViewportTransportKind`), and implemented on neither, so the blocker is not that the remote
+      transport is unnamed. `PlayModeSupport::frame_encoder` is that fact, made a query.
+      **The three facts the spike has to start from, each verified rather than assumed.**
       (a) `cy_editor_documents::worlds` already carries the three *world kinds* the specification
       demands — Authoring, Preview, Runtime — with a `compile` step and an independent
       `authoring_leaks` check, so the editor side of the model exists.
@@ -45,17 +59,36 @@ abandoning a row.
       `EncodedStream`, and the only one implemented above a local surface is a **same-machine**
       shared texture built on `VK_KHR_external_semaphore_fd`. **`RemoteDevice` cannot use it**, so
       `EncodedStream` is on this rung's critical path and nothing in the tree encodes a frame
-- [ ] 0.4 **The failure budget, stated before the work rather than after it.** One world model and
+- [x] 0.4 **RECONCILED: the middle row of the budget was spent and the refutation was not.** One
+      world model, three transports, and a **declared per-mode capability set** —
+      `PlayModeCapabilities`, queried by `PlaySession::step_frame`/`step_tick` and mirrored in Rust
+      by `PlayMode::can_step_frame`. Exactly one capability differs between the modes and it differs
+      by TRANSPORT: `RemoteDevice` cannot step a single frame because an encoded stream's frames are
+      not individually addressable; a tick step is a message rather than a picture, so every mode
+      keeps it. No second world model was needed and none was written.
+      **The failure budget, stated before the work rather than after it.** One world model and
       three transports costs nothing. One world model, three transports and a declared per-mode
       capability set — *"this mode cannot single-step"* — costs a capability query on every feature
       that steps, and is still one architecture. **Two world models is the refutation**, and if the
       spike spends it the rung is re-planned the way M8.b was re-planned on its own spike's answer,
       not delivered on a premise the spike refuted
-- [ ] 0.5 **And the one outcome that is worse than a refutation: a silent fallback.** A mode that is
+- [x] 0.5 **THE REFUSAL EXISTS, NAMES THE MODE, STARTS NOTHING, AND IS PROVEN LOAD-BEARING.**
+      `PlaySession::enter` consults `availability_of()` before it snapshots the document; the case
+      *"a play mode that is not available refuses by name and starts nothing"* checks the message
+      names `remote-device` and `encoder`, that the state is still `Editing`, that `world()` is null
+      and that the document's bytes are unchanged. The editor refuses at its own end too
+      (`Editor::set_play` resolves the mode before the badge moves) and
+      `the_mode_is_carried_on_every_play_message_and_an_unknown_one_is_refused` checks that NOTHING
+      crossed the socket. **Both refusals were mutated and both went red**: replacing the C++ refusal
+      with a fallback to `InEditor`, and replacing `PlayMode::from_name` with `unwrap_or_default()`.
+      Restores md5-verified.
+      **And the one outcome that is worse than a refutation: a silent fallback.** A mode that is
       selected and not implemented must refuse by name. A `RemoteDevice` request that quietly runs
       `InEditor` is a green test over a feature that does not exist, and it is the exact shape M9's
       gate found when a criterion passed 44 of 44 with its enforcement point deleted
-- [ ] 0.6 Commit the spike and record its answer in `design.md` §1, the way M8.b's IR spike, M9's
+- [x] 0.6 Recorded in `design.md` §1.5, beside the budget it reconciles. Not committed — the
+      orchestrator commits between phases.
+      Original: Commit the spike and record its answer in `design.md` §1, the way M8.b's IR spike, M9's
       determinism spike and M10's invalidation spike were committed and consumed without being
       re-derived
 
@@ -120,14 +153,41 @@ infrastructure as user plugins, so the extension API is exercised by the engine'
 a scenario — *"WHEN a built-in editor is implemented THEN it SHALL use only the public plugin API"*.
 Section 3 cannot be built before this one without violating the requirement it is built to satisfy.
 
-- [ ] 2.1 Plugins, extension points and the plugin lifecycle. `find src tools -iname '*plugin*'`
+- [x] 2.1 Plugins, extension points and the plugin lifecycle. `find src tools -iname '*plugin*'`
       returns **one layercheck fixture** and has since M5; four of the row's eleven requirements have
       no implementation
+
+      **DONE for 2.1 and 2.3, in `src/core/plugins/` (`cy::core-plugins`, layer 0).** `plugin.h`
+      carries identity independent of name and path, semantic versions, the three constraint kinds
+      the requirement names, the content-kind set, the trust tiers and the manifest reader;
+      `resolve.h` carries resolution into a concrete set, a deterministic load order and the
+      lockfile with the three fields the requirement asks for; `host.h` carries the eight phases,
+      failure containment, the twenty-one extension points the requirement names at minimum with
+      independent interface versioning, and type ownership with an unload refused by name and count.
+      Suites `unit.project` (17 cases) and `integration.plugins` (8 cases) — the two the m11b
+      ledger's `plugins` criterion names, which was red for want of them. **Nine mutations run and
+      restored; eight went red on the first pass and the ninth exposed a real hole** — dropping the
+      resolver's tie-break changed no order my fixtures could see, because their graph's topology
+      already fixed it. Two cases were added over two INDEPENDENT plugins, and each half of the
+      tie-break is now pinned separately. Cognitive complexity of the new functions tops out at 23
+      (a manifest keyword dispatch), inside the parser/systems band. `README.md` records what is
+      still owed: the loader, the first first-party registration at a point, and task 2.5's check.
+
 - [ ] 2.2 The plugin binary boundary as the engine's C ABI, and type ownership with unload safety —
       against the engine's own reload model, which `cy-editor-sdk`'s `RuntimeLibrary` already
       states: serialize, migrate by name, recreate, **never `dlclose`**, because a retired image's
       string literals are still referenced by every component and behaviour registration
-- [ ] 2.3 Plugin resolution and the lockfile; trust tiers for extensions
+
+      **HALF DONE, AND DELIBERATELY NOT TICKED.** The *type ownership and unload safety*
+      requirement is finished — `cy::plugins::TypeOwnership` records the owner of every type, an
+      unload with outstanding instances is refused naming the types and their counts, and a
+      successful unregister withdraws every extension binding and every ownership row
+      (`integration.plugins`, three cases, two mutations verified red). The *binary boundary* half —
+      the C ABI descriptor entry point taking the host's API version — is NOT done: `PluginRuntime`
+      is filled in by hand today, and joining it to `src/abi/`'s loader is `native-abi` work this
+      rung did not reach. A box ticked for half a task is what M10 needed three extra workflows to
+      undo.
+- [x] 2.3 Plugin resolution and the lockfile; trust tiers for extensions
 - [ ] 2.4 Layered typed configuration, and the project graph as authoritative
 - [ ] 2.5 **The check that makes 2.1 load-bearing**: a built-in specialised editor that reaches past
       the public plugin API fails the build. Without it, "the engine dogfoods its plugin API" is a
@@ -137,13 +197,34 @@ Section 3 cannot be built before this one without violating the requirement it i
 
 Section 0's answer is the input to 3.1 and 3.2. Everything else here is independent of it.
 
-- [ ] 3.1 **The three play modes exposed and driveable**, per section 0 — `InEditor`,
-      `SeparateProcess`, `RemoteDevice`, all three through the same live bridge, with pause, single
-      frame step and single simulation tick step in every mode where the runtime permits. **A mode
-      that is not available refuses by name** (task 0.5)
-- [ ] 3.2 **The live edit policy**, per field, with the outcomes the requirement names —
-      reinitialise the component, recreate the entity, restart the world. Nothing in the tree carries
-      the concept: `LiveEditPolicy|ReinitializeComponent|RecreateEntity|RestartWorld` returns nothing
+- [x] 3.1 **DONE.** `cy::gameplay::PlayMode` + `PlayModeCapabilities` + `PlayModeAvailability` +
+      `PlayModeSupport` (`src/gameplay/play/include/cy/gameplay/play/mode.h`, `src/mode.cpp`);
+      `PlayConfiguration::mode`/`support` and the refusal in `PlaySession::enter`;
+      `PlaySession::step_tick()` and `step_frame()` with `ticks_per_frame()` computed from the two
+      rational rates (60/1 ticks against 30/1 frames is two ticks, checked). Through the same live
+      bridge: `Message::Play`/`Playing` gained a `mode` word beside the state word,
+      `RuntimeSession::play(state, mode)` sends it, `play.enter|pause|leave` take an optional `mode`
+      argument defaulting to `in-editor`, and `cy_editor_viewport::play::PlayMode` is the editor's
+      mirror of the same three spellings. Suite: `cy_test_integration_editor_play`, 5 cases, 88
+      assertions. Criteria `m11b:play-modes-exist` and `m11b:play-mode-round-trip` both green.
+      **A mode that is not available refuses by name** (task 0.5)
+- [x] 3.2 **DONE, AND IT IS A COMPILER RATHER THAN A FIELD.** `src/gameplay/live/` — `cy::gameplay-live`:
+      `LiveEditPolicy` with all six of the specification's outcomes, `derived_policy_for` deriving
+      only the three the classification can justify (`reflect::PersistenceKind` gets its first
+      consumer), `LiveEditPolicyTable` for the per-field declarations, and `LiveEditCompiler`
+      translating an `AuthoringChange` into a runtime delta and applying it. `announce()` answers
+      before the change is made, from the same function `apply()` uses, so the announcement cannot
+      disagree with the outcome. Runtime state is carried across a rebuild and what could not be
+      carried is COUNTED. "Without a restart" is two tick numbers the session produced, not a
+      boolean. `declare_engine_policies` declares eleven fields, and every one of them is stronger
+      than the derived `Immediate` because the physics bridge consumes the value at body creation —
+      a finding written into `src/gameplay/live/README.md`. **And the editor now actually sends a
+      live edit**: `RuntimeMirror` no longer hard-codes `ApplyWhen::OnArrival`, so `AtTickBoundary`
+      is constructed outside a unit test for the first time in this tree's history. Suite:
+      `cy_test_integration_editor_live_edit`, 7 cases, 120 assertions, plus
+      `an_edit_made_while_the_world_is_playing_is_scheduled_for_a_tick_boundary` reading the
+      scheduling off a real socket. Criteria `m11b:live-edit-policy-exists` and
+      `m11b:live-edit-applies-without-a-restart` both green
 - [ ] 3.3 **The specialised editors**, into the `CentreLower` region `chrome.rs` has reserved since
       M5.5 for *"the active specialised editor: script graph, animation, materials, sequencing"* and
       which nothing fills. **Read the requirement's whole list before scoping this task**: it names
@@ -191,7 +272,7 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
 
 ## 4. The document model, and a node with a name — `editor-documents-and-transactions` → C
 
-- [ ] 4.1 **A node has a name.** `cy_editor_documents` carries none: identity is a `NodeId` and
+- [x] 4.1 **A node has a name.** `cy_editor_documents` carries none: identity is a `NodeId` and
       nothing else, and `hierarchy.rs:28` says so at the field — *"a node has no name in the document
       model … so the label is the node's **kind**"*. The consequence is visible in the tree and is
       worse than a missing field: `samples/05b-editor-window/project/worlds/city.cyworld` reads
@@ -199,11 +280,44 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       `node` line is the layer**, so the only authored world in the repository that looks like it
       names its nodes is putting three objects in three one-node layers because there is nowhere else
       to put a name. See `specs/editor-documents-and-transactions/spec.md`
-- [ ] 4.2 **Source control integration, which is unstarted rather than partial.**
+
+      **DONE.** The name is a fifth word on a `node` line and a `name` field on `NodeState` /
+      `WorldNode`, with `Operation::SetName` (tag 12) carrying a rename through the one operation
+      stream the journal, live editing and the engine all read. The engine decodes it
+      (`apply_set_name`, and `read_node_state` reads it between the layer and the prefab flag), the
+      outliner labels a row with it and falls back to the kind only where there is none, and
+      `layers_used_as_names` reports a document that put a name in the layer field rather than
+      accepting it silently. `samples/05b-editor-window/project/worlds/city.cyworld` now reads
+      `node 0 - "set" "Pillar"`, so `Pillar` and `Crate` share a layer and differ by name — which is
+      the case the old file could not express at all. The name word is OMITTED where there is no
+      name, so the format's byte-identical round trip survives the field being added.
+      Suites: `unit.editor_documents` (new, `tests/editor/`), plus Rust cases in
+      `cy_editor_documents::{content,document,transaction}`, `cy_editor_services::worldfile` and
+      `cy_editor_viewmodels::hierarchy`. Seven mutations verified red and restored; the one that did
+      NOT go red on the first pass — a symmetric drop of the name from `NodeState`'s codec — is why
+      `a_node_states_name_survives_the_codec_in_the_position_the_engine_reads_it` pins the POSITION
+      as well as the value.
+
+- [x] 4.2 **Source control integration, which is unstarted rather than partial.**
       `grep -niE 'source.control' editor/crates/*/src/` returns seven hits and every one is a comment
       or a remedy string. The requirement asks for a provider interface — status, history, diff,
       check out, revert, submit, lock — with **Git, Perforce and a null provider** behind it. The
       null provider is not a placeholder: it is what makes the other two optional
+
+      **DONE.** `cy_editor_services::source_control`: a `SourceControlProvider` trait — name,
+      capabilities, status, history, content at a revision, check out, revert, submit, lock, unlock
+      — with `NullSourceControl`, `GitSourceControl` and `PerforceSourceControl` behind it and a
+      `SourceControlService` that swaps one for another without a caller naming either. `Capability`
+      is a declared set rather than discovered behaviour, and the requirement's second scenario is a
+      test: Git declares no exclusive locking and `lock()` refuses by name, where a silent `Ok(())`
+      would be a lock a person believed they held. Git also declares no check out, for the same
+      reason. Both real providers run the vendor's own client through a `CommandRunner` seam, so the
+      argument list a provider builds is checked as well as the output it parses; one case runs
+      against a REAL `git` in a temporary repository and reports nothing where `git` is absent, the
+      way the render suites do without a device. `content_at` returns bytes rather than hunks
+      deliberately — the semantic diff is what a caller shows for an authored document, and a hunk
+      parser here would be a third diff representation.
+
 - [ ] 4.3 The rest of the row's twelve: semantic diff and three-way merge over authored documents,
       which `src/sequencing/README.md` is also waiting on — *"there is no text form, no diff and no
       merge. That is an editor feature with an editor's test surface"*
@@ -235,17 +349,48 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
 
 Section 1's adoptions are the input to 6.1 through 6.4.
 
-- [ ] 6.1 **Skins and animations through glTF.** `tools/import/src/gltf.cpp:940` reports
-      `skipped-rig` when a file carries either, with a message that names M8 as the milestone after
-      which there would be something to import a skeleton into. There has been since M8.b.
-      `MeshData` carries no joint or weight array, which is the model change beneath the parser change
+- [x] 6.1 **Skins and animations through glTF — DONE, and the model change beneath it reaches the
+      FBX path too.** `MeshData::skin` is four joint indices and four weights per vertex;
+      `MeshAttributes::Skin` and `kCookedMeshVersion = 2` carry it into the cooked record (the
+      version moved with the bit, because a version-1 reader computes its payload length from the
+      attribute set and would take a skinned mesh for a truncated one). All seven places that
+      permute or duplicate a vertex carry it — the weld's gather AND its key (two vertices in one
+      place with different bindings are a RIG SEAM and stay split), the normal split, the fetch
+      reorder, the simplifier's emit and the unwrap's remap. glTF reads `skins` into the same
+      `ImportedSkeleton` record M8.d defined, `JOINTS_0`/`WEIGHTS_0` through a slot-to-joint map
+      (glTF fixes no ordering on a skin's `joints` array and `Skeleton::add_joint` refuses a parent
+      that is not smaller than its child, so the two numberings differ and confusing them is a
+      character whose left arm moves when its right leg does), and `animations` into
+      `cy::animation::Clip` through the same codec. `write_cooked_clip` moved out of `fbx_clip.cpp`
+      into `cy/import/clip_record.h` so the two formats cannot grow two clip records. **FBX'S SKIN
+      CLUSTERS WERE PARSED AND DROPPED SINCE UFBX LANDED** — `Walking.fbx`'s 65 of them —
+      and `resolve_mesh_skin` now resolves each to a joint by bone NAME and keeps the four heaviest
+      influences, renormalised, reporting the reduction, an unresolved cluster and a second skin by
+      name. Both importer versions moved (gltf 2→3, fbx 1→2) so everything re-cooks. Evidence:
+      `integration.asset_import_gltf` (16 cases, new suite — the two the ledger names plus the slot
+      map, the bind-pose disagreement, determinism, and one per mesh step),
+      `integration.import_fbx_skeleton` (+4 cases over a new always-present ASCII-FBX skinned
+      fixture: two polygons so a corner index differs from a vertex index, five clusters in an order
+      the skeleton does not share, and a five-influence vertex). Fifteen mutations run and every one
+      went red; `skins-and-animations-import` run verbatim, green, and proved red under one
 - [ ] 6.2 PNG, JPEG, WebP and EXR decoding, over section 1.2
 - [ ] 6.3 BC7 and ASTC encoding, over section 1.3
 - [ ] 6.4 **The derivation key changes when an encoder lands**, so a cache built without one is not
       served to a build with one. `deps/manifest.toml` already asserts this as the intended behaviour
       — *"a build that links an encoder produces a different derivation key and re-cooks rather than
       serving uncompressed pixels from the cache"* — and nothing checks it. See
-      `specs/asset-import-pipeline/spec.md`
+      `specs/asset-import-pipeline/spec.md`.
+      **THE GENERAL HALF IS DONE AND LEFT UNTICKED DELIBERATELY, because the encoder half cannot be
+      done until 1.3/6.3 land an encoder.** `import_derivation_key` now contributes
+      `ImporterInfo::steps` — the set of model-import steps THIS BUILD reaches — which is the spec
+      delta's second scenario ("the capability set is part of the key, not a note beside it") over
+      the case that already exists: `-D CY_ANIMATION=OFF` removes the clip codec and therefore step
+      8, and until now a cache populated by such a build served its artefacts to one that had a
+      codec — the cache hit, the build was fast, and the character came back without its animation.
+      `unit.import`'s new case *"import key: what the cooker could not do is in it"* asserts both
+      directions and goes red when the contribution is removed. The texture half needs the same
+      treatment on `CookedTexture::encoded`/`select_format`, and there is nothing to key off until
+      an encoder exists
 - [ ] 6.5 **Virtual-geometry cooking reachable from inside the editor** rather than from a command
       line only. The cooker is `virtual-geometry`'s and exists; the reachability is this rung's
 - [ ] 6.6 USD import, tool-time only, over section 1.6

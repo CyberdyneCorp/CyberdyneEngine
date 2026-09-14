@@ -98,6 +98,12 @@ add_subdirectory(abilities)
 # the other way round, so the list above is unchanged. See play/CMakeLists.txt.
 add_subdirectory(play)
 
+# live/ — the live edit policy and the live edit compiler, M11.b section 3. A separate target again,
+# and for a sharper reason than play/'s: live editing exists so an EDITOR can reach a running world,
+# and a shipped game has no use for it. Folding it into cy_gameplay_play would put an editor-facing
+# feature into the link closure of every dedicated server. See live/CMakeLists.txt.
+add_subdirectory(live)
+
 # The headless check, deferred to the end of the top-level directory: a target's transitive link
 # closure is only complete once every module in the tree has been declared, so running it here in
 # directory order would check a closure that is not yet the closure.
@@ -109,6 +115,10 @@ function(cy_gameplay_check_headless)
     cy_require_headless(cy_gameplay)
     cy_require_headless(cy_gameplay_abilities)
     cy_require_headless(cy_gameplay_play)
+    # And the live edit compiler: it reaches a RUNNING world from an editor, so the temptation to
+    # give it a renderer or an asset system is real. A `ReloadAsset` policy is handed to a
+    # `LiveEditHost` the caller supplies precisely so that it does not need one.
+    cy_require_headless(cy_gameplay_live)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gameplay_check_headless)

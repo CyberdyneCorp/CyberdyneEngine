@@ -129,6 +129,20 @@ pub enum Operation {
         /// The override after, or `None` to return to inheriting.
         after: Option<Value>,
     },
+    /// Change a node's **author-given name**.
+    ///
+    /// Separate from [`Operation::SetLayer`] because a name and a grouping are separate values —
+    /// `editor-documents-and-transactions` requires that a node's name "SHALL NOT determine or be
+    /// determined by its layer" — and separate from [`Operation::SetField`] because a name is not a
+    /// component's field: a node with no components still has one.
+    SetName {
+        /// Which node.
+        node: NodeId,
+        /// The name before.
+        before: String,
+        /// The name after.
+        after: String,
+    },
     /// Change which layer a node belongs to.
     SetLayer {
         /// Which node.
@@ -251,6 +265,15 @@ impl Operation {
                 before: after.clone(),
                 after: before.clone(),
             },
+            Operation::SetName {
+                node,
+                before,
+                after,
+            } => Operation::SetName {
+                node: *node,
+                before: after.clone(),
+                after: before.clone(),
+            },
             Operation::SetLayer {
                 node,
                 before,
@@ -301,6 +324,7 @@ impl Operation {
             | Operation::InstantiatePrefab { node, .. }
             | Operation::SetOverride { node, .. }
             | Operation::SetLayer { node, .. }
+            | Operation::SetName { node, .. }
             | Operation::SetAssetReference { node, .. } => Some(*node),
             Operation::Domain { node, .. } => *node,
         }
@@ -490,6 +514,16 @@ impl Operation {
                 writer.text(before);
                 writer.text(after);
             }
+            Operation::SetName {
+                node,
+                before,
+                after,
+            } => {
+                writer.u8(12);
+                writer.u128(node.as_u128());
+                writer.text(before);
+                writer.text(after);
+            }
             Operation::SetAssetReference {
                 node,
                 component,
@@ -578,6 +612,11 @@ impl Operation {
                 node: NodeId::from_u128(reader.u128()?),
                 component: TypeId::from_raw(reader.u64()?),
                 field: FieldId::from_raw(reader.u64()?),
+                before: reader.text()?,
+                after: reader.text()?,
+            },
+            12 => Operation::SetName {
+                node: NodeId::from_u128(reader.u128()?),
                 before: reader.text()?,
                 after: reader.text()?,
             },

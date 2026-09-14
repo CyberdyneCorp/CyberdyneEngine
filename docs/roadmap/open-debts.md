@@ -21,12 +21,10 @@ The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.
 
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
-| M10 | `fields-one-vegetation-potential` | **M11.a** | `vegetation-potential` is declared UNorm8/Static/Persistent by `cy::foliage` and UNorm16/SlowlyVarying/Authoritative by `cy::weather`'s ecosystem half, and `FieldRegistry::declare()` refuses the se… |
-| M10 | `fields-sampled-on-a-device` | **M11.a** | no `.slang` module samples an environment field, so `environment-fields`' CPU-and-GPU-access requirement is discharged on the processor only. It is the same gap that makes the artefact cost 122 ms … |
-| M10 | `sky-field-round-trip` | **M11.a** | the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have… |
 | M10 | `world-frame-budget` | **M11.a** | the environment demo costs about 122 ms a frame against a 16.7 ms budget, and the three bands that make it are the substrate re-sampled at every terrain vertex, the cloud march and water's foam fie… |
 | M8.c | `steam-audio-configures` | **M11.a** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
-| M9 | `lockstep-cross-platform` | **M11.a** | this host has one architecture and one operating system, and no continuous-integration job compares a state hash between two of them. The legs exist — ci.yml's build and test matrices are six, incl… |
+| M11.a | `developer-workflow-at-working` | **M11.d** | THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the … |
+| M10 | `pcg-gpu-domain-agreement` | **M11.e** | there is no GPU execution domain in this tree to compare. `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic — `procedural-content-generation`'s "CPU and GPU execution" requ… |
 | M9 | `record-matches-plan-history` | **M11.e** | FOUR CELLS OVER FOUR CLOSED MILESTONES: M3 `testing-and-quality`, M4 `build-system-and-platforms`, M6 `developer-workflow-and-just`, M8.b `thirdparty-dependencies` — each column claims Working and … |
 
 ## 2. Behind the plan

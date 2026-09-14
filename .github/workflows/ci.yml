@@ -1107,6 +1107,110 @@ jobs:
   # adds that nothing else does is the artefact recipes, the tier records, and the ledger's own
   # arithmetic. Narrowing it to a post-merge and nightly run is recorded here so the next milestone
   # can widen it rather than rediscover it.
+  # --- The one job that compares one leg's answer with another's ---------------------------------
+  #
+  # M11.a section 4. UNTIL THIS PAIR OF JOBS EXISTED, NOTHING IN THIS FILE COMPARED ONE LEG'S RESULT
+  # WITH ANOTHER'S. The build and test matrices above are six legs running independently: each one
+  # asserts that the engine agrees with its own committed expectations, and not one of them asks
+  # whether two architectures agree with each other. Three criteria in three ledgers looked for
+  # exactly this shape and failed or reported NOT EVALUATED for want of it —
+  # `m9:lockstep-cross-platform`, `m10:pcg-regeneration-cross-platform` and
+  # `m10:pcg-gpu-domain-agreement`.
+  #
+  # `m9:lockstep-cross-platform` was DECLARED A GAP rather than written as a `where = "ci"`
+  # criterion, and the reason is written into m9.toml: `where = "ci"` would have made it PASS in
+  # continuous integration, satisfied by a single-leg suite. So the comparator refuses a single leg,
+  # refuses several legs of one architecture, and refuses a digest of an empty workload; the list is
+  # at the top of tools/ci/cross_leg_digests.py and every entry exits non-zero.
+  #
+  # A DISAGREEMENT IS A FINDING THIS JOB REPORTS, NOT A FAILURE IT HIDES. The engine does not claim
+  # `DeterminismProfile::CrossPlatform` today — `DeterminismConfiguration::require()` refuses it with
+  # `DeterministicMathMissing`, because there is no deterministic-math module — so this job's honest
+  # outcome may well be red, with every leg's number printed beside its architecture. That is the
+  # answer arriving, and it is why the job publishes its comparison as an artefact whether it agreed
+  # or not.
+  cross-leg-publish:
+    name: cross-leg digest — ${{ matrix.label }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-x86_64, os: ubuntu-24.04 }
+          - { label: linux-arm64, os: ubuntu-24.04-arm }
+          - { label: macos-arm64, os: macos-14 }
+          - { label: windows-x86_64, os: windows-2022, msvc: x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - if: matrix.msvc != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc }}
+      - name: Install the window-system headers SDL3 builds against
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxkbcommon-dev libwayland-dev
+      - name: Install the generator
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      # The same cache key the `build` leg of this label wrote, so this job compiles what changed
+      # rather than the engine.
+      - uses: actions/cache@v4
+        with:
+          path: build/dev
+          key: cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            cy-build-${{ matrix.label }}-${{ hashFiles('deps/manifest.toml', 'cmake/**', 'CMakeLists.txt') }}-
+            cy-build-${{ matrix.label }}-
+      # The label is an annotation and never the comparator's evidence: the architecture compared is
+      # the one `determinism.cross_leg` detected in the binary that computed the digest, so two
+      # runners of one architecture cannot be made into two by naming them differently.
+      - name: Publish this leg's simulation and generation digests
+        env:
+          CY_CROSS_LEG_LABEL: ${{ matrix.label }}
+        run: just test-determinism --publish-digest cross-leg-digests/${{ matrix.label }}.digest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cross-leg-digest-${{ matrix.label }}
+          path: cross-leg-digests/${{ matrix.label }}.digest
+          if-no-files-found: error
+
+  cross-leg-compare:
+    name: cross-leg — lockstep and pcg digests compared between architectures
+    needs: cross-leg-publish
+    # `always()` so that a leg which failed to build does not turn the comparison into a skip. A
+    # skipped comparison is indistinguishable from a comparison that agreed, and the comparator's
+    # own refusal — "1 leg published, and one leg agrees with itself" — is the message that must
+    # reach the log instead.
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cross-leg-digest-*
+          path: cross-leg-digests
+      # The lockstep state hash (m9:lockstep-cross-platform) and the generated world's digest
+      # (m10:pcg-regeneration-cross-platform), compared across every architecture that published.
+      # The GPU execution domain (m10:pcg-gpu-domain-agreement) is NOT compared here and the
+      # comparator says why when asked: `cy::pcg::ExecutionDomain` has no GPU enumerator, so there
+      # is no GPU domain in this tree to run, and no runner in the matrices above has a device.
+      # That criterion stays open rather than being answered by a job that measured nothing.
+      - name: One leg's digest against another's
+        run: just test-determinism --compare-legs --pcg --digests cross-leg-digests
+      # Published whether the legs agreed or not: a disagreement between two architectures is the
+      # finding, and it is worth more downloaded than it is scrolled past in a log.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-leg-comparison
+          path: cross-leg-digests
+          if-no-files-found: ignore
+
   milestone:
     name: milestone — the closed milestones' exit criteria
     needs: build

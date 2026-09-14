@@ -158,9 +158,17 @@ crossed by prose is a source of bugs rather than an interface.
   — rather than approximated.
 * **It reads Targa and not PNG.** PNG needs a DEFLATE decoder and JPEG a DCT one. `decode_image`
   fails with a message naming which dependency would read the file.
-* **It does not import skeletons or animations.** `animation-and-skinning` reaches Working at M8 and
-  there is nothing to import a rig *into* before it; a glTF or FBX carrying skins is imported for its
-  meshes and materials with a diagnostic naming what was skipped.
+* ~~**It does not import skeletons or animations.**~~ **M8.d landed both for FBX and M11.b landed
+  both for glTF, together with the half that lives on the mesh.** `MeshData::skin` carries four
+  joint indices and four weights per vertex, `write_cooked_mesh` has the attribute bit and the
+  version to go with it, and both model importers fill it — ufbx's skin clusters resolved by bone
+  name, glTF's `JOINTS_0`/`WEIGHTS_0` remapped from the skin's slot numbering to the skeleton
+  record's. The skeleton record and the clip record are shared between the two formats
+  (`cy/import/fbx_skeleton.h`, `cy/import/clip_record.h`) so one character exported in both cooks to
+  one of each. What a step could not do reaches the derivation key: `ImporterInfo::steps` is
+  contributed by `import_derivation_key`, so a cache entry written by a build without the clip codec
+  is not served to a build that has one. Morph targets, blend shapes and step 9 (material extraction
+  as separately editable assets) remain absent, each named by its own diagnostic.
 * **It does not import USD.** `asset-import-pipeline` makes USD "an optional, tool-time-only
   importer" and `thirdparty-dependencies` calls OpenUSD "a large dependency, so editor and cooker
   only". It is not in `deps/manifest.toml` and M6 does not add it.

@@ -41,6 +41,7 @@ use cy_editor_commands::{
 use cy_editor_core::problem::{Problem, Result};
 use cy_editor_core::value::{Value, ValueKind};
 use cy_editor_documents::operation::Operation;
+use cy_editor_viewport::play::PlayMode;
 
 use crate::project::{SOURCE_DOMAIN, decode_source, encode_source};
 
@@ -349,11 +350,31 @@ fn play(
 ) -> Command {
     let (id, label, value, binding, description) = state;
     Command::new(
-        Metadata::new(id, label, "Play", description, EffectClass::Read).bound_to(binding),
-        move |context, _| {
+        Metadata::new(id, label, "Play", description, EffectClass::Read)
+            .bound_to(binding)
+            // WHERE the runtime runs it. M11.b task 3.1. Optional and defaulting to `in-editor`,
+            // which is the mode the editor has always been in without being able to name it — so a
+            // caller that does not pass one gets the behaviour it had before, and a caller that
+            // passes a mode this build cannot run is REFUSED BY NAME rather than served the
+            // default. See `ProjectHost::set_play`.
+            .with(ParameterSpec::optional(
+                "mode",
+                ValueKind::Text,
+                "Where the runtime runs: in-editor, separate-process or remote-device. A mode \
+                 this build cannot run is refused by name rather than replaced.",
+                Value::Text(PlayMode::default().name().to_string()),
+            )),
+        move |context, arguments| {
+            let mode = arguments
+                .text("mode")
+                .filter(|text| !text.is_empty())
+                .unwrap_or(PlayMode::default().name())
+                .to_string();
             let project = host(context)?;
-            let said = project.set_play(value)?;
-            Ok(Outcome::new(said).with("play", Value::Text(value.to_string())))
+            let said = project.set_play(value, &mode)?;
+            Ok(Outcome::new(said)
+                .with("play", Value::Text(value.to_string()))
+                .with("mode", Value::Text(mode)))
         },
     )
     .available_when(move |context| {

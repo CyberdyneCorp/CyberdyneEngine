@@ -67,12 +67,21 @@ A project declaring a `radiation` field writes a declaration and changes no engi
 
 ## What is NOT here, and what M10's later rows owe
 
-- **No shader.** `gpu.h` fixes and documents the buffer layout and tests the algorithm on the CPU; no
-  `.slang` module accompanies it and no agreement against a real device is claimed. Writing
-  `cy/field.slang` against this layout, binding the buffer through the GPU scene, and measuring the
-  agreement on a device belongs to the renderer-facing row that first samples a field in a shader.
-  **`environment-fields`' "CPU and GPU access" requirement is therefore half-discharged here**, and
-  the half that is missing is the device.
+- **No shader — and the shader now exists, one layer up.** `gpu.h` fixes and documents the buffer
+  layout and tests the algorithm on the CPU; this module still ships no `.slang` file, because
+  `cy::environment` is layer 2 and may not name the renderer. What was missing until M11.a was the
+  shader anywhere: `m10:fields-sampled-on-a-device` measured the number of `.slang` modules in the
+  tree that sampled an environment field at ZERO, and **`environment-fields`' "CPU and GPU access"
+  requirement was half-discharged, the missing half being the device**.
+
+  It is `src/rendering/shaders/cy/field.slang` — this layout's sampler, expression for expression
+  against `sample_field_image()` below, bound through the GPU scene's bindless table so a shader
+  samples a field without a per-draw binding. `tests/render/test_field_device.cpp` runs it on a
+  graphics device against `sample_field_image()` over the same bytes and compares BIT-EXACTLY: at a
+  lattice centre an `F32` field is bit-identical over 6 912 comparisons, and a quantised one lands
+  within one ULP — which is the device conforming, because Vulkan specifies `OpFDiv` to 2.5 ULP and a
+  quantised decode divides. `cy/terrain_shade.slang` and `cy/cloud_shadow.slang` are the first two
+  consumers.
 - **No wind model.** The wind field's transient sources — a shape, a strength, a lifetime, a budget,
   and the lowest-priority source dropped deterministically — belong to `weather-and-wind`, which the
   specification names as the wind field's producer. What this module provides is the substrate the

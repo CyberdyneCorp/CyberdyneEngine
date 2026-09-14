@@ -155,33 +155,56 @@ ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "field-device-agrees-with-cpu"
-describe = "the device sampler and the processor sampler return the same value at the same positions. `integration.environment_gpu` proves the decode agrees on the processor TWICE — one packer and a second independent decoder — and that is evidence about a layout rather than about a device. This case samples the same field at the same points through both paths and compares"
-source = "tasks 1.1, environment-fields (CPU and GPU access)"
+describe = """the device sampler and the processor sampler return the same value at the same positions, COMPARED BIT-EXACTLY. `integration.environment_gpu` proves the decode agrees on the processor TWICE — one packer and a second independent decoder — and that is evidence about a layout rather than about a device. `render.environment_field` samples the same field at the same points through `cy/field.slang` on a graphics device and through `sample_field_image()` over the same bytes, and reports bit-identical counts and ULP distances rather than a tolerance.
+
+TWO EDITS TO WHAT THIS LEDGER FIRST SAID, BOTH FORCED BY MEASUREMENT.
+
+FIRST, THE SUITE. This criterion named `integration.environment_gpu`, which links `cy::environment` alone — a layer-2 module that may not name a device or the renderer, which is the invariant the `layering` criterion above exists to hold. The device case is `render.environment_field` under tests/, layer 7, where `render.gpu_culling` and `render.conventions` already are; it is `KIND render` because that taxonomy's budget and timeout are the ones written for a suite that talks to a GPU.
+
+SECOND, THE BOUND. M11.a's spike mutated the `UNorm16` decode's divisor from 65535 to 65536 and every value in its report changed WHILE EVERY FIELD STAYED INSIDE ITS DECLARED PRECISION; the same mutation on `UNorm8` here moves the worst difference to 0.00383735 against a declared precision of 0.00392157 — still inside. A criterion written as "within the field's declared precision" cannot fail on the defect it exists for. So the suite asserts bit-identity at lattice centres for an `F32` encoding, three ULP there for a quantised one (Vulkan specifies `OpFDiv` to 2.5 ULP, which is the one-ULP difference measured), and the declared-precision bound across a sweep with the ULP figures reported beside it."""
+source = "tasks 1.1, 1.2, environment-fields (CPU and GPU access), design.md 1.4"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_environment_gpu"
-test -x "$binary" || { echo "no $binary — the suite integration.environment_gpu does not exist"; exit 1; }
-filter='the device sampler agrees with the processor*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
+binary="$d/tests/render/cy_test_render_environment_field"
+test -x "$binary" || binary="$d/cy_test_render_environment_field"
+test -x "$binary" || { echo "no cy_test_render_environment_field — the suite render.environment_field does not exist"; exit 1; }
+out="$("$binary" 2>&1)" || { echo "$out"; echo "the device agreement suite FAILED"; exit 1; }
+printf '%s\n' "$out" | grep -E 'sentinels alive|sweep|lattice centres'
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.environment_gpu any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "the suite ran ${selected:-0} case(s) of the 2 it declares"
+test "${selected:-0}" -ge 2 || { echo "a case has been renamed, deleted or skipped"; exit 1; }
+# A SKIP IS NOT A PASS. device.h prints this line and returns when the machine has no Vulkan device;
+# the criterion carries requires = "gpu" so such a machine reports NOT EVALUATED, and a run that got
+# here having skipped would be reporting a green over a suite that did nothing.
+printf '%s\n' "$out" | grep -q 'no Vulkan device on this machine' && { echo "the suite skipped: no device"; exit 1; }
+# AND THE NUMBERS. Every sentinel dead, every position resolved, and the content varying — the three
+# ways a device comparison passes while measuring nothing.
+printf '%s\n' "$out" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+sentinels = re.search(r"sentinels alive: ([0-9]+) of ([0-9]+)", text)
+if not sentinels:
+    sys.exit("the suite no longer reports its sentinel count: the dispatch cannot be shown to have run")
+if int(sentinels.group(1)) != 0:
+    sys.exit(f"{sentinels.group(1)} of {sentinels.group(2)} answer words were never written: the dispatch did not run")
+rows = re.findall(r"(\w[\w ()]*?): ([0-9]+) comparisons, ([0-9]+) bit-identical, worst ([0-9]+) ulp", text)
+if len(rows) < 4:
+    sys.exit(f"expected four reported comparisons (two fields, sweep and lattice centres), saw {len(rows)}")
+unresolved = [int(value) for value in re.findall(r"([0-9]+) unresolved", text)]
+if not unresolved or any(count != 0 for count in unresolved):
+    sys.exit(f"positions fell outside the written tiles: {unresolved} unresolved — both samplers then answer the declared default and agree about nothing")
+for name, compared, identical, ulp in rows:
+    print(f"  {name.strip()}: {compared} comparisons, {identical} bit-identical, worst {ulp} ulp")
+print("the device sampler agrees with the processor over", sum(int(row[1]) for row in rows), "comparisons")
+'
 '''
 requires = "gpu"
 reason = "sampling a field in a shader needs a graphics device; on a machine without one the claim is reported NOT EVALUATED rather than passed, because the processor half already passes and would make a green look like agreement"
+timeout_s = 3600
 ci_job = "milestone-m11a"
-
-# --- Section 2: the frame budget, which is the honest headline of M10's artefact -------------------
-#
-# `m10:world-frame-budget` measures about 122 ms a frame with a device drawing and about 106 ms
-# headless, against 16.7 ms — seven times over either way — nearly flat across the day/night cycle,
-# with the three largest bands in the same order in both takes. THE CRITERIA HERE ARE TWO, AND THE
-# COMPANION WITHOUT A DEVICE IS M8.c's RULE KEPT: nothing a milestone claims should be judgeable only
-# on the machines with a GPU in them.
 
 [[criterion]]
 id = "world-budget-headless"
@@ -218,18 +241,30 @@ source = "tasks 1.3, atmosphere-sky-and-clouds (Cloud shadows)"
 kind = "command"
 run = '''
 set -eo pipefail
-readers=$(grep -rln "cloud_shadow\|CloudShadowField" --include='*.cpp' --include='*.h' src/ \
-    | grep -v "^src/rendering/sky/" || true)
+# TESTS AND COMMENTS ARE NOT CONSUMERS, and the first version of this check counted one. It matched
+# src/rendering/material/tests/test_slang_program.cpp, which compiles `cy.cloud_shadow` and never
+# reads the field — a criterion satisfied by a string in a file is the shape this project has
+# shipped five times. So: no test directories, and the match must be a CALL — `cloud_shadow_field_id`
+# or `CloudShadowField::sample` — rather than the words appearing anywhere in the file.
+readers=$(grep -rln "cloud_shadow_field_id\|CloudShadowField::sample" \
+    --include='*.cpp' --include='*.h' src/ \
+    | grep -v "^src/rendering/sky/" | grep -v "/tests/" || true)
 count=$(printf '%s' "$readers" | grep -c . || true)
 echo "$count file(s) outside src/rendering/sky/ read the cloud shadow field:"
 printf '%s\n' "${readers:-  none}"
+if [ "$count" -lt 2 ]; then
+    echo "  `atmosphere-sky-and-clouds` requires the field to be consumed by terrain, foliage,"
+    echo "  water and illumination. `CloudShadowField::declare_consumers()` declares all four to"
+    echo "  the registry and none of them reads it: a declared consumer that never samples is a"
+    echo "  configuration entry, not a consumer."
+fi
 test "$count" -ge 2
 '''
 ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "sky-field-round-trips"
-describe = "the two assertions parked in `src/rendering/sky/tests/test_cloud_shadows.cpp` are restored as the check and pass: a producer that reports writing darkened tiles is read back darkened. The parked assertions are the evidence that the defect was known and the test was loosened rather than the code fixed, so restoring them is the closure and not a new test"
+describe = "the two assertions parked in `src/rendering/sky/tests/test_cloud_shadows.cpp` are restored as the check and pass: a producer that reports writing darkened tiles is read back darkened. The parked assertions are the evidence that the defect was known and the test was loosened rather than the code fixed, so restoring them is the closure and not a new test. THE SUITE NAMED HERE WAS WRONG WHEN THIS LEDGER WAS WRITTEN — test_cloud_shadows.cpp is `integration.render_sky_fields`, and `unit.render_sky` is test_sky.cpp, which does not name the cloud shadow field at all. A criterion that runs a suite not containing the file it greps can go green over the defect it exists for, so it runs the right suite and READS THE NUMBERS, exactly as `m10:sky-field-round-trip` does: a case that is renamed or skipped prints no round-trip line and fails on its absence rather than on the suite's exit code"
 source = "tasks 1.3, src/rendering/sky/tests/test_cloud_shadows.cpp"
 kind = "command"
 run = '''
@@ -239,7 +274,24 @@ echo "$parked line(s) in test_cloud_shadows.cpp still mention a parked or deferr
 test "$parked" -eq 0
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-ctest --test-dir "$d" -R '^unit.render_sky$' --output-on-failure
+out="$(ctest --test-dir "$d" -R '^integration.render_sky_fields$' -V 2>&1)" || { printf '%s\n' "$out" | tail -40; exit 1; }
+line="$(printf '%s\n' "$out" | grep -o 'through the store: .*' | head -1)"
+test -n "$line" || { echo "the round-trip case printed nothing — it has been renamed, skipped or deleted"; exit 1; }
+echo "$line"
+printf '%s\n' "$line" | python3 -c '
+import re, sys
+line = sys.stdin.read()
+found = re.search(r"([0-9]+) samples, lowest ([0-9.eE+-]+), highest ([0-9.eE+-]+)", line)
+if not found:
+    sys.exit("the round-trip line no longer reports a sample count, a lowest and a highest")
+count, lowest, highest = int(found.group(1)), float(found.group(2)), float(found.group(3))
+if count == 0:
+    sys.exit("no cell the producer wrote resolved through the store: nothing was published")
+if lowest >= 0.99 or highest - lowest <= 0.01:
+    sys.exit(f"{count} cells read back with a lowest of {lowest} and a spread of {highest - lowest}: "
+             f"the producer computes a cloud shadow and nothing readable reaches the substrate")
+print(f"the cloud shadow reaches the substrate: {count} cells, lowest {lowest}, spread {highest - lowest}")
+'
 '''
 ci_job = "milestone-m11a"
 
@@ -260,8 +312,14 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_standard_fields"
-test -x "$binary" || { echo "no $binary — the suite integration.standard_fields does not exist"; exit 1; }
+# TWO PLACES, because `cy_add_test` puts a suite's binary where the CMakeLists.txt that declares it
+# lives: tests/integration/ declares this one from its own directory, while the suites declared by a
+# deferred call from the top level land at the build root. Naming only one of them made this
+# criterion fail with "the suite does not exist" over a suite that was built and green — a red for
+# the wrong reason, which is as unreadable as a green for the wrong reason.
+binary="$d/tests/integration/cy_test_integration_standard_fields"
+test -x "$binary" || binary="$d/cy_test_integration_standard_fields"
+test -x "$binary" || { echo "no cy_test_integration_standard_fields under $d — the suite integration.standard_fields does not exist"; exit 1; }
 filter='both producers register in both directions*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
@@ -308,6 +366,25 @@ CHECK
 ci_job = "milestone-m11a"
 
 [[criterion]]
+id = "cross-leg-digest-published"
+describe = "the leg-side half of that job RUNS AND CHECKS WHAT IT PUBLISHES. `determinism.cross_leg` computes the digest out of the engine's own pieces — the golden session of src/replay/tests/sim.h and the forest graph of src/pcg/tests/fixtures.h, so that a digest two legs compare is a digest of the simulation and the generator rather than of a fixture invented for the comparison — and it asserts four things about it: the published simulation digest is the roll-up of the COMMITTED golden hashes, the digests are the same twice in one process, every field the comparator reads is published, and THE GENERATION DIGEST MOVES WHEN THE WORLD'S SEED DOES. That last case is M11.a's field spike's own lesson one layer up: its refusal counted variety across four fields together and a mutation making the content constant ran to completion and reported a speed-up. Two legs agreeing on a constant are not two legs that agreed"
+source = "tasks 2.1, simulation-and-determinism, procedural-content-generation"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/tests/determinism/cy_test_determinism_cross_leg"
+test -x "$binary" || { echo "no $binary — determinism.cross_leg does not exist, so no leg can publish"; exit 1; }
+out="$("$binary" 2>&1)" || { echo "$out"; echo "the publisher FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the suite ran ${selected:-0} case(s) of the 5 it declares"
+test "${selected:-0}" -ge 5 || { echo "a case was renamed, deleted or skipped: a publisher with fewer checks than it had is a digest nobody verified"; exit 1; }
+'''
+ci_job = "milestone-m11a"
+
+[[criterion]]
 id = "lockstep-agrees-across-architectures"
 describe = "and the digests AGREE. The job existing is one claim and the answer it returns is another: a disagreement between two architectures is a FINDING this rung reports, not a failure it hides, and the criterion exists to be capable of going red on it"
 source = "tasks 2.1, simulation-and-determinism (CrossPlatform)"
@@ -319,7 +396,7 @@ ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "pcg-regenerates-across-architectures"
-describe = "a generated region reproduces bit-for-bit on a second architecture, and the GPU execution domain reproduces the CPU domain's output on more than one vendor's driver. Both were reported NOT EVALUATED at M10 for want of the job above; with the job they become answerable, and either answer is worth having"
+describe = "a generated region reproduces bit-for-bit on a second architecture. It was reported NOT EVALUATED at M10 for want of the job above; with the job it becomes answerable, and either answer is worth having. **THE GPU HALF OF `m10:pcg-gpu-domain-agreement` IS NOT ANSWERED HERE AND THIS RUNG SAYS SO RATHER THAN LETTING THE JOB LOOK LIKE AN ANSWER**: `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic, so there is no GPU execution domain in this tree to compare, and no hosted runner in ci.yml's matrices has a device either — two absent things, only one of them a runner question. `tools/ci/cross_leg_digests.py --gpu-domain` prints every leg's field and REFUSES; that criterion is re-declared as a `known_gap` in m10.toml closing at M11.e, and its own check was strengthened at this rung because M11.a's job turned it green by mentioning the subject"
 source = "tasks 2.1, procedural-content-generation (Deterministic derivation, Execution domains)"
 kind = "command"
 run = "just test-determinism --compare-legs --pcg"
@@ -451,44 +528,108 @@ ci_job = "milestone-m11a"
 # THIS rung owes is the first half: criteria that EVALUATE the rows, so that the tier a later rung
 # records is one something re-checks. A tier written into a record nothing re-checks is the defect the
 # gap is about, one level down.
+#
+# TASKS 5.1 AND 5.2, AND WHY THE FOUR BELOW READ THE MATRIX RATHER THAN THE SPECIFICATION.
+# `docs/roadmap/capability-matrix.md` already writes out, per row, the evidence its Working claim was
+# argued from — "the evidence below is what such criteria would have to assert", in its own words. So
+# each criterion re-checks THAT argument against this tree rather than deriving a new one: a check
+# whose subject drifts away from the claim it was written for is the same defect one more level down.
+# `tools/roadmap/row_evidence.py` is the one place the four arguments live, quoted at each check.
+#
+# WHAT THEY ARE NOT. None of them records a tier and none of them touches `docs/roadmap/status.yaml`.
+# `delivery-roadmap` makes recording a closing gate's act and M11.a's design §7 says so in as many
+# words; the four Complete cells stay at M11.d and M11.e where the work that earns them is scoped.
+# What this rung owes is that the Working tier a later rung records is one something can contradict.
+
+[[criterion]]
+id = "testing-and-quality-at-working"
+describe = "the M3 evidence for `testing-and-quality` still holds: the taxonomy gives every kind both a per-case budget and a CTest timeout, `cy_add_test` compiles the budget in and labels the suite with its kind, every kind in the table has a suite behind it, the golden images are committed, EVERY REGISTERED BENCHMARK HAS A COMMITTED RATIO AND TOLERANCE IN BOTH DIRECTIONS — a benchmark with no threshold cannot regress and a threshold with no benchmark is one nobody runs — and the seven quality jobs the row is argued on are declared in ci.yml"
+source = "tasks 5.1, 5.2, testing-and-quality, docs/roadmap/capability-matrix.md"
+kind = "command"
+run = "python3 tools/roadmap/row_evidence.py testing-and-quality"
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "build-system-at-working"
+describe = "the M4 evidence for `build-system-and-platforms` still holds, and its first leg is the one nothing has ever compared end to end: FOUR PROFILES THAT MEAN THE SAME THING IN EVERY TOOLCHAIN is a claim about four files, and `cmake/profiles.cmake` cross-checks itself against the justfile only when a caller supplies both, while nothing anywhere compared either with the Cargo profile the editor is actually built with. Then the feature table's shape, the Swift overlay still regenerating from the C ABI, every optional dependency gated by a feature option that exists, and `deps/manifest.toml`'s own rule — `a version that appears in a CMake file rather than in this table is a defect` — checked over every CMake file the build reads"
+source = "tasks 5.1, 5.2, build-system-and-platforms, docs/roadmap/capability-matrix.md"
+kind = "command"
+run = "python3 tools/roadmap/row_evidence.py build-system-and-platforms"
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "developer-workflow-at-working"
+describe = "the M6 evidence for `developer-workflow-and-just` still holds: every one of the eleven categories `Recipe surface` names has at least one recipe that DOES SOMETHING rather than refusing, and the Roadmap category provides the two recipes the requirement names outright. THE REFUSAL IS RECOGNISED BY NAME, so the check also asserts that the justfile still defines `_not-implemented` — without that leg, renaming the helper away would make every recipe read as implemented and this criterion would pass over a workflow that refuses everywhere"
+source = "tasks 5.1, 5.2, developer-workflow-and-just, docs/roadmap/capability-matrix.md"
+kind = "command"
+run = "python3 tools/roadmap/row_evidence.py developer-workflow-and-just"
+known_gap = "THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the eleven categories the `Recipe surface` requirement names covers nothing — against a matrix row whose Working evidence reads `Every category of the required recipe surface does something from M6: Environment, Build, Run, Test, Quality, Generate, Content, Diagnose, Roadmap, Maintenance, Release`. THIS IS THE FIRST THING AN EVALUATING CRITERION FOUND, and it is exactly what §5 was written to make possible: the row's stated evidence was one quarter false and no check could say so, because the only expectation naming the row expected `seed` and an exit tier is a floor. It is declared rather than fixed here because the fix is M11.d's scope — `m11d:release-recipes-stop-refusing` is that criterion, and `developer-workflow-and-just` reaches Complete at M11.d `with the targets a release and a second platform bring`. What this rung owes is that the claim is now checked; what M11.d owes is that it becomes true. The other three legs pass, so a regression in any of them turns this from a one-line gap into a failure with a named cause"
+known_gap_closes = "m11d"
+ci_job = "milestone-m11a"
+
+[[criterion]]
+id = "thirdparty-dependencies-at-working"
+describe = "the M8.b evidence for `thirdparty-dependencies` still holds: every dependency and host tool carries the full field set the requirement lists, `THIRD_PARTY.md` NAMES every record — coverage rather than currency, because a document regenerated from a record that lost an entry is current and wrong — the editor's Rust crates are governed by a record of their own, and A DISABLED FEATURE FETCHES, BUILDS AND LINKS NOTHING, proved by configuring twice and reading what the build system did. That last leg is `tools/deps/test_gating.py`, which the row's evidence has named since M8.b and WHICH NO CRITERION AND NO CI JOB HAS EVER RUN — a test nobody runs is the same defect as a tier nobody re-checks, one level down. **AND THE FIRST TIME IT WAS RUN IT FAILED**, which is why this criterion is red in this rung rather than green: its OFF phase passes in full — twenty-four assertions over six gated dependencies, none fetched, none linked, each exclusion named in the configure log — and its ON phase cannot complete, because turning every gate on turns on `CY_AUDIO_STEAM_AUDIO` and `steam_audio-src/core/CMakeLists.txt:235` calls `find_package(PFFFT)` for one of the four upstream dependencies `m8c:steam-audio-configures` has named since M8.c and that have never been fetched. So this criterion and `steam-audio-simulates` have the same blocker, discovered from opposite ends, and THE CONSEQUENCE IS FOR SECTION 7.2: if `audio` is deferred, a recorded deferral alone does not make this green — while `steam_audio` is declared `optional` in `deps/manifest.toml`, the gating proof turns it on, so the deferral has to say what happens to the manifest entry as well as to the backend"
+source = "tasks 5.1, 5.2, thirdparty-dependencies, docs/roadmap/capability-matrix.md"
+kind = "command"
+run = "python3 tools/roadmap/row_evidence.py thirdparty-dependencies"
+# THE GATING LEG CONFIGURES TWICE AND THE SECOND CONFIGURE FETCHES EVERY GATED DEPENDENCY, Slang and
+# its submodules among them — about 1.5 GB of git on a cold cache, measured at six minutes on a quiet
+# machine and over twenty on a loaded one. `tools/deps/test_gating.py` keeps its own FetchContent
+# cache under build/ and reuses it, so only the first run on a runner pays that. Budgeted for the
+# cold case rather than the warm one, because a timeout is not a measurement.
+timeout_s = 7200
+ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "the-four-rows-are-evaluated"
-describe = "each of `testing-and-quality`, `build-system-and-platforms`, `developer-workflow-and-just` and `thirdparty-dependencies` is BOTH named by a criterion that runs something AND expected above `seed` by some ledger's `expect_tiers`. Before the five M11 ledgers were written, `build-system-and-platforms` appeared in no ledger but m0.toml at all, and the only tier expectation naming any of the four was `m0:roadmap-tiers` expecting `seed` — which is a FLOOR and can never contradict a Working claim. **THIS CRITERION WENT GREEN THE DAY THE FIVE LEDGERS LANDED AND IT IS A REGRESSION GUARD FROM HERE ON**: it goes red again if the criteria that evaluate a row are deleted or its tier expectation is dropped. The other half of the defect — the tiers actually being RECORDED — is `m9:record-matches-plan-history`, which fails today and closes at M11.e"
-source = "tasks, delivery-roadmap (A recorded tier is evaluated by a criterion)"
+describe = "each of `testing-and-quality`, `build-system-and-platforms`, `developer-workflow-and-just` and `thirdparty-dependencies` is BOTH evaluated by a criterion THIS LEDGER ACTUALLY RUNS AND expected above `seed` by some ledger's `expect_tiers`. Before the five M11 ledgers were written, `build-system-and-platforms` appeared in no ledger but m0.toml at all, and the only tier expectation naming any of the four was `m0:roadmap-tiers` expecting `seed` — which is a FLOOR and can never contradict a Working claim. **THE `ACTUALLY RUNS` HALF IS NOT DECORATION**: when the five ledgers landed, this check went green on criteria declared in m11d and m11e, which `criteria.build_plan` does not put in M11.a's plan at all — so a row could be `evaluated` by something that will not execute until two rungs after the tier is recorded. It reads the plan rather than the directory for that reason, and it excludes itself, because a check that counted its own declaration would be the same defect one level up. The other half — the tiers actually being RECORDED — is `m9:record-matches-plan-history`, which fails today and closes at M11.e"
+source = "tasks 5.1, delivery-roadmap (A recorded tier is evaluated by a criterion)"
 kind = "command"
 run = '''
 set -eo pipefail
 python3 - <<'CHECK'
 import pathlib, sys, tomllib
+sys.path.insert(0, "tools/roadmap")
+import criteria, gates
 rows = ["testing-and-quality", "build-system-and-platforms",
         "developer-workflow-and-just", "thirdparty-dependencies"]
-# TWO HALVES, AND THE GAP IS ABOUT BOTH. A criterion that RUNS something and declares the row it is
-# evaluating — `source` is that declaration, and `describe` is prose, so only `source` is read; and a
-# tier expectation ABOVE `seed` somewhere, because `_check_tiers` treats an exit tier as a FLOOR and
-# a `seed` expectation can never contradict a Working claim. This criterion excludes itself: a check
-# that counted its own declaration would be the same defect one level up.
+# TWO HALVES, AND THE GAP IS ABOUT BOTH.
+#
+# ONE: a criterion that RUNS something, declares the row it is evaluating, and is IN THIS LEDGER'S
+# OWN PLAN. `source` is the declaration — `describe` is prose, so only `source` is read — and
+# `build_plan` is the second half of it: a ledger evaluates the permanent set plus its own criteria
+# and nothing else, so a criterion declared in m11d is not a check this rung has, however well it
+# reads in the directory. That is precisely how this criterion first passed.
+#
+# TWO: a tier expectation ABOVE `seed` somewhere, because `_check_tiers` treats an exit tier as a
+# FLOOR and a `seed` expectation can never contradict a Working claim. That half reads every ledger,
+# including the rungs that will record the tier, because the floor is the thing a later gate is held
+# to rather than a check this rung runs.
 RANK = {"seed": 0, "working": 1, "complete": 2}
+plan = criteria.build_plan("m11a", gates.permanent_milestones(gates.load()))
 evaluating = {row: [] for row in rows}
 floors = {row: [] for row in rows}
+for entry in plan.entries:
+    criterion = entry.criterion
+    if criterion.kind == "tiers" or criterion.id == "the-four-rows-are-evaluated":
+        continue
+    for row in rows:
+        if row in criterion.source:
+            evaluating[row].append(entry.label)
 for path in sorted(pathlib.Path("tools/roadmap/milestones").glob("*.toml")):
     for criterion in tomllib.loads(path.read_text(encoding="utf-8")).get("criterion", ()):
-        label = f"{path.stem}:{criterion['id']}"
-        if criterion["kind"] == "tiers":
-            for row, tier in criterion.get("expect_tiers", {}).items():
-                if row in rows and RANK.get(tier, 0) > RANK["seed"]:
-                    floors[row].append(f"{label} expects {tier}")
+        if criterion["kind"] != "tiers":
             continue
-        if criterion["id"] == "the-four-rows-are-evaluated":
-            continue
-        for row in rows:
-            if row in str(criterion.get("source", "")):
-                evaluating[row].append(label)
+        for row, tier in criterion.get("expect_tiers", {}).items():
+            if row in rows and RANK.get(tier, 0) > RANK["seed"]:
+                floors[row].append(f"{path.stem}:{criterion['id']} expects {tier}")
 short = []
+print(f"M11.a's plan is {len(plan.entries)} criteria; these are the ones that name a row:")
 for row in rows:
     print(f"  {row}")
-    print(f"    runs:  {', '.join(evaluating[row]) or 'NOTHING RUNS FOR THIS ROW'}")
-    print(f"    floor: {', '.join(floors[row]) or 'NO LEDGER EXPECTS IT ABOVE seed'}")
+    print(f"    runs here: {', '.join(evaluating[row]) or 'NOTHING IN THIS PLAN RUNS FOR THIS ROW'}")
+    print(f"    floor:     {', '.join(floors[row]) or 'NO LEDGER EXPECTS IT ABOVE seed'}")
     if not evaluating[row] or not floors[row]:
         short.append(row)
 sys.exit(1 if short else 0)

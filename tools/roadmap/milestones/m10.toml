@@ -107,15 +107,22 @@ ci_job = "milestone-m10"
 
 [[criterion]]
 id = "pcg-gpu-domain-agreement"
-describe = "A GPU EXECUTION DOMAIN REPRODUCES THE CPU DOMAIN'S OUTPUT FOR THE SAME SEED — AND THIS HOST HAS ONE GPU VENDOR, so an agreement measured here would be an agreement with one driver. `procedural-content-generation`'s execution domains include a GPU one, and the M10 spike's graph ran entirely on the CPU: nothing in design.md §1 measured a GPU domain at all. The check looks for the only shape that could close it: a continuous-integration job that runs the generation on two different GPU vendors and compares the digests"
+describe = "A GPU EXECUTION DOMAIN REPRODUCES THE CPU DOMAIN'S OUTPUT FOR THE SAME SEED — AND THIS HOST HAS ONE GPU VENDOR, so an agreement measured here would be an agreement with one driver. `procedural-content-generation`'s execution domains include a GPU one, and the M10 spike's graph ran entirely on the CPU: nothing in design.md §1 measured a GPU domain at all. The check looks for the only shape that could close it: a continuous-integration job that runs the generation on two different GPU vendors and compares the digests. **THE CHECK WAS STRENGTHENED AT M11.a AND THE REASON IS THE WHOLE OF ITS VALUE**: it asked only that some job block mention `gpu`, a `pcg` word and `download-artifact`, and M11.a's cross-leg comparison job — which compares a CPU-domain digest between two ARCHITECTURES and no GPU domain at all — turned it green the moment its own comment explained why it does not answer this. A criterion a neighbouring job satisfies by mentioning the subject is a criterion that cannot fail. It now asks the job to NAME TWO GPU VENDORS, which is what running on two of them requires of a workflow"
 source = "tasks 0.2, 4.1, design.md §1.5"
 kind = "command"
 run = '''
 python3 - <<'CHECK'
 import pathlib, re, sys
 
+# TWO DIFFERENT GPU VENDORS, NAMED. A workflow cannot run on a vendor's driver without saying so —
+# a hosted runner has no device at all, so the job has to name the runner label or the image that
+# carries one — and requiring the NAME is what stops a job that merely discusses GPUs from
+# satisfying a claim about two of them. The list is the vendors whose drivers a runner could carry.
+VENDORS = ("nvidia", "amd", "radeon", "intel", "apple", "qualcomm", "adreno", "mali", "powervr")
+
 workflows = sorted(pathlib.Path(".github/workflows").glob("*.y*ml"))
 comparing = []
+mentions = []
 for path in workflows:
     text = path.read_text(encoding="utf-8")
     for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
@@ -127,20 +134,30 @@ for path in workflows:
             continue
         if "download-artifact" not in lowered:
             continue
-        comparing.append(f"{path.name}:{name}")
-print(f"{len(workflows)} workflow(s) examined; "
-      f"{len(comparing)} job(s) compare a GPU-generated region digest across vendors: "
-      f"{comparing or 'none'}")
+        mentions.append(f"{path.name}:{name}")
+        named = sorted({vendor for vendor in VENDORS if vendor in lowered})
+        if len(named) >= 2:
+            comparing.append(f"{path.name}:{name} ({', '.join(named)})")
+print(f"{len(workflows)} workflow(s) examined; {len(mentions)} job(s) mention a GPU beside a "
+      f"generated-region digest; {len(comparing)} of them name two vendors: {comparing or 'none'}")
+if mentions and not comparing:
+    print(f"  {', '.join(mentions)} mention(s) the subject and name(s) no two vendors' drivers.")
 if not comparing:
     print("  no job runs procedural generation on a GPU on two vendors and compares the results, so")
     print("  'the GPU execution domain agrees with the CPU one' is UNMEASURED rather than met. A")
     print("  single-vendor comparison would answer a different question and must not read as green.")
+    print("  TWO THINGS ARE ABSENT AND ONLY ONE IS A RUNNER QUESTION: `cy::pcg::ExecutionDomain` is")
+    print("  Editor, Cook, Runtime, Streaming, Dynamic — there is no GPU domain in this tree to run")
+    print("  — and no leg of ci.yml's matrices has a device. determinism.cross_leg's last case")
+    print("  asserts the first of those and goes red the day a GPU domain is added.")
 sys.exit(0 if comparing else 1)
 CHECK
 '''
 where = "ci"
 reason = "this host has one GPU vendor, so agreement measured here would be agreement with one driver rather than between two, and `requires = \"gpu\"` would make it RUN and PASS on exactly that evidence"
 ci_job = "milestone-m10"
+known_gap = "there is no GPU execution domain in this tree to compare. `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic — `procedural-content-generation`'s \"CPU and GPU execution\" requirement is discharged on the processor only — so the criterion needs TWO absent things and only one of them is a runner question: the domain itself, and two GPU vendors in a matrix whose hosted runners have no device at all. M11.a built the cross-leg comparison job that closed `m9:lockstep-cross-platform` and `m10:pcg-regeneration-cross-platform` and DELIBERATELY DID NOT ANSWER THIS ONE — `tools/ci/cross_leg_digests.py --gpu-domain` prints every leg's `pcg-gpu-domain` field and refuses. The forcing function for the first half is `determinism.cross_leg`'s last case, which asserts that no execution domain names a device and goes red the day one does"
+known_gap_closes = "m11e"
 
 # --- A GAP M10'S GATE FOUND, DECLARED RATHER THAN HIDDEN ------------------------------------------
 #
@@ -219,8 +236,6 @@ if lowest >= 0.99 or highest - lowest <= 0.01:
 print(f"the cloud shadow reaches the substrate: lowest {lowest}, spread {highest - lowest}")
 '
 '''
-known_gap = "the cloud shadow field is written by a producer that reports writing it and read back as the declared default at every sample inside the radius, so no consumer can see it. The test that should have caught this asserted only against the producer's own statistics, which is the defect class this project has now hit twice"
-known_gap_closes = "m11a"
 ci_job = "milestone-m10"
 
 # ==================================================================================================
@@ -1384,8 +1399,6 @@ if forwards or backwards:
 print("every field every producing module declares composes in one registry, both ways round")
 '
 '''
-known_gap = "`vegetation-potential` is declared UNorm8/Static/Persistent by `cy::foliage` and UNorm16/SlowlyVarying/Authoritative by `cy::weather`'s ecosystem half, and `FieldRegistry::declare()` refuses the second in either order — so a project that registers both rows' producers fails at startup, which is the `wind` defect again one namespace down. Closing it means deciding whether foliage's realised `vegetation` density and weather's ecosystem `vegetation-density` are one quantity — `weather-and-wind` gives the ecosystem to weather — and then one of the two declarations, or one of the two producers, goes away"
-known_gap_closes = "m11a"
 timeout_s = 7200
 ci_job = "milestone-m10"
 
@@ -1417,8 +1430,6 @@ if [ "$count" -eq 0 ]; then
 fi
 test "$count" -gt 0
 '''
-known_gap = "no `.slang` module samples an environment field, so `environment-fields`' CPU-and-GPU-access requirement is discharged on the processor only. It is the same gap that makes the artefact cost 122 ms a frame and the same gap six of M10's module READMEs record against terrain materials, water surfaces, grass expansion and the cloud march. Closing it is `cy/field.slang` written against the layout `gpu.h` already fixes, bound through the GPU scene, and measured against a device"
-known_gap_closes = "m11a"
 ci_job = "milestone-m10"
 
 # --- Section 8: the record, the tiers, and the next rung -------------------------------------------

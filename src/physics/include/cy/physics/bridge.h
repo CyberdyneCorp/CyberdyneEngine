@@ -186,6 +186,14 @@ public:
     [[nodiscard]] PhysicsStepper& stepper() noexcept { return stepper_; }
     [[nodiscard]] const PhysicsStepper& stepper() const noexcept { return stepper_; }
 
+    /// The component identifiers this bridge was built against.
+    ///
+    /// Exposed for M11.b's live edit compiler, which has to name the same `RigidBody` and
+    /// `Collider` columns this bridge writes in order to declare a live edit policy over them — and
+    /// which would otherwise have to re-register them and get different numbers for the same
+    /// components.
+    [[nodiscard]] const PhysicsComponents& components() const noexcept { return components_; }
+
     /// The body an entity's components produced, or a null handle.
     [[nodiscard]] BodyHandle body_of(ecs::Entity entity) const noexcept;
 

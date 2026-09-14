@@ -41,6 +41,7 @@ pub mod primitives;
 pub mod project;
 pub mod runtime;
 pub mod selection;
+pub mod source_control;
 pub mod viewports;
 pub mod workspace;
 pub mod worldfile;
