@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 131 proven, 510 not yet shown able to fail.
+# 149 proven, 492 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -254,7 +254,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "network-at-complete-grade"
-digest = "b3cd586f0fb7b0f1"
+digest = "8f637a6c1ce6c505"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 row(s) map to a test, a gate or a recorded exemption"
@@ -422,7 +422,7 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 [[proof]]
 ledger = "m11b"
 criterion = "editor-at-complete-grade"
-digest = "42c1eb1a855d5730"
+digest = "6aed660b056c19e2"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-and-gizmos editor-docume … 0 of 133 requirement(s) across 9 row(s) map to a test, a gate or a recorded exemption"
@@ -454,7 +454,7 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> co
 [[proof]]
 ledger = "m11b"
 criterion = "gameplay-at-complete-grade"
-digest = "d6432b9754ac1f53"
+digest = "edb0e2bfbec8b42b"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-and-cinematics input-and- … 0 of 183 requirement(s) across 8 row(s) map to a test, a gate or a recorded exemption"
@@ -676,12 +676,140 @@ mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (decl
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
+ledger = "m11c"
+criterion = "beauty-shot"
+digest = "276f0c5ff5bce208"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "image-rows-at-complete-grade"
+digest = "53d4116af8f8920e"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  virtual-geometry virtual-shadows rendering-global-illumination denoising ray-tracing-infrastructure rendering-post-processing tempora … 0 of 123 requirement(s) across 8 row(s) map to a test, a gate or a recorded exemption"
+
+[[proof]]
+ledger = "m11c"
+criterion = "m11d-open"
+digest = "510629bace6a8da2"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11d-desktop/proposal.md … the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+
+[[proof]]
+ledger = "m11c"
+criterion = "material-compiler-at-complete-grade"
+digest = "877a445a2c606598"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  material-compiler shader-system … 0 of 34 requirement(s) across 2 row(s) map to a test, a gate or a recorded exemption"
+
+[[proof]]
+ledger = "m11c"
+criterion = "materials-are-textures"
+digest = "aab4e27a4ea1fc04"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): no beauty-shot project in the tree"
+
+[[proof]]
+ledger = "m11c"
+criterion = "roadmap-tiers"
+digest = "d8b5e8dc0f03fc99"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete' … virtual-shadows: recorded 'working', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11c"
+criterion = "shot-authored-through-the-editor"
+digest = "1b4f555394a9c9a5"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): no beauty-shot project in the tree"
+
+[[proof]]
+ledger = "m11d"
+criterion = "core-rows-at-complete-grade"
+digest = "522881c95ca1a0e0"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  core-assets-and-io core-jobs-and-concurrency core-memory-and-containers ecs-core engine-architecture core-platform-abstraction rhi-an … 0 of 83 requirement(s) across 7 row(s) map to a test, a gate or a recorded exemption"
+
+[[proof]]
+ledger = "m11d"
+criterion = "developer-workflow-recipes"
+digest = "c98044d98067383f"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): quality.just:166: names M11, which is not on the ladder … 6 recipe line(s) refuse naming a milestone the ladder does not carry"
+
+[[proof]]
+ledger = "m11d"
+criterion = "m11e-open"
+digest = "c415a4b8b99407b9"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11e-ship/proposal.md … the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+
+[[proof]]
+ledger = "m11d"
+criterion = "port-touches-no-engine-layer"
+digest = "cd7e974bb12e88d9"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): no commit naming 'native-platform-backend' in the last 40 — the native backend has not landed, … so the claim that it touched no engine layer cannot be evaluated and is not passed"
+
+[[proof]]
+ledger = "m11d"
+criterion = "roadmap-tiers"
+digest = "1ee58f37a6ed1121"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): build-and-packaging: recorded 'working', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11d"
+criterion = "ship-sample-drawn"
+digest = "af0bef6a8c02a879"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+
+[[proof]]
+ledger = "m11d"
+criterion = "ship-sample-exists"
+digest = "2eb2f60fe49c40a6"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+
+[[proof]]
+ledger = "m11e"
+criterion = "dependency-set-integrated"
+digest = "46b080ac5760e1d2"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): 17 dependency entries in deps/manifest.toml: … ACL, Core ML, DirectML, FreeType, HarfBuzz, ICU, ISPC Texture Compressor, LZ4, OpenUSD, SPIRV-Cross, SPIRV-Reflect, SPIRV-Tools, TensorRT, astc-encoder, bc7enc,"
+
+[[proof]]
+ledger = "m11e"
+criterion = "no-recipe-refuses-with-a-dead-milestone"
+digest = "19fa87f9cb0f9db8"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): build.just:72: names M3, whose gate is already green … 101 recipe line(s) name a milestone that is absent or already closed"
+
+[[proof]]
 ledger = "m11e"
 criterion = "one-point-oh-record"
 digest = "aa9bff960cdac1ff"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded working, and no deferral names it"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded working, and no deferral names it … 48 capability(ies) are neither Complete nor deferred with a re-entry point"
 
 [[proof]]
 ledger = "m11e"
@@ -697,7 +825,23 @@ criterion = "record-matches-plan-history-closed"
 digest = "5cd78f1302b398ca"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): M4 build-system-and-platforms: working planned, seed recorded"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): M4 build-system-and-platforms: working planned, seed recorded … 4 cell(s) over closed milestones exceed the status record"
+
+[[proof]]
+ledger = "m11e"
+criterion = "roadmap-tiers"
+digest = "95914c0986eedbcb"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): build-system-and-platforms: recorded 'seed', below this milestone's exit of 'complete' … thirdparty-dependencies: recorded 'seed', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11e"
+criterion = "ship-sample-drawn-on-the-target"
+digest = "f66b90d108bbaa7f"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
 
 [[proof]]
 ledger = "m2"
@@ -1821,19 +1965,11 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11c"
-criterion = "beauty-shot"
-digest = "276f0c5ff5bce208"
-verdict = "not provable here"
-mutation = "delete-path in docs/design/images/m11c-beauty*.png (derived)"
-detail = "the positive control failed in the sandbox (exit 1): (no output)"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "denoiser-signals-have-producers"
 digest = "5b68fa3919ed5671"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -1847,25 +1983,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11c"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "frame-passes-through-post"
 digest = "bd53d9dae8b021ed"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -1879,17 +2015,9 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 ledger = "m11c"
 criterion = "hierarchical-depth-on-a-device"
 digest = "152937886be89aa7"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "image-rows-at-complete-grade"
-digest = "53d4116af8f8920e"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -1903,73 +2031,49 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11c"
 criterion = "lighting-and-shadow-suites"
 digest = "93ffba38324cece8"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "lowering-stages-inspectable"
 digest = "f9d52bf69e028cdd"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "m11d-open"
-digest = "510629bace6a8da2"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "material-compiler-at-complete-grade"
-digest = "877a445a2c606598"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "material-node-previews"
 digest = "de115a4a047252af"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "materials-are-textures"
-digest = "aab4e27a4ea1fc04"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "ray-tracing-capability-honest"
 digest = "8c187eff6c8be4e2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -1981,14 +2085,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11c"
-criterion = "roadmap-tiers"
-digest = "d8b5e8dc0f03fc99"
-verdict = "not provable here"
-mutation = "lower-tiers (derived)"
-detail = "the positive control failed in the sandbox (exit 1): atmosphere-sky-and-clouds: recorded 'working', below this milestone's exit of 'complete'"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "shader-targets-for-the-next-rung"
 digest = "c65774eaeeb48ba1"
 verdict = "not provable here"
@@ -1997,27 +2093,19 @@ detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
-criterion = "shot-authored-through-the-editor"
-digest = "1b4f555394a9c9a5"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "skin-pass-complete"
 digest = "75419de791411efa"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "sky-as-an-image"
 digest = "8ae7726fcd745b37"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -2031,25 +2119,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11c"
 criterion = "subsystem-controllers-report-costs"
 digest = "4f08086ba1b14f5d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "vfx-in-the-shot"
 digest = "b6c7ffad6384808b"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
 criterion = "virtual-geometry-image"
 digest = "40d634ff5a37157d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just test'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -2063,41 +2151,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11d"
 criterion = "content-audit-and-symbols"
 digest = "19f816333575e311"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "core-rows-at-complete-grade"
-digest = "522881c95ca1a0e0"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "d3d12-backend-exists"
 digest = "e4d27727b07eaa5a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "developer-workflow-recipes"
-digest = "c98044d98067383f"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: D3D12 exists only on Windows and this host is Linux; reported NOT EVALUATED here rather than passed by a suite that did not run — CI job 'milestone-m11d'"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "documentation-gate"
 digest = "08840163db54e9c5"
-verdict = "no mutation"
+verdict = "refuted"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "absent-recipe: just quality-docs: no such recipe"
 
 [[unproven]]
 ledger = "m11d"
@@ -2111,33 +2183,33 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11d"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "full-gate-set"
 digest = "d20078bfe37c3b27"
-verdict = "no mutation"
+verdict = "refuted"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "absent-recipe: just quality-swift-format: no such recipe; absent-recipe: just quality-licence-headers: no such recipe; absent-recipe: just quality-spelling: no such recipe"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "golden-images-across-three-backends"
 digest = "7b49d70a1417310d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: three backends live on three operating systems and no single machine has all three; the comparison is between legs of the matrix, which is the same shape as the cross-leg digest job M11.a builds — CI job 'milestone-m11d'"
 
 [[unproven]]
 ledger = "m11d"
@@ -2151,33 +2223,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11d"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "m11e-open"
-digest = "c415a4b8b99407b9"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "metal-backend-is-native"
 digest = "4e11d3dfd02d69cb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: Metal exists only on macOS and this host is Linux; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered — CI job 'milestone-m11d'"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "native-backend-runs-the-m0-sample"
 digest = "10e6c6bff740ff2f"
-verdict = "no mutation"
+verdict = "refuted"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "absent-sample: just run-sample 00-empty: no samples/*/CMakeLists.txt declares cy_sample_00-empty"
 
 [[unproven]]
 ledger = "m11d"
@@ -2191,49 +2255,41 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11d"
 criterion = "null-backend-refuses-what-it-cannot-do"
 digest = "712e97a7d530f8b1"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "port-touches-no-engine-layer"
-digest = "cd7e974bb12e88d9"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "porting-surface-against-a-stub"
 digest = "2f33b8c76e7b2bef"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "release-recipes-stop-refusing"
 digest = "920245983af0b4e9"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just release'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
 criterion = "rhi-interface-gaps-settled"
 digest = "d0c4804ed354e5ed"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
@@ -2245,14 +2301,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11d"
-criterion = "roadmap-tiers"
-digest = "1ee58f37a6ed1121"
-verdict = "not provable here"
-mutation = "lower-tiers (derived)"
-detail = "the positive control failed in the sandbox (exit 1): build-and-packaging: recorded 'working', below this milestone's exit of 'complete'"
-
-[[unproven]]
-ledger = "m11d"
 criterion = "shader-targets-emitted"
 digest = "54acd63db26068ce"
 verdict = "not provable here"
@@ -2261,27 +2309,11 @@ detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
-criterion = "ship-sample-drawn"
-digest = "af0bef6a8c02a879"
-verdict = "not provable here"
-mutation = "delete-path in docs/design/images/m11d-ship*.png (derived)"
-detail = "the positive control failed in the sandbox (exit 1): (no output)"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "ship-sample-exists"
-digest = "2eb2f60fe49c40a6"
-verdict = "not provable here"
-mutation = "delete-path in samples/11-ship/CMakeLists.txt (derived)"
-detail = "the positive control failed in the sandbox (exit 1): (no output)"
-
-[[unproven]]
-ledger = "m11d"
 criterion = "ship-sample-on-desktop"
 digest = "42a781a223612aef"
-verdict = "no mutation"
+verdict = "refuted"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "absent-sample: just run-sample 11-ship: no samples/*/CMakeLists.txt declares cy_sample_11-ship"
 
 [[unproven]]
 ledger = "m11d"
@@ -2303,17 +2335,17 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11e"
 criterion = "attribution-api"
 digest = "63682e0878639e2a"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "cross-compilation-works"
 digest = "8ce150908ed8958e"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -2325,19 +2357,11 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11e"
-criterion = "dependency-set-integrated"
-digest = "46b080ac5760e1d2"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
 criterion = "downloadable-content-and-distributed-execution"
 digest = "8fe4b83bbf386135"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -2351,9 +2375,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11e"
 criterion = "every-requirement-maps"
 digest = "649f8370dea9c408"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "its ledger asks for 7200 s, past the 1800 s default: it fetches or builds, and the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -2367,25 +2391,25 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11e"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "full-ci-matrix"
 digest = "1d951367433f4426"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just ci'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -2407,57 +2431,49 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11e"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "mobile-artefact-is-produced"
 digest = "44d666761ebbc816"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: no mobile toolchain and no device exist on this host; the claim is reported NOT EVALUATED here rather than passed, and the matrix leg is where it is answered — CI job 'milestone-m11e'"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "mobile-pipeline-differences"
 digest = "3e29d0643b38a06c"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "no-recipe-refuses-with-a-dead-milestone"
-digest = "19fa87f9cb0f9db8"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "porting-surface-against-a-real-non-desktop"
 digest = "388483f34e425433"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: no mobile toolchain on this host; `porting-surface-against-a-stub` in M11.d's ledger carries the half that can be judged anywhere — CI job 'milestone-m11e'"
 
 [[unproven]]
 ledger = "m11e"
 criterion = "release-recipes-produce-artefacts"
 digest = "7078c698f79a51cd"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('just release'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11e"
@@ -2469,27 +2485,11 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11e"
-criterion = "roadmap-tiers"
-digest = "95914c0986eedbcb"
-verdict = "not provable here"
-mutation = "lower-tiers (derived)"
-detail = "the positive control failed in the sandbox (exit 1): build-system-and-platforms: recorded 'seed', below this milestone's exit of 'complete'"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "ship-sample-drawn-on-the-target"
-digest = "f66b90d108bbaa7f"
-verdict = "not provable here"
-mutation = "delete-path in docs/design/images/m11e-ship*.png (derived)"
-detail = "the positive control failed in the sandbox (exit 1): (no output)"
-
-[[unproven]]
-ledger = "m11e"
 criterion = "ship-sample-everywhere"
 digest = "f140da2640327631"
-verdict = "no mutation"
+verdict = "refuted"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "absent-sample: just run-sample 11-ship: no samples/*/CMakeLists.txt declares cy_sample_11-ship"
 
 [[unproven]]
 ledger = "m11e"
@@ -2511,9 +2511,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11e"
 criterion = "xr-prerequisites-still-pass"
 digest = "93f1c95966d9d9cb"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m2"

@@ -1301,12 +1301,18 @@ def digest(criterion: criteria_module.Criterion) -> str:
         criterion.kind, criterion.run, criterion.path,
         repr(sorted(criterion.expect_tiers.items())),
         repr(sorted((criterion.falsifies or {}).items())),
-        # THE DECLARED CI ENVIRONMENT IS PART OF WHAT THE PROOF WAS ABOUT, exactly as the declared
-        # mutation is. A `where = "ci"` criterion is judged against what its `provide` builds, so
-        # changing that command — or the mutation of it — changes what was demonstrated, and the
-        # standing proof lapses rather than being carried over a different experiment.
-        repr(sorted((criterion.ci_proof or {}).items())),
     ])
+    # THE DECLARED CI ENVIRONMENT IS PART OF WHAT THE PROOF WAS ABOUT, exactly as the declared
+    # mutation is. A `where = "ci"` criterion is judged against what its `provide` builds, so changing
+    # that command — or the mutation of it — changes what was demonstrated, and the standing proof
+    # lapses rather than being carried over a different experiment.
+    #
+    # APPENDED ONLY WHEN THERE IS ONE, and that is not cosmetic. Adding an unconditional line to the
+    # material moves the digest of every criterion on the ladder, which invalidates all 641 recorded
+    # proofs at once — this module's own ratchet, broken by an edit to this module. That happened
+    # once, in this function, and `check` reported 633 disagreements a moment later.
+    if criterion.ci_proof:
+        material += "\n" + repr(sorted(criterion.ci_proof.items()))
     return hashlib.sha256(material.encode()).hexdigest()[:16]
 
 

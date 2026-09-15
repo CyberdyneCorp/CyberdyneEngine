@@ -516,8 +516,33 @@ same way, with the numbers moved**.
 ## 10. The gate
 
 - [ ] 10.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
-- [ ] 10.2 **Every criterion executes something and can fail** — break what it checks and prove it
-      goes red. Sections 5.3 and 2.2 are the two most likely to pass over nothing
+- [x] 10.2 **Every criterion executes something and can fail** — break what it checks and prove it
+      goes red. Sections 5.3 and 2.2 are the two most likely to pass over nothing.
+      DONE for all 37 of `m11a.toml`'s criteria, one `[[proof]]` each in
+      `tools/roadmap/falsifiability.toml` and no `[[unproven]]` entry left for this ledger.
+      REPAIR ROUND 2 closed the last two holes, and both were in the MECHANISM rather than in a
+      criterion:
+      (a) `lockstep-agrees-across-architectures` and `pcg-regenerates-across-architectures` carry
+      `where = "ci"` — this host has one architecture — and `falsify.prove` refused to judge them at
+      all, so nobody had ever watched them fail. They now declare `[criterion.ci_proof]`: the command
+      that BUILDS what continuous integration hands them
+      (`tools/ci/cross_leg_audit.py --write-legs`, the agreeing pair from the publisher's own field
+      list), and the mutation of that environment. The prover runs the criterion's own body three
+      times against it — green, RED with one leg's `sim-state-digest` / `pcg-world-digest` renamed,
+      green again once restored — and records `proven in the environment CI supplies`. A `provide`
+      that supplies nothing leaves the criterion red at its positive control and is `not provable
+      here`, which was checked by breaking `--write-legs` and watching the verdict come back.
+      (b) `network-at-complete-grade` ran `just quality-requirements`, which did not exist: `just`
+      aborted at argument parsing, ran nothing, exited 1 — and "red unmutated in the sandbox and in
+      the repository" is what `falsify._red_in_the_tree` records as a PROOF. The mechanism was
+      counting a name that does not resolve as a check that had been watched going red. `falsify`'s
+      new `absent-recipe` rule is in `CANNOT_GO_RED` and refuses the shape before any run (it finds
+      eleven such criteria across the ladder, and none of the other 630), and the recipe those
+      criteria were written for now exists: `tools/roadmap/requirements.py` reads each row's
+      `### Requirement:` headings out of `openspec/specs/` and resolves each against a committed
+      `cy_add_test()`, a gate id, a criterion id or a recorded exemption. The criterion is RED
+      today — 0 of 67 requirements across its three rows map to anything — and that red is the
+      finding, not a missing check
 - [ ] 10.3 Adversarial pass on this rung's own invariants: a project registering both vegetation
       producers; the sky field read by a consumer outside `src/rendering/sky/`; the device sampler
       against the CPU sampler at the same positions; the budget across a full cycle at a seed the
@@ -545,3 +570,71 @@ same way, with the numbers moved**.
       are BYTE-IDENTICAL to what `3d44e2f` (Close M10 — Worlds) shipped, so those two closures moved
       the code and not the check; `fields-sampled-on-a-device`'s `run` is the one that changed, and it
       changed in this repair, in the direction of a check that can fail
+- [x] 10.7 **THE TWO CRITERIA THAT CARRY THE FOURTH GAP COULD NOT RUN AT ALL, AND THE PROVER FILED
+      BOTH AS PROOFS — REPAIR 2.** `world-budget-headless` and `world-budget-on-a-device` ran
+      `just run-sample 10-world … --cycle --budget-ms 16.7`. The sample is called `world`
+      (`10-world` is the directory; `just/run.just` globs `samples/*/cy_sample_<name>` and its own
+      comment says so), and neither `--cycle` nor `--budget-ms` was a flag `main.cpp` parsed — so
+      both exited **2** at `no sample '10-world'`, on every machine, having measured nothing. Both
+      were nevertheless recorded in `falsifiability.toml` as **`red against a built tree`**, the
+      verdict a criterion earns by being watched failing for its subject's sake, with the exit-2
+      line quoted as though it were the finding. `m11a:world-streams` was the third, with
+      `--stream-report`, a flag that never existed either. **This is the ninth instance of this
+      project's one defect and the second one committed by the mechanism built to end it** — the
+      first was `absent-recipe`, which reads a `just` recipe's name and stops there.
+      - **`falsify._inspect_samples`** refuses a `run-sample` name that no `samples/*/CMakeLists.txt`
+        declares, in `CANNOT_GO_RED` beside `absent-recipe`. It found six criteria across four
+        ledgers: the three above, `m11d:native-backend-runs-the-m0-sample` (`00-empty`, for a sample
+        called `empty`), and `m11d:ship-sample-on-desktop` and `m11e:ship-sample-everywhere`, which
+        name `11-ship` — a sample M11.e has not written, so those two are honest debt and are left
+        as such, named in the audit rather than laundered. **Proven by the rule itself**: it fires
+        on all six as written and on none of the three once repaired.
+      - **`falsify._why_it_is_red`** records both ends of what a red criterion said. The old records
+        carried `==> configure  profile=dev …` — the first line every build-backed criterion in the
+        ladder prints — and nothing of the failure. `just`'s own epilogue is stepped over, because
+        `error: Recipe … failed with exit code 1` is the same sentence for every failing recipe.
+        The three re-recorded entries now read `the three largest bands: terrain_shade_ms 73.3 ms,
+        sky_ms 27.4 ms, water_ms 14.2 ms` and `tiles_cooked: 49  tiles_resident: 49  evicted: 0
+        stitched_vertices: 0` — the measurement, in the record.
+      - **`--budget-ms` is in the program**, so the same arithmetic serves `m10:world-frame-budget`'s
+        CSV and these two, and a person running the sample by hand gets the verdict the ledger gets.
+        **It discriminates**: `--budget-ms 16.7` exits 1 (`OVER the budget`), `--budget-ms 1000`
+        exits 0 (`INSIDE the budget at every frame of the cycle`) over the same take. `--cycle` was
+        NOT restored — `main.cpp`'s header fixes that "a take is exactly one simulated day", so a
+        flag asserting it has no false case; the take length is passed instead. A run that asked for
+        a device and got none used to `return 0`; with `--budget-ms` it now exits 1, because a
+        budget held by a run that drew nothing is the submit band missing from the total.
+      - **`world-streams` reads a measurement instead of a flag.** The sample prints its residency
+        off `TerrainStore::tile_count()` against what `build()` cooked — a difference, not a counter
+        somebody has to remember to increment. Proven: evicting one level-0 tile moves the line from
+        `evicted: 0` to `evicted: 1` with nothing in the reporter touched (`samples/10-world/world.cpp`
+        md5-restored afterwards).
+      - **THE FOURTH GAP IS STILL NOT CLOSED, and both criteria are still RED — now for the reason
+        they name.** Measured on this host through the repaired command line: headless **121.1 ms
+        mean, 128.8 ms worst, 7.7x over**; with a device drawing **137.2 ms mean, 156.0 ms worst,
+        9.3x over**; bands `terrain_shade_ms 71.8`, `sky_ms 26.6`, `water_ms 13.8`. Sections 2.3,
+        2.4 and 2.5 are still why. What changed is that a reader can now tell a criterion that ran
+        and failed from one that never resolved its own command.
+- [x] 10.8 **`m10:fields-sampled-on-a-device` WAS CLOSED FOR A REASON ITS DECLARATION DOES NOT NAME
+      — REPAIR 2.** The declaration says closing it is "`cy/field.slang` written against the layout
+      `gpu.h` already fixes, **bound through the GPU scene**, and **measured against a device**".
+      After repair 1 the check ran the Slang front end and compared the checked-in SPIR-V — two real
+      halves, and both of them PASS ON A MACHINE WITH NO GRAPHICS DEVICE. A gap whose subject is
+      "an environment field is sampled on a device" cannot be discharged by a criterion that never
+      asks for one. It now runs `render.environment_field` as its third half: the suite must be
+      registered, must PASS, must not have skipped for want of a device, and must report its four
+      comparisons with **0 unresolved** — and the criterion carries `requires = "gpu"`, with
+      `fields-gpu-agreement` above it as the processor-side half every machine can judge, which is
+      M8.c's rule. Green here over **17 152 comparisons through the bound buffer and through the
+      bindless table alike**. **RED under mutation**: `commands.dispatch` removed from
+      `tests/render/test_field_device.cpp` → `the device sampler does NOT agree with the processor
+      over the same bytes` (11 of 7 986 assertions failed, 2 of 2 cases); restored and md5-verified.
+      And `just roadmap-falsify prove m10 --only fields-sampled-on-a-device --build-dir … 
+      --mutate-the-tree` now records it **`proven against a built tree`** — it was `not provable
+      here` debt before — by renaming `cyFieldSampleScene` in `cy/field.slang`, rebuilding, watching
+      it go red, restoring, and watching it come back green.
+      **One defect in the new half was found by running it twice**: `ctest -N … | grep -q` under
+      `set -o pipefail` gives ctest a SIGPIPE and the pipeline a 141, so the check reported "the
+      suite is not registered" about a suite that is — a check failing for a reason that is not its
+      subject, in the very repair that exists to remove those. It is a `case` over a captured string
+      now, and three consecutive runs agree.

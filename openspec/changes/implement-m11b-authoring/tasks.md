@@ -646,7 +646,14 @@ is the forcing function `ui-system` requires by name (task 7.5).
       --mutate-the-tree`), and 16 red unmutated — 8 in the tree, 8 against a build — which is this
       rung being open. Nine of those criteria had no proof of any kind before this round: they PASSED
       against a build and the prover had nothing that could turn them red, which is the shape of all
-      seven unfalsifiable criteria this mechanism exists to end
+      seven unfalsifiable criteria this mechanism exists to end.
+      REPAIR ROUND 2 corrected two of those entries. `gameplay-at-complete-grade` and
+      `editor-at-complete-grade` ran `just quality-requirements`, a recipe that existed nowhere:
+      `just` stopped at argument parsing having run nothing, and the exit 1 that produced was
+      recorded as `red in the tree` — a PROOF. `falsify`'s new `absent-recipe` rule refuses that
+      shape before any run, and `tools/roadmap/requirements.py` is the recipe those criteria were
+      written for. Both now execute: 0 of 183 requirements across eight gameplay rows and 0 of 133
+      across nine editor rows map to a test, a gate or a recorded exemption, each named
       **NOT DONE FOR THE TWO CRITERIA THIS REPAIR ROUND TOUCHED, AND THE REGISTRY SAYS SO RATHER
       THAN THIS LIST.** `m11b.toml` now carries 34 criteria: `play-mode-round-trip` was rewritten
       (its digest moved, so its existing entry is stale by construction) and
