@@ -21,7 +21,7 @@ counted twice for one piece of work — design.md §3.
 
 ## 0. The spike — one authored material, end to end
 
-- [ ] 0.1 Measure, do not assume: **one textured material, authored through the editor M11.b
+- [x] 0.1 Measure, do not assume: **one textured material, authored through the editor M11.b
       finished, compiled through the runtime compiler, its textures encoded through M11.b's BC7/ASTC
       encoder, bound into a frame assembled by `src/rendering/assembly/` and recorded by
       `src/rendering/pipeline/`, and photographed.** Every claim in this rung assumes that path is
@@ -31,21 +31,21 @@ counted twice for one piece of work — design.md §3.
       `cy::rendering-gi`**, so global illumination has never been in an assembled frame. The only
       texture any sample binds is a checkerboard generated on the first frame in
       `samples/03-first-light/renderer.cpp`
-- [ ] 0.2 **The spike carries its own negative controls**, because this project has shipped criteria
+- [x] 0.2 **The spike carries its own negative controls**, because this project has shipped criteria
       that passed on the very defect they were written for. At minimum, and each watched to fail:
       the same frame with the material's textures **unbound** must be visibly different and must say
       so, rather than sampling a default and looking plausible; and the same frame with the post
       chain **removed** must be visibly different too — if the picture is unchanged with tone mapping
       off, the picture is not going through the chain and the rest of this rung is measuring nothing
-- [ ] 0.3 State what the spike cannot answer on this host through the ledger's own `requires`/`where`
+- [x] 0.3 State what the spike cannot answer on this host through the ledger's own `requires`/`where`
       mechanism rather than as a sentence. This machine has **one GPU vendor**, so "it looks right"
       is measured against one driver; and `cy::rhi::Capability::RayTracing` is an enumerator nothing
       sets, so on this tree every ray-traced tier runs its software fallback
-- [ ] 0.4 Commit the spike **outside the repository** — `~/cyberdyne-spikes/m11c-material-spike/` —
+- [x] 0.4 Commit the spike **outside the repository** — `~/cyberdyne-spikes/m11c-material-spike/` —
       as M3's through M10's were, because a prototype under `docs/` fails `just quality-layers`, and
       record its answer in `design.md` §1 where the rows that depend on it can read it. A spike is
       not merged; its deliverable is a decision
-- [ ] 0.5 **If the path does not close, say so before scoping the rest.** design.md §4 names the
+- [x] 0.5 **If the path does not close, say so before scoping the rest.** design.md §4 names the
       contingency: a beauty shot assembled from an unbound material is a debug view with better
       lighting, and this rung publishes that verdict rather than photographing one and calling it
       art direction
@@ -116,6 +116,14 @@ that rung — and what stands behind it is this rung's.
 
 ## 3. The frame the picture is actually made of — `rendering-post-processing`, `temporal-rendering`, `rendering-lighting-and-shadows` → Complete
 
+**WHAT THE SPIKE CHANGED HERE — design.md §1.3b.** This section reads as one link edit followed by
+tuning. **It is not.** After `samples/10-world` links `cy::rendering-assembly`, the frame still
+samples no texture: `cy/frame.slang`'s `surfaceOf()` reads four constants out of `cyMaterialWords`,
+the pipeline layer's only sampled texture is the scene colour for post, `RenderServer::create_texture`
+stores a record with no pixels, and the RHI's own bindless table is written by
+`bind_texture_globally` and never placed in a pipeline layout or bound in a command buffer. Task 3.7
+below is that work, named rather than discovered.
+
 - [ ] 3.1 **The world and the game are rendered *through* `src/rendering/assembly/`, not beside it.**
       `samples/10-world/CMakeLists.txt` links `cy::rendering-graph`, `cy::rendering-sky` and
       `cy::rhi` and does **not** link `cy::rendering-assembly`, `cy::rendering-post`,
@@ -138,6 +146,23 @@ that rung — and what stands behind it is this rung's.
       `Approximation` rung reached by the caller that knows whether a trace is available this frame
 - [ ] 3.6 **Nothing here is judged until M11.a's budget is real.** A frame tuned at 122 ms is not a
       tuned frame — design.md §5
+- [ ] 3.7 **A material texture reaches the frame, which today nothing does.** Three pieces the spike
+      measured as absent and one it measured as possible: a material texture binding in
+      `cy/frame.slang` at the set and binding `cy/material.slang` already declares (set 0, binding 1
+      for `cyMaterialTextures[]`, binding 2 for `cyMaterialSampler`); a device upload path from a
+      cooked texture to an `rhi` image, which no module under `src/` has; and a **fragment-stage**
+      lowering in the material compiler, because `assemble_translation_unit` appends a COMPUTE probe
+      and `slang_program.h` says so in as many words. The feature side is already done — the Vulkan
+      backend requests `runtimeDescriptorArray`, `descriptorIndexing` and
+      `descriptorBindingPartiallyBound` (`vulkan_instance.cpp:396`) — so this is plumbing, and the
+      spike's stand-in for the missing lowering was 102 non-comment lines per stage
+- [ ] 3.8 **The sample is taken at an implicit level of detail, or the shot aliases.** Measured: the
+      same frame with eight of the importer's nine cooked mip levels never uploaded is BYTE-IDENTICAL
+      — mean |delta| 0.000/255, 0.00% of texels. `cy_material_sample`, which the prelude generates,
+      calls `cyMaterialSampleTextureLevel(..., 0.0)`. `cyMaterialSampleTexture` — the implicit form —
+      is already in the standard library with a comment saying nothing calls it yet. Until a lowering
+      that knows it is producing a pixel stage calls it, the cooked mip chain is a third more bytes
+      that the frame cannot read and every minified surface in the artefact aliases
 
 ## 4. The geometry rows and the one HZB they share — `virtual-geometry`, `virtual-shadows`, `rendering-culling-and-lod` → Complete
 
@@ -193,10 +218,30 @@ that rung — and what stands behind it is this rung's.
 
 ## 6. Content, and the row that needs it — `vfx-system` → Complete, and the first textures in the tree
 
-- [ ] 6.1 **Real materials in the repository.** Authored through the editor, encoded through M11.b's
-      BC7/ASTC encoder, cooked, and bound through the bindless table `cy/material.slang` has been
-      declaring since M8.c. This is the first content this project has ever shipped and it changes
-      what the repository is
+**WHAT THE SPIKE CHANGED HERE — design.md §1.3b. TASK 6.1 WAS NOT ONE TASK.** It assumed two things
+that are not in the tree. **The editor refuses to open a material editor**: `Domain::Materials`
+declares no node types, so no catalogue is built, and `open()` returns *"this build declares no
+authoring vocabulary for materials — `material-compiler` owes it"*. **And there is no encoder**:
+`texture.cpp:663` writes `header.encoded = false` unconditionally and `decode_image` reads Targa
+only. So 6.1 is split into 6.1a, 6.1b and 6.1c below. The VFX graph editor refuses identically,
+which is 6.4's blocker measured rather than predicted.
+
+- [ ] 6.1a **The editor can author a material at all.** Three pieces in two languages: a node-type
+      vocabulary for `Domain::Materials` in `cy-editor-interface` (the palette is compared against
+      the engine's own lowerings by the contract gate, so the vocabulary has to be the engine's); a
+      material document and its on-disk form — and `specialised/graph.rs` assigns *writing*
+      `.cygraph` from Rust to **M11.e**, so either that moves or the editor writes through the
+      engine; and a `lower_material` in `src/graph/`, which today has `lower_script`,
+      `lower_behaviour`, `lower_camera` and `lower_pose` and no material lowering at all
+- [ ] 6.1b **A block encoder, or the debt is declared.** `m11b:texture-encoders` and
+      `m11b:image-codecs` both FAIL today, name a binary (`cy_test_unit_asset_import`) that has
+      never existed, select 0 of 34 cases when pointed at the real suite `cy_test_unit_import`, and
+      carry no `known_gap`, no `known_gap_closes` and no `requires`. **M11.b closed over two red
+      undeclared criteria and this rung must not close over them too.** Either integrate BC7/ASTC
+      and a PNG/JPEG decoder here, or give both criteria gap markers naming the rung that does
+- [ ] 6.1c **Real materials in the repository.** Authored through 6.1a, encoded through 6.1b,
+      cooked, and bound through the table 3.7 wires up. This is the first content this project has
+      ever shipped and it changes what the repository is
 - [ ] 6.2 **Every texture carries its licence and its provenance.** `thirdparty-dependencies`'
       governance applies to content the project ships as much as to code it links, and that row is
       **not this rung's** — design.md §5. What this rung owes is the record per file and a refusal to

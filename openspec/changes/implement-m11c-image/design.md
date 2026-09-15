@@ -46,6 +46,101 @@ is an image judged against one driver's rasterisation and one vendor's floating 
 `src/backends/rhi/vulkan/src/vulkan_instance.cpp`, so on this tree every ray-traced tier runs its
 software fallback and a spike cannot measure the hardware one by wanting to.
 
+### 1.3b THE ANSWER IT CAME BACK WITH — the spike ran, and it came back "no"
+
+**Four of six junctions close. Two do not, and they are the two ends of the path.** Run on an
+RTX 5060 against `build/m11c-spike` at commit `cfb989c`; the numbers, the transcripts, the
+mutations and the five captures are `~/cyberdyne-spikes/m11c-material-spike/RESULT.txt`.
+
+| # | junction | verdict | measured by |
+|---|---|---|---|
+| 1 | **author** | **REFUSED** | `SpecialisedEditors::open(Domain::Materials)` in the editor's own crate |
+| 2 | compile | closes | `lower_graph` → `compile_material` → `assemble_translation_unit` → `slangc` |
+| 3 | encode | **partial** | `TextureImporter::import` — names BC7, delivers uncompressed RGBA8 |
+| 4 | **bind** | **ABSENT** | nothing in the tree binds the table; the spike had to write the binding |
+| 5 | assemble | absent | no assembled frame in the tree draws a compiled material program |
+| 6 | capture | closes | `tests/render/golden.cpp`, unchanged |
+
+**The middle is sound and it is the best-finished thing in the path.** A graph carrying every wart
+`graph.h` says an editor produces and the same material written as text compiled to the *same cook
+key* — `0x2e810237312fe3e5` — the family derived, the far-field program substituting the declared
+average, the shadow program absent, `preview_node` producing a preview through the same emitter, and
+3065 bytes of Slang that `slangc` compiles against the shipping standard library **with no edit**.
+
+**The front is missing.** `Domain::Materials::node_types()` is the empty slice, so no catalogue is
+built and the material editor refuses with *"this build declares no authoring vocabulary for
+materials — `material-compiler` owes it"*. The VFX graph editor refuses identically, which is tasks
+6.3 and 6.4's blocker measured rather than predicted. `.cymat` reaches the editor tree only as a
+thumbnail extension; `specialised/graph.rs` assigns writing `.cygraph` from Rust to **M11.e**; and
+`src/graph/src/` has `lower_script`, `lower_behaviour`, `lower_camera`, `lower_pose` and **no
+`lower_material`**. The rung's own sentence — a shot authored *through* the editor proves both — is
+not available today, and the work behind it is three pieces in two languages across a rung boundary.
+
+**The back is missing, and more completely than §3.1 suggests.** `cy/frame.slang`'s `surfaceOf()`
+reads four constants out of `cyMaterialWords` and samples no texture; the pipeline layer's only
+sampled texture is the scene colour, for post; `RenderServer::create_texture` stores a record **with
+no pixels**, so there is no upload path from a cooked texture to a device image anywhere under
+`src/`. And the RHI's own global bindless table is **write-only**: `bindless_layout_` and
+`bindless_set_` are created, written by `bind_texture_globally` at binding 0 as combined image
+samplers, destroyed — and never placed in a pipeline layout or bound in a command buffer, while
+`cy/material.slang` declares the table at **set 0, binding 1** with a separate sampler at binding 2.
+Nothing outside `src/backends/rhi/` names `DescriptorKind::Bindless` at all.
+
+**What the spike proved is possible**, which is the useful half: the generated program compiled into
+a fragment stage, `cyMaterialTextures[]` satisfied at the binding the standard library declares, the
+importer's own mip chain uploaded, and the picture captured. The engine's Vulkan backend already
+requests `runtimeDescriptorArray`, `descriptorIndexing` and `descriptorBindingPartiallyBound`
+(`vulkan_instance.cpp:396`), so the feature side is done and only the plumbing is missing. The
+fragment wrapper that stood in for the lowering the engine does not generate is **102 non-comment
+lines**, per attribute set and per stage.
+
+**And one defect was found by measuring rather than by reading.** The same frame with eight of the
+nine cooked mip levels never uploaded is **byte-identical** — mean |Δ| 0.000/255, 0.00% of texels.
+`cy_material_sample`, which the prelude generates, calls `cyMaterialSampleTextureLevel(..., 0.0)`,
+an *explicit* level, because a material program is compiled before it is placed in a stage. So the
+importer generates a mip chain in the correct colour space, spends a third more bytes on it, and the
+generated program cannot read it: **every minified surface in this engine's first textured frame
+aliases**. `slang_program.h` names the cause; 0.000 is what it costs.
+
+**Both negative controls passed and both were watched to fail.** Textures bound against the declared
+average: mean |Δ| 34.072/255, 65.38% of texels. Post chain on against compiled out: 62.033/255,
+100.00%. `mutate.sh` breaks each in the shape of the real defect — the "unbound" frame handed the
+*same* table, the "no post" frame keeping the chain — and both go red with exit 7 and back to green
+unmutated. Control A is not a formality: `out/shot-average-post.png` is a lit, shaded, tone-mapped,
+entirely plausible picture of a flat surface, indistinguishable from a material to anyone without
+the textured frame beside it.
+
+**One precondition this design declared is unpaid and, worse, undeclared.** §5 lists BC7/ASTC
+encoding and PNG/JPEG decoding as owed by M11.b. `texture.cpp:663` still writes `header.encoded =
+false` unconditionally and `decode_image` still reads Targa only. The two criteria that exist to
+detect this — `m11b:texture-encoders` and `m11b:image-codecs` — **fail**, name a binary
+(`cy_test_unit_asset_import`) that has never existed, select **0 of 34 cases** when pointed at the
+real suite, and carry no `known_gap`, no `known_gap_closes` and no `requires`. M11.b closed over
+them.
+
+**What this changes in the plan**, taken now rather than discovered in section 6:
+
+1. **Task 6.1 is not one task.** It assumes an authoring surface that refuses to open and an encoder
+   that does not exist. Split it into the editor's material vocabulary/document/lowering, the
+   encoder, and the content.
+2. **The bind junction is work this task list does not name.** Section 3 reads as one link edit plus
+   tuning; after that edit the frame still samples no texture. A material texture binding in
+   `cy/frame.slang`, a device upload path for cooked textures, and a *fragment-stage* lowering in
+   the material compiler are three new pieces.
+3. **Fix the explicit level of detail or publish an aliased picture.** `cyMaterialSampleTexture` is
+   already in the standard library with a comment saying nothing calls it yet.
+4. **Raise the encoder into this rung or declare it.** A third rung must not close over two red
+   undeclared criteria.
+5. **The artefact's caption is already decided by this spike**: how many materials were textures and
+   how many constants, whether the textures were block-compressed, whether the mip chain was
+   sampled, and whether the shot was authored in the editor or assembled in C++. None of those is
+   answerable from a picture, and every one of them is a question the spike had to ask.
+
+**What the spike did NOT overturn.** §6's refusal of a golden-image test of the beauty shot stands —
+if anything the controls strengthen it, because what they check is provenance and difference rather
+than bytes. And §1.4's admission stands unchanged: this spike still does not measure §4's demotion
+prediction.
+
 ### 1.4 The honest asymmetry, named rather than dressed up
 
 **This spike measures the artefact's feasibility. It does not measure the row this design predicts it

@@ -212,7 +212,7 @@ ci_job = "milestone-m11c"
 
 [[criterion]]
 id = "ray-tracing-capability-honest"
-describe = "`Capability::RayTracing` reports what the DEVICE supports rather than what the backend compiled. It is unset today, and an honest reading of a capability set implemented in the Vulkan backend alone is 'Vulkan only' — which is a finding this rung reports rather than a cell it claims"
+describe = "`Capability::RayTracing` reports what the DEVICE supports rather than what the backend compiled. IT IS UNSET ON THIS HOST AND THE M11.c SPIKE CONFIRMED IT: nothing in `vulkan_instance.cpp` sets the enumerator, so every ray-traced tier in this tree runs its software fallback — on an RTX 5060 — and no spike can measure the hardware one by wanting to (design.md §1.3). An honest reading of a capability set implemented in the Vulkan backend alone is 'Vulkan only', which is a finding this rung reports rather than a cell it claims"
 source = "tasks 2, ray-tracing-infrastructure, rhi-and-render-graph"
 kind = "command"
 run = '''
@@ -257,7 +257,7 @@ source = "tasks 2, virtual-geometry, virtual-shadows"
 kind = "command"
 run = "just test-render virtual-geometry --shaded --compare-golden"
 requires = "gpu"
-reason = "a shaded capture needs a graphics device; `frame-passes-through-post` above carries the structural claim on every machine"
+reason = "a shaded capture needs a graphics device, AND THIS HOST HAS ONE GPU VENDOR — the M11.c spike measured every picture it took against one driver's rasterisation and one vendor's floating point, so a green here is a claim about this vendor and not about the image; `frame-passes-through-post` above carries the structural claim on every machine"
 ci_job = "milestone-m11c"
 
 [[criterion]]
@@ -307,7 +307,7 @@ echo "the filter selected ${selected:-0} case(s) of the 1 it names"
 test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.rendering_culling any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 requires = "gpu"
-reason = "an HZB is built by the device; the CPU two-pass model it replaces is already covered by `unit.rendering-culling`, so a green here must mean the device path and not the model"
+reason = "an HZB is built by the device; the CPU two-pass model it replaces is already covered by `unit.rendering-culling`, so a green here must mean the device path and not the model. AND THIS HOST HAS ONE GPU VENDOR, so an agreement measured here is agreement with one driver — design.md §1.3 and §4"
 ci_job = "milestone-m11c"
 
 [[criterion]]
@@ -317,7 +317,7 @@ source = "tasks 3, atmosphere-sky-and-clouds"
 kind = "command"
 run = "just test-render sky --times-of-day 4 --compare-golden"
 requires = "gpu"
-reason = "a sky capture needs a device; the field round trip it depends on is checked without one by M11.a's `sky-field-consumed-outside-the-sky`"
+reason = "a sky capture needs a device, and on this one-GPU-vendor host the picture is judged against a single driver; the field round trip it depends on is checked without one by M11.a's `sky-field-consumed-outside-the-sky`"
 ci_job = "milestone-m11c"
 
 [[criterion]]
