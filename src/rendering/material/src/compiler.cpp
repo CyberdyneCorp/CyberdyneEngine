@@ -253,6 +253,16 @@ struct Build {
         return program;
     }
 
+    // WHICH INPUTS ARE TEXTURES AND WHICH ARE CONSTANTS, off the module this program was emitted
+    // from. Per program rather than per material: the far-field program of a fully textured
+    // material substitutes averages and has no texture input at all, which is the specification
+    // and is exactly what a report answering per material would get wrong.
+    auto inputs = classify_inputs(program.module);
+    if (!inputs) {
+        return make_unexpected(inputs.error());
+    }
+    program.inputs = std::move(inputs.value());
+
     EmitOptions emit;
     emit.kind = kind;
     emit.tier = tier;

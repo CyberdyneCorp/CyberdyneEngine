@@ -47,10 +47,12 @@ cy_add_module(
         src/cost.cpp
         src/emit.cpp
         src/graph.cpp
+        src/inputs.cpp
         src/ir.cpp
         src/lowering.cpp
         src/material.cpp
         src/passes.cpp
+        src/stages.cpp
         src/standard.cpp
         src/text.cpp
         src/validation.cpp
@@ -79,14 +81,21 @@ cy_add_module(
 # It depends on cy::shader (layer 3) because THIS is where the engine invokes the compiler, which is
 # the sentence M7's gate said was false. cy::rendering-material does NOT depend on it, so nothing
 # that only wants the IR pays for the shader pipeline.
+#
+# M11.c task 1.1 adds `src/preview.cpp` here and NOT to `cy_rendering_material`, for the same
+# reason: a node preview compiled through `shader-system` is the half of "previews SHALL be
+# generated through the same compiler, lowering, AND SHADER PIPELINE as runtime" that nothing in
+# this tree had ever run, and it needs the shader front end that layer 4 must not link.
 cy_add_module(
     NAME cy_rendering_material_slang
     LAYER rendering
     ALIAS cy::rendering-material-slang
     TYPE STATIC
-    SOURCES src/slang_program.cpp
+    SOURCES
+        src/preview.cpp
+        src/slang_program.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::rendering-material)
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::rendering-material cy::shader)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

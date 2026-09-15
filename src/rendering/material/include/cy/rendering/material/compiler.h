@@ -37,6 +37,7 @@
 #include <cy/rendering/material/cost.h>
 #include <cy/rendering/material/emit.h>
 #include <cy/rendering/material/graph.h>
+#include <cy/rendering/material/inputs.h>
 #include <cy/rendering/material/lowering.h>
 #include <cy/rendering/material/material.h>
 #include <cy/rendering/material/passes.h>
@@ -69,7 +70,7 @@ struct CompileDiagnostic {
 /// One compiled program of the family.
 struct CompiledProgram {
     explicit CompiledProgram(Allocator& allocator) noexcept
-        : module(allocator), source(allocator), cost(allocator) {}
+        : module(allocator), source(allocator), cost(allocator), inputs(allocator) {}
 
     CompiledProgram(const CompiledProgram&) = delete;
     CompiledProgram& operator=(const CompiledProgram&) = delete;
@@ -89,6 +90,12 @@ struct CompiledProgram {
     /// emitted, which is "Opaque materials SHALL produce no fragment work in the shadow program".
     bool absent = false;
     DerivationDifference difference;
+    /// Which of this program's surface inputs are textures and which are constants. M11.c task 1.2
+    /// and `material-compiler`'s "The compile report says which inputs are textures and which are
+    /// constants" — PER PROGRAM, because that is where the answer differs: the far-field program of
+    /// a fully textured material has no texture inputs at all, by derivation, and a report that
+    /// answered per MATERIAL would say "textured" about a program that samples nothing.
+    InputReport inputs;
 };
 
 struct CompileOptions {

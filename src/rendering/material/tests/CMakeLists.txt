@@ -77,6 +77,11 @@ function(cy_material_declare_tests)
     # this is the compiler that fills them in. Unit, because nothing here touches a device, a file or
     # a shader toolchain — the exit criterion "a graph and a hand-written material produce identical
     # programs" is a property of generated TEXT, which is the whole reason it is checkable at all.
+    # M11.c task 1.3 adds test_stages.cpp: the five lowering stages `shader-system`'s "Visual
+    # material editor" enumerates, and the readable IR dump `material-compiler`'s "IR is
+    # inspectable" asked for and nothing in this tree had. It is in THIS suite and not in
+    # `material_lowering` because every case in it compiles ONE program — `derive_family` off —
+    # which is what keeps it inside a millisecond in every configuration.
     cy_add_test(
         NAME material_compiler
         KIND unit
@@ -84,6 +89,7 @@ function(cy_material_declare_tests)
             "${cy_material_tests_dir}/test_ir.cpp"
             "${cy_material_tests_dir}/test_frontends.cpp"
             "${cy_material_tests_dir}/test_preview.cpp"
+            "${cy_material_tests_dir}/test_stages.cpp"
         DEPENDENCIES cy::rendering-material)
 
     # The same compiler, integration cost. Nothing about these two files is slower than it should
@@ -91,12 +97,18 @@ function(cy_material_declare_tests)
     # rather than an accident of how they are written — and `testing-and-quality`'s taxonomy has a
     # suite for exactly that. Splitting them out is what keeps `unit.material_compiler` inside its
     # budget in every configuration rather than only in the optimised ones.
+    #
+    # test_inputs.cpp is here for exactly that reason and arrived the same way. M11.c task 1.2's
+    # claim is about the FAMILY — the far-field program of a fully textured material samples nothing
+    # by derivation, and a report answered per material rather than per program would call it
+    # textured — so the case cannot be had without deriving the family.
     cy_add_test(
         NAME material_lowering
         KIND integration
         SOURCES
             "${cy_material_tests_dir}/test_passes.cpp"
             "${cy_material_tests_dir}/test_lowering.cpp"
+            "${cy_material_tests_dir}/test_inputs.cpp"
         DEPENDENCIES cy::rendering-material)
 
     cy_add_test(
@@ -129,6 +141,27 @@ function(cy_material_declare_tests)
                          cy::shader-slang cy::core-assets
             DEFINITIONS CY_SHADER_STAGE_PARENT="${cy_shader_stage_parent}")
         add_dependencies(cy_test_smoke_material_slang cy_shaders_stage)
+
+        # M11.c task 1.1: A NODE PREVIEW, ACTUALLY COMPILED. `material-compiler` requires previews
+        # to be generated "through the same compiler, lowering, AND SHADER PIPELINE as runtime", and
+        # the third of those had no caller anywhere in this tree — `unit.material_compiler` proves
+        # the preview's TEXT and stops there, because a suite at layer 4 cannot reach a compiler.
+        #
+        # SMOKE for the same reason `material_slang` is, and the reason is measured rather than
+        # guessed: creating a Slang global session loads its core module and costs about a second of
+        # CPU, which is the whole of the integration budget.
+        #
+        # THE NEGATIVE CONTROL IS IN THE SAME BINARY AND NEEDS NO SLANG: the SPIR-V passthrough is
+        # the front end a SHIPPING build has, and a preview asked of it must fail rather than fall
+        # back. That is the requirement's own scenario.
+        cy_add_test(
+            NAME material_preview
+            KIND smoke
+            SOURCES "${cy_material_tests_dir}/test_preview_pipeline.cpp"
+            DEPENDENCIES cy::rendering-material cy::rendering-material-slang cy::shader
+                         cy::shader-slang cy::core-assets
+            DEFINITIONS CY_SHADER_STAGE_PARENT="${cy_shader_stage_parent}")
+        add_dependencies(cy_test_smoke_material_preview cy_shaders_stage)
     endif()
 endfunction()
 
