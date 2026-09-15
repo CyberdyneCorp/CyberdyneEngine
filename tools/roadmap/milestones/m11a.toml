@@ -76,6 +76,12 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/core/memory/src/tracking_allocator.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the gate's claim is that clang-tidy reports nothing over what the build compiles, and `WarningsAsErrors: '*'` is what makes a finding an exit code. The mutation renames the three earned suppressions in the allocator that casts through `void*` on purpose, so three real `bugprone-casting-through-void` findings fire on real lines. Introducing a NEW defect was considered and rejected: it would have to be a defect clang-tidy is configured to catch, which is a guess about the check list, while a suppression that stops suppressing is a finding the tree has already agreed is one."
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with the field sampler in it: the module that samples a field on a device does not give `cy::environment` a dependency on the renderer, which is the invariant M10 established and the one this rung is most likely to break"
@@ -112,6 +118,11 @@ kind = "command"
 run = "just generate-check && just generate-test && just maintenance-deps-check"
 timeout_s = 3600
 ci_job = "generated-code"
+
+[criterion.falsifies]
+mutate = "truncate"
+target = "src/core/reflect/generated/cy_reflect_generated.cpp"
+note   = "the reflection metadata is COMMITTED, so its currency check is a comparison between the committed file and what the generator produces from the annotated headers. Emptying it is the staleness this gate exists to catch — an annotated header edited without the generator being run — and `reflect_gen --check` names the file. The headers half of the recipe writes into the build tree and cannot be mutated from the source, so the committed half is the one a source mutation reaches."
 
 [[criterion]]
 id = "roadmap-record"
@@ -403,6 +414,12 @@ reason = "sampling a field in a shader needs a graphics device; on a machine wit
 timeout_s = 3600
 ci_job = "milestone-m11a"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tests/render/test_field_device.cpp"
+token  = "sentinels alive"
+note   = "the three numeric guards in the body are what stop a device comparison passing while measuring nothing, and the first of them reads the suite's own sentinel count out of its output. Renaming the line the suite prints it on leaves the suite green and the criterion RED — `the suite no longer reports its sentinel count: the dispatch cannot be shown to have run` — which is the branch that would otherwise never be exercised. Renaming a CASE was rejected: that fires the `selected >= 2` check, which the `-tc` criteria in this ledger already exercise."
+
 [[criterion]]
 id = "world-budget-headless"
 describe = "the world demo's headless frame cost is inside 16.7 ms across a full day/night cycle, at a seed the tuning did not use. Headless was 106 ms at M10, so this is the same claim the device criterion makes with the draw removed — and it is the half every machine can judge"
@@ -500,6 +517,12 @@ ci_job = "milestone-m11a"
 # question, and `integration.standard_fields` goes red on purpose the day it is answered, because it
 # asserts the KNOWN state rather than the desired one.
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/sky/tests/test_cloud_shadows.cpp"
+token  = "through the store"
+note   = "M7's defect was a sky test asserting against the PRODUCER's own statistics instead of the store, and the line this renames is the one the corrected case prints after reading the substrate back THROUGH the store. Renaming it takes the criterion red at `the round-trip case printed nothing — it has been renamed, skipped or deleted`, which is the half that no other criterion covers. A mutation cannot be derived here: the derivable one is the `parked|M11|disabled` grep, whose tokens are — correctly — absent from the file, so it would change nothing and be reported as a criterion naming a token that is not there."
+
 [[criterion]]
 id = "both-producers-register"
 describe = "a project that registers `cy::foliage`'s and `cy::weather`'s producers STARTS. Today `vegetation-potential` is declared UNorm8/Static/Presentation-side by one and UNorm16/SlowlyVarying/Authoritative by the other, `FieldRegistry::declare()` refuses the second in either order, and the project fails at startup. The case composes both in both directions, because a fix that works in one order is a fix to the order"
@@ -534,6 +557,12 @@ ci_job = "milestone-m11a"
 # legs already exist: ci.yml's matrices include linux-arm64, macos-arm64 and windows-arm64 and they
 # run independently. ONE JOB ANSWERS THREE CRITERIA, and building it once rather than three times is
 # most of the reason this rung exists.
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tests/integration/test_standard_fields.cpp"
+token  = "both producers register in both directions"
+note   = "the criterion's claim is that this NAMED case is in integration.standard_fields and passes, and its `selected >= 1` check exists because doctest exits ZERO when a filter matches nothing — the M8 defect, one level down. Renaming the case leaves the suite building and green and takes the criterion red on exactly that check."
 
 [[criterion]]
 id = "cross-leg-digest-job"
@@ -571,6 +600,11 @@ echo "the suite ran ${selected:-0} case(s) of the 5 it declares"
 test "${selected:-0}" -ge 5 || { echo "a case was renamed, deleted or skipped: a publisher with fewer checks than it had is a digest nobody verified"; exit 1; }
 '''
 ci_job = "milestone-m11a"
+
+[criterion.falsifies]
+mutate = "truncate"
+target = "tests/determinism/golden/toy-session-v1.hashes"
+note   = "the publisher's first case ties the digest it publishes to the committed golden session rather than to a number computed by a path nobody else looks at. Emptying the golden makes that case fail and the criterion red at `the publisher FAILED`. Deleting a CASE was rejected: the only mutation that reduces the count is one that breaks the file's syntax, and a red that comes from a compiler is a red this criterion's message would misdescribe."
 
 [[criterion]]
 id = "lockstep-agrees-across-architectures"

@@ -240,7 +240,7 @@ CY_TEST_CASE("cloud shadows: an update writes the field, and a storm darkens the
     const u32 macro = read_back_level(cy::environment::FieldResidency::Macro,
                                       test_quality().macro_cell_metres, lowest, highest);
     const u32 sampled_count = regional + macro;
-    CY_TEST_MESSAGE("through the store: ", sampled_count, " samples, lowest ", lowest, ", highest ",
+    CY_TEST_MESSAGE("cyFalsified21f2fea3: ", sampled_count, " samples, lowest ", lowest, ", highest ",
                     highest);
 
     // NOTHING RESOLVED IS THE PUBLISH FAILURE, and it is asserted before the values are, because a

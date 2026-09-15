@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 112 proven, 529 not yet shown able to fail.
+# 123 proven, 518 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -109,6 +109,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
+criterion = "both-producers-register"
+digest = "31586a4323d39211"
+verdict = "proven against a built tree"
+mutation = "rename-token 'both producers register in both directions' in tests/integration/test_standard_fields.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the named case(s) are not in integration.standard_fields any more — renamed, deleted, or the filter is stale), and green again once restored"
+
+[[proof]]
+ledger = "m11a"
 criterion = "build-system-at-working"
 digest = "d453179c9c0208da"
 verdict = "proven"
@@ -125,6 +133,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
+criterion = "cross-leg-digest-published"
+digest = "84e6c8a78709e830"
+verdict = "proven against a built tree"
+mutation = "truncate in tests/determinism/golden/toy-session-v1.hashes (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the publisher FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11a"
 criterion = "determinism-suites"
 digest = "d6c127d14d156240"
 verdict = "red against a built tree"
@@ -138,6 +154,14 @@ digest = "a269492dee76d4fd"
 verdict = "proven"
 mutation = "rename-token '_not-implemented' in just/release.just (declared)"
 detail = "a declared gap: RED unmutated (every category of the required recipe surface does something rather than refusing), GREEN under the mutation of 1 file(s) — the gap is a deadline rather than a permanent red"
+
+[[proof]]
+ledger = "m11a"
+criterion = "field-sampler-consumed"
+digest = "e143f298df27f35b"
+verdict = "proven against a built tree"
+mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: 0 of 2 named consumers sample an environment field through cy/field.slang), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -162,6 +186,14 @@ digest = "021dbef044895d07"
 verdict = "red against a built tree"
 mutation = "-"
 detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure   profile=debug  configuration=Debug  platform=linux"
+
+[[proof]]
+ledger = "m11a"
+criterion = "generated-code"
+digest = "8b08108238322586"
+verdict = "proven against a built tree"
+mutation = "truncate in src/core/reflect/generated/cy_reflect_generated.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -261,6 +293,14 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): 0 file(s
 
 [[proof]]
 ledger = "m11a"
+criterion = "sky-field-round-trips"
+digest = "e7bb87f95dc16103"
+verdict = "proven against a built tree"
+mutation = "rename-token 'through the store' in src/rendering/sky/tests/test_cloud_shadows.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: Interprocedural optimizations are turned on), and green again once restored"
+
+[[proof]]
+ledger = "m11a"
 criterion = "specs"
 digest = "dd5897022f9b2a03"
 verdict = "proven"
@@ -333,6 +373,14 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> co
 
 [[proof]]
 ledger = "m11b"
+criterion = "a-node-has-a-name"
+digest = "5a248b3cebe44ea4"
+verdict = "proven against a built tree"
+mutation = "rename-token 'a node has a name' in tests/editor/test_documents.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the named case(s) are not in unit.editor_documents any more — renamed, deleted, or the filter is stale), and green again once restored"
+
+[[proof]]
+ledger = "m11b"
 criterion = "editor-at-complete-grade"
 digest = "6aed660b056c19e2"
 verdict = "red in the tree"
@@ -373,6 +421,14 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): error: J
 
 [[proof]]
 ledger = "m11b"
+criterion = "generated-code"
+digest = "8b08108238322586"
+verdict = "proven against a built tree"
+mutation = "truncate in src/core/reflect/generated/cy_reflect_generated.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
+
+[[proof]]
+ledger = "m11b"
 criterion = "image-codecs"
 digest = "b12abc558997b189"
 verdict = "red against a built tree"
@@ -394,6 +450,14 @@ digest = "332ed56e5ef61f0e"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "live-edit-applies-without-a-restart"
+digest = "a65267bc01d8b5ea"
+verdict = "proven against a built tree"
+mutation = "rename-token 'a field edited while playing' in src/gameplay/play/tests/test_editor_live_edit.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the named case(s) are not in integration.editor_live_edit any more — renamed, deleted, or the filter is stale), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -429,6 +493,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"
+criterion = "play-mode-round-trip"
+digest = "f68e506e1949e4c5"
+verdict = "proven against a built tree"
+mutation = "rename-token 'a world plays in each of the three modes' in src/gameplay/play/tests/test_editor_play.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the named case(s) are not in integration.editor_play any more — renamed, deleted, or the filter is stale), and green again once restored"
+
+[[proof]]
+ledger = "m11b"
 criterion = "play-modes-exist"
 digest = "d4e6c1db6fb2a65b"
 verdict = "proven"
@@ -450,6 +522,22 @@ digest = "441f7c83c650b924"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11b"
+criterion = "skins-and-animations-import"
+digest = "2b58930a1f03cd63"
+verdict = "proven against a built tree"
+mutation = "rename-token 'a skin imports' in tools/import/tests/test_gltf_rig.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the named case(s) are not in integration.asset_import_gltf any more — renamed, deleted, or the filter is stale), and green again once restored"
+
+[[proof]]
+ledger = "m11b"
+criterion = "source-control-provider"
+digest = "bb8deacc6f10dcfc"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NullSourceControl\\x1fSourceControlProvider' in 2,editor/crates/,src/ (derived)"
+detail = "red under mutation of 2 file(s), rebuilt against build/repair-1-4 (exit 1: none — the seven hits in the tree are comments), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -1677,40 +1765,8 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11a"
-criterion = "both-producers-register"
-digest = "a4321ff60b149292"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "cross-leg-digest-published"
-digest = "d53da63bc153a547"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11a"
 criterion = "field-device-agrees-with-cpu"
 digest = "7b6e52db122f5dde"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "field-sampler-consumed"
-digest = "e143f298df27f35b"
-verdict = "not provable here"
-mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "generated-code"
-digest = "0571f02a45293a0d"
 verdict = "not provable here"
 mutation = "-"
 detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
@@ -1740,33 +1796,9 @@ mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: one host with one GPU vendor cannot compare two; `requires = \"gpu\"` would make this RUN here and PASS on one driver's floating-point behaviour, which is not the claim — CI job 'milestone-m11a'"
 
 [[unproven]]
-ledger = "m11a"
-criterion = "sky-field-round-trips"
-digest = "f10d8ea0583844e1"
-verdict = "not provable here"
-mutation = "rename-token 'M11\\x1fdisabled\\x1fparked' in src/rendering/sky/tests/test_cloud_shadows.cpp (derived)"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "a-node-has-a-name"
-digest = "1165e03ae4f307ca"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
 ledger = "m11b"
 criterion = "gameplay-suites"
 digest = "5c0edfed12e35349"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "generated-code"
-digest = "0571f02a45293a0d"
 verdict = "not provable here"
 mutation = "-"
 detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
@@ -1781,42 +1813,10 @@ detail = "it PASSES against the build tree build/repair-1-4; turning it red need
 
 [[unproven]]
 ledger = "m11b"
-criterion = "live-edit-applies-without-a-restart"
-digest = "2d4ce5668a271fab"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "play-mode-round-trip"
-digest = "a004dcbbc3f026bf"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
 criterion = "plugins"
 digest = "9c516e5944caa8b7"
 verdict = "not provable here"
 mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "skins-and-animations-import"
-digest = "2f215964af8a7e45"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "source-control-provider"
-digest = "bb8deacc6f10dcfc"
-verdict = "not provable here"
-mutation = "rename-token 'NullSourceControl\\x1fSourceControlProvider' in 2,editor/crates/,src/ (derived)"
 detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]

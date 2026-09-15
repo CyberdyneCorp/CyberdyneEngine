@@ -1518,6 +1518,101 @@ def test_falsifiability_unjudged(root: Path) -> None:
               for finding in falsify_module.reconcile([now_proven], inventory)))
 
 
+def test_falsifiability_by_mutating_the_tree(root: Path) -> None:
+    """The fourth proof shape, and the guard that lets it touch the repository at all.
+
+    WHAT IT IS FOR. A criterion whose subject is a COMPILED artefact cannot be judged in a source-only
+    sandbox: with `--build-dir` it is run unmutated against a real tree, and when it PASSES the tool
+    used to have nothing left to say. That is the shape of all seven unfalsifiable criteria this
+    mechanism exists to end — green, with nothing able to turn it red — and sixteen of M11.a's and
+    M11.b's criteria were sitting in it. `--mutate-the-tree` mutates the working tree instead, lets
+    the criterion's own body rebuild over it, and requires RED and then GREEN again.
+
+    WHAT IS CHECKED HERE IS THE DANGEROUS HALF: that the guard refuses a dirty tree, that it puts
+    back what it changed, that `git status` agrees it did, that a criterion the mutation does not
+    reach is REFUTED rather than proven, and that a tree whose restore was lost is recovered from git
+    rather than left broken. Every one of those runs against a throwaway git repository of three
+    files — this test never touches the repository it is running in.
+    """
+    tree_root = root / "checkout"
+    tree_root.mkdir(parents=True, exist_ok=True)
+    (tree_root / "subject.txt").write_text("the sampler is cySubjectToken here\n", encoding="utf-8")
+    (tree_root / "bystander.txt").write_text("nothing to do with it\n", encoding="utf-8")
+    for command in (["git", "init", "-q"], ["git", "add", "-A"],
+                    ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fixture"]):
+        subprocess.run(command, cwd=tree_root, check=True, capture_output=True)
+
+    tree = falsify_module.WorkingTree(tree_root)
+    check("the guard calls a freshly committed tree clean", not tree.dirty(), tree.dirty())
+
+    (tree_root / "subject.txt").write_text("edited by somebody else\n", encoding="utf-8")
+    check("AN EDIT BY SOMEBODY ELSE IS DRIFT FROM THE BASELINE, and the guard sees it",
+          bool(tree.dirty()), "git called an edited tree unchanged")
+    subprocess.run(["git", "checkout", "--", "."], cwd=tree_root, check=True, capture_output=True)
+
+    before = (tree_root / "subject.txt").read_bytes()
+    mutation = falsify_module.Mutation(verb="rename-token", target="subject.txt",
+                                       token="cySubjectToken", derived=False)
+    changed = tree.apply(mutation)
+    check("the mutation reaches the working tree", changed == 1, f"{changed} file(s)")
+    check("and while it is applied, git says so", bool(tree.dirty()))
+    tree.restore()
+    check("THE RESTORE PUTS THE BYTES BACK", (tree_root / "subject.txt").read_bytes() == before)
+    check("and git — which was not involved in the bookkeeping — agrees the tree is clean",
+          not tree.dirty(), tree.dirty())
+
+    # THE PROOF ITSELF, over a criterion that reads the mutated file. `run_in_the_repository` takes
+    # the root, so the three runs happen in the fixture checkout and not in this repository.
+    finished = lambda verdict, mutated, detail, unjudged=False: falsify_module.Proof(  # noqa: E731
+        "m0", "fixture", "aaaa", verdict, mutated, detail, 0.0, unjudged)
+    reads_it = _criterion("reads-it", "grep -q cySubjectToken subject.txt")
+    proof = falsify_module._prove_by_mutating_the_tree(reads_it, "build/none", mutation, tree,
+                                                      finished)
+    check("A CRITERION THAT GOES RED UNDER THE MUTATION AND GREEN AGAIN AFTER IT IS PROVEN",
+          proof.verdict == falsify_module.PROVEN_BY_REBUILD, f"{proof.verdict}: {proof.detail}")
+    check("and the tree is clean afterwards", not tree.dirty(), tree.dirty())
+
+    ignores_it = _criterion("ignores-it", "grep -q nothing bystander.txt")
+    proof = falsify_module._prove_by_mutating_the_tree(ignores_it, "build/none", mutation, tree,
+                                                      finished)
+    check("while one the mutation does not reach is REFUTED, not carried",
+          proof.verdict == falsify_module.REFUTED, f"{proof.verdict}: {proof.detail}")
+    check("and the tree is clean after that too", not tree.dirty(), tree.dirty())
+
+    # A RESTORE THE TOOL LOST. `forget()` drops what it remembered, which is the worst case short of
+    # the process dying: the recovery is git's, and it is checked rather than assumed.
+    tree.apply(mutation)
+    tree._files.forget()
+    tree.restore()
+    check("a tree whose remembered bytes were lost is recovered from git rather than left broken",
+          not tree.dirty() and (tree_root / "subject.txt").read_bytes() == before, tree.dirty())
+
+    # AND WORK THAT WAS IN FLIGHT BEFORE THE RUN IS NEVER DISCARDED TO ACHIEVE THAT. The recovery is
+    # `git checkout`, which would happily throw an uncommitted edit away; it is offered only to paths
+    # that were clean at the baseline, so a tree that starts modified — which is every tree a phase
+    # editing this module works in — is restored to what it was, not to HEAD.
+    (tree_root / "bystander.txt").write_text("somebody was in the middle of this\n", encoding="utf-8")
+    in_flight = falsify_module.WorkingTree(tree_root)
+    check("a file modified before the run is the baseline rather than drift",
+          not in_flight.dirty() and len(in_flight.modified_at_the_baseline()) == 1,
+          f"{in_flight.modified_at_the_baseline()}")
+    in_flight.apply(mutation)
+    in_flight._files.forget()
+    in_flight.restore()
+    check("and it survives even a restore that had to fall back on git",
+          (tree_root / "bystander.txt").read_text(encoding="utf-8").startswith("somebody"),
+          (tree_root / "bystander.txt").read_text(encoding="utf-8"))
+    subprocess.run(["git", "checkout", "--", "."], cwd=tree_root, check=True, capture_output=True)
+
+    # AND IT REFUSES TO RUN INSIDE ANOTHER PROVER, where two runs would mutate one tree.
+    os.environ[NESTED_IN_THE_PROVER] = "1"
+    try:
+        check("--mutate-the-tree is refused inside another prover",
+              "a prover is already running" in tree.unavailable(), tree.unavailable())
+    finally:
+        del os.environ[NESTED_IN_THE_PROVER]
+
+
 def test_falsifiability_of_the_ladder(root: Path) -> None:
     """The real thing: every criterion on the ladder, proven or accounted for.
 
@@ -1593,6 +1688,7 @@ def main() -> int:
             test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
             test_falsifiability_of_a_declared_gap(_area(root, "falsify-gap"))
             test_falsifiability_red_in_the_tree(_area(root, "falsify-red"))
+            test_falsifiability_by_mutating_the_tree(_area(root, "falsify-tree"))
             test_falsifiability_unjudged(_area(root, "falsify-unjudged"))
             test_falsifiability_of_the_ladder(_area(root, "falsify-ladder"))
     passed = len(_cases) - len(_failures)

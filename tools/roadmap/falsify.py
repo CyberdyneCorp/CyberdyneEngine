@@ -140,13 +140,29 @@ RED_IN_THE_TREE = "red in the tree"
 #: real build tree, named on the command line. Recorded apart because a source-only run cannot
 #: re-earn it — see `reconcile`.
 RED_WITH_A_BUILD = "red against a built tree"
+#: THE FOURTH SHAPE, AND THE ONE THAT CLOSES THE HOLE THE OTHER THREE LEFT. A criterion that needs a
+#: build and PASSES against one was, until M11's repair round, `not provable here` — named, with the
+#: mutation its own text implies, and nothing more. That is the shape the seven had: green, and
+#: nothing in the tooling able to turn it red. Sixteen of M11.a's and M11.b's seventy sat in it.
+#:
+#: So the mutation is applied to the WORKING TREE, under `--mutate-the-tree`, the criterion's own
+#: body rebuilds (every one of them opens with `just build-engine`), and the criterion must go red.
+#: Then the tree is restored and the criterion must come back GREEN — which is what separates "the
+#: mutation made it red" from "something about this run made it red", and is also how the restore is
+#: verified by something other than the restorer's own bookkeeping.
+#:
+#: `WorkingTree` is what makes that safe: it refuses to start against a tree `git status` calls
+#: dirty, remembers every byte it overwrites, restores on every exit path including a signal, and
+#: verifies afterwards that git reports the tree clean again. A run that cannot put the tree back
+#: does not return a verdict — it aborts, loudly, naming the files.
+PROVEN_BY_REBUILD = "proven against a built tree"
 REFUTED = "refuted"
 UNPROVABLE = "not provable here"
 NO_MUTATION = "no mutation"
 
 #: Every verdict that counts as a proof. `reconcile` requires the recorded one to be the observed
 #: one, so a criterion that changes proof shape is re-judged rather than carried.
-PROOF_VERDICTS = (PROVEN, RED_IN_THE_TREE, RED_WITH_A_BUILD)
+PROOF_VERDICTS = (PROVEN, RED_IN_THE_TREE, RED_WITH_A_BUILD, PROVEN_BY_REBUILD)
 
 
 # --- Reading a criterion's shell ------------------------------------------------------------------
@@ -839,6 +855,170 @@ class Sandbox:
         return (0 if status == criteria_module.OK else 1), output
 
 
+# --- The working tree, for the criteria only a build can judge -------------------------------------
+
+
+class TreeNotRestored(RuntimeError):
+    """The repository was mutated and could not be put back. Nothing continues after this."""
+
+
+class WorkingTree:
+    """The repository itself, mutated under a guard and put back — the one thing the sandbox cannot be.
+
+    WHY THIS EXISTS, HAVING BEEN REFUSED ONCE. The rule above this module's first eight hundred lines
+    is that a mutation never reaches the working tree, and it is the right rule: a tool that breaks
+    the tree and puts it back is one crash away from leaving it broken, and this one runs hundreds of
+    times. What that rule bought was a sandbox; what it cost was every criterion whose subject is a
+    COMPILED artefact. A source-only copy has no build, so such a criterion is either red there for
+    want of one — which the tree control correctly refuses to call a proof — or, with `--build-dir`,
+    run unmutated against a real tree and found GREEN, at which point the module had nothing left to
+    say but "turning it red needs its source mutated and the tree rebuilt, which this prover does not
+    do". That sentence names sixteen of M11.a's and M11.b's criteria, and it describes the seven
+    exactly: green, and nothing able to turn them red.
+
+    So the rule is narrowed rather than kept: a mutation never reaches the working tree EXCEPT under
+    `--mutate-the-tree`, which is a flag on a command line rather than a default, and which is
+    answerable for putting the tree back exactly as it found it:
+
+      * every byte it overwrites is remembered before it is overwritten (`Sandbox._remember`);
+      * the restore runs on every exit path — normal, exception, SIGINT, SIGTERM, interpreter exit;
+      * afterwards, `git status --porcelain -uno` must report EXACTLY what it reported before the
+        mutation. That is a byte-for-byte comparison against the index of every tracked file, made
+        by something that took no part in the bookkeeping, so a restore this class believes it made
+        and did not is caught by a witness rather than by the witness's employer;
+      * a tree that does not come back raises `TreeNotRestored`, which is caught nowhere: the run
+        stops and names the files. A prover that carried on would be writing proofs about a tree it
+        had already broken.
+
+    THE BASELINE IS "AS THIS RUN FOUND IT", NOT "AS HEAD HAS IT", and that distinction is load-
+    bearing rather than a convenience. Requiring a pristine checkout was the first draft, and it
+    makes the tool unusable in the one situation it is for: a phase that is editing this very module
+    cannot prove anything with it. So the state at construction is recorded, and what is required at
+    the end is that state — a file already modified when the run began is restored to the bytes it
+    had then. The recovery path is narrowed to match: `git checkout --` is offered only to paths that
+    were CLEAN at the baseline, so it can never discard work that was in flight before this ran.
+
+    It is refused outright inside another prover (`CY_FALSIFY`), where two runs would mutate one tree.
+    """
+
+    def __init__(self, root: Path = REPO_ROOT) -> None:
+        self.root = root
+        self._files = Sandbox(root)
+        self._armed = False
+        self._previous: dict = {}
+        self._baseline = self._status()
+
+    # --- what git says --------------------------------------------------------------------------
+
+    def _status(self) -> tuple[str, ...]:
+        """What `git status` reports as modified. Untracked files are not it.
+
+        `-uno`: this prover's own runs leave untracked artefacts behind — a capture at the repository
+        root, a generated header — and refusing to work in a tree that has any would refuse to work
+        in this repository at all. What must come back is the TRACKED content, because that is what a
+        mutation touches and what a restore has to reproduce.
+        """
+        reported = subprocess.run(["git", "status", "--porcelain", "-uno"], cwd=self.root,
+                                  capture_output=True, text=True, check=False)
+        if reported.returncode != 0:
+            return (f"git could not report the state of {self.root}: {reported.stderr.strip()}",)
+        return tuple(sorted(line for line in reported.stdout.splitlines() if line.strip()))
+
+    def drift(self) -> tuple[str, ...]:
+        """Everything git reports now that it did not report when this object was made."""
+        return tuple(line for line in self._status() if line not in self._baseline)
+
+    def modified_at_the_baseline(self) -> tuple[str, ...]:
+        return self._baseline
+
+    def dirty(self) -> str:
+        """Drift from the baseline, as one line for a message. Empty when the tree is as it was."""
+        return "\n".join(self.drift())
+
+    def unavailable(self) -> str:
+        """Why this tree may not be mutated at all, or an empty string."""
+        if os.environ.get("CY_FALSIFY"):
+            return "a prover is already running: two of them must not mutate one tree"
+        if not (self.root / ".git").exists():
+            return f"{self.root} is not a git checkout, so a restore could not be verified"
+        return ""
+
+    # --- the mutation window --------------------------------------------------------------------
+
+    def apply(self, mutation: Mutation) -> int:
+        """Apply the mutation to the repository, arming the restore FIRST."""
+        self._arm()
+        return self._files.apply(mutation)
+
+    def restore(self) -> None:
+        """Put every remembered byte back, and require git to agree the tree is as it was.
+
+        RAISES rather than returns a verdict. A caller that could handle this would be a caller that
+        continues with a broken tree.
+        """
+        try:
+            self._files.restore()
+        finally:
+            self._disarm()
+        left = self.drift()
+        if left:
+            # ONE RECOVERY ATTEMPT, AND IT IS GIT'S — `_remember` can only put back what it was asked
+            # to change, and a criterion's own body may have written to a tracked file. Offered only
+            # to paths that were CLEAN at the baseline: a path that was already modified when this
+            # run started is somebody's work in flight, and discarding it would be a worse outcome
+            # than the one being recovered from.
+            already = {line[3:] for line in self._baseline}
+            recoverable = [line[3:] for line in left if line[3:] not in already]
+            if recoverable:
+                subprocess.run(["git", "checkout", "--", *recoverable], cwd=self.root,
+                               capture_output=True, check=False)
+            left = self.drift()
+        if left:
+            raise TreeNotRestored(
+                "the working tree was mutated and has NOT been put back. Restore it before anything "
+                "else is done in it — `git status` reports this, which it did not before:\n"
+                + "\n".join(left))
+
+    def _arm(self) -> None:
+        if self._armed:
+            return
+        self._armed = True
+        import atexit
+        import signal
+        atexit.register(self._emergency)
+        for number in (signal.SIGINT, signal.SIGTERM):
+            try:
+                self._previous[number] = signal.signal(number, self._on_signal)
+            except (ValueError, OSError):  # not the main thread, or no such signal here
+                pass
+
+    def _disarm(self) -> None:
+        if not self._armed:
+            return
+        self._armed = False
+        import atexit
+        import signal
+        atexit.unregister(self._emergency)
+        for number, handler in self._previous.items():
+            try:
+                signal.signal(number, handler)
+            except (ValueError, OSError):
+                pass
+        self._previous.clear()
+
+    def _emergency(self) -> None:
+        """The last-resort restore: the interpreter is going away with the tree still mutated."""
+        self._files.restore()
+        print("falsify: the working tree was restored on the way out; git reports "
+              f"{len(self.drift())} file(s) it did not report before this run", file=sys.stderr)
+
+    def _on_signal(self, number, frame) -> None:  # noqa: ANN001 — a signal handler's signature
+        del frame
+        self._emergency()
+        self._disarm()
+        raise KeyboardInterrupt(f"interrupted by signal {number}; the working tree was restored")
+
+
 # --- A proof ---------------------------------------------------------------------------------------
 
 
@@ -949,7 +1129,7 @@ def build_budget() -> int:
 
 
 def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
-                         timeout_s: int) -> tuple[int, str]:
+                         timeout_s: int, root: Path = REPO_ROOT) -> tuple[int, str]:
     """Run the criterion, UNMUTATED, in the repository itself.
 
     THE WORKING TREE IS NEVER MUTATED HERE, and that is the whole licence for this function. The
@@ -965,7 +1145,7 @@ def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
         # ZERO. Reading the repository through the same evaluator the sandbox uses IS the control;
         # running an empty string reported every artefact and every tier claim as green in the tree,
         # which is this module's own defect committed inside the control that exists to catch it.
-        return Sandbox(REPO_ROOT).run(criterion)
+        return Sandbox(root).run(criterion)
     if _RUNS_THE_ROADMAP_TOOLING.search(without_comments(criterion.run)):
         return -1, "a criterion that runs this module cannot be controlled by running it again"
     environment = {key: value for key, value in os.environ.items() if not key.startswith("CY_")}
@@ -974,11 +1154,15 @@ def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
         environment["CY_BUILD_DIR"] = build_dir
     try:
         completed = subprocess.run(  # noqa: S603 — the command is committed data
-            ["bash", "-c", criterion.run], cwd=REPO_ROOT, capture_output=True, text=True,
-            timeout=timeout_s, check=False, env=environment)
+            ["bash", "-c", criterion.run], cwd=root, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, timeout=timeout_s, check=False, env=environment)
     except subprocess.TimeoutExpired:
         return 124, f"no result within {timeout_s} s"
-    return completed.returncode, (completed.stdout or "") + (completed.stderr or "")
+    # ONE STREAM, IN ORDER. Concatenating stdout after stderr put a criterion's own verdict line in
+    # the middle of the capture and a build tool's chatter at the end, so the recorded detail of a
+    # proof read "Interprocedural optimizations are turned on" about a criterion that had said
+    # exactly why it was red four lines earlier.
+    return completed.returncode, completed.stdout or ""
 
 
 def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: str, finished,
@@ -1019,8 +1203,70 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
                     f"{_first_line(tree_output)}")
 
 
+def _prove_by_mutating_the_tree(criterion: criteria_module.Criterion, build_dir: str,
+                                mutation: Mutation, tree: WorkingTree, finished) -> Proof:
+    """The criterion passes against a real build. Break what it names, rebuild, and require RED.
+
+    THREE RUNS, exactly as the sandbox has three, with the build standing in for the copy:
+
+      positive control  already taken by the caller: the criterion passes, unmutated, against the
+                        build tree named on the command line;
+      the mutation      applied to the working tree. The criterion's own body rebuilds — every one
+                        of the sixteen this exists for opens with `just build-engine` — so what is
+                        judged is a COMPILED tree that carries the mutation, not a text file;
+      the restore       the tree is put back and the criterion must come back GREEN. This is the run
+                        that makes the middle one mean something: a criterion red under the mutation
+                        AND red afterwards was red for some reason of its own, and a restore that
+                        the tooling believes it made but did not would show up here as well.
+
+    THE LEDGER-BLIND CONTROL IS NOT REPEATED HERE, and that is a rule rather than an omission. It
+    exists because two of the seven were a grep that matched the ledger declaring it — and that
+    shape is refused before any run reaches this function: `self-match` is in `CANNOT_GO_RED`, so a
+    criterion whose search can reach `tools/roadmap/` is REFUTED by `inspect` at the top of `prove`,
+    whatever it would do against a build.
+    """
+    budget = min(build_budget(), criterion.timeout_s or BUILD_PROOF_TIMEOUT_S)
+    unavailable = tree.unavailable()
+    if unavailable:
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"the working tree cannot be mutated: {unavailable}", unjudged=True)
+    dirty = tree.dirty()
+    if dirty:
+        return finished(UNPROVABLE, mutation.describe(),
+                        "the working tree is not clean, so a mutation applied to it could not be "
+                        f"told from what is already there: {dirty.splitlines()[0]}", unjudged=True)
+    try:
+        changed = tree.apply(mutation)
+        if not changed:
+            return finished(REFUTED, mutation.describe(),
+                            "the mutation changed nothing — it names a file or a token that is not "
+                            "there")
+        code, output = run_in_the_repository(criterion, build_dir, budget, tree.root)
+    finally:
+        tree.restore()
+    if code < 0:
+        return finished(UNPROVABLE, mutation.describe(), output, unjudged=True)
+    if code == 124:
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"mutated, it did not finish within {budget} s", unjudged=True)
+    if code == 0:
+        return finished(REFUTED, mutation.describe(),
+                        f"the criterion still PASSES with {changed} file(s) mutated and "
+                        f"{build_dir} rebuilt over them: it cannot go red")
+    back, restored_output = run_in_the_repository(criterion, build_dir, budget, tree.root)
+    if back != 0:
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"it went red with {changed} file(s) mutated and did NOT come back green "
+                        f"when the tree was restored (exit {back}: {_first_line(restored_output)}), "
+                        "so the redness cannot be laid at the mutation's door", unjudged=True)
+    return finished(PROVEN_BY_REBUILD, mutation.describe(),
+                    f"red under mutation of {changed} file(s), rebuilt against {build_dir} "
+                    f"(exit {code}: {_last_line(output)}), and green again once restored")
+
+
 def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str, blocked: str,
-                           mutation: Mutation | None, finished) -> Proof:
+                           mutation: Mutation | None, finished,
+                           tree: WorkingTree | None = None) -> Proof:
     """A criterion the source-only sandbox cannot run at all, judged against a real build tree.
 
     WITHOUT `--build-dir` NOTHING IS CLAIMED: it is `not provable here`, named, with the reason. With
@@ -1028,11 +1274,14 @@ def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str,
     has been watched going red, which is the same shape as `_red_in_the_tree` and is recorded apart
     only because a source-only run cannot re-earn it.
 
-    A criterion that PASSES against a build is NOT proven here, and this is the honest edge of the
-    tool: turning it red needs its source mutated and the tree rebuilt, which this prover does not do
-    — mutating the repository is exactly what the sandbox exists to prevent. Those are named, with
-    the mutation their own text implies, so that whoever builds the job that proves them knows what
-    to break.
+    A criterion that PASSES against a build IS the positive control of a fourth proof shape, and
+    `_prove_by_mutating_the_tree` takes it from here when `--mutate-the-tree` has been given: the
+    mutation goes into the working tree, the criterion's own body rebuilds over it, and the criterion
+    has to go red and then come back. Without that flag the answer is the one this tool gave until
+    M11's repair round — `not provable here`, with the mutation the criterion's own text implies, so
+    that whoever runs the proving job knows what to break. That answer is UNJUDGED and not a finding:
+    a run with no licence to mutate has not contradicted a standing proof, it has declined to re-earn
+    one.
     """
     if not build_dir:
         return finished(UNPROVABLE, mutation.describe() if mutation else "-", blocked, unjudged=True)
@@ -1046,13 +1295,21 @@ def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str,
         return finished(RED_WITH_A_BUILD, "-",
                         f"red unmutated against the build tree {build_dir} (exit {code}): "
                         f"{_first_line(output)}")
-    return finished(UNPROVABLE, mutation.describe() if mutation else "-",
+    if tree is not None and mutation is not None:
+        return _prove_by_mutating_the_tree(criterion, build_dir, mutation, tree, finished)
+    if mutation is None:
+        return finished(NO_MUTATION, "-",
+                        f"it PASSES against the build tree {build_dir}, and no mutation can be "
+                        "derived from its text: it must declare a [criterion.falsifies] before a "
+                        "build-backed run can turn it red")
+    return finished(UNPROVABLE, mutation.describe(),
                     f"it PASSES against the build tree {build_dir}; turning it red needs its source "
-                    "mutated and the tree rebuilt, which this prover does not do")
+                    "mutated and the tree rebuilt, which needs `prove --mutate-the-tree`",
+                    unjudged=True)
 
 
 def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
-          build_dir: str = "") -> Proof:
+          build_dir: str = "", tree: WorkingTree | None = None) -> Proof:
     """Positive control, mutation, ledger-blind control. Anything short of all three is not a proof.
 
     UNLESS THE UNMUTATED RUN IS ITSELF THE PROOF. A criterion that FAILS as written has been watched
@@ -1093,7 +1350,7 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
     mutation = derive(criterion)
     blocked = unsandboxable(criterion)
     if blocked:
-        return _prove_against_a_build(criterion, build_dir, blocked, mutation, finished)
+        return _prove_against_a_build(criterion, build_dir, blocked, mutation, finished, tree)
 
     code, output = sandbox.run(criterion)
     if code != 0:
@@ -1431,9 +1688,33 @@ def command_prove(arguments: argparse.Namespace) -> int:
     if build_dir and not (REPO_ROOT / build_dir).is_dir():
         print(f"falsify: no build tree at {build_dir}", file=sys.stderr)
         return 2
+    tree: WorkingTree | None = None
+    if arguments.mutate_the_tree:
+        # THE FLAG IS REFUSED WITHOUT A BUILD, rather than quietly ignored. Its whole subject is the
+        # criteria a source-only sandbox cannot run, and without a tree to run them against it would
+        # be a licence to mutate the repository in exchange for nothing.
+        if not build_dir:
+            print("falsify: --mutate-the-tree needs --build-dir: the criteria it exists for are the "
+                  "ones a source-only sandbox cannot run at all", file=sys.stderr)
+            return 2
+        tree = WorkingTree()
+        unavailable = tree.unavailable()
+        if unavailable:
+            print(f"falsify: --mutate-the-tree: {unavailable}", file=sys.stderr)
+            return 2
+        print("falsify: --mutate-the-tree — the repository itself is mutated, one criterion at a "
+              "time, and restored before the next. What the restore has to reproduce is the tree as "
+              "this run found it, and `git status` is asked after every one.")
+        already = tree.modified_at_the_baseline()
+        if already:
+            print(f"falsify: {len(already)} tracked file(s) were already modified when this started. "
+                  "They are the baseline, they are restored to the bytes they have now, and they are "
+                  "the ones `git checkout` is never offered:")
+            for line in already[:10]:
+                print(f"    {line}")
     with tempfile.TemporaryDirectory(prefix="cy-falsify-", ignore_cleanup_errors=True) as directory:
         sandbox = Sandbox.materialise(Path(directory) / "tree")
-        proofs = _prove_all(sandbox, tuple(arguments.milestone), arguments.only, build_dir)
+        proofs = _prove_all(sandbox, tuple(arguments.milestone), arguments.only, build_dir, tree)
     counts: dict[str, int] = {}
     for proof in proofs:
         counts[proof.verdict] = counts.get(proof.verdict, 0) + 1
@@ -1452,13 +1733,13 @@ def command_prove(arguments: argparse.Namespace) -> int:
 
 
 def _prove_all(sandbox: Sandbox, ledgers: tuple[str, ...], only: str,
-               build_dir: str = "") -> list[Proof]:
+               build_dir: str = "", tree: WorkingTree | None = None) -> list[Proof]:
     proofs = []
     for identifier in (ledgers or criteria_module.available()):
         for criterion in criteria_module.load(identifier).criteria:
             if only and only not in criterion.id:
                 continue
-            proof = prove(sandbox, identifier, criterion, build_dir)
+            proof = prove(sandbox, identifier, criterion, build_dir, tree)
             sandbox.restore()
             proofs.append(proof)
     return proofs
@@ -1566,6 +1847,12 @@ def _parser() -> argparse.ArgumentParser:
     prove_command.add_argument(
         "--budget", type=int, default=0,
         help="seconds a build-backed criterion gets, when that is tighter than its own timeout_s")
+    prove_command.add_argument(
+        "--mutate-the-tree", action="store_true",
+        help="for the criteria that PASS against --build-dir and can only be judged by a rebuild: "
+             "apply the mutation to the WORKING TREE, let the criterion's own body rebuild over it, "
+             "require RED, then restore and require GREEN again. Refuses a tree git calls dirty, "
+             "restores on every exit path, and verifies with `git status` that it did")
     prove_command.add_argument("--verbose", action="store_true", help="print the proven ones too")
     prove_command.set_defaults(handler=command_prove)
 
@@ -1582,6 +1869,11 @@ def main(argv: list[str] | None = None) -> int:
     except criteria_module.CriteriaError as error:
         print(f"falsify: {error}", file=sys.stderr)
         return 2
+    except TreeNotRestored as error:
+        # NOT A VERDICT AND NOT A FINDING. `--mutate-the-tree` broke the repository and could not put
+        # it back, so nothing this run would go on to say about falsifiability is worth reading.
+        print(f"falsify: THE WORKING TREE IS STILL MUTATED.\n{error}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

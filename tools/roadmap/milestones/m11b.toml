@@ -70,6 +70,12 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/core/memory/src/tracking_allocator.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the gate's claim is that clang-tidy reports nothing over what the build compiles, and `WarningsAsErrors: '*'` is what makes a finding an exit code. The mutation renames the three earned suppressions in the allocator that casts through `void*` on purpose, so three real `bugprone-casting-through-void` findings fire on real lines. Introducing a NEW defect was considered and rejected: it would have to be a defect clang-tidy is configured to catch, which is a guess about the check list, while a suppression that stops suppressing is a finding the tree has already agreed is one."
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with three play modes in it. `SeparateProcess` and `RemoteDevice` are transports, and a transport that reaches into the editor's document model — or an editor that links the runtime to host `InEditor` — is the layering violation this rung is most likely to commit"
@@ -106,6 +112,11 @@ kind = "command"
 run = "just generate-check && just generate-test && just maintenance-deps-check"
 timeout_s = 3600
 ci_job = "generated-code"
+
+[criterion.falsifies]
+mutate = "truncate"
+target = "src/core/reflect/generated/cy_reflect_generated.cpp"
+note   = "the reflection metadata is COMMITTED, so its currency check is a comparison between the committed file and what the generator produces from the annotated headers. Emptying it is the staleness this gate exists to catch — an annotated header edited without the generator being run — and `reflect_gen --check` names the file. The headers half of the recipe writes into the build tree and cannot be mutated from the source, so the committed half is the one a source mutation reaches."
 
 [[criterion]]
 id = "roadmap-record"
@@ -244,6 +255,12 @@ test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.
 timeout_s = 3600
 ci_job = "milestone-m11b"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/gameplay/play/tests/test_editor_play.cpp"
+token  = "a world plays in each of the three modes"
+note   = "the criterion names one case and checks that the filter SELECTED it, because `-tc=<a name that is not there>` exits zero having run nothing. Renaming the case leaves the suite green and takes the criterion red on the count."
+
 [[criterion]]
 id = "live-edit-applies-without-a-restart"
 describe = "a field edited while a world is playing takes effect under its declared policy, and a field whose policy says restart restarts. The claim is that the policy is DECLARED per field rather than inferred, so the case edits one field of each policy class"
@@ -265,6 +282,12 @@ test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.
 ci_job = "milestone-m11b"
 
 # --- Section 2: the rest of the editor -------------------------------------------------------------
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/gameplay/play/tests/test_editor_live_edit.cpp"
+token  = "a field edited while playing"
+note   = "as for play-mode-round-trip: the named case is the whole claim, and an empty selection is a pass unless the count is asserted. Renaming it takes the criterion red on that assertion."
 
 [[criterion]]
 id = "source-control-provider"
@@ -349,6 +372,12 @@ ctest --test-dir "$d" -R "$pattern" --output-on-failure
 '''
 ci_job = "milestone-m11b"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/core/plugins/src/host.cpp"
+token  = "virtual-texture-producer"
+note   = "the registration half of this criterion is covered by the mutation on gameplay-suites; what this one breaks is the RUN. `unit.project` spells the requirement's list of standard extension points out one name at a time so that a point deleted from the registry fails on its own name, and renaming one in the host's declaration is that deletion. The suite compiles, ctest runs it, and the case fails — so the criterion is red because a test failed rather than because CMake did."
+
 [[criterion]]
 id = "a-node-has-a-name"
 describe = "a node in the editor's document model has a name. It is a one-line claim and a document-model change rather than a field, which is why it has outlived four milestones' worth of larger work"
@@ -374,6 +403,12 @@ echo "the filter selected ${selected:-0} case(s) of the 1 it names"
 test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.editor_documents any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11b"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tests/editor/test_documents.cpp"
+token  = "a node has a name"
+note   = "the named case, again: `unit.editor_documents` keeps building and passing, the filter selects nothing, and the count check is what goes red."
 
 [[criterion]]
 id = "specialised-editors"
@@ -476,6 +511,12 @@ test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.
 '''
 ci_job = "milestone-m11b"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/import/tests/test_gltf_rig.cpp"
+token  = "a skin imports"
+note   = "this criterion names TWO cases and requires both, so the mutation renames one of them: the filter then selects one of two and `test 1 -ge 2` is what reports it. A criterion that took whatever the filter found would have stayed green on half the claim."
+
 [[criterion]]
 id = "import-from-the-editor"
 describe = "every format `tools/import` supports is reachable from inside the editor. M8.a added `asset.import` for the formats it had; this rung's claim is that the set is the same set, which is a check rather than a sentence"
@@ -526,6 +567,12 @@ ctest --test-dir "$d" -R "$pattern" --output-on-failure
 '''
 timeout_s = 3600
 ci_job = "milestone-m11b"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/gameplay/abilities/tests/CMakeLists.txt"
+token  = "ability_core"
+note   = "the ten names in the pattern were read out of `ctest -N` rather than guessed, after four of the criterion's original ten turned out never to have existed — so the half that matters is the count, and the mutation is a suite RENAMED rather than deleted. `unit.ability_core` becomes a suite under another name, the build stays green, ctest registers nine of the ten, and the criterion says which. The name appears in this file's header comment and in its NAME field and nowhere else, so nothing else moves with it."
 
 [[criterion]]
 id = "gameplay-at-complete-grade"
