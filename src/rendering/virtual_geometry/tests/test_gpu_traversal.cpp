@@ -29,7 +29,10 @@
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#include <cy/core/math/matrix.h>
+#include <cy/core/math/projection.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/servers/render/culling/hzb.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/virtual_geometry/gpu.h>
@@ -38,6 +41,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -423,4 +427,222 @@ CY_TEST_CASE("a traversal is destroyed with its frames in flight, in a loop") {
     }
     CY_REQUIRE(fixture.device().wait_idle().has_value());
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
+}
+
+// ================================================================================================
+// CLUSTER-GRANULAR OCCLUSION, OVER THE SAME PYRAMID THE CULLING PASS READS. M11.c task 4.1.
+// ================================================================================================
+//
+// From M7 to M10 this module's README recorded occlusion as ABSENT and named the seam rather than
+// leaving it to be read off a counter: "`TraversalStatistics::nodes_pruned_by_occlusion` and
+// `rejected_by_occlusion` exist, read zero, and are the seam: the shader takes the cull tests in
+// the order the requirement fixes and the HZB test slots in beside the cone test."
+//
+// This is that test, and what makes it evidence rather than a counter moving off zero is that both
+// sides are asked the same question through the same structure: the device reads the pyramid
+// `cy::rendering::hzb::HzbPass` built, and `TraversalView::occlusion` is
+// `cy::render::culling::HzbOcclusionTester` over the CPU model of the same pyramid — which is the
+// SAME interface `GpuCullOptions::occlusion` takes. One piece of device work, two rows.
+CY_TEST_CASE("cluster occlusion reads the shared hierarchical depth buffer and agrees with the "
+             "reference") {
+    DeviceFixture fixture;
+    if (!fixture.have_vulkan()) {
+        fixture.report_skip();
+        return;
+    }
+    Allocator& allocator = fixture.allocator();
+
+    constexpr u32 kWidth = 128;
+    constexpr u32 kHeight = 72;
+    constexpr f32 kDistance = 4.0F;
+
+    // TWO OCCLUDERS, AND THE SECOND ONE GRAZES. A pyramid that occluded everything would agree
+    // with a reference that occluded everything and would say nothing, so the left half of the
+    // screen is held by a NEAR occluder — which hides whole subtrees and fires the node prune — and
+    // the right half by one at the depth of the object's own centre, which hides a cluster on the
+    // far side of the object while the GROUP sphere that contains it still reaches nearer than the
+    // occluder. That second case is the only way the cluster-granular test fires at all, and
+    // without it a sweep could pass while the cluster test did nothing.
+    //
+    // 0.1 / 4.0 is the reversed-Z depth of the object's centre for a near plane of 0.1 at four
+    // units: the near half of the object is in front of it and the far half behind.
+    Array<f32> depths(allocator);
+    CY_REQUIRE(depths.resize(static_cast<usize>(kWidth) * kHeight).has_value());
+    for (u32 y = 0; y < kHeight; ++y) {
+        for (u32 x = 0; x < kWidth; ++x) {
+            // Reversed Z: 1 is the near plane, so 0.9 is an occluder close to the camera and 0 is
+            // the far plane, which occludes nothing.
+            depths[(static_cast<usize>(y) * kWidth) + x] = x < kWidth / 2U ? 0.9F : 0.1F / kDistance;
+        }
+    }
+
+    const Mat4 projection = cy::perspective_reversed_z(
+        1.0471975512F, static_cast<f32>(kWidth) / static_cast<f32>(kHeight), 0.1F, 1000.0F);
+    const Mat4 look = cy::look_at(Vec3{0.0F, 0.0F, kDistance}, Vec3{0.0F, 0.0F, 0.0F},
+                             Vec3{0.0F, 1.0F, 0.0F});
+    const Mat4 view_projection = projection * look;
+
+    // The CPU model: level 0 is the depths above and `reduce()` fills the rest. It is the expected
+    // value for the device pyramid AND the tester the reference traversal culls with.
+    render::culling::Hzb model(allocator);
+    CY_REQUIRE(model.resize(kWidth, kHeight).has_value());
+    {
+        const Span<f32> level0 = model.level(0);
+        CY_REQUIRE(level0.size() == depths.size());
+        for (usize index = 0; index < depths.size(); ++index) {
+            level0[index] = depths[index];
+        }
+    }
+    model.reduce();
+    model.mark_valid();
+    const render::culling::HzbOcclusionTester tester(model, view_projection);
+
+    const vg::test::MeshData mesh = vg::test::icosphere(allocator, 3);
+    Expected<vg::GeometryBuild, Error> build =
+        vg::build_geometry(mesh.source(), test_options(), allocator);
+    CY_REQUIRE(build.has_value());
+
+    GpuFixture gpu(allocator, fixture.device());
+    CY_REQUIRE(vg::encode_asset(*build, vg::VertexEncoding{}, gpu.bytes).has_value());
+    Expected<vg::DecodedAsset, Error> decoded = vg::decode_asset(gpu.bytes.span(), allocator);
+    CY_REQUIRE(decoded.has_value());
+    gpu.asset = std::move(*decoded);
+    Expected<u32, Error> asset_index = gpu.scene.add_asset(gpu.asset);
+    CY_REQUIRE(asset_index.has_value());
+
+    Array<vg::GeometryInstance> instances(allocator);
+    vg::GeometryInstance instance;
+    instance.asset = *asset_index;
+    CY_REQUIRE(instances.push_back(instance).has_value());
+    CY_REQUIRE(gpu.scene.set_instances(instances.span()).has_value());
+
+    vg::GpuTraversalOptions options;
+    options.max_levels = 12;
+    CY_REQUIRE(gpu.traversal.initialise(gpu.scene, options).has_value());
+
+    Array<vg::PageTableEntry> table(allocator);
+    CY_REQUIRE(table.resize(gpu.asset.pages.size()).has_value());
+    for (vg::PageTableEntry& entry : table) {
+        entry.location = 0;
+        entry.bytes = 0;
+        entry.generation = 1;
+        entry.flags = vg::PageFlags::kResident;
+    }
+    CY_REQUIRE(gpu.traversal.upload_page_table(table.span()).has_value());
+
+    // The depth the pyramid is seeded from, as a device buffer the graph can name.
+    rhi::BufferDescription depth_description;
+    depth_description.name = "vg.test.depth";
+    depth_description.size = depths.size() * sizeof(f32);
+    depth_description.usage = rhi::BufferUsage::Storage | rhi::BufferUsage::TransferSource;
+    depth_description.memory = rhi::MemoryUse::Upload;
+    Expected<rhi::BufferHandle, Error> depth_buffer =
+        fixture.device().create_buffer(depth_description);
+    CY_REQUIRE(depth_buffer.has_value());
+    void* mapped = fixture.device().buffer_mapped_pointer(*depth_buffer);
+    CY_REQUIRE(mapped != nullptr);
+    std::memcpy(mapped, depths.data(), depths.size() * sizeof(f32));
+
+    hzb::HzbPass pyramid;
+    hzb::HzbPassDescription pyramid_description;
+    pyramid_description.width = kWidth;
+    pyramid_description.height = kHeight;
+    CY_REQUIRE(pyramid.create(allocator, fixture.device(), pyramid_description).has_value());
+    pyramid.mark_valid();
+    CY_REQUIRE(gpu.traversal.set_occlusion(&pyramid, view_projection).has_value());
+
+    const vg::DecodedAsset* assets[1] = {&gpu.asset};
+    vg::TraversalInputs inputs;
+    inputs.assets = Span<const vg::DecodedAsset* const>(assets, 1);
+    inputs.instances = instances.span();
+
+    // A SWEEP RATHER THAN ONE VIEW, and for a reason the counters make plain. The two occlusion
+    // tests are at different granularities: a NODE is pruned when the group sphere that contains
+    // every cluster beneath it is hidden, and a CLUSTER is rejected when its own bounds are hidden
+    // though its group's were not. A coarse threshold selects large clusters and only the first
+    // fires; a fine one selects small clusters near the occluder's edge and the second does. One
+    // view would leave whichever did not fire untested, which is how a test ends up unable to
+    // detect the deletion of half of what it is about.
+    vg::TraversalResult reference(allocator);
+    vg::TraversalReadback readback(allocator);
+    u32 total_pruned = 0;
+    u32 total_rejected = 0;
+    u32 total_visible = 0;
+    u32 mismatches = 0;
+
+    for (u32 step = 0; step < 6; ++step) {
+        const f32 threshold = 2.0F * static_cast<f32>(1U << step);
+        vg::TraversalView view = view_at(kDistance, threshold);
+        view.occlusion = &tester;
+
+        CY_REQUIRE(vg::traverse_reference(inputs, view, reference).has_value());
+
+        RenderGraph graph(allocator);
+        BufferRequest depth_request;
+        depth_request.name = "vg.test.depth";
+        depth_request.size = depths.size() * sizeof(f32);
+        depth_request.extra_usage = rhi::BufferUsage::TransferSource;
+        const ResourceId depth_resource = graph.import_buffer(depth_request, *depth_buffer);
+        Expected<ResourceId, Error> pyramid_resource = pyramid.declare(graph, depth_resource);
+        CY_REQUIRE(pyramid_resource.has_value());
+        CY_REQUIRE(gpu.traversal
+                       .record(graph, view, static_cast<u32>(instances.size()), *pyramid_resource)
+                       .has_value());
+        CY_REQUIRE(graph.status().has_value());
+        Expected<ExecutionResult, Error> executed =
+            gpu.executor.execute(graph, CompileOptions{}, ExecuteOptions{});
+        CY_REQUIRE(executed.has_value());
+        CY_REQUIRE(fixture.device().wait_idle().has_value());
+        CY_REQUIRE(gpu.traversal.read_back(readback).has_value());
+
+        total_pruned += reference.stats.nodes_pruned_by_occlusion;
+        total_rejected += reference.stats.rejected_by_occlusion;
+        total_visible += reference.stats.visible_clusters;
+
+        std::ranges::sort(reference.visible, visible_before);
+        std::ranges::sort(readback.visible, visible_before);
+        if (readback.stats.nodes_pruned_by_occlusion != reference.stats.nodes_pruned_by_occlusion ||
+            readback.stats.rejected_by_occlusion != reference.stats.rejected_by_occlusion ||
+            readback.stats.visible_clusters != reference.stats.visible_clusters ||
+            readback.visible.size() != reference.visible.size()) {
+            ++mismatches;
+            std::fprintf(stderr,
+                         "threshold %.3f: reference pruned %u rejected %u visible %u; device "
+                         "pruned %u rejected %u visible %u\n",
+                         static_cast<double>(threshold),
+                         reference.stats.nodes_pruned_by_occlusion,
+                         reference.stats.rejected_by_occlusion, reference.stats.visible_clusters,
+                         readback.stats.nodes_pruned_by_occlusion,
+                         readback.stats.rejected_by_occlusion, readback.stats.visible_clusters);
+            continue;
+        }
+        for (usize index = 0; index < reference.visible.size(); ++index) {
+            if (readback.visible[index].instance != reference.visible[index].instance ||
+                readback.visible[index].cluster != reference.visible[index].cluster) {
+                ++mismatches;
+                break;
+            }
+        }
+    }
+
+    CY_TEST_MESSAGE("occlusion over 6 thresholds: "
+                    << total_pruned << " node(s) pruned, " << total_rejected
+                    << " cluster(s) rejected, " << total_visible << " left visible, " << mismatches
+                    << " view(s) mismatched");
+
+    // NOT VACUOUS, AND IN THREE DIRECTIONS: BOTH occlusion tests fired somewhere in the sweep, and
+    // something survived. An agreement between two answers of zero is not evidence of anything.
+    CY_CHECK_GT(total_pruned, 0U);
+    CY_CHECK_GT(total_rejected, 0U);
+    CY_CHECK_GT(total_visible, 0U);
+    CY_CHECK_EQ(mismatches, 0U);
+
+    // AND THE PYRAMID IS THE ONE THE CULLING PASS WOULD READ: the same object, the same buffer, the
+    // same `hzb_sample.slang`. `integration.rendering_culling` compares that pyramid against the
+    // CPU model texel for texel; this case compares what a second consumer does with it.
+    CY_CHECK_EQ(pyramid.level_count(), model.level_count());
+    CY_CHECK_EQ(fixture.validation_errors(), 0U);
+
+    pyramid.destroy();
+    fixture.device().destroy_buffer(*depth_buffer);
 }

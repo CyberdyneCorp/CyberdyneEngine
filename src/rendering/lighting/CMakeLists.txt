@@ -43,6 +43,7 @@ cy_add_module(
         src/area.cpp
         src/cascades.cpp
         src/channels.cpp
+        src/cloud_shadow.cpp
         src/decals.cpp
         src/filtering.cpp
         src/light_functions.cpp
@@ -51,7 +52,18 @@ cy_add_module(
         src/shadow_atlas.cpp
         src/units.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::servers-render)
+    # cy::environment and cy::rendering-sky ARE ILLUMINATION'S HALF OF THE CLOUD SHADOW, and they
+    # arrive together because one is useless without the other: the field is produced into the
+    # substrate by the sky and read out of the substrate by `cloud_shadow.cpp`.
+    # `atmosphere-sky-and-clouds` names illumination as one of four consumers and, until M11.c,
+    # nothing outside src/rendering/sky/ read the field at all.
+    #
+    # NO CYCLE, AND IT IS CHECKED RATHER THAN ASSUMED: `cy::rendering-sky` depends on
+    # cy::rendering-post, cy::rendering-temporal, cy::rendering-arbiter, cy::environment and
+    # cy::world, and none of those names cy::rendering-lighting. `just quality-layers` is what says
+    # so on every change.
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::environment
+                        cy::rendering-sky cy::servers-render cy::world)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)

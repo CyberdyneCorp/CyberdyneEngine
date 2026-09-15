@@ -169,6 +169,21 @@ const char* capability_name(Capability capability) noexcept {
     return index < kCapabilityCount ? kCapabilityNames[index] : "<invalid>";
 }
 
+bool device_reports_ray_tracing(const RayTracingObservation& observed) noexcept {
+    // ONE LINE PER ANSWER THE DEVICE GAVE. A single `&&` chain would read the same and could not be
+    // broken one answer at a time, and being able to break it one answer at a time is the whole
+    // point: each line below is a distinct way for a backend to report a capability the device did
+    // not claim, and `m11c:ray-tracing-capability-honest` is proven by deleting one of them.
+    bool reported = true;
+    reported = reported && observed.acceleration_structure_extension;
+    reported = reported && observed.ray_query_extension;
+    reported = reported && observed.deferred_host_operations_extension;
+    reported = reported && observed.acceleration_structure_feature;
+    reported = reported && observed.ray_query_feature;
+    reported = reported && observed.enabled_on_the_device;
+    return reported;
+}
+
 const char* backend_kind_name(BackendKind kind) noexcept {
     switch (kind) {
         case BackendKind::Null:

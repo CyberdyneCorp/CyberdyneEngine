@@ -182,6 +182,16 @@ struct ArbiterReport {
 
     f32 allocation_ms[kBudgetSubsystemCount] = {};
     f32 measured_ms[kBudgetSubsystemCount] = {};
+    /// WHAT EACH `measured_ms` ACTUALLY IS. M11.c: "The arbiter's per-frame report SHALL distinguish
+    /// a measured cost from an estimated one, so that a subsystem with no measurement is visible as
+    /// such rather than indistinguishable from one that is cheap."
+    ///
+    /// It is the reporter's claim CONFIRMED BY THE NUMBERS, never the claim alone: a subsystem that
+    /// reports the same cost in every frame is `Estimated` here whichever entry point it used, which
+    /// is the requirement's own "a constant is not a measurement" scenario made mechanical rather
+    /// than asserted. `report_subsystem`'s default is `Estimated`, so a caller that says nothing is
+    /// reported as having said nothing.
+    CostSource cost_source[kBudgetSubsystemCount] = {};
     bool registered[kBudgetSubsystemCount] = {};
     bool at_minimum[kBudgetSubsystemCount] = {};
     /// The arbiter permits this subsystem one step back up this frame. The controller consumes it.
@@ -228,8 +238,12 @@ public:
     /// has anything left to give. The last two come from the subsystem because the subsystem is
     /// what moved: an arbiter that assumed its grant was obeyed would price against a position
     /// nothing is at.
-    void report_subsystem(BudgetSubsystem subsystem, f32 measured_ms, u8 position,
-                          bool at_minimum) noexcept;
+    ///
+    /// `source` is what the caller CLAIMS the cost is, and it defaults to `Estimated` because a
+    /// caller that has not thought about the question has not measured anything. What the report
+    /// carries is that claim confirmed against the numbers — see `ArbiterReport::cost_source`.
+    void report_subsystem(BudgetSubsystem subsystem, f32 measured_ms, u8 position, bool at_minimum,
+                          CostSource source = CostSource::Estimated) noexcept;
 
     /// "A pinned mode SHALL disable the arbiter and every subsystem controller together... Partial
     /// pinning SHALL NOT be possible." This class stops; propagating it to the controllers is the
@@ -261,6 +275,19 @@ private:
         bool at_minimum = false;
         bool measured = false;
         u32 frames_since_grant = 0;
+        /// The variance witness, the same pair `SubsystemController` keeps and for the same reason:
+        /// the question is whether the reported number MOVES, and a running variance answers a
+        /// different one more expensively.
+        f32 first_reported_ms = 0.0F;
+        bool reported = false;
+        bool varied = false;
+        CostSource claimed_source = CostSource::Estimated;
+
+        /// The claim, confirmed. Both halves, exactly as `SubsystemController::cost_source()`.
+        [[nodiscard]] CostSource cost_source() const noexcept {
+            return (claimed_source == CostSource::Measured && varied) ? CostSource::Measured
+                                                                      : CostSource::Estimated;
+        }
     };
 
     [[nodiscard]] static f32 predicted_at(const Entry& entry, u8 position) noexcept;

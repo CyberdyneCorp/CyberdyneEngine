@@ -40,25 +40,34 @@
 // with the reference" is a memcmp.
 //
 // ================================================================================================
-// WHAT IS NOT HERE
+// THE OCCLUSION TEST IS INCLUDED, NOT WRITTEN HERE — M11.c TASK 4.1
 // ================================================================================================
 //
-// The occlusion test. `hzb.h` is a CPU model of a depth pyramid and there is no pyramid on a device
-// yet; `GpuCullPass` refuses a view with `kGpuCullOcclusion` set rather than silently culling
-// nothing, so the day the pyramid lands the omission is a compile-time task and not a wrong frame.
+// Until M11.c it was absent: `hzb.h` was a CPU model of a depth pyramid, there was no pyramid on a
+// device, and `GpuCullPass::upload` refused a view with `kGpuCullOcclusion` set rather than silently
+// culling nothing. The pyramid now exists — `cy::rendering-hzb` — and the test it is read with is
+// `hzb_sample.slang`, INCLUDED rather than copied, because `virtual-geometry`'s cluster-granular
+// occlusion includes the same file. Two spellings of one test would be two chances to transpose a
+// matrix, and would let one piece of work be recorded as two satisfied requirements.
+//
+// The refusal is still there and still means what it said: a view that asks for occlusion with no
+// pyramid ATTACHED is refused, because a dispatch over an empty pyramid reports "nothing was
+// occluded" and is indistinguishable from a working occlusion cull.
 //
 // ================================================================================================
 // REGENERATING
 // ================================================================================================
 //
-//   slangc gpu_cull.slang -target spirv -profile spirv_1_5 \
+//   slangc gpu_cull.slang -target spirv -profile spirv_1_5 -I ../../hzb/shaders \
 //          -entry cull_instances -stage compute -o gpu_cull_instances.spv
-//   slangc gpu_cull.slang -target spirv -profile spirv_1_5 \
+//   slangc gpu_cull.slang -target spirv -profile spirv_1_5 -I ../../hzb/shaders \
 //          -entry compact_draws  -stage compute -o gpu_cull_compact.spv
 //   python3 embed_spirv.py gpu_cull_spirv.h \
 //          kGpuCullInstancesSpirv=gpu_cull_instances.spv \
 //          kGpuCullCompactSpirv=gpu_cull_compact.spv
 //   clang-format -i gpu_cull_spirv.h
+
+#include "hzb_sample.slang"
 
 // --- The records, laid out to match the C++ exactly ---------------------------------------------
 //
@@ -210,6 +219,10 @@ static const uint kCompactGroupSize = 256u;
 [[vk::binding(10, 0)]] RWStructuredBuffer<DrawIndexedIndirect> commands;
 [[vk::binding(11, 0)]] RWStructuredBuffer<DrawPayload> payloads;
 [[vk::binding(12, 0)]] RWStructuredBuffer<uint> virtual_geometry;
+/// The hierarchical depth pyramid, levels concatenated coarsest last. `cy::rendering::hzb::HzbPass`
+/// owns it; a pass created with no pyramid binds a one-float dummy and sends `hzb.enabled == 0`,
+/// because Vulkan has no zero-length buffer and a descriptor must name something.
+[[vk::binding(13, 0)]] StructuredBuffer<float> hzb;
 
 // --- Sizes, as the C++ wrote them ----------------------------------------------------------------
 //
@@ -228,6 +241,10 @@ struct Sizes {
     uint reserved0;
     uint reserved1;
     uint reserved2;
+    /// The view-projection the occlusion test projects through, and the pyramid's dimensions.
+    /// `enabled` is 0 when no pyramid is attached or the pyramid is invalid, and then every test
+    /// answers "not occluded" — which is the only safe answer for a question nothing has asked yet.
+    HzbParams hzb_params;
 };
 
 [[vk::push_constant]] Sizes sizes;
@@ -409,7 +426,14 @@ Survivor test_instance(uint slot, uint instance_count) {
         }
     }
 
-    // 5. Occlusion would be here, and is refused by the C++ rather than skipped silently.
+    // 5. Occlusion. Last, because it is the most expensive test — which is the order
+    // `cpu_reference_cull` takes them in, and the comparison in `integration.rendering_culling` is
+    // between two arrays rather than between two sets.
+    if ((flags & kCullOcclusion) != 0u &&
+        hzbOccludesSphere(hzb, sizes.hzb_params, centre, radius)) {
+        result.verdict = kVerdictOcclusion;
+        return result;
+    }
 
     result.view_depth = dot(centre - eye, view.forward_max_distance.xyz);
     result.verdict = kVerdictVisible;

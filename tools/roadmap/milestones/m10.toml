@@ -209,39 +209,52 @@ known_gap_closes = "m11e"
 
 [[criterion]]
 id = "sky-field-round-trip"
-describe = "**THE CLOUD SHADOW REACHES THE SUBSTRATE — AND THE HALF OF THIS GAP THAT WAS TRUE WAS THE SECOND HALF. CLOSED AT M11.a.** As declared: `CloudShadowField::update` reports darkest < 0.5 and brightest > 0.9 over tiles it says it wrote, `CloudShadowField::sample` returned the declared 1.0 at every point the case probed inside `radius_metres`, and `atmosphere-sky-and-clouds` requires the shadow to be \"consumed by terrain, foliage, water, and illumination\" — which none of them could do through a sampler answering its own default. The cause named — the sky's write path — IS NOT WHAT WAS WRONG, and the comment above this criterion measured that before M10 closed: `src/rendering/sky/src/cloud_shadows.cpp` has not changed since `3d44e2f` and the shadow was in the store all along. What was wrong is what the declaration's SECOND sentence names, a case that asserted against the producer's own statistics: its twenty-five probes were a 5x5 grid at 128 m about the origin, ground this weather leaves in full sun, so they read 1.0 whether `publish()` ran or not. The case now reads back EVERY CELL THE PRODUCER WROTE at both residencies — 2048 of the 2048 it reports over 8 tiles resolve — and compares the extremes with `stats()` inside one UNorm8 quantum. **THIS CRITERION JUDGES THOSE NUMBERS**: `through the store: 2048 samples, lowest 0.00392157, highest 1` against the producer's own darkest of 0.00414244. Suppress `publish()` and the same line reads `0 samples` and this goes red."
+describe = '''**THE CLOUD SHADOW REACHES THE SUBSTRATE THROUGH THE FUNCTION EVERY CONSUMER CALLS. CLOSED AT M11.c, AND IT TOOK TWO ATTEMPTS BECAUSE THE FIRST MOVED THE CHECK OFF THE DEFECT.** As declared: `CloudShadowField::update` reports darkest < 0.5 over tiles it says it wrote, `CloudShadowField::sample` was believed to return the declared 1.0 at every point inside `radius_metres`, and `atmosphere-sky-and-clouds` requires the shadow to be "consumed by terrain, foliage, water, and illumination" — which none of them could do through a sampler answering its own default. M11.a established that the SAMPLER was never wrong: the M10 case probed a 5x5 grid at 128 m about the origin, ground this weather leaves in full sun, so it read 1.0 whether `publish()` ran or not. Its repair rewrote the read-back to call `store.sample_at(field, position, level)` with an explicit residency — a better test of the STORE, and no longer a test of the function the requirement's four consumers call. M11.a's own gate proved it: it replaced `CloudShadowField::sample`'s body with `return 1.0F`, the literal symptom this declaration names, and the criterion stayed GREEN. **WHAT CLOSES IT IS A SECOND WALK OVER THE SAME CELLS THROUGH `CloudShadowField::sample`, AND A COMPARISON OF THE TWO ANSWERS**: `through CloudShadowField::sample: 5120 samples, lowest 0.00392157, highest 1, disagreeing 0` — not one of 5 120 cell centres read back through the consumer path differs from the finest level the store resolves there, and the darkest is the producer's own 0.00414244 inside one UNorm8 quantum. **THIS CRITERION JUDGES THAT LINE AND NOT THE STORE'S.** With the sampler returning its default the store line is unchanged and this one reads `lowest 1` and `disagreeing 236`, which is measured rather than asserted: `[criterion.falsifies]` is that mutation and the prover watches it. Production code changed in the same rung — `cloud_shadows.cpp` states the full-sun answer in the sampler rather than taking it on trust from the substrate's fill, and `src/rendering/lighting/cloud_shadow.cpp` is illumination reading the field, the first consumer of it anywhere outside `src/rendering/sky/`.'''
 source = "M10 gate, claim 2; openspec/specs/atmosphere-sky-and-clouds/spec.md"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-# `-V` AND NOT `--output-on-failure`, AND THAT EDIT IS THE DIFFERENCE BETWEEN A CHECK AND A
-# COINCIDENCE. The case PASSES today — the two assertions that would fail are commented out in
-# test_cloud_shadows.cpp with a note saying they fail — so `--output-on-failure` printed nothing and
-# this criterion failed with "the case did not run": the right verdict for the wrong reason, and one
-# that would go on failing after the gap closed. Under `-V` the `through the store:` line the case
-# prints either way is readable, and the numbers in it are what is judged.
+# `-V` AND NOT `--output-on-failure`: the numbers this criterion judges are printed by a case that
+# PASSES, so a runner that only prints failures prints nothing and the criterion fails with "the
+# case did not run" — the right verdict for the wrong reason, and one that would go on failing after
+# the gap closed. That edit was M10's; what M11.c adds is WHICH line is read.
 out="$(ctest --test-dir "$d" -R '^integration.render_sky_fields$' -V 2>&1 || true)"
-line="$(printf '%s\n' "$out" | grep -o 'through the store: .*' | head -1)"
-test -n "$line" || { echo "the sky round-trip case did not run — it has been renamed or deleted"; exit 1; }
 printf '%s\n' "$out" | grep -o 'broken cloud: .*' | head -1
+# THE CONSUMER PATH, AND NOT `through the store:`. The store line is M11.a's and it stays in the
+# suite because it is a good test of the store; it is NOT this criterion, because the gate that
+# replaced `CloudShadowField::sample` with `return 1.0F` left it untouched and green.
+if ! line="$(printf '%s\n' "$out" | grep -o 'through CloudShadowField::sample: .*' | head -1)"; then line=""; fi
+test -n "$line" || { echo "the consumer round-trip case printed nothing — it has been renamed, skipped or deleted"; exit 1; }
 echo "$line"
 printf '%s\n' "$line" | python3 -c '
 import re, sys
 line = sys.stdin.read()
-found = re.search(r"lowest ([0-9.eE+-]+), highest ([0-9.eE+-]+)", line)
+found = re.search(r"([0-9]+) samples, lowest ([0-9.eE+-]+), highest ([0-9.eE+-]+), disagreeing ([0-9]+)", line)
 if not found:
-    sys.exit("the round-trip line no longer reports lowest and highest")
-lowest, highest = float(found.group(1)), float(found.group(2))
+    sys.exit("the consumer round-trip line no longer reports a count, a lowest, a highest and a disagreement count")
+count, lowest, highest, disagreeing = int(found.group(1)), float(found.group(2)), float(found.group(3)), int(found.group(4))
+if count == 0:
+    sys.exit("no cell the producer wrote resolved through CloudShadowField::sample: nothing was published")
+if disagreeing != 0:
+    sys.exit(f"{disagreeing} of {count} cells read one value through CloudShadowField::sample and "
+             f"another through the store at the same position: the four declared consumers and the "
+             f"substrate are not looking at one field")
 if lowest >= 0.99 or highest - lowest <= 0.01:
-    sys.exit(f"every sample inside the radius reads {lowest} against a declared default of 1.0, "
-             f"with a spread of {highest - lowest}: the producer computes a cloud shadow and "
-             f"nothing readable reaches the substrate")
-print(f"the cloud shadow reaches the substrate: lowest {lowest}, spread {highest - lowest}")
+    sys.exit(f"every cell read back through CloudShadowField::sample reads {lowest} against a "
+             f"declared default of 1.0, with a spread of {highest - lowest}: the producer computes "
+             f"a cloud shadow and the function every consumer calls does not return it")
+print(f"the cloud shadow reaches every consumer: {count} cells, lowest {lowest}, spread {highest - lowest}, 0 disagreeing")
 '
 '''
 ci_job = "milestone-m10"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/sky/src/cloud_shadows.cpp"
+token  = "transmittance = sampled.value.x();"
+note   = "THIS IS M11.a's OWN GATE MUTATION, kept because it is the one that exposed the repair. Deleting the line leaves `CloudShadowField::sample` returning `kFullSun` at every position — the literal symptom this declaration names — while the file still compiles and every other case in the suite still passes. Watched: `through the store: 2048 samples, lowest 0.00392157` is UNCHANGED, which is exactly why it could not be the line this criterion reads, and `through CloudShadowField::sample` goes to `lowest 1, disagreeing 236`. Renaming the function was tried first and rejected: it stops the module compiling, which is a red that says nothing about the sampler."
 
 # ==================================================================================================
 # TASK 8.1 — EVERYTHING BELOW THIS LINE
@@ -258,8 +271,12 @@ ci_job = "milestone-m10"
 # had to swallow: seven directories that did not exist, an eighth module half, and a sample that
 # names all seven.
 
-known_gap = """THE GAP WAS NOT CLOSED; THE CHECK WAS MOVED OFF THE DEFECT. M11.a's gate proved it by mutation: it replaced the body of `CloudShadowField::sample` with `return 1.0F` — the literal symptom this declaration names — rebuilt, confirmed the object reached the binary, and the criterion stayed GREEN. `git diff 3d44e2f..HEAD -- src/rendering/sky/` touches README.md and tests/test_cloud_shadows.cpp and NOT ONE LINE of cloud_shadows.cpp, so no production code closed it. M10's case judged numbers read through `CloudShadowField::sample`, the function every consumer calls; the rewrite reads them from `store.sample_at(field, pos, level)` with an explicit residency, and calls `CloudShadowField::sample` exactly once, at a point nine million metres away. Closing this means judging the function the declaration names, and changing cloud_shadows.cpp."""
-known_gap_closes = "m11c"
+# THE `known_gap` AND `known_gap_closes` MARKERS THAT STOOD HERE ARE DELETED, AND THE DELETION IS
+# THE CLOSURE. They said "the gap was not closed; the check was moved off the defect", and they may
+# only go when the DEFECT is gone rather than when the check stops seeing it — so what replaced them
+# is a criterion that reads the function the declaration names and a `[criterion.falsifies]` the
+# prover runs. A declared gap that starts passing fails the ledger, which is what makes this a
+# one-way door.
 
 [[criterion]]
 id = "specs"

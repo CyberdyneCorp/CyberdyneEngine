@@ -9,6 +9,10 @@ namespace {
 
 }  // namespace
 
+const char* cost_source_name(CostSource source) noexcept {
+    return source == CostSource::Measured ? "measured" : "estimated";
+}
+
 const char* budget_subsystem_name(BudgetSubsystem subsystem) noexcept {
     switch (subsystem) {
         case BudgetSubsystem::Geometry:
@@ -72,6 +76,10 @@ Status SubsystemController::declare(const SubsystemDeclaration& declaration,
     allocation_ms_ = declaration.base_cost_ms;
     position_ = 0;
     frames_since_relax_ = config.relax_dwell_frames;
+    first_reported_ms_ = 0.0F;
+    reported_ = false;
+    varied_ = false;
+    claimed_source_ = CostSource::Estimated;
     measured_ = false;
     relax_granted_ = false;
     return {};
@@ -83,7 +91,31 @@ void SubsystemController::set_allocation_ms(f32 allocation_ms) noexcept {
 }
 
 void SubsystemController::report_measured_ms(f32 measured_ms) noexcept {
-    const f32 sample = measured_ms > 0.0F ? measured_ms : 0.0F;
+    claimed_source_ = CostSource::Measured;
+    accept_report(measured_ms);
+}
+
+void SubsystemController::report_estimated_ms(f32 estimated_ms) noexcept {
+    claimed_source_ = CostSource::Estimated;
+    accept_report(estimated_ms);
+}
+
+CostSource SubsystemController::cost_source() const noexcept {
+    // BOTH HALVES. A claim is not a measurement and a number that moved is not a claim: a caller
+    // reporting a table that happens to be indexed by something changing would otherwise be
+    // promoted by this function, which is the failure one door along from the one it exists for.
+    return (claimed_source_ == CostSource::Measured && varied_) ? CostSource::Measured
+                                                                : CostSource::Estimated;
+}
+
+void SubsystemController::accept_report(f32 cost_ms) noexcept {
+    const f32 sample = cost_ms > 0.0F ? cost_ms : 0.0F;
+    if (!reported_) {
+        first_reported_ms_ = sample;
+        reported_ = true;
+    } else if (sample != first_reported_ms_) {
+        varied_ = true;
+    }
     if (!measured_) {
         filtered_ms_ = sample;
         measured_ = true;
@@ -124,6 +156,7 @@ SubsystemUpdate SubsystemController::update() noexcept {
         result.at_reserved_minimum = allocation_ms_ <= declaration_.reserved_minimum_ms;
         const f32 overrun = filtered_ms_ - allocation_ms_;
         result.pinned_overrun_ms = overrun > 0.0F ? overrun : 0.0F;
+        result.cost_source = cost_source();
         return result;
     }
 
@@ -155,6 +188,7 @@ SubsystemUpdate SubsystemController::update() noexcept {
     result.predicted_ms = predicted_at(position_);
     result.at_minimum = at_minimum();
     result.at_reserved_minimum = allocation_ms_ <= declaration_.reserved_minimum_ms;
+    result.cost_source = cost_source();
     return result;
 }
 

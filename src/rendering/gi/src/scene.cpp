@@ -71,6 +71,8 @@ const char* invalidation_cause_name(InvalidationCause cause) noexcept {
             return "GeometryMoved";
         case InvalidationCause::LightChanged:
             return "LightChanged";
+        case InvalidationCause::SkyChanged:
+            return "SkyChanged";
         case InvalidationCause::MaterialChanged:
             return "MaterialChanged";
         case InvalidationCause::CellIngested:

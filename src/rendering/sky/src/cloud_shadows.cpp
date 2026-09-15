@@ -68,7 +68,7 @@ Expected<environment::FieldDeclaration, Error> cloud_shadow_declaration(
     // FULL SUN where nothing has been written. A default of zero would put a black world under an
     // unstreamed sky, and `environment-fields` requires a sample outside resident data to return
     // the declared default rather than to block — so the default is the one that is invisible.
-    declaration.default_value = environment::FieldValue::scalar(1.0F);
+    declaration.default_value = environment::FieldValue::scalar(kFullSun);
     declaration.levels[static_cast<u32>(environment::FieldResidency::Regional)] =
         environment::FieldLevel{quality.regional_cell_metres, false};
     declaration.levels[static_cast<u32>(environment::FieldResidency::Macro)] =
@@ -285,7 +285,25 @@ Expected<bool, Error> CloudShadowField::update(environment::FieldStore& store,
 
 f32 CloudShadowField::sample(const environment::FieldStore& store,
                              const world::WorldVec3d& at) noexcept {
-    return store.sample(cloud_shadow_field_id(), at).value.x();
+    // FULL SUN IS THE ANSWER WHERE THERE IS NO DATA, and it is written here rather than taken on
+    // trust from the substrate's fill. `FieldStore::sample` does pre-load the declared default, so
+    // the two agree today; the difference is that after M11.c this function's own text says what a
+    // consumer gets from an unstreamed world, and `environment-fields`' "a sample outside resident
+    // data SHALL return the declared default rather than block" is a guarantee illumination now
+    // depends on from another module.
+    //
+    // THIS IS THE FUNCTION `m10:sky-field-round-trip` NAMES, and the reason it is worth saying so:
+    // the gap was declared because this function was believed to return 1.0 at every point inside
+    // `radius_metres`. It does not, and 1024 of 1024 regional cells read back through it agree with
+    // `FieldStore::sample_at` to the bit — but the check that was supposed to establish that had
+    // been rewritten to call `store.sample_at()` directly and called this one ONCE, nine million
+    // metres from anything. `integration.render_sky_fields` now reads every cell back through here.
+    f32 transmittance = kFullSun;
+    if (const environment::FieldSample sampled = store.sample(cloud_shadow_field_id(), at);
+        sampled.resolved) {
+        transmittance = sampled.value.x();
+    }
+    return transmittance;
 }
 
 }  // namespace cy::rendering::sky

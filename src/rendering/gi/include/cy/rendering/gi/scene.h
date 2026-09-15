@@ -144,6 +144,13 @@ enum class InvalidationCause : u8 {
     MaterialChanged,
     CellIngested,
     CellEvicted,
+    /// THE SKY MOVED. Its own cause rather than `LightChanged`, and the difference is serviced
+    /// rather than decorative: a sun that rotated changed the ILLUMINATION and moved no geometry,
+    /// so the sparse distance field — which is a representation of where surfaces are — cannot have
+    /// been invalidated by it. `IlluminationSystem::service_invalidations` skips the field for this
+    /// cause and for no other, which is `rendering-global-illumination`'s "invalidating only the
+    /// illumination that depends on it" as a number a report carries rather than a sentence.
+    SkyChanged,
     Count,
 };
 

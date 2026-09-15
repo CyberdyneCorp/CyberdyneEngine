@@ -370,6 +370,24 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
         }
     }
 
+    // RAY TRACING, WHICH WAS AN ENUMERATOR NOTHING SET FROM M3 UNTIL M11.c. What is recorded here
+    // is what the DEVICE listed; what it reports as a feature is asked below, beside bindless, and
+    // the two are different answers. `ray-tracing-infrastructure`'s README named this as "two edits
+    // and no interface change" and this is the first of them.
+    //
+    // THREE EXTENSIONS AND NOT ONE. `VK_KHR_ray_query` is what a shader issues a query through;
+    // `VK_KHR_acceleration_structure` is what builds the structure it queries; and that one
+    // requires `VK_KHR_deferred_host_operations`, so a device listing two of the three can create
+    // no structure at all. The conjunction lives in `device_reports_ray_tracing()` rather than
+    // here, because a decision inside a backend is a decision no machine without that backend can
+    // judge.
+    ray_tracing_.acceleration_structure_extension = has_extension(
+        available.data(), extension_count, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    ray_tracing_.ray_query_extension =
+        has_extension(available.data(), extension_count, VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    ray_tracing_.deferred_host_operations_extension = has_extension(
+        available.data(), extension_count, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
     // The 1.3 baseline, requested explicitly rather than assumed: dynamic rendering removes
     // VkRenderPass objects, synchronization2 is what every barrier this engine derives is expressed
     // in, and timeline semaphores are what a cross-queue dependency becomes.
@@ -388,10 +406,29 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
     // and the reduced GPU-driven capability is REPORTED rather than silently degraded.
     VkPhysicalDeviceVulkan12Features supported12{};
     supported12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    // The ray-tracing feature bits are chained only where the device listed the extensions: asking
+    // a driver about a structure whose extension it does not have is undefined, and a zeroed struct
+    // read back from such a device would look exactly like an honest "no".
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR supported_acceleration{};
+    supported_acceleration.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    VkPhysicalDeviceRayQueryFeaturesKHR supported_ray_query{};
+    supported_ray_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    if (ray_tracing_.acceleration_structure_extension) {
+        supported_acceleration.pNext = supported12.pNext;
+        supported12.pNext = &supported_acceleration;
+    }
+    if (ray_tracing_.ray_query_extension) {
+        supported_ray_query.pNext = supported12.pNext;
+        supported12.pNext = &supported_ray_query;
+    }
     VkPhysicalDeviceFeatures2 supported{};
     supported.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     supported.pNext = &supported12;
     vkGetPhysicalDeviceFeatures2(physical_, &supported);
+    ray_tracing_.acceleration_structure_feature =
+        supported_acceleration.accelerationStructure == VK_TRUE;
+    ray_tracing_.ray_query_feature = supported_ray_query.rayQuery == VK_TRUE;
 
     const bool bindless = supported12.descriptorIndexing == VK_TRUE &&
                           supported12.descriptorBindingPartiallyBound == VK_TRUE &&
@@ -407,6 +444,37 @@ Status VulkanDevice::create_logical_device(const DeviceDescription& desc) noexce
         features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
     }
     model_ = bindless ? DescriptorModel::Bindless : DescriptorModel::Compatibility;
+
+    // ASKED FOR, AND THE CAPABILITY FOLLOWS FROM WHETHER IT WAS. A capability reported for a
+    // feature the device was created without is a capability a shader cannot use: the queue would
+    // accept the pipeline and the query would be undefined. `enabled_on_the_device` is therefore
+    // part of the observation rather than a separate flag, and it is the last thing set.
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_features{};
+    acceleration_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features{};
+    ray_query_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    RayTracingObservation asked = ray_tracing_;
+    asked.enabled_on_the_device = true;
+    if (device_reports_ray_tracing(asked)) {
+        const char* const wanted[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                      VK_KHR_RAY_QUERY_EXTENSION_NAME,
+                                      VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
+        Status pushed = ok();
+        for (const char* name : wanted) {
+            pushed = device_extensions.push_back(name);
+            if (!pushed) {
+                return pushed;
+            }
+        }
+        acceleration_features.accelerationStructure = VK_TRUE;
+        ray_query_features.rayQuery = VK_TRUE;
+        acceleration_features.pNext = features12.pNext;
+        features12.pNext = &acceleration_features;
+        ray_query_features.pNext = features12.pNext;
+        features12.pNext = &ray_query_features;
+        ray_tracing_.enabled_on_the_device = true;
+    }
 
     VkPhysicalDeviceFeatures2 features{};
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -530,6 +598,10 @@ void VulkanDevice::fill_capabilities() noexcept {
     capabilities_.set(Capability::SubgroupArithmetic,
                       (subgroup.supportedOperations & VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) != 0);
     capabilities_.set(Capability::Multiview, true);
+    // THE SECOND OF THE TWO EDITS `ray-tracing-infrastructure`'s README named. The capability is
+    // not set here: `set_ray_tracing_observation` sets it from what the device answered, so the
+    // decision has exactly one implementation and it is one a test without a GPU can drive.
+    capabilities_.set_ray_tracing_observation(ray_tracing_);
 
     // Per format, from the device rather than from a table: a device may sample R32Sfloat and
     // refuse to blend it, and `rhi-and-render-graph` requires per-format support to be queryable.

@@ -61,6 +61,17 @@ function(cy_render_lighting_declare_tests)
             "${cy_lighting_tests_dir}/test_reference.cpp"
             "${cy_lighting_tests_dir}/test_cookie_scroll.cpp"
         DEPENDENCIES cy::rendering-lighting)
+
+    # ILLUMINATION READING THE CLOUD SHADOW FIELD. M11.c task 5.2, and its own suite rather than a
+    # case in `render_lighting` for two reasons: it drives a real `CloudWeatherMap` and a real
+    # `FieldStore` and does not fit a millisecond, and `m11a:sky-field-consumed-outside-the-sky`
+    # names a suite it runs — a criterion pointed at a suite carrying thirty unrelated cases goes
+    # red for any of them, which is how a check stops meaning what it says.
+    cy_add_test(
+        NAME render_illumination_clouds
+        KIND integration
+        SOURCES "${cy_lighting_tests_dir}/test_cloud_shadow_illumination.cpp"
+        DEPENDENCIES cy::rendering-lighting cy::environment cy::rendering-sky)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_render_lighting_declare_tests)

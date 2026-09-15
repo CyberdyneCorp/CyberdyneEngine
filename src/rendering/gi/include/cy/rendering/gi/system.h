@@ -125,6 +125,21 @@ public:
     void set_mode(GiMode mode) noexcept { settings_.mode = mode; }
     [[nodiscard]] GiMode mode() const noexcept { return settings_.mode; }
 
+    /// Replace the sky term without reconfiguring the system.
+    ///
+    /// THE SEAM [dependency cycle 2](docs/roadmap/dependencies.md) IS ABOUT, and the reason it is
+    /// not `configure()`. `configure()` rebuilds the clipmap, discards the probe cache and
+    /// reconstructs the acceleration service — a full recomputation — and a sun that moved a
+    /// quarter of a degree must not cost that. The sky is read from exactly two places, the
+    /// settings and the tiered tracer's config, and this writes both and touches nothing else.
+    ///
+    /// It does not invalidate anything. What a sky change invalidates is a decision about a REGION,
+    /// which belongs to the caller that knows where the sky is visible — `cy::rendering-sky-illumination`
+    /// is the composition point that makes it, and `InvalidationCause::SkyChanged` is the cause it
+    /// files the record under.
+    void set_sky_term(const SkyTerm& sky) noexcept;
+    [[nodiscard]] const SkyTerm& sky_term() const noexcept { return settings_.sky; }
+
     // The named subsystems. Public because they are separate subsystems and not private state:
     // a renderer ingests cells into the scene, a residency system places distance fields, and an
     // editor inspects the caches, and none of that should go through a forwarding method here.

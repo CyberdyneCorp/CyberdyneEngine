@@ -42,6 +42,7 @@ function(cy_render_shadows_declare_tests)
             "${tests_dir}/test_address_space.cpp"
             "${tests_dir}/test_cache.cpp"
             "${tests_dir}/test_clipmap.cpp"
+            "${tests_dir}/test_mode.cpp"
             "${tests_dir}/test_pages.cpp"
         DEPENDENCIES cy::rendering-shadows)
 

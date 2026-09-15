@@ -152,13 +152,20 @@ void BudgetArbiter::report_frame_ms(f32 frame_ms) noexcept {
 }
 
 void BudgetArbiter::report_subsystem(BudgetSubsystem subsystem, f32 measured_ms, u8 position,
-                                     bool at_minimum) noexcept {
+                                     bool at_minimum, CostSource source) noexcept {
     const auto index = static_cast<u32>(subsystem);
     if (index >= kBudgetSubsystemCount || !entries_[index].registered) {
         return;
     }
     Entry& entry = entries_[index];
     const f32 sample = measured_ms > 0.0F ? measured_ms : 0.0F;
+    entry.claimed_source = source;
+    if (!entry.reported) {
+        entry.first_reported_ms = sample;
+        entry.reported = true;
+    } else if (sample != entry.first_reported_ms) {
+        entry.varied = true;
+    }
     if (!entry.measured) {
         entry.filtered_ms = sample;
         entry.measured = true;
@@ -421,6 +428,7 @@ ArbiterReport BudgetArbiter::update() noexcept {
         report.registered[index] = entry.registered;
         report.allocation_ms[index] = entry.allocation_ms;
         report.measured_ms[index] = entry.filtered_ms;
+        report.cost_source[index] = entry.cost_source();
         report.at_minimum[index] = entry.registered && entry.at_minimum;
     }
     report.resolution_scale = resolution_scale();

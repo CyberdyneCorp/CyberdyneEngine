@@ -27,8 +27,12 @@ cy_add_module(
     TYPE STATIC
     SOURCES src/cull_pass.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    # cy::rendering-hzb is PUBLIC because `set_occlusion` and `Sizes` name `HzbPass` and
+    # `HzbParams` in this module's interface: a caller has to be able to construct the one and this
+    # header has to be able to size the other. It is the SAME pyramid virtual geometry reads, which
+    # is what stops one piece of device work from being counted as two satisfied requirements.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::rendering-graph
-                        cy::servers-render cy::servers-render-culling
+                        cy::rendering-hzb cy::servers-render cy::servers-render-culling
     PRIVATE_DEPENDENCIES cy::rhi)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

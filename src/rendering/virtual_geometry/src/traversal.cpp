@@ -125,10 +125,16 @@ namespace {
         ++out.stats.rejected_by_size;
         return ok();
     }
-    // `virtual-geometry` — "Occlusion culling for clusters" specifies a two-pass HZB scheme. This
-    // reference has no depth buffer to test against and reports zero rather than pretending: the
-    // counter exists, the seam is `nodes_pruned_by_occlusion` and `rejected_by_occlusion`, and
-    // README.md says plainly that neither moves at M7.
+    // `virtual-geometry` — "Candidate clusters SHALL then be culled by: frustum, normal cone
+    // backface rejection, screen size, and HZB occlusion." M11.c task 4.1 supplied the fourth: a
+    // null tester is the M7 behaviour — the counter exists and reads zero — and a real one is
+    // `HzbOcclusionTester` over the pyramid the device built, so that the two answers can be
+    // compared rather than each trusted.
+    if (walk.view.occlusion != nullptr &&
+        walk.view.occlusion->occluded(world.center, world.radius)) {
+        ++out.stats.rejected_by_occlusion;
+        return ok();
+    }
 
     VisibleCluster record;
     record.instance = walk.instance_index;
@@ -249,6 +255,14 @@ Status traverse_reference(const TraversalInputs& inputs, const TraversalView& vi
                 to_world(instance, cluster.lod_sphere.center, cluster.lod_sphere.radius);
             if (!view.frustum.intersects(subtree)) {
                 ++out.stats.nodes_pruned_by_frustum;
+                continue;
+            }
+            // OCCLUSION ON THE SUBTREE'S SPHERE, for the same reason the frustum prune is on it: a
+            // group hidden behind an occluder has every cluster beneath it hidden too, and pruning
+            // on the cluster's own bounds would prune a subtree whose members reach outside them.
+            if (view.occlusion != nullptr &&
+                view.occlusion->occluded(subtree.center, subtree.radius)) {
+                ++out.stats.nodes_pruned_by_occlusion;
                 continue;
             }
 

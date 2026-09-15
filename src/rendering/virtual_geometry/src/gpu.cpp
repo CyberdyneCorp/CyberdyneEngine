@@ -29,6 +29,10 @@ enum CounterSlot : u32 {
     kCountRejectedSize,
     kCountVisibleTriangles,
     kCountMissingPages,
+    /// M11.c task 4.1. Zero until this rung, which README.md recorded as the seam rather than
+    /// leaving it to be read off a counter.
+    kCountPrunedOcclusion,
+    kCountRejectedOcclusion,
     kCounterWords,
 };
 
@@ -48,6 +52,10 @@ enum Binding : u32 {
     kBindRequests,
     kBindVisited,
     kBindClusterTriangles,
+    /// The shared pyramid and its parameters. M11.c task 4.1, appended so that no existing index
+    /// moves.
+    kBindHzb,
+    kBindHzbParams,
     kBindingCount,
 };
 
@@ -161,7 +169,7 @@ GpuTraversal::~GpuTraversal() {
     for (const rhi::BufferHandle buffer :
          {clusters_, cluster_triangles_, instances_, assets_, roots_, children_, page_table_,
           queue_a_, queue_b_, counters_, dispatch_args_, visible_, requests_, visited_, staging_,
-          readback_}) {
+          readback_, hzb_params_, no_pyramid_}) {
         if (!buffer.is_null()) {
             device_.destroy_buffer(buffer);
         }
@@ -338,6 +346,10 @@ Status GpuTraversal::initialise(const GpuScene& scene,
          rhi::MemoryUse::Upload},
         {&readback_, "vg.readback", readback_bytes, rhi::BufferUsage::TransferDestination,
          rhi::MemoryUse::Readback},
+        {&hzb_params_, "vg.hzb-params", sizeof(hzb::HzbParams), rhi::BufferUsage::Storage,
+         rhi::MemoryUse::Upload},
+        {&no_pyramid_, "vg.no-pyramid", sizeof(f32), rhi::BufferUsage::Storage,
+         rhi::MemoryUse::DeviceLocal},
     };
     for (const Plan& entry : plan) {
         Expected<rhi::BufferHandle, Error> buffer =
@@ -346,6 +358,19 @@ Status GpuTraversal::initialise(const GpuScene& scene,
             return make_unexpected(buffer.error());
         }
         *entry.target = *buffer;
+    }
+
+    // THE OCCLUSION PARAMETERS ARE ZEROED HERE AND NOT WHERE THEY ARE FIRST SET, because a traversal
+    // that never calls `set_occlusion` still BINDS this buffer: `HzbParams::enabled` read out of
+    // fresh upload memory is whatever the driver left there, and a non-zero value would run the
+    // occlusion test against a pyramid nothing built. That is the exact failure the culling pass
+    // refuses by name, arriving instead through uninitialised host memory.
+    if (void* mapped = device_.buffer_mapped_pointer(hzb_params_); mapped != nullptr) {
+        const hzb::HzbParams disabled{};
+        std::memcpy(mapped, &disabled, sizeof(disabled));
+    } else {
+        return fail(ErrorCode::Internal,
+                    "GpuTraversal: the occlusion parameter buffer is not mapped");
     }
 
     // --- The layout ------------------------------------------------------------------------
@@ -391,9 +416,10 @@ Status GpuTraversal::initialise(const GpuScene& scene,
     descriptors_ = *descriptors;
 
     const rhi::BufferHandle bound[kBindingCount] = {
-        clusters_, instances_,        assets_,   roots_,         children_, page_table_,
-        queue_a_,  queue_b_,          counters_, dispatch_args_, visible_,  requests_,
-        visited_,  cluster_triangles_};
+        clusters_,    instances_,         assets_,     roots_,         children_,
+        page_table_,  queue_a_,           queue_b_,    counters_,      dispatch_args_,
+        visible_,     requests_,          visited_,    cluster_triangles_,
+        no_pyramid_,  hzb_params_};
     rhi::DescriptorWrite writes[kBindingCount];
     for (u32 index = 0; index < kBindingCount; ++index) {
         writes[index] = rhi::DescriptorWrite{};
@@ -510,10 +536,47 @@ void GpuTraversal::record_pass(const PassContext& context, void* user) noexcept 
     state->self->dispatch(context, *state);
 }
 
-Status GpuTraversal::record(RenderGraph& graph, const TraversalView& view,
-                            u32 instance_count) noexcept {
+Status GpuTraversal::set_occlusion(const hzb::HzbPass* pyramid,
+                                   const Mat4& view_projection) noexcept {
+    if (!initialised_) {
+        return fail(ErrorCode::Unavailable, "GpuTraversal::set_occlusion: initialise() has not run");
+    }
+    pyramid_ = pyramid;
+    // Binding 14 is rewritten rather than the whole set: the other fifteen name buffers this object
+    // owns for its whole life, and attaching a pyramid is something a two-pass scheme does per
+    // frame.
+    rhi::DescriptorWrite write;
+    write = rhi::DescriptorWrite{};
+    write.binding = kBindHzb;
+    write.kind = rhi::DescriptorKind::StorageBuffer;
+    write.buffer = pyramid_ != nullptr ? pyramid_->buffer() : no_pyramid_;
+    if (Status updated = device_.update_descriptor_set(
+            descriptors_, Span<const rhi::DescriptorWrite>(&write, 1));
+        !updated) {
+        return updated;
+    }
+    const hzb::HzbParams params =
+        pyramid_ != nullptr ? pyramid_->params(view_projection) : hzb::HzbParams{};
+    void* mapped = device_.buffer_mapped_pointer(hzb_params_);
+    if (mapped == nullptr) {
+        return fail(ErrorCode::Internal, "GpuTraversal: the occlusion parameter buffer is not "
+                                         "mapped");
+    }
+    std::memcpy(mapped, &params, sizeof(params));
+    return ok();
+}
+
+Status GpuTraversal::record(RenderGraph& graph, const TraversalView& view, u32 instance_count,
+                            ResourceId pyramid) noexcept {
     if (!initialised_) {
         return fail(ErrorCode::Unavailable, "GpuTraversal::record: initialise() has not run");
+    }
+    if (pyramid_ != nullptr && pyramid == kInvalidResource) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a hierarchical depth pyramid is attached to this traversal and record() was "
+                    "given no resource id for it. Pass what HzbPass::declare returned for this "
+                    "graph: importing the handle here would be a second resource for one buffer, "
+                    "and the graph would derive no barrier between the reduction and the traversal");
     }
     view_ = pack_view(view, instance_count, cluster_stride_);
 
@@ -637,8 +700,11 @@ Status GpuTraversal::record(RenderGraph& graph, const TraversalView& view,
             !pushed) {
             return pushed;
         }
-        graph.add_pass("vg.traverse", rhi::QueueKind::Graphics)
-            .read(args, rhi::Access::IndirectCommandRead)
+        PassBuilder traverse = graph.add_pass("vg.traverse", rhi::QueueKind::Graphics);
+        if (pyramid_ != nullptr) {
+            traverse.read(pyramid, rhi::Access::ComputeStorageRead);
+        }
+        traverse.read(args, rhi::Access::IndirectCommandRead)
             .read(uploaded[kUploadClusters], rhi::Access::ComputeStorageRead)
             .read(uploaded[kUploadClusterTriangles], rhi::Access::ComputeStorageRead)
             .read(uploaded[kUploadInstances], rhi::Access::ComputeStorageRead)
@@ -717,8 +783,11 @@ Status GpuTraversal::read_back(TraversalReadback& out) const noexcept {
     out.stats.visible_clusters = counters[kCountVisible];
     out.stats.visible_triangles = counters[kCountVisibleTriangles];
     out.stats.missing_pages = counters[kCountMissingPages];
+    out.stats.nodes_pruned_by_occlusion = counters[kCountPrunedOcclusion];
+    out.stats.rejected_by_occlusion = counters[kCountRejectedOcclusion];
     out.stats.candidates = counters[kCountVisible] + counters[kCountRejectedCone] +
-                           counters[kCountRejectedFrustum] + counters[kCountRejectedSize];
+                           counters[kCountRejectedFrustum] + counters[kCountRejectedSize] +
+                           counters[kCountRejectedOcclusion];
     out.levels_exhausted = counters[kCountQueueA] != 0 || counters[kCountQueueB] != 0;
     out.overflowed = counters[kCountVisible] > options_.visible_capacity ||
                      counters[kCountRequests] > options_.request_capacity;

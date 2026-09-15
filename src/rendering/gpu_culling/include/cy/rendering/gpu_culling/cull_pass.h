@@ -49,13 +49,18 @@
 // case drains each frame before beginning the next for exactly this reason, and says so.
 //
 // ================================================================================================
-// WHAT IT REFUSES
+// WHAT IT REFUSES, AND WHAT M11.c CHANGED ABOUT IT
 // ================================================================================================
 //
-// A view with `kGpuCullOcclusion` set. `hzb.h` is a CPU model of a depth pyramid and no pyramid
-// exists on a device yet, so a dispatch that quietly ignored the flag would report "nothing was
-// occluded" and be indistinguishable from a working occlusion cull over an empty pyramid. It fails
-// naming the flag instead.
+// A view with `kGpuCullOcclusion` set AND NO PYRAMID ATTACHED. Until M11.c task 4.1 there was no
+// pyramid to attach: `hzb.h` was a CPU model and nothing built one on a device, so the flag was
+// refused unconditionally because a dispatch that quietly ignored it would report "nothing was
+// occluded" and be indistinguishable from a working occlusion cull over an empty pyramid.
+//
+// `cy::rendering-hzb` is now that pyramid, `set_occlusion()` attaches one, and the refusal narrows
+// to exactly the case it was written for. It does NOT go away: a caller that asks for occlusion
+// culling and hands over no pyramid is asking for a cull that cannot occlude anything, and the
+// answer is still an error naming the flag rather than a green frame with nothing culled.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/handles.h>
@@ -63,6 +68,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/hzb/hzb_pass.h>
 #include <cy/servers/render/culling/gpu_cull.h>
 
 namespace cy::rendering::gpu_culling {
@@ -124,6 +130,24 @@ public:
     /// answer — that is the whole reason the reference is a reference and not a test fixture.
     [[nodiscard]] static bool supported(const rhi::Device& device) noexcept;
 
+    /// Attach the hierarchical depth pyramid the occlusion test reads, and the view-projection it
+    /// projects bounds through.
+    ///
+    /// ONE PYRAMID, TWO CONSUMERS. `cy::rendering::hzb::HzbPass` is the same object
+    /// `virtual-geometry`'s cluster-granular occlusion reads, and `hzb_sample.slang` is the same
+    /// test — which is what stops one piece of device work from being recorded as two satisfied
+    /// requirements.
+    ///
+    /// `view_projection` is the matrix the PYRAMID was built in, not necessarily this view's: a
+    /// two-pass scheme rebuilds the pyramid from the first pass's depth and tests the rest against
+    /// it, and both halves are the same camera. It is taken here rather than read out of
+    /// `GpuCullView` because that block carries a frustum and no matrix, and a frustum cannot
+    /// project a sphere onto a depth buffer.
+    ///
+    /// A null pyramid detaches, which is what a camera cut does alongside `HzbPass::invalidate()`.
+    [[nodiscard]] Status set_occlusion(const hzb::HzbPass* pyramid,
+                                       const Mat4& view_projection) noexcept;
+
     /// Copy the scene and the view into the device buffers, and zero the counters.
     ///
     /// Everything here is host-visible and written directly. A staging copy would be the shape for
@@ -134,7 +158,16 @@ public:
 
     /// Declare the two dispatches and the read-back into `graph`. Call between `upload` and the
     /// graph's execution.
-    [[nodiscard]] Status declare(RenderGraph& graph) noexcept;
+    ///
+    /// `pyramid` is what `HzbPass::declare` returned for THIS graph, and it is required whenever a
+    /// pyramid is attached. It is not an optimisation: `RenderGraph::import_buffer` does not
+    /// de-duplicate, so importing the pyramid's handle here would give the graph a SECOND resource
+    /// for one buffer, with no edge between the reduction that writes it and this dispatch that
+    /// reads it — and a missing barrier on a read-after-write is right on some frames and reports
+    /// "nothing was occluded" on others. Passing `kInvalidResource` with a pyramid attached is
+    /// refused rather than raced.
+    [[nodiscard]] Status declare(RenderGraph& graph,
+                                 ResourceId pyramid = kInvalidResource) noexcept;
 
     /// What the dispatch wrote. Valid until the next `upload`.
     ///
@@ -147,6 +180,10 @@ public:
 private:
     struct Buffers {
         rhi::BufferHandle view;
+        /// One float, bound at the pyramid's binding when no pyramid is attached. Vulkan has no
+        /// zero-length buffer and a descriptor must name something; `Sizes::occlusion.enabled` is
+        /// what tells the shader the binding is empty.
+        rhi::BufferHandle no_pyramid;
         rhi::BufferHandle instances;
         rhi::BufferHandle chains;
         rhi::BufferHandle mesh_lods;
@@ -183,7 +220,12 @@ private:
         u32 reserved0 = 0;
         u32 reserved1 = 0;
         u32 reserved2 = 0;
+        /// The occlusion test's own block, and `enabled` is 0 until `set_occlusion` attaches a
+        /// pyramid. 112 bytes in total, which is inside the 128 every Vulkan implementation
+        /// guarantees.
+        hzb::HzbParams occlusion{};
     };
+    static_assert(sizeof(Sizes) == 112, "the cull push block must fit the guaranteed 128 bytes");
 
     [[nodiscard]] Status create_pipelines() noexcept;
     [[nodiscard]] Status create_buffers() noexcept;
@@ -198,6 +240,9 @@ private:
     rhi::Device* device_ = nullptr;
     GpuCullPassDescription desc_{};
     Sizes sizes_{};
+    /// The pyramid currently attached, or null. Held so that `declare()` imports the buffer the
+    /// descriptor names and the graph derives the barrier between the reduction and this dispatch.
+    const hzb::HzbPass* pyramid_ = nullptr;
     u32 instance_count_ = 0;
 
     rhi::ShaderModuleHandle cull_shader_;

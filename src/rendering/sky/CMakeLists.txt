@@ -58,6 +58,7 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/atmosphere.cpp
+        src/budget.cpp
         src/celestial.cpp
         src/cloud_shadows.cpp
         src/clouds.cpp

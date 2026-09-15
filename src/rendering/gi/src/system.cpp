@@ -43,6 +43,13 @@ Status IlluminationSystem::configure(const IlluminationSettings& settings) noexc
     return ok();
 }
 
+void IlluminationSystem::set_sky_term(const SkyTerm& sky) noexcept {
+    settings_.sky = sky;
+    TieredTracer::Config config = tracer_.config();
+    config.sky = sky;
+    tracer_.set_config(config);
+}
+
 bool IlluminationSystem::dynamic_enabled() const noexcept {
     return settings_.mode == GiMode::Dynamic || settings_.mode == GiMode::Hybrid;
 }
@@ -54,7 +61,14 @@ void IlluminationSystem::service_invalidations(IlluminationFrameReport& report,
         // Each subsystem services the record and writes back what it cost, so one record accounts
         // for the whole of one change. That is "the system SHALL report which changes caused which
         // invalidations", as a number rather than a log line.
-        record.field_bricks = field_.invalidate(record.region);
+        //
+        // AND THE CAUSE DECIDES WHO IS ASKED. The sparse distance field is a representation of
+        // WHERE SURFACES ARE; a sun that rotated moved none of them, so rebuilding its bricks would
+        // be work attributed to a change that cannot have caused it. `SkyChanged` is the one cause
+        // that skips it, and `record.field_bricks` staying zero is how
+        // "invalidating only the illumination that depends on it" is checked rather than asserted.
+        const bool geometry_may_have_moved = record.cause != InvalidationCause::SkyChanged;
+        record.field_bricks = geometry_may_have_moved ? field_.invalidate(record.region) : 0;
         record.surface_pages = surfaces_.invalidate(record.region);
         record.probes = radiance_.invalidate(record.region);
         (void)reflections_.invalidate(record.region);

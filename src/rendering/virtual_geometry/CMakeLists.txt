@@ -55,7 +55,12 @@ cy_add_module(
         src/traversal.cpp
         src/visbuffer.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    # cy::rendering-hzb and cy::servers-render-culling joined at M11.c task 4.1, and both are
+    # PUBLIC because both appear in this module's interface: `GpuTraversal::set_occlusion` names
+    # `HzbPass`, and `TraversalView::occlusion` names `render::culling::OcclusionTester` — the SAME
+    # interface `GpuCullOptions` takes, over the SAME pyramid. Two rows, one piece of device work.
     PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::core-assets
+                        cy::rendering-hzb cy::servers-render-culling
                         cy::servers-residency cy::rhi cy::rendering-graph
     PRIVATE_DEPENDENCIES cy::core-diagnostics)
 

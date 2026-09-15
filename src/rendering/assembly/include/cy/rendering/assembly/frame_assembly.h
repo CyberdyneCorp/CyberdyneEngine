@@ -104,6 +104,9 @@
 #include <cy/rendering/material/material.h>
 #include <cy/rendering/post/chain.h>
 #include <cy/rendering/shadows/cache.h>
+#include <cy/rendering/shadows/fallback.h>
+#include <cy/rendering/shadows/invalidation.h>
+#include <cy/rendering/shadows/mode.h>
 #include <cy/rendering/sky/atmosphere.h>
 #include <cy/rendering/sky/sky_light.h>
 #include <cy/rendering/temporal/framework.h>
@@ -147,6 +150,14 @@ struct AssemblyDescription {
     /// path, which is the reference the device path is compared against and the only path a
     /// headless build has.
     bool gpu_culling = true;
+    /// PINNED MODE, WHICH IS A CAPTURE REQUIREMENT AND NOT A DEBUG AID. `temporal-rendering`'s
+    /// "Determinism and capture": "the framework SHALL support a pinned mode in which jitter
+    /// follows a fixed sequence from a fixed starting index and history is deterministic, so
+    /// golden-image tests and capture produce reproducible output". `JitterSequence::pin` has been
+    /// in the tree since M7; this is the frame asking for it, so that a capture is reproducible by
+    /// construction rather than by a caller remembering to reach into the framework.
+    bool pin_jitter = false;
+    u32 pinned_jitter_index = 0;
 };
 
 /// One view of one world, this frame.
@@ -172,6 +183,18 @@ struct AssemblyView {
     /// what a caller that forgot them gets. `AssemblyReport::draws` is where that shows.
     Span<const render::culling::GpuLodChain> lod_chains;
     Span<const render::culling::GpuMeshLod> mesh_lods;
+    /// The shadow mode each light DECLARED, parallel to `lights`.
+    ///
+    /// Empty — which is what every caller before M11.c passed — means every shadow-casting light
+    /// declared `ShadowMode::Virtual`, the mode this module implements. `virtual-shadows` requires
+    /// that "each light SHALL declare a shadow mode"; this span is where a light declares one, and
+    /// `shadow_profile` is the other half of the same sentence.
+    Span<const ShadowMode> shadow_modes;
+    /// Which modes the renderer profile makes available THIS FRAME. `traced` is the field that
+    /// moves: it is the caller's answer to "is a trace available", which
+    /// `ray-tracing-infrastructure` answers on the processor while
+    /// `cy::rhi::Capability::RayTracing` is unset.
+    ShadowModeProfile shadow_profile;
     /// Normalised, pointing FROM the surface TO the sun. What the sky table is rebuilt against.
     Vec3 sun_direction{0.0F, 1.0F, 0.0F};
     sky::Atmosphere atmosphere;
@@ -217,6 +240,19 @@ struct AssemblyReport {
     /// Shadow pages this frame asked the cache for, and how many were already resident.
     u32 shadow_pages_requested = 0;
     u32 shadow_pages_resident = 0;
+    /// Which mode each light ended up in, and how many did not get what they declared.
+    ShadowModeLedger shadow_modes;
+    /// What a receiver sampling each requested page would get THIS FRAME, walked through
+    /// `resolve_shadow_lookup`. The per-pixel walk is a shader's; this is the frame-level answer
+    /// for the pages the frame asked for, and it is what makes "the fallback chain is exercised" a
+    /// number rather than a claim about a function nothing calls.
+    SubstitutionLedger shadow_substitutions;
+    /// Pages dirtied because a shadow-casting light MOVED since the last frame — the sun over a
+    /// day/night cycle is the case this exists for. Attributed to the light, as
+    /// `invalidate_light()` requires.
+    u32 shadow_pages_invalidated = 0;
+    /// Shadow-casting lights whose orientation or position changed this frame.
+    u32 shadow_lights_moved = 0;
     bool sky_rebuilt = false;
     /// The GPU material table: how many slots it holds, and how many are allocated.
     u32 material_slots = 0;
@@ -231,6 +267,15 @@ struct AssemblyReport {
     u32 material_upload_size = 0;
     u64 temporal_frame = 0;
     bool temporal_invalidated = false;
+    /// The sub-pixel offset the frame's projection was jittered by, and whether the sequence is
+    /// pinned. Zero and false is an unjittered frame, which is what a chain with no temporal stage
+    /// gets — "WHEN no active effect requires jitter THEN the projection SHALL be unjittered".
+    Vec2 jitter{0.0F, 0.0F};
+    bool jitter_pinned = false;
+    u32 jitter_index = 0;
+    /// The cause of the most recent history invalidation, so a smear has a name rather than a
+    /// guess. `temporal-rendering`'s "invalidation events and their causes" diagnostic.
+    TemporalInvalidation temporal_cause = TemporalInvalidation::None;
     /// The post chain, in order, and why it is that long.
     u32 post_stages = 0;
     PostStage post_stage[kMaxPostStages] = {};
@@ -250,6 +295,13 @@ struct AssemblyReport {
     /// Filled by `execute`. Zero after `assemble` alone.
     ExecutionResult execution;
     bool executed = false;
+};
+
+/// Where one shadow-casting light was, so that "it moved" is a comparison rather than a guess.
+struct LightPose {
+    u64 stable_id = 0;
+    Vec3 position{0.0F, 0.0F, 0.0F};
+    Vec3 direction{0.0F, -1.0F, 0.0F};
 };
 
 /// One view's frame, assembled.
@@ -353,6 +405,10 @@ private:
     [[nodiscard]] Status build_lights(const AssemblyView& view, AssemblyReport& out) noexcept;
     [[nodiscard]] Status request_shadow_pages(const AssemblyView& view,
                                               AssemblyReport& out) noexcept;
+    /// Dirty what a light's own motion invalidated, before the pages are requested. Returns the
+    /// number of lights that moved.
+    [[nodiscard]] Status invalidate_moved_lights(const AssemblyView& view,
+                                                 AssemblyReport& out) noexcept;
     [[nodiscard]] Status update_sky(const AssemblyView& view, AssemblyReport& out) noexcept;
     [[nodiscard]] Status declare_frame(const AssemblyView& view, const FrameFeatures& features,
                                        const FrameSinks& sinks, RenderGraph& graph,
@@ -383,6 +439,10 @@ private:
     // The other five of the eight.
     MaterialTable materials_;
     ShadowPageCache shadows_;
+    /// Where each shadow-casting light was last frame, by its stable id. Kept across frames
+    /// because "the light moved" is a comparison against the previous frame and there is nowhere
+    /// else in the renderer that holds one.
+    Array<LightPose> light_poses_;
     sky::SkyViewTable sky_;
     Vec3 sky_irradiance_{0.0F, 0.0F, 0.0F};
     TemporalFramework temporal_;

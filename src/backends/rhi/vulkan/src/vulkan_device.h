@@ -23,6 +23,7 @@
 //     VkValidationFeaturesEXT chained into VkInstanceCreateInfo, none of the hazard checks fire and
 //     the whole exercise is theatre. (Spike gotcha 6h.)
 
+#include <cy/backends/rhi/capabilities.h>
 #include <cy/backends/rhi/validation.h>
 #include <cy/core/memory/array.h>
 #include <cy/core/memory/handle_pool.h>
@@ -548,6 +549,10 @@ private:
     bool break_on_validation_error_ = false;
     bool debug_markers_ = false;
     bool memory_budget_ = false;
+    /// WHAT THE DEVICE SAID ABOUT RAY TRACING, kept as the five separate answers it gave rather
+    /// than as the one bit they reduce to. `fill_capabilities()` hands it to `DeviceCapabilities`,
+    /// which is where the reduction happens and where it can be tested without a device.
+    RayTracingObservation ray_tracing_{};
 };
 
 /// Set up the swapchain half of the device. Declared here because it lives in its own translation

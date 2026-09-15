@@ -265,6 +265,87 @@ CY_TEST_CASE("cloud shadows: an update writes the field, and a storm darkens the
     CY_CHECK_GT(highest - lowest, 0.01F);
     CY_CHECK_GE(highest, lowest);
 
+    // ============================================================================================
+    // AND THE SAME CELLS READ BACK THROUGH THE FUNCTION EVERY CONSUMER CALLS. M11.c.
+    // ============================================================================================
+    //
+    // `m10:sky-field-round-trip` was DECLARED against `CloudShadowField::sample` — "sample returned
+    // the declared 1.0 at every point the case probed inside radius_metres" — and M11.a's repair
+    // rewrote the read-back above to call `store.sample_at(field, position, level)` with an explicit
+    // residency instead. That is a better test of the STORE and it stopped being a test of the
+    // function the requirement's four consumers call: M11.a's own gate replaced this function's
+    // body with `return 1.0F`, rebuilt, and the criterion stayed green, because the only call to it
+    // left in this file is the one nine million metres away at the bottom of this case.
+    //
+    // So the walk is done twice, over the same cell centres, and the two answers are COMPARED. The
+    // agreement is the assertion: `CloudShadowField::sample` walks the residencies finest-first and
+    // `sample_at` is told which level to read, and at a regional cell centre inside the written
+    // radius those two must be the same number. A consumer reading the field through the substrate
+    // and a test reading it through a level are then looking at one thing.
+    const auto read_back_through_the_consumer = [&store](f32 cell_metres, f32& least, f32& most,
+                                                         u32& disagreements) -> u32 {
+        u32 resolved = 0;
+        const auto span = static_cast<cy::i32>(cy::environment::kTileCells);
+        for (cy::i32 tile_z = -2; tile_z <= 1; ++tile_z) {
+            for (cy::i32 tile_x = -2; tile_x <= 1; ++tile_x) {
+                for (cy::i32 local_z = 0; local_z < span; ++local_z) {
+                    for (cy::i32 local_x = 0; local_x < span; ++local_x) {
+                        const double at_x = (static_cast<double>((tile_x * span) + local_x) + 0.5) *
+                                            static_cast<double>(cell_metres);
+                        const double at_z = (static_cast<double>((tile_z * span) + local_z) + 0.5) *
+                                            static_cast<double>(cell_metres);
+                        const WorldVec3d at{at_x, 0.0, at_z};
+                        // The finest resident level is what a consumer gets, so the comparison is
+                        // against the FINEST level the store resolves here rather than against a
+                        // level this test chose — otherwise a macro cell centre that happens to sit
+                        // inside the regional radius would be counted as a disagreement for being
+                        // answered correctly.
+                        cy::environment::FieldSample finest = store.sample_at(
+                            cloud_shadow_field_id(), at, cy::environment::FieldResidency::Regional);
+                        if (!finest.resolved) {
+                            finest = store.sample_at(cloud_shadow_field_id(), at,
+                                                     cy::environment::FieldResidency::Macro);
+                        }
+                        if (!finest.resolved) {
+                            continue;
+                        }
+                        ++resolved;
+                        const f32 through = CloudShadowField::sample(store, at);
+                        if (std::fabs(through - finest.value.x()) > 1e-6F) {
+                            ++disagreements;
+                        }
+                        least = cy::math::min(least, through);
+                        most = cy::math::max(most, through);
+                    }
+                }
+            }
+        }
+        return resolved;
+    };
+
+    f32 consumer_lowest = 1.0F;
+    f32 consumer_highest = 0.0F;
+    u32 disagreements = 0;
+    const u32 consumer_regional = read_back_through_the_consumer(
+        test_quality().regional_cell_metres, consumer_lowest, consumer_highest, disagreements);
+    const u32 consumer_macro = read_back_through_the_consumer(
+        test_quality().macro_cell_metres, consumer_lowest, consumer_highest, disagreements);
+    const u32 consumer_total = consumer_regional + consumer_macro;
+    CY_TEST_MESSAGE("through CloudShadowField::sample: ", consumer_total, " samples, lowest ",
+                    consumer_lowest, ", highest ", consumer_highest, ", disagreeing ",
+                    disagreements);
+
+    CY_CHECK_GT(consumer_regional, 0U);
+    CY_CHECK_GT(consumer_macro, 0U);
+    // NOT ONE CELL DISAGREES. This is the half `m10:sky-field-round-trip` was declared about and
+    // the half no check in this repository has ever performed.
+    CY_CHECK_EQ(disagreements, 0U);
+    // And the shadow is THERE, in the function a consumer calls, rather than only in the level a
+    // test asked for by name. Replacing this function's body with `return 1.0F` — the literal
+    // symptom the gap names — makes both of these fail.
+    CY_CHECK_LT(consumer_lowest, 0.99F);
+    CY_CHECK_GT(consumer_highest - consumer_lowest, 0.01F);
+
     // A sample far outside the written radius returns the declared default — FULL SUN — rather than
     // blocking or faulting. `environment-fields` requires exactly that, and a default of zero would
     // have blacked out an unstreamed world.

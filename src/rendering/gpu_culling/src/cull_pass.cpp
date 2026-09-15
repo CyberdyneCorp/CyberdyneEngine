@@ -25,7 +25,9 @@ constexpr u32 kCullGroupSize = 64;
 constexpr u32 kCounterWords = static_cast<u32>(sizeof(GpuCullCounters) / sizeof(u32));
 static_assert(sizeof(GpuCullCounters) == kCounterWords * sizeof(u32));
 
-/// The thirteen bindings the shader declares, in the order it declares them.
+/// The fourteen bindings the shader declares, in the order it declares them. Thirteen until M11.c
+/// task 4.1 added the hierarchical depth pyramid at the end, which is where a binding is added so
+/// that no existing index moves.
 enum Binding : u32 {
     kBindingView = 0,
     kBindingInstances = 1,
@@ -40,7 +42,8 @@ enum Binding : u32 {
     kBindingCommands = 10,
     kBindingPayloads = 11,
     kBindingVirtualGeometry = 12,
-    kBindingCount = 13,
+    kBindingHzb = 13,
+    kBindingCount = 14,
 };
 
 /// A buffer is never zero-sized: Vulkan has no zero-length buffer, and a descriptor must name
@@ -239,6 +242,11 @@ Status GpuCullPass::create_buffers() noexcept {
          rhi::MemoryUse::DeviceLocal, &buffers_.payloads},
         {"gpu cull virtual geometry", at_least_one(desc_.max_draws, sizeof(u32)), storage_src,
          rhi::MemoryUse::DeviceLocal, &buffers_.virtual_geometry},
+        // The empty pyramid. One float, and never read: `Sizes::occlusion.enabled` is zero
+        // whenever this is what binding 13 names. It exists because Vulkan has no zero-length
+        // buffer and a descriptor set must be complete before a pipeline is bound.
+        {"gpu cull no pyramid", sizeof(f32), storage, rhi::MemoryUse::DeviceLocal,
+         &buffers_.no_pyramid},
     };
     for (const Request& request : requests) {
         rhi::BufferDescription description;
@@ -310,6 +318,7 @@ Status GpuCullPass::write_descriptors() noexcept {
         buffers_.commands,
         buffers_.payloads,
         buffers_.virtual_geometry,
+        pyramid_ != nullptr ? pyramid_->buffer() : buffers_.no_pyramid,
     };
     rhi::DescriptorWrite writes[kBindingCount] = {};
     for (u32 index = 0; index < kBindingCount; ++index) {
@@ -328,6 +337,7 @@ void GpuCullPass::destroy() noexcept {
         return;
     }
     const rhi::BufferHandle buffers[] = {
+        buffers_.no_pyramid,
         buffers_.view,
         buffers_.instances,
         buffers_.chains,
@@ -372,16 +382,40 @@ void GpuCullPass::destroy() noexcept {
 // --- Upload
 // ---------------------------------------------------------------------------------------
 
+Status GpuCullPass::set_occlusion(const hzb::HzbPass* pyramid,
+                                  const Mat4& view_projection) noexcept {
+    if (device_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "the culling pass has not been created");
+    }
+    pyramid_ = pyramid;
+    // Binding 13 is rewritten rather than the whole set, because attaching a pyramid is a thing a
+    // caller may do once and a thing a two-pass scheme does every frame, and the other twelve
+    // descriptors name buffers this object owns for its whole life.
+    rhi::DescriptorWrite write{};
+    write.binding = kBindingHzb;
+    write.kind = rhi::DescriptorKind::StorageBuffer;
+    write.buffer = pyramid_ != nullptr ? pyramid_->buffer() : buffers_.no_pyramid;
+    write.buffer_range = 0;
+    if (Status updated = device_->update_descriptor_set(
+            descriptor_set_, Span<const rhi::DescriptorWrite>(&write, 1));
+        !updated) {
+        return updated;
+    }
+    sizes_.occlusion = pyramid_ != nullptr ? pyramid_->params(view_projection) : hzb::HzbParams{};
+    return ok();
+}
+
 Status GpuCullPass::upload(const render::culling::GpuCullScene& scene,
                            const GpuCullView& view) noexcept {
     if (device_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "the culling pass has not been created");
     }
-    if ((view.flags & kGpuCullOcclusion) != 0U) {
-        return fail(ErrorCode::NotImplemented,
-                    "kGpuCullOcclusion is set and no hierarchical depth buffer exists on the "
-                    "device yet; a dispatch that ignored the flag would report 'nothing was "
-                    "occluded' and be indistinguishable from a working occlusion cull");
+    if ((view.flags & kGpuCullOcclusion) != 0U && pyramid_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument,
+                    "kGpuCullOcclusion is set and no hierarchical depth buffer is attached to this "
+                    "pass; a dispatch that ignored the flag would report 'nothing was occluded' "
+                    "and be indistinguishable from a working occlusion cull. Call set_occlusion() "
+                    "with the cy::rendering::hzb::HzbPass whose pyramid was built this frame");
     }
     const u32 instances = view.instance_count < scene.instances.size()
                               ? view.instance_count
@@ -484,9 +518,17 @@ void GpuCullPass::record_readback(const PassContext& context, void* user) noexce
     }
 }
 
-Status GpuCullPass::declare(RenderGraph& graph) noexcept {
+Status GpuCullPass::declare(RenderGraph& graph, ResourceId pyramid) noexcept {
     if (device_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "the culling pass has not been created");
+    }
+    if (pyramid_ != nullptr && pyramid == kInvalidResource) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a hierarchical depth pyramid is attached to this pass and declare() was given "
+                    "no resource id for it. Pass what HzbPass::declare returned for this graph: "
+                    "importing the handle here would be a second resource for one buffer, the "
+                    "graph would derive no barrier between the reduction and this dispatch, and "
+                    "the cull would read the pyramid mid-write");
     }
 
     // Every resource is imported rather than graph-owned: the buffers outlive the frame, the
@@ -544,8 +586,12 @@ Status GpuCullPass::declare(RenderGraph& graph) noexcept {
         .write(counters, Access::TransferWrite)
         .record(&record_clear, this);
 
-    graph.add_pass("gpu cull instances", QueueKind::Graphics)
-        .read(view, Access::ComputeUniformRead)
+    // The pyramid is READ by the cull under the CALLER's resource id, which is what makes the
+    // barrier between the last reduction dispatch and this one the graph's.
+    const ResourceId occlusion = pyramid_ != nullptr ? pyramid : kInvalidResource;
+
+    PassBuilder cull = graph.add_pass("gpu cull instances", QueueKind::Graphics);
+    cull.read(view, Access::ComputeUniformRead)
         .read(instances, Access::ComputeStorageRead)
         .read(chains, Access::ComputeStorageRead)
         .read(mesh_lods, Access::ComputeStorageRead)
@@ -554,8 +600,11 @@ Status GpuCullPass::declare(RenderGraph& graph) noexcept {
         .write(slot_emit, Access::ComputeStorageWrite)
         .write(slot_command, Access::ComputeStorageWrite)
         .write(slot_payload, Access::ComputeStorageWrite)
-        .use(counters, Access::ComputeStorageReadWrite)
-        .record(&record_cull, this);
+        .use(counters, Access::ComputeStorageReadWrite);
+    if (occlusion != kInvalidResource) {
+        cull.read(occlusion, Access::ComputeStorageRead);
+    }
+    cull.record(&record_cull, this);
 
     graph.add_pass("gpu cull compact", QueueKind::Graphics)
         .read(view, Access::ComputeUniformRead)

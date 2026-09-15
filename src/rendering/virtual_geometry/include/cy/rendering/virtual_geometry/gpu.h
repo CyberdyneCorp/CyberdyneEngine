@@ -26,11 +26,15 @@
 // WHAT IS DELIBERATELY ABSENT AT M7, AND WHERE THE SEAM IS
 // ================================================================================================
 //
-// **Occlusion culling.** `virtual-geometry` specifies a two-pass HZB scheme, and the renderer has
-// no hierarchical depth buffer yet. `TraversalStatistics::nodes_pruned_by_occlusion` and
-// `rejected_by_occlusion` exist, read zero, and are the seam: the shader's cull chain takes the
-// tests in the order the requirement fixes and the HZB test slots in beside the cone test without
-// changing anything above this file. Reported rather than left to be discovered.
+// **Occlusion culling — SUPPLIED AT M11.c, task 4.1.** Through M10 this section read "the renderer
+// has no hierarchical depth buffer yet" and the two counters read zero. `cy::rendering-hzb` is now
+// that pyramid; `set_occlusion()` attaches it, the shader's cull chain takes the HZB test in the
+// order the requirement fixes — frustum, cone, screen size, occlusion — and
+// `TraversalStatistics::nodes_pruned_by_occlusion` and `rejected_by_occlusion` are what it fills.
+//
+// IT IS THE SAME PYRAMID `rendering-culling-and-lod`'s occlusion cull reads, and the same
+// `hzb_sample.slang` that tests it. Two rows were waiting on one piece of device work, and one
+// piece of work must not be recorded as two satisfied requirements.
 //
 // **A hash for the visited marks.** The DAG mark is one word per (instance, cluster), so a scene of
 // many instances of a large asset needs more memory than it should. `create()` computes the
@@ -42,6 +46,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/hzb/hzb_pass.h>
 #include <cy/rendering/virtual_geometry/residency.h>
 #include <cy/rendering/virtual_geometry/traversal.h>
 
@@ -143,10 +148,26 @@ public:
     /// what `GeometryCache::table()` hands over.
     [[nodiscard]] Status upload_page_table(Span<const PageTableEntry> table) noexcept;
 
+    /// Attach the hierarchical depth pyramid the cluster occlusion test reads.
+    ///
+    /// The CPU half of the same decision is `TraversalView::occlusion`, which takes the CPU model's
+    /// `HzbOcclusionTester` over the same pyramid — so a test can ask both and compare, which is
+    /// what `integration.rendering_culling` does for the instance cull.
+    ///
+    /// A null pyramid detaches and every test then answers "not occluded", which is the behaviour
+    /// this module shipped with from M7 to M10.
+    [[nodiscard]] Status set_occlusion(const hzb::HzbPass* pyramid,
+                                       const Mat4& view_projection) noexcept;
+
     /// Declare the traversal's passes into `graph`. The caller executes the graph; the barriers
     /// between the levels are the graph's, because nothing else in the engine may emit one.
-    [[nodiscard]] Status record(RenderGraph& graph, const TraversalView& view,
-                                u32 instance_count) noexcept;
+    ///
+    /// `pyramid` is what `HzbPass::declare` returned FOR THIS GRAPH, and it is required whenever a
+    /// pyramid is attached: `RenderGraph::import_buffer` does not de-duplicate, so importing the
+    /// handle here would give the graph a second resource for one buffer and no barrier between the
+    /// reduction that writes it and the traversal that reads it.
+    [[nodiscard]] Status record(RenderGraph& graph, const TraversalView& view, u32 instance_count,
+                                ResourceId pyramid = kInvalidResource) noexcept;
 
     /// Read what the last recorded frame produced. Must be called after that frame has completed —
     /// the readback is a host-visible buffer and the caller owns the synchronisation, which is
@@ -238,6 +259,13 @@ private:
     rhi::BufferHandle visited_;
     rhi::BufferHandle staging_;
     rhi::BufferHandle readback_;
+    /// `HzbParams` for the attached pyramid, in a buffer rather than in the push block: `GpuView`
+    /// already fills the 128 push-constant bytes every Vulkan implementation guarantees.
+    rhi::BufferHandle hzb_params_;
+    /// One float, bound at the pyramid's binding when nothing is attached. Vulkan has no
+    /// zero-length buffer and a descriptor set must be complete.
+    rhi::BufferHandle no_pyramid_;
+    const hzb::HzbPass* pyramid_ = nullptr;
 
     rhi::DescriptorSetLayoutHandle set_layout_;
     rhi::PipelineLayoutHandle pipeline_layout_;

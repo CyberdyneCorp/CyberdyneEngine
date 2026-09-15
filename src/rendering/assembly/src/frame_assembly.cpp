@@ -148,6 +148,12 @@ Status FrameAssembly::initialize(const AssemblyDescription& description) noexcep
         return make_unexpected(declared.error());
     }
     history_ = *declared;
+    // PINNED BEFORE THE FIRST FRAME, not per frame: `JitterSequence::pin` fixes the STARTING index,
+    // and pinning it again every frame would hold the sequence at one sample — an unjittered frame
+    // wearing a temporal stage's cost.
+    if (description.pin_jitter) {
+        temporal_.pin_jitter(description.pinned_jitter_index);
+    }
 
     initialized_ = true;
     return ok();
@@ -393,13 +399,106 @@ Status FrameAssembly::build_lights(const AssemblyView& view, AssemblyReport& out
     return ok();
 }
 
+namespace {
+
+/// What one light declared, or `Virtual` when the caller declared nothing.
+///
+/// A caller that passes no `shadow_modes` span gets the mode this module implements, which is what
+/// every caller written before M11.c was implicitly asking for. A span SHORTER than the light list
+/// is a caller that declared some and not others, and the undeclared ones get the same default —
+/// refusing the frame over it would turn a missing declaration into a black screen.
+[[nodiscard]] ShadowMode declared_mode_of(const AssemblyView& view, usize index) noexcept {
+    return index < view.shadow_modes.size() ? view.shadow_modes[index] : ShadowMode::Virtual;
+}
+
+/// Where a light is, in the two numbers "it moved" is a comparison of.
+[[nodiscard]] LightPose pose_of(const render::LightDescription& light) noexcept {
+    LightPose pose;
+    pose.stable_id = light.stable_id;
+    pose.position = light.transform.translation;
+    pose.direction = normalize(light.transform.forward());
+    return pose;
+}
+
+/// A LIGHT MOVED, AND THE THRESHOLD IS WHY THIS IS NOT `!=`.
+///
+/// The sun over a day/night cycle moves a fraction of a degree a frame, and a strict comparison
+/// would dirty every page of the directional light every frame — which is a shadow cache switched
+/// off by arithmetic. The angular threshold is a tenth of a degree; below it the cached pages are
+/// still the right answer, and above it the sun has moved about a page of a 16384-texel clipmap.
+[[nodiscard]] bool pose_changed(const LightPose& before, const LightPose& now) noexcept {
+    constexpr f32 kCosineThreshold = 0.99999848F;  // cos(0.1 degrees)
+    constexpr f32 kPositionThreshold = 0.01F;      // one centimetre
+    if (dot(before.direction, now.direction) < kCosineThreshold) {
+        return true;
+    }
+    const Vec3 delta = now.position - before.position;
+    return dot(delta, delta) > kPositionThreshold * kPositionThreshold;
+}
+
+}  // namespace
+
 // --- 6. Shadow pages --------------------------------------------------------------------------
 
-Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyReport& out) noexcept {
-    shadows_.begin_frame(frame_index_);
+Status FrameAssembly::invalidate_moved_lights(const AssemblyView& view,
+                                              AssemblyReport& out) noexcept {
     for (usize index = 0; index < view.lights.size(); ++index) {
         const render::LightDescription& light = view.lights[index];
         if (!light.casts_shadow) {
+            continue;
+        }
+        const LightPose now = pose_of(light);
+        LightPose* previous = nullptr;
+        for (LightPose& candidate : light_poses_) {
+            if (candidate.stable_id == now.stable_id) {
+                previous = &candidate;
+                break;
+            }
+        }
+        if (previous == nullptr) {
+            // First sight of this light. Nothing is cached for it yet, so there is nothing to
+            // dirty and recording the pose is the whole of the work.
+            if (Status added = light_poses_.push_back(now); !added) {
+                return added;
+            }
+            continue;
+        }
+        if (!pose_changed(*previous, now)) {
+            continue;
+        }
+        *previous = now;
+        out.shadow_lights_moved += 1;
+        const InvalidationReport report =
+            invalidate_light(shadows_, static_cast<u32>(index), light.stable_id);
+        out.shadow_pages_invalidated += report.pages_dirtied;
+    }
+    return ok();
+}
+
+Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyReport& out) noexcept {
+    shadows_.begin_frame(frame_index_);
+    out.shadow_modes.reset();
+    out.shadow_substitutions.reset();
+    if (Status invalidated = invalidate_moved_lights(view, out); !invalidated) {
+        return invalidated;
+    }
+    for (usize index = 0; index < view.lights.size(); ++index) {
+        const render::LightDescription& light = view.lights[index];
+
+        // THE MODE IS SELECTED FOR EVERY LIGHT, INCLUDING THE ONES THAT CAST NO SHADOW, because
+        // `ShadowMode::None` is one of the six and a ledger that counted only the casters could not
+        // tell "no light declared None" from "no light was asked".
+        ShadowModeRequest request;
+        request.declared = declared_mode_of(view, index);
+        request.casts_shadow = light.casts_shadow;
+        const ShadowModeSelection selection = select_shadow_mode(request, view.shadow_profile);
+        out.shadow_modes.record(selection);
+        // A light whose selected mode allocates no pages asks the cache for none. `Baked` and
+        // `None` are the two, and asking anyway would spend a page budget on a light that never
+        // samples one.
+        if (selection.selected != ShadowMode::Virtual &&
+            selection.selected != ShadowMode::Conventional &&
+            selection.selected != ShadowMode::RayTraced && selection.selected != ShadowMode::Hybrid) {
             continue;
         }
         for (u8 level = 0; level < kShadowLevels; ++level) {
@@ -412,6 +511,23 @@ Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyRep
             // shadow budget is spent against, and it is `needs_render` inverted rather than a
             // second word to keep in step.
             out.shadow_pages_resident += (!lookup.needs_render && !lookup.starved) ? 1U : 0U;
+
+            // WHAT A RECEIVER WOULD GET, WALKED THROUGH THE CHAIN THE SPECIFICATION DEFINES.
+            // `resolve_shadow_lookup` has been in the tree since M7 and was called by nothing but
+            // its own suite, so "the system SHALL degrade along a defined chain" was a function
+            // with no consumer. The per-pixel walk stays the shader's; this is the frame's answer
+            // for the page it just asked for, and it is what puts a number against the
+            // `Approximation` rung — which is reached only when the CALLER says a trace is
+            // available this frame.
+            FallbackOptions options;
+            options.tail_level = 0;
+            options.coarser_levels = kShadowLevels;
+            options.approximation_available =
+                view.shadow_profile.traced || selection.selected == ShadowMode::Hybrid ||
+                selection.selected == ShadowMode::RayTraced;
+            const FallbackResult resolved =
+                resolve_shadow_lookup(shadows_, frame_index_, page, options);
+            out.shadow_substitutions.record(resolved.substitution);
         }
     }
     return ok();
@@ -523,6 +639,10 @@ Status FrameAssembly::assemble(const SpatialIndex& index, const AssemblyView& vi
     temporal_.begin_frame(temporal_view);
     out.temporal_frame = temporal_.frame();
     out.temporal_invalidated = temporal_.invalidated_this_frame();
+    out.temporal_cause = temporal_.statistics().last_cause;
+    out.jitter = temporal_.jitter().current();
+    out.jitter_pinned = temporal_.jitter().pinned();
+    out.jitter_index = temporal_.jitter().index();
 
     const bool on_device = cull_pass_ready_ && device_ != nullptr;
     if (on_device) {

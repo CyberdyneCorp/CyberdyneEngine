@@ -120,6 +120,43 @@ struct DeviceLimits {
     u64 timestamp_period_ns = 0;
 };
 
+/// WHAT A BACKEND OBSERVED ABOUT A DEVICE'S RAY TRACING, before anything decided anything.
+///
+/// THE DEFECT THIS STRUCT EXISTS TO MAKE IMPOSSIBLE. `Capability::RayTracing` was an enumerator
+/// NOTHING SET from M3 until M11.c — so every device this engine could open reported no ray
+/// tracing, including the RTX 5060 the GI fallback suite was written on, whose driver lists
+/// `VK_KHR_ray_query`. The failure mode in the other direction is worse and is the one this shape
+/// prevents: a backend that sets the capability because it was COMPILED with the extension's
+/// headers, or because the extension is listed, without the device ever reporting the FEATURE.
+/// Listing an extension and enabling its feature are different answers, and a driver gives both.
+///
+/// So the backend records what it saw, `device_reports_ray_tracing()` decides, and a test can put
+/// any device in front of that decision without owning a GPU — which is what makes the claim
+/// judgeable on a machine that cannot open a ray-tracing device at all.
+struct RayTracingObservation {
+    /// The extension is in the device's own list.
+    bool acceleration_structure_extension = false;
+    bool ray_query_extension = false;
+    /// `VK_KHR_acceleration_structure` requires it; a device that lists one and not the other
+    /// cannot create a structure, so the pair is the unit rather than either half.
+    bool deferred_host_operations_extension = false;
+    /// The device reported the feature bit, which is the answer that is not the same as the
+    /// extension being listed.
+    bool acceleration_structure_feature = false;
+    bool ray_query_feature = false;
+    /// The engine asked for the features when it created the device. A capability reported for a
+    /// feature nobody enabled is a capability a shader cannot use.
+    bool enabled_on_the_device = false;
+};
+
+/// Whether a device that reported this may be told it has ray tracing.
+///
+/// Every field is required and the conjunction is spelled one line per field DELIBERATELY: each
+/// line is one thing the device said, so removing any one of them is a one-line mutation that
+/// leaves a tree which still compiles and a capability that no longer reports the device — which is
+/// exactly the defect `m11c:ray-tracing-capability-honest` is proven against.
+[[nodiscard]] bool device_reports_ray_tracing(const RayTracingObservation& observed) noexcept;
+
 /// Which backend answered. Reported for a log line and a crash artefact — never branched on. The
 /// renderer branches on Capability; this exists so a bug report says which backend produced it.
 enum class BackendKind : u8 {
@@ -175,6 +212,17 @@ public:
     [[nodiscard]] const char* driver_version() const noexcept { return driver_version_; }
     void set_driver_version(const char* version) noexcept;
 
+    /// What the backend saw before it decided about ray tracing. Reported rather than inferred:
+    /// `has(Capability::RayTracing)` is one bit, and "which of the five answers was missing" is the
+    /// question a bug report about a device that should have traced actually asks.
+    [[nodiscard]] const RayTracingObservation& ray_tracing_observation() const noexcept {
+        return ray_tracing_;
+    }
+    void set_ray_tracing_observation(const RayTracingObservation& observed) noexcept {
+        ray_tracing_ = observed;
+        set(Capability::RayTracing, device_reports_ray_tracing(observed));
+    }
+
     /// GPU-driven rendering needs bindless. `rhi-and-render-graph` requires the compatibility
     /// path's limitations to be reported rather than to degrade silently, and this is the one
     /// question the renderer asks to find out which path it is on.
@@ -190,6 +238,7 @@ private:
     BackendKind backend_ = BackendKind::Null;
     char device_name_[128] = {};
     char driver_version_[64] = {};
+    RayTracingObservation ray_tracing_{};
 };
 
 }  // namespace cy::rhi

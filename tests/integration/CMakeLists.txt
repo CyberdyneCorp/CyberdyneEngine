@@ -50,3 +50,27 @@ cy_add_test(
         cy::terrain
         cy::water
         cy::weather)
+
+# THE HIERARCHICAL DEPTH BUFFER ON THE DEVICE, JUDGED AGAINST THE CPU MODEL. M11.c task 4.1 and 4.2.
+#
+# Here rather than in `cy::rendering-hzb`'s own tests because the claim spans three modules and no
+# one of them owns it: hzb/ builds the pyramid, `cy::servers-render-culling` is the CPU model that
+# has passed its own tests since M6, and `cy::rendering-gpu-culling` is the consumer whose dispatch
+# refused `kGpuCullOcclusion` by name until this rung. The requirement M11.c adds to
+# `rendering-culling-and-lod` is exactly about that seam: a model passing its own tests is not a
+# pass, and the device answer has to be compared against the model's for the same scene.
+#
+# It needs a Vulkan device and REPORTS "NOT EVALUATED" without one rather than passing on the
+# model's behalf. The ledger criterion that runs it carries `requires = "gpu"` for the same reason.
+cy_add_test(
+    NAME    rendering_culling
+    KIND    integration
+    SOURCES test_rendering_culling.cpp
+    DEPENDENCIES
+        cy::rendering-gpu-culling
+        cy::rendering-graph
+        cy::rendering-hzb
+        cy::rhi
+        cy::rhi-null
+        cy::rhi-vulkan
+        cy::servers-render-culling)

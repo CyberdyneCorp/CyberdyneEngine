@@ -74,6 +74,31 @@ inline constexpr u32 kBudgetSubsystemCount = static_cast<u32>(BudgetSubsystem::C
 
 [[nodiscard]] const char* budget_subsystem_name(BudgetSubsystem subsystem) noexcept;
 
+/// Where a reported cost came from.
+///
+/// `rendering-architecture`, M11.c: "A subsystem controller SHALL report a cost derived from an
+/// OBSERVATION of its own work in a frame — a timer, a counter scaled by a measured unit cost, or a
+/// device query — and SHALL NOT report a value that is a compile-time constant or a table lookup
+/// independent of the frame", and "The arbiter's per-frame report SHALL distinguish a measured cost
+/// from an estimated one, so that a subsystem with no measurement is visible as such rather than
+/// indistinguishable from one that is cheap."
+///
+/// THIS ENUMERATION IS NOT A LABEL THE REPORTER CHOOSES. A caller states what it BELIEVES it is
+/// reporting; what the report carries is that claim CONFIRMED BY THE NUMBERS — see
+/// `SubsystemController::cost_source()`. Seven controllers in `samples/07-fidelity` have been
+/// reporting a hard-coded table into this interface since M7 and the arbiter could not tell them
+/// from a measurement, which is the defect the M11.c requirement was written against.
+enum class CostSource : u8 {
+    /// A declared number: an engine default, a cost table, a compile-time constant. Legitimate —
+    /// `SubsystemDeclaration::base_cost_ms` is one, and it is what the arbiter has before any
+    /// measurement arrives — and useless as feedback, because it cannot disagree with the frame.
+    Estimated = 0,
+    /// Derived from an observation of the subsystem's own work in the frame it is reported for.
+    Measured,
+};
+
+[[nodiscard]] const char* cost_source_name(CostSource source) noexcept;
+
 /// The longest declared ladder. Four is what the spike's model used and five is what
 /// `virtual-shadows` folds into a composite; six leaves room without making the arbiter's arrays
 /// interesting.
@@ -170,6 +195,8 @@ struct SubsystemUpdate {
     bool at_reserved_minimum = false;
     /// Milliseconds over the allocation while pinned — reported, never corrected.
     f32 pinned_overrun_ms = 0.0F;
+    /// What `filtered_ms` actually is: `SubsystemController::cost_source()` at this update.
+    CostSource cost_source = CostSource::Estimated;
 };
 
 /// One subsystem's controller: it holds an allocation using its own ladder, and it cannot see the
@@ -195,7 +222,32 @@ public:
     [[nodiscard]] f32 allocation_ms() const noexcept { return allocation_ms_; }
 
     /// The subsystem's own measured cost. There is no frame-time equivalent, on purpose.
+    ///
+    /// "MEASURED" IS A CLAIM AND `cost_source()` IS THE VERDICT. Calling this does not make a cost a
+    /// measurement; a caller that hands the same number in every frame is reported `Estimated` by
+    /// `cost_source()` however it arrived here.
     void report_measured_ms(f32 measured_ms) noexcept;
+
+    /// A cost the subsystem did not observe: an engine default, a cook-time estimate, a table.
+    ///
+    /// It still drives the loop — an estimate is what the arbiter has before anything measures —
+    /// and it is reported as what it is, which is the whole difference this pair exists to make.
+    void report_estimated_ms(f32 estimated_ms) noexcept;
+
+    /// What the last reported cost actually was, rather than what the caller called it.
+    ///
+    /// `Measured` requires BOTH that the caller claimed a measurement and that the numbers it has
+    /// reported have moved. A claim nothing varies against is reported `Estimated`, and that is the
+    /// requirement's own scenario: "WHEN a subsystem controller reports a cost that does not vary
+    /// with the work it did that frame THEN the arbiter's report SHALL mark that subsystem's cost
+    /// as estimated."
+    ///
+    /// THE FALSE NEGATIVE IS DELIBERATE AND IS STATED HERE. A genuinely measured subsystem whose
+    /// work and whose machine are both perfectly steady reports the same number forever and is
+    /// called an estimate. That is the honest answer: an observation that never moves carries no
+    /// information the arbiter can act on, and is indistinguishable from the constant it would be
+    /// replaced by. A controller that wants the distinction back has only to do different work.
+    [[nodiscard]] CostSource cost_source() const noexcept;
 
     /// The arbiter permits one step back up. Consumed by the next `update()` that can use it.
     void grant_relax_step() noexcept { relax_granted_ = true; }
@@ -217,6 +269,9 @@ public:
 
 private:
     [[nodiscard]] f32 predicted_at(u8 candidate) const noexcept;
+    /// The filtering and the variance witness both reports share. Private because the DIFFERENCE
+    /// between the two entry points is the claim and nothing else.
+    void accept_report(f32 cost_ms) noexcept;
 
     SubsystemDeclaration declaration_;
     SubsystemControllerConfig config_;
@@ -226,6 +281,13 @@ private:
     f32 allocation_ms_ = 0.0F;
     u8 position_ = 0;
     u32 frames_since_relax_ = 0;
+    /// The first cost reported since the claim last changed, and whether anything has differed from
+    /// it since. Two fields rather than a variance: what the requirement asks is whether the number
+    /// MOVES, and a running variance would answer a different question more expensively.
+    f32 first_reported_ms_ = 0.0F;
+    bool reported_ = false;
+    bool varied_ = false;
+    CostSource claimed_source_ = CostSource::Estimated;
     bool measured_ = false;
     bool relax_granted_ = false;
     bool pinned_ = false;

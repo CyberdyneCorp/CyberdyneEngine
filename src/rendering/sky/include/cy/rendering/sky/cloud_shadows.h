@@ -63,6 +63,13 @@ inline constexpr const char* kCloudShadowFieldName = "cloud-shadow";
 /// The producer's name, as a refusal will print it.
 inline constexpr const char* kCloudShadowProducerName = "atmosphere-sky-and-clouds";
 
+/// The field's value where no cloud blocks the sun, and its declared default.
+///
+/// ONE, and a consumer multiplies by it. A default of zero would put a black world under a sky
+/// nothing had streamed, which is why `environment-fields` requires a sample outside resident data
+/// to answer the declared default rather than to block: the default has to be the invisible one.
+inline constexpr f32 kFullSun = 1.0F;
+
 /// The smallest cell a cloud shadow field may declare, in metres.
 ///
 /// SIXTY-FOUR, and the number is an argument rather than a taste. A cumulus is on the order of a

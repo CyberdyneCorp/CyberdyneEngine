@@ -36,6 +36,16 @@ function(cy_render_arbiter_declare_tests)
             "${tests_dir}/test_profiles.cpp"
         DEPENDENCIES cy::rendering-arbiter)
 
+    # rendering_architecture: the ROW's name rather than the module's, because the criterion it
+    # answers — `m11c:subsystem-controllers-report-costs` — is about the row and because its subject
+    # is a controller that is deliberately NOT in this module. It links `cy::rendering-sky` for that
+    # reason: "at least one controller outside a sample", and the sky's is the engine's first.
+    cy_add_test(
+        NAME rendering_architecture
+        KIND unit
+        SOURCES "${tests_dir}/test_measured_cost.cpp"
+        DEPENDENCIES cy::rendering-arbiter cy::rendering-sky)
+
     cy_add_test(
         NAME render_arbiter_sweep
         KIND integration

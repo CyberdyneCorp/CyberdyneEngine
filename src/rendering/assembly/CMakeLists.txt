@@ -40,6 +40,7 @@ cy_add_module(
     ALIAS cy::rendering-assembly
     TYPE STATIC
     SOURCES
+        src/capture_manifest.cpp
         src/frame_assembly.cpp
         src/scene_index.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"

@@ -39,25 +39,42 @@
 // depth prepass, the shadow passes and the opaque pass all bind the same bytes.
 //
 // ================================================================================================
-// WHAT IS DELIBERATELY NOT HERE
+// THE TWO REFUSALS THIS FILE CARRIED FROM M8.d TO M11.c, AND WHAT ACTUALLY CLOSED THEM
 // ================================================================================================
 //
-// **Dual quaternion skinning.** `SkinningMethod::DualQuaternion` is a declared option and this
-// dispatch does not implement it, because a dual-quaternion skin needs the pose AS DUAL
-// QUATERNIONS and `cy::animation::PoseWorld` publishes matrices — `Skeleton::to_skinning` composes
-// `model * inverse_bind` and hands back `Mat4`. Deriving a rotation quaternion per vertex per
-// influence inside the dispatch is the wrong place for that work by two orders of magnitude, and
-// adding a second pose representation is `animation-and-skinning`'s to add, not this module's.
-// `make_skin_constants` therefore REFUSES the method by name rather than silently linear-blending
-// and producing a candy-wrapper twist nobody could trace back to an ignored field.
+// Until M11.c `make_skin_constants` refused `SkinningMethod::DualQuaternion` and any non-zero
+// `blend_shape_count` by name, and the header argued that the first was blocked on
+// `animation-and-skinning` owing a second pose representation. **That argument was half right and
+// the half that was wrong is where the work goes.** The objection it actually makes is about COST:
 //
-// **Blend shapes.** `BlendShapeSet` in skinning.h is the storage and the active-shape compaction;
-// applying the deltas belongs in this same dispatch and is not written yet.
-// `make_skin_constants` refuses a descriptor with a non-zero `blend_shape_count` for the same
-// reason.
+//   "Deriving a rotation quaternion per vertex per influence inside the dispatch is the wrong place
+//   for that work by two orders of magnitude."
 //
-// Both refusals follow `GpuCullPass`'s refusal of `kGpuCullOcclusion`: a dispatch that quietly
-// ignored a flag would be indistinguishable from one that honoured it over empty data.
+// Per vertex per influence, yes — a skinned character is tens of thousands of vertices with four
+// influences each, against a hundred-odd bones. PER BONE it is a hundred conversions a frame, which
+// is the same order as composing `model * inverse_bind` in the first place. So the second pose
+// representation is `GpuBoneDualQuaternion` below and `pack_bone_dual_quaternion` is how it is
+// reached, exactly parallel to `GpuBoneMatrix` and `pack_bone_matrix` — which are also defined HERE
+// and not in `animation-and-skinning`, because a buffer layout the dispatch reads is the
+// dispatch's. `PoseWorld` still publishes `Mat4` and nothing about it changed; what changed is that
+// the renderer converts once per bone at pack time instead of refusing.
+//
+// A DUAL QUATERNION CANNOT CARRY SCALE, and this one does not pretend to. The third row of the
+// record is the bone's UNIFORM scale, extracted from the matrix's column lengths and blended
+// linearly beside the rigid part. A rig that non-uniformly scales a bone loses the shear — which is
+// the same thing `rotate_by_blend` already says about normals under linear blending, stated once
+// more where it bites harder.
+//
+// **Blend shapes.** `BlendShapeSet` in skinning.h was always the storage and the active-shape
+// compaction; what was missing was the arithmetic. It is here now, and it runs BEFORE the skin, on
+// the bind pose, which is the only order that means anything: a delta is authored against the
+// modelled shape and the skin is what carries that shape into the world. "in the same compute pass
+// as skinning" is the requirement's own words and this is the same pass.
+//
+// WHAT IS STILL REFUSED IS NOTHING, and that is worth saying plainly because the refusals were
+// load-bearing for three milestones. `make_skin_constants` now refuses only what
+// `SkinningDescriptor::validate()` refuses, plus an active-shape list longer than the mesh's
+// authored shape count.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -92,6 +109,37 @@ static_assert(sizeof(GpuBoneMatrix) == 48, "GpuBoneMatrix is three shader-visibl
 
 /// Transpose one `Mat4` into the dispatch's row form. The only place the convention changes.
 [[nodiscard]] GpuBoneMatrix pack_bone_matrix(const Mat4& skinning_matrix) noexcept;
+
+/// The SAME pose, as a dual quaternion, for `SkinningMethod::DualQuaternion`.
+///
+/// FORTY-EIGHT BYTES, WHICH IS `GpuBoneMatrix`'s, and the equality is the point rather than a
+/// coincidence: a pose buffer holds the same number of elements whichever representation a skin
+/// asked for, so a renderer that binds one in place of the other re-sizes nothing and a residency
+/// report charges the same bytes. A rigid dual quaternion needs thirty-two; the third row is where
+/// the scale goes, which is the thing a dual quaternion cannot carry.
+///
+/// `real` is the rotation as (x, y, z, w) and `dual` is `0.5 * (t as a pure quaternion) * real`,
+/// which is the standard encoding and the one every published blend skinning formula assumes.
+/// `scale[0]` is the bone's UNIFORM scale and `scale[1..3]` are zero and reserved — they are not a
+/// non-uniform scale waiting to be filled in, because blending three axes of scale beside a
+/// rotation is not a thing this representation can do.
+struct alignas(16) GpuBoneDualQuaternion {
+    f32 real[4] = {0.0F, 0.0F, 0.0F, 1.0F};
+    f32 dual[4] = {0.0F, 0.0F, 0.0F, 0.0F};
+    f32 scale[4] = {1.0F, 0.0F, 0.0F, 0.0F};
+};
+
+static_assert(sizeof(GpuBoneDualQuaternion) == 48,
+              "GpuBoneDualQuaternion is three shader-visible float4 rows, the same stride as "
+              "GpuBoneMatrix");
+
+/// Convert one skinning matrix into the dual-quaternion form, ONCE PER BONE.
+///
+/// The rotation is taken from the matrix's linear part with its column lengths divided out, which
+/// is what makes the scale separable; a matrix whose columns have three different lengths is
+/// non-uniformly scaled and this keeps their mean, losing the shear. That is stated in the header
+/// and it is the representation's limitation rather than this function's approximation.
+[[nodiscard]] GpuBoneDualQuaternion pack_bone_dual_quaternion(const Mat4& skinning_matrix) noexcept;
 
 // --- The influences, as the cooked mesh holds them -----------------------------------------------
 
@@ -158,6 +206,13 @@ enum GpuSkinFlagBits : u32 {
     /// there, it is the difference between a dispatch that reads a stream the pass will not bind
     /// and one that does not.
     kSkinWriteFrames = 1U << 0U,
+    /// Blend the pose as DUAL QUATERNIONS rather than as matrices — `SkinningMethod::DualQuaternion`.
+    ///
+    /// A FLAG AND NOT A SECOND ENTRY POINT, because the two methods differ in eleven lines out of a
+    /// hundred and every line they share is a line that must not drift: the influence decode, the
+    /// index clamp, the unweighted-vertex rule, the blend-shape pass and the frame re-encode are one
+    /// implementation each or they are two implementations of one algorithm again.
+    kSkinDualQuaternion = 1U << 1U,
 };
 
 /// Eight words, matching the shader's push constant block.
@@ -181,7 +236,11 @@ struct GpuSkinConstants {
     /// share one output buffer, and because the output is double buffered — the second frame's
     /// range is the first's plus the vertex count, which is what `SkinnedBuffers` indexes.
     u32 first_output_vertex = 0;
-    u32 reserved = 0;
+    /// How many entries of the active blend shape list the dispatch reads. Zero for a mesh with no
+    /// shapes AND for a mesh whose shapes are all at rest — which is `BlendShapeSet::active()`'s own
+    /// answer and the requirement's "WHEN 50 blend shapes exist and 5 have non-zero weight THEN only
+    /// the 5 active shapes' deltas SHALL be read".
+    u32 active_blend_shapes = 0;
 };
 
 static_assert(sizeof(GpuSkinConstants) == 32, "the push block is eight words");
@@ -193,7 +252,33 @@ static_assert(sizeof(GpuSkinConstants) == 32, "the push block is eight words");
 /// that a caller gets one diagnostic rather than a second-order one.
 [[nodiscard]] Expected<GpuSkinConstants, Error> make_skin_constants(
     const SkinningDescriptor& descriptor, bool write_frames, u32 first_input_vertex,
-    u32 first_output_vertex) noexcept;
+    u32 first_output_vertex, u32 active_blend_shapes = 0) noexcept;
+
+// --- The blend shapes, as the dispatch reads them -------------------------------------------------
+
+/// One ACTIVE shape: where its deltas are in the shared array, and the weight to apply them at.
+///
+/// SIXTEEN BYTES, which is one shader-visible `uint4`. The list is built per frame by
+/// `BlendShapeSet::active()` and holds only the shapes above the threshold, so the dispatch's cost
+/// is the active count and never the authored one.
+struct GpuActiveBlendShape {
+    /// `BlendShapeRange::first` for this shape.
+    u32 first = 0;
+    /// `BlendShapeRange::count`.
+    u32 count = 0;
+    f32 weight = 0.0F;
+    u32 reserved = 0;
+};
+
+static_assert(sizeof(GpuActiveBlendShape) == 16, "GpuActiveBlendShape is one shader-visible uint4");
+
+/// Build the dispatch's active list from a set's current weights. Returns how many were written.
+///
+/// `out` may be shorter than the set; the list is truncated at its size and the return value says
+/// how many entries the constants should name. A budget that caps active shapes is applied here,
+/// which is the one place it can be applied without the dispatch and the reference disagreeing.
+[[nodiscard]] u32 active_blend_shapes(const BlendShapeSet& shapes, f32 threshold,
+                                      Span<u32> scratch, Span<GpuActiveBlendShape> out) noexcept;
 
 // --- The reference ---------------------------------------------------------------------------
 
@@ -210,6 +295,15 @@ struct SkinInputs {
     Span<const PackedNormalTangent> frames;
     /// One record per vertex at four influences, two at eight.
     Span<const GpuSkinInfluence> influences;
+    /// The same pose as dual quaternions. Read INSTEAD of `bones` when `kSkinDualQuaternion` is set,
+    /// and empty otherwise — a dispatch binds one representation or the other, never both, because
+    /// a pose buffer carrying two encodings of one pose is two things that can disagree.
+    Span<const GpuBoneDualQuaternion> bone_dual_quaternions;
+    /// Every authored shape's deltas, sorted by vertex within each shape.
+    /// `BlendShapeSet::deltas()`.
+    Span<const BlendShapeDelta> blend_shape_deltas;
+    /// The shapes this frame actually applies, `constants.active_blend_shapes` of them.
+    Span<const GpuActiveBlendShape> active_shapes;
 };
 
 /// Everything it writes. `frames` may be empty when `kSkinWriteFrames` is clear.

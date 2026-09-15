@@ -37,6 +37,7 @@
 #include <cy/core/memory/array.h>
 #include <cy/rendering/virtual_geometry/asset.h>
 #include <cy/rendering/virtual_geometry/cluster.h>
+#include <cy/servers/render/culling/gpu_cull.h>
 
 namespace cy::rendering::vg {
 
@@ -88,6 +89,18 @@ struct TraversalView {
     u32 layer_mask = 0xFFFFFFFFU;
     /// Reject clusters whose normal cone faces entirely away from the camera.
     bool cone_culling = true;
+    /// The hierarchical depth buffer's test, or null. M11.c task 4.1.
+    ///
+    /// THE SAME INTERFACE `GpuCullOptions::occlusion` TAKES, and deliberately: a caller passes
+    /// `cy::render::culling::HzbOcclusionTester` over the pyramid `cy::rendering::hzb::HzbPass`
+    /// built, and the device runs `hzb_sample.slang` over the very same buffer. Two rows, one piece
+    /// of device work — which is the condition M11.c's specification delta attaches to this
+    /// capability's occlusion claim.
+    ///
+    /// Null answers "not occluded" for everything, which is what the reference did unconditionally
+    /// until this rung: `nodes_pruned_by_occlusion` and `rejected_by_occlusion` read zero and
+    /// README.md said so rather than leaving it to a counter.
+    const render::culling::OcclusionTester* occlusion = nullptr;
 };
 
 /// One surviving cluster, as traversal emits it. The rasteriser's input and the visibility buffer's

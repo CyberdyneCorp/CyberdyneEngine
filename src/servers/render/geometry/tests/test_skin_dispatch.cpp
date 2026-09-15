@@ -24,6 +24,7 @@
 // gives `w0·(2,0,0) + w1·(1,1,0)` because a matrix blend is linear in the matrix.
 
 #include <cy/core/math/matrix.h>
+#include <cy/core/memory/system_allocator.h>
 #include <cy/servers/render/geometry/skin_dispatch.h>
 #include <cy/test/test.h>
 
@@ -48,6 +49,10 @@ namespace {
 /// Absolute rather than relative, because half of these components are zero and a relative
 /// comparison against zero passes for any value at all. 1e-6 is about eight ulps at unit scale.
 constexpr f32 kAbsolute = 1e-6F;
+
+cy::Allocator& allocator() noexcept {
+    return cy::system_allocator(cy::MemoryDomain::Renderer);
+}
 
 void check_close(Vec3 measured, f32 x, f32 y, f32 z) {
     CY_CHECK(std::fabs(measured.x - x) < kAbsolute);
@@ -333,30 +338,349 @@ CY_TEST_CASE("skin dispatch: pack_bone_matrix is the one transposition in the pa
     check_close(through_record, 1.0F, 1.0F, 0.0F);
 }
 
-CY_TEST_CASE("skin dispatch: the two methods this pass does not implement are refused by name") {
-    // Following `GpuCullPass`'s refusal of `kGpuCullOcclusion`: a dispatch that quietly
-    // linear-blended a dual-quaternion skin would be indistinguishable from one that honoured the
-    // field, and the difference only shows as a twisted joint on a rig somebody else authored.
-    SkinningDescriptor dual = elbow_descriptor(1);
-    dual.method = SkinningMethod::DualQuaternion;
-    const cy::Expected<GpuSkinConstants, cy::Error> refused_dual =
-        make_skin_constants(dual, false, 0, 0);
-    CY_REQUIRE(!refused_dual.has_value());
-    CY_CHECK(refused_dual.error().code == cy::ErrorCode::NotImplemented);
+CY_TEST_CASE("skin dispatch: what the dispatch still refuses, now that it refuses neither method") {
+    // Until M11.c this case asserted that `SkinningMethod::DualQuaternion` and a non-zero
+    // `blend_shape_count` were refused with `NotImplemented`. Both are implemented; what remains
+    // refused is what the dispatch genuinely cannot execute.
 
-    SkinningDescriptor shapes = elbow_descriptor(1);
-    shapes.blend_shape_count = 3;
-    const cy::Expected<GpuSkinConstants, cy::Error> refused_shapes =
-        make_skin_constants(shapes, false, 0, 0);
-    CY_REQUIRE(!refused_shapes.has_value());
-    CY_CHECK(refused_shapes.error().code == cy::ErrorCode::NotImplemented);
-
-    // A baked instance is refused too — it has no skeleton and skins nothing — and the descriptor's
-    // own rules are checked first, so an invalid descriptor names its own defect.
+    // A baked instance has no skeleton and skins nothing, and the descriptor's own rules are
+    // checked first, so an invalid descriptor names its own defect.
     SkinningDescriptor baked = elbow_descriptor(1);
     baked.tier = AnimationTier::Baked;
     baked.retained_bones = 0;
     CY_CHECK(!make_skin_constants(baked, false, 0, 0).has_value());
+
+    // AN ACTIVE LIST LONGER THAN THE AUTHORED SET. The active list is a compaction of the mesh's
+    // shapes, so a dispatch told to read more of them than exist would read past the end of a
+    // storage buffer — undefined behaviour on the device, with no diagnostic there.
+    SkinningDescriptor shapes = elbow_descriptor(1);
+    shapes.blend_shape_count = 2;
+    CY_CHECK(make_skin_constants(shapes, false, 0, 0, 2).has_value());
+    const cy::Expected<GpuSkinConstants, cy::Error> too_many =
+        make_skin_constants(shapes, false, 0, 0, 3);
+    CY_REQUIRE(!too_many.has_value());
+    CY_CHECK(too_many.error().code == cy::ErrorCode::InvalidArgument);
+
+    // And both methods now REACH a constant block, with the method visible in the flags rather than
+    // in a second entry point.
+    SkinningDescriptor dual = elbow_descriptor(1);
+    dual.method = SkinningMethod::DualQuaternion;
+    const cy::Expected<GpuSkinConstants, cy::Error> accepted = make_skin_constants(dual, true, 0, 0);
+    CY_REQUIRE(accepted.has_value());
+    CY_CHECK((accepted->flags & kSkinDualQuaternion) != 0U);
+    CY_CHECK((make_skin_constants(elbow_descriptor(1), true, 0, 0)->flags & kSkinDualQuaternion) ==
+             0U);
+}
+
+CY_TEST_CASE(
+    "dual quaternion skinning: the elbow keeps its length where a matrix blend shortens it") {
+    // ============================================================================================
+    // THE CANDY WRAPPER, IN NUMBERS WORKED OUT ON PAPER
+    // ============================================================================================
+    //
+    // This is the whole reason `SkinningMethod::DualQuaternion` is a declared option, and it is why
+    // a dispatch that quietly linear-blended one would be a defect rather than an approximation.
+    //
+    // The pose is this file's elbow: bone 0 at rest, bone 1 a quarter turn about +Z around an elbow
+    // at (1, 0, 0). The vertex is at (2, 0, 0) — ONE UNIT past the elbow — split evenly between the
+    // two bones, which is the joint's own seam and the place the artefact appears.
+    //
+    //   MATRIX BLEND  averages the two matrices, so it averages the two ANSWERS:
+    //                 0.5·(2,0,0) + 0.5·(1,1,0) = (1.5, 0.5, 0).
+    //                 Its distance from the elbow is |(0.5, 0.5, 0)| = 0.70711.
+    //                 The limb lost 29% of its thickness. That is the candy wrapper.
+    //
+    //   DUAL BLEND    averages the two TRANSFORMS and renormalises, which for two rotations about
+    //                 one axis is the rotation halfway between them — Rz(45°) about the elbow:
+    //                 (1,0,0) + Rz(45°)·(1,0,0) = (1.70711, 0.70711, 0).
+    //                 Its distance from the elbow is exactly 1.
+    const std::vector<GpuBoneMatrix> matrix_pose = elbow_pose();
+
+    // The same pose, converted ONCE PER BONE — which is the cost argument this file's header makes.
+    Mat4 identity;
+    Mat4 forearm;
+    forearm.columns[0] = Vec4{0.0F, 1.0F, 0.0F, 0.0F};
+    forearm.columns[1] = Vec4{-1.0F, 0.0F, 0.0F, 0.0F};
+    forearm.columns[2] = Vec4{0.0F, 0.0F, 1.0F, 0.0F};
+    forearm.columns[3] = Vec4{1.0F, -1.0F, 0.0F, 1.0F};
+
+    // `pack_bone_matrix` and `pack_bone_dual_quaternion` are two encodings of ONE matrix, and this
+    // is the assertion that they are: the row form must be the elbow this file already uses.
+    const GpuBoneMatrix repacked = pack_bone_matrix(forearm);
+    CY_CHECK(std::fabs(repacked.rows[0][1] + 1.0F) < kAbsolute);
+    CY_CHECK(std::fabs(repacked.rows[0][3] - 1.0F) < kAbsolute);
+    CY_CHECK(std::fabs(repacked.rows[1][0] - 1.0F) < kAbsolute);
+    CY_CHECK(std::fabs(repacked.rows[1][3] + 1.0F) < kAbsolute);
+
+    const std::vector<GpuBoneDualQuaternion> dual_pose = {pack_bone_dual_quaternion(identity),
+                                                          pack_bone_dual_quaternion(forearm)};
+    // Rz(90°) is (0, 0, sin 45°, cos 45°) and the dual part of a rotation about an elbow at
+    // (1, 0, 0) works out to (0, -sin 45°, 0, 0). Stated, not captured.
+    constexpr f32 kHalfRoot2 = 0.70710678F;
+    CY_CHECK(std::fabs(dual_pose[1].real[2] - kHalfRoot2) < 1e-5F);
+    CY_CHECK(std::fabs(dual_pose[1].real[3] - kHalfRoot2) < 1e-5F);
+    CY_CHECK(std::fabs(dual_pose[1].dual[1] + kHalfRoot2) < 1e-5F);
+    CY_CHECK(std::fabs(dual_pose[1].scale[0] - 1.0F) < 1e-5F);
+
+    const Vec3 rest[1] = {Vec3{2.0F, 0.0F, 0.0F}};
+    const GpuSkinInfluence weights[1] = {influence(0, 128, 1, 127)};
+
+    const auto distance_from_elbow = [](Vec3 skinned) {
+        const Vec3 arm{skinned.x - 1.0F, skinned.y, skinned.z};
+        return std::sqrt((arm.x * arm.x) + (arm.y * arm.y) + (arm.z * arm.z));
+    };
+
+    // The matrix path, unchanged, and it shortens the limb.
+    Vec3 linear[1] = {};
+    {
+        const cy::Expected<GpuSkinConstants, cy::Error> constants =
+            make_skin_constants(elbow_descriptor(1), false, 0, 0);
+        CY_REQUIRE(constants.has_value());
+        SkinInputs inputs;
+        inputs.bones = Span<const GpuBoneMatrix>(matrix_pose.data(), matrix_pose.size());
+        inputs.positions = Span<const Vec3>(rest, 1);
+        inputs.influences = Span<const GpuSkinInfluence>(weights, 1);
+        SkinOutputs outputs;
+        outputs.positions = Span<Vec3>(linear, 1);
+        CY_REQUIRE(cpu_reference_skin(*constants, inputs, outputs).has_value());
+    }
+    // 128/255 and 127/255, not exactly a half, so the expected value is the weighted blend.
+    const f32 w1 = 127.0F / 255.0F;
+    check_close(linear[0], 2.0F - w1, w1, 0.0F);
+    CY_CHECK_LT(distance_from_elbow(linear[0]), 0.71F);
+
+    // The dual path, on the same vertex and the same weights, and it does not.
+    Vec3 dual[1] = {};
+    {
+        SkinningDescriptor descriptor = elbow_descriptor(1);
+        descriptor.method = SkinningMethod::DualQuaternion;
+        const cy::Expected<GpuSkinConstants, cy::Error> constants =
+            make_skin_constants(descriptor, false, 0, 0);
+        CY_REQUIRE(constants.has_value());
+        SkinInputs inputs;
+        inputs.bone_dual_quaternions =
+            Span<const GpuBoneDualQuaternion>(dual_pose.data(), dual_pose.size());
+        inputs.positions = Span<const Vec3>(rest, 1);
+        inputs.influences = Span<const GpuSkinInfluence>(weights, 1);
+        SkinOutputs outputs;
+        outputs.positions = Span<Vec3>(dual, 1);
+        CY_REQUIRE(cpu_reference_skin(*constants, inputs, outputs).has_value());
+    }
+    CY_TEST_MESSAGE("elbow at 50/50: matrix blend ", distance_from_elbow(linear[0]),
+                    " from the elbow, dual quaternion ", distance_from_elbow(dual[0]));
+    CY_CHECK(std::fabs(distance_from_elbow(dual[0]) - 1.0F) < 1e-4F);
+
+    // AND THE TWO METHODS AGREE WHERE THEY MUST: a vertex bound entirely to one bone is a rigid
+    // transform and there is nothing to blend, so both land on the pose's own answer. A dual path
+    // that disagreed here would be a conversion bug rather than a blending choice.
+    const GpuSkinInfluence whole[1] = {influence(1, 255)};
+    Vec3 dual_whole[1] = {};
+    SkinningDescriptor descriptor = elbow_descriptor(1);
+    descriptor.method = SkinningMethod::DualQuaternion;
+    const cy::Expected<GpuSkinConstants, cy::Error> constants =
+        make_skin_constants(descriptor, false, 0, 0);
+    CY_REQUIRE(constants.has_value());
+    SkinInputs inputs;
+    inputs.bone_dual_quaternions =
+        Span<const GpuBoneDualQuaternion>(dual_pose.data(), dual_pose.size());
+    inputs.positions = Span<const Vec3>(rest, 1);
+    inputs.influences = Span<const GpuSkinInfluence>(whole, 1);
+    SkinOutputs outputs;
+    outputs.positions = Span<Vec3>(dual_whole, 1);
+    CY_REQUIRE(cpu_reference_skin(*constants, inputs, outputs).has_value());
+    check_close(dual_whole[0], 1.0F, 1.0F, 0.0F);
+
+    // A DUAL-QUATERNION SKIN READS THE DUAL POSE AND NOT THE MATRIX ONE, and handing it the wrong
+    // buffer is refused rather than read as zeros: a pose of zero dual quaternions normalises to
+    // nothing and every vertex would sit at its bind position, which is a plausible-looking
+    // statue nobody could trace.
+    SkinInputs wrong_buffer;
+    wrong_buffer.bones = Span<const GpuBoneMatrix>(matrix_pose.data(), matrix_pose.size());
+    wrong_buffer.positions = Span<const Vec3>(rest, 1);
+    wrong_buffer.influences = Span<const GpuSkinInfluence>(whole, 1);
+    CY_CHECK(!cpu_reference_skin(*constants, wrong_buffer, outputs).has_value());
+}
+
+CY_TEST_CASE(
+    "dual quaternion skinning: two bones on opposite hemispheres blend rather than cancelling") {
+    // `q` AND `-q` ARE THE SAME ROTATION AND THEIR SUM IS ZERO. This is the one defect a
+    // dual-quaternion skin has that a matrix skin does not, it is invisible in any test whose bones
+    // were all converted from nearby rotations, and it presents as a vertex snapping to the origin.
+    //
+    // The pose here is built to have it: bone 1 is the elbow's rotation with EVERY COMPONENT
+    // NEGATED, which is the identical rotation and the identical translation. A blend without the
+    // sign fix gets a real part of `0.5·q + 0.5·(−q)` = 0, cannot normalise, and answers with the
+    // bind pose; with the fix it is the same 45° answer as the case above.
+    Mat4 identity;
+    Mat4 forearm;
+    forearm.columns[0] = Vec4{0.0F, 1.0F, 0.0F, 0.0F};
+    forearm.columns[1] = Vec4{-1.0F, 0.0F, 0.0F, 0.0F};
+    forearm.columns[2] = Vec4{0.0F, 0.0F, 1.0F, 0.0F};
+    forearm.columns[3] = Vec4{1.0F, -1.0F, 0.0F, 1.0F};
+
+    std::vector<GpuBoneDualQuaternion> pose = {pack_bone_dual_quaternion(identity),
+                                               pack_bone_dual_quaternion(forearm)};
+    for (u32 component = 0; component < 4U; ++component) {
+        pose[1].real[component] = -pose[1].real[component];
+        pose[1].dual[component] = -pose[1].dual[component];
+    }
+
+    const Vec3 rest[1] = {Vec3{2.0F, 0.0F, 0.0F}};
+    const GpuSkinInfluence weights[1] = {influence(0, 128, 1, 127)};
+    SkinningDescriptor descriptor = elbow_descriptor(1);
+    descriptor.method = SkinningMethod::DualQuaternion;
+    const cy::Expected<GpuSkinConstants, cy::Error> constants =
+        make_skin_constants(descriptor, false, 0, 0);
+    CY_REQUIRE(constants.has_value());
+
+    Vec3 skinned[1] = {};
+    SkinInputs inputs;
+    inputs.bone_dual_quaternions = Span<const GpuBoneDualQuaternion>(pose.data(), pose.size());
+    inputs.positions = Span<const Vec3>(rest, 1);
+    inputs.influences = Span<const GpuSkinInfluence>(weights, 1);
+    SkinOutputs outputs;
+    outputs.positions = Span<Vec3>(skinned, 1);
+    CY_REQUIRE(cpu_reference_skin(*constants, inputs, outputs).has_value());
+
+    const Vec3 arm{skinned[0].x - 1.0F, skinned[0].y, skinned[0].z};
+    const f32 length = std::sqrt((arm.x * arm.x) + (arm.y * arm.y) + (arm.z * arm.z));
+    CY_TEST_MESSAGE("antipodal bones: vertex at (", skinned[0].x, ", ", skinned[0].y, ", ",
+                    skinned[0].z, "), ", length, " from the elbow");
+    CY_CHECK(std::fabs(length - 1.0F) < 1e-4F);
+    // And it is NOT the bind pose, which is what a cancelled blend would have produced.
+    CY_CHECK(std::fabs(skinned[0].x - 2.0F) > 0.1F);
+}
+
+CY_TEST_CASE(
+    "blend shapes: the active shapes' deltas move the bind pose, and the skin carries the result") {
+    // `rendering-geometry-and-resources`: blend shape deltas are applied "in the same compute pass
+    // as skinning", and "WHEN 50 blend shapes exist and 5 have non-zero weight THEN only the 5
+    // active shapes' deltas SHALL be read and applied."
+    //
+    // THE ORDER IS THE ASSERTION. A delta is authored against the modelled shape, so it is added to
+    // the bind pose and the skin carries the result into the world. Applying it after the skin
+    // would move the vertex along the model's axes after it had been rotated onto the character's,
+    // and the difference is what this case measures: the vertex at (2, 0, 0) is bound entirely to
+    // the rotated bone and carries a delta of (1, 0, 0) at full weight.
+    //
+    //   deltas first:  (2,0,0) + (1,0,0) = (3,0,0), then the elbow's quarter turn -> (1, 2, 0)
+    //   deltas after:  (2,0,0) skinned -> (1,1,0), then + (1,0,0)                 -> (2, 1, 0)
+    BlendShapeSet shapes(allocator());
+    const BlendShapeDelta stretch[1] = {BlendShapeDelta{0, {1.0F, 0.0F, 0.0F}, {}, {}}};
+    const cy::Expected<u32, cy::Error> stretch_index =
+        shapes.add(Span<const BlendShapeDelta>(stretch, 1));
+    CY_REQUIRE(stretch_index.has_value());
+    // A second shape, left at rest, so that "only the active shapes are read" is a claim with
+    // something to exclude rather than a sentence about an empty set.
+    const BlendShapeDelta ruin[1] = {BlendShapeDelta{0, {0.0F, 0.0F, 99.0F}, {}, {}}};
+    CY_REQUIRE(shapes.add(Span<const BlendShapeDelta>(ruin, 1)).has_value());
+    CY_REQUIRE(shapes.set_weight(*stretch_index, 1.0F));
+
+    u32 scratch[4] = {};
+    GpuActiveBlendShape active[4] = {};
+    const u32 count = active_blend_shapes(shapes, 1e-3F, Span<u32>(scratch, 4),
+                                          Span<GpuActiveBlendShape>(active, 4));
+    CY_REQUIRE_EQ(count, 1U);
+    CY_CHECK_EQ(active[0].count, 1U);
+    CY_CHECK(std::fabs(active[0].weight - 1.0F) < kAbsolute);
+
+    const std::vector<GpuBoneMatrix> pose = elbow_pose();
+    const Vec3 rest[1] = {Vec3{2.0F, 0.0F, 0.0F}};
+    const GpuSkinInfluence weights[1] = {influence(1, 255)};
+    SkinningDescriptor descriptor = elbow_descriptor(1);
+    descriptor.blend_shape_count = 2;
+    const cy::Expected<GpuSkinConstants, cy::Error> constants =
+        make_skin_constants(descriptor, false, 0, 0, count);
+    CY_REQUIRE(constants.has_value());
+    CY_CHECK_EQ(constants->active_blend_shapes, 1U);
+
+    Vec3 skinned[1] = {};
+    SkinInputs inputs;
+    inputs.bones = Span<const GpuBoneMatrix>(pose.data(), pose.size());
+    inputs.positions = Span<const Vec3>(rest, 1);
+    inputs.influences = Span<const GpuSkinInfluence>(weights, 1);
+    inputs.blend_shape_deltas = shapes.deltas();
+    inputs.active_shapes = Span<const GpuActiveBlendShape>(active, count);
+    SkinOutputs outputs;
+    outputs.positions = Span<Vec3>(skinned, 1);
+    CY_REQUIRE(cpu_reference_skin(*constants, inputs, outputs).has_value());
+
+    CY_TEST_MESSAGE("blend shape then skin: (", skinned[0].x, ", ", skinned[0].y, ", ",
+                    skinned[0].z, ")");
+    check_close(skinned[0], 1.0F, 2.0F, 0.0F);
+
+    // THE SHAPE AT REST WAS NOT READ. Its delta is +99 on z and the answer's z is zero, which is
+    // the compaction working rather than a weight of zero multiplying it away — the second is also
+    // correct arithmetic and costs a delta list read per vertex per frame forever.
+    CY_CHECK(std::fabs(skinned[0].z) < kAbsolute);
+
+    // Waking it changes the answer, so the exclusion above is a decision and not an absence.
+    CY_REQUIRE(shapes.set_weight(1, 0.5F));
+    const u32 both = active_blend_shapes(shapes, 1e-3F, Span<u32>(scratch, 4),
+                                         Span<GpuActiveBlendShape>(active, 4));
+    CY_REQUIRE_EQ(both, 2U);
+    const cy::Expected<GpuSkinConstants, cy::Error> awake =
+        make_skin_constants(descriptor, false, 0, 0, both);
+    CY_REQUIRE(awake.has_value());
+    inputs.active_shapes = Span<const GpuActiveBlendShape>(active, both);
+    CY_REQUIRE(cpu_reference_skin(*awake, inputs, outputs).has_value());
+    check_close(skinned[0], 1.0F, 2.0F, 49.5F);
+}
+
+CY_TEST_CASE("blend shapes: a delta moves the normal and tangent frame, not only the position") {
+    // A shape that changes a surface's shape changes its normals, and a dispatch that moved only
+    // positions would leave a frowning face lit as though it were smiling. The frame is decoded,
+    // the delta is added, and the SKIN rotates the result — which is the same order the position
+    // takes and for the same reason.
+    BlendShapeSet shapes(allocator());
+    // The bind normal is +Z and the delta tips it towards +X by one unit, so the shape's normal is
+    // (1, 0, 1) normalised — 45 degrees — and under the identity pose that is what comes back.
+    const BlendShapeDelta tip[1] = {BlendShapeDelta{0, {}, {1.0F, 0.0F, 0.0F}, {}}};
+    CY_REQUIRE(shapes.add(Span<const BlendShapeDelta>(tip, 1)).has_value());
+    CY_REQUIRE(shapes.set_weight(0, 1.0F));
+
+    u32 scratch[2] = {};
+    GpuActiveBlendShape active[2] = {};
+    const u32 count = active_blend_shapes(shapes, 1e-3F, Span<u32>(scratch, 2),
+                                          Span<GpuActiveBlendShape>(active, 2));
+    CY_REQUIRE_EQ(count, 1U);
+
+    const std::vector<GpuBoneMatrix> pose = elbow_pose();
+    const Vec3 rest[1] = {Vec3{0.0F, 0.0F, 0.0F}};
+    const PackedNormalTangent frames[1] = {
+        cy::render::pack_normal_tangent(Vec3{0.0F, 0.0F, 1.0F}, Vec3{1.0F, 0.0F, 0.0F}, 1.0F)};
+    const GpuSkinInfluence weights[1] = {influence(0, 255)};  // the bone at rest: identity
+
+    SkinningDescriptor descriptor = elbow_descriptor(1);
+    descriptor.blend_shape_count = 1;
+    const cy::Expected<GpuSkinConstants, cy::Error> constants =
+        make_skin_constants(descriptor, true, 0, 0, count);
+    CY_REQUIRE(constants.has_value());
+
+    Vec3 skinned[1] = {};
+    PackedNormalTangent out_frames[1] = {};
+    SkinInputs inputs;
+    inputs.bones = Span<const GpuBoneMatrix>(pose.data(), pose.size());
+    inputs.positions = Span<const Vec3>(rest, 1);
+    inputs.frames = Span<const PackedNormalTangent>(frames, 1);
+    inputs.influences = Span<const GpuSkinInfluence>(weights, 1);
+    inputs.blend_shape_deltas = shapes.deltas();
+    inputs.active_shapes = Span<const GpuActiveBlendShape>(active, count);
+    SkinOutputs outputs;
+    outputs.positions = Span<Vec3>(skinned, 1);
+    outputs.frames = Span<PackedNormalTangent>(out_frames, 1);
+    CY_REQUIRE(cpu_reference_skin(*constants, inputs, outputs).has_value());
+
+    const Vec3 normal = unpack_normal(out_frames[0]);
+    constexpr f32 kHalfRoot2 = 0.70710678F;
+    CY_TEST_MESSAGE("blend-shaped normal: (", normal.x, ", ", normal.y, ", ", normal.z, ")");
+    // 1e-4, which is the octahedral encoding's own resolution at 16 bits and not a tolerance
+    // chosen until this passed.
+    CY_CHECK(std::fabs(normal.x - kHalfRoot2) < 1e-4F);
+    CY_CHECK(std::fabs(normal.z - kHalfRoot2) < 1e-4F);
+    // The bitangent sign is the input's: a skin rotates a frame and a delta moves it, and neither
+    // can mirror it.
+    CY_CHECK(unpack_bitangent_sign(out_frames[0]) > 0.0F);
 }
 
 CY_TEST_CASE("skin dispatch: a correctly cooked vertex's weight bytes sum to 255") {

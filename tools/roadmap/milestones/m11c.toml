@@ -263,16 +263,34 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_rendering_assembly"
-test -x "$binary" || { echo "no $binary — the suite integration.rendering_assembly does not exist"; exit 1; }
+# THE SUITE IS `integration.render_assembly` AND NOT `integration.rendering_assembly`. This ledger
+# was written naming the second, which has never existed; renaming the first to match it would have
+# taken `m8b:frame-is-assembled` — `just test-integration -R render_assembly` — red, because a
+# closed milestone's criterion selects it by that substring. The suite keeps its name and this
+# criterion names the suite.
+binary="$d/cy_test_integration_render_assembly"
+test -x "$binary" || { echo "no $binary — the suite integration.render_assembly does not exist"; exit 1; }
 filter='the frame passes through tone mapping*,the frame passes through anti-aliasing*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
 echo "the filter selected ${selected:-0} case(s) of the 2 it names"
-test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.rendering_assembly any more — renamed, deleted, or the filter is stale"; exit 1; }
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.render_assembly any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE DEFECT THE CRITERION IS ABOUT, and it is one line of production code rather
+# than a test. `decide_features` is where a temporal post stage turns into a frame that PRODUCES
+# MOTION VECTORS — `ForwardFrame::select_prepass_mode` derives the prepass from the feature set — so
+# deleting that assignment leaves a tree that still compiles, a manifest that still lists
+# `TemporalAntiAliasing`, and a frame whose prepass is depth-only and whose velocity target was
+# never allocated. That is exactly "the caption claims a stage the frame did not run", one level
+# down, and the anti-aliasing case goes red on the structure while the stage list still reads right.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/assembly/src/frame_assembly.cpp"
+token = "features.temporal = config.temporal_antialiasing || config.temporal_upscaling;"
+note = "the assignment is ONE statement and `FrameFeatures::temporal` defaults to false, so the tree still builds without it. The frame then declares no velocity target and no temporal pass for a chain that contains a temporal stage, and `the frame passes through anti-aliasing` fails on `prepass == DepthNormalVelocity` — the assertion that the STRUCTURE agrees with the stage list."
 
 [[criterion]]
 id = "virtual-geometry-image"
@@ -293,7 +311,13 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-pattern='^(unit.rendering_lighting|unit.rendering_shadows|unit.rendering_gi|unit.denoising|unit.rendering_post|unit.temporal_rendering|unit.virtual_geometry|unit.virtual_shadows)$'
+# THE EIGHT ROWS' SUITES, SPELLED AS `cy_add_test` DECLARES THEM. This ledger was written with the
+# ROW names — `unit.rendering_lighting`, `unit.denoising`, `unit.temporal_rendering`,
+# `unit.virtual_shadows` — and NOT ONE OF THOSE FOUR IS A SUITE IN THIS TREE, so the pattern matched
+# nothing and the `registered` guard below would have failed for a reason that has nothing to do
+# with the eight rows being green. The suites are named here and the guard is what keeps the list
+# honest when one is renamed.
+pattern='^(unit.render_lighting|unit.render_shadows|unit.render_gi|unit.render_denoise|unit.render_post|unit.render_temporal|unit.virtual_geometry|unit.render_raytracing)$'
 registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
 echo "$registered of 8 suite(s) match $pattern"
 test "$registered" -ge 8 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
@@ -373,16 +397,28 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_rendering_geometry"
-test -x "$binary" || { echo "no $binary — the suite unit.rendering_geometry does not exist"; exit 1; }
+# THE BINARY NAMED WHEN THIS LEDGER WAS WRITTEN — `cy_test_unit_rendering_geometry` — HAS NEVER
+# EXISTED. The suite is `unit.render_geometry` (src/servers/render/geometry/tests/), which is where
+# `cpu_reference_skin` and `make_skin_constants` live and therefore the only place these cases can
+# be. A criterion pointing at a binary no target produces is red for the wrong reason forever, which
+# is how `m11b:texture-encoders` closed over a real absence, so the name is corrected rather than a
+# second suite invented to match it.
+binary="$d/cy_test_unit_render_geometry"
+test -x "$binary" || { echo "no $binary — the suite unit.render_geometry does not exist"; exit 1; }
 filter='dual quaternion skinning*,blend shapes*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
 echo "the filter selected ${selected:-0} case(s) of the 2 it names"
-test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.rendering_geometry any more — renamed, deleted, or the filter is stale"; exit 1; }
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.render_geometry any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11c"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/servers/render/geometry/src/skin_dispatch.cpp"
+token  = "position = dual_apply(blend, source.position);"
+note   = "the claim is that the pass DOES dual quaternions, and the one line that makes it so applies the blended dual quaternion to the vertex. Deleting it leaves the dual path answering with the BIND POSE, which is exactly what a dispatch that read `SkinningMethod::DualQuaternion` and ignored it would do. What catches it is the half of that case which asserts the two methods AGREE: a vertex bound entirely to the rotated bone must land at (1, 1, 0) and sits at (2, 0, 0) instead. THE DISTANCE-FROM-THE-ELBOW ASSERTION ALONE DOES NOT CATCH IT — the bind vertex is also exactly one unit from the elbow — which is why that case carries both and why this note names the one that fires. Renaming `make_skin_constants`' refusal was tried first and rejected: it stops the file compiling, which is a red no reader of this criterion could act on."
 
 [[criterion]]
 id = "vfx-in-the-shot"

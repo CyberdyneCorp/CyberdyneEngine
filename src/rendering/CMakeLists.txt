@@ -32,6 +32,14 @@ add_subdirectory(material)
 # only because neither depends on the other.
 add_subdirectory(culling)
 
+# THE HIERARCHICAL DEPTH BUFFER, and it is ONE piece of work that two rows were waiting on. M11.c
+# task 4.1. `rendering-culling-and-lod`'s occlusion cull was refused by name in `GpuCullPass::upload`
+# because no pyramid existed on a device, and `virtual-geometry`'s cluster-granular occlusion had its
+# seam already cut with a counter reading zero. Both consume this module and neither owns it, so
+# "one buffer, two consumers" is something the link line says rather than something a reader has to
+# take on trust. Read before gpu_culling/ and virtual_geometry/ because both depend on it.
+add_subdirectory(hzb)
+
 # CyberGeometry: the virtualised geometry path. The cooked asset and its pages, the cluster
 # hierarchy and its crack-free error metric, the GPU geometry cache and its streaming feedback, GPU
 # traversal and cluster culling, and the visibility buffer with material resolve. M7 section 7.
@@ -107,6 +115,15 @@ add_subdirectory(temporal)
 # of ray marching. M7 task 10.4. It names nothing in gi/, which is what lets "sufficient for GI's
 # sky term" be a measurement in its own suite rather than a claim.
 add_subdirectory(sky)
+
+# THE COMPOSITION POINT WHERE THE ATMOSPHERE BECOMES ILLUMINATION. M11.c tasks 2.1–2.4, and the
+# whole of [dependency cycle 2](docs/roadmap/dependencies.md): the physical atmosphere landed at M10
+# and GI was to reach Complete there, and the seam was never joined — nothing in this tree
+# constructed a `gi::SkyTerm` from an atmosphere. EXACTLY ONE LIBRARY DEPENDS ON cy::rendering-gi
+# AND cy::rendering-sky AT ONCE AND IT IS THIS ONE, which is why it is a third module rather than an
+# edge added to either: sky/ says in capitals that it does not depend on gi/, and gi/ runs headless
+# on two dependencies. Read after both, because it composes them.
+add_subdirectory(sky_illumination)
 
 # The renderer's one budget arbiter, the subsystem controllers it allocates to, the four named
 # renderer profiles and the rendering configuration asset. M7 tasks 10.1 and 10.2, and the module

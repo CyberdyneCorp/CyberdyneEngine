@@ -22,6 +22,7 @@
 #include <cy/core/math/matrix.h>
 #include <cy/core/math/projection.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/assembly/capture_manifest.h>
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/assembly/scene_index.h>
 #include <cy/rendering/scene/extract.h>
@@ -29,6 +30,7 @@
 #include <cy/test/test.h>
 
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <new>
 
@@ -510,4 +512,237 @@ CY_TEST_CASE("a draw whose material is past the end of the table is counted, not
     CY_CHECK_EQ(again.material_slots_live, 2U);
     // Two slots were written, so the frame has a material upload interval to transfer.
     CY_CHECK_GT(again.material_upload_size, 0U);
+}
+
+// ================================================================================================
+// THE PICTURE'S OWN PROVENANCE. M11.c tasks 3.2 and 3.4.
+// ================================================================================================
+//
+// The two cases below are what `m11c:frame-passes-through-post` runs, and they are written as
+// COMPARISONS rather than as searches, because this project has shipped seven criteria that could
+// not go red and the ones about a picture are the easiest of all to fake. Each assembles a frame,
+// EXECUTES it, asks the frame for its own stage list, and then assembles the SAME frame with the
+// thing under test removed and requires the two answers to differ.
+//
+// A note on what is deliberately NOT asserted: no image is compared. The M11.c design refuses a
+// golden-image test of a tonemapped still — "a tolerance wide enough to survive a second GPU would
+// not detect a changed picture either" — and what replaces it is exactly this: the provenance, the
+// difference, and the caption checked against the frame.
+
+namespace {
+
+/// A frame assembled and executed through the null backend, so both cases below observe a frame
+/// that RAN rather than one that was described.
+struct ExecutedFrame {
+    explicit ExecutedFrame(cy::Allocator& alloc) noexcept : assembly(alloc), graph(alloc) {}
+
+    [[nodiscard]] bool run(const AssemblyDescription& description) noexcept {
+        (void)cy::rhi::null::register_null_backend();
+        cy::rhi::DeviceDescription device_description;
+        device_description.application_name = "cy_test_integration_render_assembly";
+        cy::rhi::BackendSelection selection{};
+        auto opened = cy::rhi::create_device(allocator(), "null", device_description, selection);
+        if (!opened) {
+            return false;
+        }
+        device = opened.value();
+        if (!assembly.initialize(description) || !assembly.attach_device(*device)) {
+            return false;
+        }
+        SpatialIndex index(allocator());
+        for (u32 which = 0; which < 3; ++which) {
+            SpatialEntry entry;
+            entry.bounds = cy::Aabb::from_center_extents(
+                Vec3{static_cast<f32>(which), 0.0F, -6.0F}, Vec3{0.5F, 0.5F, 0.5F});
+            entry.stable_id = 900U + which;
+            entry.radius = 0.9F;
+            if (!index.insert(entry)) {
+                return false;
+            }
+        }
+        const cy::render::LightDescription lights[] = {sun(1)};
+        if (!assembly.assemble(index, make_view({lights, 1}), FrameSinks{}, graph, report)) {
+            return false;
+        }
+        if (!device->begin_frame()) {
+            return false;
+        }
+        {
+            GraphExecutor executor(allocator(), *device);
+            const bool executed = assembly.execute(executor, graph, report).has_value();
+            const bool ended = device->end_frame().has_value();
+            if (!executed || !ended) {
+                return false;
+            }
+        }
+        return device->wait_idle().has_value();
+    }
+
+    ~ExecutedFrame() {
+        if (device != nullptr) {
+            cy::rhi::destroy_device(allocator(), device);
+        }
+    }
+
+    ExecutedFrame(const ExecutedFrame&) = delete;
+    ExecutedFrame& operator=(const ExecutedFrame&) = delete;
+
+    FrameAssembly assembly;
+    RenderGraph graph;
+    AssemblyReport report;
+    cy::rhi::Device* device = nullptr;
+};
+
+/// The provenance a capture recipe fills in: pinned arbiter, a measured exposure, the medium
+/// preset. Nothing here is the stage list.
+[[nodiscard]] CaptureProvenance publication_provenance() noexcept {
+    CaptureProvenance provenance;
+    provenance.title = "integration.render_assembly";
+    provenance.arbiter_pinned = true;
+    provenance.purpose = CapturePurpose::Publication;
+    provenance.ev100 = 12.5F;
+    provenance.quality = post_quality_preset(QualityLevel::Medium);
+    return provenance;
+}
+
+}  // namespace
+
+CY_TEST_CASE("the frame passes through tone mapping, and says so itself") {
+    AssemblyDescription description = make_description();
+    description.post.bloom = true;
+    description.post.colour_grading = true;
+
+    ExecutedFrame frame(allocator());
+    CY_REQUIRE(frame.run(description));
+    CY_REQUIRE(frame.report.executed);
+
+    // 1. THE FRAME EMITS THE LIST, and it is refused for a frame that did not run — which is what
+    //    stops a stage list from being published for a picture that does not exist.
+    AssemblyReport unexecuted;
+    CY_CHECK_EQ(capture_refusal(unexecuted, publication_provenance()),
+                CaptureRefusal::FrameNotExecuted);
+
+    const auto manifest = capture_manifest(description, frame.report, publication_provenance());
+    CY_REQUIRE(manifest.has_value());
+    CY_CHECK(manifest->ran(PostStage::Tonemap));
+    CY_CHECK(manifest->ran(PostStage::ExposureApply));
+    CY_CHECK(manifest->ran(PostStage::OutputEncoding));
+
+    // 2. IN THE SPECIFICATION'S ORDER AND NOT IN THE ONE A CAPTION WOULD GUESS. Exposure before
+    //    tonemapping, grading after it, and the colour space flipping at exactly that boundary.
+    CY_CHECK_LT(manifest->position_of(PostStage::ExposureApply),
+                manifest->position_of(PostStage::Tonemap));
+    CY_CHECK_LT(manifest->position_of(PostStage::Tonemap),
+                manifest->position_of(PostStage::ColourGrading));
+    CY_CHECK_EQ(manifest->stages[manifest->position_of(PostStage::Bloom)].space,
+                ColourSpace::SceneReferred);
+    CY_CHECK_EQ(manifest->stages[manifest->position_of(PostStage::ColourGrading)].space,
+                ColourSpace::DisplayReferred);
+
+    // 3. THE PICTURE COMES OUT OF THE CHAIN. `ForwardFrame` declares the Composite blit ONLY when
+    //    the composite did not already write the output — "with post-processing on, tonemapping
+    //    writes the swapchain image and this pass does not exist". So the presence of the post pass
+    //    and the ABSENCE of the blit is the frame saying the published image passed through it.
+    CY_CHECK_NE(frame.assembly.frame().pass_of(FramePassKind::PostProcess), kInvalidPass);
+    CY_CHECK_EQ(frame.assembly.frame().pass_of(FramePassKind::Composite), kInvalidPass);
+
+    // 4. AND THE COMPARISON, because a frame that always looks like this proves nothing. The same
+    //    frame with post switched OFF routes its picture through the blit instead, and has no post
+    //    pass at all. Two answers, and they differ.
+    ForwardFrame bare(allocator());
+    RenderGraph bare_graph(allocator());
+    FrameDescription bare_description;
+    bare_description.width = kWidth;
+    bare_description.height = kHeight;
+    bare_description.features.post_process = false;
+    CY_REQUIRE(bare.build(bare_graph, bare_description).has_value());
+    CY_CHECK_EQ(bare.pass_of(FramePassKind::PostProcess), kInvalidPass);
+    CY_CHECK_NE(bare.pass_of(FramePassKind::Composite), kInvalidPass);
+
+    // 5. THE CAPTION IS CHECKED AGAINST THE MANIFEST, IN BOTH DIRECTIONS. A caption claiming a
+    //    stage the frame ran is confirmed; one claiming a stage it did not is refused NAMING the
+    //    stage, rather than the difference resting on a reader's judgement.
+    const CaptionCheck honest =
+        check_caption(*manifest, "Tone mapping and colour grading, captured through the frame.");
+    CY_CHECK(honest.ok());
+    CY_CHECK_EQ(honest.claimed, 2U);
+    CY_CHECK_EQ(honest.confirmed, 2U);
+
+    const CaptionCheck overclaimed =
+        check_caption(*manifest, "Tone mapping, colour grading and depth of field.");
+    CY_CHECK_FALSE(overclaimed.ok());
+    CY_CHECK_EQ(overclaimed.missing, PostStage::DepthOfField);
+
+    // 6. AND THE TEXT PUBLISHED BESIDE THE PICTURE IS THE MANIFEST'S OWN.
+    char text[2048] = {};
+    const auto written = write_capture_manifest(*manifest, text, sizeof(text));
+    CY_REQUIRE(written.has_value());
+    CY_CHECK_GT(*written, 0U);
+    CY_CHECK(std::strstr(text, "Tonemap") != nullptr);
+    CY_CHECK(std::strstr(text, "arbiter pinned") != nullptr);
+
+    // 7. A PUBLICATION CAPTURE IS REFUSED WHILE THE ARBITER IS FREE TO DEGRADE THE FRAME, which is
+    //    the specification's own third scenario and the difference between an authored frame and
+    //    one the arbiter chose not to render.
+    CaptureProvenance unpinned = publication_provenance();
+    unpinned.arbiter_pinned = false;
+    CY_CHECK_EQ(capture_refusal(frame.report, unpinned), CaptureRefusal::ArbiterUnpinned);
+    CY_CHECK_FALSE(capture_manifest(description, frame.report, unpinned).has_value());
+    // The same frame is a legitimate DIAGNOSTIC capture. The refusal is about the claim, not the
+    // numbers.
+    unpinned.purpose = CapturePurpose::Diagnostic;
+    CY_CHECK(capture_manifest(description, frame.report, unpinned).has_value());
+}
+
+CY_TEST_CASE("the frame passes through anti-aliasing, and the structure under it agrees") {
+    // TEMPORAL ANTI-ALIASING IS THE ONE THAT CHANGES THE FRAME'S SHAPE, which is why it is the one
+    // a manifest alone cannot certify: a temporal stage in a frame whose prepass produced no
+    // velocity is a stage reading a target that was never allocated. So this case asserts the
+    // stage AND the structure, and then asserts that removing the stage removes the structure.
+    AssemblyDescription with = make_description();
+    with.post.temporal_antialiasing = true;
+    with.pin_jitter = true;
+    with.pinned_jitter_index = 0;
+
+    ExecutedFrame antialiased(allocator());
+    CY_REQUIRE(antialiased.run(with));
+
+    const auto manifest = capture_manifest(with, antialiased.report, publication_provenance());
+    CY_REQUIRE(manifest.has_value());
+    CY_CHECK(manifest->ran(PostStage::TemporalAntiAliasing));
+    CY_CHECK_EQ(manifest->stages[manifest->position_of(PostStage::TemporalAntiAliasing)].step, 5U);
+    CY_CHECK_EQ(manifest->prepass, PrepassMode::DepthNormalVelocity);
+    CY_CHECK(manifest->velocity_written);
+    CY_CHECK_NE(antialiased.assembly.resources().velocity, kInvalidResource);
+    CY_CHECK_NE(antialiased.assembly.frame().pass_of(FramePassKind::Temporal), kInvalidPass);
+
+    // DETERMINISM AND CAPTURE, which is the requirement a beauty shot is most tempted to skip: the
+    // sequence is PINNED, so the same frame index gives the same sub-pixel offset on every run.
+    CY_CHECK(manifest->jitter_pinned);
+
+    // AND THE COMPARISON. The same description with the stage removed: no TAA in the list, a
+    // depth-only prepass, and NO VELOCITY TARGET AT ALL — "their passes SHALL be absent from the
+    // graph and their targets unallocated". If these two frames were the same, nothing in this
+    // suite would be measuring anti-aliasing.
+    AssemblyDescription without = with;
+    without.post.temporal_antialiasing = false;
+
+    ExecutedFrame aliased(allocator());
+    CY_REQUIRE(aliased.run(without));
+    const auto bare = capture_manifest(without, aliased.report, publication_provenance());
+    CY_REQUIRE(bare.has_value());
+    CY_CHECK_FALSE(bare->ran(PostStage::TemporalAntiAliasing));
+    CY_CHECK_EQ(bare->prepass, PrepassMode::DepthOnly);
+    CY_CHECK_FALSE(bare->velocity_written);
+    CY_CHECK_EQ(aliased.assembly.resources().velocity, kInvalidResource);
+    CY_CHECK_EQ(aliased.assembly.frame().pass_of(FramePassKind::Temporal), kInvalidPass);
+    CY_CHECK_LT(bare->stage_count, manifest->stage_count);
+
+    // AND THE CAPTION IS REFUSED FOR THE FRAME THAT DID NOT ANTI-ALIAS. This is the failure the
+    // whole mechanism exists for: the same sentence under two pictures, true of one and false of
+    // the other, and the check tells them apart.
+    CY_CHECK(check_caption(*manifest, "1080p, tone mapped, with anti-aliasing.").ok());
+    const CaptionCheck wrong = check_caption(*bare, "1080p, tone mapped, with anti-aliasing.");
+    CY_CHECK_FALSE(wrong.ok());
+    CY_CHECK_EQ(wrong.missing, PostStage::TemporalAntiAliasing);
 }

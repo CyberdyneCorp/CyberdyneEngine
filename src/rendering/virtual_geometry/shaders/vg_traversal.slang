@@ -39,17 +39,21 @@
 // final one: a scene with many instances of a large asset wants a hash instead. The bound is
 // checked on the host and the driver refuses rather than overflowing.
 //
+// THE OCCLUSION TEST IS INCLUDED, NOT WRITTEN HERE — M11.c task 4.1. `hzb_sample.slang` is the same
+// file `gpu_cull.slang` includes and the pyramid is the same `cy::rendering::hzb::HzbPass` builds:
+// one piece of device work for two rows, which is why the invocations below carry `-I`.
+//
 // ================================================================================================
 // REGENERATING
 // ================================================================================================
 //
-//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 \
+//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 -I ../../hzb/shaders \
 //          -entry vgReset        -stage compute -o vg_reset.spv
-//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 \
+//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 -I ../../hzb/shaders \
 //          -entry vgInstanceCull -stage compute -o vg_instance_cull.spv
-//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 \
+//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 -I ../../hzb/shaders \
 //          -entry vgPrepare      -stage compute -o vg_prepare.spv
-//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 \
+//   slangc vg_traversal.slang -target spirv -profile spirv_1_5 -I ../../hzb/shaders \
 //          -entry vgTraverse     -stage compute -o vg_traverse.spv
 //   python3 embed_spirv.py vg_spirv.h \
 //          kVgResetSpirv=vg_reset.spv kVgInstanceCullSpirv=vg_instance_cull.spv \
@@ -145,11 +149,18 @@ static const uint kCountRejectedFrustum = 8;
 static const uint kCountRejectedSize = 9;
 static const uint kCountVisibleTriangles = 10;
 static const uint kCountMissingPages = 11;
-static const uint kCounterWords = 12;
+/// M11.c task 4.1. Until this rung both of these were absent from the shader and the two
+/// `TraversalStatistics` fields behind them read zero, which README.md recorded as the SEAM rather
+/// than leaving it to be discovered from a counter.
+static const uint kCountPrunedOcclusion = 12;
+static const uint kCountRejectedOcclusion = 13;
+static const uint kCounterWords = 14;
 
 // Indirect dispatch arguments: three words per queue, ping then pong.
 static const uint kArgsPing = 0;
 static const uint kArgsPong = 3;
+
+#include "hzb_sample.slang"
 
 struct VgView
 {
@@ -184,6 +195,15 @@ ConstantBuffer<VgPush> push;
 [[vk::binding(11, 0)]] RWStructuredBuffer<VgRequest> requests;
 [[vk::binding(12, 0)]] RWStructuredBuffer<uint> visited;
 [[vk::binding(13, 0)]] StructuredBuffer<uint> clusterTriangles;
+/// THE SAME PYRAMID `gpu_cull.slang` READS, built by the same `cy::rendering::hzb::HzbPass`, tested
+/// by the same `hzb_sample.slang`. One piece of device work serves `rendering-culling-and-lod`'s
+/// occlusion cull and this row's cluster-granular occlusion, which is what stops it from being
+/// recorded as two satisfied requirements.
+[[vk::binding(14, 0)]] StructuredBuffer<float> hzb;
+/// The occlusion parameters, in a buffer rather than in the push block: `VgView` already occupies
+/// the 128 bytes of push constants every Vulkan implementation guarantees, and eighty more would be
+/// a portability claim this engine has not measured.
+[[vk::binding(15, 0)]] StructuredBuffer<HzbParams> hzbParams;
 
 // The step this dispatch is running: 0 reads queueA and writes queueB, 1 the other way round.
 // A specialization constant rather than a push field, so the two pipelines differ by a constant
@@ -403,6 +423,16 @@ void vgTraverse(uint3 id : SV_DispatchThreadID)
         return;
     }
 
+    // OCCLUSION, ON THE SUBTREE'S SPHERE, for the same reason the frustum prune is: pruning a
+    // subtree is only sound against the sphere that contains everything beneath it. A group hidden
+    // behind an occluder has every cluster beneath it hidden too; a group that is NOT hidden may
+    // still have hidden clusters, and those are rejected below, beside the cone test.
+    if (hzbOccludesSphere(hzb, hzbParams[0], subtree.xyz, subtree.w))
+    {
+        InterlockedAdd(counters[kCountPrunedOcclusion], 1u);
+        return;
+    }
+
     bool resident = pageResident(asset.pageBase, cluster.page);
     uint ancestor = resident ? node.cluster : node.ancestor;
 
@@ -467,6 +497,14 @@ void vgTraverse(uint3 id : SV_DispatchThreadID)
     if (2.0f * world.w * pixelsPerUnitFrom(push.view.camera, world.xyz, world.w) < 0.5f)
     {
         InterlockedAdd(counters[kCountRejectedSize], 1u);
+        return;
+    }
+    // `virtual-geometry` — "Candidate clusters SHALL then be culled by: frustum, normal cone
+    // backface rejection, screen size, and HZB occlusion." The order is the requirement's and the
+    // reference takes it in the same order, which is what makes the comparison an equality.
+    if (hzbOccludesSphere(hzb, hzbParams[0], world.xyz, world.w))
+    {
+        InterlockedAdd(counters[kCountRejectedOcclusion], 1u);
         return;
     }
 

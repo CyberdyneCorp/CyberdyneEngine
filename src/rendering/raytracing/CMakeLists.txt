@@ -25,9 +25,16 @@ cy_add_module(
     TYPE STATIC
     SOURCES
         src/acceleration.cpp
+        src/capability.cpp
         src/geometry.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory
+    # cy::rhi IS THE INTERFACE AND NOT A DEVICE, and the distinction is the module's whole layering
+    # argument. M11.c task 2.6 makes `ServiceConfig::device_supports_ray_tracing` follow from
+    # `rhi::Capability::RayTracing` instead of from a caller's guess, which needs the capability
+    # model — a layer-3 header with no driver behind it. What is still absent, and is the rule this
+    # module is actually held to, is a GRAPHICS API: `tools/layercheck/layercheck.py`'s `gpuapi`
+    # rule allows a Vulkan header only under src/backends/, so nothing here can name one.
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-math cy::core-memory cy::rhi
     PRIVATE_DEPENDENCIES cy::core-jobs)
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
