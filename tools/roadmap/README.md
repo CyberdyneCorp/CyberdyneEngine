@@ -19,6 +19,8 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `tools/roadmap/milestones/<id>.toml` | One milestone's **new** exit criteria — what it adds to the permanent set, not what it inherits. `m0.toml` through `m4.toml` today; M5 through M11 add a file each and should change no code — M3 added one line, the `gpu` requirement below, because it is the first milestone whose criteria need hardware, M4 added the `MINIMUM_CRITERIA` floors below, because its ledger was otherwise covered by nothing, and M5 removed the `m<n>-green` chaining criteria for the reason under "A ledger is flat". |
 | `tools/roadmap/gates.toml` | The permanent merge-gate set, and the overrides recorded against it. |
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
+| `falsify.py` | Whether a criterion can go RED. Breaks what each one names, in a sandboxed copy of the tree, and requires it to fail. `just roadmap-falsify`. |
+| `falsifiability.toml` | Generated. What the ladder has shown can fail, and the list — which only shrinks — of what it has not. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
 
@@ -77,6 +79,95 @@ recipe that quietly skipped its rendering criteria would report M3 green on exac
 least able to judge it.
 
 Exit status: `0` every criterion this host evaluated passed, `1` one failed, `2` the data is wrong.
+
+## A criterion nobody has shown can fail is not a check
+
+This repository has now found **seven** criteria that were green because nothing could make them
+red: a determinism test whose scene never contended; a sky test asserting against the producer's own
+statistics instead of the store; a criterion running through a recipe that passes
+`--no-tests=ignore`; two whose grep matched only the ledger file doing the grepping; a dependency
+check parsing backticks out of a table written in bold; and a four-profiles criterion that passed
+only because the runner supplied a build step it lacked. Then M11.a and M11.b's gate refuted five
+claims at once, three of them "word-greps a dummy job satisfies".
+
+At seven it is not seven bugs. It is a defect in how a criterion is written, and six comments asking
+for care have already failed to fix it. So the rule is enforced by tooling:
+
+> **A criterion is not admitted to a ledger until the tooling has broken what it names and watched
+> it go red.**
+
+`just roadmap-falsify` is that tooling, and `just roadmap-test` — the `plan-consistency` criterion of
+every ledger on the ladder — runs it on every pull request.
+
+### What a proof is
+
+Three runs against a sandbox that is a copy of the **tracked** tree, never the tree itself:
+
+| Run | Must |
+|---|---|
+| positive control — unmutated | **pass**, or the criterion is reported *not provable here* with the reason, and is not counted as proven |
+| the mutation | **fail** |
+| ledger-blind — `tools/roadmap/milestones/` deleted | **pass** |
+
+The third exists because two of the seven were a grep that found its own ledger. No regex catches
+every spelling of that; deleting the ledgers catches all of them, because a criterion whose verdict
+changes when the roadmap is deleted was reading the roadmap.
+
+### The mutation is derived, not described
+
+The author writes nothing. A `path` criterion names the artefact, a `tiers` criterion names the
+rows, and a text search names the token and the files it reads — so `falsify.py` derives the
+mutation from the criterion's own text and applies it. A field an author fills in is a field an
+author can fill in falsely, and prose is what the seven were written in.
+
+Where a mutation cannot be derived — a loop over a shell variable, a path assembled by a command
+substitution — the criterion declares one, and what it declares is a verb and a target the tooling
+executes:
+
+```toml
+[criterion.falsifies]
+mutate = "rename-token"   # delete-path | delete-lines | rename-token | truncate | lower-tiers
+target = "src/editor/"
+token  = "LiveEditPolicy"
+```
+
+A mutation that changes nothing is itself a finding: it names a file or a token that is not there.
+
+### Shapes refused on sight
+
+Some criteria cannot be judged by mutation because the sandbox has no build tree, and some cannot be
+judged by anything because no state of the repository makes them fail. Those are read rather than
+run, and each rule has a negative fixture in `selftest.py` spelled the way the ledgers spell it:
+
+| Rule | Refuses |
+|---|---|
+| `searches-the-repository-root` | `grep -r <token> .` — the mere presence of the token **anywhere** satisfies it |
+| `self-match` | a search that reaches `tools/roadmap/` without filtering it out: the ledger declaring the criterion is one of the files searched |
+| `vacuous-suite` | `just test-render -R <suite>` and `ctest -R <suite>` — an empty selection exits zero unless the registration is asserted |
+| `no-assertion` | a body whose every command is inert: it reports and returns |
+| `swallowed-verdict` | `… || true` at the end: the exit code cannot reach the criterion |
+
+Two further shapes are reported apart, because they are a weaker complaint: `presence-only`, whose
+whole verdict is that some text exists, and `artefact-presence`, a `path` criterion satisfied by a
+file of the right name whatever is in it. Both *can* go red. Both are satisfied by typing the word.
+
+### The list only shrinks
+
+`falsifiability.toml` records every proof and every criterion not yet proven. `just roadmap-test`
+re-runs the proofs rather than believing the file, and fails in four directions:
+
+* a criterion nothing has judged — it is new, or edited since: it arrives with a proof or it does
+  not arrive. **This is what stops the eighth.**
+* an entry whose digest has moved. The digest is over what the criterion *checks*, so re-wording a
+  description is free and changing a command costs a re-proof.
+* an entry that has become provable — `DELETE THE ENTRY`, the same anti-rot direction as a declared
+  gap that starts passing.
+* a proof that has stopped proving.
+
+`--record` will always write a **proof**. It refuses to add a new *unproven* entry: otherwise it
+would be the escape hatch that makes the whole mechanism advisory. The one exception is
+`--baseline`, which wrote this ladder's existing debt once; it is a flag on a command line rather
+than a field in a file, so using it shows up in a review.
 
 ## A gap a milestone ships knowingly
 

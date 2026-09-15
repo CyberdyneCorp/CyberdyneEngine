@@ -36,3 +36,21 @@ roadmap-gates *args:
 # Test the roadmap tooling itself: drift detection, criteria loading, and the override rules.
 roadmap-test *args:
     @cd "{{root}}" && python3 tools/roadmap/selftest.py {{args}}
+
+# Show which criteria have been shown able to FAIL. --record writes tools/roadmap/falsifiability.toml.
+#
+# A criterion nobody has shown can fail is not a check, and this repository has now found seven of
+# them. `prove` breaks what each criterion names — in a sandboxed copy of the tracked tree, never in
+# the tree — and requires it to go red; `audit` reads the shapes that cannot go red whatever the
+# tree contains; `check` is what `just roadmap-test` runs on every pull request.
+roadmap-falsify *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    # `${argv[@]+"${argv[@]}"}` rather than `"${argv[@]}"`: an empty array under `set -u` is an
+    # unbound variable on bash 4.3, which is what `just roadmap-falsify` with no arguments is.
+    argv=({{args}})
+    case "${argv[0]:-prove}" in
+        audit|prove|check) python3 tools/roadmap/falsify.py ${argv[@]+"${argv[@]}"} ;;
+        *)                 python3 tools/roadmap/falsify.py prove ${argv[@]+"${argv[@]}"} ;;
+    esac

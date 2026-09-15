@@ -49,6 +49,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import criteria as criteria_module  # noqa: E402
+import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import record as record_module  # noqa: E402
@@ -1150,6 +1151,181 @@ def test_declared_gaps(root: Path) -> None:
     check("an ordinary failure beside a declared gap still fails the milestone", code != 0)
 
 
+# --- Falsifiability: the defect this project has now shipped seven of ------------------------------
+#
+# A determinism test whose scene never contended; a sky test asserting against the producer's own
+# statistics; a criterion running through a recipe that passes `--no-tests=ignore`; two criteria
+# whose grep matched only the ledger file doing the grepping; a dependency check parsing backticks
+# out of a table written in bold; a four-profiles criterion the runner had to help; and then five
+# refuted claims at M11.a/M11.b's gate. Seven findings of one defect: A CRITERION NOBODY HAS SHOWN
+# CAN FAIL IS NOT A CHECK, and every one of them was green until somebody read it.
+#
+# `falsify.py` is the mechanism and this is what makes it a gate rather than a tool nobody runs:
+# `just roadmap-test` is the `plan-consistency` criterion of every ledger on the ladder, so a
+# criterion that has not been shown able to go red turns every milestone gate red instead.
+#
+# The cases below come in pairs on purpose. Each rule is fired at the defect it was written for —
+# spelled as the ledgers actually spell it — and then at the corrected version of the same check,
+# because a rule that flags everything is as useless as one that flags nothing, and the first draft
+# of three of these rules did exactly that.
+
+
+def _criterion(identifier: str, run: str, **extra) -> criteria_module.Criterion:
+    return criteria_module.Criterion(id=identifier, describe="a fixture", source="a fixture",
+                                     kind=extra.pop("kind", "command"), ci_job="milestone-m0",
+                                     run=run, **extra)
+
+
+def _rules(run: str, **extra) -> set[str]:
+    return {finding.rule for finding in falsify_module.inspect(_criterion("fixture", run, **extra))}
+
+
+def test_falsifiability_rules(root: Path) -> None:
+    """Each rule against the defect it was written for, and against the corrected check beside it."""
+    del root
+
+    # THE TWO FAILURE MODES THIS MECHANISM WAS ASKED TO MAKE IMPOSSIBLE.
+    check("a grep over the whole tree is refused: it matches the ledger doing the grepping",
+          "self-match" in _rules("grep -rq SeparateProcess ."))
+    check("and it is refused a second time for matching a token ANYWHERE in the tree",
+          "searches-the-repository-root" in _rules("grep -rq SeparateProcess ."))
+    check("a grep of tools/ that does not filter out tools/roadmap/ is refused",
+          "self-match" in _rules("grep -rniIl FieldImage src/ tools/"))
+    check("the same grep is accepted once it filters its own ledger out — M11.b's spelling",
+          not _rules('grep -rniIl SeparateProcess src/ editor/ tools/ | grep -v "^tools/roadmap/"'))
+    check("and accepted when --include cannot open a .toml — M9's `replay-one-record` spelling",
+          not _rules("grep -rn kRecordTypeId src/ tools/ --include='*.h' --include='*.cpp'"))
+    check("a grep scoped to source directories is not accused of anything",
+          not _rules("grep -rq CY_BREADCRUMB src/ --include='*.cpp'"))
+
+    # THE DEFECT M8 SHIPPED: a recipe that reports a pass for having run nothing.
+    check("`just test-render -R <suite>` is refused: --no-tests=ignore makes an empty selection pass",
+          "vacuous-suite" in _rules("just test-render -R vfx"))
+    check("the same suite is accepted once the criterion asserts the suite is registered — M10's",
+          "vacuous-suite" not in _rules(
+              'ctest --test-dir "$d" -N -R \'^render.vfx_gpu$\' | grep -q render.vfx_gpu\n'
+              "just test-render -R '^render.vfx_gpu$'"))
+    check("a ctest that selects and asserts nothing about the selection is refused",
+          "vacuous-suite" in _rules('ctest --test-dir "$d" -R vfx'))
+
+    # A BODY THAT CANNOT RETURN NON-ZERO, which is what "a word-grep a dummy job satisfies" becomes
+    # once the grep is deleted.
+    check("a criterion that only reports is refused",
+          "no-assertion" in _rules('echo "the play modes exist"\nls src/'))
+    check("a criterion that ends by discarding its own verdict is refused",
+          "swallowed-verdict" in _rules("grep -q SeparateProcess src/editor/play.h || true"))
+    check("an embedded Python program is NOT mistaken for a body with no assertion",
+          "no-assertion" not in _rules("set -eo pipefail\npython3 - <<'CHECK'\nimport sys\n"
+                                       "sys.exit(1)\nCHECK"))
+    check("nor is `CY_BUILD_DIR=... cargo test`, whose command is cargo and not the assignment",
+          "no-assertion" not in _rules('CARGO_TARGET_DIR="$(just _editor-target-dir)" cargo test'))
+
+
+def test_falsifiability_digest(root: Path) -> None:
+    """The digest is over what a criterion CHECKS, so prose is free and a changed check is not."""
+    del root
+    original = _criterion("x", "grep -q Token src/a.h")
+    reworded = criteria_module.Criterion(**{**original.__dict__, "describe": "a much better wording",
+                                           "source": "tasks 99.9"})
+    changed = criteria_module.Criterion(**{**original.__dict__, "run": "grep -q Other src/a.h"})
+    check("re-wording a criterion costs nothing",
+          falsify_module.digest(original) == falsify_module.digest(reworded))
+    check("changing what it runs costs a re-proof",
+          falsify_module.digest(original) != falsify_module.digest(changed))
+    declared = criteria_module.Criterion(
+        **{**original.__dict__, "falsifies": {"mutate": "delete-path", "target": "src/a.h"}})
+    check("and so does changing the mutation it declares",
+          falsify_module.digest(original) != falsify_module.digest(declared))
+
+
+def test_falsifiability_reconciliation(root: Path) -> None:
+    """The four directions the inventory can disagree with the ladder, none of which may be silent."""
+    del root
+    proven = falsify_module.Proof("m0", "good", "aaaa", falsify_module.PROVEN, "delete-path", "red")
+    unproven = falsify_module.Proof("m0", "debt", "bbbb", falsify_module.NO_MUTATION, "-", "")
+
+    empty = falsify_module.Inventory()
+    findings = falsify_module.reconcile([proven], empty)
+    check("A CRITERION NOTHING HAS JUDGED IS REFUSED — this is what stops the eighth",
+          any("nothing in falsifiability.toml has judged" in finding for finding in findings),
+          str(findings))
+
+    inventory = falsify_module.Inventory(proofs={("m0", "good"): proven},
+                                         unproven={("m0", "debt"): unproven})
+    check("a ladder that matches its inventory reports nothing",
+          not falsify_module.reconcile([proven, unproven], inventory))
+
+    edited = falsify_module.Proof("m0", "good", "cccc", falsify_module.PROVEN, "delete-path", "red")
+    findings = falsify_module.reconcile([edited, unproven], inventory)
+    check("a criterion edited since it was proven is refused until it is proven again",
+          any("has changed since it was last judged" in finding for finding in findings),
+          str(findings))
+
+    paid = falsify_module.Proof("m0", "debt", "bbbb", falsify_module.PROVEN, "rename-token", "red")
+    findings = falsify_module.reconcile([proven, paid], inventory)
+    check("A DEBT THAT HAS BEEN PAID FAILS TOO: the entry outlived the gap",
+          any("DELETE THE ENTRY" in finding for finding in findings), str(findings))
+
+    lapsed = falsify_module.Proof("m0", "good", "aaaa", falsify_module.REFUTED, "-", "vacuous-suite")
+    findings = falsify_module.reconcile([lapsed, unproven], inventory)
+    check("a proof that has stopped proving fails",
+          any("no longer proves" in finding for finding in findings), str(findings))
+
+    findings = falsify_module.reconcile([proven], inventory)
+    check("an entry for a criterion no ledger declares any more fails",
+          any("in no ledger" in finding for finding in findings), str(findings))
+
+
+def test_falsifiability_ledger_blind(root: Path) -> None:
+    """The control that catches a grep matching its own ledger, run against one that does.
+
+    THE REGEX IS NOT THE MECHANISM. `self-match` reads the criterion's text and is caught out by
+    every spelling nobody anticipated — a `find | xargs grep`, a path assembled in a variable, a
+    search of a directory that happens to contain the ledgers. Deleting tools/roadmap/milestones/ and
+    re-running the criterion catches all of them, because a criterion whose verdict CHANGES when the
+    roadmap is deleted was reading the roadmap. This is that control, fired at a criterion whose
+    token exists nowhere else in the tree.
+    """
+    sandbox = falsify_module.Sandbox.materialise(root / "tree")
+    planted = sandbox.root / "tools" / "roadmap" / "milestones" / "fixture.toml"
+    planted.write_text("# kTokenThatExistsOnlyInALedger\n", encoding="utf-8")
+
+    reads_its_own_ledger = _criterion(
+        "blind", "grep -rq kTokenThatExistsOnlyInALedger tools/roadmap/milestones/")
+    code, _output = sandbox.run(reads_its_own_ledger)
+    check("the fixture criterion passes while its ledger is there — the positive control", code == 0)
+    reason = falsify_module._ledger_blind(sandbox, reads_its_own_ledger)
+    check("A CRITERION THAT READS ITS OWN LEDGER IS CAUGHT BY DELETING THE LEDGERS",
+          "comes from its own ledger" in reason, reason or "the control said nothing")
+
+    reads_the_repository = _criterion("real", "grep -rq CyberdyneEngine README.md")
+    code, _output = sandbox.run(reads_the_repository)
+    check("and a criterion that reads the repository passes the same control untouched",
+          code == 0 and not falsify_module._ledger_blind(sandbox, reads_the_repository))
+
+
+def test_falsifiability_of_the_ladder(root: Path) -> None:
+    """The real thing: every criterion on the ladder, proven or accounted for.
+
+    This runs the prover — a sandboxed copy of the tracked tree, one mutation per criterion — rather
+    than trusting the file, because a recorded verdict nothing re-earns is the shape of decay this
+    whole mechanism exists to refuse. It costs about two seconds for six hundred criteria.
+    """
+    del root
+    inventory = falsify_module.read_inventory()
+    check("falsifiability.toml exists and has been written",
+          bool(inventory.proofs or inventory.unproven),
+          "no inventory: run `just roadmap-falsify --record --baseline`")
+    observed = falsify_module.prove_the_ladder()
+    check("the prover ran over the whole ladder", len(observed) > 500, f"{len(observed)} judged")
+    proven = [proof for proof in observed if proof.verdict == falsify_module.PROVEN]
+    check(f"{len(proven)} of {len(observed)} criteria have been shown to go red under a mutation "
+          "the tooling applied itself", bool(proven))
+    findings = falsify_module.reconcile(observed, inventory)
+    check("every criterion on the ladder is either proven or on the list that only shrinks",
+          not findings, "\n".join(findings[:20]))
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="cy-roadmap-selftest-") as directory:
         root = Path(directory)
@@ -1167,6 +1343,11 @@ def main() -> int:
         test_plan_checks_can_fail(_area(root, "plan-negative"))
         test_just_arguments(_area(root, "just-arguments"))
         test_matrix_requirement_counts(_area(root, "reqs-column"))
+        test_falsifiability_rules(_area(root, "falsify-rules"))
+        test_falsifiability_digest(_area(root, "falsify-digest"))
+        test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
+        test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
+        test_falsifiability_of_the_ladder(_area(root, "falsify-ladder"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")
     return 1 if _failures else 0

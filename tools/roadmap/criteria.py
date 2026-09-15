@@ -46,13 +46,18 @@ from record import MILESTONES, REPO_ROOT, TIERS, Entry
 MILESTONES_DIR = Path(__file__).resolve().parent / "milestones"
 SCHEMA = 1
 KINDS = ("recipe", "command", "path", "tiers")
+#: The mutations `falsify.py` knows how to APPLY. A criterion declares one of these when the tooling
+#: cannot derive a mutation from the criterion's own text; what it declares is the verb and the
+#: target, never a sentence, because a sentence is what seven unfalsifiable criteria were written in.
+MUTATIONS = ("delete-path", "delete-lines", "rename-token", "truncate", "lower-tiers")
+FALSIFIES_KEYS = frozenset({"mutate", "target", "token", "note"})
 WHERE = ("local", "ci")
 REQUIREMENTS = ("display", "gpu")
 DEFAULT_TIMEOUT_S = 1800
 
 CRITERION_KEYS = frozenset(
     {"id", "describe", "source", "kind", "run", "path", "expect_tiers", "where", "ci_job",
-     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes"}
+     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "falsifies"}
 )
 MILESTONE_KEYS = frozenset({"schema", "id", "name", "artefact", "notes", "criterion"})
 
@@ -84,6 +89,10 @@ class Criterion:
     #: The milestone that must close it. Required with `known_gap`, must be a rung ABOVE the one
     #: declaring it, and it is what makes a gap a deadline rather than a shrug.
     known_gap_closes: str = ""
+    #: The mutation that must turn this criterion RED, as data `falsify.py` applies itself. Declared
+    #: only where the tooling cannot derive one from the criterion's own text; `falsify.py` derives
+    #: the mutation for a `path` criterion, a `tiers` criterion and a text search without being told.
+    falsifies: dict = field(default_factory=dict)
 
     @property
     def is_declared_gap(self) -> bool:
@@ -172,6 +181,7 @@ def _criterion(table: dict, source: str) -> Criterion:
             raise CriteriaError(f"{where}: '{key}' is required — every criterion is checked in CI")
     _check_kind(table, where)
     _check_scope(table, where)
+    _check_falsifies(table, where)
     return Criterion(**{key: value for key, value in table.items()})
 
 
@@ -237,6 +247,29 @@ def _check_known_gap(table: dict, where: str) -> None:
     if closes not in MILESTONES:
         raise CriteriaError(f"{where}: 'known_gap_closes' is {closes!r}, which is not a milestone; "
                             f"they are {', '.join(MILESTONES)}")
+
+
+def _check_falsifies(table: dict, where: str) -> None:
+    """A declared mutation is a verb and a target the tooling can apply, or it is not declared.
+
+    THE POINT IS THAT PROSE IS NOT ACCEPTED. `falsify.py` runs this mutation against a sandbox copy
+    of the tree and requires the criterion to go red; a field it cannot execute would be a sentence
+    about falsifiability rather than a demonstration of it, which is the defect being fixed.
+    """
+    declared = table.get("falsifies")
+    if declared is None:
+        return
+    if not isinstance(declared, dict):
+        raise CriteriaError(f"{where}: 'falsifies' is a table, not {type(declared).__name__}")
+    _reject_unknown(declared.keys(), FALSIFIES_KEYS, f"{where}: falsifies")
+    verb = str(declared.get("mutate", "")).strip()
+    if verb not in MUTATIONS:
+        raise CriteriaError(f"{where}: falsifies.mutate is {verb!r}, not one of "
+                            f"{', '.join(MUTATIONS)} — a mutation nothing can apply proves nothing")
+    if verb != "lower-tiers" and not str(declared.get("target", "")).strip():
+        raise CriteriaError(f"{where}: falsifies.mutate = {verb!r} needs a 'target' path or glob")
+    if verb in ("delete-lines", "rename-token") and not str(declared.get("token", "")).strip():
+        raise CriteriaError(f"{where}: falsifies.mutate = {verb!r} needs the 'token' it removes")
 
 
 # --- The flat, deduplicated plan ------------------------------------------------------------------
