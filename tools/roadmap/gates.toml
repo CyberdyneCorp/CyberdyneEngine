@@ -1178,7 +1178,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m11a"
 class = "milestone"
 milestone = "m11a"
-state = "joins-on-close"
+state = "green"
 
 [[gate]]
 id = "milestone-m11b"
@@ -1188,7 +1188,7 @@ platforms = ["linux", "windows", "macos"]
 since = "m11b"
 class = "milestone"
 milestone = "m11b"
-state = "joins-on-close"
+state = "green"
 
 [[gate]]
 id = "milestone-m11c"

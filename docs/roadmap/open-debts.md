@@ -8,7 +8,7 @@ a view over records that are already maintained for their own reasons rather tha
 place to keep up to date, because a hand-written list of unfinished work goes stale exactly
 when it matters most — at the moment a milestone closes and somebody adds to it.
 
-Closed milestones: M0, M1, M2, M3, M4, M5, M5.5, M6, M7, M8.a, M8.b, M8.c, M9, M10.
+Closed milestones: M0, M1, M2, M3, M4, M5, M5.5, M6, M7, M8.a, M8.b, M8.c, M9, M10, M11.a, M11.b.
 
 ## 1. Declared gaps
 
@@ -22,7 +22,15 @@ The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
 | M8.c | `steam-audio-configures` | **M11.a** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
+| M10 | `sky-field-round-trip` | **M11.c** | THE GAP WAS NOT CLOSED; THE CHECK WAS MOVED OFF THE DEFECT. M11.a's gate proved it by mutation: it replaced the body of `CloudShadowField::sample` with `return 1.0F` — the literal symptom this decl… |
 | M10 | `world-frame-budget` | **M11.c** | the environment demo costs 115.7 ms a frame mean and 127.6 ms worst against a 16.7 ms budget, and 126.8/137.8 with this machine busy — re-measured headless at 0x5EED over the same 64-frame take, WO… |
+| M11.a | `field-sampler-consumed` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.a | `field-sampler-written` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.a | `save-has-an-engine-consumer` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.a | `sky-field-consumed-outside-the-sky` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.b | `live-edit-policy-exists` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.b | `play-modes-exist` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.b | `the-game-is-honest-about-its-content` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
 | M11.a | `developer-workflow-at-working` | **M11.d** | THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the … |
 | M10 | `pcg-gpu-domain-agreement` | **M11.e** | there is no GPU execution domain in this tree to compare. `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic — `procedural-content-generation`'s "CPU and GPU execution" requ… |
 | M9 | `record-matches-plan-history` | **M11.e** | FOUR CELLS OVER FOUR CLOSED MILESTONES: M3 `testing-and-quality`, M4 `build-system-and-platforms`, M6 `developer-workflow-and-just`, M8.b `thirdparty-dependencies` — each column claims Working and … |
@@ -35,10 +43,46 @@ rather than accept a claim, and each one is a piece of work the plan still expec
 
 | Capability | Planned | Recorded | Promised by |
 |---|---|---|---|
+| [`ai-system`](../../openspec/specs/ai-system/spec.md) | complete | **working** | M11.b |
+| [`animation-and-skinning`](../../openspec/specs/animation-and-skinning/spec.md) | complete | **working** | M11.b |
+| [`asset-import-pipeline`](../../openspec/specs/asset-import-pipeline/spec.md) | complete | **working** | M11.b |
+| [`audio`](../../openspec/specs/audio/spec.md) | complete | **working** | M11.a |
 | [`build-system-and-platforms`](../../openspec/specs/build-system-and-platforms/spec.md) | working | **seed** | M4 |
+| [`camera-system`](../../openspec/specs/camera-system/spec.md) | complete | **working** | M11.b |
 | [`developer-workflow-and-just`](../../openspec/specs/developer-workflow-and-just/spec.md) | working | **seed** | M6 |
+| [`editor-agent-interface`](../../openspec/specs/editor-agent-interface/spec.md) | complete | **working** | M11.b |
+| [`editor-architecture`](../../openspec/specs/editor-architecture/spec.md) | complete | **seed** | M11.b |
+| [`editor-documents-and-transactions`](../../openspec/specs/editor-documents-and-transactions/spec.md) | complete | **working** | M11.b |
+| [`editor-rust-application`](../../openspec/specs/editor-rust-application/spec.md) | complete | **working** | M11.b |
+| [`editor-ui-ux`](../../openspec/specs/editor-ui-ux/spec.md) | complete | **working** | M11.b |
+| [`editor-viewport-and-gizmos`](../../openspec/specs/editor-viewport-and-gizmos/spec.md) | complete | **working** | M11.b |
+| [`editor-visual-language`](../../openspec/specs/editor-visual-language/spec.md) | complete | **working** | M11.b |
+| [`environment-fields`](../../openspec/specs/environment-fields/spec.md) | complete | **working** | M11.a |
+| [`foliage`](../../openspec/specs/foliage/spec.md) | complete | **working** | M11.a |
+| [`gameplay-abilities-and-effects`](../../openspec/specs/gameplay-abilities-and-effects/spec.md) | complete | **working** | M11.b |
+| [`input-and-actions`](../../openspec/specs/input-and-actions/spec.md) | complete | **working** | M11.b |
+| [`live-editing`](../../openspec/specs/live-editing/spec.md) | complete | **seed** | M11.b |
+| [`ml-inference`](../../openspec/specs/ml-inference/spec.md) | complete | **seed** | M11.b |
+| [`navigation`](../../openspec/specs/navigation/spec.md) | complete | **working** | M11.b |
+| [`networking-and-replication`](../../openspec/specs/networking-and-replication/spec.md) | complete | **working** | M11.a |
+| [`physics`](../../openspec/specs/physics/spec.md) | complete | **working** | M11.b |
+| [`procedural-content-generation`](../../openspec/specs/procedural-content-generation/spec.md) | complete | **working** | M11.a |
+| [`project-and-plugins`](../../openspec/specs/project-and-plugins/spec.md) | complete | **working** | M11.b |
+| [`rendering-2d`](../../openspec/specs/rendering-2d/spec.md) | complete | **working** | M11.b |
+| [`replay-and-rollback`](../../openspec/specs/replay-and-rollback/spec.md) | complete | **working** | M11.a |
+| [`save-and-persistence`](../../openspec/specs/save-and-persistence/spec.md) | complete | **working** | M11.a |
+| [`sequencing-and-cinematics`](../../openspec/specs/sequencing-and-cinematics/spec.md) | complete | **working** | M11.b |
+| [`simulation-and-determinism`](../../openspec/specs/simulation-and-determinism/spec.md) | complete | **working** | M11.a |
+| [`swift-scripting`](../../openspec/specs/swift-scripting/spec.md) | complete | **working** | M11.b |
+| [`terrain`](../../openspec/specs/terrain/spec.md) | complete | **working** | M11.a |
 | [`testing-and-quality`](../../openspec/specs/testing-and-quality/spec.md) | working | **seed** | M3 |
+| [`text-and-fonts`](../../openspec/specs/text-and-fonts/spec.md) | complete | **working** | M11.b |
 | [`thirdparty-dependencies`](../../openspec/specs/thirdparty-dependencies/spec.md) | working | **seed** | M8.b |
+| [`ui-system`](../../openspec/specs/ui-system/spec.md) | complete | **working** | M11.b |
+| [`visual-scripting`](../../openspec/specs/visual-scripting/spec.md) | complete | **working** | M11.b |
+| [`water`](../../openspec/specs/water/spec.md) | complete | **working** | M11.a |
+| [`weather-and-wind`](../../openspec/specs/weather-and-wind/spec.md) | complete | **working** | M11.a |
+| [`world-partition-and-streaming`](../../openspec/specs/world-partition-and-streaming/spec.md) | complete | **working** | M11.a |
 
 ## 3. What each milestone said it did not close
 

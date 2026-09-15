@@ -258,6 +258,9 @@ ci_job = "milestone-m10"
 # had to swallow: seven directories that did not exist, an eighth module half, and a sample that
 # names all seven.
 
+known_gap = """THE GAP WAS NOT CLOSED; THE CHECK WAS MOVED OFF THE DEFECT. M11.a's gate proved it by mutation: it replaced the body of `CloudShadowField::sample` with `return 1.0F` — the literal symptom this declaration names — rebuilt, confirmed the object reached the binary, and the criterion stayed GREEN. `git diff 3d44e2f..HEAD -- src/rendering/sky/` touches README.md and tests/test_cloud_shadows.cpp and NOT ONE LINE of cloud_shadows.cpp, so no production code closed it. M10's case judged numbers read through `CloudShadowField::sample`, the function every consumer calls; the rewrite reads them from `store.sample_at(field, pos, level)` with an explicit residency, and calls `CloudShadowField::sample` exactly once, at a point nine million metres away. Closing this means judging the function the declaration names, and changing cloud_shadows.cpp."""
+known_gap_closes = "m11c"
+
 [[criterion]]
 id = "specs"
 describe = "openspec validate --specs --strict passes over the specification set this milestone advances — the seven capabilities it takes from nothing or Seed to Working, the eighth it advances from Seed, and the three it was asked to complete"
