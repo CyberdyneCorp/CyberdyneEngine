@@ -17,6 +17,7 @@
 //! | [`virtualise`] | Lists whose cost scales with what is visible rather than with what exists |
 //! | [`thumbnails`] | Asset previews the engine renders, and typed placeholders until it has |
 //! | [`shell`] | The three rules that hold across all of it: stability, ambient status, vocabulary |
+//! | [`specialised`] | The specialised editors, the ONE graph canvas and the ONE timeline surface |
 //!
 //! --- WHY THERE IS NO TOOLKIT HERE, AND WHY THAT IS THE POINT ----------------------------------------
 //!
@@ -57,6 +58,7 @@ pub mod panels;
 pub mod problems;
 pub mod progress;
 pub mod shell;
+pub mod specialised;
 pub mod thumbnails;
 pub mod virtualise;
 
@@ -71,5 +73,6 @@ pub use panels::{PanelKey, PanelTitles};
 pub use problems::{Problems, Report, Site};
 pub use progress::{Artefact, ProgressSurface};
 pub use shell::Shell;
+pub use specialised::{Domain, SpecialisedEditors, Surface};
 pub use thumbnails::{Kind, Thumbnail, Thumbnails};
 pub use virtualise::{Viewport, Window};

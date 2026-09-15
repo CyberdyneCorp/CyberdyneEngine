@@ -1327,14 +1327,34 @@ def test_absent_recipe_rule(root: Path) -> None:
           "absent-recipe" in _rules("just --justfile Justfile no-such-recipe-at-all"))
 
 
+def _a_suite_and_a_case_in_it() -> tuple[str, str]:
+    """A real `<kind>.<name>` and a real test case declared beside it, read out of this tree.
+
+    Derived rather than hard-coded, for the reason `tools/editor/selftest.py` gives about fixtures:
+    a suite and a case named in a constant here go stale the day either is renamed, and a stale
+    fixture agrees with a broken check.
+    """
+    for suite, directory in sorted(requirements_module.declared_tests().items()):
+        for source in sorted(directory.glob("*.cpp")):
+            found = re.search(r'TEST_CASE\("([^"]{12,})"', source.read_text(encoding="utf-8"))
+            if found:
+                return suite, found.group(1)
+    raise AssertionError("no committed suite in this tree declares a TEST_CASE this reader can find")
+
+
 def test_requirements_coverage(root: Path) -> None:
     """`just quality-requirements` can PASS and can FAIL, over fixtures that say which.
 
     A check that is red today says nothing about whether it can ever be green, and "it cannot pass"
-    is the same defect as "it cannot fail" seen from the other side. The map this repository ships is
-    EMPTY on purpose — no capability row has been read requirement by requirement, and each run says
-    so by name — so the both-directions proof is made here, against a specification tree and a map
-    written for the occasion.
+    is the same defect as "it cannot fail" seen from the other side. So the both-directions proof is
+    made here, against a specification tree and a map written for the occasion.
+
+    AND THE FIVE LEGS THAT STOP AN ENTRY FROM BEING A SENTENCE. `requirements.py`'s first version
+    asked only whether a suite of the named name was declared SOMEWHERE, which twenty-four
+    requirements could have satisfied by naming one suite twenty-four times. Each of the rules that
+    replaced that is proven able to fail below: a `test:` entry with no case, a case that belongs to
+    another suite, a `criterion:` entry naming a criterion nobody has shown can fail, and a `rust:`
+    entry naming a function that is not in the crate it claims.
     """
     specs = root / "openspec" / "specs" / "fixture-row"
     specs.mkdir(parents=True)
@@ -1345,8 +1365,11 @@ def test_requirements_coverage(root: Path) -> None:
     previous = requirements_module.SPECS
     requirements_module.SPECS = root / "openspec" / "specs"
     try:
-        real_test = sorted(requirements_module.declared_tests())[0]
+        real_test, real_case = _a_suite_and_a_case_in_it()
         real_gate = sorted(requirements_module.declared_gates())[0]
+        real_proven = sorted(requirements_module.proven_criteria())[0]
+        unproven = sorted(requirements_module.declared_criteria()
+                          - requirements_module.proven_criteria())[0]
 
         written = itertools.count()
 
@@ -1357,7 +1380,7 @@ def test_requirements_coverage(root: Path) -> None:
                 return requirements_module.main(["fixture-row", "--map", str(path)])
 
         answered = (f'[[coverage]]\nrow = "fixture-row"\nrequirement = "The first thing"\n'
-                    f'evidence = "test:{real_test}"\n\n'
+                    f'evidence = "test:{real_test}"\ncase = "{real_case}"\n\n'
                     f'[[coverage]]\nrow = "fixture-row"\nrequirement = "The second thing"\n'
                     f'evidence = "gate:{real_gate}"\n')
         check("a row whose every requirement names a real suite or gate PASSES", audit(answered) == 0)
@@ -1369,6 +1392,38 @@ def test_requirements_coverage(root: Path) -> None:
         broken = answered.replace(f"test:{real_test}", "test:unit.no_such_suite_exists")
         check("and RED when an answer names a suite no committed cy_add_test() declares",
               audit(broken) == 1)
+
+        # --- THE CASE IS THE CLAIM, AND THESE TWO ARE WHY -------------------------------------------
+        caseless = answered.replace(f'case = "{real_case}"\n', "")
+        check("a `test:` entry with no case is REFUSED — a suite alone is satisfied by any suite",
+              audit(caseless) == 1)
+
+        borrowed = answered.replace(f'case = "{real_case}"',
+                                    'case = "a case that belongs to some other suite entirely"')
+        check("and RED when the case is not in the sources beside the cy_add_test that declares it",
+              audit(borrowed) == 1)
+
+        # --- A CRITERION ANSWERS ONLY IF IT HAS BEEN SHOWN ABLE TO FAIL -----------------------------
+        proven = answered.replace(f'evidence = "gate:{real_gate}"',
+                                  f'evidence = "criterion:{real_proven}"')
+        check("a criterion that falsifiability.toml records a PROOF for is an answer",
+              audit(proven) == 0)
+        check("and one it does not is REFUSED, however green it is today",
+              audit(answered.replace(f'evidence = "gate:{real_gate}"',
+                                     f'evidence = "criterion:{unproven}"')) == 1)
+
+        # --- THE EDITOR'S OWN SUITES ----------------------------------------------------------------
+        rust = answered.replace(
+            f'evidence = "gate:{real_gate}"',
+            'evidence = "rust:cy-editor-interface::specialised::tests::'
+            'every_graph_editor_opens_the_same_one_canvas"')
+        check("a `rust:` entry naming a test function of an editor crate is an answer",
+              audit(rust) == 0)
+        check("and RED when that crate holds no such function",
+              audit(rust.replace("every_graph_editor_opens_the_same_one_canvas",
+                                 "every_graph_editor_opens_whatever_it_likes")) == 1)
+        check("and RED when the crate itself is not there",
+              audit(rust.replace("cy-editor-interface::", "cy-editor-imaginary::")) == 1)
 
         stale = answered + ('\n[[coverage]]\nrow = "fixture-row"\n'
                             'requirement = "A requirement nobody asks any more"\n'

@@ -10,14 +10,23 @@
 #
 # AN ENTRY IS A CLAIM THE TOOL CHECKS, not a sentence:
 #
-#   evidence = "test:unit.save"             a suite a committed cy_add_test() declares
+#   evidence = "test:unit.save"             a suite a committed cy_add_test() declares, AND
+#   case     = "a save round-trips"         the test case in it that answers this requirement
+#   evidence = "rust:cy-editor-documents::transaction::tests::undo_and_redo_walk_one_ordered_sequence"
 #   evidence = "gate:build-and-test"        a gate in tools/roadmap/gates.toml
-#   evidence = "criterion:m11a:world-streams"   a criterion in tools/roadmap/milestones/
+#   evidence = "criterion:m11a:world-streams"   a criterion that falsifiability.toml PROVES can fail
 #   evidence = "exempt:m11e"                a deferral, with `note` saying why, closing at that rung
 #
 # Every one of those is resolved against the tree: a suite that is renamed or deleted turns the row
 # RED rather than leaving a green tick behind, which is the failure mode M11.a's gate found in the
 # record audit one level down. So is an entry naming a requirement the specification no longer asks.
+#
+# THE `case` AND THE PROOF ARE WHAT STOP AN ENTRY FROM BEING A SENTENCE. Without them, twenty-four
+# requirements could be answered by naming one suite twenty-four times, and any criterion — including
+# one nobody has ever shown can fail — would count. The case is searched for in the sources beside
+# the `cy_add_test` that declares the suite, so it cannot be borrowed from elsewhere; the proof is
+# read out of `tools/roadmap/falsifiability.toml`, which `just roadmap-test` re-earns.
+# `tools/roadmap/selftest.py::test_requirements_coverage` breaks each of those rules on purpose.
 #
 # WRITING AN ENTRY MEANS READING THE REQUIREMENT. That is the work these criteria exist to force and
 # it is not work a tool can do: `requirements.py` deliberately cannot author this file. Add entries
@@ -25,4 +34,86 @@
 
 schema = 1
 
-# (no entries yet — every row named by the five criteria is unanswered, and each run says so by name)
+# WHAT IS HERE, AND WHAT IS DELIBERATELY NOT. Nine entries across two rows, written by reading those
+# two specifications requirement by requirement. The other fifteen requirements of those rows, and
+# every requirement of every other row the five criteria name, stay UNANSWERED and each run prints
+# them by title. Several of them have a case in the tree that answers PART of them — and a part
+# recorded as an answer is precisely the green tick that outlives its subject, so those are left for
+# whoever reads the requirement end to end.
+
+# --- live-editing ----------------------------------------------------------------------------------
+#
+# FIVE OF ELEVEN, AND THE SIX THAT ARE NOT HERE ARE NOT HERE ON PURPOSE. `Live asset reload`,
+# `Shader and material live reload`, `Module hot reload is a declared capability`, `Runtime
+# inspection`, `Runtime tweaking is distinct from authoring` and `Live editing diagnostics` are
+# openspec/changes/implement-m11b-authoring/tasks.md §3.10, which is not done. An entry for one of
+# them naming a suite that exercises a neighbouring claim is exactly the rot this map's own header
+# warns about, so each stays UNANSWERED and each run prints its title.
+
+[[coverage]]
+row = "live-editing"
+requirement = "Live editing is a compilation step"
+evidence = "test:integration.editor_live_edit"
+case = "a field edited while playing is announced before it is applied"
+note = "the compiler is a compiler rather than a setter because `announce()` answers BEFORE the change is made, from the same function `apply()` uses — so the announcement cannot disagree with the outcome. That is the case."
+
+[[coverage]]
+row = "live-editing"
+requirement = "Live edit policy"
+evidence = "criterion:m11b:live-edit-policy-exists"
+note = "the engine's policy table against the requirement's own table and against the classification the defaults are derived from, with RecreateEntity and RestartWorld never derived."
+
+[[coverage]]
+row = "live-editing"
+requirement = "Runtime state is preserved"
+evidence = "test:integration.editor_live_edit"
+case = "a field edited while playing keeps the runtime state the simulation owns"
+note = "the field classification governs what survives a live edit: Authoring is updated, RuntimeState and PersistentState are preserved. The case edits one field of each class and reads the runtime state back out of the session."
+
+[[coverage]]
+row = "live-editing"
+requirement = "Play modes"
+evidence = "criterion:m11b:play-modes-exist"
+note = "the three modes as the engine declares them, as the editor declares them, and as this requirement's own table names them, required to agree on spelling, order, stepping and isolation."
+
+[[coverage]]
+row = "live-editing"
+requirement = "Live bridge protocol"
+evidence = "test:unit.editor_bridge"
+case = "a tag this build does not know is reported rather than fatal"
+note = "the requirement asks for a VERSIONED protocol, and the property that makes a version number worth anything is what an older build does with a newer message: report it, not die. That is the case, over a real socket pair."
+
+# --- editor-architecture ---------------------------------------------------------------------------
+#
+# FOUR OF THIRTEEN. `Project management and settings`, `Build and deployment` and `Debugging and
+# profiling tools` are tasks §3.6, §3.7 and §3.8 and none of them is started — M11.b's gate read the
+# tree for each and found `CentreLower` referenced by one file, no FrameProfiler, no RenderDebugger
+# and no breakpoint outside two unrelated headers. `Editor is an engine application`, `Editor mode
+# and tool execution`, `Scene editing viewports`, `Scene hierarchy and asset browser` and
+# `Collaboration-friendly behaviour` each have cases in the tree that answer PART of them, and a
+# part recorded as an answer is a green tick that outlives its subject. They stay unanswered until
+# somebody reads each one end to end, which is what this map exists to force.
+
+[[coverage]]
+row = "editor-architecture"
+requirement = "Play mode"
+evidence = "criterion:m11b:play-mode-round-trip"
+note = "one authored world, one command stream, two processes, simulating to the same float bit for bit — and the authoring state restored byte for byte on leave, which is the half of this requirement that says play never leaks into the project."
+
+[[coverage]]
+row = "editor-architecture"
+requirement = "Undo/redo"
+evidence = "rust:cy-editor-documents::transaction::tests::undo_and_redo_walk_one_ordered_sequence"
+note = "this requirement defines no transaction model of its own; it requires the editor to use the one `editor-documents-and-transactions` owns. The case drives that model's ordered sequence."
+
+[[coverage]]
+row = "editor-architecture"
+requirement = "Plugin architecture"
+evidence = "criterion:m11b:plugins"
+note = "the twenty-one extension points, the eight lifecycle phases, resolution and the lockfile, and an unload refused by name and count while instances are outstanding."
+
+[[coverage]]
+row = "editor-architecture"
+requirement = "Specialised editors"
+evidence = "criterion:m11b:specialised-editors"
+note = "the editors the requirement enumerates against the ones registered, and the requirement's two prohibitions — one node-graph canvas, one curve surface — checked where they are decided rather than by a word search."

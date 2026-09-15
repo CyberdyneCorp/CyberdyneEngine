@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The play-mode and live-edit-policy contracts, derived from the engine and compared.
+"""The play-mode, live-edit-policy and specialised-editor contracts, derived and compared.
 
 WHY THIS FILE EXISTS, AND IT IS NOT "ANOTHER LINTER".
 
@@ -26,6 +26,12 @@ table from the declaration that fixes it, and requires the sides to agree:
     live-edit-policy    the engine      src/gameplay/live/{include/cy/gameplay/live/policy.h,src/policy.cpp}
                         its input       src/core/reflect/include/cy/core/reflect/attributes.h
                         the requirement openspec/specs/live-editing/spec.md
+
+    specialised-editors the editor      editor/crates/cy-editor-interface/src/specialised/{mod,timeline}.rs
+                        the workspace   editor/crates/cy-editor-visual/src/chrome.rs
+                        the engine      src/graph/src/lower_{script,behaviour,pose}.cpp, locomotion.cpp
+                                        src/sequencing/{include/cy/sequencing/source.h,src/source.cpp}
+                        the requirement openspec/specs/editor-architecture/spec.md (Specialised editors)
 
 A word typed into a comment satisfies none of it. Renaming a mode on one side of the boundary and
 not the other is red; adding a mode to the enumeration without a capability row is red; deriving
@@ -58,13 +64,21 @@ on purpose and requires this gate to notice.
 
     python3 tools/editor/play_contract.py play-modes
     python3 tools/editor/play_contract.py live-edit-policy
+    python3 tools/editor/play_contract.py specialised-editors
     python3 tools/editor/play_contract.py --list
 
 Standard library only, like `tools/abi/` and `tools/roadmap/`: this runs on every pull request on
 three platforms, and a gate may not depend on a package that happens to be installed.
 
-Governed by: editor-architecture (Play mode), live-editing (Play modes, Live edit policy),
-delivery-roadmap (Milestone exit criteria are executable, Forbidden roadmap patterns).
+THE THIRD CONTRACT REPLACES A CRITERION THAT CALLED ITSELF A PLACEHOLDER. `m11b:specialised-editors`
+was `grep -rniIl CentreLower editor/crates/` with a count of three, and its own body said *"three
+files naming a region is satisfied by three comments ... whoever writes section 3.3 owns the
+replacement"*. The requirement it stands for forbids two things by name — a sixth bespoke graph
+editor, and a second curve surface — so those prohibitions are what the contract reads, off the
+requirement's own description of each editor rather than off a table kept here.
+
+Governed by: editor-architecture (Play mode, Specialised editors), live-editing (Play modes, Live
+edit policy), delivery-roadmap (Milestone exit criteria are executable, Forbidden roadmap patterns).
 """
 
 from __future__ import annotations
@@ -84,6 +98,31 @@ POLICY_SOURCE = "src/gameplay/live/src/policy.cpp"
 ATTRIBUTES = "src/core/reflect/include/cy/core/reflect/attributes.h"
 LIVE_EDITING = "openspec/specs/live-editing/spec.md"
 EDITOR_ARCHITECTURE = "openspec/specs/editor-architecture/spec.md"
+SPECIALISED = "editor/crates/cy-editor-interface/src/specialised/mod.rs"
+SPECIALISED_TIMELINE = "editor/crates/cy-editor-interface/src/specialised/timeline.rs"
+CHROME = "editor/crates/cy-editor-visual/src/chrome.rs"
+SEQUENCING_HEADER = "src/sequencing/include/cy/sequencing/source.h"
+SEQUENCING_SOURCE = "src/sequencing/src/source.cpp"
+
+#: Which engine source declares each domain's authoring vocabulary, and by which name prefixes. The
+#: editor's palette is required to offer exactly what these register: a node type the engine gains
+#: and the palette does not is a node an author cannot place, and one the palette gains and the
+#: engine does not is a node that fails at cook time.
+VOCABULARIES = {
+    "GameplayAndUtilityGraphs": ("ai", "script"),
+    "AbilitiesAndEffects": ("ability", "script"),
+    "AnimationGraphsAndClips": ("pose",),
+}
+
+#: Where each prefix's node types are registered. Read as string literals rather than as calls,
+#: because `lower_script.cpp` registers some of its types through a table and some through a
+#: function, and a reader that understood only one of those would compare half a vocabulary.
+LOWERINGS = {
+    "script": ("src/graph/src/lower_script.cpp",),
+    "ability": ("src/graph/src/lower_script.cpp",),
+    "ai": ("src/graph/src/lower_behaviour.cpp",),
+    "pose": ("src/graph/src/lower_pose.cpp", "src/graph/src/locomotion.cpp"),
+}
 
 
 class ContractError(Exception):
@@ -518,12 +557,283 @@ def _check_derivation(report: Report, root: Path, source: str, variants: tuple[s
                "a per-field declaration table exists to override the derived default")
 
 
+def rust_string_arms(body: str, enum_name: str, where: str) -> dict[str, str]:
+    """`Enum::Variant => "text",` — every arm of a Rust match that answers with a literal."""
+    arms = dict(re.findall(rf"{re.escape(enum_name)}::(\w+)\s*=>\s*\"((?:[^\"\\]|\\.)*)\"",
+                           body))
+    if not arms:
+        raise ContractError(f"{where}: no `{enum_name}::... => \"...\"` arms to read")
+    return arms
+
+
+def rust_grouped_arms(body: str, enum_name: str, answer: str, where: str) -> dict[str, tuple]:
+    """A Rust match whose arms may list several variants and answer with a set of names.
+
+        Domain::Materials | Domain::VfxGraph => &[Surface::Graph],
+        Domain::Terrain | Domain::Foliage => {
+            &[Surface::Painting]
+        }
+
+    Reads to `{"Materials": ("Graph",), ...}`. The alternation is the point: an arm that collects
+    four domains is still four claims, and a gate that read only the first would stop noticing
+    three of them. Both arm bodies above are read, because rustfmt chooses between them on line
+    length and a gate whose result depended on that would be a gate that depended on formatting.
+    """
+    pattern = (rf"({re.escape(enum_name)}::\w+(?:\s*\|\s*{re.escape(enum_name)}::\w+)*)"
+               r"\s*=>\s*(\{[^{}]*\}|&\[[^\]]*\]|[^,\n]+)")
+    found: dict[str, tuple] = {}
+    for arm in re.finditer(pattern, body, re.S):
+        answers = tuple(re.findall(rf"{re.escape(answer)}::(\w+)", arm.group(2)))
+        for variant in re.findall(rf"{re.escape(enum_name)}::(\w+)", arm.group(1)):
+            found[variant] = answers
+    if not found:
+        raise ContractError(f"{where}: no `{enum_name}::...` arms to read")
+    return found
+
+
+def rust_named_arms(body: str, enum_name: str, where: str) -> dict[str, str]:
+    """A Rust match whose arms answer with an identifier — `Domain::X => SOME_CONST,`."""
+    pattern = (rf"({re.escape(enum_name)}::\w+(?:\s*\|\s*{re.escape(enum_name)}::\w+)*)"
+               r"\s*=>\s*([A-Z_][A-Z0-9_]*)\s*,")
+    found: dict[str, str] = {}
+    for arm in re.finditer(pattern, body, re.S):
+        for variant in re.findall(rf"{re.escape(enum_name)}::(\w+)", arm.group(1)):
+            found[variant] = arm.group(2)
+    if not found:
+        raise ContractError(f"{where}: no `{enum_name}::... => IDENTIFIER` arms to read")
+    return found
+
+
+def rust_const_strings(text: str, name: str, where: str) -> tuple[str, ...]:
+    """The string literals of a Rust `const NAME: &[&str] = &[...];`."""
+    match = re.search(rf"\bconst\s+{re.escape(name)}\s*:[^=]*=\s*&\[", uncommented(text))
+    if match is None:
+        raise ContractError(f"{where}: no `const {name}` to read the palette from")
+    start = uncommented(text).index("[", match.end() - 1)
+    depth = 0
+    body = ""
+    stripped = uncommented(text)
+    for index in range(start, len(stripped)):
+        if stripped[index] == "[":
+            depth += 1
+        elif stripped[index] == "]":
+            depth -= 1
+            if depth == 0:
+                body = stripped[start + 1:index]
+                break
+    values = tuple(re.findall(r'"((?:[^"\\]|\\.)*)"', body))
+    if not values:
+        raise ContractError(f"{where}: {name} holds no node type names")
+    return values
+
+
+def engine_node_types(root: Path, prefix: str) -> tuple[str, ...]:
+    """Every `prefix.node` name a lowering registers, read out of the engine's own sources.
+
+    String literals rather than calls, and comments stripped first, so that a node type named in a
+    comment cannot enter the engine's half of the comparison. An empty result is an ERROR: the
+    seventh unfalsifiable check this project found compared nothing to nothing.
+    """
+    found: set[str] = set()
+    for relative in LOWERINGS[prefix]:
+        found.update(re.findall(rf'"({re.escape(prefix)}\.\w+)"', uncommented(read(relative, root))))
+    if not found:
+        raise ContractError(f"{', '.join(LOWERINGS[prefix])}: no `{prefix}.*` node type literals. "
+                            "These are not the files this gate reads.")
+    return tuple(sorted(found))
+
+
+def specification_editors(root: Path) -> tuple[tuple[str, str], ...]:
+    """The specialised editors the requirement enumerates: `(term, the segment it was written as)`.
+
+    The requirement's first paragraph is a prose list — *"dedicated editors for: materials
+    (including the node graph), animation graphs and clips (a timeline with curve editing), ..."* —
+    and it is the authority on which editors exist. The segment is kept beside the term because the
+    parenthetical is what says which shared surface an editor is built on.
+    """
+    section = requirement_section(read(EDITOR_ARCHITECTURE, root), "Specialised editors",
+                                  EDITOR_ARCHITECTURE)
+    match = re.search(r"dedicated editors for:(.+?)\.\s*\n\s*\n", section, re.S)
+    if match is None:
+        raise ContractError(f"{EDITOR_ARCHITECTURE}: the Specialised editors requirement no longer "
+                            "opens with a `dedicated editors for: ...` list. It is not the "
+                            "paragraph this gate reads.")
+    listed = []
+    for segment in match.group(1).replace("\n", " ").split(","):
+        raw = segment.strip()
+        term = re.sub(r"\([^)]*\)", " ", raw)
+        term = term.replace("**", " ").replace("`", " ")
+        term = re.sub(r"^\s*and\s+", "", term.strip(), flags=re.I)
+        term = re.sub(r"^\s*the\s+", "", term.strip(), flags=re.I)
+        term = re.sub(r"\s+", " ", term).strip().lower()
+        if term:
+            listed.append((term, raw.lower()))
+    if len(listed) < 10:
+        raise ContractError(f"{EDITOR_ARCHITECTURE}: the editors list parsed to {len(listed)} "
+                            "entries. It is not the list this gate reads.")
+    return tuple(listed)
+
+
+# --- specialised-editors ---------------------------------------------------------------------------
+
+
+def check_specialised_editors(root: Path) -> int:
+    report = Report("specialised-editors",
+                    "the editors the requirement enumerates, the ONE canvas and the ONE timeline "
+                    "surface they are built on, and the vocabularies the engine can actually lower")
+    source = read(SPECIALISED, root)
+    impl = rust_impl(source, "Domain", SPECIALISED)
+    listed = specification_editors(root)
+    terms = rust_string_arms(function_body(impl, "spec_term", SPECIALISED), "Domain", SPECIALISED)
+    order = enumerators(source, "Domain", SPECIALISED)
+
+    report.same("the editor registers exactly the editors the requirement enumerates, in its order",
+                EDITOR_ARCHITECTURE, [term for term, _raw in listed],
+                f"{SPECIALISED} Domain::spec_term", [terms.get(name, "?") for name in order])
+    _check_shared_surfaces(report, root, impl, listed, terms, order)
+    _check_owning_rows(report, root, impl, order)
+    _check_palettes(report, root, source, impl)
+    _check_track_kinds(report, root)
+    _check_region(report, root, source)
+    return report.finish()
+
+
+def _check_shared_surfaces(report: Report, root: Path, impl: str, listed, terms, order) -> None:
+    """The two prohibitions, read off the requirement's own words rather than off a table here.
+
+    An editor the requirement describes as a graph must be built on `Surface::Graph`, and one it
+    describes with a timeline, a curve or a sequence must be built on `Surface::Timeline`. The
+    direction matters: the requirement compels the code, and an editor that ALSO uses a shared
+    surface the requirement did not ask for is not a defect.
+    """
+    surfaces = rust_grouped_arms(function_body(impl, "surfaces", SPECIALISED), "Domain", "Surface",
+                                 SPECIALISED)
+    by_term = {terms[name]: surfaces.get(name, ()) for name in order if name in terms}
+    for keyword, surface, what in (("graph", "Graph", "a node-graph canvas"),
+                                   ("timeline|curve|sequence|cinematic", "Timeline",
+                                    "a curve editing surface")):
+        wanted = [term for term, raw in listed if re.search(keyword, raw)]
+        report.leg(bool(wanted), f"the requirement names at least one editor built on {what}")
+        missing = [term for term in wanted if surface not in by_term.get(term, ())]
+        report.leg(not missing,
+                   f"every editor the requirement describes with {what} is built on the ONE shared "
+                   f"Surface::{surface}",
+                   "" if not missing else
+                   f"declares no Surface::{surface}: {missing}\n"
+                   "which is the bespoke editor the requirement forbids by name")
+    bespoke = sorted(name for name, answers in surfaces.items() if not answers)
+    report.leg(not bespoke, "every editor is built on a shared surface",
+               "" if not bespoke else f"built on nothing shared: {bespoke}")
+
+
+def _check_owning_rows(report: Report, root: Path, impl: str, order) -> None:
+    """A refusal names the row that owes the vocabulary, and that row has to exist.
+
+    `open()` refuses thirteen of the sixteen by naming a capability row. A refusal that named a row
+    no specification declares would send a reader to a directory that is not there, which is the
+    same defect as a diagnostic that names a graph and not a pin.
+    """
+    rows = rust_string_arms(function_body(impl, "owning_row", SPECIALISED), "Domain", SPECIALISED)
+    report.leg(sorted(rows) == sorted(order),
+               "every registered editor names the capability row that owes its subject",
+               "" if sorted(rows) == sorted(order) else
+               f"no row: {sorted(set(order) - set(rows))}")
+    absent = sorted(row for row in set(rows.values())
+                    if not (root / "openspec" / "specs" / row / "spec.md").is_file())
+    report.leg(not absent, "every row a refusal names is a specification in this tree",
+               "" if not absent else f"named and absent: {absent}")
+
+
+def _check_palettes(report: Report, root: Path, source: str, impl: str) -> None:
+    """The palette offers exactly what the engine can lower, per domain.
+
+    This is the leg a comment cannot satisfy and a rename cannot survive: both sides are lists of
+    node type names, one read out of `Domain::node_types`' constants and one out of the engine's
+    lowerings, and they are required to be equal.
+    """
+    constants = rust_named_arms(function_body(impl, "node_types", SPECIALISED), "Domain",
+                                SPECIALISED)
+    report.leg(sorted(constants) == sorted(VOCABULARIES),
+               "the editor declares a palette for exactly the domains this tree has a vocabulary for",
+               "" if sorted(constants) == sorted(VOCABULARIES) else
+               f"{SPECIALISED}: {sorted(constants)}\nthis gate: {sorted(VOCABULARIES)}")
+    for domain, prefixes in sorted(VOCABULARIES.items()):
+        if domain not in constants:
+            continue
+        engine: list[str] = []
+        for prefix in prefixes:
+            engine.extend(engine_node_types(root, prefix))
+        report.same(f"{domain}'s palette is the engine's own {'/'.join(prefixes)} vocabulary",
+                    "+".join(sum((LOWERINGS[prefix] for prefix in prefixes), ())), sorted(engine),
+                    f"{SPECIALISED} {constants[domain]}",
+                    sorted(rust_const_strings(source, constants[domain], SPECIALISED)))
+
+
+def _check_track_kinds(report: Report, root: Path) -> None:
+    """The timeline offers exactly the track kinds the engine can dispatch.
+
+    `cy::sequencing::TrackKind` is what the sequence compiler switches on. A timeline that offered a
+    kind the compiler has no arm for would let an author build a sequence that fails at cook time,
+    and one that hid a kind the engine has would make a track unreachable from the editor.
+    """
+    engine = [name for name in enumerators(read(SEQUENCING_HEADER, root), "TrackKind",
+                                           SEQUENCING_HEADER) if name != "Count"]
+    editor_source = read(SPECIALISED_TIMELINE, root)
+    editor = list(enumerators(editor_source, "TrackKind", SPECIALISED_TIMELINE))
+    report.same("the editor's timeline declares the engine's track kinds, in the engine's order",
+                SEQUENCING_HEADER, engine, SPECIALISED_TIMELINE, editor)
+
+    engine_names = switch_arms(function_body(read(SEQUENCING_SOURCE, root), "track_kind_name",
+                                             SEQUENCING_SOURCE),
+                               "TrackKind", f"{SEQUENCING_SOURCE}: track_kind_name")
+    spelled = {}
+    for name, arm in engine_names.items():
+        returned = re.search(r'return\s+"([^"]*)"', arm)
+        if returned:
+            spelled[name] = returned.group(1)
+    editor_names = rust_string_arms(
+        function_body(rust_impl(editor_source, "TrackKind", SPECIALISED_TIMELINE), "name",
+                      SPECIALISED_TIMELINE),
+        "TrackKind", SPECIALISED_TIMELINE)
+    report.same("both sides spell every track kind the same way",
+                SEQUENCING_SOURCE, [spelled.get(name, "?") for name in engine],
+                SPECIALISED_TIMELINE, [editor_names.get(name, "?") for name in engine])
+
+
+def _check_region(report: Report, root: Path, source: str) -> None:
+    """The active editor is drawn in the region `chrome.rs` reserved for it, and nowhere else.
+
+    `Region::CentreLower` was reserved in M5.5 and read by ONE file — the one reserving it — until
+    this module existed. `m11b:specialised-editors` used to be `grep -l CentreLower` with a count of
+    three, which three comments satisfy. This is the same claim, checked where it is decided.
+    """
+    chrome = read(CHROME, root)
+    reserved = rust_string_arms(function_body(rust_impl(chrome, "Region", CHROME), "contents",
+                                              CHROME), "Region", CHROME)
+    held = reserved.get("CentreLower", "")
+    report.leg("specialised editor" in held,
+               "chrome.rs still reserves a region for the active specialised editor",
+               "" if "specialised editor" in held else
+               f"Region::CentreLower now holds \"{held}\"; the regions are {sorted(reserved)}")
+    bound = re.search(r"const\s+REGION\s*:\s*Region\s*=\s*Region::(\w+)\s*;", uncommented(source))
+    report.leg(bound is not None, "the specialised editors declare which region they are drawn in",
+               "" if bound else f"{SPECIALISED}: no `const REGION: Region = Region::...;`")
+    if bound is None:
+        return
+    report.leg(bound.group(1) in reserved and bound.group(1) == "CentreLower",
+               "they are drawn in the region chrome.rs reserved for them",
+               "" if bound.group(1) == "CentreLower" else
+               f"{SPECIALISED} draws them in Region::{bound.group(1)}, and chrome.rs reserves "
+               f"CentreLower for \"{reserved.get('CentreLower', '')}\"")
+
+
 # --- The command line --------------------------------------------------------------------------------
 
 
 CONTRACTS = {
     "play-modes": check_play_modes,
     "live-edit-policy": check_live_edit_policy,
+    "specialised-editors": check_specialised_editors,
 }
 
 

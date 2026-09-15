@@ -172,10 +172,11 @@ quality-abi *args:
 # rows are fixed by the declarations, so reading them states the rule rather than sampling one
 # instance of it. See tools/editor/README.md.
 #
-#   just quality-editor-contract             both contracts against the tree
+#   just quality-editor-contract             every contract against the tree
 #   just quality-editor-contract --selftest  prove the gate still refuses each break of it
 
-# Check the engine's play-mode and live-edit-policy tables against the editor's and the specification's.
+# Check the engine's play-mode, live-edit-policy and specialised-editor tables against the editor's
+# and the specification's.
 quality-editor-contract *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -188,6 +189,8 @@ quality-editor-contract *args:
     python3 tools/editor/play_contract.py play-modes {{args}}
     echo "==> editor-contract  live-edit-policy"
     python3 tools/editor/play_contract.py live-edit-policy {{args}}
+    echo "==> editor-contract  specialised-editors"
+    python3 tools/editor/play_contract.py specialised-editors {{args}}
 
 # Validate the specification set: openspec validate --specs --strict. Seconds.
 quality-specs *args:

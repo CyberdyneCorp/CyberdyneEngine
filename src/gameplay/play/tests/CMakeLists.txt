@@ -119,15 +119,21 @@ function(cy_gameplay_play_declare_tests)
     #
     #   integration.editor_contract_play_modes
     #   integration.editor_contract_live_edit_policy
+    #   integration.editor_contract_specialised_editors
     #                                 the tree satisfies each contract. These are the gate.
     #   integration.editor_contract_gate  the gate still REFUSES a renamed mode, a fourth mode on
     #                                     one side only, a capability the two sides disagree about,
     #                                     a refusal that names no rung, a policy the specification
     #                                     drops, two policies sharing a disturbance rank, and a
-    #                                     classification from which a restart becomes derivable.
+    #                                     classification from which a restart becomes derivable —
+    #                                     and, since section 3.3, an editor the requirement gained
+    #                                     that the editor did not, a graph editor that stops using
+    #                                     the ONE shared canvas, a node type the engine registers
+    #                                     that the palette does not offer, a track kind respelled on
+    #                                     one side, and a region chrome.rs stops reserving.
     find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
 
-    foreach(contract play-modes live-edit-policy)
+    foreach(contract play-modes live-edit-policy specialised-editors)
         string(REPLACE "-" "_" contract_test "${contract}")
         add_test(NAME integration.editor_contract_${contract_test}
             COMMAND ${Python3_EXECUTABLE}

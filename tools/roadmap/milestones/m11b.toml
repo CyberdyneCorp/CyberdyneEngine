@@ -488,30 +488,176 @@ target = "tests/editor/test_documents.cpp"
 token  = "a node has a name"
 note   = "the named case, again: `unit.editor_documents` keeps building and passing, the filter selects nothing, and the count check is what goes red."
 
+# THE PLACEHOLDER THIS REPLACES, AND WHY IT WAS ALLOWED TO STAND FOR ONE RUNG.
+#
+# It ran `grep -rniIl CentreLower editor/crates/` and required three files. It said so itself:
+# "three files naming a region is satisfied by three comments ... whoever writes section 3.3 owns
+# the replacement, and the grep above is a placeholder that must not outlive them". It was left red
+# on purpose, because the thing to execute did not exist — `CentreLower` was referenced by ONE file,
+# the one reserving it.
+#
+# Section 3.3 is written and the placeholder is gone. What replaced it is the same pair every
+# repaired criterion on this rung is: a STATIC contract over things that can disagree, and a
+# BEHAVIOURAL suite that drives the model. Neither replaces the other.
+#
+#   static       `tools/editor/play_contract.py specialised-editors` — seventeen legs. The editors
+#                the requirement enumerates against `Domain::spec_term`; the requirement's own
+#                description of each against the surface it is built on, so an editor the
+#                requirement calls a graph that declares anything but the ONE `Surface::Graph` is
+#                red; every palette against the engine's `lower_*.cpp` node-type literals; the
+#                editor's `TrackKind` against `cy::sequencing::TrackKind`, enumerator, order and
+#                spelling; and `SpecialisedEditors::REGION` against the region `chrome.rs` reserves.
+#                `tools/editor/selftest.py` breaks each of those on purpose — ten new cases — and
+#                requires the gate to notice. It runs here as well as in CI, because a gate nobody
+#                has watched fail is the defect this ledger exists to stop.
+#
+#   behavioural  the cases below, which OPEN the editors and compare what they opened onto. "Every
+#                graph editor shares one canvas" is `CanvasId` equality across the opens, not a
+#                table saying so; "a domain this tree cannot open refuses by name" checks that the
+#                previously active editor is still active afterwards, because a refusal that
+#                cleared the region would lose an author's work.
+#
+# THE COUNT IS ASSERTED ON EVERY LEG. `cargo test -- --exact <a name that is not there>` filters to
+# zero and EXITS 0, which is how `source-control-provider` above nearly shipped a criterion that
+# named five cases and found none.
 [[criterion]]
 id = "specialised-editors"
-describe = "the `CentreLower` region `chrome.rs` reserves for 'the active specialised editor: script graph, animation, materials, sequencing' is filled by something. It is reserved and empty today, and four rows of this rung are the four editors it names"
-source = "tasks, editor-architecture, editor-ui-ux, visual-scripting, sequencing-and-cinematics"
+describe = "the editors the editor registers are the ones the requirement enumerates, built on ONE node-graph canvas and ONE timeline surface rather than one of each per domain — which the requirement forbids by name — and offering the node types and track kinds the engine can actually lower and dispatch. The STATIC half, which needs no build, so `just roadmap-falsify` can prove it"
+source = "tasks 3.3 and 3.4, editor-architecture (Specialised editors), editor-ui-ux, visual-scripting, sequencing-and-cinematics"
 kind = "command"
 run = '''
 set -eo pipefail
-fills=$(grep -rniIl "CentreLower" editor/crates/ 2>/dev/null | grep -v "/target/" || true)
-count=$(printf '%s' "$fills" | grep -c . || true)
-echo "$count file(s) reference the CentreLower region: ${fills:-none}"
-test "$count" -ge 3
-# WHAT WAS HERE AND WHY IT IS GONE. This criterion ran `ctest -R '^unit.render_sky$'` — the sky
-# renderer's suite, which has nothing to do with a specialised editor and would have gone red for a
-# reason no reader of this criterion could act on, or green while telling them nothing. That is the
-# sibling of the six checks this project has shipped that could not fail: a criterion whose passing
-# leg measures something else is not evidence about its own subject.
-#
-# It is NOT replaced with an executing leg here, and the criterion stays RED until one is written,
-# because the thing to execute does not exist yet: `CentreLower` is referenced by one file
-# (`cy-editor-visual/src/chrome.rs`, which reserves the region) and nothing fills it. Whoever writes
-# section 3.3 owns the replacement, and the grep above is a placeholder that must not outlive them —
-# three files naming a region is satisfied by three comments.
+python3 tools/editor/play_contract.py specialised-editors
+# THE GATE'S OWN NEGATIVE CASES ARE NOT RUN FROM HERE, and that is deliberate rather than an
+# omission. `tools/editor/selftest.py` breaks each of this contract's inputs on purpose — eleven
+# cases for this contract alone — and it runs as `integration.editor_contract_specialised_editors`'
+# sibling `integration.editor_contract_gate` and through `just quality-editor-contract --selftest`.
+# Naming it HERE would match `falsify`'s `_RUNS_THE_ROADMAP_TOOLING` guard, which refuses to run a
+# tree control for a criterion that invokes a selftest — and this criterion would be reported "not
+# provable here" for a reason that has nothing to do with whether it can fail.
 '''
 ci_job = "milestone-m11b"
+
+# Declared rather than derived: the body's searches are inside a python module, which `falsify`
+# cannot read a mutation out of. What it executes is the break that matters most — the ONE timeline
+# surface becoming two. `Domain::SequencesAndCinematics` and `Domain::AnimationGraphsAndClips` stop
+# declaring the shared surface, every word in the tree stays where it is, and the contract's
+# "built on the ONE shared Surface::Timeline" leg goes red. The canvas half is the same break on
+# `Surface::Graph`.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "editor/crates/cy-editor-interface/src/specialised/mod.rs"
+token  = "Surface::Timeline"
+note   = "renaming the shared timeline surface in the host's own declaration leaves the type, the tests' names and every mention of CentreLower in place, and takes the contract red on the leg that carries the requirement's second prohibition."
+
+[[criterion]]
+id = "specialised-editors-open"
+describe = "and the BEHAVIOURAL half: the editors are OPENED, and what they opened onto is compared. `every graph editor shares one canvas` is `CanvasId` equality across the opens rather than a table saying so, and a domain this tree has no vocabulary for refuses by name while leaving the previously active editor alone — because a refusal that cleared the reserved region would lose an author's work to a mis-click"
+source = "tasks 3.3 and 3.4, editor-architecture (Specialised editors)"
+kind = "command"
+run = '''
+set -eo pipefail
+cd editor
+# A failing case's own output goes to STDERR rather than to stdout, because stdout here is captured
+# into `$passed` and thrown away by the `tail -1` — which is how `source-control-provider`'s copy of
+# this helper turns a red case into a bare exit status with nothing to read.
+ran() {
+    out="$("$@" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+    printf '%s' "$out" | sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' | tail -1
+}
+passed=$(ran cargo test -p cy-editor-interface --lib -- --exact \
+    specialised::tests::every_editor_the_requirement_names_is_registered_and_names_a_row_that_exists \
+    specialised::tests::every_graph_editor_opens_the_same_one_canvas \
+    specialised::tests::every_keyed_time_editor_opens_the_same_one_surface \
+    specialised::tests::a_domain_this_tree_cannot_open_refuses_by_name_and_opens_nothing \
+    specialised::tests::the_active_specialised_editor_fills_the_region_chrome_reserved_for_it \
+    specialised::tests::opening_a_second_editor_replaces_the_first_in_the_one_region | tail -1)
+echo "the host cases: ${passed:-0} of the 6 named ran"
+test "${passed:-0}" -eq 6 || { echo "a case this criterion names is gone — renamed, deleted, or the filter is stale"; exit 1; }
+passed=$(ran cargo test -p cy-editor-interface --lib -- --exact \
+    specialised::graph::tests::a_wire_between_pins_of_different_types_is_refused_naming_both \
+    specialised::graph::tests::a_wire_that_would_close_a_cycle_is_refused_naming_the_path \
+    specialised::graph::tests::a_diagnostic_names_the_node_and_the_pin \
+    specialised::graph::tests::the_diff_reports_meaning_and_ignores_where_the_boxes_sit | tail -1)
+echo "the canvas cases: ${passed:-0} of the 4 named ran"
+test "${passed:-0}" -eq 4 || { echo "a case this criterion names is gone — renamed, deleted, or the filter is stale"; exit 1; }
+passed=$(ran cargo test -p cy-editor-interface --lib -- --exact \
+    specialised::timeline::tests::the_track_kinds_are_the_engines_own_seventeen \
+    specialised::timeline::tests::manual_keying_with_no_key_under_the_playhead_refuses_rather_than_discarding \
+    specialised::timeline::tests::retiming_moves_every_key_and_changes_no_identity \
+    specialised::timeline::tests::frame_stepping_is_whole_frames_and_snapping_does_not_eat_them \
+    specialised::timeline::tests::a_locked_track_refuses_an_edit_by_name | tail -1)
+echo "the timeline cases: ${passed:-0} of the 5 named ran"
+test "${passed:-0}" -eq 5 || { echo "a case this criterion names is gone — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+timeout_s = 3600
+ci_job = "milestone-m11b"
+
+# It needs a compiled editor, so `just roadmap-falsify` reports it "not provable here" and it is
+# proved by hand: rename the case, run, watch the COUNT go red, restore, md5-verify. The count is
+# the whole mechanism — `cargo test -- --exact <a name that is not there>` filters to zero and
+# EXITS 0, so a criterion that named fifteen cases and found none would report success.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "editor/crates/cy-editor-interface/src/specialised/mod.rs"
+token  = "every_graph_editor_opens_the_same_one_canvas"
+note   = "the named case is the claim that there is ONE canvas, measured by CanvasId equality. Renaming it leaves the case passing under its new name and takes this criterion red on `the host cases: 5 of the 6 named ran`, which is the assertion that stops an empty filter from reading as a pass."
+
+# THE SCENARIO IS THE CHECK, AND IT IS THE ONE `editor-architecture` WROTE.
+#
+#   WHEN a project setting changes THEN the diff SHALL show only that setting, and user preferences
+#   SHALL not appear in the project file.
+#
+# That is false of every settings file serialised out of a hash map, re-indented by its writer, or
+# stamped with when it was written — each a locally reasonable thing to do, and each discovered by
+# the reviewer of an unrelated change. `SettingsService::project_diff` makes the scenario a function
+# and the case below calls it: two settings written, one changed, and the diff required to be
+# EXACTLY the two lines of that one setting.
+#
+# The second half is enforced by shape rather than by care: a declaration says which file a setting
+# belongs in, `set_project` on a preference is refused BY NAME, and the two files have different
+# writers — so there is no code path that would put a preference in the project file. The case
+# checks the refusal and the absence, because "there is no path" is the sort of claim that stops
+# being true when somebody adds one.
+[[criterion]]
+id = "project-settings-in-version-control"
+describe = "a project setting change is a one-setting diff, a preference never reaches the project file, and a project is created from a template rather than from an empty directory and a hope. `editor-architecture`'s Project management and settings requirement had no implementation at all when this rung opened — neither settings nor templates existed — and its only scenario is about what a reviewer sees"
+source = "tasks 3.6, editor-architecture (Project management and settings, Collaboration-friendly behaviour)"
+kind = "command"
+run = '''
+set -eo pipefail
+cd editor
+ran() {
+    out="$("$@" 2>&1)" || { printf '%s\n' "$out" >&2; return 1; }
+    printf '%s' "$out" | sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' | tail -1
+}
+# The count is asserted because `cargo test -- --exact <a name that is not there>` filters to zero
+# and EXITS 0 — a criterion that named seven cases and found none would report success.
+passed=$(ran cargo test -p cy-editor-services --lib -- --exact \
+    settings::tests::changing_one_setting_changes_one_line_of_the_project_file \
+    settings::tests::a_preference_never_appears_in_the_project_file \
+    settings::tests::a_preference_written_as_a_project_setting_is_refused_by_name \
+    settings::tests::writing_a_file_nobody_changed_produces_the_same_bytes \
+    settings::tests::a_platform_override_wins_on_that_platform_and_nowhere_else \
+    settings::tests::settings_are_organised_by_category_and_found_by_searching_their_words \
+    settings::tests::a_project_is_created_from_a_template_and_not_over_one | tail -1)
+echo "the settings cases: ${passed:-0} of the 7 named ran"
+test "${passed:-0}" -eq 7 || { echo "a case this criterion names is gone — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+timeout_s = 3600
+ci_job = "milestone-m11b"
+
+# It needs a compiled editor, so the source-only sandbox reports it "not provable here". The
+# mutation is the canonical writer's own guarantee: `{:?}` on a real number is what makes a file
+# written twice the same bytes, and `{}` — which every reasonable person would write — drops the
+# precision that makes it so. With it changed, `writing_a_file_nobody_changed_produces_the_same_bytes`
+# still passes over whole numbers and the criterion is still green, which is why the mutation this
+# declares is the CASE NAME: the count is the leg that cannot be argued with.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "editor/crates/cy-editor-services/src/settings.rs"
+token  = "changing_one_setting_changes_one_line_of_the_project_file"
+note   = "the named case IS the requirement's only scenario. Renaming it leaves the case passing under its new name and takes this criterion red on `the settings cases: 6 of the 7 named ran`, which is the assertion that stops an empty filter from reading as a pass."
 
 [[criterion]]
 id = "editor-window"

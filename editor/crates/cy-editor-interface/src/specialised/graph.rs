@@ -515,7 +515,9 @@ impl GraphCanvas {
         for (key, node) in &after.nodes {
             match before.nodes.get(key) {
                 None => changes.push(Change::NodeAdded(*key)),
-                Some(was) if was.type_name != node.type_name || was.properties != node.properties => {
+                Some(was)
+                    if was.type_name != node.type_name || was.properties != node.properties =>
+                {
                     changes.push(Change::NodeChanged(*key));
                 }
                 Some(_) => {}
@@ -558,7 +560,10 @@ impl GraphCanvas {
 
     /// The pin of this node, this name and this direction, or why there is none.
     fn pin_of(&self, key: NodeKey, name: &str, direction: PinDirection) -> Result<&Pin> {
-        let node = self.nodes.get(&key).ok_or_else(|| Self::no_such_node(key))?;
+        let node = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| Self::no_such_node(key))?;
         let node_type = self.catalogue.get(&node.type_name).ok_or_else(|| {
             Problem::new(
                 format!("wire the {} node {}", node.type_name, key.ordinal()),
@@ -584,5 +589,168 @@ impl GraphCanvas {
             "the canvas holds no node with that key",
         )
         .with_remedy("place the node first, or name one that is there")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A domain-neutral vocabulary. The canvas is generic, so its own behaviour is tested on its
+    /// own terms rather than through one domain's palette — which is the claim being made about it.
+    fn catalogue() -> Catalogue {
+        Catalogue::new(vec![
+            NodeType::new(
+                "test.source",
+                vec![Pin::new("out", PinDirection::Output, "float")],
+            ),
+            NodeType::new(
+                "test.sink",
+                vec![Pin::new("in", PinDirection::Input, "float")],
+            ),
+            NodeType::new(
+                "test.relay",
+                vec![
+                    Pin::new("in", PinDirection::Input, "float"),
+                    Pin::new("out", PinDirection::Output, "float"),
+                ],
+            ),
+            NodeType::new(
+                "test.flag",
+                vec![Pin::new("out", PinDirection::Output, "bool")],
+            ),
+        ])
+        .expect("four distinct node types")
+    }
+
+    fn canvas() -> GraphCanvas {
+        let mut canvas = GraphCanvas::new(7);
+        canvas.load(catalogue());
+        canvas
+    }
+
+    #[test]
+    fn a_wire_between_pins_of_different_types_is_refused_naming_both() {
+        let mut canvas = canvas();
+        let flag = canvas
+            .add("test.flag", Layout::default())
+            .expect("a flag node");
+        let sink = canvas
+            .add("test.sink", Layout::default())
+            .expect("a sink node");
+        let refused = canvas
+            .connect(flag, "out", sink, "in")
+            .expect_err("bool does not flow into float");
+        assert!(
+            refused.because.contains("bool") && refused.because.contains("float"),
+            "the refusal names neither type: {refused:?}"
+        );
+        assert_eq!(canvas.links().count(), 0, "a refused wire was made anyway");
+    }
+
+    #[test]
+    fn a_wire_that_would_close_a_cycle_is_refused_naming_the_path() {
+        let mut canvas = canvas();
+        let first = canvas
+            .add("test.relay", Layout::default())
+            .expect("a relay");
+        let second = canvas
+            .add("test.relay", Layout::default())
+            .expect("a relay");
+        canvas
+            .connect(first, "out", second, "in")
+            .expect("a forward wire");
+        let refused = canvas
+            .connect(second, "out", first, "in")
+            .expect_err("the second wire closes a cycle");
+        assert!(
+            refused.because.contains("cycle"),
+            "the refusal does not say what is wrong: {refused:?}"
+        );
+        assert_eq!(canvas.links().count(), 1, "the cycle was wired anyway");
+    }
+
+    #[test]
+    fn a_diagnostic_names_the_node_and_the_pin() {
+        let mut canvas = canvas();
+        let sink = canvas
+            .add("test.sink", Layout::default())
+            .expect("a sink node");
+        let reported = canvas.diagnostics();
+        assert_eq!(reported.len(), 1, "expected one unwired required input");
+        assert_eq!(reported[0].node, sink);
+        assert_eq!(
+            reported[0].pin.as_deref(),
+            Some("in"),
+            "a diagnostic that names a graph and not a pin sends an author hunting"
+        );
+
+        canvas
+            .set_property(sink, "in", "0.5")
+            .expect("a literal on the pin");
+        assert!(
+            canvas.diagnostics().is_empty(),
+            "a valued pin still reports"
+        );
+    }
+
+    #[test]
+    fn the_diff_reports_meaning_and_ignores_where_the_boxes_sit() {
+        let mut before = canvas();
+        let node = before
+            .add("test.relay", Layout::default())
+            .expect("a relay");
+        let mut after = before.clone();
+        after
+            .move_to(node, Layout { x: 500.0, y: 500.0 })
+            .expect("the node moves");
+        assert!(
+            GraphCanvas::diff(&before, &after).is_empty(),
+            "moving a node changed the graph's meaning"
+        );
+
+        after.set_property(node, "gain", "2").expect("a property");
+        assert_eq!(
+            GraphCanvas::diff(&before, &after),
+            vec![Change::NodeChanged(node)]
+        );
+
+        let extra = after
+            .add("test.source", Layout::default())
+            .expect("a source");
+        after.connect(extra, "out", node, "in").expect("a wire");
+        let changes = GraphCanvas::diff(&before, &after);
+        assert!(changes.contains(&Change::NodeAdded(extra)));
+        assert_eq!(
+            changes
+                .iter()
+                .filter(|change| matches!(change, Change::LinkAdded(_)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_node_type_the_catalogue_does_not_declare_cannot_be_placed() {
+        let mut canvas = canvas();
+        let refused = canvas
+            .add("material.multiply", Layout::default())
+            .expect_err("no such type in this vocabulary");
+        assert!(refused.because.contains("material.multiply"), "{refused:?}");
+        assert_eq!(canvas.nodes().count(), 0);
+    }
+
+    #[test]
+    fn removing_a_node_takes_its_wires_and_its_selection_with_it() {
+        let mut canvas = canvas();
+        let source = canvas
+            .add("test.source", Layout::default())
+            .expect("a source");
+        let sink = canvas.add("test.sink", Layout::default()).expect("a sink");
+        canvas.connect(source, "out", sink, "in").expect("a wire");
+        canvas.select([source, sink]).expect("both selected");
+        canvas.remove(source).expect("the source goes");
+        assert_eq!(canvas.links().count(), 0, "a wire outlived its node");
+        assert_eq!(canvas.selection(), vec![sink]);
     }
 }

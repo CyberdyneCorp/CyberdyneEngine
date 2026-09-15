@@ -33,9 +33,31 @@
 //! no key under the playhead is REFUSED by name rather than silently discarded, because a value a
 //! person typed that goes nowhere is the failure this requirement exists to prevent.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use cy_editor_core::problem::{Problem, Result};
+
+/// Whether `start` is strictly before `end`, with a NaN on either side answering `false`.
+///
+/// Written once rather than as `!(end > start)` at five sites: a not-a-number that slipped into a
+/// time would make every ordering comparison false, and a check spelled as a negated `>` reads as
+/// if it had handled that when it has only inherited it.
+fn is_before(start: f64, end: f64) -> bool {
+    matches!(start.partial_cmp(&end), Some(Ordering::Less))
+}
+
+/// Whether a rate or a factor is a positive finite number. A frame rate and a retime factor both
+/// have to be one, and both leave everything downstream undefined when they are not.
+fn is_positive(value: f64) -> bool {
+    value.is_finite() && is_before(0.0, value)
+}
+
+/// Whether two times are the same instant. `total_cmp` rather than `==`, so that the comparison is
+/// a total order over every bit pattern a time can hold rather than one with three answers.
+fn same_time(left: f64, right: f64) -> bool {
+    left.total_cmp(&right).is_eq()
+}
 
 /// What a track drives. Mirrors `cy::sequencing::TrackKind`, spelling for spelling.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -289,7 +311,7 @@ pub struct TimelineSurface {
 impl TimelineSurface {
     /// An empty surface at the given frame rate.
     pub fn new(id: u64, frame_rate: f64) -> Result<Self> {
-        if !(frame_rate.is_finite() && frame_rate > 0.0) {
+        if !is_positive(frame_rate) {
             return Err(Problem::new(
                 format!("open a timeline at {frame_rate} frames per second"),
                 "frame stepping and snapping are both defined in terms of the frame rate, so a \
@@ -435,15 +457,13 @@ impl TimelineSurface {
 
     /// Loop between these two times. A range that is empty or inverted is refused.
     pub fn set_loop(&mut self, range: Option<(f64, f64)>) -> Result<()> {
-        if let Some((start, end)) = range {
-            if !(end > start) {
-                return Err(Problem::new(
-                    format!("loop between {start} and {end}"),
-                    "a loop range whose end is not after its start would either play nothing or \
-                     play backwards, and neither is what a person asked for",
-                )
-                .with_remedy("drag the range's end past its start"));
-            }
+        if let Some((start, end)) = range.filter(|(start, end)| !is_before(*start, *end)) {
+            return Err(Problem::new(
+                format!("loop between {start} and {end}"),
+                "a loop range whose end is not after its start would either play nothing or play \
+                 backwards, and neither is what a person asked for",
+            )
+            .with_remedy("drag the range's end past its start"));
         }
         self.loop_range = range;
         Ok(())
@@ -483,7 +503,7 @@ impl TimelineSurface {
         self.refuse_if_locked(id)?;
         let ordinal = self.next_ordinal;
         let track = self.mutable(id)?;
-        if let Some(existing) = track.keys.iter_mut().find(|key| key.time == time) {
+        if let Some(existing) = track.keys.iter_mut().find(|key| same_time(key.time, time)) {
             existing.value = value;
             return Ok(existing.id);
         }
@@ -494,7 +514,9 @@ impl TimelineSurface {
             interpolation: Interpolation::Linear,
         };
         track.keys.push(key);
-        track.keys.sort_by(|left, right| left.time.total_cmp(&right.time));
+        track
+            .keys
+            .sort_by(|left, right| left.time.total_cmp(&right.time));
         self.next_ordinal += 1;
         Ok(key.id)
     }
@@ -513,7 +535,7 @@ impl TimelineSurface {
                     .ok_or_else(|| Self::no_such_track(id))?
                     .keys
                     .iter()
-                    .find(|key| key.time == at)
+                    .find(|key| same_time(key.time, at))
                     .map(|key| key.id);
                 match existing {
                     Some(_) => self.key(id, at, value),
@@ -540,7 +562,7 @@ impl TimelineSurface {
         subject: impl Into<String>,
     ) -> Result<SectionId> {
         self.refuse_if_locked(id)?;
-        if !(end > start) {
+        if !is_before(start, end) {
             return Err(Problem::new(
                 format!("place a section from {start} to {end}"),
                 "a section whose end is not after its start has no duration to play",
@@ -567,7 +589,7 @@ impl TimelineSurface {
     /// Move a section's start and end, keeping its identity and its keys' identities.
     pub fn trim(&mut self, id: TrackId, section: SectionId, start: f64, end: f64) -> Result<()> {
         self.refuse_if_locked(id)?;
-        if !(end > start) {
+        if !is_before(start, end) {
             return Err(Problem::new(
                 format!("trim a section to {start}..{end}"),
                 "a section whose end is not after its start has no duration to play",
@@ -600,7 +622,7 @@ impl TimelineSurface {
     /// rather than about a whole track.
     pub fn retime(&mut self, id: TrackId, factor: f64) -> Result<()> {
         self.refuse_if_locked(id)?;
-        if !(factor.is_finite() && factor > 0.0) {
+        if !is_positive(factor) {
             return Err(Problem::new(
                 format!("retime a track by {factor}"),
                 "a factor that is not a positive finite number would collapse or invert the \
@@ -633,7 +655,11 @@ impl TimelineSurface {
         let index = keys.iter().rposition(|key| key.time <= at)?;
         let (left, right) = (&keys[index], &keys[index + 1]);
         let span = right.time - left.time;
-        let t = if span > 0.0 { (at - left.time) / span } else { 0.0 };
+        let t = if span > 0.0 {
+            (at - left.time) / span
+        } else {
+            0.0
+        };
         Some(match left.interpolation {
             Interpolation::Constant => left.value,
             Interpolation::Linear => left.value + (right.value - left.value) * t,
@@ -652,7 +678,10 @@ impl TimelineSurface {
     }
 
     fn refuse_if_locked(&self, id: TrackId) -> Result<()> {
-        let track = self.tracks.get(&id).ok_or_else(|| Self::no_such_track(id))?;
+        let track = self
+            .tracks
+            .get(&id)
+            .ok_or_else(|| Self::no_such_track(id))?;
         if track.locked {
             return Err(Problem::new(
                 format!("edit the locked track {}", track.label),
@@ -676,5 +705,139 @@ impl TimelineSurface {
             "the surface holds no track with that identity",
         )
         .with_remedy("add the track first, or name one that is there")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn surface() -> TimelineSurface {
+        let mut surface = TimelineSurface::new(3, 30.0).expect("thirty frames a second");
+        surface.load(10.0);
+        surface
+    }
+
+    #[test]
+    fn the_track_kinds_are_the_engines_own_seventeen() {
+        assert_eq!(
+            TrackKind::ALL.len(),
+            17,
+            "cy::sequencing::TrackKind declares seventeen"
+        );
+        let mut names: Vec<&str> = TrackKind::ALL.iter().map(|kind| kind.name()).collect();
+        let before = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), before, "two track kinds share a spelling");
+        assert!(
+            TrackKind::ALL.iter().any(|kind| kind.is_keyed()),
+            "no track kind carries keys, so the curve surface has nothing to edit"
+        );
+    }
+
+    #[test]
+    fn manual_keying_with_no_key_under_the_playhead_refuses_rather_than_discarding() {
+        let mut surface = surface();
+        let track = surface.add_track(TrackKind::Property, "intensity");
+        surface.set_keying(KeyingMode::Manual);
+        surface.scrub(2.0);
+        let refused = surface
+            .value_edited(track, 3.0)
+            .expect_err("manual keying has no key here");
+        assert!(refused.because.contains("nowhere to go"), "{refused:?}");
+        assert_eq!(surface.track(track).expect("the track").keys.len(), 0);
+
+        surface.set_keying(KeyingMode::Auto);
+        surface
+            .value_edited(track, 3.0)
+            .expect("auto keying keys it");
+        assert_eq!(surface.track(track).expect("the track").keys.len(), 1);
+    }
+
+    #[test]
+    fn retiming_moves_every_key_and_changes_no_identity() {
+        let mut surface = surface();
+        let track = surface.add_track(TrackKind::Property, "intensity");
+        let first = surface.key(track, 1.0, 0.0).expect("a key");
+        let second = surface.key(track, 2.0, 1.0).expect("a key");
+        surface.retime(track, 2.0).expect("the track stretches");
+        let keys = &surface.track(track).expect("the track").keys;
+        assert_eq!(
+            keys.iter().map(|key| key.id).collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert!((keys[0].time - 2.0).abs() < 1e-9);
+        assert!((keys[1].time - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn frame_stepping_is_whole_frames_and_snapping_does_not_eat_them() {
+        let mut surface = surface();
+        surface.scrub(0.0);
+        surface.step_frames(3);
+        assert!(
+            (surface.playhead() - 0.1).abs() < 1e-9,
+            "three frames at thirty a second is a tenth of a second, not {}",
+            surface.playhead()
+        );
+        surface.snap_to(Some(1.0));
+        surface.step_frames(1);
+        assert!(
+            (surface.playhead() - (0.1 + 1.0 / 30.0)).abs() < 1e-9,
+            "snapping swallowed a frame step: {}",
+            surface.playhead()
+        );
+    }
+
+    #[test]
+    fn a_locked_track_refuses_an_edit_by_name() {
+        let mut surface = surface();
+        let track = surface.add_track(TrackKind::Property, "intensity");
+        surface.set_locked(track, true).expect("the track locks");
+        let refused = surface
+            .key(track, 1.0, 1.0)
+            .expect_err("the track is locked");
+        assert!(refused.what.contains("intensity"), "{refused:?}");
+        assert_eq!(surface.track(track).expect("the track").keys.len(), 0);
+    }
+
+    #[test]
+    fn a_track_that_drives_the_sequence_itself_refuses_a_binding() {
+        let mut surface = surface();
+        let marker = surface.add_track(TrackKind::Marker, "beats");
+        let refused = surface
+            .bind(marker, "Pillar")
+            .expect_err("a marker track drives nothing");
+        assert!(refused.because.contains("Marker"), "{refused:?}");
+        let property = surface.add_track(TrackKind::Property, "intensity");
+        surface
+            .bind(property, "Pillar")
+            .expect("a property track binds");
+        assert_eq!(
+            surface
+                .track(property)
+                .expect("the track")
+                .binding
+                .as_deref(),
+            Some("Pillar")
+        );
+    }
+
+    #[test]
+    fn playback_wraps_inside_the_loop_range_and_nowhere_else() {
+        let mut surface = surface();
+        surface.set_loop(Some((2.0, 4.0))).expect("a range");
+        surface.scrub(3.5);
+        surface.advance(1.0);
+        assert!(
+            (surface.playhead() - 2.5).abs() < 1e-9,
+            "{}",
+            surface.playhead()
+        );
+        assert!(
+            surface.set_loop(Some((4.0, 2.0))).is_err(),
+            "an inverted range was accepted"
+        );
     }
 }

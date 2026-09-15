@@ -44,7 +44,7 @@ import play_contract  # noqa: E402  (after the path insert, deliberately)
 
 REPOSITORY = play_contract.REPOSITORY
 
-#: Every file either contract reads. A tree holding these is a tree the gate can judge.
+#: Every file any contract reads. A tree holding these is a tree the gate can judge.
 INPUTS = (
     play_contract.MODE_HEADER,
     play_contract.MODE_SOURCE,
@@ -54,7 +54,19 @@ INPUTS = (
     play_contract.ATTRIBUTES,
     play_contract.LIVE_EDITING,
     play_contract.EDITOR_ARCHITECTURE,
-)
+    play_contract.SPECIALISED,
+    play_contract.SPECIALISED_TIMELINE,
+    play_contract.CHROME,
+    play_contract.SEQUENCING_HEADER,
+    play_contract.SEQUENCING_SOURCE,
+) + tuple(sorted({source for sources in play_contract.LOWERINGS.values() for source in sources}))
+
+#: `specialised-editors` asks whether every row a refusal names is a specification in this tree, so
+#: the sandbox needs the specification set's *names*. Copied as whole files rather than as empty
+#: directories, so that a case which points a refusal at a row that does not exist is distinguished
+#: from a sandbox that simply has no rows — which is the shape that makes a check compare nothing to
+#: nothing and pass.
+SPEC_ROWS = "openspec/specs"
 
 
 @dataclass(frozen=True)
@@ -139,7 +151,50 @@ CASES = (
          "| `ReloadAsset` | The referenced asset", "| x | The referenced asset", 1,
          "names exactly the policies the engine declares"),
 
+    # --- specialised-editors --------------------------------------------------------------------
+    Case("control-specialised", "specialised-editors", play_contract.SPECIALISED, "", "", 0,
+         "every leg holds"),
+    Case("the-requirement-gains-an-editor", "specialised-editors",
+         play_contract.EDITOR_ARCHITECTURE,
+         "and localisation tables.\n", "and localisation tables, and shader permutations.\n", 1,
+         "exactly the editors the requirement enumerates"),
+    Case("the-editor-renames-one", "specialised-editors", play_contract.SPECIALISED,
+         'Domain::Tilemaps => "tilemaps",', 'Domain::Tilemaps => "tile maps",', 1,
+         "exactly the editors the requirement enumerates"),
+    Case("a-graph-editor-goes-bespoke", "specialised-editors", play_contract.SPECIALISED,
+         "Domain::Materials\n            | Domain::VfxGraph",
+         "Domain::Materials => &[Surface::Canvas2D],\n            Domain::VfxGraph", 1,
+         "built on the ONE shared Surface::Graph"),
+    Case("a-timeline-editor-goes-bespoke", "specialised-editors", play_contract.SPECIALISED,
+         "Domain::SequencesAndCinematics => &[Surface::Timeline],",
+         "Domain::SequencesAndCinematics => &[Surface::Table],", 1,
+         "built on the ONE shared Surface::Timeline"),
+    Case("the-engine-gains-a-node-type", "specialised-editors",
+         "src/graph/src/lower_pose.cpp",
+         'register_node(registry, "pose.ik"', 'register_node(registry, "pose.mirror"', 1,
+         "palette is the engine's own pose vocabulary"),
+    Case("the-engine-respells-a-track-kind", "specialised-editors",
+         play_contract.SEQUENCING_SOURCE, 'return "CameraCut";', 'return "Camera-Cut";', 1,
+         "spell every track kind the same way"),
+    Case("the-editors-leave-the-reserved-region", "specialised-editors",
+         play_contract.SPECIALISED,
+         "pub const REGION: Region = Region::CentreLower;",
+         "pub const REGION: Region = Region::Right;", 1,
+         "drawn in the region chrome.rs reserved for them"),
+    Case("chrome-stops-reserving-the-region", "specialised-editors", play_contract.CHROME,
+         'Region::CentreLower => "the active specialised editor",',
+         'Region::CentreLower => "a second content browser",', 1,
+         "still reserves a region for the active specialised editor"),
+    Case("a-refusal-names-a-row-that-is-not-there", "specialised-editors",
+         play_contract.SPECIALISED,
+         'Domain::Tilemaps => "rendering-2d",', 'Domain::Tilemaps => "tilemaps",', 1,
+         "every row a refusal names is a specification in this tree"),
+
     # --- the parser, rather than the contract ----------------------------------------------------
+    Case("prose-list", "specialised-editors", play_contract.EDITOR_ARCHITECTURE,
+         "The editor SHALL provide dedicated editors for: materials",
+         "The editor SHALL provide these dedicated editors. Materials", 2,
+         "It is not the paragraph this gate reads"),
     Case("bold-table", "live-edit-policy", play_contract.LIVE_EDITING,
          "| `Immediate` | Applied to running instances directly |\n"
          "| `ReinitializeComponent` | The component is torn down and rebuilt from new data |\n"
@@ -162,6 +217,10 @@ def materialise(into: Path) -> None:
         destination = into / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPOSITORY / relative, destination)
+    for row in sorted((REPOSITORY / SPEC_ROWS).glob("*/spec.md")):
+        destination = into / SPEC_ROWS / row.parent.name / "spec.md"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(row, destination)
 
 
 def apply(root: Path, case: Case) -> None:

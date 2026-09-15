@@ -21,8 +21,8 @@ The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.
 
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
-| M10 | `world-frame-budget` | **M11.a** | the environment demo costs about 122 ms a frame against a 16.7 ms budget, and the three bands that make it are the substrate re-sampled at every terrain vertex, the cloud march and water's foam fie… |
 | M8.c | `steam-audio-configures` | **M11.a** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
+| M10 | `world-frame-budget` | **M11.c** | the environment demo costs 115.7 ms a frame mean and 127.6 ms worst against a 16.7 ms budget — re-measured headless at 0x5EED over the same 64-frame take, WORSE than the 122/106 ms this gap was dec… |
 | M11.a | `developer-workflow-at-working` | **M11.d** | THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the … |
 | M10 | `pcg-gpu-domain-agreement` | **M11.e** | there is no GPU execution domain in this tree to compare. `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic — `procedural-content-generation`'s "CPU and GPU execution" requ… |
 | M9 | `record-matches-plan-history` | **M11.e** | FOUR CELLS OVER FOUR CLOSED MILESTONES: M3 `testing-and-quality`, M4 `build-system-and-platforms`, M6 `developer-workflow-and-just`, M8.b `thirdparty-dependencies` — each column claims Working and … |

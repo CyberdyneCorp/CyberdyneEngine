@@ -26,17 +26,42 @@ answers it. Twenty rows named by those five criteria carry 383 requirements betw
     python3 tools/roadmap/requirements.py <row>...          the rows, and what answers them
     python3 tools/roadmap/requirements.py <row> --list      every requirement and its evidence
 
-WHAT COUNTS AS AN ANSWER, and every one of the four is CHECKED rather than read:
+WHAT COUNTS AS AN ANSWER, and every one of the five is CHECKED rather than read:
 
     test:<kind>.<name>        a suite declared by `cy_add_test(NAME <name> KIND <kind>)` in a
-                              COMMITTED CMakeLists.txt. Verified against the tracked tree rather
-                              than against `ctest -N`, so it is answerable without a build — which
-                              is what lets `just roadmap-falsify` judge it in its source-only sandbox
+                              COMMITTED CMakeLists.txt, PLUS a `case` naming the test case in it
+                              that answers this requirement. Verified against the tracked tree
+                              rather than against `ctest -N`, so it is answerable without a build —
+                              which is what lets `just roadmap-falsify` judge it in its source-only
+                              sandbox
+    rust:<crate>::<path>      a `#[test]` function of an editor crate, by its full path, e.g.
+                              `rust:cy-editor-interface::specialised::tests::every_graph_editor...`
     gate:<id>                 a gate in tools/roadmap/gates.toml
-    criterion:<ledger>:<id>   a criterion of tools/roadmap/milestones/<ledger>.toml
+    criterion:<ledger>:<id>   a criterion of tools/roadmap/milestones/<ledger>.toml THAT HAS BEEN
+                              PROVEN ABLE TO FAIL — `tools/roadmap/falsifiability.toml` must record
+                              a proof for it. See below
     exempt:<milestone>        a recorded deferral: the milestone that must close it, and a `note`
                               saying why. A milestone that is not in `record.MILESTONES` is refused,
                               so an exemption cannot be parked at a rung that does not exist
+
+--- WHY A SUITE ALONE IS NOT AN ANSWER, AND WHY AN UNPROVEN CRITERION IS NOT ONE EITHER -------------
+
+This module's first version accepted `test:unit.editor_documents` and asked only whether a suite of
+that name was declared somewhere in the tree. **Twenty-four requirements could have been answered by
+naming one suite twenty-four times**, and every one of them would have resolved. That is the ninth
+instance of the defect `tools/roadmap/falsify.py` enumerates, in the tool built to count the other
+eight — so it was corrected before the map had a single entry in it rather than after.
+
+What a `test:` entry now claims is a NAMED CASE, and the case has to be in the SUITE'S OWN SOURCES:
+the text is searched for in the tracked files under the directory of the `CMakeLists.txt` that
+declares the suite. Renaming the case turns the entry red; pointing an entry at a case that belongs
+to another suite is refused at the directory.
+
+And a `criterion:` entry inherits its strength from the criterion, so it inherits its weakness too.
+`falsifiability.toml` is the record of which criteria have been broken on purpose and watched go
+red; 584 of 641 have not. An entry naming one of those would be a requirement answered by a check
+nobody has shown can fail, which is the thing this ladder spent a whole phase building a prover
+for. So the proof is required, and the refusal says which criterion and what would fix it.
 
 AND THE OTHER DIRECTION, WHICH IS THE ONE THAT ROTS. An entry naming a requirement that no longer
 appears in the specification is a FAILURE, not a silence: requirements are renamed by archived
@@ -84,7 +109,10 @@ _CY_ADD_TEST = re.compile(
     r"cy_add_test\s*\(\s*(?=[^)]*\bNAME\s+([A-Za-z0-9_]+))(?=[^)]*\bKIND\s+([A-Za-z0-9_]+))",
     re.MULTILINE)
 
-KINDS = ("test", "gate", "criterion", "exempt")
+KINDS = ("test", "rust", "gate", "criterion", "exempt")
+
+FALSIFIABILITY = Path(__file__).resolve().parent / "falsifiability.toml"
+EDITOR_CRATES = REPO_ROOT / "editor" / "crates"
 
 #: An exemption says why in prose, and prose is accepted HERE and nowhere else in this mechanism for
 #: one reason: a deferral is a human decision and there is nothing to execute. What keeps it honest
@@ -115,16 +143,22 @@ def _committed_cmake() -> list[Path]:
     return [REPO_ROOT / name for name in listed.stdout.split("\0") if name]
 
 
-def declared_tests() -> set[str]:
-    """`<kind>.<name>` for every suite a committed CMakeLists.txt declares."""
-    found: set[str] = set()
+def declared_tests() -> dict[str, Path]:
+    """`<kind>.<name>` -> the directory of the CMakeLists.txt that declares it.
+
+    The directory is what makes a `case` checkable. `cy_add_test`'s SOURCES are written through
+    CMake variables (`"${tests_dir}/test_editor_play.cpp"`), so resolving them would mean evaluating
+    CMake; the directory holding the declaration is exact, needs no evaluation, and is enough to
+    refuse an entry that names a case belonging to a different suite's module.
+    """
+    found: dict[str, Path] = {}
     for path in _committed_cmake():
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
         for name, kind in _CY_ADD_TEST.findall(text):
-            found.add(f"{kind}.{name}")
+            found[f"{kind}.{name}"] = path.parent
     return found
 
 
@@ -151,12 +185,53 @@ def declared_criteria() -> set[str]:
     return found
 
 
+def proven_criteria() -> set[str]:
+    """`<ledger>:<id>` for every criterion `falsifiability.toml` records a PROOF for.
+
+    A verdict of "red in the tree" or "red against a built tree" is a criterion that is currently
+    failing, not one that has been shown able to fail on purpose; only a verdict beginning "proven"
+    counts. The file is generated by `just roadmap-falsify --record` and re-earned by
+    `just roadmap-test`, so this reads a record something else keeps honest.
+    """
+    if not FALSIFIABILITY.is_file():
+        raise CoverageError(f"no falsifiability record at {FALSIFIABILITY}; a `criterion:` entry "
+                            "cannot be judged without it")
+    loaded = tomllib.loads(FALSIFIABILITY.read_text(encoding="utf-8"))
+    proofs = loaded.get("proof", [])
+    if not proofs:
+        raise CoverageError(f"{FALSIFIABILITY.name} records no proofs at all. It is not the file "
+                            "this module reads.")
+    return {f"{proof.get('ledger', '')}:{proof.get('criterion', '')}" for proof in proofs
+            if str(proof.get("verdict", "")).startswith("proven")}
+
+
+def _tracked_sources(directory: Path, suffixes: tuple[str, ...]) -> list[Path]:
+    """Every file git tracks under `directory` with one of these suffixes."""
+    listed = subprocess.run(["git", "ls-files", "-z", "--", str(directory)], cwd=REPO_ROOT,
+                            capture_output=True, text=True, check=False)
+    if listed.returncode != 0:
+        raise CoverageError(f"git could not list {directory}: {listed.stderr.strip()}")
+    return [REPO_ROOT / name for name in listed.stdout.split("\0")
+            if name and name.endswith(suffixes)]
+
+
+def _contains(paths: list[Path], needle: str) -> bool:
+    for path in paths:
+        try:
+            if needle in path.read_text(encoding="utf-8"):
+                return True
+        except (OSError, UnicodeDecodeError):
+            continue
+    return False
+
+
 @dataclass
 class Entry:
     row: str
     requirement: str
     evidence: str
     note: str
+    case: str = ""
 
     @property
     def kind(self) -> str:
@@ -175,11 +250,12 @@ def coverage(path: Path = COVERAGE) -> list[Entry]:
     entries = []
     seen: set[tuple[str, str]] = set()
     for index, table in enumerate(loaded.get("coverage", []), start=1):
-        unknown = set(table) - {"row", "requirement", "evidence", "note"}
+        unknown = set(table) - {"row", "requirement", "evidence", "note", "case"}
         if unknown:
             raise CoverageError(f"{path.name} entry {index}: unknown key(s) {', '.join(sorted(unknown))}")
         entry = Entry(row=str(table.get("row", "")), requirement=str(table.get("requirement", "")),
-                      evidence=str(table.get("evidence", "")), note=str(table.get("note", "")))
+                      evidence=str(table.get("evidence", "")), note=str(table.get("note", "")),
+                      case=str(table.get("case", "")))
         if not entry.row or not entry.requirement or not entry.evidence:
             raise CoverageError(f"{path.name} entry {index}: 'row', 'requirement' and 'evidence' "
                                 "are all required")
@@ -199,23 +275,80 @@ def coverage(path: Path = COVERAGE) -> list[Entry]:
 class Resolver:
     """What this tree actually declares, read once for every row a run is asked about."""
 
-    tests: set[str] = field(default_factory=declared_tests)
+    tests: dict = field(default_factory=declared_tests)
     gates: set[str] = field(default_factory=declared_gates)
     criteria: set[str] = field(default_factory=declared_criteria)
+    proven: set[str] = field(default_factory=proven_criteria)
 
     def unresolved(self, entry: Entry) -> str:
-        """Why this entry's evidence does not exist in this tree, or an empty string."""
-        if entry.kind == "test":
-            if entry.subject not in self.tests:
-                return (f"no suite `{entry.subject}` is declared by any committed cy_add_test() — "
-                        "renamed, deleted, or never written")
-            return ""
-        if entry.kind == "gate":
-            return "" if entry.subject in self.gates else f"no gate `{entry.subject}` in gates.toml"
-        if entry.kind == "criterion":
-            if entry.subject not in self.criteria:
-                return f"no criterion `{entry.subject}` in tools/roadmap/milestones/"
-            return ""
+        """Why this entry's evidence does not answer this requirement in this tree, or ``""``."""
+        resolve = {"test": self._test, "rust": self._rust, "gate": self._gate,
+                   "criterion": self._criterion, "exempt": self._exempt}
+        return resolve[entry.kind](entry)
+
+    def _test(self, entry: Entry) -> str:
+        """A suite, AND the case in it that answers this requirement.
+
+        The case is what stops one suite from answering twenty-four requirements: it is searched for
+        in the tracked sources beside the `cy_add_test` that declares the suite, so an entry cannot
+        borrow a case from somewhere else, and renaming the case turns the entry red.
+        """
+        directory = self.tests.get(entry.subject)
+        if directory is None:
+            return (f"no suite `{entry.subject}` is declared by any committed cy_add_test() — "
+                    "renamed, deleted, or never written")
+        if not entry.case.strip():
+            return ("a `test:` entry needs a `case` naming the test case that answers this "
+                    "requirement; a suite alone is satisfied by any suite")
+        sources = _tracked_sources(directory, (".cpp", ".h", ".hpp", ".cc"))
+        if not sources:
+            return f"{directory.relative_to(REPO_ROOT)} holds no tracked sources to find a case in"
+        if not _contains(sources, entry.case):
+            return (f"no case named {entry.case!r} in "
+                    f"{directory.relative_to(REPO_ROOT)} — renamed, deleted, or it belongs to "
+                    "another suite")
+        return ""
+
+    def _rust(self, entry: Entry) -> str:
+        """A `#[test]` of an editor crate, by crate and full path.
+
+        The same claim as `_test` in the workspace where most of the editor's evidence lives: the
+        function has to be declared in THAT crate, not merely named somewhere.
+        """
+        crate, _, path = entry.subject.partition("::")
+        directory = EDITOR_CRATES / crate
+        if not directory.is_dir():
+            return f"no crate `{crate}` under editor/crates/"
+        function = path.rsplit("::", 1)[-1]
+        if not function:
+            return ("a `rust:` entry is `<crate>::<module path>::<test function>`; this one names "
+                    "no function")
+        sources = _tracked_sources(directory, (".rs",))
+        if not sources:
+            return f"editor/crates/{crate} holds no tracked Rust sources"
+        if not _contains(sources, f"fn {function}("):
+            return f"no `fn {function}(` in editor/crates/{crate} — renamed, deleted, or moved"
+        return ""
+
+    def _gate(self, entry: Entry) -> str:
+        return "" if entry.subject in self.gates else f"no gate `{entry.subject}` in gates.toml"
+
+    def _criterion(self, entry: Entry) -> str:
+        """A criterion, AND a proof that it can fail.
+
+        `falsifiability.toml` is the ladder's record of which criteria have been broken on purpose
+        and watched go red. An entry naming one that has not been is a requirement answered by a
+        check nobody knows works, which is the shape this whole mechanism exists to refuse.
+        """
+        if entry.subject not in self.criteria:
+            return f"no criterion `{entry.subject}` in tools/roadmap/milestones/"
+        if entry.subject not in self.proven:
+            return (f"`{entry.subject}` has never been shown able to fail — falsifiability.toml "
+                    "records no proof for it, so it cannot answer a requirement. Prove it with "
+                    "`just roadmap-falsify --record`, or answer this requirement with a case")
+        return ""
+
+    def _exempt(self, entry: Entry) -> str:
         if entry.subject.lower() not in MILESTONES:
             return (f"exempt until `{entry.subject}`, which is not a milestone; they are "
                     f"{', '.join(MILESTONES)}")

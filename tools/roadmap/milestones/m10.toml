@@ -191,9 +191,25 @@ known_gap_closes = "m11e"
 # actually unproven, that no CONSUMER (terrain, foliage, water, illumination) reads the field at all.
 # `declare_consumers()` names those four and nothing in the tree opens a reader as any of them.
 
+# --- WHAT M11.a DID WITH THAT DECISION, AND THE DECLARATION BELOW IS REWRITTEN TO MATCH ----------
+#
+# It took the FIRST of the two: the case samples where the field varies, the gap is closed, and its
+# `known_gap` was deleted in the same change. The declaration below was NOT rewritten then, and that
+# left this ledger asserting a cause its own measurement above had already refuted — a criterion
+# whose `describe` says "the substrate cannot see it" over a `run` that passes because the substrate
+# can. M11.a's third repair rewrote it. The `run` is untouched and BYTE-IDENTICAL to what `3d44e2f`
+# shipped: what changed is the sentence about the engine, not the check over it.
+#
+# THE FIRST HALF OF THE DECLARATION WAS FALSE AND THE SECOND WAS TRUE, which is why this is a
+# correction and not a re-diagnosis after the fact. `src/rendering/sky/src/cloud_shadows.cpp` has not
+# changed since `3d44e2f` — `git diff 3d44e2f HEAD -- src/rendering/sky/` touches the README and the
+# TEST and nothing else — so no write path was repaired, because none was broken. What was repaired
+# is the half the declaration's second sentence names: a case that asserted against the producer's
+# own statistics, probing twenty-five positions the shadow does not fall on.
+
 [[criterion]]
 id = "sky-field-round-trip"
-describe = "THE SKY COMPUTES A CLOUD SHADOW AND THE SUBSTRATE CANNOT SEE IT. `CloudShadowField::update` reports darkest < 0.5 and brightest > 0.9 over tiles it says it wrote, and `CloudShadowField::sample` returns the declared 1.0 at every point inside `radius_metres`. `atmosphere-sky-and-clouds` requires the shadow to be \"consumed by terrain, foliage, water, and illumination\", which is what reading it through the field is for; today none of them could. Terrain and water round-trip correctly through the same store, so this is the sky's write path and not the substrate's."
+describe = "**THE CLOUD SHADOW REACHES THE SUBSTRATE — AND THE HALF OF THIS GAP THAT WAS TRUE WAS THE SECOND HALF. CLOSED AT M11.a.** As declared: `CloudShadowField::update` reports darkest < 0.5 and brightest > 0.9 over tiles it says it wrote, `CloudShadowField::sample` returned the declared 1.0 at every point the case probed inside `radius_metres`, and `atmosphere-sky-and-clouds` requires the shadow to be \"consumed by terrain, foliage, water, and illumination\" — which none of them could do through a sampler answering its own default. The cause named — the sky's write path — IS NOT WHAT WAS WRONG, and the comment above this criterion measured that before M10 closed: `src/rendering/sky/src/cloud_shadows.cpp` has not changed since `3d44e2f` and the shadow was in the store all along. What was wrong is what the declaration's SECOND sentence names, a case that asserted against the producer's own statistics: its twenty-five probes were a 5x5 grid at 128 m about the origin, ground this weather leaves in full sun, so they read 1.0 whether `publish()` ran or not. The case now reads back EVERY CELL THE PRODUCER WROTE at both residencies — 2048 of the 2048 it reports over 8 tiles resolve — and compares the extremes with `stats()` inside one UNorm8 quantum. **THIS CRITERION JUDGES THOSE NUMBERS**: `through the store: 2048 samples, lowest 0.00392157, highest 1` against the producer's own darkest of 0.00414244. Suppress `publish()` and the same line reads `0 samples` and this goes red."
 source = "M10 gate, claim 2; openspec/specs/atmosphere-sky-and-clouds/spec.md"
 kind = "command"
 run = '''
@@ -1140,6 +1156,47 @@ ci_job = "milestone-m10"
 # softened into "the budget is measured" for M6's: a milestone that quietly restates a requirement it
 # did not meet is doing the thing this ledger exists to prevent. `world-budget-curve` above is the
 # measurement and passes; this is the budget and fails.
+
+# --- WHAT M11.a MEASURED AGAINST THIS GAP, AND WHY THE RUNG ON THE DECLARATION MOVES -------------
+#
+# THE GAP IS NOT CLOSED AND NOTHING BELOW IS WEAKENED: the `run` is byte-identical to what `3d44e2f`
+# shipped and the criterion still fails, on this host at 115.7 ms mean and 127.6 ms worst over the
+# 64-frame take at 0x5EED — worse than the 106/116 the declaration recorded. The bands come out in
+# the order the gap names: `terrain_shade_ms` 68.7, `sky_ms` 25.4, `water_ms` 12.7 (measured: the
+# whole of that band is the foam field's `recentre` + `advect`; `drive_ocean_from_wind` beside it is
+# 0.00 ms), `ocean_ms` 5.6, `weather_ms` 1.7, `foliage_ms` 0.9.
+#
+# M11.a WROTE TWO OF THE SHADERS AND DISPATCHED NEITHER. `cy/field.slang` and `cy/terrain_shade.slang`
+# type-check through the engine's own front end and agree with the processor on a device over 17 152
+# comparisons — `fields-sampled-on-a-device` above is green on that — and nothing in
+# `samples/10-world`'s frame path calls them. So the first half of the gap's own closing condition
+# ("when those shaders exist") is half-met and the demo has not moved.
+#
+# AND THE CLOSING CONDITION AS WRITTEN CANNOT MAKE THIS CRITERION GREEN, WHICH IS THE FINDING. It is
+# the mirror of the seven checks this project has shipped that could not FAIL: a check that cannot
+# PASS for the reason its own gap names. Two halves, both executed rather than argued, against the
+# repository tree with `md5sum -c` afterwards:
+#
+#   * THE MEASUREMENT HAS NO DEVICE IN IT. The `run` above passes `--headless`, and
+#     `samples/10-world/main.cpp` opens a stage only when frames are asked for AND `--headless` is
+#     not given (`wants_pictures`, main.cpp:622). No shader of any kind executes inside the number
+#     this criterion judges.
+#   * AND THE ARITHMETIC AGREES. The closing act was applied to the tree, made small: band one
+#     (`shade_terrain`) and band two (the `compose_sky` loop over the dome) removed from the frame,
+#     and the ocean patch build with them, as they would be if a shader did them during the draw.
+#     Result: **21.6 ms worst, 18.7 ms mean — STILL RED, 1.3x over** — because what is left is band
+#     three, water's foam field, at 14.1 ms, and that is SIMULATION a headless run must do. Remove
+#     that too and the take is **7.9 ms worst and this criterion is GREEN**. So the only state of the
+#     tree in which it passes is one where the foam field has left the processor, and the run it
+#     measures has no processor-alternative to move it to.
+#
+# THE RUNG THEREFORE MOVES TO M11.c AND THE DECLARATION SAYS WHAT IS OWED. M11.c is the rung whose
+# subject is the image — materials, a shader for a terrain surface, tone mapping, "nothing has been
+# optimised so nothing has been tuned" — so it is where the three shaders are written. What it
+# inherits with them is a decision M11.a is not entitled to make on a closed milestone's behalf:
+# what a HEADLESS frame budget claims once the visual bands are on the device. The two criteria that
+# carry this claim at M11.a — `m11a:world-budget-headless` and `m11a:world-budget-on-a-device` —
+# are RED and stay red at their own rung, so nothing here is hidden by moving the deadline.
 [[criterion]]
 id = "world-frame-budget"
 describe = "**THE ENVIRONMENT DEMO HOLDS ITS FRAME BUDGET ACROSS A FULL DAY/NIGHT CYCLE — AND IT DOES NOT.** Measured rather than asserted, which is what makes this a number instead of an opinion. With a device drawing, `just capture-world` at 960x540 measures about 122 ms mean and 145 ms worst; this criterion runs HEADLESS, so the submit-and-wait band is absent and it measures about 106 ms mean and 116 ms worst — SEVEN TIMES a 16.7 ms 60 Hz frame either way, which is the point. The three largest bands come out in the same order in both: the substrate re-sampled at every terrain vertex at 63.0 ms, the cloud march at 23.2 ms and water's foam field at 12.0 ms. The curve is nearly flat across the cycle and the only band that knows the time of day is the cloud march. This criterion asks for the worst frame of the take to be inside 16.7 ms and prints what it actually was, with the three bands beside it"
@@ -1178,8 +1235,8 @@ print("  the three largest bands: " + ", ".join(f"{name} {value:.1f} ms" for nam
 sys.exit(0 if worst <= BUDGET_MS else 1)
 CHECK
 '''
-known_gap = "the environment demo costs about 122 ms a frame against a 16.7 ms budget, and the three bands that make it are the substrate re-sampled at every terrain vertex, the cloud march and water's foam field — all three of them work a shipping engine would do in a shader. M10 shipped no `.slang` module for an environment field, a terrain material, a water surface, grass expansion or a cloud march, and six of its module READMEs record that gap against their own rows. This closes when those shaders exist, not by optimising the CPU loop"
-known_gap_closes = "m11a"
+known_gap = "the environment demo costs 115.7 ms a frame mean and 127.6 ms worst against a 16.7 ms budget — re-measured headless at 0x5EED over the same 64-frame take, WORSE than the 122/106 ms this gap was declared at — and the three bands that make it are the substrate re-sampled at every terrain vertex (68.7 ms), the cloud march over the sky dome (25.4 ms) and water's foam field (12.7 ms, the whole of `water_ms`), all three of them work a shipping engine would do in a shader. M11.a wrote two of those shaders — `cy/field.slang` and `cy/terrain_shade.slang`, which type-check and agree with the processor on a device — and DISPATCHED NEITHER: nothing in `samples/10-world`'s frame path calls them. AND THE CLOSING CONDITION THIS GAP WAS DECLARED WITH — \"this closes when those shaders exist, not by optimising the CPU loop\" — CANNOT MAKE THE CRITERION ABOVE GREEN, which M11.a measured rather than argued: the `run` passes `--headless` and the sample opens no device at all in that mode, so no shader executes inside the number judged; and with bands one and two and the ocean patch build removed from the frame — the closing act, made small — the worst frame is 21.6 ms and still over, because band three is the foam field's advection and decay, which is simulation a headless run must do. Removing that too gives 7.9 ms and a green. So what is owed is the three shaders AND a restatement of what a headless budget claims once the visual work is on the device — the second of the two options this ledger's own comment above `sky-field-round-trip` names, and a rung's decision rather than a closing gate's"
+known_gap_closes = "m11c"
 timeout_s = 7200
 ci_job = "milestone-m10"
 

@@ -294,7 +294,18 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       one arm of `derived_policy_for` turns the criterion red, watched by hand. Proven by
       `just roadmap-falsify` (`rename-token 'recreate-entity' in src/gameplay/live/src/policy.cpp`)
       and run outside the ledger as `integration.editor_contract_live_edit_policy`
-- [ ] 3.3 **The specialised editors**, into the `CentreLower` region `chrome.rs` has reserved since
+- [ ] 3.3 **THE HOST AND THE REGION ARE DONE; THE SIXTEEN EDITORS ARE NOT, AND THE BOX STAYS
+      UNTICKED FOR THAT REASON.** `SpecialisedEditors` fills `Region::CentreLower` — the first thing
+      in this workspace to do so since M5.5 reserved it — registers all sixteen editors the
+      requirement enumerates, and opens three of them: gameplay and utility graphs (`script.*` and
+      `ai.*`), abilities and effects (`ability.*`), and animation graphs and clips (`pose.*` plus
+      the keyed track kinds). **The other thirteen refuse by name**, naming themselves and the
+      capability row that owes the vocabulary, because an empty canvas opened for `terrain` would be
+      a specialised editor that exists only in a screenshot — the silent fallback M11.b's own gate
+      called the outcome worse than a refutation. Untouched: the environment tool set the
+      requirement also asks for — sculpting over a non-destructive modifier stack, river spline
+      authoring, foliage rule authoring — which is task 3.5's join and M11.c's rows.
+      Original: **The specialised editors**, into the `CentreLower` region `chrome.rs` has reserved since
       M5.5 for *"the active specialised editor: script graph, animation, materials, sequencing"* and
       which nothing fills. **Read the requirement's whole list before scoping this task**: it names
       materials, animation graphs and clips, the VFX graph, **terrain, foliage, water and environment
@@ -303,7 +314,31 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       tables — plus an environment tool set with sculpting over a non-destructive modifier stack,
       river spline authoring and foliage rule authoring. That is a larger surface than the two Seed
       rows' twenty-four requirements suggest and `design.md` §4 says what this rung does about it
-- [ ] 3.4 **One node-graph canvas and one timeline surface, not six of each.** The requirement
+- [x] 3.4 **DONE, AND THE PROHIBITIONS ARE WHAT IS CHECKED.**
+      `editor/crates/cy-editor-interface/src/specialised/` — `graph.rs` is THE node-graph canvas
+      (`GraphCanvas`: the engine's `NodeKey` identity, links ordered `(to, to_pin, from, from_pin)`
+      the way `cy::graph` fixes, the layout as a side table outside the semantic model, node- and
+      pin-precise diagnostics, a type-checked connect that refuses a cycle by name, and a diff that
+      reports meaning and ignores where the boxes sit); `timeline.rs` is THE curve surface
+      (`TimelineSurface`: `TrackId`/`SectionId`/`KeyId` that survive retiming and trimming,
+      `KeyingMode` with `value_edited` as the one function every viewport edit goes through, and
+      scrubbing, whole-frame stepping, loop ranges, markers, snapping, filtering, locking, binding
+      validation, retiming and trimming); `mod.rs` is the host, which holds **one** of each and
+      hands them out through `Session`, so a domain has no way to bring its own.
+      **What makes it unfakeable.** "Every graph editor shares one canvas" is `CanvasId` equality
+      across the opens and "every keyed-time editor shares one surface" is `SurfaceId` equality —
+      measured, not declared. And the requirement's own words decide which editors those are:
+      `tools/editor/play_contract.py specialised-editors` parses the requirement's enumeration and
+      requires every editor **it** describes as a graph to declare `Surface::Graph` and every one it
+      describes with a timeline, a curve or a sequence to declare `Surface::Timeline`. Seventeen
+      legs, no build needed.
+      **What is NOT here, stated rather than discovered later.** The canvas does not write
+      `cy::graph`'s canonical text form — `src/graph/include/cy/graph/text.h` owns it, and a second
+      writer of a canonical format is a second format the day the two disagree about a float. The
+      built-in catalogues declare node type NAMES without the engine's pin tables, so `connect`
+      refuses on a built-in palette naming what would fix it. Both are M11.e's, beside the semantic
+      diff `editor-documents-and-transactions` still owes
+      Original: **One node-graph canvas and one timeline surface, not six of each.** The requirement
       forbids a sixth bespoke graph editor by name and requires all keyed-time editors to share one
       curve surface, one keying model and one identity model for tracks, sections and keys
 - [ ] 3.5 **Rule-driven tools explain themselves** — *"WHEN a designer asks why no trees appear in a
