@@ -81,11 +81,20 @@ function(cy_gameplay_play_declare_tests)
     # where the milestone ledger's criteria look for a binary. The conceptual half is that both are
     # about a play session — the modes are its transport and the live edit is a change reaching it —
     # so the module that owns the session owns their suites.
+    #
+    # IT LINKS A PLATFORM AND IT DEPENDS ON A BINARY, and both are new at the repair round that made
+    # `separate-process` a process. `cy::platform-desktop-sdl3` is the only implementation of
+    # `Platform` in the tree and therefore the only thing that can start one; `cy_play_runtime_host`
+    # is what it starts, and the explicit dependency is what stops the suite from being run against
+    # a tree where the host binary has not been built yet — which would present as the mode being
+    # unavailable rather than as the missing build step it is.
     cy_add_test(
         NAME editor_play
         KIND integration
         SOURCES "${tests_dir}/test_editor_play.cpp"
-        DEPENDENCIES cy::gameplay-play cy::physics-reference cy::scene cy::scene-serialization)
+        DEPENDENCIES cy::core-assets cy::gameplay-play cy::physics-reference
+                     cy::platform-desktop-sdl3 cy::scene cy::scene-serialization)
+    add_dependencies(cy_test_integration_editor_play cy_play_runtime_host)
 
     cy_add_test(
         NAME editor_live_edit

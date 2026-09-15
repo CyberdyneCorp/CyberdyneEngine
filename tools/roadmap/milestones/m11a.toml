@@ -420,31 +420,75 @@ target = "tests/render/test_field_device.cpp"
 token  = "sentinels alive"
 note   = "the three numeric guards in the body are what stop a device comparison passing while measuring nothing, and the first of them reads the suite's own sentinel count out of its output. Renaming the line the suite prints it on leaves the suite green and the criterion RED — `the suite no longer reports its sentinel count: the dispatch cannot be shown to have run` — which is the branch that would otherwise never be exercised. Renaming a CASE was rejected: that fires the `selected >= 2` check, which the `-tc` criteria in this ledger already exercise."
 
+# ================================================================================================
+# THE TWO CRITERIA THAT CARRY `m10:world-frame-budget`, AND BOTH OF THEM WERE DEAD — REPAIR 2
+# ================================================================================================
+#
+# As written at this rung they were `just run-sample 10-world ... --cycle --budget-ms 16.7`, and
+# THREE separate things in that line did not exist: the sample is called `world` and not `10-world`
+# (`10-world` is the DIRECTORY; `just/run.just` globs `samples/*/cy_sample_<name>` and says so in its
+# own comment), and neither `--cycle` nor `--budget-ms` was a flag `samples/10-world/main.cpp` parsed.
+# The recipe therefore printed `run-sample: no sample '10-world' in <build>/samples.` and exited 2 on
+# every machine, having run nothing at all.
+#
+# AND `roadmap-falsify` RECORDED THAT EXIT AS A PROOF. Both criteria sat in `falsifiability.toml` as
+# `red against a built tree`, with the exit-2 line quoted in the record, which is the verdict a
+# criterion earns by being watched failing for its subject's sake. A check that cannot run is not
+# distinguishable, by exit code, from a check that ran and failed — the seven-times defect, committed
+# by the mechanism built to end it. `falsify._inspect_samples` now refuses a sample name no
+# `samples/*/CMakeLists.txt` declares, exactly as `_inspect_recipes` refuses an absent recipe.
+#
+# `--cycle` IS NOT RESTORED, AND THE REASON IS THAT IT COULD NOT BE FALSE. `samples/10-world`'s own
+# header fixes it — "a take is exactly one simulated day" — so every run of it is a full day/night
+# cycle by construction and a flag asserting that would be a flag with no false case. What the two
+# criteria pass instead is the take LENGTH (`--seconds 8 --fps 8`, the 64 frames
+# `m10:world-frame-budget` measures over, so the two are comparable) and the budget.
+#
+# THE JUDGEMENT IS IN THE PROGRAM. `--budget-ms` makes the sample compare the WORST frame of the
+# cycle against the budget and exit non-zero, printing the three largest bands beside it. It is in
+# the program rather than in a Python block here so that the same arithmetic serves
+# `m10:world-frame-budget`'s CSV and these two, and so that a person running the sample by hand gets
+# the same verdict the ledger gets.
 [[criterion]]
 id = "world-budget-headless"
-describe = "the world demo's headless frame cost is inside 16.7 ms across a full day/night cycle, at a seed the tuning did not use. Headless was 106 ms at M10, so this is the same claim the device criterion makes with the draw removed — and it is the half every machine can judge"
+describe = "the world demo's headless frame cost is inside 16.7 ms across a full day/night cycle, at a seed the tuning did not use. Headless was 106 ms at M10, so this is the same claim the device criterion makes with the draw removed — and it is the half every machine can judge. **THE WORST FRAME AND NOT THE MEAN**, because a mean inside 16.7 ms with a worst at 40 is a scene that hitches once a second; `m10:world-frame-budget` judges the worst for the same reason and this reproduces its arithmetic over the same 64-frame take"
 source = "tasks 1.2, ROADMAP M11.a exit criteria"
 kind = "command"
 run = '''
 set -eo pipefail
-just run-sample 10-world --headless --seed 20260913 --cycle --budget-ms 16.7
+just run-sample world --headless --seed 20260913 --seconds 8 --fps 8 --budget-ms 16.7
 '''
 timeout_s = 3600
 ci_job = "milestone-m11a"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "samples/10-world/main.cpp"
+token  = "--budget-ms"
+note   = "THE MUTATION THIS CRITERION OWES THE DAY IT GOES GREEN, declared now rather than then. It is RED as written — the take costs about 114 ms a frame against 16.7 — so `falsify.prove` takes the `red in the tree` route and runs no mutation at all; what makes TODAY's red trustworthy is `_inspect_samples`, which refuses a sample name no `samples/*/CMakeLists.txt` declares and would have refused this criterion outright in the state the gate found it. When the three bands move into shaders and the budget is met, `reconcile` demands an ordinary mutation proof before the ladder will take the green, and this is it: rename the flag the sample parses and the run exits 2 at `unknown argument` instead of printing a measured verdict, so the criterion goes red again. Renaming `OVER the budget` was rejected — the criterion reads the sample's exit code and not its words, so that mutation would change nothing and be recorded as one that cannot fail."
+
 [[criterion]]
 id = "world-budget-on-a-device"
-describe = "and with a device drawing. The three bands the gap names — the substrate re-sampled at every terrain vertex at 63.0 ms, the cloud march at 23.2 ms and water's foam field at 12.0 ms — are all three of them work a shipping engine does in a shader, and this is the measurement that says whether moving them there did what the spike predicted"
+describe = "and with a device drawing. The three bands the gap names — the substrate re-sampled at every terrain vertex at 63.0 ms, the cloud march at 23.2 ms and water's foam field at 12.0 ms — are all three of them work a shipping engine does in a shader, and this is the measurement that says whether moving them there did what the spike predicted. **IT DRAWS RATHER THAN ASKING FOR A DEVICE AND NOT USING ONE**: `--frames` is what opens the stage, so the submit-and-wait band this criterion exists to include is actually in the total, and a run where no device answered now EXITS NON-ZERO instead of reporting the world it built — the sample returned 0 in that case, which would have read as a budget held by a run that drew nothing"
 source = "tasks 1.2, ROADMAP M11.a exit criteria"
 kind = "command"
 run = '''
 set -eo pipefail
-just run-sample 10-world --seed 20260913 --cycle --budget-ms 16.7
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/frames"
+just run-sample world --seed 20260913 --seconds 8 --fps 8 --frames "$work/frames" --budget-ms 16.7
 '''
 requires = "gpu"
 reason = "the measurement with a device drawing needs one; `world-budget-headless` above carries the same claim on every machine, which is M8.c's rule that no claim is judgeable only where a GPU is"
 timeout_s = 3600
 ci_job = "milestone-m11a"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "samples/10-world/main.cpp"
+token  = "--budget-ms"
+note   = "the same mutation as the headless criterion above and owed for the same reason: this one is red because the frame costs about 128 ms with the draw included, and the day it is not, the ladder asks for a mutation that turns it back red before it will take the green."
 
 # --- Section 3: the sky's write path, and the consumers the requirement names ----------------------
 
@@ -571,21 +615,25 @@ note   = "the criterion's claim is that this NAMED case is in integration.standa
 
 [[criterion]]
 id = "cross-leg-digest-job"
-describe = "THE JOB COMPARES, AND THE CHECK PROVES IT BY RUNNING THE JOB'S OWN COMPARISON. One job publishes a digest from each leg of a four-leg matrix and a second job downloads all of them and compares them; that much a reader can see. What a reader cannot see, and what M11.a's gate correctly refused to take on trust, is whether the command that job runs would NOTICE a disagreement — the first draft of this criterion asked only that one job block contain `upload-artifact`, `download-artifact` and the word `digest`, which a job that moves no bytes and runs `echo` satisfies in three lines. `tools/ci/cross_leg_audit.py` reads the workflow for the publisher, the downloader and the command between them, and then EXECUTES that command against digests it wrote: identical digests from two architectures must pass, and a changed simulation hash, a changed generated world, one leg alone, two legs of one architecture, a digest of zero and an empty workload must each turn it red. The dummy job is fixture one of `--selftest`, beside a publication with no comparison, a comparison that does not `needs:` its publication, a one-leg matrix, a matrix of one runner image, and a job that fails whatever it is given — six shapes that must be refused, checked on every `just ci-check`"
+describe = "THE JOB COMPARES, AND THE CHECK PROVES IT BY RUNNING THE JOB'S OWN COMPARISON. One job publishes a digest from each leg of a four-leg matrix and a second job downloads all of them and compares them; that much a reader can see. What a reader cannot see, and what M11.a's gate correctly refused to take on trust, is whether the command that job runs would NOTICE a disagreement — the first draft of this criterion asked only that one job block contain `upload-artifact`, `download-artifact` and the word `digest`, which a job that moves no bytes and runs `echo` satisfies in three lines. `tools/ci/cross_leg_audit.py` reads the workflow for the publisher, the downloader and the command between them, and then EXECUTES that command against digests it wrote: identical digests from two architectures must pass, and a changed simulation hash, a changed generated world, one leg alone, two legs of one architecture, a digest of zero and an empty workload must each turn it red. The dummy job is fixture one of `--selftest`, beside a publication with no comparison, a comparison that does not `needs:` its publication, a one-leg matrix, a matrix of one runner image, and a job that fails whatever it is given — six shapes that must be refused, checked on every `just ci-check`. **AND THE REPAIR-2 GATE REFUTED THAT REPAIR IN TURN, BECAUSE A COMMAND IS NOT A JOB.** It broke the workflow three ways and this criterion stayed GREEN on all three: `if: always()` changed to `if: false` on the comparison job, so nothing is ever compared and — GitHub scoring a SKIPPED job as success — the pipeline is green too; the matrix leg's publishing step deleted verbatim, so four legs upload a path nothing computed; and that step's command replaced by an `echo` or its flag misspelt, so the leg runs, exits, and routes nothing to the path it uploads. A command that discriminates, inside a job that never runs, over an artefact nobody wrote, is the dummy job again with more lines in it. So the audit now also asks IS THE COMPARISON SCHEDULED — evaluating every `if:` on the publishing job, the comparison job, the `needs:` chain between them and each step the chain is made of, against the workflow's own `on:` triggers, with a condition it cannot read reported as a finding rather than a pass — and DOES A LEG PUBLISH ANYTHING, by RUNNING the leg's own publishing command with the path it uploads redirected into a directory the check has deliberately not created and with `CY_BUILD_DIR` pointed inside a regular file so no build can succeed: the real command creates that directory before it dies at the build, an `echo` exits 0 having created nothing, and a misspelt flag dies having touched nothing at all. Each of the three mutations above now turns all three criteria red, and each is a fixture of `--selftest`, which requires a refusal to SAY the thing its fixture is about so that a rule which began refusing everything cannot pass for twelve discriminating ones"
 source = "tasks 2.1, simulation-and-determinism (CrossPlatform), procedural-content-generation"
 kind = "command"
 run = "python3 tools/ci/cross_leg_audit.py --claim job"
 ci_job = "milestone-m11a"
 
-# WHAT MUST BREAK IT: deleting every `download-artifact` line from ci.yml leaves the legs
-# publishing into artefacts nothing collects, which is the state this rung found and the state
-# the word-grep could not tell from the state it built. `just roadmap-falsify` applies that to a
-# sandboxed copy of the tree and requires this criterion to go RED on it.
+# WHAT MUST BREAK IT, AND IT IS NOW THE MUTATION THE REPAIR-2 GATE USED RATHER THAN THE ONE THE
+# FIRST REPAIR CHOSE. Deleting `download-artifact` still turns this red, and it was the wrong
+# mutation to record: it breaks the half that was already defended. The half that was NOT defended
+# is the publication, and deleting the one line of ci.yml that carries `--publish-digest` leaves the
+# publishing step standing — its name, its `env:`, its `upload-artifact` — with no command under it,
+# so every leg runs, every leg uploads a path nothing computed, and the comparison compares the
+# empty set. `just roadmap-falsify` applies that to a sandboxed copy of the tree and requires this
+# criterion to go RED on it.
 [criterion.falsifies]
 mutate = "delete-lines"
 target = ".github/workflows/ci.yml"
-token = "download-artifact"
-note = "the download step removed: four legs publish a digest and no job collects them"
+token = "--publish-digest"
+note = "the leg's publishing command deleted: the step, the label and the upload survive it, and no leg computes a digest at all"
 
 [[criterion]]
 id = "cross-leg-digest-published"
@@ -621,6 +669,13 @@ where = "ci"
 reason = "this host has one architecture and one operating system, so the comparison cannot be made here at all; it is reported NOT EVALUATED rather than passed by a single-leg suite, which is the defect m9:lockstep-cross-platform was declared to avoid"
 ci_job = "milestone-m11a"
 
+[criterion.ci_proof]
+provide = "python3 tools/ci/cross_leg_audit.py --claim lockstep --write-legs cross-leg-digests"
+mutate  = "rename-token"
+target  = "cross-leg-digests/cross-leg-digest-1/beta.digest"
+token   = "44d0feadcb7cd95d"
+note    = "THE ANSWER IS CI'S; THE FALSIFIABILITY IS NOT. This host cannot make the comparison, so the ledger reports the criterion NOT EVALUATED and `where = \"ci\"` stays. What it could not do until M11's repair round was show that the check is capable of saying no — `falsify.prove` returned `not provable here` and the criterion sat among the two of seventy nobody had watched go red. The environment is what was missing: continuous integration hands this criterion a directory of digests published by the `cross-leg-publish` matrix, and `cross_leg_audit.py --write-legs` lays out exactly that from `test_cross_leg_digests.leg()`, the publisher's own field list, so the fixtures cannot drift from what a leg really writes. `sim-state-digest` is the field the `lockstep` claim compares; renaming it in ONE leg is two architectures disagreeing, which is the finding this criterion exists to report, and the comparator exits 1 on it. Mutating the file wholesale was rejected: a truncated digest makes the comparator REFUSE (exit 2) for want of a readable leg, and a red that comes from an unreadable fixture would misdescribe what this criterion measures."
+
 [[criterion]]
 id = "pcg-regenerates-across-architectures"
 describe = "a generated region reproduces bit-for-bit on a second architecture. It was reported NOT EVALUATED at M10 for want of the job above; with the job it becomes answerable, and either answer is worth having. **THE GPU HALF OF `m10:pcg-gpu-domain-agreement` IS NOT ANSWERED HERE AND THIS RUNG SAYS SO RATHER THAN LETTING THE JOB LOOK LIKE AN ANSWER**: `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic, so there is no GPU execution domain in this tree to compare, and no hosted runner in ci.yml's matrices has a device either — two absent things, only one of them a runner question. `tools/ci/cross_leg_digests.py --gpu-domain` prints every leg's field and REFUSES; that criterion is re-declared as a `known_gap` in m10.toml closing at M11.e, and its own check was strengthened at this rung because M11.a's job turned it green by mentioning the subject"
@@ -631,6 +686,13 @@ where = "ci"
 reason = "one host with one GPU vendor cannot compare two; `requires = \"gpu\"` would make this RUN here and PASS on one driver's floating-point behaviour, which is not the claim"
 ci_job = "milestone-m11a"
 
+[criterion.ci_proof]
+provide = "python3 tools/ci/cross_leg_audit.py --claim pcg --write-legs cross-leg-digests"
+mutate  = "rename-token"
+target  = "cross-leg-digests/cross-leg-digest-1/beta.digest"
+token   = "7bc377fd2fc0872b"
+note    = "The same environment as the criterion above and DELIBERATELY A DIFFERENT FIELD. `--compare-legs --pcg` compares the lockstep claim and the pcg claim in one run, so mutating `sim-state-digest` would turn this criterion red through the OTHER claim — green on its own subject, red on its neighbour's, and recorded as proven. `pcg-world-digest` is the field the `pcg` claim compares and nothing else reads it, so the red this earns is a generated region that did not reproduce, which is what the criterion's own text says it reports."
+
 # --- Section 6: the world that streams ------------------------------------------------------------
 
 [[criterion]]
@@ -640,9 +702,26 @@ source = "tasks, world-partition-and-streaming, src/terrain/README.md"
 kind = "command"
 run = '''
 set -eo pipefail
-just run-sample 10-world --headless --seed 20260913 --stream-report | tee /tmp/cy-m11a-stream.txt
-grep -E "evicted: [1-9]" /tmp/cy-m11a-stream.txt
-grep -E "stitched_vertices: [1-9]" /tmp/cy-m11a-stream.txt
+# WHAT THIS USED TO RUN, AND WHY IT MEASURED NOTHING — REPAIR 2. It was
+# `just run-sample 10-world --headless --seed 20260913 --stream-report`, and neither the name nor
+# the flag existed: the sample is `world` (`10-world` is the directory) and `--stream-report` was
+# never a flag `samples/10-world/main.cpp` parsed. The recipe exited 2 at `no sample '10-world'`,
+# the two greps never ran, and `roadmap-falsify` recorded the exit as `red against a built tree` —
+# a criterion that could not run, filed as a criterion watched going red.
+#
+# The sample now PRINTS what it streams at the end of every take, off `TerrainStore::tile_count()`
+# rather than off a counter, so these two greps read a measurement and no flag is needed.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+just run-sample world --headless --seed 20260913 --seconds 1 --fps 4 | tee "$work/stream.txt"
+grep -q "=== world-partition-and-streaming" "$work/stream.txt" || {
+    echo "the sample no longer reports its residency at all: this criterion cannot be judged by"
+    echo "its absence, because an absent line is what a renamed section and an unstreamed world"
+    echo "look like alike"
+    exit 1
+}
+grep -E "evicted: [1-9]" "$work/stream.txt"
+grep -E "stitched_vertices: [1-9]" "$work/stream.txt"
 '''
 timeout_s = 3600
 ci_job = "milestone-m11a"
@@ -770,13 +849,16 @@ ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "testing-and-quality-at-working"
-describe = "the M3 evidence for `testing-and-quality` still holds: the taxonomy gives every kind both a per-case budget and a CTest timeout, `cy_add_test` compiles the budget in and labels the suite with its kind, every kind in the table has a suite behind it, the golden images are committed, EVERY REGISTERED BENCHMARK HAS A COMMITTED RATIO AND TOLERANCE IN BOTH DIRECTIONS — a benchmark with no threshold cannot regress and a threshold with no benchmark is one nobody runs — and the seven quality jobs the row is argued on are declared in ci.yml"
+describe = "the M3 evidence for `testing-and-quality` still holds, ASKED OF CMAKE RATHER THAN READ OUT OF IT: `tools/roadmap/probes/taxonomy/` configures a real project that includes `tests/CMakeLists.txt`, declares one suite per kind the taxonomy DEFINES, and reports the `CY_TEST_BUDGET_NS` cy_add_test passed on and the LABELS and TIMEOUT properties CMake's generator wrote — so the budget, the label and the timeout are facts about what the function DID. Then every kind in the table has a suite behind it, the golden images are committed, EVERY REGISTERED BENCHMARK HAS A COMMITTED RATIO AND TOLERANCE IN BOTH DIRECTIONS — a benchmark with no threshold cannot regress and a threshold with no benchmark is one nobody runs — and the seven quality jobs the row is argued on each RUN A RECIPE THE WORKFLOW CARRIES. **THE EIGHTH INSTANCE OF THIS PROJECT'S ONE DEFECT WAS THIS CRITERION AND THIS IS THE REPAIR**: three of its legs were `fragment in taxonomy`, a substring search, and the fourth was `^  <job>:$` over ci.yml. M11's second repair round commented out cy_add_test's definition, label and timeout lines, leaving the words behind in the comments, and replaced all seven CI jobs with `run: echo dummy` — and this criterion stayed GREEN through both. A check a comment satisfies measures spelling"
 source = "tasks 5.1, 5.2, testing-and-quality, docs/roadmap/capability-matrix.md"
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py testing-and-quality"
 evaluates = ["testing-and-quality"]
 # THE TAXONOMY IS THE ROW'S FIRST LEG: delete the per-case budgets and a suite can be declared
-# without one, which is the half of the claim that is not a convention.
+# without one, which is the half of the claim that is not a convention. Since the repair the
+# mutation lands harder than it used to — with no `CY_TEST_BUDGET_<kind>` defined, `cy_add_test`
+# raises the FATAL_ERROR it was written to raise and the probe project does not configure at all, so
+# what goes red is the build system refusing, not a string that stopped being found.
 ci_job = "milestone-m11a"
 [criterion.falsifies]
 mutate = "delete-lines"
@@ -786,14 +868,16 @@ token = "CY_TEST_BUDGET_"
 
 [[criterion]]
 id = "build-system-at-working"
-describe = "the M4 evidence for `build-system-and-platforms` still holds, and its first leg is the one nothing has ever compared end to end: FOUR PROFILES THAT MEAN THE SAME THING IN EVERY TOOLCHAIN is a claim about four files, and `cmake/profiles.cmake` cross-checks itself against the justfile only when a caller supplies both, while nothing anywhere compared either with the Cargo profile the editor is actually built with. Then the feature table's shape, the Swift overlay still regenerating from the C ABI, every optional dependency gated by a feature option that exists, and `deps/manifest.toml`'s own rule — `a version that appears in a CMake file rather than in this table is a defect` — checked over every CMake file the build reads"
+describe = "the M4 evidence for `build-system-and-platforms` still holds, and its first leg is the one nothing has ever compared end to end: FOUR PROFILES THAT MEAN THE SAME THING IN EVERY TOOLCHAIN is a claim about four files, and `cmake/profiles.cmake` cross-checks itself against the justfile only when a caller supplies both, while nothing anywhere compared either with the Cargo profile the editor is actually built with. THE PROFILE IS NOW DERIVED RATHER THAN MATCHED: `tools/roadmap/probes/profiles/` configures once per profile, calling `cy_declare_build_configurations()` before `project()` exactly as the top-level CMakeLists.txt does, so the configuration in the comparison is the one the BUILD would use for `CY_PROFILE=<p>`; `cy_profile_for_configuration()` maps it back, and `cy_declare_features()` declares the option set through its own resolver. Then the Swift overlay still regenerating from the C ABI, every optional dependency gated by a feature option CMake ACTUALLY DECLARED, and `deps/manifest.toml`'s own rule — `a version that appears in a CMake file rather than in this table is a defect` — checked over every CMake file the build reads. **THE SAME REPAIR AS THE CRITERION ABOVE, AND FOR THE SAME REASON**: M11's second repair round commented out every `set(CY_PROFILE...)` line in `cmake/profiles.cmake`, leaving a build system with no profile table at all, and this criterion stayed GREEN on every profile leg — the regular expressions matched the commented-out lines"
 source = "tasks 5.1, 5.2, build-system-and-platforms, docs/roadmap/capability-matrix.md"
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py build-system-and-platforms"
 evaluates = ["build-system-and-platforms"]
 # FOUR PROFILES THAT MEAN THE SAME THING IN EVERY TOOLCHAIN is the row's first leg, and
 # `set(CY_PROFILES ...)` is where CMake states its half of it. Without that line the two files
-# have nothing to disagree about, which is the shape this criterion exists to catch.
+# have nothing to disagree about, which is the shape this criterion exists to catch. Since the
+# repair the mutation is answered by CMake: `cy_declare_build_configurations()` raises its own
+# FATAL_ERROR because the profile it was handed is in no list, and the probe reports the refusal.
 ci_job = "milestone-m11a"
 [criterion.falsifies]
 mutate = "delete-lines"

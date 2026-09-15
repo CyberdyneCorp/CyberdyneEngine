@@ -126,9 +126,9 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "cross-leg-digest-job"
-digest = "fb0d880cc00d962b"
+digest = "53bd7b8ad30927aa"
 verdict = "proven"
-mutation = "delete-lines 'download-artifact' in .github/workflows/ci.yml (declared)"
+mutation = "delete-lines '--publish-digest' in .github/workflows/ci.yml (declared)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]

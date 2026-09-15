@@ -108,10 +108,13 @@ testing-and-quality (Quality gates for merge).
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
+import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -171,13 +174,32 @@ RED_WITH_A_BUILD = "red against a built tree"
 #: verifies afterwards that git reports the tree clean again. A run that cannot put the tree back
 #: does not return a verdict — it aborts, loudly, naming the files.
 PROVEN_BY_REBUILD = "proven against a built tree"
+#: THE FIFTH SHAPE, FOR THE CRITERIA THIS HOST CANNOT EVALUATE AT ALL. A `where = "ci"` criterion is
+#: skipped by the ledger — `just test-determinism --compare-legs` cannot compare two architectures on
+#: a machine that has one — and this module refused to judge it, correctly, because a red produced by
+#: the laptop is a verdict about the laptop. Two of M11.a's seventy sat there, and M11's repair gate
+#: called that dispositive: nobody had shown they could fail.
+#:
+#: What was missing was the ENVIRONMENT, not the criterion. `[criterion.ci_proof]` declares the
+#: command that CONSTRUCTS what continuous integration hands the criterion — for the cross-leg pair,
+#: a directory of digests published by several legs, which `tools/ci/cross_leg_audit.py --write-legs`
+#: writes from the publisher's own field list — and the mutation of that environment which must turn
+#: the criterion red. The criterion's own body then runs verbatim, three times, exactly as the
+#: sandbox and the build-backed shapes run theirs: green against the environment, red under the
+#: mutation, green again once it is restored.
+#:
+#: IT CLAIMS NOTHING ABOUT THE ANSWER. The criterion still reports NOT EVALUATED on this host and is
+#: still answered only in CI. What is earned here is the thing every other criterion in the ladder
+#: had and these two did not: a demonstration that the check is capable of saying no.
+PROVEN_IN_THE_CI_ENVIRONMENT = "proven in the environment CI supplies"
 REFUTED = "refuted"
 UNPROVABLE = "not provable here"
 NO_MUTATION = "no mutation"
 
 #: Every verdict that counts as a proof. `reconcile` requires the recorded one to be the observed
 #: one, so a criterion that changes proof shape is re-judged rather than carried.
-PROOF_VERDICTS = (PROVEN, RED_IN_THE_TREE, RED_WITH_A_BUILD, PROVEN_BY_REBUILD)
+PROOF_VERDICTS = (PROVEN, RED_IN_THE_TREE, RED_WITH_A_BUILD, PROVEN_BY_REBUILD,
+                  PROVEN_IN_THE_CI_ENVIRONMENT)
 
 
 # --- Reading a criterion's shell ------------------------------------------------------------------
@@ -448,13 +470,21 @@ RULES = {
         "suite is executed, no two observations are compared"),
     "artefact-presence": (
         "a `path` criterion: it is satisfied by a file of the right name, whatever is in it"),
+    "absent-recipe": (
+        "the body invokes a `just` recipe that does not exist, so `just` aborts at argument parsing "
+        "and NOTHING the criterion names is ever measured — the red it produces is the name failing "
+        "to resolve, not the subject failing"),
+    "absent-sample": (
+        "the body runs `just run-sample <name>` for a sample no samples/*/CMakeLists.txt declares, "
+        "so run.just prints `no sample '<name>'` and exits 2 having run nothing — `absent-recipe` "
+        "one level down, and the red it produces is again the name failing to resolve"),
 }
 
 #: Rules 1-5 say the criterion CANNOT GO RED — no state of the repository makes it fail. `presence-
 #: only` is weaker and is reported apart: such a criterion can be turned red (delete the token) but
 #: it is satisfied by typing the token, so it measures spelling rather than capability.
 CANNOT_GO_RED = ("searches-the-repository-root", "self-match", "vacuous-suite", "no-assertion",
-                 "swallowed-verdict")
+                 "swallowed-verdict", "absent-recipe", "absent-sample")
 
 #: Commands that cannot carry a verdict: they report, they move bytes, and in a body under `set -e`
 #: they are what "a dummy job satisfies it" looks like. The rule is a SAFE LIST rather than a list of
@@ -477,8 +507,163 @@ def inspect(criterion: criteria_module.Criterion) -> tuple[Finding, ...]:
     if criterion.kind in ("path", "tiers"):
         return ()
     body = criterion.run
-    findings = [*_inspect_searches(body), *_inspect_suites(body), *_inspect_verdict(body)]
+    findings = [*_inspect_searches(body), *_inspect_suites(body), *_inspect_verdict(body),
+                *_inspect_recipes(body), *_inspect_samples(body)]
     return tuple(findings)
+
+
+#: `just` options that consume the next token, so the token after one is a value rather than the
+#: recipe name. `--set` consumes two. Anything else beginning with `-` consumes only itself.
+_JUST_TAKES_A_VALUE = frozenset({"-f", "--justfile", "-d", "--working-directory", "--color",
+                                 "--shell", "--shell-arg", "--chooser", "--command-color",
+                                 "--dotenv-filename", "--dotenv-path", "--list-heading",
+                                 "--list-prefix", "--timestamp-format"})
+
+
+def _invocation(argv: list[str]) -> tuple[str, list[str]] | None:
+    """The recipe a `just ...` command runs and the arguments it hands it.
+
+    None when this is not a `just` command, or when the name is assembled at run time — guessing at
+    `$recipe` is how a rule that exists to catch a name that does not resolve starts accusing names
+    it could not see.
+    """
+    if not argv or Path(argv[0]).name != "just":
+        return None
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--set":
+            index += 3
+            continue
+        if token in _JUST_TAKES_A_VALUE:
+            index += 2
+            continue
+        if token.startswith("-") and len(token) > 1:
+            index += 1
+            continue
+        if re.search(r"[$`*?]", token):
+            return None
+        return token, argv[index + 1:]
+    return None
+
+
+def _invoked_recipe(argv: list[str]) -> str | None:
+    """The recipe name a `just ...` command runs, or None when this is not one or cannot be read."""
+    invocation = _invocation(argv)
+    return invocation[0] if invocation is not None else None
+
+
+@functools.lru_cache(maxsize=1)
+def recipe_names() -> frozenset[str]:
+    """Every recipe this repository's justfile defines, private ones included.
+
+    `just --summary` lists only the public ones and several criteria invoke `just _ctest`, so the
+    JSON dump is what is read. An EMPTY set means "this could not be determined", and the rule below
+    is skipped entirely rather than accusing every criterion in the ladder of naming a recipe that
+    is not there — a rule that cannot see is a rule that must not speak.
+    """
+    try:
+        dumped = subprocess.run(["just", "--dump", "--dump-format", "json"], cwd=REPO_ROOT,
+                                capture_output=True, text=True, check=False, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return frozenset()
+    if dumped.returncode != 0:
+        return frozenset()
+    try:
+        return frozenset(json.loads(dumped.stdout).get("recipes", {}))
+    except (ValueError, AttributeError):
+        return frozenset()
+
+
+def _inspect_recipes(body: str) -> list[Finding]:
+    """A `just` recipe a criterion names that the justfile does not define.
+
+    THE EIGHTH OF THE SEVEN, and the one that made the mechanism itself complicit. Three criteria —
+    `m11a:network-at-complete-grade`, `m11b:gameplay-at-complete-grade`,
+    `m11b:editor-at-complete-grade` — ran `just quality-requirements <rows...>`, and there is no such
+    recipe. `just` stops at argument parsing with `error: Justfile does not contain recipes`, exit 1,
+    having run nothing. The criterion is therefore red, unmutated, in the sandbox AND in the
+    repository, which is precisely the shape `_red_in_the_tree` records as a PROOF — so a command
+    that never executed was counted as a check that had been watched going red.
+
+    A red that comes from a name failing to resolve says nothing about the subject, and it cannot be
+    told apart from a real one by looking at the exit code. So it is refused here, before any run.
+    """
+    known = recipe_names()
+    if not known:
+        return []
+    findings = []
+    for argv in simple_commands(without_comments(body)):
+        name = _invoked_recipe(argv)
+        if name is not None and name not in known:
+            findings.append(Finding("absent-recipe", f"just {name}: no such recipe"))
+    return findings
+
+
+@functools.lru_cache(maxsize=1)
+def sample_names() -> frozenset[str]:
+    """Every sample `just run-sample` can find, read from the declarations that build them.
+
+    `just/run.just`'s own comment fixes the mapping: "samples/<nn>-<name>/cy_sample_<name>: the
+    sample's number orders the directory listing and is not part of its name, so the binary is found
+    by pattern rather than by a table kept in step." So the name is the one in `cy_add_module(NAME
+    cy_sample_<name>)` and NOT the directory — which is exactly the difference the rule below
+    catches.
+
+    An EMPTY set means "this could not be determined", and the rule is skipped rather than accusing
+    every criterion that runs a sample: a rule that cannot see is a rule that must not speak, which
+    is `recipe_names()`'s rule above and the same one here.
+    """
+    found = set()
+    for declaration in sorted((REPO_ROOT / "samples").glob("*/CMakeLists.txt")):
+        try:
+            text = declaration.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        found.update(re.findall(r"NAME\s+cy_sample_([A-Za-z0-9_-]+)", text))
+    return frozenset(found)
+
+
+def _inspect_samples(body: str) -> list[Finding]:
+    """A sample a criterion runs by a name `just run-sample` cannot resolve.
+
+    THE NINTH, AND IT IS `absent-recipe` ONE LEVEL DOWN — the same defect, in the same mechanism,
+    caught by the same reasoning and missed because the rule above reads the recipe's name and stops
+    there. `m11a:world-budget-headless` and `m11a:world-budget-on-a-device` ran
+    `just run-sample 10-world ... --cycle --budget-ms 16.7`. The recipe exists; the sample is called
+    `world` and not `10-world` — `10-world` is the DIRECTORY — so run.just printed
+    `run-sample: no sample '10-world' in <build>/samples.` and exited 2, having run nothing at all.
+
+    Both criteria were then recorded by this very module as `red against a built tree`, with the
+    exit-2 line quoted in the record as though it were a measurement. A criterion that cannot run is
+    indistinguishable, by exit code, from one that ran and failed — which is the whole defect this
+    module exists to end, committed by the module. So a name `run-sample` cannot resolve is refused
+    here, before any run, exactly as an absent recipe is.
+
+    NOT AN ARGUMENT CHECK, and deliberately not: `--cycle` and `--budget-ms` did not exist either
+    when those two criteria were written, and a static reader that tried to validate a sample's own
+    command line would need every sample's parser. What it CAN read with certainty is which binaries
+    `samples/*/CMakeLists.txt` declares, because that is the same list `run-sample` globs for.
+    """
+    known = sample_names()
+    if not known:
+        return []
+    findings = []
+    for argv in simple_commands(without_comments(body)):
+        invocation = _invocation(argv)
+        if invocation is None or invocation[0] != "run-sample":
+            continue
+        # `just run-sample --headless` with no name at all means `empty`, which run.just names as
+        # its default. A leading flag is therefore not a sample name and not an accusation.
+        names = [token for token in invocation[1] if not token.startswith("-")]
+        if not names or re.search(r"[$`*?]", names[0]):
+            continue
+        if names[0] not in known:
+            findings.append(Finding(
+                "absent-sample",
+                f"just run-sample {names[0]}: no samples/*/CMakeLists.txt declares "
+                f"cy_sample_{names[0]}"))
+    return findings
 
 
 #: How a criterion says "and not my own ledger". Recognising only these spellings matters: the first
@@ -1409,6 +1594,8 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
     # the same probe the ledger uses to report NOT EVALUATED rather than passed.
     unmet = criteria_module.unmet_requirement(criterion)
     if unmet:
+        if criterion.where == "ci" and criterion.ci_proof:
+            return _prove_in_the_ci_environment(sandbox, criterion, finished)
         return finished(UNPROVABLE, "-", f"this host cannot evaluate it, so it cannot judge it "
                                          f"either: {unmet} — CI job '{criterion.ci_job}'",
                         unjudged=True)
@@ -1454,6 +1641,114 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
     if blind:
         return finished(REFUTED, mutation.describe(), blind)
     return finished(PROVEN, mutation.describe(), f"red under mutation of {changed} file(s)")
+
+
+#: How long the command that builds a CI-shaped environment may take. It writes files; it does not
+#: build anything. A `provide` that needs longer than this is doing something other than laying out
+#: what a job downloads, and the timeout is where that is noticed.
+CI_ENVIRONMENT_TIMEOUT_S = 300
+
+
+def _prove_in_the_ci_environment(sandbox: Sandbox, criterion: criteria_module.Criterion,
+                                 finished) -> Proof:
+    """A `where = "ci"` criterion, judged against the environment continuous integration gives it.
+
+    THREE RUNS, the same three every other shape here is held to, with the declared environment
+    standing in for the machine this host is not:
+
+      positive control  `provide` is EXECUTED — never read — and the criterion's own body must then
+                        pass against what it produced. A `provide` that supplied nothing leaves the
+                        criterion red here and the verdict is `not provable here`, which is exactly
+                        the answer this shape replaced, so the field cannot be filled in falsely;
+      the mutation      applied to the environment, not to the criterion. One leg's digest changed,
+                        and the comparison has to report the disagreement;
+      the restore       the environment is put back and the criterion must come back GREEN, which is
+                        what separates "the mutation made it red" from "this run made it red".
+
+    THE VERDICT IS ABOUT THE CHECK, NOT ABOUT THE SUBJECT. Nothing here says two architectures agree
+    — this host has one, which is the whole reason the criterion carries `where = "ci"` — and the
+    ledger still reports it NOT EVALUATED. What is established is that the check can say no.
+    """
+    declared = criterion.ci_proof
+    provide = str(declared.get("provide", ""))
+    mutation = Mutation(verb=str(declared.get("mutate", "")), target=str(declared.get("target", "")),
+                        token=str(declared.get("token", "")), derived=False)
+
+    # ONE SANDBOX SERVES A WHOLE LEDGER, so an environment left behind by one criterion is an input
+    # to the next. The first run of this shape proved the lockstep criterion and then reported the
+    # pcg criterion `not provable here`, because `--write-legs` correctly refused to write over the
+    # directory its neighbour had just created. What a proof leaves behind is therefore removed:
+    # everything at the sandbox root that was not there before `provide` ran.
+    before = {entry.name for entry in sandbox.root.iterdir()}
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("CY_")}
+    environment["CY_FALSIFY"] = "1"
+    try:
+        built = subprocess.run(  # noqa: S603 — the command is committed data
+            ["bash", "-c", provide], cwd=sandbox.root, capture_output=True, text=True,
+            timeout=CI_ENVIRONMENT_TIMEOUT_S, check=False, env=environment)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        _discard_the_ci_environment(sandbox, before)
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"the environment CI supplies could not be built: {error}", unjudged=True)
+    try:
+        return _judge_in_the_ci_environment(sandbox, criterion, mutation, provide, built, finished)
+    finally:
+        _discard_the_ci_environment(sandbox, before)
+
+
+def _discard_the_ci_environment(sandbox: Sandbox, before: set[str]) -> None:
+    """Everything `provide` left at the sandbox root, removed. Nothing tracked is ever in this set."""
+    for entry in sandbox.root.iterdir():
+        if entry.name in before:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            entry.unlink(missing_ok=True)
+
+
+def _judge_in_the_ci_environment(sandbox: Sandbox, criterion: criteria_module.Criterion,
+                                 mutation: Mutation, provide: str, built, finished) -> Proof:
+    """The three runs, once `provide` has been executed. Separated so the cleanup is a `finally`."""
+    if built.returncode != 0:
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"`{provide}` exited {built.returncode}, so there is no environment to "
+                        f"judge against: {_first_line(built.stdout + built.stderr)}", unjudged=True)
+
+    code, output = sandbox.run(criterion)
+    if code != 0:
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"it is RED against the environment its own ci_proof built (exit {code}): "
+                        f"{_first_line(output)} — a positive control that fails judges nothing",
+                        unjudged=True)
+
+    try:
+        changed = sandbox.apply(mutation)
+    except (OSError, ValueError) as error:
+        sandbox.restore()
+        return finished(UNPROVABLE, mutation.describe(), f"the mutation could not be applied: {error}")
+    if not changed:
+        sandbox.restore()
+        return finished(REFUTED, mutation.describe(),
+                        "the mutation changed nothing — it names a file or a token that is not "
+                        "there in the environment ci_proof built")
+    mutated_code, mutated_output = sandbox.run(criterion)
+    sandbox.restore()
+    if mutated_code == 0:
+        return finished(REFUTED, mutation.describe(),
+                        f"the criterion still PASSES with {changed} file(s) of its CI environment "
+                        "mutated: it cannot go red")
+
+    back, restored_output = sandbox.run(criterion)
+    if back != 0:
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"it went red under the mutation and did NOT come back green when the "
+                        f"environment was restored (exit {back}: {_first_line(restored_output)}), "
+                        "so the redness cannot be laid at the mutation's door", unjudged=True)
+    return finished(PROVEN_IN_THE_CI_ENVIRONMENT, mutation.describe(),
+                    f"green against the environment `{provide}` builds, RED under the mutation of "
+                    f"{changed} file(s) of it (exit {mutated_code}: {_last_line(mutated_output)}), "
+                    "and green again once restored")
 
 
 def _prove_a_declared_gap(sandbox: Sandbox, criterion: criteria_module.Criterion,

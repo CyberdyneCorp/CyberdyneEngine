@@ -240,6 +240,36 @@ field.
       criteria declare a `[criterion.falsifies]` the tooling executes: delete the `--compare-legs`
       line, rename `--pcg`, delete the `download-artifact` lines. All three are PROVEN in
       `tools/roadmap/falsifiability.toml`, which is three entries shorter than it was
+- [x] 4.7 **AND A COMMAND IS NOT A JOB — REPAIR 2, after the gate refuted repair 1.** The comparison
+      COMMAND was genuinely defended by 4.6; the JOB was not. The gate broke `.github/workflows/ci.yml`
+      three ways in a sandbox and all three criteria stayed GREEN on every one: `if: always()` changed
+      to `if: false` on `cross-leg-compare`, so nothing is ever compared **and GitHub scores a skipped
+      job as success, leaving the whole pipeline green**; the matrix leg's
+      `Publish this leg's simulation and generation digests` step deleted verbatim, so four legs upload
+      a path nothing computed; and the same step's command replaced by an `echo` or its flag misspelt,
+      so the leg runs, exits and routes nothing to the path it uploads. A command that discriminates,
+      inside a job that never runs, over an artefact nobody wrote, is the dummy job again with more
+      lines in it. **`tools/ci/cross_leg_audit.py` now answers two more questions and both fail
+      CLOSED.** *Is the comparison scheduled?* — a reader for the subset of GitHub's expression
+      language a job's `if:` uses (`always()`, `success()`, `failure()`, `cancelled()`,
+      `github.event_name`, `github.ref`, literals, `==`, `!=`, `!`, `&&`, `||`, parentheses),
+      evaluated over the workflow's OWN `on:` triggers against the publishing job, the comparison job,
+      the `needs:` chain between them and each step the chain is made of; a condition it cannot read is
+      reported as a finding, because "I could not tell whether it runs" must never print the same as
+      "it runs". *Does a leg publish anything?* — the leg's own publishing command is RUN, with the
+      path it uploads redirected into a directory the check has deliberately not created and with
+      `CY_BUILD_DIR` pointed inside a regular file so no build can succeed: the real command creates
+      that directory in 60 ms before it dies at the build, an `echo` exits 0 having created nothing,
+      and a misspelt flag dies having touched nothing at all. **Watched red, in a sandbox copy of the
+      tree, `md5sum` 31543d5d4264e3638d4a6bc1a0cfcf03 restored after each**: all three of the gate's
+      mutations now take all three criteria to exit 1, as do `if: false` on the publishing job, on the
+      comparison step and on the upload step, and a job restricted to an event this workflow never
+      fires. The twelve `--selftest` fixtures are built from ONE template so each is the working
+      workflow with one thing changed, and **each names the finding it must provoke** — a rule that
+      began refusing everything would otherwise read exactly like twelve discriminating ones.
+      `m11a:cross-leg-digest-job`'s declared mutation moves off `download-artifact`, which broke the
+      half that was already defended, onto `--publish-digest`, which is the half that was not; it is
+      re-PROVEN in `tools/roadmap/falsifiability.toml` and m9's and m10's proofs still stand
 
 ## 5. The four rows whose Working tier is claimed by a column and checked by nothing
 

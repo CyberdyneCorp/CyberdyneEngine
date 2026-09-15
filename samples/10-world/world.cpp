@@ -683,7 +683,24 @@ Status World::build(BuildReport& report) noexcept {
     }
     report.fields_declared = static_cast<u32>(registry_.size());
     report.field_bytes = fields_.bytes_resident();
+    cooked_tiles_ = report.terrain_tiles;
+    stitched_vertices_ = report.terrain_stitched_vertices;
     return ok();
+}
+
+World::StreamingReport World::streaming() const noexcept {
+    StreamingReport report;
+    report.tiles_cooked = cooked_tiles_;
+    report.tiles_resident = static_cast<u32>(terrain_.tile_count());
+    // THE DIFFERENCE, AND NOT A COUNTER. Nothing in this artefact calls `TerrainStore::evict()`,
+    // so a counter incremented beside the call would be a counter this file's author is the only
+    // person who could ever move. Reading the store's own residency against what `build()` cooked
+    // means the number moves the day a streaming binder exists, whoever writes it.
+    report.tiles_evicted = report.tiles_cooked > report.tiles_resident
+                               ? report.tiles_cooked - report.tiles_resident
+                               : 0U;
+    report.stitched_vertices = stitched_vertices_;
+    return report;
 }
 
 // ================================================================================================

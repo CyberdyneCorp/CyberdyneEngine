@@ -351,6 +351,29 @@ public:
     [[nodiscard]] Status deform_and_round_trip(const WorldVec3d& at, f32 radius, f32 depth,
                                                PersistenceReport& report) noexcept;
 
+    /// WHAT THIS ARTEFACT STREAMS, WHICH IS NOTHING, MEASURED RATHER THAN STATED.
+    ///
+    /// `world-partition-and-streaming`'s Complete cell was moved off M10 by its own gate because the
+    /// world is kept wholly resident: every level-0 tile is cooked at build and none is ever
+    /// evicted, so every neighbour is at the same level and `MeshReport::stitched_vertices` is zero.
+    /// `m11a:world-streams` is the criterion that says so, and it used to say it by running the
+    /// sample with a `--stream-report` flag that did not exist, against a sample name that did not
+    /// resolve — it exited 2 having measured nothing, and was recorded as a criterion watched going
+    /// red.
+    ///
+    /// SO THE NUMBERS COME OFF THE STORE. `tiles_resident` is `TerrainStore::tile_count()` read at
+    /// the moment it is asked for, and `tiles_evicted` is the difference between what `build()`
+    /// made resident and what is resident now — not a counter this file increments, which would be
+    /// a number only a streamer's author would remember to move. The day a streaming binder evicts
+    /// a tile the difference is non-zero without anything here being edited.
+    struct StreamingReport {
+        u32 tiles_cooked = 0;
+        u32 tiles_resident = 0;
+        u32 tiles_evicted = 0;
+        u32 stitched_vertices = 0;
+    };
+    [[nodiscard]] StreamingReport streaming() const noexcept;
+
     // --- What the renderer reads ---------------------------------------------------------------
 
     [[nodiscard]] Span<const TerrainPatch> terrain_patches() const noexcept {
@@ -407,6 +430,11 @@ private:
     /// `weather::TerrainProfile::elevation_at`'s signature, over the same query, so the rain shadow
     /// is cast by the same mountains the water runs off.
     static f64 elevation_at(void* user, f64 x, f64 z) noexcept;
+
+    /// What `build()` made resident and what it stitched, kept so `streaming()` can report the
+    /// difference against the store's own count rather than against a remembered constant.
+    u32 cooked_tiles_ = 0;
+    u32 stitched_vertices_ = 0;
 
     Allocator* allocator_;
     WorldOptions options_;

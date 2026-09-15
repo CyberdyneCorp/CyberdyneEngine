@@ -194,6 +194,27 @@ Status PlaySession::enter(const PlayConfiguration& configuration) noexcept {
         return fail(ErrorCode::Unavailable, availability.reason);
     }
 
+    // AND A SECOND REFUSAL, ABOUT A DIFFERENT QUESTION. `availability_of` answers the editor's —
+    // *may I offer this mode* — and the answer for `SeparateProcess` is yes whenever this build can
+    // launch a runtime host. This answers the session's: *is this process the one that mode's
+    // runtime lives in*.
+    //
+    // A session is the runtime world of the process it is in; it does not launch anything and
+    // cannot become a second process by being told it is one. So a `PlaySession` built in the
+    // process that did the launching, and labelled `SeparateProcess`, is the in-editor world under
+    // another name — which is exactly what M11.b shipped, and exactly what let a suite "drive three
+    // modes" by building three sessions in one process and comparing them.
+    //
+    // `cy::gameplay::ProcessPlayDriver` is the editor's side of the mode and the launched
+    // `cy_play_runtime_host` is where its session lives, with `hosted_runtime_process` set.
+    if (configuration.mode == PlayMode::SeparateProcess &&
+        !configuration.support.hosted_runtime_process) {
+        return fail(ErrorCode::Unavailable,
+                    "separate-process: a play session in the process that did the launching is the "
+                    "in-editor world under another name — drive this mode through "
+                    "cy::gameplay::ProcessPlayDriver, whose runtime is the launched process");
+    }
+
     report_ = PlayReport{};
     report_.mode = configuration.mode;
     configuration_ = configuration;

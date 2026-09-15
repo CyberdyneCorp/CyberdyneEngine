@@ -217,6 +217,10 @@ Sdl3Platform::ProcessSlot* Sdl3Platform::find_process(ProcessHandle process) {
     return nullptr;
 }
 
+const Sdl3Platform::ProcessSlot* Sdl3Platform::find_process(ProcessHandle process) const {
+    return const_cast<Sdl3Platform*>(this)->find_process(process);
+}
+
 Expected<ProcessHandle, Error> Sdl3Platform::spawn_process(const ProcessOptions& options) {
     if (options.arguments == nullptr || options.argument_count == 0) {
         return fail(ErrorCode::InvalidArgument, "spawning a process needs at least argv[0]");
@@ -246,8 +250,12 @@ Expected<ProcessHandle, Error> Sdl3Platform::spawn_process(const ProcessOptions&
     }
     argv[options.argument_count] = nullptr;
 
+    // Three states rather than two, and the pipe wins. A caller that asked for a channel to the
+    // child and was given the parent's terminal would read the terminal, which is a hang rather
+    // than an error.
     const SDL_ProcessIO stdio =
         options.inherit_standard_streams ? SDL_PROCESS_STDIO_INHERITED : SDL_PROCESS_STDIO_NULL;
+    const SDL_ProcessIO channel = options.piped_standard_streams ? SDL_PROCESS_STDIO_APP : stdio;
 
     const SDL_PropertiesID properties = SDL_CreateProperties();
     if (properties == 0) {
@@ -257,8 +265,10 @@ Expected<ProcessHandle, Error> Sdl3Platform::spawn_process(const ProcessOptions&
     // constness has to be cast away to hand it over. SDL does not write through it.
     SDL_SetPointerProperty(properties, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
                            const_cast<void*>(static_cast<const void*>(argv)));
-    SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, stdio);
-    SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, stdio);
+    SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, channel);
+    SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, channel);
+    // Standard error stays where the caller put it even when input and output are piped: a child's
+    // diagnostics belong in the parent's log, not in a buffer the protocol never drains.
     SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER, stdio);
     if (options.working_directory != nullptr) {
         SDL_SetStringProperty(properties, SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING,
@@ -275,6 +285,8 @@ Expected<ProcessHandle, Error> Sdl3Platform::spawn_process(const ProcessOptions&
     slot->process = process;
     slot->exited = false;
     slot->exit_code = 0;
+    slot->piped = options.piped_standard_streams;
+    slot->input_closed = false;
     return slot->handle;
 }
 
@@ -336,6 +348,124 @@ void Sdl3Platform::release_process(ProcessHandle process) {
     }
     SDL_DestroyProcess(static_cast<SDL_Process*>(slot->process));
     *slot = ProcessSlot{};
+}
+
+Expected<i64, Error> Sdl3Platform::process_id(ProcessHandle process) const {
+    const ProcessSlot* slot = find_process(process);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "no such process");
+    }
+    const SDL_PropertiesID properties =
+        SDL_GetProcessProperties(static_cast<SDL_Process*>(slot->process));
+    if (properties == 0) {
+        return sdl_failure(ErrorCode::Unavailable);
+    }
+    // Zero is never a child's identifier on any platform the engine targets, so it is the sentinel
+    // for "SDL did not record one" rather than a value to hand back.
+    const Sint64 pid = SDL_GetNumberProperty(properties, SDL_PROP_PROCESS_PID_NUMBER, 0);
+    if (pid == 0) {
+        return fail(ErrorCode::Unavailable,
+                    "this SDL build does not report the operating system's process identifier");
+    }
+    return static_cast<i64>(pid);
+}
+
+// --- Talking to a spawned process -------------------------------------------------------------
+//
+// Every one of the three refuses on a child whose streams were not piped. The alternative — writing
+// into a stream that does not exist and reporting success — is the shape of failure this whole
+// module is written against: a caller would drive a child that is not listening and read replies
+// that never come.
+
+Expected<usize, Error> Sdl3Platform::write_process_input(ProcessHandle process,
+                                                         std::string_view bytes) {
+    ProcessSlot* slot = find_process(process);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "no such process");
+    }
+    if (!slot->piped) {
+        return fail(ErrorCode::Unsupported,
+                    "this child's standard streams were not piped; spawn it with "
+                    "ProcessOptions::piped_standard_streams to write to it");
+    }
+    if (slot->input_closed) {
+        return fail(ErrorCode::Unavailable, "this child's standard input is already closed");
+    }
+    SDL_IOStream* input = SDL_GetProcessInput(static_cast<SDL_Process*>(slot->process));
+    if (input == nullptr) {
+        return sdl_failure(ErrorCode::Unavailable);
+    }
+    if (bytes.empty()) {
+        return usize{0};
+    }
+    const size_t written = SDL_WriteIO(input, bytes.data(), bytes.size());
+    if (written == 0) {
+        return sdl_failure(ErrorCode::Internal);
+    }
+    // A pipe buffers, and SDL does not flush on its own. Without this the child blocks reading a
+    // request that is sitting in this process's buffer, and the parent blocks reading the reply.
+    if (!SDL_FlushIO(input)) {
+        return sdl_failure(ErrorCode::Internal);
+    }
+    return static_cast<usize>(written);
+}
+
+Status Sdl3Platform::close_process_input(ProcessHandle process) {
+    ProcessSlot* slot = find_process(process);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "no such process");
+    }
+    if (!slot->piped) {
+        return fail(ErrorCode::Unsupported, "this child's standard streams were not piped");
+    }
+    if (slot->input_closed) {
+        return ok();
+    }
+    SDL_IOStream* input = SDL_GetProcessInput(static_cast<SDL_Process*>(slot->process));
+    if (input == nullptr) {
+        // SDL hands back null once the stream is gone, which is the state being asked for.
+        slot->input_closed = true;
+        return ok();
+    }
+    slot->input_closed = true;
+    if (!SDL_CloseIO(input)) {
+        return sdl_failure(ErrorCode::Internal);
+    }
+    return ok();
+}
+
+Expected<usize, Error> Sdl3Platform::read_process_output(ProcessHandle process, char* buffer,
+                                                         usize capacity) {
+    ProcessSlot* slot = find_process(process);
+    if (slot == nullptr) {
+        return fail(ErrorCode::NotFound, "no such process");
+    }
+    if (!slot->piped) {
+        return fail(ErrorCode::Unsupported, "this child's standard streams were not piped");
+    }
+    if (buffer == nullptr || capacity == 0) {
+        return fail(ErrorCode::InvalidArgument, "reading a child's output needs a buffer");
+    }
+    SDL_IOStream* output = SDL_GetProcessOutput(static_cast<SDL_Process*>(slot->process));
+    if (output == nullptr) {
+        return sdl_failure(ErrorCode::Unavailable);
+    }
+    const size_t read = SDL_ReadIO(output, buffer, capacity);
+    if (read > 0) {
+        return static_cast<usize>(read);
+    }
+    // Zero means one of three things and they are not interchangeable: end of stream is the child
+    // having closed its output, NOT_READY cannot happen on a blocking pipe but is answered as "read
+    // again" rather than as an end, and anything else is a failure that must not read as a quiet
+    // child.
+    const SDL_IOStatus status = SDL_GetIOStatus(output);
+    if (status == SDL_IO_STATUS_EOF) {
+        return usize{0};
+    }
+    if (status == SDL_IO_STATUS_NOT_READY) {
+        return fail(ErrorCode::Unavailable, "the child has not written anything yet");
+    }
+    return sdl_failure(ErrorCode::Internal);
 }
 
 // --- Clocks -----------------------------------------------------------------------------------

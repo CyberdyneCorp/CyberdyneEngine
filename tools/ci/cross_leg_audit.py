@@ -36,7 +36,29 @@ The dummy above fails the second case: `echo` exits 0 whatever the legs say. So 
 downloads the artefacts and runs a linter, and so does a job whose comparison was deleted — which is
 the mutation `just roadmap-falsify` applies to prove these three criteria can still go red.
 
-WHAT THIS DOES NOT CLAIM. It does not run the engine, so it says nothing about whether the digests a
+AND A COMMAND IS NOT A JOB, WHICH IS WHAT THE REPAIR-2 GATE PROVED BY BREAKING THE WORKFLOW THREE
+WAYS AND WATCHING ALL THREE CRITERIA STAY GREEN. `if: false` on the comparison job: nothing is ever
+compared, and because GitHub scores a SKIPPED job as success the whole pipeline stays green too. The
+matrix leg's publishing step deleted: no leg computes a digest, and four legs upload a path nothing
+wrote. That step's command replaced by `echo`, or its flag renamed: the leg runs, exits, and routes
+nothing to the path it uploads. So two more questions are asked here, and both fail CLOSED —
+
+    IS THE COMPARISON SCHEDULED?   every `if:` on the publishing job, the comparison job, the chain
+                                   of `needs:` between them and each step the comparison is made of,
+                                   evaluated against the workflow's OWN `on:` triggers. A condition
+                                   this reader cannot evaluate is a finding, never a pass.
+    DOES A LEG PUBLISH ANYTHING?   the leg's own publishing command is RUN, with the path it uploads
+                                   redirected into a directory this check has deliberately not
+                                   created and with the build made impossible. A command that routes
+                                   that path creates it before it fails; `echo` exits 0 and creates
+                                   nothing; a renamed flag fails having touched nothing at all.
+
+WHAT THIS DOES NOT CLAIM, AND THE SECOND OF THESE IS A HOLE LEFT OPEN DELIBERATELY. A publishing
+step that creates the directory and then fails on every run would satisfy the routing check — and it
+would also be RED in the pipeline on every run, which is the state this whole module exists to tell
+apart from green. The line drawn here is between a step that is green and publishes nothing and a
+step that is red; the first is invisible and is what is checked for, the second announces itself.
+And it does not run the engine, so it says nothing about whether the digests a
 real leg publishes are digests of anything; `m11a:cross-leg-digest-published` builds the tree and
 runs `determinism.cross_leg`'s five cases for that, and the fixtures here are cross-checked against
 that publisher's own field list so the two cannot drift apart silently. And it does not say the
@@ -200,6 +222,10 @@ class Job:
     runs_on: str
     legs: tuple[dict, ...]
     steps: tuple[dict, ...]
+    #: The job's own `if:`, and the triggers of the file it lives in. Together they answer whether
+    #: this job is ever SCHEDULED, which is a different question from what its steps say.
+    condition: str = ""
+    events: tuple[Event, ...] = ()
 
     @property
     def label(self) -> str:
@@ -243,6 +269,7 @@ def _legs(job: dict) -> tuple[dict, ...]:
 def jobs_of(path: pathlib.Path) -> list[Job]:
     document = parse_workflow(path.read_text(encoding="utf-8"))
     declared = document.get("jobs", {})
+    events = events_of(document)
     found = []
     for name, body in declared.items() if isinstance(declared, dict) else ():
         if not isinstance(body, dict):
@@ -250,7 +277,8 @@ def jobs_of(path: pathlib.Path) -> list[Job]:
         steps = body.get("steps", [])
         found.append(Job(workflow=path.name, name=name, needs=_as_list(body.get("needs")),
                          runs_on=str(body.get("runs-on", "")), legs=_legs(body),
-                         steps=tuple(step for step in steps if isinstance(step, dict))))
+                         steps=tuple(step for step in steps if isinstance(step, dict)),
+                         condition=str(body.get("if", "")), events=events))
     return found
 
 
@@ -258,18 +286,241 @@ def workflows_in(directory: pathlib.Path) -> list[Job]:
     return [job for path in sorted(directory.glob("*.y*ml")) for job in jobs_of(path)]
 
 
+# --- Does the comparison RUN AT ALL? --------------------------------------------------------------
+#
+# THE NINTH UNFALSIFIABLE CHECK, AND IT IS THIS MODULE'S OWN. Everything above proves things about a
+# COMMAND. The claim is about a JOB, and M11.a's repair-2 gate showed the difference by breaking the
+# workflow three ways and watching all three criteria stay GREEN:
+#
+#   `if: always()` -> `if: false` on the comparison job   the comparison never runs. GitHub scores a
+#                                                         skipped job as SUCCESS, so the pipeline is
+#                                                         green too, and nothing is compared.
+#   the publishing step deleted from the matrix leg       no leg computes a digest; the legs upload a
+#                                                         path nothing wrote.
+#   that step's command replaced, or its flag renamed     the leg runs, exits, and routes nothing to
+#                                                         the path it uploads.
+#
+# A command that discriminates, inside a job that never runs, over an artefact nobody wrote, is the
+# dummy job again with more lines in it. So the reader below answers two more questions, and both of
+# them fail CLOSED — a condition this evaluator cannot read is a FINDING, never a pass, because "I
+# could not tell whether the comparison runs" and "the comparison runs" must never print the same.
+#
+# The subset evaluated is the subset a job's `if:` uses: `always()`, `success()`, `failure()`,
+# `cancelled()`, `github.event_name`, `github.ref`, string and boolean literals, `==`, `!=`, `!`,
+# `&&`, `||` and parentheses. Anything else raises. The contexts are the workflow's OWN `on:`
+# triggers, one per event, with `needs:` assumed to have succeeded — so a job that is unreachable
+# here is unreachable on every event the workflow declares, which is the only way to be sure a
+# comparison that is scheduled by nothing is not read as a comparison that agreed.
+
+
+class Unreadable(Exception):
+    """A condition this reader cannot evaluate. It is reported as a finding, never as a pass."""
+
+
+@dataclass(frozen=True)
+class Event:
+    """One trigger of a workflow, as far as a job's `if:` can see it."""
+
+    name: str
+    ref: str
+
+    def __str__(self) -> str:
+        return self.name
+
+
+#: The ref each trigger arrives with. `pull_request` is the one that is not a branch, and the one a
+#: condition restricting a job to `refs/heads/main` excludes.
+_REF_OF = {"pull_request": "refs/pull/7/merge"}
+
+
+def events_of(document: dict) -> tuple[Event, ...]:
+    triggers = document.get("on", "")
+    names = tuple(triggers) if isinstance(triggers, dict) else _as_list(triggers)
+    return tuple(Event(name, _REF_OF.get(name, "refs/heads/main")) for name in names if name)
+
+
+_TOKEN = re.compile(r"(\|\||&&|==|!=|[()!,]|'(?:[^']|'')*'|[A-Za-z_][A-Za-z0-9_.-]*|[0-9]+)")
+
+
+def _tokens(text: str) -> list[str]:
+    text = text.replace("${{", " ").replace("}}", " ")
+    found, at = [], 0
+    while at < len(text):
+        if text[at].isspace():
+            at += 1
+            continue
+        match = _TOKEN.match(text, at)
+        if not match:
+            raise Unreadable(f"cannot read {text[at]!r} in `{' '.join(text.split())}`")
+        found.append(match.group(1))
+        at = match.end()
+    return found
+
+
+def _truth(value) -> bool:
+    return bool(value)
+
+
+def _same(left, right) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return _truth(left) == _truth(right)
+    return str(left) == str(right)
+
+
+class _Condition:
+    """One `if:` expression, evaluated for one event. Every unknown raises."""
+
+    #: `needs:` is assumed to have succeeded, which is the nominal run. `failure()` and `cancelled()`
+    #: are therefore false: a job that runs ONLY when something failed does not run on a green
+    #: pipeline, and a comparison nobody reaches on a green pipeline has not compared anything.
+    FUNCTIONS = {"always": True, "success": True, "failure": False, "cancelled": False}
+
+    def __init__(self, tokens: list[str], event: Event) -> None:
+        self.tokens, self.at, self.event = tokens, 0, event
+
+    # --- the grammar -----------------------------------------------------------------------------
+
+    def value(self):
+        result = self.disjunction()
+        if self.at != len(self.tokens):
+            raise Unreadable(f"unexpected `{self.tokens[self.at]}`")
+        return result
+
+    def disjunction(self):
+        result = self.conjunction()
+        while self.take("||"):
+            result = _truth(self.conjunction()) or _truth(result)
+        return result
+
+    def conjunction(self):
+        result = self.comparison()
+        while self.take("&&"):
+            result = _truth(self.comparison()) and _truth(result)
+        return result
+
+    def comparison(self):
+        left = self.unary()
+        for operator in ("==", "!="):
+            if self.take(operator):
+                agree = _same(left, self.unary())
+                return agree if operator == "==" else not agree
+        return left
+
+    def unary(self):
+        if self.take("!"):
+            return not _truth(self.unary())
+        return self.primary()
+
+    def primary(self):
+        token = self.next()
+        if token == "(":
+            inner = self.disjunction()
+            if not self.take(")"):
+                raise Unreadable("unbalanced parentheses")
+            return inner
+        if token.startswith("'"):
+            return token[1:-1].replace("''", "'")
+        if token in ("true", "false"):
+            return token == "true"
+        if token.isdigit():
+            return int(token)
+        if self.peek() == "(":
+            return self.call(token)
+        return self.context(token)
+
+    def call(self, name: str):
+        self.take("(")
+        depth, arguments = 1, 0
+        while depth:
+            token = self.next()
+            arguments += token not in ("(", ")")
+            depth += {"(": 1, ")": -1}.get(token, 0)
+        if name not in self.FUNCTIONS or arguments:
+            raise Unreadable(f"`{name}(...)` is a function this reader does not evaluate")
+        return self.FUNCTIONS[name]
+
+    def context(self, name: str):
+        if name == "github.event_name":
+            return self.event.name
+        if name == "github.ref":
+            return self.event.ref
+        raise Unreadable(f"`{name}` is a context this reader does not evaluate")
+
+    # --- the cursor ------------------------------------------------------------------------------
+
+    def peek(self) -> str:
+        return self.tokens[self.at] if self.at < len(self.tokens) else ""
+
+    def next(self) -> str:
+        token = self.peek()
+        if not token:
+            raise Unreadable("the condition ends where a value was expected")
+        self.at += 1
+        return token
+
+    def take(self, token: str) -> bool:
+        if self.peek() != token:
+            return False
+        self.at += 1
+        return True
+
+
+def runs_on_event(condition: str, event: Event) -> bool:
+    """Whether a job or step carrying this `if:` runs on this event, its `needs:` having succeeded."""
+    text = str(condition).strip()
+    if not text:
+        return True
+    return _truth(_Condition(_tokens(text), event).value())
+
+
+def blocked_on(job: Job, event: Event, index: dict[str, Job], seen: tuple[str, ...] = ()) -> str:
+    """Empty when the job runs on this event; otherwise the link in the chain that stops it."""
+    if not runs_on_event(job.condition, event):
+        return f"{job.label} carries `if: {' '.join(job.condition.split())}`, false on {event}"
+    for need in job.needs:
+        upstream = index.get(f"{job.workflow}:{need}")
+        if upstream is None:
+            return f"{job.label} needs `{need}`, which is not a job in {job.workflow}"
+        if need in seen:
+            return f"{job.label} and `{need}` need each other, so neither is ever scheduled"
+        stopped = blocked_on(upstream, event, index, (*seen, job.name))
+        if stopped:
+            return f"{stopped} — and {job.label} needs it"
+    return ""
+
+
+def index_of(jobs: list[Job]) -> dict[str, Job]:
+    return {job.label: job for job in jobs}
+
+
 # --- Finding the comparison ------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Comparison:
-    """A publishing job, the job that downloads what it published, and the command that compares."""
+    """A publishing job, the job that downloads what it published, and the command that compares.
+
+    IT REMEMBERS THE STEPS AND NOT ONLY THE COMMAND, because the three mutations that killed the
+    first repair were all steps: the one that computes the digest, deleted; the one that compares,
+    conditioned away; the job around them, `if: false`. A comparison is the chain, and a chain is
+    checked link by link.
+    """
 
     publisher: Job
     comparer: Job
     artefact: str
     directory: str
     command: str
+    #: The steps the chain is made of: what computes the digest, what uploads it, what downloads it,
+    #: and what compares. `produced` is empty when no command in the publishing job writes the path
+    #: that job uploads, which is the deletion this audit exists to notice.
+    produced: tuple[dict, ...] = ()
+    compared: tuple[dict, ...] = ()
+    uploaded: dict = field(default_factory=dict)
+    downloaded: dict = field(default_factory=dict)
+    #: The constant part of the uploaded path — `cross-leg-digests/` — which is what a publishing
+    #: command has to name and what this audit redirects when it runs one.
+    stem: str = ""
 
 
 def _stem(name: str) -> str:
@@ -288,20 +539,19 @@ def publishers(jobs: list[Job]) -> list[Job]:
     return [job for job in jobs if any(_uploads_a_digest(step) for step in job.using("upload-artifact"))]
 
 
-def _downloads_from(job: Job, publisher: Job) -> tuple[str, str] | None:
-    """The artefact pattern and the directory this job downloads the publisher's uploads into."""
-    uploaded = [step.get("with", {}) for step in publisher.using("upload-artifact")
-                if _uploads_a_digest(step)]
+def _downloads_from(job: Job, publisher: Job) -> tuple[str, str, dict, dict] | None:
+    """The artefact, the directory it lands in, and the two steps that move it."""
+    uploads = [step for step in publisher.using("upload-artifact") if _uploads_a_digest(step)]
     for step in job.using("download-artifact"):
         with_ = step.get("with", {})
         if not isinstance(with_, dict):
             continue
         wanted = _stem(with_.get("pattern") or with_.get("name") or "")
         directory = str(with_.get("path", "")).strip()
-        for published in uploaded:
-            name = _stem(published.get("name", ""))
+        for upload in uploads:
+            name = _stem(upload.get("with", {}).get("name", ""))
             if wanted and name and (wanted.startswith(name) or name.startswith(wanted)) and directory:
-                return f"{wanted}*", directory
+                return f"{wanted}*", directory, upload, step
     return None
 
 
@@ -310,16 +560,24 @@ def _pair(publisher: Job, job: Job) -> tuple[Comparison | None, str]:
     downloaded = _downloads_from(job, publisher)
     if downloaded is None:
         return None, ""
-    artefact, directory = downloaded
+    artefact, directory, upload, download = downloaded
     if publisher.name not in job.needs:
         return None, (f"{job.label} downloads {artefact} and does not `needs:` {publisher.name}, "
                       f"so it can run before anything published")
-    commands = [str(step["run"]) for step in job.steps
-                if "run" in step and directory in str(step["run"])]
-    if not commands:
+    compared = [step for step in job.steps if "run" in step and directory in str(step["run"])]
+    if not compared:
         return None, (f"{job.label} downloads {artefact} into {directory}/ and no `run:` step of it "
                       f"reads {directory}/: it collects the digests and compares nothing")
-    return Comparison(publisher, job, artefact, directory, "\n".join(commands)), ""
+    # THE PUBLISHING SIDE, FOUND THE SAME WAY THE COMPARING SIDE IS: by the path, not by the name of
+    # a step or a word in it. A step whose command never mentions the path this job uploads cannot
+    # be what writes it.
+    stem = _stem(str(upload.get("with", {}).get("path", "")))
+    produced = [step for step in publisher.steps
+                if "run" in step and stem and stem in str(step["run"])]
+    return Comparison(publisher=publisher, comparer=job, artefact=artefact, directory=directory,
+                      command="\n".join(str(step["run"]) for step in compared),
+                      produced=tuple(produced), compared=tuple(compared), uploaded=upload,
+                      downloaded=download, stem=stem), ""
 
 
 def comparisons(jobs: list[Job]) -> tuple[list[Comparison], list[str]]:
@@ -392,6 +650,35 @@ def _write(directory: pathlib.Path, legs: list[dict]) -> None:
         nested.mkdir(parents=True)
         body = "".join(f"{key} {value}\n" for key, value in fields.items())
         (nested / f"{fields.get('label', index)}.digest").write_text(body, encoding="utf-8")
+
+
+def write_legs(directory: pathlib.Path, claim: str) -> int:
+    """The agreeing pair, on disk, exactly as the comparison job finds them after downloading.
+
+    WHAT THIS IS FOR, AND WHAT IT IS NOT. `m11a:lockstep-agrees-across-architectures` and
+    `m11a:pcg-regenerates-across-architectures` carry `where = "ci"`: this host has one architecture,
+    so the comparison cannot be MADE here and the ledger reports them NOT EVALUATED rather than
+    passed. `falsify.prove` then refused to judge them at all, and M11's repair gate was right that a
+    criterion nobody has shown can fail is not a criterion that has been shown to fail.
+
+    The environment is the part that was missing, not the criterion. This writes it: the same
+    `digests.leg()` fixtures the audit's own AGREEING case uses, from the publisher's field list, in
+    the nested layout `actions/download-artifact` produces. `falsify` then runs the criterion's own
+    command over it — green — mutates one leg's digest — red — and restores. That proves the
+    criterion can go red; it does NOT claim two architectures agreed, which only continuous
+    integration, with two architectures in it, can say.
+    """
+    if directory.exists() and any(directory.iterdir()):
+        print(f"{directory} already has something in it; refusing to write legs over it",
+              file=sys.stderr)
+        return 1
+    directory.mkdir(parents=True, exist_ok=True)
+    legs = AGREEING[2]
+    _write(directory, legs)
+    print(f"wrote {len(legs)} agreeing leg(s) into {directory} for the {claim} claim:")
+    for leg in legs:
+        print(f"  {leg['label']}  {leg['os']}/{leg['arch']}")
+    return 0
 
 
 def run_against(comparison: Comparison, legs: list[dict]) -> tuple[int, str]:
@@ -467,6 +754,153 @@ def _check_the_comparison(audit: Audit, comparison: Comparison) -> None:
             print(f"        | {line}")
 
 
+# --- Did any leg PUBLISH anything? ----------------------------------------------------------------
+#
+# THE MUTATION THIS EXISTS TO CATCH deletes the one step of the matrix leg that computes a digest.
+# Every leg then runs, every leg then uploads the path named in its `upload-artifact` step, the
+# comparison job downloads what it can find, and the whole pipeline is green over an empty
+# comparison. A reader of the workflow cannot tell the difference, because the difference is a step
+# that is not there.
+#
+# HOW THIS IS ANSWERED WITHOUT BUILDING THE ENGINE, and why that is not a compromise. The leg's own
+# command is RUN — with the path it uploads redirected into a directory this check owns and has
+# deliberately NOT created, and with `CY_BUILD_DIR` pointed inside a regular file so that no build
+# can possibly succeed. That makes one narrow behaviour observable in sixty milliseconds and on any
+# host: DOES THE COMMAND ROUTE THE PATH IT UPLOADS, before anything else it might do?
+#
+#   the publication, unmutated   fails at the impossible build, HAVING CREATED the directory    ok
+#   the step deleted             there is no command at all                                     RED
+#   the command replaced by      exits 0 and writes nothing — a green tick over no digest       RED
+#   `echo`
+#   its flag renamed or dropped  fails, and never touched the path: the argument went nowhere   RED
+#   a command that writes        exits 0 with a file the comparator cannot read                 RED
+#   something else there
+#
+# WHAT THIS DOES NOT CLAIM, because the distinction is the whole reason the build is made impossible
+# rather than attempted: it does not say the digest a real leg writes is a digest OF ANYTHING. That
+# is `m11a:cross-leg-digest-published`, which builds the tree and runs `determinism.cross_leg`'s five
+# cases over the numbers themselves. This says only that the path the comparison eventually reads is
+# a path this leg's command actually writes to — which is exactly what the deletion removed.
+
+
+def _resolve_matrix(text: str, leg: dict) -> str:
+    """`${{ matrix.label }}` answered by one leg of the matrix; every other expression left alone."""
+    return re.sub(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}",
+                  lambda found: str(leg.get(found.group(1), found.group(0))), text)
+
+
+def _last_line(text: str) -> str:
+    lines = [line for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else "(it printed nothing)"
+
+
+def run_the_publication(comparison: Comparison) -> tuple[bool, str]:
+    """Run the leg's own publishing command with its output redirected and the build made impossible."""
+    leg = comparison.publisher.legs[0] if comparison.publisher.legs else {}
+    command = _resolve_matrix("\n".join(str(step["run"]) for step in comparison.produced), leg)
+    with tempfile.TemporaryDirectory(prefix="cy-cross-leg-publish-") as directory:
+        root = pathlib.Path(directory)
+        wall = root / "not-a-directory"
+        wall.write_text("", encoding="utf-8")   # a FILE, so `mkdir -p` under it fails on every host
+        into = root / "published"               # NOT created here: the command has to create it
+        environment = {**os.environ, "CY_CROSS_LEG_AUDIT": "1", "CY_BUILD_DIR": str(wall / "build")}
+        for step in comparison.produced:
+            for key, value in (step.get("env") or {}).items():
+                environment[str(key)] = _resolve_matrix(str(value), leg)
+        try:
+            finished = subprocess.run(  # noqa: S602 — the command is this repository's own workflow
+                ["bash", "-c", command.replace(comparison.stem, f"{into}{os.sep}")], cwd=REPO_ROOT,
+                capture_output=True, text=True, check=False, env=environment, timeout=300)
+        except subprocess.TimeoutExpired:
+            return False, ("did not finish in five minutes with the build made impossible, so this "
+                           "check cannot say what it routed")
+        routed = into.is_dir()
+        written = {path.name: path.read_text(encoding="utf-8", errors="replace")
+                   for path in sorted(into.rglob("*")) if path.is_file()} if routed else {}
+    return _judge_the_publication(finished, routed, written)
+
+
+def _judge_the_publication(finished, routed: bool, written: dict[str, str]) -> tuple[bool, str]:
+    """What the leg's command did with the path it uploads. Four outcomes, and two of them are red."""
+    if finished.returncode != 0:
+        if routed:
+            return True, ("routed its output into the directory it uploads and then failed at the "
+                          "build this check made impossible — the publication doing its work")
+        return False, ("failed WITHOUT EVER TOUCHING the path its job uploads, so the argument "
+                       "naming that path went nowhere and the artefact is empty however green the "
+                       f"leg is. Last line: {_last_line(finished.stdout + finished.stderr)}")
+    if not written:
+        return False, ("exited 0 AND WROTE NO DIGEST AT ALL. A step that reports success without "
+                       "publishing is the publication deleted, wearing a green tick: every leg then "
+                       "uploads a path nothing computed and the comparison agrees with the empty set")
+    unreadable = [name for name in sorted(comparator.REQUIRED)
+                  if not all(body.startswith(f"{name} ") or f"\n{name} " in body
+                             for body in written.values())]
+    if unreadable:
+        return False, (f"exited 0 and wrote {', '.join(written)}, which the comparison cannot read: "
+                       f"no {', '.join(unreadable)} in it")
+    return True, f"wrote {', '.join(written)}, carrying every field the comparison reads"
+
+
+def _check_it_runs(audit: Audit, comparison: Comparison, index: dict[str, Job]) -> None:
+    """The comparison must be SCHEDULED. A skipped job is scored as success and compares nothing."""
+    events = comparison.comparer.events
+    if not events:
+        audit.failed(f"{comparison.comparer.workflow} declares no `on:` trigger, so nothing in it "
+                     f"says when {comparison.comparer.name} would ever run")
+        return
+    runs, stopped = [], []
+    for event in events:
+        try:
+            why = (blocked_on(comparison.publisher, event, index)
+                   or blocked_on(comparison.comparer, event, index)
+                   or _steps_blocked(comparison, event))
+        except Unreadable as unreadable:
+            audit.failed(f"{comparison.comparer.label} is scheduled by a condition this audit "
+                         f"cannot evaluate, and 'I could not tell whether the comparison runs' must "
+                         f"not print the same as 'the comparison runs': {unreadable}")
+            return
+        (runs if not why else stopped).append(event.name if not why else f"on {event}: {why}")
+    if runs:
+        print(f"  ok    the publication and the comparison are both scheduled on: {', '.join(runs)}")
+        return
+    audit.failed(f"{comparison.comparer.label} NEVER RUNS on any of this workflow's own triggers "
+                 f"({', '.join(event.name for event in events)}), so nothing is ever compared — and "
+                 f"a job that is skipped is scored as SUCCESS, which leaves the pipeline green too. "
+                 + "; ".join(stopped))
+
+
+def _steps_blocked(comparison: Comparison, event: Event) -> str:
+    """Whether every step the comparison is made of runs on this event, the jobs having run."""
+    named = (("publishes the digest", comparison.produced),
+             ("uploads it", (comparison.uploaded,)),
+             ("downloads it", (comparison.downloaded,)),
+             ("compares", comparison.compared))
+    for what, steps in named:
+        for step in steps:
+            if step and not runs_on_event(str(step.get("if", "")), event):
+                return (f"the step that {what} carries `if: "
+                        f"{' '.join(str(step.get('if')).split())}`, which is false")
+    return ""
+
+
+def _check_the_publication(audit: Audit, comparison: Comparison) -> None:
+    publisher = comparison.publisher
+    if not comparison.stem:
+        audit.failed(f"{publisher.label} uploads a path with no constant part, so this audit cannot "
+                     f"tell which of its commands would have to write it")
+        return
+    if not comparison.produced:
+        audit.failed(f"{publisher.label} uploads {comparison.stem}… and NO `run:` step of it writes "
+                     f"{comparison.stem}: every leg runs, every leg uploads a path nothing computed, "
+                     f"and the comparison downloads and compares the empty set")
+        return
+    verdict, detail = run_the_publication(comparison)
+    print(f"  {'ok  ' if verdict else 'FAIL'}  the leg's own publishing command {detail}")
+    if not verdict:
+        audit.failed(f"{publisher.label}'s publishing command {detail}")
+
+
 def audit_claim(claim: str, directory: pathlib.Path) -> Audit:
     audit = Audit(claim)
     print(f"claim: {claim}\nworkflows: {directory}")
@@ -484,13 +918,19 @@ def audit_claim(claim: str, directory: pathlib.Path) -> Audit:
         for detail in rejected:
             audit.failed(detail)
         return audit
+    index = index_of(jobs)
     for comparison in found:
         print(f"\n{comparison.publisher.label} publishes {comparison.artefact} from "
               f"{len(comparison.publisher.legs)} legs on {', '.join(comparison.publisher.runners)}")
+        for step in comparison.produced:
+            for line in str(step["run"]).splitlines():
+                print(f"    {line}")
         print(f"{comparison.comparer.label} downloads them into {comparison.directory}/ and runs:")
         for line in comparison.command.splitlines():
             print(f"    {line}")
+        _check_it_runs(audit, comparison, index)
         _check_the_legs(audit, comparison)
+        _check_the_publication(audit, comparison)
         _check_the_comparison(audit, comparison)
     return audit
 
@@ -498,152 +938,136 @@ def audit_claim(claim: str, directory: pathlib.Path) -> Audit:
 # --- The audit's own negative fixtures ------------------------------------------------------------
 #
 # A rule that stopped firing looks exactly like a workflow with nothing wrong in it, which is why
-# `check_workflows.py` and `test_cross_leg_digests.py` both carry fixtures. THE FIRST FIXTURE IS THE
-# DUMMY JOB THE GATE DESCRIBED: it says every word the three word-greps looked for and compares
-# nothing, and it must be refused here.
+# `check_workflows.py` and `test_cross_leg_digests.py` both carry fixtures. Each fixture below is
+# THE WORKING WORKFLOW WITH ONE THING CHANGED, built from one template, so that what a fixture is
+# about is the line that differs and not a second copy of the file that drifted.
+#
+# AND EACH FIXTURE NAMES THE FINDING IT MUST PROVOKE. "Refused" is not enough: a rule that began
+# refusing everything — an unreadable template, a missing `on:`, a reader that stopped parsing —
+# would refuse all twelve and look exactly like twelve discriminating rules. The selftest requires
+# the refusal to SAY the thing the fixture is about, so a blanket refusal is a failure here.
+#
+# THE FIRST FIXTURE IS THE DUMMY JOB THE GATE DESCRIBED: it says every word the three word-greps
+# looked for and compares nothing. The next three are the repair-2 gate's own mutations.
 
-_REAL_COMPARISON = """
-      - name: One leg's digest against another's
+_TRIGGERS = """on:
+  push:
+    branches: [main]
+  pull_request:
+"""
+
+_TWO_LEGS = """          - { label: linux-x86_64, os: ubuntu-24.04 }
+          - { label: linux-arm64, os: ubuntu-24.04-arm }
+"""
+
+_REAL_PUBLICATION = """      - name: Publish this leg's simulation and generation digests
+        env:
+          CY_CROSS_LEG_LABEL: ${{ matrix.label }}
+        run: just test-determinism --publish-digest cross-leg-digests/${{ matrix.label }}.digest
+"""
+
+_UPLOAD = """      - uses: actions/upload-artifact@v4
+        with:
+          name: cross-leg-digest-${{ matrix.label }}
+          path: cross-leg-digests/${{ matrix.label }}.digest
+"""
+
+_DOWNLOAD = """      - uses: actions/download-artifact@v4
+        with:
+          pattern: cross-leg-digest-*
+          path: cross-leg-digests
+"""
+
+_REAL_COMPARISON = """      - name: One leg's digest against another's
         run: just test-determinism --compare-legs --pcg --digests cross-leg-digests
 """
 
+
+def _workflow(*, triggers: str = _TRIGGERS, legs: str = _TWO_LEGS, publish_if: str = "",
+              publication: str = _REAL_PUBLICATION, upload: str = _UPLOAD, compare: bool = True,
+              needs: str = "    needs: publish\n", compare_if: str = "", download: str = _DOWNLOAD,
+              comparison: str = _REAL_COMPARISON) -> str:
+    """The working workflow, with one thing changed. Every fixture is a call to this."""
+    text = triggers + "jobs:\n  publish:\n" + publish_if + (
+        "    strategy:\n      fail-fast: false\n      matrix:\n        include:\n" + legs +
+        "    runs-on: ${{ matrix.os }}\n    steps:\n      - uses: actions/checkout@v4\n" +
+        publication + upload)
+    if compare:
+        text += ("  compare:\n" + needs + compare_if + "    runs-on: ubuntu-24.04\n    steps:\n"
+                 "      - uses: actions/checkout@v4\n" + download + comparison)
+    return text
+
+
+#: name -> (the workflow, why it must be refused, a phrase the refusal must contain).
 _FIXTURES = {
-    "dummy": ("""
-jobs:
-  publish:
-    strategy:
-      matrix:
-        include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-          - { label: linux-arm64, os: ubuntu-24.04-arm }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cross-leg-digest-${{ matrix.label }}
-          path: cross-leg-digests/${{ matrix.label }}.digest
-  compare:
-    needs: publish
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cross-leg-digest-*
-          path: cross-leg-digests
-      - name: lockstep and pcg digests compared between architectures
-        run: echo "cross-leg-digests compared: lockstep and pcg agree"
-""", "the dummy job: every word the three greps looked for, and no comparison"),
+    "dummy": (
+        _workflow(publication="", comparison='      - name: lockstep and pcg digests compared\n'
+                                             '        run: echo "cross-leg-digests compared"\n'),
+        "the dummy job: every word the three greps looked for, and no comparison",
+        "when the simulation state hash differs"),
 
-    "publication-only": ("""
-jobs:
-  publish:
-    strategy:
-      matrix:
-        include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-          - { label: linux-arm64, os: ubuntu-24.04-arm }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cross-leg-digest-${{ matrix.label }}
-          path: cross-leg-digests/${{ matrix.label }}.digest
-""", "a publication is not a comparison"),
+    # --- the three the repair-2 gate applied to the real ci.yml ----------------------------------
+    "never-scheduled": (
+        _workflow(compare_if="    if: false\n"),
+        "`if: false` on the comparison job. It never runs, and GitHub scores a skipped job as "
+        "SUCCESS, so the pipeline is green and nothing was compared",
+        "NEVER RUNS"),
 
-    "one-leg": ("""
-jobs:
-  publish:
-    strategy:
-      matrix:
-        include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cross-leg-digest-${{ matrix.label }}
-          path: cross-leg-digests/${{ matrix.label }}.digest
-  compare:
-    needs: publish
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cross-leg-digest-*
-          path: cross-leg-digests
-""" + _REAL_COMPARISON, "one leg publishing is one leg agreeing with itself"),
+    "scheduled-by-an-event-that-never-fires": (
+        _workflow(compare_if="    if: github.event_name == 'release'\n"),
+        "a condition that is false on every trigger this workflow declares",
+        "NEVER RUNS"),
 
-    "unordered": ("""
-jobs:
-  publish:
-    strategy:
-      matrix:
-        include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-          - { label: linux-arm64, os: ubuntu-24.04-arm }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cross-leg-digest-${{ matrix.label }}
-          path: cross-leg-digests/${{ matrix.label }}.digest
-  compare:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cross-leg-digest-*
-          path: cross-leg-digests
-""" + _REAL_COMPARISON, "a comparison that does not `needs:` the publication can run before it"),
+    "publication-deleted": (
+        _workflow(publication=""),
+        "the matrix leg's publishing step deleted: four legs upload a path nothing computed",
+        "NO `run:` step of it writes"),
 
-    "refuses-everything": ("""
-jobs:
-  publish:
-    strategy:
-      matrix:
-        include:
-          - { label: linux-x86_64, os: ubuntu-24.04 }
-          - { label: linux-arm64, os: ubuntu-24.04-arm }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cross-leg-digest-${{ matrix.label }}
-          path: cross-leg-digests/${{ matrix.label }}.digest
-  compare:
-    needs: publish
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cross-leg-digest-*
-          path: cross-leg-digests
-      - run: test -d cross-leg-digests && exit 1
-""", "a job that fails whatever the legs published has measured nothing either"),
+    "publication-replaced-by-an-echo": (
+        _workflow(publication='      - name: Publish this leg\'s digests\n'
+                              '        run: echo "published cross-leg-digests/x.digest"\n'),
+        "a publishing step that reports success and writes nothing",
+        "WROTE NO DIGEST AT ALL"),
 
-    "one-runner": ("""
-jobs:
-  publish:
-    strategy:
-      matrix:
-        include:
-          - { label: leg-one, os: ubuntu-24.04 }
-          - { label: leg-two, os: ubuntu-24.04 }
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cross-leg-digest-${{ matrix.label }}
-          path: cross-leg-digests/${{ matrix.label }}.digest
-  compare:
-    needs: publish
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: cross-leg-digest-*
-          path: cross-leg-digests
-""" + _REAL_COMPARISON, "two legs of one runner image are not two architectures"),
+    "publication-routes-nothing": (
+        _workflow(publication="      - name: Publish this leg's digests\n"
+                              "        run: just test-determinism --publish-digest-typo "
+                              "cross-leg-digests/${{ matrix.label }}.digest\n"),
+        "the publishing flag misspelt: the leg runs, fails, and never routes the path it uploads",
+        "WITHOUT EVER TOUCHING the path"),
+
+    "scheduled-by-a-condition-nobody-can-read": (
+        _workflow(compare_if="    if: ${{ vars.CY_COMPARE_LEGS == 'true' }}\n"),
+        "a condition this reader cannot evaluate. 'I could not tell whether it runs' must not "
+        "print the same as 'it runs'",
+        "cannot evaluate"),
+
+    # --- and the shapes the first repair already refused -----------------------------------------
+    "publication-only": (
+        _workflow(compare=False),
+        "a publication is not a comparison",
+        "publishes a digest per leg and runs a command"),
+
+    "one-leg": (
+        _workflow(legs="          - { label: linux-x86_64, os: ubuntu-24.04 }\n"),
+        "one leg publishing is one leg agreeing with itself",
+        "1 leg(s): one leg cannot disagree"),
+
+    "unordered": (
+        _workflow(needs=""),
+        "a comparison that does not `needs:` its publication can run before it",
+        "does not `needs:`"),
+
+    "refuses-everything": (
+        _workflow(comparison="      - run: test -d cross-leg-digests && exit 1\n"),
+        "a job that fails whatever the legs published has measured nothing either",
+        "a command that cannot pass when the legs agree"),
+
+    "one-runner": (
+        _workflow(legs="          - { label: leg-one, os: ubuntu-24.04 }\n"
+                       "          - { label: leg-two, os: ubuntu-24.04 }\n"),
+        "two legs of one runner image are not two architectures",
+        "one runner image is one architecture"),
 }
 
 
@@ -669,7 +1093,7 @@ def _reader_agrees_with_check_workflows() -> list[str]:
 
 
 def selftest() -> int:
-    """Every fixture above must be REFUSED, and this repository's own workflows must pass."""
+    """Every fixture above must be REFUSED, and refused for the reason it is about."""
     failures = 0
     complaints = _reader_agrees_with_check_workflows()
     for complaint in complaints:
@@ -677,16 +1101,26 @@ def selftest() -> int:
     failures += len(complaints)
     if not complaints:
         print("ok   the workflow reader finds every job check_workflows.py finds\n")
-    for name, (text, why) in _FIXTURES.items():
+    for name, (text, why, expected) in _FIXTURES.items():
         with tempfile.TemporaryDirectory(prefix="cy-audit-fixture-") as directory:
             path = pathlib.Path(directory)
             (path / "fixture.yml").write_text(text, encoding="utf-8")
             audit = audit_claim("job", path)
-        if audit.findings:
-            print(f"ok   {name}: refused — {why}\n")
+        if not audit.findings:
+            failures += 1
+            print(f"FAIL {name}: ACCEPTED, and it must not be — {why}\n")
             continue
-        failures += 1
-        print(f"FAIL {name}: ACCEPTED, and it must not be — {why}\n")
+        # REFUSED IS NOT ENOUGH. A rule that began refusing every workflow would refuse these too,
+        # and twelve blanket refusals read exactly like twelve discriminating ones.
+        if not any(expected in finding for finding in audit.findings):
+            failures += 1
+            print(f"FAIL {name}: refused, and NOT for the reason it is about — nothing said "
+                  f"{expected!r}. It is about: {why}")
+            for finding in audit.findings:
+                print(f"     said instead: {finding}")
+            print()
+            continue
+        print(f"ok   {name}: refused, saying {expected!r} — {why}\n")
 
     audit = audit_claim("job", REPO_ROOT / ".github" / "workflows")
     if audit.findings:
@@ -709,9 +1143,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="the workflow directory to read")
     parser.add_argument("--selftest", action="store_true",
                         help="run the audit against fixtures it must refuse")
+    parser.add_argument("--write-legs", metavar="DIR",
+                        help="write the AGREEING pair of legs into DIR, laid out as "
+                             "actions/download-artifact unpacks them, and exit — this is the "
+                             "environment the comparison job runs in, and it is what lets "
+                             "`just roadmap-falsify` judge a where = \"ci\" criterion on a host "
+                             "with one architecture")
     arguments = parser.parse_args(argv)
     if arguments.selftest:
         return selftest()
+    if arguments.write_legs:
+        return write_legs(pathlib.Path(arguments.write_legs), arguments.claim)
 
     audit = audit_claim(arguments.claim, pathlib.Path(arguments.workflows))
     print(f"\n{audit.passed} of {len(CASES[audit.claim])} case(s) behaved as the claim requires")

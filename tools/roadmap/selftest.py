@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import itertools
 import os
 import re
 import subprocess
@@ -53,6 +54,7 @@ import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import plan as plan_module  # noqa: E402
 import record as record_module  # noqa: E402
+import requirements as requirements_module  # noqa: E402
 import roadmap as roadmap_module  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -1256,6 +1258,108 @@ def test_falsifiability_rules(root: Path) -> None:
           "no-assertion" not in _rules('CARGO_TARGET_DIR="$(just _editor-target-dir)" cargo test'))
 
 
+def test_absent_recipe_rule(root: Path) -> None:
+    """A criterion that names a `just` recipe the justfile does not define is REFUSED, not proven.
+
+    THE EIGHTH DEFECT OF ITS KIND, AND THE FIRST ONE THE PROVER COMMITTED RATHER THAN CAUGHT.
+    `m11a:network-at-complete-grade`, `m11b:gameplay-at-complete-grade` and
+    `m11b:editor-at-complete-grade` each ran `just quality-requirements <rows...>`. There was no such
+    recipe anywhere in `just/`, so `just` stopped at ARGUMENT PARSING with "Justfile does not contain
+    recipes", ran nothing at all, and exited 1. A criterion that is red unmutated in the sandbox and
+    in the repository is recorded by `falsify._red_in_the_tree` as `red in the tree`, which is inside
+    `PROOF_VERDICTS` — so all three were counted as checks that had been watched going red, by the
+    very mechanism built to stop exactly that.
+
+    An exit code cannot tell a subject failing from a name failing to resolve, so the shape is
+    refused before any run: `absent-recipe` is in `CANNOT_GO_RED`.
+    """
+    del root
+    check("a criterion naming a recipe that does not exist is refused",
+          "absent-recipe" in _rules("just quality-no-such-recipe networking-and-replication"))
+    check("and `just quality-requirements` — the recipe all three named — now exists, so it passes",
+          "absent-recipe" not in _rules("just quality-requirements networking-and-replication"),
+          "just/quality.just must define quality-requirements, or the three criteria that run it "
+          "are still names that do not resolve")
+    check("a real recipe is not accused",
+          "absent-recipe" not in _rules("just build-engine --profile dev"))
+    check("a PRIVATE recipe is not accused: `just --summary` hides them, the JSON dump does not",
+          "absent-recipe" not in _rules("just _ctest determinism -R '^determinism.cross_leg$'"))
+    check("a recipe name assembled at run time is not read, rather than guessed at",
+          "absent-recipe" not in _rules('just "$recipe" --profile dev'))
+    check("a `just` inside a heredoc body is not read as a command of this criterion",
+          "absent-recipe" not in _rules("python3 - <<'EOF'\nprint('just no-such-recipe-at-all')\nEOF"))
+    check("the rule refuses the criterion rather than merely reporting it",
+          "absent-recipe" in falsify_module.CANNOT_GO_RED)
+    check("and it sees through a `just` reached after global options",
+          "absent-recipe" in _rules("just --justfile Justfile no-such-recipe-at-all"))
+
+
+def test_requirements_coverage(root: Path) -> None:
+    """`just quality-requirements` can PASS and can FAIL, over fixtures that say which.
+
+    A check that is red today says nothing about whether it can ever be green, and "it cannot pass"
+    is the same defect as "it cannot fail" seen from the other side. The map this repository ships is
+    EMPTY on purpose — no capability row has been read requirement by requirement, and each run says
+    so by name — so the both-directions proof is made here, against a specification tree and a map
+    written for the occasion.
+    """
+    specs = root / "openspec" / "specs" / "fixture-row"
+    specs.mkdir(parents=True)
+    (specs / "spec.md").write_text(
+        "# fixture-row\n\n## Requirements\n\n"
+        "### Requirement: The first thing\nIt SHALL happen.\n\n"
+        "### Requirement: The second thing\nIt SHALL also happen.\n", encoding="utf-8")
+    previous = requirements_module.SPECS
+    requirements_module.SPECS = root / "openspec" / "specs"
+    try:
+        real_test = sorted(requirements_module.declared_tests())[0]
+        real_gate = sorted(requirements_module.declared_gates())[0]
+
+        written = itertools.count()
+
+        def audit(body: str) -> int:
+            path = root / f"map-{next(written)}.toml"
+            path.write_text("schema = 1\n" + body, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return requirements_module.main(["fixture-row", "--map", str(path)])
+
+        answered = (f'[[coverage]]\nrow = "fixture-row"\nrequirement = "The first thing"\n'
+                    f'evidence = "test:{real_test}"\n\n'
+                    f'[[coverage]]\nrow = "fixture-row"\nrequirement = "The second thing"\n'
+                    f'evidence = "gate:{real_gate}"\n')
+        check("a row whose every requirement names a real suite or gate PASSES", audit(answered) == 0)
+
+        half = answered.split("\n\n")[0] + "\n"
+        check("and the same row goes RED when one requirement is answered by nothing",
+              audit(half) == 1)
+
+        broken = answered.replace(f"test:{real_test}", "test:unit.no_such_suite_exists")
+        check("and RED when an answer names a suite no committed cy_add_test() declares",
+              audit(broken) == 1)
+
+        stale = answered + ('\n[[coverage]]\nrow = "fixture-row"\n'
+                            'requirement = "A requirement nobody asks any more"\n'
+                            f'evidence = "gate:{real_gate}"\n')
+        check("and RED on a STALE entry: an answer to a question the specification stopped asking",
+              audit(stale) == 1)
+
+        exempt = (answered.split("\n\n")[0] + "\n\n"
+                  '[[coverage]]\nrow = "fixture-row"\nrequirement = "The second thing"\n'
+                  'evidence = "exempt:m11e"\nnote = "deferred because the subject does not exist '
+                  'in this tree yet, and M11.e is the rung that builds it"\n')
+        check("a recorded exemption naming a real milestone and a reason is an answer",
+              audit(exempt) == 0)
+        check("but not one parked at a rung that is not a milestone",
+              audit(exempt.replace("exempt:m11e", "exempt:m99")) == 1)
+        check("and not one whose reason is a shrug",
+              audit(exempt.replace(exempt[exempt.index("note = "):], 'note = "too hard"\n')) == 1)
+
+        check("a duplicate answer to one requirement is a malformed map, not a smaller one",
+              audit(answered + answered.split("\n\n")[0] + "\n") == 2)
+    finally:
+        requirements_module.SPECS = previous
+
+
 def test_falsifiability_reads_a_redirection(root: Path) -> None:
     """A file descriptor in front of a redirection is not a path the criterion searches.
 
@@ -1411,6 +1515,94 @@ def test_falsifiability_declared_mutations(root: Path) -> None:
     proof = falsify_module.prove(sandbox, "m0", declared)
     check("and a criterion is proven end to end through the mutation it declared",
           proof.verdict == falsify_module.PROVEN, f"{proof.verdict}: {proof.detail}")
+
+
+def test_falsifiability_in_the_ci_environment(root: Path) -> None:
+    """A `where = "ci"` criterion judged against the environment it declares — and the four refusals.
+
+    THE SHAPE THIS REPLACED. `falsify.prove` returned `not provable here` for every criterion this
+    host cannot evaluate, correctly: `just test-determinism --compare-legs` fails on a machine with
+    one architecture, and reading that as "watched going red" would be a verdict about the laptop.
+    What it left was two of M11.a's seventy that NOBODY had shown could fail, which M11's repair gate
+    called dispositive and was right to.
+
+    So the criterion declares what CI hands it, as a command the prover EXECUTES. The four cases
+    below are why `provide` cannot be filled in falsely: an environment that is not built, one that
+    does not make the criterion pass, a mutation that misses, and a mutation the criterion survives
+    are each refused, and only the three-run sequence earns the verdict.
+    """
+    sandbox = falsify_module.Sandbox.materialise(root / "tree")
+
+    def criterion(provide: str, target: str, token: str) -> criteria_module.Criterion:
+        return criteria_module.Criterion(
+            id="needs-ci", describe="a fixture", source="a fixture", kind="command",
+            ci_job="milestone-m0", where="ci", reason="this fixture host is not the CI matrix",
+            run="grep -q agreed downloaded/leg.txt",
+            ci_proof={"provide": provide, "mutate": "rename-token", "target": target,
+                      "token": token})
+
+    supplies = "mkdir -p downloaded && printf 'agreed\\n' > downloaded/leg.txt"
+    good = criterion(supplies, "downloaded/leg.txt", "agreed")
+    proof = falsify_module.prove(sandbox, "m0", good)
+    check("a where=ci criterion is proven against the environment its ci_proof builds",
+          proof.verdict == falsify_module.PROVEN_IN_THE_CI_ENVIRONMENT,
+          f"{proof.verdict}: {proof.detail}")
+    check("and the verdict counts as a proof",
+          falsify_module.PROVEN_IN_THE_CI_ENVIRONMENT in falsify_module.PROOF_VERDICTS)
+    check("and the environment is REMOVED afterwards, so the next criterion does not inherit it",
+          not (sandbox.root / "downloaded").exists())
+
+    beaten = falsify_module.prove(sandbox, "m0", criterion("true", "downloaded/leg.txt", "agreed"))
+    check("a `provide` that supplies nothing leaves the criterion red at its positive control",
+          beaten.verdict == falsify_module.UNPROVABLE, f"{beaten.verdict}: {beaten.detail}")
+    check("and says so in those words rather than counting it",
+          "positive control" in beaten.detail, beaten.detail)
+
+    missed = falsify_module.prove(sandbox, "m0", criterion(supplies, "downloaded/leg.txt", "absent"))
+    check("a mutation that names a token the environment does not carry is REFUTED",
+          missed.verdict == falsify_module.REFUTED, f"{missed.verdict}: {missed.detail}")
+
+    survived = falsify_module.prove(
+        sandbox, "m0", criterion(supplies + " && printf 'spare\\n' > downloaded/spare.txt",
+                                 "downloaded/spare.txt", "spare"))
+    check("and a mutation the criterion SURVIVES is refuted rather than recorded",
+          survived.verdict == falsify_module.REFUTED, f"{survived.verdict}: {survived.detail}")
+
+    # THE SCOPE RULES, which are what stop this becoming a way to pass a criterion nothing can judge.
+    expect_error(
+        "a ci_proof on a criterion that is not where = \"ci\" is rejected",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "ci-proof-local",
+            'schema = 1\nid = "m0"\n[[criterion]]\nid = "c"\ndescribe = "d"\nsource = "s"\n'
+            'kind = "command"\nrun = "true"\nci_job = "build-and-test"\n'
+            '[criterion.ci_proof]\nprovide = "true"\nmutate = "truncate"\ntarget = "x"\n')))
+    expect_error(
+        "and one standing in for a device is rejected: no command conjures a GPU",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "ci-proof-gpu",
+            'schema = 1\nid = "m0"\n[[criterion]]\nid = "c"\ndescribe = "d"\nsource = "s"\n'
+            'kind = "command"\nrun = "true"\nci_job = "build-and-test"\nwhere = "ci"\n'
+            'requires = "gpu"\nreason = "r"\n'
+            '[criterion.ci_proof]\nprovide = "true"\nmutate = "truncate"\ntarget = "x"\n')))
+    expect_error(
+        "and a ci_proof with no 'provide' is rejected: there would be no environment to judge",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "ci-proof-empty",
+            'schema = 1\nid = "m0"\n[[criterion]]\nid = "c"\ndescribe = "d"\nsource = "s"\n'
+            'kind = "command"\nrun = "true"\nci_job = "build-and-test"\nwhere = "ci"\n'
+            'reason = "r"\n[criterion.ci_proof]\nmutate = "truncate"\ntarget = "x"\n')))
+    expect_error(
+        "and a ci_proof whose mutation is a sentence is rejected, like every other mutation here",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "ci-proof-prose",
+            'schema = 1\nid = "m0"\n[[criterion]]\nid = "c"\ndescribe = "d"\nsource = "s"\n'
+            'kind = "command"\nrun = "true"\nci_job = "build-and-test"\nwhere = "ci"\n'
+            'reason = "r"\n[criterion.ci_proof]\nprovide = "true"\n'
+            'mutate = "break the digest somehow"\ntarget = "x"\n')))
 
 
 def test_falsifiability_of_a_declared_gap(root: Path) -> None:
@@ -1744,12 +1936,15 @@ def main() -> int:
         test_just_arguments(_area(root, "just-arguments"))
         test_matrix_requirement_counts(_area(root, "reqs-column"))
         test_falsifiability_rules(_area(root, "falsify-rules"))
+        test_absent_recipe_rule(_area(root, "absent-recipe"))
+        test_requirements_coverage(_area(root, "requirements-coverage"))
         test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
         if not _nested():
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
             test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
+            test_falsifiability_in_the_ci_environment(_area(root, "falsify-ci-env"))
             test_falsifiability_of_a_declared_gap(_area(root, "falsify-gap"))
             test_falsifiability_red_in_the_tree(_area(root, "falsify-red"))
             test_falsifiability_by_mutating_the_tree(_area(root, "falsify-tree"))

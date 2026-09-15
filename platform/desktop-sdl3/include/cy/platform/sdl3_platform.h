@@ -61,6 +61,12 @@ public:
     Expected<i32, Error> wait_process(ProcessHandle process) override;
     Status terminate_process(ProcessHandle process, bool force) override;
     void release_process(ProcessHandle process) override;
+    [[nodiscard]] Expected<i64, Error> process_id(ProcessHandle process) const override;
+    Expected<usize, Error> write_process_input(ProcessHandle process,
+                                               std::string_view bytes) override;
+    Status close_process_input(ProcessHandle process) override;
+    Expected<usize, Error> read_process_output(ProcessHandle process, char* buffer,
+                                               usize capacity) override;
 
     [[nodiscard]] Nanoseconds monotonic_nanoseconds() const override;
     [[nodiscard]] i64 wall_nanoseconds() const override;
@@ -86,9 +92,16 @@ private:
         void* process = nullptr;
         bool exited = false;
         i32 exit_code = 0;
+        // Whether this child was spawned with its standard streams on pipes. The three stream calls
+        // refuse on a child that was not, rather than reading an SDL_IOStream that does not exist.
+        bool piped = false;
+        // Set once the child's standard input has been closed, so that closing twice is a no-op
+        // rather than a use of a destroyed stream.
+        bool input_closed = false;
     };
 
     ProcessSlot* find_process(ProcessHandle process);
+    const ProcessSlot* find_process(ProcessHandle process) const;
 
     // SDL_GetPrefPath() returns one directory. Config and cache are derived from it per platform
     // convention; the helper is where that derivation lives.

@@ -204,6 +204,29 @@ quality-specs *args:
     echo "==> openspec validate --specs --strict"
     openspec validate --specs --strict {{args}}
 
+# Every requirement of a capability row, against the test, gate or exemption that answers it.
+#
+# `docs/roadmap/capability-matrix.md` counts each row's requirements out of its specification and
+# `delivery-roadmap` says a Complete cell is one whose requirements are ANSWERED. Nothing joined the
+# two until M11's repair round: five criteria across four ledgers ran `just quality-requirements` and
+# there was no such recipe, so `just` refused at argument parsing and the criteria were recorded as
+# checks that had been watched going red. tools/roadmap/requirements.py is what they were written
+# for, and tools/roadmap/requirements-coverage.toml is the map it reads.
+#
+#   just quality-requirements networking-and-replication          one row
+#   just quality-requirements --list live-editing                 every requirement and its evidence
+quality-requirements *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if [ -z "{{args}}" ]; then
+        echo "quality-requirements: name at least one capability row, as openspec/specs/ spells it." >&2
+        echo "  e.g. just quality-requirements networking-and-replication replay-and-rollback" >&2
+        exit 2
+    fi
+    echo "==> requirements coverage  {{args}}"
+    python3 tools/roadmap/requirements.py {{args}}
+
 # --- Shared implementation --------------------------------------------------------------------------
 
 # Resolve a pinned tool, or fail naming what was found, what is required, and how to correct it.

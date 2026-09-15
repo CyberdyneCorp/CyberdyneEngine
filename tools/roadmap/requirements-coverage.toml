@@ -1,0 +1,28 @@
+# Which test, gate, criterion or recorded deferral answers each requirement of a capability row.
+#
+# READ BY tools/roadmap/requirements.py, WHICH `just quality-requirements` RUNS. Five criteria across
+# four ledgers ask whether a row is at Complete grade — `m11a:network-at-complete-grade`,
+# `m11b:gameplay-at-complete-grade`, `m11b:editor-at-complete-grade`,
+# `m11c:material-compiler-at-complete-grade` and `m11e:every-requirement-maps` — and until this file
+# existed they ran a recipe that was not there, which `just` refused at argument parsing. The check
+# that reports "nothing has read this specification end to end" is the point of the exercise; an
+# empty map is that report, and it is an honest red rather than a missing one.
+#
+# AN ENTRY IS A CLAIM THE TOOL CHECKS, not a sentence:
+#
+#   evidence = "test:unit.save"             a suite a committed cy_add_test() declares
+#   evidence = "gate:build-and-test"        a gate in tools/roadmap/gates.toml
+#   evidence = "criterion:m11a:world-streams"   a criterion in tools/roadmap/milestones/
+#   evidence = "exempt:m11e"                a deferral, with `note` saying why, closing at that rung
+#
+# Every one of those is resolved against the tree: a suite that is renamed or deleted turns the row
+# RED rather than leaving a green tick behind, which is the failure mode M11.a's gate found in the
+# record audit one level down. So is an entry naming a requirement the specification no longer asks.
+#
+# WRITING AN ENTRY MEANS READING THE REQUIREMENT. That is the work these criteria exist to force and
+# it is not work a tool can do: `requirements.py` deliberately cannot author this file. Add entries
+# as rows are read, one requirement at a time, and the count in each run's summary moves.
+
+schema = 1
+
+# (no entries yet — every row named by the five criteria is unanswered, and each run says so by name)

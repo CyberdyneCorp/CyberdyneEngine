@@ -51,13 +51,18 @@ KINDS = ("recipe", "command", "path", "tiers")
 #: target, never a sentence, because a sentence is what seven unfalsifiable criteria were written in.
 MUTATIONS = ("delete-path", "delete-lines", "rename-token", "truncate", "lower-tiers")
 FALSIFIES_KEYS = frozenset({"mutate", "target", "token", "note"})
+#: What a `where = "ci"` criterion declares so that the prover can judge it HERE: the command that
+#: builds the environment continuous integration hands it, and the mutation of that environment which
+#: must turn the criterion red. See `_check_ci_proof`.
+CI_PROOF_KEYS = frozenset({"provide", "mutate", "target", "token", "note"})
 WHERE = ("local", "ci")
 REQUIREMENTS = ("display", "gpu")
 DEFAULT_TIMEOUT_S = 1800
 
 CRITERION_KEYS = frozenset(
     {"id", "describe", "source", "kind", "run", "path", "expect_tiers", "where", "ci_job",
-     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "falsifies", "evaluates"}
+     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "falsifies", "evaluates",
+     "ci_proof"}
 )
 MILESTONE_KEYS = frozenset({"schema", "id", "name", "artefact", "notes", "criterion"})
 
@@ -104,6 +109,27 @@ class Criterion:
     #: declaration; this field is, it is declared by exactly the criterion that does the evaluating,
     #: and `evaluators` below is the only way to ask who they are.
     evaluates: list = field(default_factory=list)
+    #: HOW A `where = "ci"` CRITERION IS JUDGED ON A MACHINE THAT CANNOT EVALUATE IT.
+    #:
+    #: `falsify.prove` refuses to judge a criterion this host cannot evaluate, and it is right to:
+    #: `just test-determinism --compare-legs` fails on a machine with one architecture, and reading
+    #: that as "watched going red" would be a verdict about the laptop rather than about the
+    #: repository. What it left behind was a criterion NOBODY had shown could fail — two of M11.a's
+    #: seventy, and M11's repair gate called that out as dispositive.
+    #:
+    #: The missing piece was never the criterion; it was the ENVIRONMENT. What CI supplies to
+    #: `m11a:lockstep-agrees-across-architectures` is a directory of digests published by several
+    #: legs, and that directory is something this repository can construct: `tools/ci/cross_leg_audit`
+    #: already writes well-formed legs from the publisher's own field list. So the criterion declares
+    #: the command that CONSTRUCTS that environment and the mutation of it that must turn the
+    #: criterion red, and the prover runs the criterion's own body, verbatim, three times against it.
+    #:
+    #: THIS IS NOT A LICENCE TO PASS. `provide` is executed, not read; the criterion has to go GREEN
+    #: against what it produced, RED under the mutation, and GREEN again once restored. A `provide`
+    #: that supplied nothing would leave the criterion red at its positive control and the verdict is
+    #: `not provable here`, exactly as before. And it is refused on `requires` (a GPU, a display): no
+    #: command constructs a graphics device, and pretending otherwise is the defect upside down.
+    ci_proof: dict = field(default_factory=dict)
 
     @property
     def is_declared_gap(self) -> bool:
@@ -193,6 +219,7 @@ def _criterion(table: dict, source: str) -> Criterion:
     _check_kind(table, where)
     _check_scope(table, where)
     _check_falsifies(table, where)
+    _check_ci_proof(table, where)
     _check_evaluates(table, where)
     return Criterion(**{key: value for key, value in table.items()})
 
@@ -282,6 +309,42 @@ def _check_falsifies(table: dict, where: str) -> None:
         raise CriteriaError(f"{where}: falsifies.mutate = {verb!r} needs a 'target' path or glob")
     if verb in ("delete-lines", "rename-token") and not str(declared.get("token", "")).strip():
         raise CriteriaError(f"{where}: falsifies.mutate = {verb!r} needs the 'token' it removes")
+
+
+def _check_ci_proof(table: dict, where: str) -> None:
+    """The environment CI supplies, as a command the tooling runs — and the mutation of it.
+
+    Same rule as `_check_falsifies` and for the same reason: what is declared is executed, so it is a
+    command and a verb rather than a sentence. The two extra rules here are about SCOPE.
+
+    A `ci_proof` belongs only to a criterion whose `where` is `ci`. On a `requires = "gpu"` or
+    `requires = "display"` criterion it would be a claim that a shell command can conjure a graphics
+    device, which is the defect this whole mechanism exists to refuse, wearing the mechanism's own
+    clothes. And on an ordinary criterion it is dead weight: the sandbox already runs those.
+    """
+    declared = table.get("ci_proof")
+    if declared is None:
+        return
+    if not isinstance(declared, dict):
+        raise CriteriaError(f"{where}: 'ci_proof' is a table, not {type(declared).__name__}")
+    _reject_unknown(declared.keys(), CI_PROOF_KEYS, f"{where}: ci_proof")
+    if table.get("where") != "ci":
+        raise CriteriaError(f"{where}: 'ci_proof' declares the environment CI supplies, so it "
+                            "belongs only to a criterion with where = \"ci\"")
+    if table.get("requires"):
+        raise CriteriaError(f"{where}: 'ci_proof' may not stand in for requires = "
+                            f"{table['requires']!r} — no command constructs a device or a display")
+    if not str(declared.get("provide", "")).strip():
+        raise CriteriaError(f"{where}: ci_proof needs 'provide', the command that builds the "
+                            "environment continuous integration hands this criterion")
+    verb = str(declared.get("mutate", "")).strip()
+    if verb not in MUTATIONS:
+        raise CriteriaError(f"{where}: ci_proof.mutate is {verb!r}, not one of "
+                            f"{', '.join(MUTATIONS)} — a mutation nothing can apply proves nothing")
+    if verb != "lower-tiers" and not str(declared.get("target", "")).strip():
+        raise CriteriaError(f"{where}: ci_proof.mutate = {verb!r} needs a 'target' path or glob")
+    if verb in ("delete-lines", "rename-token") and not str(declared.get("token", "")).strip():
+        raise CriteriaError(f"{where}: ci_proof.mutate = {verb!r} needs the 'token' it removes")
 
 
 def _check_evaluates(table: dict, where: str) -> None:

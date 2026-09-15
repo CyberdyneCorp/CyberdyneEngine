@@ -35,7 +35,12 @@ constexpr const char* kRemoteDeviceNoRuntime =
 /// The rung at which `RemoteDevice` is due. M11.b task 5.2 owns `EncodedStream`; if that task does
 /// not land in this rung, this string is what has to be re-pointed, and it is one string.
 constexpr const char* kRemoteDeviceDue = "M11.b task 5.2 (EncodedStream) — see design.md §1.2";
-constexpr const char* kSeparateProcessDue = "M11.d (build-and-packaging owns the launcher)";
+/// What `SeparateProcess` needs, when it is missing. It is no longer a RUNG: the launcher is built
+/// (`cy/gameplay/play/launcher.h`) and the mode is unavailable only when the host binary it
+/// launches cannot be found beside the calling executable, which is an installation to repair
+/// rather than work to schedule.
+constexpr const char* kSeparateProcessDue =
+    "build cy_play_runtime_host and install it beside this executable";
 
 }  // namespace
 
@@ -63,11 +68,19 @@ Expected<PlayMode, Error> play_mode_of(std::string_view name) noexcept {
 
 PlayModeSupport play_mode_support() noexcept {
     PlayModeSupport support;
-    // A second runtime process is the host's to launch and this build carries no launcher yet;
-    // what it does carry is the live bridge that would drive one, which is why the mode is
-    // available as a session and its launcher is named as the part M11.d owns. See
-    // `availability_of` for how the two are kept apart.
-    support.runtime_launcher = true;
+    // FALSE, AND THE FALSE IS THE POINT. A caller with no `Platform` cannot start a process, so
+    // "can this build start and supervise a second runtime process" has one honest answer here and
+    // it is no.
+    //
+    // This field read `true` from M11.b until the repair round that built the launcher, beside a
+    // comment that said "this build carries no launcher yet". A literal `true` made
+    // `availability_of(SeparateProcess, …)` a constant, which made every check over it a check that
+    // could not fail, which is how a mode with no implementation at all sat behind a green suite.
+    //
+    // `play_mode_support(platform)` in `cy/gameplay/play/launcher.h` is the overload a host calls:
+    // it MEASURES the answer by resolving `cy_play_runtime_host` beside the calling executable and
+    // asking the filesystem whether it is there.
+    support.runtime_launcher = false;
     // Both false in every configuration of this tree. See the header: `EncodedStream` is declared
     // on both sides of the viewport transport and implemented on neither.
     support.frame_encoder = false;

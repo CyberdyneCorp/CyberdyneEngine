@@ -40,6 +40,16 @@ struct ProcessOptions {
     const char* working_directory = nullptr;
     // False redirects the child's standard streams to the platform's null device.
     bool inherit_standard_streams = true;
+    // True connects the child's standard input and output to PIPES this process reads and writes
+    // through write_process_input()/read_process_output(), rather than to the parent's streams or
+    // to the null device. It takes precedence over inherit_standard_streams, because a caller that
+    // asked for a pipe and got an inherited stream would read the terminal.
+    //
+    // This is what makes a spawned process ADDRESSABLE rather than merely started: a second runtime
+    // process the editor launches has to be driven, and a driver needs a channel. Standard error is
+    // deliberately left inherited so that a child's diagnostics reach the parent's log rather than
+    // into a buffer nobody drains.
+    bool piped_standard_streams = false;
 };
 
 struct ProcessStatus {
@@ -144,6 +154,38 @@ public:
     virtual Status terminate_process(ProcessHandle process, bool force) = 0;
     // Releases the handle. A process that is still running is not killed by this.
     virtual void release_process(ProcessHandle process) = 0;
+
+    // The operating system's own identifier for a spawned child — a POSIX pid, a Windows process
+    // id. It is not the ProcessHandle above, which is this Platform's bookkeeping and means nothing
+    // outside it.
+    //
+    // It exists so that a caller can PROVE the answers it is reading came from the process it
+    // launched: a child that reports its own identifier and a parent that reads the same one from
+    // the operating system are talking across a real boundary, and no in-process stand-in can
+    // produce that agreement.
+    [[nodiscard]] virtual Expected<i64, Error> process_id(ProcessHandle process) const = 0;
+
+    // --- Talking to a spawned process ---------------------------------------------------------
+    //
+    // Only for a child spawned with ProcessOptions::piped_standard_streams. Every one of these
+    // fails, rather than silently doing nothing, on a child that was not.
+
+    // Writes to the child's standard input. Returns the bytes written, which may be fewer than
+    // asked for; a caller that needs all of them loops.
+    virtual Expected<usize, Error> write_process_input(ProcessHandle process,
+                                                       std::string_view bytes) = 0;
+    // Closes the child's standard input, which is how a child that reads to end-of-file is told
+    // there is no more. Idempotent.
+    virtual Status close_process_input(ProcessHandle process) = 0;
+    // Reads from the child's standard output. BLOCKS until at least one byte is available, the
+    // child closes the stream, or the read fails — which is what a request/response protocol over a
+    // pipe wants, and why a caller that cannot afford to block must poll the process instead.
+    //
+    // Returns 0 ONLY at end of stream: the child closed its output, which for a child that replies
+    // to every request means it exited. A failed read is an error rather than a zero, so that a
+    // caller cannot mistake a broken pipe for a quiet child.
+    virtual Expected<usize, Error> read_process_output(ProcessHandle process, char* buffer,
+                                                       usize capacity) = 0;
 
     // --- Clocks -----------------------------------------------------------------------------
     //

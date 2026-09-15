@@ -135,7 +135,28 @@ struct PlayModeAvailability {
 /// would set it.
 struct PlayModeSupport {
     /// Whether this build can start and supervise a second runtime process.
-    bool runtime_launcher = true;
+    ///
+    /// MEASURED, not declared: `play_mode_support(platform)` in `cy/gameplay/play/launcher.h`
+    /// answers it by resolving `cy_play_runtime_host` beside the calling executable and asking the
+    /// filesystem whether it is there. The no-argument `play_mode_support()` answers `false`,
+    /// because a caller with no `Platform` cannot start anything.
+    ///
+    /// It read `true` from a literal until the repair round that built the launcher, which made
+    /// every check over `availability_of(SeparateProcess, …)` a check that could not fail.
+    bool runtime_launcher = false;
+    /// Whether THIS PROCESS is a runtime host something launched.
+    ///
+    /// Distinct from `runtime_launcher`, and the distinction is the one M11.b got wrong.
+    /// `runtime_launcher` is the EDITOR's question — may I offer this mode — and is what
+    /// `availability_of` answers. This is the SESSION's question: a `PlaySession` serving
+    /// `SeparateProcess` is the runtime world *inside* the second process, and one built in the
+    /// process that did the launching would be the in-editor world wearing another mode's name.
+    /// That was precisely the fiction the rung shipped: three sessions in one process, compared to
+    /// each other, reported as three modes.
+    ///
+    /// Only `cy_play_runtime_host` sets it. `PlaySession::enter` refuses `SeparateProcess` without
+    /// it, naming `ProcessPlayDriver` as the way the editor's side drives the mode.
+    bool hosted_runtime_process = false;
     /// Whether this build can encode a frame for a transport that crosses a machine boundary —
     /// `TransportKind::EncodedStream`, declared on both sides of the viewport transport and
     /// implemented on neither. False in every configuration of this tree; see the file header.

@@ -45,9 +45,14 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: The probe projects beside this file. Each one is a real CMake project that includes the file whose
+#: behaviour a leg is about and reports what CMake DID — see the header comment in each.
+PROBES = REPO_ROOT / "tools" / "roadmap" / "probes"
 
 
 class Report:
@@ -132,6 +137,163 @@ def _walked_cmake_files() -> list[Path]:
     return sorted(found)
 
 
+# --- Asking the build system, rather than reading it ----------------------------------------------
+#
+# THE EIGHTH INSTANCE OF THIS PROJECT'S ONE DEFECT WAS FOUND HERE, and it is why these two probes
+# exist. The legs below used to be regular expressions over `tests/CMakeLists.txt` and
+# `cmake/profiles.cmake` — `fragment in taxonomy`, `re.search(r"set\(CY_PROFILES ...")`. M11's second
+# repair round broke both files' BEHAVIOUR while leaving their WORDS in place:
+#
+#   * `cy_add_test()` with its `PRIVATE_DEFINITIONS CY_TEST_BUDGET_NS=...` line and its whole
+#     `set_tests_properties(... LABELS ... TIMEOUT ...)` call commented out — so no suite would carry
+#     a budget, a label or a timeout — and `testing-and-quality` stayed GREEN on all three legs,
+#     because the commented-out lines still contained the strings the legs looked for.
+#   * every `set(CY_PROFILE...)` line in `cmake/profiles.cmake` commented out — so the build has no
+#     profile table at all — and `build-system-and-platforms` stayed GREEN on every profile leg.
+#
+# A check a comment satisfies measures spelling. So the subject is handed to CMake instead: a probe
+# project includes the file, calls the function, and reports what CMake produced. The mutation above
+# turns both criteria red now, for the reason the mutation is about, and so does any other way of
+# breaking those functions — including ways nobody thought to write a regular expression for.
+
+
+class Probe:
+    """One probe project, configured. `records` is what CMake wrote; `failure` is why it could not.
+
+    A probe that will not configure is a FINDING, not an error: the subject of every leg that reads
+    it is the file the probe includes, so `cmake/profiles.cmake` raising FATAL_ERROR because it no
+    longer defines a profile is exactly the answer the leg wanted.
+    """
+
+    def __init__(self, records: list[list[str]], failure: str) -> None:
+        self.records = records
+        self.failure = failure
+
+    def of(self, kind: str) -> list[list[str]]:
+        """Every record of one kind, with the kind itself dropped."""
+        return [record[1:] for record in self.records if record and record[0] == kind]
+
+    def first(self, kind: str) -> list[str]:
+        found = self.of(kind)
+        return found[0] if found else []
+
+
+def _configure(source: Path, build: Path, defines: dict[str, str]) -> str:
+    """Configure a probe project. "" when CMake succeeded, or what it said when it refused."""
+    command = ["cmake", "-S", str(source), "-B", str(build), f"-DCY_REPO={REPO_ROOT}"]
+    command += [f"-D{name}={value}" for name, value in defines.items()]
+    try:
+        done = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    except OSError as error:  # noqa: BLE001 — no cmake on PATH is a finding like any other
+        return f"cmake could not be run: {error}"
+    return "" if done.returncode == 0 else (done.stdout + done.stderr).strip()[-900:]
+
+
+def _records(report: Path) -> list[list[str]]:
+    text = report.read_text(encoding="utf-8") if report.is_file() else ""
+    return [line.split("|") for line in text.splitlines() if line.strip()]
+
+
+#: `set_tests_properties([=[<test>]=] PROPERTIES  LABELS "unit" TIMEOUT "60" ...)`, as CMake's
+#: generator writes it into CTestTestfile.cmake. This file is the generator's output, not the
+#: project's input: nothing in this repository chooses what it says.
+_CTEST_PROPERTIES_RE = re.compile(r"^set_tests_properties\(\[=\[([^\]]+)\]=\] PROPERTIES\s+(.*)$",
+                                  re.MULTILINE)
+
+
+def ctest_properties(build: Path) -> dict[str, dict[str, str]]:
+    """Every test the generated CTestTestfile.cmake registers, and the properties it gives it."""
+    testfile = build / "CTestTestfile.cmake"
+    registered: dict[str, dict[str, str]] = {}
+    if not testfile.is_file():
+        return registered
+    for name, body in _CTEST_PROPERTIES_RE.findall(testfile.read_text(encoding="utf-8")):
+        given = dict(re.findall(r'(\w+) "([^"]*)"', body))
+        registered[name] = {key: given[key] for key in ("LABELS", "TIMEOUT") if key in given}
+    return registered
+
+
+def taxonomy_probe() -> tuple[Probe, dict[str, dict[str, str]]]:
+    """Configure tools/roadmap/probes/taxonomy: what cy_add_test() does, asked of CMake.
+
+    Two answers come back, from two places neither of which is the text of tests/CMakeLists.txt: the
+    arguments cy_add_test() passed to cy_add_module(), recorded by the probe's stub, and the CTest
+    properties CMake's own generator wrote for the suites it declared.
+    """
+    with tempfile.TemporaryDirectory(prefix="cy-taxonomy-probe-") as work:
+        workspace, build = Path(work), Path(work) / "build"
+        report, source = workspace / "report.txt", workspace / "probe.cpp"
+        # Written here rather than committed: a .cpp under tools/ is a file the formatting gate, the
+        # layer checker and the lint gate would each then scan, over a fixture that exists to be
+        # named on a cy_add_test() call and never compiled.
+        source.write_text("#include <cy/test/test.h>\n", encoding="utf-8")
+        failure = _configure(PROBES / "taxonomy", build,
+                             {"CY_PROBE_REPORT": str(report), "CY_PROBE_SOURCE": str(source)})
+        return Probe(_records(report), failure), ctest_properties(build)
+
+
+def profiles_probe(profile: str) -> Probe:
+    """Configure tools/roadmap/probes/profiles for one profile: what the build derives from it."""
+    with tempfile.TemporaryDirectory(prefix="cy-profiles-probe-") as work:
+        report = Path(work) / "report.txt"
+        failure = _configure(PROBES / "profiles", Path(work) / "build",
+                             {"CY_PROFILE": profile, "CY_PROBE_REPORT": str(report)})
+        return Probe(_records(report), failure)
+
+
+def without_cmake_comments(text: str) -> str:
+    """The same file with every whole-line comment removed.
+
+    The scans below look for a DECLARATION. A commented-out declaration is not one, and leaving them
+    in is how a leg comes to report on a file that declares nothing — which is the defect this whole
+    section exists to end, in the one place a probe cannot reach.
+    """
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def recipe_surface() -> tuple[list[str], str]:
+    """Every public recipe `just` will run, and why it could not be asked when it could not."""
+    summary = subprocess.run(["just", "--summary"], cwd=REPO_ROOT, capture_output=True, text=True,
+                             check=False)
+    if summary.returncode != 0:
+        return [], summary.stderr.strip()[:400] or "just --summary failed"
+    return summary.stdout.split(), ""
+
+
+#: `run: just <recipe> ...`, with just's own flags skipped so that `just --yes maintenance-clean`
+#: names the recipe rather than the flag.
+_JUST_CALL_RE = re.compile(r"\bjust\s+(?:--[\w-]+(?:[ =][^\s]+)?\s+)*([a-z][a-z0-9-]*)")
+
+
+def ci_jobs() -> dict[str, str]:
+    """Each job under `jobs:` in ci.yml, and the text of its block.
+
+    Split on the two-space job header, starting AFTER `jobs:` so that `on:`'s own `push:` and
+    `schedule:` keys are not mistaken for jobs.
+    """
+    body = read(".github/workflows/ci.yml").split("\njobs:\n", 1)[-1]
+    blocks: dict[str, list[str]] = {}
+    name = None
+    for line in body.splitlines():
+        header = re.match(r"^  ([a-z0-9-]+):\s*$", line)
+        if header:
+            name = header.group(1)
+            blocks[name] = []
+        elif name is not None:
+            blocks[name].append(line)
+    return {job: "\n".join(lines) for job, lines in blocks.items()}
+
+
+def recipes_a_job_runs(block: str) -> list[str]:
+    """The `just` recipes a job's steps invoke. Comment lines are dropped before looking.
+
+    ci.yml's jobs carry long explanatory comments that name recipes — the `sanitize` job's own notes
+    name four — so a scan that counted those would find a recipe invocation in a job with no steps.
+    """
+    commands = "\n".join(line for line in block.splitlines() if not line.lstrip().startswith("#"))
+    return sorted({match.group(1) for match in _JUST_CALL_RE.finditer(commands)})
+
+
 # --- testing-and-quality — argued Working at M3 ---------------------------------------------------
 #
 # capability-matrix.md: "At M3's closing commit: `cy_add_test` carrying the taxonomy's per-case
@@ -144,50 +306,67 @@ TESTING_CI_JOBS = ("sanitize", "sanitize-nightly", "quality", "specs", "generate
                    "profiles")
 
 
-def check_testing_and_quality() -> int:
-    report = Report("testing-and-quality", "M3")
-    taxonomy = read("tests/CMakeLists.txt")
+def _kinds_detail(kinds: dict[str, tuple[str, str]], incomplete: list[str]) -> str:
+    """What CMake says the taxonomy is, for the reader of a run."""
+    if not kinds:
+        return "the probe found no CY_TEST_BUDGET_<kind> at all"
+    stated = "  ".join(f"{kind}={budget}ns/{timeout}s" for kind, (budget, timeout) in sorted(kinds.items()))
+    return stated + (f"\nwithout both: {', '.join(incomplete)}" if incomplete else "")
 
-    # The taxonomy is DATA in tests/CMakeLists.txt rather than prose, which is what makes "a suite
-    # cannot be declared without a budget" true rather than a convention. Both halves — the per-case
-    # budget compiled into the binary and the per-suite CTest timeout — or the claim is half made.
-    budgets = set(re.findall(r"set\(CY_TEST_BUDGET_(\w+)\s", taxonomy))
-    timeouts = set(re.findall(r"set\(CY_TEST_TIMEOUT_(\w+)\s", taxonomy))
-    report.leg(bool(budgets) and budgets == timeouts,
+
+def _taxonomy_legs(report: Report, probe: Probe, properties: dict[str, dict[str, str]]) -> None:
+    """The four legs that are about what cy_add_test() PRODUCES, read out of CMake's own answers."""
+    kinds = {kind: (budget, timeout) for kind, budget, timeout in probe.of("taxonomy")}
+    incomplete = sorted(kind for kind, (budget, timeout) in kinds.items() if not budget or not timeout)
+    report.leg(bool(kinds) and not incomplete,
                "the taxonomy gives every kind both a per-case budget and a CTest timeout",
-               f"budgets: {', '.join(sorted(budgets)) or 'none'}\n"
-               f"timeouts: {', '.join(sorted(timeouts)) or 'none'}")
+               _kinds_detail(kinds, incomplete))
 
-    # `cy_add_test` is the one way a suite is declared, and the three things it must carry are the
-    # three the row is argued on: the budget compiled in, the kind as a CTest label, the timeout.
-    for fragment, claim in (
-        ("CY_TEST_BUDGET_NS=${CY_TEST_BUDGET_${arg_KIND}}",
-         "cy_add_test compiles the kind's per-case budget into the binary"),
-        ('LABELS "${arg_KIND}"', "cy_add_test gives every suite its kind as a CTest label"),
-        ("TIMEOUT ${CY_TEST_TIMEOUT_${arg_KIND}}",
-         "cy_add_test gives every suite the taxonomy's CTest timeout"),
-    ):
-        report.leg(fragment in taxonomy, claim, f"looked for: {fragment}")
+    # `PRIVATE_DEFINITIONS` as cy_add_test() actually passed them, captured by the probe's stub. A
+    # budget that is spelled in the file and not passed on does not appear here.
+    handed = {name: definitions for name, definitions in probe.of("module")}
+    wrong = []
+    for kind, (budget, _timeout) in sorted(kinds.items()):
+        definitions = handed.get(f"cy_test_{kind}_probe_{kind}", "")
+        if f"CY_TEST_BUDGET_NS={budget}ULL" not in definitions:
+            wrong.append(f"{kind}: cy_add_module got {definitions or 'no definitions'!r}, "
+                         f"not CY_TEST_BUDGET_NS={budget}ULL")
+    report.leg(bool(kinds) and not wrong,
+               "cy_add_test compiles the kind's per-case budget into the binary it declares",
+               "\n".join(wrong) or "\n".join(f"{name}: {definitions}"
+                                             for name, definitions in sorted(handed.items())))
 
-    # A kind in the table with no suite behind it is a budget nobody is under. `KIND` is matched over
-    # every CMakeLists.txt because suites are declared beside the module they test, not centrally.
-    declared: dict[str, int] = {kind: 0 for kind in sorted(budgets)}
-    for path in cmake_files():
-        for kind in re.findall(r"cy_add_test\([^)]*?KIND\s+(\w+)", path.read_text(encoding="utf-8"),
-                               re.DOTALL):
-            declared[kind] = declared.get(kind, 0) + 1
-    empty = [kind for kind in sorted(budgets) if not declared.get(kind)]
-    report.leg(not empty, "every kind in the taxonomy has at least one suite declared",
-               "  ".join(f"{kind}={declared.get(kind, 0)}" for kind in sorted(budgets))
-               + (f"\nno suite for: {', '.join(empty)}" if empty else ""))
+    # And what CTest will see, read from the file CMake's generator wrote.
+    unlabelled, mistimed = [], []
+    for kind, (_budget, timeout) in sorted(kinds.items()):
+        given = properties.get(f"{kind}.probe_{kind}")
+        if given is None:
+            unlabelled.append(f"{kind}: cy_add_test registered no test for it at all")
+            mistimed.append(f"{kind}: no test registered")
+            continue
+        if given.get("LABELS") != kind:
+            unlabelled.append(f"{kind}: CTest sees LABELS {given.get('LABELS', 'none')!r}")
+        if given.get("TIMEOUT") != timeout:
+            mistimed.append(f"{kind}: CTest sees TIMEOUT {given.get('TIMEOUT', 'none')!r}, "
+                            f"the taxonomy says {timeout}")
+    registered = "\n".join(f"{name}: LABELS {given.get('LABELS', 'none')!r} "
+                            f"TIMEOUT {given.get('TIMEOUT', 'none')!r}"
+                            for name, given in sorted(properties.items()))
+    report.leg(bool(properties) and not unlabelled,
+               "cy_add_test gives every suite its kind as a CTest label",
+               "\n".join(unlabelled) or registered)
+    report.leg(bool(properties) and not mistimed,
+               "cy_add_test gives every suite the taxonomy's CTest timeout",
+               "\n".join(mistimed) or "every registered suite carries the taxonomy's timeout")
 
-    references = sorted((REPO_ROOT / "tests/render/references").glob("*.png"))
-    report.leg(bool(references), "golden images are committed, not described",
-               f"{len(references)} reference image(s) in tests/render/references/")
 
-    # "a committed baseline and PER-BENCHMARK tolerances" — so the test is not that the file exists
-    # but that it covers what the tree actually registers, in both directions. A benchmark with no
-    # threshold cannot regress and a threshold with no benchmark is a threshold nobody runs.
+def _benchmark_leg(report: Report) -> None:
+    """"a committed baseline and PER-BENCHMARK tolerances" — over what the tree registers.
+
+    Not that the file exists but that it covers what the tree actually registers, in both
+    directions. A benchmark with no threshold cannot regress and a threshold with no benchmark is a
+    threshold nobody runs.
+    """
     registered = set()
     for path in (REPO_ROOT / "benchmarks").rglob("*.cpp"):
         registered.update(re.findall(r'CY_BENCHMARK\(\s*"([^"]+)"', path.read_text(encoding="utf-8")))
@@ -204,12 +383,67 @@ def check_testing_and_quality() -> int:
                f"threshold with no benchmark: {', '.join(orphans) or 'none'}\n"
                f"threshold missing ratio or tolerance: {', '.join(untoleranced) or 'none'}")
 
-    workflow = read(".github/workflows/ci.yml")
-    absent = [job for job in TESTING_CI_JOBS if not re.search(rf"^  {re.escape(job)}:$", workflow,
-                                                              re.MULTILINE)]
-    report.leg(not absent, "the quality jobs the row is argued on are declared in ci.yml",
-               f"expected: {', '.join(TESTING_CI_JOBS)}\n"
-               f"not declared: {', '.join(absent) or 'none'}")
+
+def _ci_jobs_leg(report: Report) -> None:
+    """The seven quality jobs, and WHAT THEY RUN.
+
+    THIS LEG WAS A WORD-GREP AND THE M11 GATE SAID SO IN THOSE WORDS: `^  <job>:$` in ci.yml is
+    "a word-grep a dummy job satisfies", demonstrated in the repair round by replacing all seven
+    jobs with `run: echo dummy` and watching the criterion stay green. The row's evidence is that
+    these jobs RUN the quality work, so that is what is asked: every one of them invokes at least one
+    `just` recipe, and every recipe any of them invokes is one the recipe surface actually carries —
+    a step calling a recipe that no longer exists is a job that fails on the runner and a gate that
+    gates nothing until someone reads the log.
+    """
+    jobs = ci_jobs()
+    recipes, unavailable = recipe_surface()
+    absent = [job for job in TESTING_CI_JOBS if job not in jobs]
+    inert = [job for job in TESTING_CI_JOBS if job in jobs and not recipes_a_job_runs(jobs[job])]
+    unknown = sorted({f"{job} -> just {recipe}" for job in TESTING_CI_JOBS if job in jobs
+                      for recipe in recipes_a_job_runs(jobs[job]) if recipe not in recipes})
+    detail = "\n".join(f"{job:<18} {', '.join(recipes_a_job_runs(jobs.get(job, ''))) or 'runs no recipe'}"
+                       for job in TESTING_CI_JOBS)
+    report.leg(not absent and not inert and not unknown and not unavailable,
+               "the quality jobs the row is argued on are declared in ci.yml AND each runs a recipe "
+               "the workflow carries",
+               detail
+               + (f"\nnot declared: {', '.join(absent)}" if absent else "")
+               + (f"\ndeclared but running no recipe: {', '.join(inert)}" if inert else "")
+               + (f"\nrecipe not in the workflow: {', '.join(unknown)}" if unknown else "")
+               + (f"\nthe recipe surface could not be read: {unavailable}" if unavailable else ""))
+
+
+def check_testing_and_quality() -> int:
+    report = Report("testing-and-quality", "M3")
+
+    probe, properties = taxonomy_probe()
+    report.leg(not probe.failure,
+               "the taxonomy configures, so cy_add_test can be asked what it does rather than read",
+               probe.failure or f"tools/roadmap/probes/taxonomy configured; "
+                                f"{len(probe.of('taxonomy'))} kind(s), "
+                                f"{len(properties)} suite(s) registered with CTest")
+    _taxonomy_legs(report, probe, properties)
+
+    # A kind in the table with no suite behind it is a budget nobody is under. Matched over every
+    # committed CMakeLists.txt because suites are declared beside the module they test, and with
+    # comment lines removed, because a commented-out declaration declares nothing.
+    kinds = [kind for kind, _budget, _timeout in probe.of("taxonomy")]
+    declared: dict[str, int] = {kind: 0 for kind in sorted(kinds)}
+    for path in cmake_files():
+        text = without_cmake_comments(path.read_text(encoding="utf-8"))
+        for kind in re.findall(r"cy_add_test\([^)]*?KIND\s+(\w+)", text, re.DOTALL):
+            declared[kind] = declared.get(kind, 0) + 1
+    empty = [kind for kind in sorted(kinds) if not declared.get(kind)]
+    report.leg(bool(kinds) and not empty, "every kind in the taxonomy has at least one suite declared",
+               "  ".join(f"{kind}={declared.get(kind, 0)}" for kind in sorted(kinds))
+               + (f"\nno suite for: {', '.join(empty)}" if empty else ""))
+
+    references = sorted((REPO_ROOT / "tests/render/references").glob("*.png"))
+    report.leg(bool(references), "golden images are committed, not described",
+               f"{len(references)} reference image(s) in tests/render/references/")
+
+    _benchmark_leg(report)
+    _ci_jobs_leg(report)
     return report.finish()
 
 
@@ -225,10 +459,13 @@ PROFILES = ("debug", "dev", "profile", "release")
 
 
 #: The three columns the profile table carries beside the profile's own name, as
-#: (the `CY_PROFILE_<p>_<suffix>` suffix in cmake/profiles.cmake, the justfile column, a label).
-PROFILE_COLUMNS = (("CONFIG", 1, "CMake configuration"),
-                   ("CARGO", 4, "Cargo profile"),
-                   ("SLANG", 5, "slangc flags"))
+#: (the key in the probe's `selected|` record, the justfile column, a label). The probe reports each
+#: one as CMake COMPUTED it: the configuration comes back from `cy_declare_build_configurations()`,
+#: which is the macro the top-level CMakeLists.txt calls, and the other two from the variables that
+#: macro's file defines.
+PROFILE_COLUMNS = ((1, 1, "CMake configuration"),
+                   (2, 4, "Cargo profile"),
+                   (3, 5, "slangc flags"))
 
 
 def justfile_profile_table() -> dict[str, list[str]]:
@@ -242,25 +479,29 @@ def justfile_profile_table() -> dict[str, list[str]]:
     return rows
 
 
-def profile_columns_disagreeing(rows: dict[str, list[str]], profiles_cmake: str) -> list[str]:
-    """Where the justfile's table and cmake/profiles.cmake say different things, or say nothing.
+def profile_columns_disagreeing(rows: dict[str, list[str]],
+                                derived: dict[str, list[str]]) -> list[str]:
+    """Where the justfile's table and what CMake DERIVES say different things, or say nothing.
 
     This is the comparison nothing in the tree makes end to end. `cmake/profiles.cmake` cross-checks
     itself against the justfile at CONFIGURE time and only when a caller supplies both, and neither
     file has ever been compared with the Cargo profile the editor is actually built with.
+
+    `derived` is the probe's answer per profile, not a regular expression over the file: the leg this
+    replaced matched commented-out `set()` lines and stayed green over a build system with no profile
+    table at all.
     """
     found = []
     for profile in PROFILES:
-        fields = rows.get(profile, [])
-        for suffix, index, label in PROFILE_COLUMNS:
-            stated = re.search(rf'set\(CY_PROFILE_{profile}_{suffix}\s+"?([^"\n)]+?)"?\s*\)',
-                               profiles_cmake)
-            expected = fields[index] if len(fields) > index else None
-            if stated is None or expected is None:
+        fields, stated = rows.get(profile, []), derived.get(profile, [])
+        for index, column, label in PROFILE_COLUMNS:
+            answered = stated[index] if len(stated) > index else None
+            expected = fields[column] if len(fields) > column else None
+            if not answered or expected is None:
                 found.append(f"{profile}/{label}: not stated in both files")
-            elif " ".join(stated.group(1).split()) != " ".join(expected.split()):
-                found.append(f"{profile}/{label}: cmake {stated.group(1).strip()!r} "
-                             f"against justfile {expected!r}")
+            elif " ".join(answered.split()) != " ".join(expected.split()):
+                found.append(f"{profile}/{label}: CMake derives {answered!r} "
+                             f"against the justfile's {expected!r}")
     return found
 
 
@@ -278,16 +519,6 @@ def pins_outside_the_manifest() -> list[str]:
     return found
 
 
-#: The four values `_cy_resolve_default` in cmake/features.cmake accepts. A fifth is a configure-time
-#: error, which is a failure nobody sees until they configure with that option.
-FEATURE_DEFAULTS = ("ON", "OFF", "DEVELOPMENT", "APPLE")
-
-
-def feature_options() -> list[tuple[str, str]]:
-    """`CY_FEATURE_OPTIONS`, one (name, default) per row. The table is data, so it is read as data."""
-    return re.findall(r'"(CY_[A-Z0-9_]+)\|([A-Z]+)\|', read("cmake/features.cmake"))
-
-
 def cargo_profiles(rows: dict[str, list[str]], cargo: str) -> tuple[list[str], list[str]]:
     """What `editor/Cargo.toml` declares, and which of the table's selections it does not.
 
@@ -299,28 +530,85 @@ def cargo_profiles(rows: dict[str, list[str]], cargo: str) -> tuple[list[str], l
     return declared, [name for name in selected if name not in declared]
 
 
+def profiles_as_cmake_derives_them() -> tuple[dict[str, Probe], Probe, list[str]]:
+    """Configure the profiles probe once per profile. What comes back is CMake's own answer.
+
+    One configure per profile rather than one for all four, because the question is what
+    `cy_declare_build_configurations()` DOES with `CY_PROFILE=<p>` — which is how `just` invokes the
+    real build — and that macro answers for the profile it was given. A profile the table no longer
+    carries is a FATAL_ERROR raised by the shipped macro, and arrives here as a refusal naming it.
+    """
+    probed: dict[str, Probe] = {}
+    refused: list[str] = []
+    last = Probe([], "no profile was probed")
+    for profile in PROFILES:
+        last = profiles_probe(profile)
+        if last.failure:
+            refused.append(f"{profile}: {_first_line(last.failure)}")
+            continue
+        probed[profile] = last
+    return probed, last, refused
+
+
+def _first_line(text: str) -> str:
+    """The most useful line of a CMake refusal: what it complained about, not that it stopped.
+
+    CMake's last word is always "Configuring incomplete, errors occurred!", which tells a reader
+    nothing. The line after `CMake Error` is the message the shipped code raised, and that is the
+    finding.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for index, line in enumerate(lines):
+        if line.startswith("CMake Error"):
+            return " ".join(lines[index:index + 2])[:240]
+    return lines[0][:200] if lines else "no output"
+
+
+def _profile_legs(report: Report, rows: dict[str, list[str]]) -> Probe:
+    """The four legs about the profile table, answered by configuring rather than by reading."""
+    probed, probe, refused = profiles_as_cmake_derives_them()
+    derived = {profile: answer.first("selected") for profile, answer in probed.items()}
+    report.leg(not refused,
+               "every profile configures: cmake/profiles.cmake derives a configuration for each",
+               "\n".join(refused) or "\n".join(f"CY_PROFILE={profile} -> {' | '.join(stated[1:])}"
+                                               for profile, stated in sorted(derived.items())))
+
+    listed = probe.first("profiles")
+    report.leg(bool(listed) and tuple(listed[0].split()) == PROFILES,
+               "CY_PROFILES, as CMake computes it, is the same four in the same order",
+               f"CY_PROFILES = {listed[0] if listed else 'the probe reported none'}")
+
+    disagreeing = profile_columns_disagreeing(rows, derived)
+    report.leg(not disagreeing and not refused,
+               "every profile means the same thing in CMake, Cargo and the shader toolchain",
+               "\n".join(disagreeing)
+               or "the CMake, Cargo and Slang columns agree between the justfile and what "
+                  "cmake/profiles.cmake derives")
+
+    # The map back. `cy_profile_for_configuration()` is the function anything holding only a
+    # configuration uses, and a table half of whose rows were lost round-trips for the other half.
+    broken = [f"{profile}: {' -> '.join(mapped) or 'the probe reported no round trip'}"
+              for profile, answer in sorted(probed.items())
+              for mapped in [answer.first("roundtrip")]
+              if len(mapped) < 2 or mapped[1] != profile]
+    report.leg(not broken and not refused,
+               "and the configuration maps back to the profile it came from",
+               "\n".join(broken) or "cy_profile_for_configuration answers with the profile for "
+                                    "each of the four configurations")
+    return probe
+
+
 def check_build_system_and_platforms() -> int:
     report = Report("build-system-and-platforms", "M4")
     rows = justfile_profile_table()
-    profiles_cmake = read("cmake/profiles.cmake")
-    cargo = read("editor/Cargo.toml")
 
     report.leg(tuple(sorted(rows)) == tuple(sorted(PROFILES)),
                "the justfile's profile table names exactly the four profiles",
                f"named: {', '.join(sorted(rows)) or 'none'}")
 
-    listed = re.search(r"set\(CY_PROFILES\s+([^\n)]+)", profiles_cmake)
-    report.leg(bool(listed) and tuple(listed.group(1).split()) == PROFILES,
-               "cmake/profiles.cmake lists the same four, in the same order",
-               f"CY_PROFILES = {listed.group(1).strip() if listed else 'not set'}")
+    probe = _profile_legs(report, rows)
 
-    disagreeing = profile_columns_disagreeing(rows, profiles_cmake)
-    report.leg(not disagreeing,
-               "every profile means the same thing in CMake, Cargo and the shader toolchain",
-               "\n".join(disagreeing)
-               or "the CMake, Cargo and Slang columns agree between the justfile and profiles.cmake")
-
-    declared, missing = cargo_profiles(rows, cargo)
+    declared, missing = cargo_profiles(rows, read("editor/Cargo.toml"))
     report.leg(not missing, "editor/Cargo.toml declares every profile the table selects",
                f"declared: {', '.join(declared) or 'none'}\n"
                f"selected but not declared: {', '.join(missing) or 'none'}")
@@ -331,12 +619,16 @@ def check_build_system_and_platforms() -> int:
                "the workflow itself answers with the four profiles when asked",
                f"just _profiles -> {' '.join(answered.stdout.split()) or answered.stderr.strip()}")
 
-    options = feature_options()
-    unrecognised = [name for name, default in options if default not in FEATURE_DEFAULTS]
-    report.leg(bool(options) and not unrecognised,
-               "the feature options are a table with a default the resolver accepts",
-               f"{len(options)} option(s)\n"
-               f"unrecognised default: {', '.join(unrecognised) or 'none'}")
+    # THE FEATURE OPTIONS ARE DECLARED RATHER THAN MATCHED, for the same reason as the profiles:
+    # `cy_declare_features()` runs every row through `_cy_resolve_default()` and calls `option()`, so
+    # a row with a default the resolver does not accept is a configure failure — reported by the leg
+    # above — and a row that exists only in a comment declares no option and is absent here.
+    options = {name: value for name, value in probe.of("feature")}
+    report.leg(bool(options), "the feature options are declared by cmake/features.cmake's own table "
+                              "through its own resolver",
+               f"{len(options)} option(s) declared: "
+               f"{', '.join(f'{name}={value}' for name, value in sorted(options.items()))}"
+               if options else "cy_declare_features() declared nothing")
 
     pinned = pins_outside_the_manifest()
     report.leg(not pinned, "no CMake file carries a pin the dependency manifest should own",
@@ -344,12 +636,14 @@ def check_build_system_and_platforms() -> int:
                or "every fetch reads its repository and commit from deps/manifest.toml")
 
     # And every gated dependency names a feature that exists, or `-D CY_X=OFF` excludes nothing
-    # because there is no CY_X.
-    known = {name for name, _ in options}
+    # because there is no CY_X. `options` is what CMake DECLARED, so a feature the manifest gates on
+    # that features.cmake only mentions in a comment is a finding rather than a match.
     unknown = [f"{entry.get('name')} -> {entry.get('feature', '')!r}" for entry in manifest_entries()
-               if entry.get("optional") == "true" and entry.get("feature", "") not in known]
-    report.leg(not unknown, "every optional dependency is gated by a feature option that exists",
-               "\n".join(unknown) or "every `feature` in deps/manifest.toml is in CY_FEATURE_OPTIONS")
+               if entry.get("optional") == "true" and entry.get("feature", "") not in options]
+    report.leg(bool(options) and not unknown,
+               "every optional dependency is gated by a feature option that exists",
+               "\n".join(unknown) or "every `feature` in deps/manifest.toml is an option "
+                                     "cy_declare_features() declared")
 
     # "THE SWIFT TOOLCHAIN INTEGRATION THE REQUIREMENT NAMES, which is the rung at which the build
     # system had to serve a second toolchain" — and the overlay is generated from the ABI rather than
@@ -436,18 +730,25 @@ def category_tally(recipes: list[str], refusing: dict[str, bool]):
 def check_developer_workflow_and_just() -> int:
     report = Report("developer-workflow-and-just", "M6")
 
-    summary = subprocess.run(["just", "--summary"], cwd=REPO_ROOT, capture_output=True, text=True,
-                             check=False)
-    recipes = summary.stdout.split()
-    report.leg(summary.returncode == 0 and bool(recipes),
+    recipes, unavailable = recipe_surface()
+    report.leg(bool(recipes) and not unavailable,
                "the recipe surface loads: every imported category file parses",
-               f"{len(recipes)} public recipe(s)" if recipes else summary.stderr.strip()[:400])
+               f"{len(recipes)} public recipe(s)" if recipes else unavailable)
 
-    # The helper is how a refusal is recognised below. If it is gone, every recipe would read as
-    # implemented and this check would pass over a workflow that refuses everywhere.
-    report.leg("_not-implemented recipe task:" in read("justfile"),
-               "the one shape an unimplemented recipe takes is still the shape this check looks for",
-               "justfile defines `_not-implemented`")
+    # THE HELPER IS RUN, NOT SPELLED. It is how a refusal is recognised below, so if it were gone
+    # every recipe would read as implemented and this check would pass over a workflow that refuses
+    # everywhere — and the leg that guarded against that used to be `"_not-implemented recipe task:"
+    # in read("justfile")`, which a comment satisfies. `just` is asked to run it instead: a refusal
+    # is an exit status and a sentence naming the recipe and its task, and a helper that has been
+    # renamed away answers `Justfile does not contain recipe`, which carries neither.
+    refusal = subprocess.run(["just", "_not-implemented", "probe-recipe", "probe-task"],
+                             cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    said = (refusal.stdout + refusal.stderr).strip()
+    report.leg(refusal.returncode != 0
+               and "just probe-recipe: not implemented (task probe-task)" in said,
+               "the one shape an unimplemented recipe takes still refuses when it is run",
+               f"just _not-implemented probe-recipe probe-task -> exit {refusal.returncode}: "
+               f"{said.splitlines()[0][:200] if said else 'it said nothing'}")
 
     detail, empty, all_refusing = category_tally(recipes, refusing_recipes())
     report.leg(not empty and not all_refusing,

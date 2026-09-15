@@ -76,6 +76,17 @@ struct Options {
     u32 regions = 24;
     u64 seed = WorldOptions{}.seed;
     f32 seconds = 24.0F;
+    /// The frame budget this run is JUDGED against, in milliseconds, or zero for "report only".
+    ///
+    /// WHY THE ASSERTION IS IN THE PROGRAM AND NOT IN THE LEDGER THAT CALLS IT. `m10:world-frame-
+    /// budget` runs this binary by absolute path, writes a CSV and judges the CSV in Python; the
+    /// two M11.a criteria that replace it were written as `just run-sample ... --budget-ms 16.7`
+    /// and neither the sample name nor the flag existed, so BOTH EXITED 2 — "no sample '10-world'"
+    /// — on every machine, and `roadmap-falsify` recorded that exit as "red against a built tree",
+    /// which is what a criterion that is red because its subject failed also records. A check that
+    /// cannot run is not distinguishable from a check that ran and failed, which is this project's
+    /// seven-times defect one level up. The flag exists so the two are different runs.
+    f32 budget_ms = 0.0F;
     bool headless = false;
 };
 
@@ -199,7 +210,9 @@ private:
             cursor.number("--height", out.height) || cursor.number("--fps", out.fps) ||
             cursor.number("--still-frame", out.still_frame) ||
             cursor.number("--regions", out.regions) || cursor.number("--seed", out.seed) ||
-            cursor.number("--seconds", out.seconds) || cursor.flag("--headless", out.headless);
+            cursor.number("--seconds", out.seconds) ||
+            cursor.number("--budget-ms", out.budget_ms) ||
+            cursor.flag("--headless", out.headless);
         if (!recognised) {
             const std::string_view argument = cursor.current();
             std::fprintf(stderr, "unknown argument: %.*s\n", static_cast<int>(argument.size()),
@@ -457,6 +470,87 @@ void print_budget(const Take& take) {
     std::printf("  the whole curve is in the CSV; the video's companion figure plots it.\n");
 }
 
+/// The mean of every band of the take, largest first, and the frame that was worst.
+///
+/// `producers_ms` is deliberately NOT a band: it is the SUM of six of the ones below it, so a table
+/// that included it would report the total as the largest band and say nothing about where the time
+/// goes. `m10:world-frame-budget`'s own Python excludes it for the same reason, and this function
+/// exists so the two presentations are one implementation rather than two that can drift.
+struct Band {
+    const char* name;
+    f64 mean_ms;
+};
+
+/// JUDGE the take against a budget. Returns false when the worst frame is over it.
+///
+/// THE WORST FRAME AND NOT THE MEAN, because a budget a frame misses is a frame that stutters, and
+/// a mean inside 16.7 ms with a worst at 40 is a scene that hitches once a second. `m10:world-frame-
+/// budget` judges the worst for the same reason and this reproduces its arithmetic.
+[[nodiscard]] bool judge_budget(const Take& take, f32 budget_ms) {
+    if (take.costs.empty()) {
+        std::fprintf(stderr,
+                     "--budget-ms was given and the take recorded no frame at all, so there is "
+                     "nothing to judge: a budget held over zero frames is the emptiest false "
+                     "green there is\n");
+        return false;
+    }
+    const auto frames = static_cast<f64>(take.costs.size());
+    f64 worst = 0.0;
+    f64 mean = 0.0;
+    usize worst_frame = 0;
+    Band bands[] = {{"weather_ms", 0.0},       {"water_ms", 0.0},
+                    {"ocean_ms", 0.0},         {"sky_ms", 0.0},
+                    {"terrain_shade_ms", 0.0}, {"foliage_ms", 0.0},
+                    {"stage_build_ms", 0.0},   {"stage_submit_ms", 0.0}};
+    for (usize frame = 0; frame < take.costs.size(); ++frame) {
+        const FrameCosts& cost = take.costs[frame];
+        const StageReport& drawn = take.drawn[frame];
+        const f64 total = cost.total() + drawn.build_ms + drawn.submit_ms;
+        mean += total;
+        if (total > worst) {
+            worst = total;
+            worst_frame = frame;
+        }
+        bands[0].mean_ms += cost.weather_ms;
+        bands[1].mean_ms += cost.water_ms;
+        bands[2].mean_ms += cost.ocean_ms;
+        bands[3].mean_ms += cost.sky_ms;
+        bands[4].mean_ms += cost.terrain_shade_ms;
+        bands[5].mean_ms += cost.foliage_ms;
+        bands[6].mean_ms += drawn.build_ms;
+        bands[7].mean_ms += drawn.submit_ms;
+    }
+    mean /= frames;
+    for (Band& band : bands) {
+        band.mean_ms /= frames;
+    }
+    const usize count = sizeof(bands) / sizeof(bands[0]);
+    for (usize outer = 0; outer + 1 < count; ++outer) {
+        for (usize inner = 0; inner + 1 < count - outer; ++inner) {
+            if (bands[inner + 1].mean_ms > bands[inner].mean_ms) {
+                const Band held = bands[inner];
+                bands[inner] = bands[inner + 1];
+                bands[inner + 1] = held;
+            }
+        }
+    }
+    std::printf("\n=== judged against a %.1f ms budget ===\n", static_cast<double>(budget_ms));
+    std::printf("  %llu frames: %.1f ms mean, %.1f ms worst (frame %llu), %.1fx the budget at the "
+                "worst frame\n",
+                static_cast<unsigned long long>(take.costs.size()), mean, worst,
+                static_cast<unsigned long long>(worst_frame), worst / static_cast<f64>(budget_ms));
+    std::printf("  the three largest bands: %s %.1f ms, %s %.1f ms, %s %.1f ms\n", bands[0].name,
+                bands[0].mean_ms, bands[1].name, bands[1].mean_ms, bands[2].name, bands[2].mean_ms);
+    if (worst <= static_cast<f64>(budget_ms)) {
+        std::printf("  INSIDE the budget at every frame of the cycle.\n");
+        return true;
+    }
+    std::fprintf(stderr,
+                 "  OVER the budget: the worst frame of the cycle costs %.1f ms against %.1f ms.\n",
+                 worst, static_cast<double>(budget_ms));
+    return false;
+}
+
 /// Open the device and upload what never changes. Absent-device is SUCCESS with `available()`
 /// false, and the caller decides what that means.
 [[nodiscard]] Status open_stage(Stage& stage, const World& world, const Options& options) {
@@ -538,6 +632,19 @@ int main(int argc, char** argv) {
                          "producer in this artefact runs on the processor and only the picture "
                          "needs a device.\n",
                          stage.absence());
+            // AND THAT IS A FAILURE WHEN A BUDGET WAS TO BE JUDGED WITH A DEVICE DRAWING.
+            // `m11a:world-budget-on-a-device`'s whole subject is the submit-and-wait band that
+            // only a device produces; returning 0 here would report "the budget held" for a run in
+            // which nothing was drawn, which is the same shape as a suite that skips and is read as
+            // a pass. The headless claim is the one every machine can judge and it is a separate
+            // criterion.
+            if (options.budget_ms > 0.0F) {
+                std::fprintf(stderr,
+                             "--budget-ms was given without --headless, so this run was to be "
+                             "judged WITH a device drawing, and none answered. That is not a "
+                             "budget held.\n");
+                return 1;
+            }
             return 0;
         }
     }
@@ -556,10 +663,20 @@ int main(int argc, char** argv) {
     }
 
     print_budget(take);
+    // WHAT THIS ARTEFACT STREAMS, AT THE END OF THE TAKE RATHER THAN AT THE START, because eviction
+    // is something a take does and not something a build reports. `m11a:world-streams` reads these
+    // two numbers; both are zero and the criterion is RED, which is the honest state of
+    // `world-partition-and-streaming` in this tree.
+    const World::StreamingReport streamed = world.streaming();
+    std::printf("\n=== world-partition-and-streaming: what this artefact streams ===\n");
+    std::printf("  tiles_cooked: %u  tiles_resident: %u  evicted: %u  stitched_vertices: %u\n",
+                streamed.tiles_cooked, streamed.tiles_resident, streamed.tiles_evicted,
+                streamed.stitched_vertices);
     if (!options.budget.empty() &&
         !write_budget(options.budget, take.costs, take.day, take.sun, take.rain, take.drawn)) {
         return 1;
     }
+    const bool budget_held = options.budget_ms <= 0.0F || judge_budget(take, options.budget_ms);
 
     if (wants_pictures) {
         std::printf("\n  %llu frames written to %s, vulkan validation errors: %u\n",
@@ -570,5 +687,5 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    return 0;
+    return budget_held ? 0 : 1;
 }

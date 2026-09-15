@@ -37,14 +37,59 @@ cy_add_module(
     ALIAS cy::gameplay-play
     TYPE STATIC
     SOURCES
+        src/driver.cpp
+        src/launcher.cpp
         src/mode.cpp
         src/session.cpp
         src/spawn.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-determinism cy::core-math cy::core-memory
-                        cy::core-values cy::ecs cy::gameplay cy::physics-bridge cy::scene
-                        cy::scene-serialization
-    PRIVATE_DEPENDENCIES cy::core-diagnostics)
+                        cy::core-platform cy::core-values cy::ecs cy::gameplay cy::physics-bridge
+                        cy::scene cy::scene-serialization
+    PRIVATE_DEPENDENCIES cy::core-assets cy::core-diagnostics)
+
+# ================================================================================================
+# THE SECOND RUNTIME PROCESS
+# ================================================================================================
+#
+# `live-editing` (Play modes) gives `SeparateProcess` a runtime location — "A second runtime
+# process" — and `editor-architecture` ("Standalone play") requires that selecting it LAUNCH one.
+# Until the repair round that added this target, `PlayModeSupport::runtime_launcher` was a literal
+# `true` beside a comment saying the build carried no launcher, and the suite that claimed to drive
+# "a world in each of the three modes" built three sessions in ONE process. This is the process the
+# claim was about.
+#
+# IT IS NOT BEHIND CY_BUILD_TESTS, and that is the difference between a probe and a product. The
+# runtime probes in src/runtime/ exist for one test each and a shipping tree has no use for them;
+# this binary IS separate-process play. A build that omitted it would report the mode unavailable —
+# `runtime_launcher_available()` asks the filesystem — which is an honest answer to give about a
+# tree that chose not to build its own runtime, and not one to give about a shipping engine.
+#
+# WHAT IT LINKS IS THE ISOLATION CLAIM. "Editor-only state SHALL be absent from the runtime" is not
+# a boolean on a capability table; it is this list. There is no cy::abi, no editor bridge and no
+# editor services here, and the editor itself is a Rust application in another workspace. Editor
+# state is absent because there is no expression in this binary that could reach any.
+#
+# LAYER runtime rather than tools: it is the engine running a world, not something that consumes the
+# engine to produce an artefact. Layer 5 is also what lets it link the SDL3 platform at layer 3,
+# which it needs for one thing only — to measure its own `PlayModeSupport` the same way the launcher
+# did, against its own directory, instead of asserting that being launched proves a launcher.
+#
+# RUNTIME_OUTPUT_DIRECTORY is the build root, because that is where the executables that launch it
+# are: `RuntimeProcess` resolves the host "beside the calling executable", and the same rule has to
+# hold in a build tree and in an installed layout or the resolution would need to know which it is
+# looking at.
+cy_add_module(
+    NAME cy_play_runtime_host
+    LAYER runtime
+    TYPE EXECUTABLE
+    ALIAS cy::play-runtime-host
+    SOURCES host/main.cpp
+    PRIVATE_DEPENDENCIES cy::core-assets cy::core-memory cy::gameplay-play cy::physics-reference
+                         cy::platform-desktop-sdl3 cy::scene cy::scene-serialization)
+
+set_target_properties(cy_play_runtime_host PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
