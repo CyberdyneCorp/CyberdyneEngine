@@ -601,9 +601,17 @@ is the forcing function `ui-system` requires by name (task 7.5).
 ## 13. The gate
 
 - [ ] 13.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
-- [ ] 13.2 **Every criterion executes something and can fail** — break what it checks and prove it
+- [x] 13.2 **Every criterion executes something and can fail** — break what it checks and prove it
       goes red. This is the check M9's gate added after a criterion passed 44 of 44 with its
-      enforcement point deleted, and M10's gate used it to refuse four claims
+      enforcement point deleted, and M10's gate used it to refuse four claims.
+      DONE for all 33 of `m11b.toml`'s criteria, recorded one entry each in
+      `tools/roadmap/falsifiability.toml`: 8 `proven` (mutated in a sandbox, watched red),
+      9 `proven against a built tree` (mutated in the WORKING tree, rebuilt over, watched red,
+      restored, watched green again — `just roadmap-falsify prove --build-dir <dir>
+      --mutate-the-tree`), and 16 red unmutated — 8 in the tree, 8 against a build — which is this
+      rung being open. Nine of those criteria had no proof of any kind before this round: they PASSED
+      against a build and the prover had nothing that could turn them red, which is the shape of all
+      seven unfalsifiable criteria this mechanism exists to end
 - [ ] 13.3 **Adversarial pass on this rung's own invariants**: select a play mode that is not
       available and confirm it refuses by name rather than falling back; reach past the public plugin
       API from a built-in editor and confirm the build fails; give two authored nodes the same name

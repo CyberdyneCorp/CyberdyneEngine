@@ -1256,6 +1256,29 @@ def test_falsifiability_rules(root: Path) -> None:
           "no-assertion" not in _rules('CARGO_TARGET_DIR="$(just _editor-target-dir)" cargo test'))
 
 
+def test_falsifiability_reads_a_redirection(root: Path) -> None:
+    """A file descriptor in front of a redirection is not a path the criterion searches.
+
+    `grep -rl token src/ 2>/dev/null` — the reader over committed shell took the `2` as an operand,
+    so the mutation derived from it named a file called "2" alongside the real one. It matched
+    nothing, which is what made it worth fixing rather than urgent: a recorded proof that names a
+    path which does not exist reads like a proof about that path. Both directions are checked,
+    because a rule that ate a real operand would be the same defect the other way up.
+    """
+    del root
+    searched = falsify_module.searches("grep -rl kToken src/ 2>/dev/null")
+    check("a redirection's file descriptor is not one of the paths searched",
+          searched and searched[0].paths == ("src/",), str(searched))
+    kept = falsify_module.searches("grep -rl kToken src/ 2 3")
+    check("while an operand that happens to be a digit is still an operand",
+          kept and kept[0].paths == ("src/", "2", "3"), str(kept))
+    derived = falsify_module.derive(_criterion(
+        "fixture", 'count=$(grep -rl kTokenLiteral src/ 2>/dev/null | wc -l)\ntest "$count" -ge 1'))
+    check("and the mutation derived from it names only the real path",
+          derived is not None and derived.target == "src/",
+          derived.target if derived else "nothing derived")
+
+
 def test_falsifiability_digest(root: Path) -> None:
     """The digest is over what a criterion CHECKS, so prose is free and a changed check is not."""
     del root
@@ -1721,6 +1744,7 @@ def main() -> int:
         test_just_arguments(_area(root, "just-arguments"))
         test_matrix_requirement_counts(_area(root, "reqs-column"))
         test_falsifiability_rules(_area(root, "falsify-rules"))
+        test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
         if not _nested():

@@ -269,11 +269,22 @@ def _tokenise(text: str) -> list[str] | None:
         return None
 
 
+#: The separators that are REDIRECTIONS. A bare file descriptor number written in front of one —
+#: `grep -rl token src/ 2>/dev/null` — is part of the redirection and not a path to search, and
+#: reading it as one is how `m11b:source-control-provider` came to declare a mutation against a file
+#: called "2". Harmless in that it matched nothing, which is exactly what made it worth fixing: a
+#: recorded proof naming a path that does not exist reads like a proof about that path.
+_REDIRECTIONS = frozenset({">", ">>", "<", "<<", "|&"})
+_FILE_DESCRIPTOR = re.compile(r"^[0-9]$")
+
+
 def _split_on_separators(tokens: list[str]) -> list[list[str]]:
     commands: list[list[str]] = []
     current: list[str] = []
     for token in tokens:
         if token in _SEPARATORS:
+            if token in _REDIRECTIONS and current and _FILE_DESCRIPTOR.match(current[-1]):
+                current.pop()
             commands.append(_strip_assignments(current))
             current = []
         else:

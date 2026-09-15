@@ -576,7 +576,7 @@ ledger = "m11b"
 criterion = "source-control-provider"
 digest = "bb8deacc6f10dcfc"
 verdict = "proven against a built tree"
-mutation = "rename-token 'NullSourceControl\\x1fSourceControlProvider' in 2,editor/crates/,src/ (derived)"
+mutation = "rename-token 'NullSourceControl\\x1fSourceControlProvider' in editor/crates/,src/ (derived)"
 detail = "red under mutation of 2 file(s), rebuilt against build/repair-1-4 (exit 1: none — the seven hits in the tree are comments), and green again once restored"
 
 [[proof]]
