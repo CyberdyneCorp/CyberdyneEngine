@@ -1180,10 +1180,16 @@ def _ledger_blind(sandbox: Sandbox, criterion: criteria_module.Criterion) -> str
     return ""
 
 
+#: The sandbox's own path, which several `just` recipes echo as `cd "<root>"`. It is a fresh
+#: temporary directory on every run, so leaving it in a recorded detail would make the inventory
+#: churn on every `--record` for no change anyone made.
+_SANDBOX_PATH = re.compile(r"/tmp/cy-\w+-\w+/tree")
+
+
 def _first_line(output: str) -> str:
     for line in output.splitlines():
         if line.strip():
-            return line.strip()[:160]
+            return _SANDBOX_PATH.sub("<sandbox>", line.strip())[:160]
     return "(no output)"
 
 
@@ -1191,7 +1197,7 @@ def _last_line(output: str) -> str:
     """The LAST thing a check said, which is where a report that prints its legs puts the verdict."""
     for line in reversed(output.splitlines()):
         if line.strip():
-            return line.strip()[:160]
+            return _SANDBOX_PATH.sub("<sandbox>", line.strip())[:160]
     return "(no output)"
 
 

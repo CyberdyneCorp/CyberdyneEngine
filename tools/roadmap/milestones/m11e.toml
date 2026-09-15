@@ -324,7 +324,7 @@ python3 - <<'CHECK'
 import pathlib, sys
 sys.path.insert(0, "tools/roadmap")
 import record as record_module
-entries = record_module.read()
+entries = record_module.load()
 register = pathlib.Path("docs/roadmap/risks.md").read_text(encoding="utf-8")
 short = []
 for entry in sorted(entries, key=lambda item: item.capability):
@@ -404,7 +404,7 @@ import plan as plan_module
 import record as record_module
 import gates as gates_module
 matrix = plan_module.read_matrix()
-entries = {entry.capability: entry for entry in record_module.read()}
+entries = {entry.capability: entry for entry in record_module.load()}
 gates = tomllib.loads(pathlib.Path("tools/roadmap/gates.toml").read_text(encoding="utf-8"))
 closed = {gate["milestone"] for gate in gates["gate"]
           if gate.get("class") == "milestone" and gate.get("state") == "green"}

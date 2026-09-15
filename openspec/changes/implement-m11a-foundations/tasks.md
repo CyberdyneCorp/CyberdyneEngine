@@ -294,6 +294,39 @@ and `_check_tiers` treats an exit tier as a **floor**, so `seed` can never contr
 - [ ] 5.5 The `known_gap` declaration is deleted from `m9.toml` **only** when the four criteria run
       green and the four rows are recorded, in the change that does both — a declared gap that starts
       passing fails the ledger
+- [x] 5.6 **AND THE GUARD OVER THE FOUR COULD NOT DETECT TWO OF THE FOUR DELETIONS — REPAIR 1**, in
+      the gate's own words: `the-four-rows-are-evaluated` asked whether the row's name appeared in a
+      criterion's `source`, and `source` is a **citation**. Eight criteria in M11.a's plan cite
+      `testing-and-quality` because that specification governs them and seven cite
+      `developer-workflow-and-just`, so deleting the criterion that actually evaluated either row
+      left the bystanders answering for it. Reproduced against `HEAD` before repairing: deleting
+      `testing-and-quality-at-working` and deleting `developer-workflow-at-working` each left the old
+      guard **green**, and the other two took it red — two of four, exactly as the gate said.
+      **The question now has a field to be asked of.** `criterion.evaluates` is declared by the
+      criterion that does the evaluating and by nothing else (`criteria._check_evaluates`,
+      `criteria.evaluators`, four selftest cases including the citation that must NOT count), and the
+      guard reads it through `build_plan` so that a declaration in m11d is still not a check this
+      rung runs. Deleting each of the four `[[criterion]]` tables whole now takes it **red**, all
+      four verified, `m11a.toml` restored md5-identical. It also grew the ordering leg this gap is
+      about: **no rung may expect a row above `seed` before the rung that evaluates it**, and the
+      record's own tier may not be ahead of the evaluation either.
+- [x] 5.7 **All four evaluators now carry a proof the tooling re-earns on every `just roadmap-test`**,
+      where 5.3's demonstration was twenty-six mutations in a spike directory that nothing re-runs.
+      `testing-and-quality-at-working` goes red with the per-case budgets deleted from the taxonomy;
+      `build-system-at-working` with `set(CY_PROFILES` deleted from `cmake/profiles.cmake`;
+      `the-four-rows-are-evaluated` with one evaluator's declaration deleted. `developer-workflow-at-working`
+      is a **declared gap** and is judged the other way round — it is red on the unmutated tree, which
+      is what a gap IS, so its mutation must make it **GREEN**: the Release category stops refusing
+      and it passes, which is the difference between a deadline and a check that can never pass
+      (`falsify._prove_a_declared_gap`, three selftest cases). `thirdparty-dependencies-at-working`
+      cannot be judged by a source-only sandbox — its gating leg configures CMake twice and fetches,
+      which is why its ledger asks for 7200 s — so a criterion whose declared budget is past the
+      ledger default is routed to the build-backed proof, and it is recorded **red against a built
+      tree**: watched failing in 5 m 39 s on `build/repair-1-2`, three legs holding and the gating leg
+      short on `steam_audio`'s PFFFT. Two SOURCE defects were found and fixed on the way: `cmake_files()`
+      crashed outside a git repository, which is where every proof runs, and `m11e`'s two record
+      criteria called `record.read()`, which does not exist — the criterion that CLOSES this gap was
+      failing on an AttributeError rather than on the four cells it exists to name
 
 ## 6. `save-and-persistence`, re-scoped rather than demoted a third time
 

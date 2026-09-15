@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 66 proven, 575 not yet shown able to fail.
+# 69 proven, 572 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -178,6 +178,30 @@ digest = "d4e6c1db6fb2a65b"
 verdict = "proven"
 mutation = "rename-token 'separate-process' in src/gameplay/play/src/mode.cpp (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11e"
+criterion = "one-point-oh-record"
+digest = "aa9bff960cdac1ff"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded working, and no deferral names it"
+
+[[proof]]
+ledger = "m11e"
+criterion = "one-point-oh-record-states-what-it-is-not"
+digest = "f6bdafa56de42492"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): no docs/roadmap/release-1.0.md — the 1.0 record does not exist"
+
+[[proof]]
+ledger = "m11e"
+criterion = "record-matches-plan-history-closed"
+digest = "5cd78f1302b398ca"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): M4 build-system-and-platforms: working planned, seed recorded"
 
 [[proof]]
 ledger = "m2"
@@ -2413,22 +2437,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11e"
-criterion = "one-point-oh-record"
-digest = "ebe2036341bddaa7"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "one-point-oh-record-states-what-it-is-not"
-digest = "f6bdafa56de42492"
-verdict = "not provable here"
-mutation = "rename-token 'is not\\x1fshould not expect' in docs/roadmap/release-1.0.md (derived)"
-detail = "the positive control failed in the sandbox (exit 1): no docs/roadmap/release-1.0.md — the 1.0 record does not exist"
-
-[[unproven]]
-ledger = "m11e"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
 verdict = "no mutation"
@@ -2439,14 +2447,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11e"
 criterion = "porting-surface-against-a-real-non-desktop"
 digest = "388483f34e425433"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "record-matches-plan-history-closed"
-digest = "cc03d577bf35c84e"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
