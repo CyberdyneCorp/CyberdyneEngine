@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 126 proven, 515 not yet shown able to fail.
+# 128 proven, 513 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -218,6 +218,14 @@ digest = "332ed56e5ef61f0e"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "lint"
+digest = "ba47a839980d2717"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in src/core/memory/src/tracking_allocator.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -466,6 +474,14 @@ digest = "332ed56e5ef61f0e"
 verdict = "proven"
 mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "lint"
+digest = "ba47a839980d2717"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in src/core/memory/src/tracking_allocator.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -1789,14 +1805,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11a"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11a"
 criterion = "lockstep-agrees-across-architectures"
 digest = "60e6f3a4e2189346"
 verdict = "not provable here"
@@ -1810,14 +1818,6 @@ digest = "565916878ca0f292"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: one host with one GPU vendor cannot compare two; `requires = \"gpu\"` would make this RUN here and PASS on one driver's floating-point behaviour, which is not the claim — CI job 'milestone-m11a'"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11c"

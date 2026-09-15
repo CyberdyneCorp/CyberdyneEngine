@@ -19,7 +19,7 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `tools/roadmap/milestones/<id>.toml` | One milestone's **new** exit criteria — what it adds to the permanent set, not what it inherits. `m0.toml` through `m4.toml` today; M5 through M11 add a file each and should change no code — M3 added one line, the `gpu` requirement below, because it is the first milestone whose criteria need hardware, M4 added the `MINIMUM_CRITERIA` floors below, because its ledger was otherwise covered by nothing, and M5 removed the `m<n>-green` chaining criteria for the reason under "A ledger is flat". |
 | `tools/roadmap/gates.toml` | The permanent merge-gate set, and the overrides recorded against it. |
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
-| `falsify.py` | Whether a criterion can go RED. Breaks what each one names, in a sandboxed copy of the tree, and requires it to fail. `just roadmap-falsify`. |
+| `falsify.py` | Whether a criterion can go RED. Breaks what each one names — in a sandboxed copy of the tree, or, for the criteria only a build can judge, in the working tree under `--mutate-the-tree` — and requires it to fail. `just roadmap-falsify`. |
 | `falsifiability.toml` | Generated. What the ladder has shown can fail, and the list — which only shrinks — of what it has not. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
@@ -115,15 +115,16 @@ changes when the roadmap is deleted was reading the roadmap.
 
 ### A criterion that is already red has been watched going red
 
-A proof therefore comes in three shapes, and the second and third are for the criteria that cannot
-pass a positive control because they are failing *right now* — which is most of a rung's ledger
-while the rung is open:
+A proof therefore comes in four shapes. The second and third are for the criteria that cannot pass a
+positive control because they are failing *right now* — which is most of a rung's ledger while the
+rung is open — and the fourth is for the ones whose subject is a **compiled artefact**:
 
 | Verdict | What was observed |
 |---|---|
 | `proven` | it passes, and the mutation the tooling applied turned it **red** |
 | `red in the tree` | it **fails as written**, in the sandbox *and* in the repository |
 | `red against a built tree` | the same, for a criterion a source-only sandbox cannot run at all, observed against a real build: `just roadmap-falsify prove --build-dir build/dev` |
+| `proven against a built tree` | it **passes** against that build, the mutation applied to the **working tree** and rebuilt over turned it red, and restoring the tree turned it green again: `just roadmap-falsify prove --build-dir build/dev --mutate-the-tree` |
 
 **Why this is a ratchet and not a hole.** The defect runs in one direction: a criterion that is green
 and that nothing can turn red. A criterion that is red is not that, and it is red in the open on
@@ -141,9 +142,49 @@ mutates the working tree, which is the whole reason the sandbox exists.
 **A criterion that needs a build** is `not provable here` unless a build is named, and then it is
 *run* rather than argued about. `--build-dir`, or `CY_FALSIFY_BUILD_DIR` in the environment, which is
 how `just roadmap-test` is told. A source-only run does not re-earn such a proof and does not destroy
-it either: it reports that it could not judge it. The edge of the tool is the criterion that **passes**
-against a build — turning that red needs its source mutated and the tree rebuilt, which this prover
-does not do, so it says so and names the mutation its text implies.
+it either: it reports that it could not judge it.
+
+### The criterion that passes against a build, which was the hole
+
+That used to be the edge of the tool, and the sentence it printed was *"turning it red needs its
+source mutated and the tree rebuilt, which this prover does not do"*. **That sentence named sixteen
+of M11.a's and M11.b's seventy criteria** — the GPU field sampler's consumers, the play-mode and
+live-edit round trips, the gameplay and plugin suites, `lint`, `generated-code` — and it is a
+description of the seven: green, with nothing in the tooling able to turn it red. A recorded reason
+for not checking is still not checking.
+
+So the rule that produced it — *never mutate the working tree* — is **narrowed rather than kept**.
+`just roadmap-falsify prove --build-dir <dir> --mutate-the-tree` applies the mutation to the
+repository itself, lets the criterion's own body rebuild over it (every one of the sixteen opens with
+`just build-engine`), and requires three things in order:
+
+1. **the positive control** — the criterion passes, unmutated, against that build;
+2. **the mutation** — it goes **red**, with the rebuilt tree carrying the break;
+3. **the restore** — the tree is put back and it comes back **green**. This is what separates *the
+   mutation made it red* from *something about this run made it red*, and it is also how the restore
+   is verified by something other than the restorer's own bookkeeping.
+
+The ledger-blind control is not repeated here, and that is a rule rather than an omission: the shape
+it exists to catch — a grep that matches the ledger declaring it — is refused *before any run*, by
+the `self-match` rule in the table below.
+
+**What makes it safe to point at the repository.** `--mutate-the-tree` is a flag on a command line,
+never a default and never reached by `check`. It refuses to run inside another prover. Every byte it
+overwrites is remembered first; the restore runs on the normal path, on an exception, on SIGINT and
+SIGTERM, and at interpreter exit; and afterwards **`git status` must report exactly what it reported
+before** — a byte-for-byte comparison against the index, made by a witness that took no part in the
+bookkeeping. The baseline is *as this run found the tree*, not *as HEAD has it*, so a file that was
+already modified is restored to the bytes it had and is never the target of the `git checkout`
+fallback; neither is a file this run did not write to, because a prover takes minutes and an editor
+does not stop for it.
+
+**And one hazard a restore cannot undo, found on this tool's first run.** The working tree is put
+back; a **commit taken while it was mutated** is not. An orchestrator snapshotting between phases
+caught `src/rendering/sky/tests/test_cloud_shadows.cpp` with a renamed token in it and committed it —
+after which the file on disk was right and HEAD was wrong, which is the one direction `git status`
+reads as a stray modification to be tidied away. `HEAD` is therefore read before the mutation and
+again after, a HEAD that moved **raises** rather than reports, and it is checked *before* the
+`git checkout` fallback, which would otherwise faithfully put the mutation back.
 
 **`plan-consistency` is the one criterion this prover cannot prove by running it**, because running
 it runs the prover. `selftest.py` prints a line and skips its four sandbox-materialising cases when
