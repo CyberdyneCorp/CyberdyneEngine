@@ -885,7 +885,7 @@ def digest(criterion: criteria_module.Criterion) -> str:
 _NEEDS_A_BUILD = re.compile(
     r"\bCY_BUILD_DIR\b|\bbuild/|\bctest\b|\bcmake\b|\bcargo\b|\bninja\b|"
     r"just ci(?!-check)|"
-    r"just (build|test|run|content|release|generate|quality-lint|quality-tidy)")
+    r"just (build|test|run|content|release|generate|quality-lint|quality-tidy|quality-identity)")
 
 
 #: A whole-line shell comment. Stripped before asking whether a body needs a build, because a
@@ -981,7 +981,8 @@ def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
     return completed.returncode, (completed.stdout or "") + (completed.stderr or "")
 
 
-def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: str, finished) -> Proof:
+def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: str, finished,
+                     build_dir: str = "") -> Proof:
     """A criterion that failed unmutated: watched going red, or red for the sandbox's own reasons.
 
     THE TREE CONTROL IS WHAT SEPARATES THOSE TWO. The sandbox is a copy of the TRACKED tree, so a
@@ -992,7 +993,13 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
     """
     if code == 124:
         return finished(UNPROVABLE, "-", f"the unmutated run did not finish: {_first_line(output)}")
-    tree_code, tree_output = run_in_the_repository(criterion, "", TREE_CONTROL_TIMEOUT_S)
+    # THE BUILD DIRECTORY IS PASSED IN when the run has one, and that matters: `m1:identity-manifest`
+    # is `just quality-identity`, whose build requirement is inside the recipe where no regex over
+    # the criterion's text can see it. It is red on a machine with no build/dev and green against a
+    # real tree — so a tree control that did not hand over the build would have recorded "watched
+    # going red" about a criterion that was only missing a build, which is the defect this module
+    # polices, committed by the module.
+    tree_code, tree_output = run_in_the_repository(criterion, build_dir, TREE_CONTROL_TIMEOUT_S)
     if tree_code < 0:
         return finished(UNPROVABLE, "-", f"red in the sandbox, and the tree control cannot run: "
                                          f"{tree_output}", unjudged=True)
@@ -1003,9 +1010,13 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
         return finished(UNPROVABLE, "-",
                         "it is red in the sandbox and GREEN in the repository, so the copy is what "
                         f"made it red, not the tree: {_first_line(output)}")
+    # THE DETAIL COMES FROM THE TREE RUN, not the sandbox's. They are red for the same criterion but
+    # not always at the same line — a sandbox lacks untracked inputs, so its first line can be an
+    # import error over a check that fails in the repository for its own stated reason, and the
+    # recorded sentence is what a reader has.
     return finished(RED_IN_THE_TREE, "-",
-                    f"red unmutated, in the sandbox and in the repository (exit {code}): "
-                    f"{_first_line(output)}")
+                    f"red unmutated, in the sandbox and in the repository (exit {tree_code}): "
+                    f"{_first_line(tree_output)}")
 
 
 def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str, blocked: str,
@@ -1095,7 +1106,7 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
                                 "a declared gap owes a mutation that makes it GREEN, and none can be "
                                 "derived from its text: it must declare a [criterion.falsifies]")
             return _prove_a_declared_gap(sandbox, criterion, mutation, output, finished)
-        return _red_in_the_tree(criterion, code, output, finished)
+        return _red_in_the_tree(criterion, code, output, finished, build_dir)
 
     if mutation is None:
         return finished(NO_MUTATION, "-", "no mutation can be derived from this criterion's text; "
