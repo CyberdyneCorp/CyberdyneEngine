@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -94,8 +95,41 @@ def cmake_files() -> list[Path]:
     """
     listed = subprocess.run(["git", "ls-files", "-z", "--", "*.cmake", "CMakeLists.txt",
                              "*/CMakeLists.txt"], cwd=REPO_ROOT, capture_output=True, text=True,
-                            check=True)
-    return sorted(REPO_ROOT / name for name in listed.stdout.split("\0") if name)
+                            check=False)
+    if listed.returncode == 0:
+        return sorted(REPO_ROOT / name for name in listed.stdout.split("\0") if name)
+    return _walked_cmake_files()
+
+
+#: Directories a POPULATED tree grows and a tracked tree never has. `build` is deliberately NOT here:
+#: `tools/build/CMakeLists.txt` is committed, and pruning by that name would drop it.
+_NEVER_TRACKED = frozenset({".git", ".build", "node_modules", "target", "_deps", "checkouts"})
+
+
+def _walked_cmake_files() -> list[Path]:
+    """The same set, for a tree that is not a git repository — which is where a PROOF runs.
+
+    `tools/roadmap/falsify.py` judges a criterion against a sandbox: a tar of `git ls-files`
+    unpacked outside any repository. git answers "not a repository" there, so the call above used to
+    raise and the three criteria over this file crashed rather than ran — reported as
+    `not provable here` about checks that are perfectly able to fail. The sandbox holds the tracked
+    files and nothing else, so walking it gives exactly the answer git would have given.
+
+    The reproducibility the comment above is about is kept in the direction that matters. A
+    configured build tree is pruned by its `CMakeCache.txt` rather than by its name — `build` is a
+    directory this repository COMMITS (`tools/build/CMakeLists.txt`) — and the fetched-dependency
+    directories by name. What a leftover file that slipped past both would do is ADD a file to the
+    pin check, which can only produce another finding: this path cannot manufacture a green, and a
+    walk cannot miss a file git would have listed.
+    """
+    found: list[Path] = []
+    for directory, subdirectories, names in os.walk(REPO_ROOT):
+        here = Path(directory)
+        subdirectories[:] = [name for name in subdirectories if name not in _NEVER_TRACKED
+                             and not (here / name / "CMakeCache.txt").is_file()]
+        found.extend(here / name for name in names
+                     if name == "CMakeLists.txt" or name.endswith(".cmake"))
+    return sorted(found)
 
 
 # --- testing-and-quality — argued Working at M3 ---------------------------------------------------

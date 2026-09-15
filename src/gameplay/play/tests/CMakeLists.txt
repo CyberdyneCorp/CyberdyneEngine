@@ -93,6 +93,43 @@ function(cy_gameplay_play_declare_tests)
         SOURCES "${tests_dir}/test_editor_live_edit.cpp"
         DEPENDENCIES cy::gameplay-live cy::gameplay-play cy::physics-reference cy::scene
                      cy::scene-serialization)
+
+    # --- The contract the two suites above assume, checked where it cannot stop firing ------------
+    #
+    # A suite proves the engine does what the suite asks. It cannot prove that what it asks is what
+    # the specification asks, or that the editor on the other side of the boundary asks the same
+    # thing — and that gap is exactly where `editor-architecture` and `live-editing` spent five
+    # milestones at Seed. `tools/editor/play_contract.py` derives the play-mode and live-edit-policy
+    # tables from the engine's own declarations, from the editor's, and from the requirements' own
+    # markdown tables, and requires the three to agree.
+    #
+    # Registered here rather than left to a recipe, for the reason src/abi/tests/CMakeLists.txt
+    # gives about the ABI gate: a check that runs only when somebody remembers the recipe is a check
+    # that has silently stopped firing. Neither entry needs a built engine, so both cost
+    # milliseconds and run in every profile.
+    #
+    #   integration.editor_contract_play_modes
+    #   integration.editor_contract_live_edit_policy
+    #                                 the tree satisfies each contract. These are the gate.
+    #   integration.editor_contract_gate  the gate still REFUSES a renamed mode, a fourth mode on
+    #                                     one side only, a capability the two sides disagree about,
+    #                                     a refusal that names no rung, a policy the specification
+    #                                     drops, two policies sharing a disturbance rank, and a
+    #                                     classification from which a restart becomes derivable.
+    find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
+
+    foreach(contract play-modes live-edit-policy)
+        string(REPLACE "-" "_" contract_test "${contract}")
+        add_test(NAME integration.editor_contract_${contract_test}
+            COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_SOURCE_DIR}/tools/editor/play_contract.py" "${contract}")
+        set_tests_properties(integration.editor_contract_${contract_test}
+            PROPERTIES TIMEOUT 300 LABELS integration)
+    endforeach()
+
+    add_test(NAME integration.editor_contract_gate
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/editor/selftest.py")
+    set_tests_properties(integration.editor_contract_gate PROPERTIES TIMEOUT 300 LABELS integration)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_gameplay_play_declare_tests)

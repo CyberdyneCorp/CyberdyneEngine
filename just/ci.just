@@ -28,6 +28,13 @@ ci-check *args:
     # are: a rule that stopped firing looks exactly like a tree with nothing wrong in it.
     echo "==> cross-leg   the digest comparator's refusals, against fixtures that must not pass"
     python3 tools/ci/test_cross_leg_digests.py {{args}}
+    # And one layer up: the three criteria that job answers were word-greps until M11.a's gate read
+    # them, so what checks them now RUNS the job's own comparison command against digests it wrote.
+    # Its fixtures are the dummy job the greps accepted, a publication with no comparison, a
+    # comparison that does not `needs:` its publication, a one-leg matrix, a one-runner matrix, and a
+    # job that fails whatever it is handed. Every one of them must be refused.
+    echo "==> cross-leg   the audit behind m9:lockstep-cross-platform and two more, against a dummy job"
+    python3 tools/ci/cross_leg_audit.py --selftest
 
 # List the jobs of every workflow and the recipes each one invokes. The gate set, from the source.
 ci-jobs:

@@ -218,6 +218,19 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       is why the suite's existing "two languages, one wire" case did not catch it. Both were mutated
       and both went red.
       **A mode that is not available refuses by name** (task 0.5)
+      **CORRECTED AT M11's GATE, AND THE CORRECTION IS THE POINT.** "`m11b:play-modes-exist` green"
+      was worth nothing: that criterion was `grep -rniIl SeparateProcess src/ editor/crates/ tools/`
+      — M10's absence grep inverted — and the gate refused it in three words, *word-greps a dummy
+      job satisfies*. Reproduced since: with `src/gameplay/play/`, `src/gameplay/live/` and
+      `cy-editor-viewport/src/play.rs` deleted outright and one comment file holding the seven words
+      added, the old criterion PASSES. It is now `python3 tools/editor/play_contract.py play-modes`,
+      which derives the mode table from the declaration that fixes it on each side — the engine's
+      `constexpr kNames`, its `capabilities_of` and `availability_of` switch arms, the editor's
+      `const fn name()` and `matches!` predicates, and the markdown tables in `live-editing` and
+      `editor-architecture` — and requires them to agree. Over the same deleted tree it goes RED.
+      Proven by `just roadmap-falsify` (`rename-token 'separate-process' in
+      src/gameplay/play/src/mode.cpp`), watched red by hand under five separate breaks, and run
+      outside the ledger as `integration.editor_contract_play_modes` so it cannot stop firing
 - [x] 3.2 **DONE, AND IT IS A COMPILER RATHER THAN A FIELD.** `src/gameplay/live/` — `cy::gameplay-live`:
       `LiveEditPolicy` with all six of the specification's outcomes, `derived_policy_for` deriving
       only the three the classification can justify (`reflect::PersistenceKind` gets its first
@@ -235,6 +248,17 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       `an_edit_made_while_the_world_is_playing_is_scheduled_for_a_tick_boundary` reading the
       scheduling off a real socket. Criteria `m11b:live-edit-policy-exists` and
       `m11b:live-edit-applies-without-a-restart` both green
+      **CORRECTED AT M11's GATE, for the same reason 3.1 is.** `m11b:live-edit-policy-exists` was
+      four more inverted greps and a comment naming the four symbols closed it. It is now `python3
+      tools/editor/play_contract.py live-edit-policy`, which compares the engine's table against the
+      requirement's own table and against `reflect::PersistenceKind` — the classification the
+      defaults are derived FROM — and whose load-bearing leg is the claim this task rests on:
+      **`RecreateEntity` and `RestartWorld` are never DERIVED.** A build in which the classification
+      could produce either would make the per-field declaration unnecessary and
+      `live-edit-applies-without-a-restart` vacuous; inserting `LiveEditPolicy::RestartWorld` into
+      one arm of `derived_policy_for` turns the criterion red, watched by hand. Proven by
+      `just roadmap-falsify` (`rename-token 'recreate-entity' in src/gameplay/live/src/policy.cpp`)
+      and run outside the ledger as `integration.editor_contract_live_edit_policy`
 - [ ] 3.3 **The specialised editors**, into the `CentreLower` region `chrome.rs` has reserved since
       M5.5 for *"the active specialised editor: script graph, animation, materials, sequencing"* and
       which nothing fills. **Read the requirement's whole list before scoping this task**: it names

@@ -1063,9 +1063,12 @@ jobs:
   # tools/roadmap/gates.toml — M10 task 8.4, which names both halves. M10 adds sixty-one criteria on
   # top of M9's — 354 evaluated in all, 293 from the permanent set — of which FOUR are declared
   # gaps that run and fail by design (`sky-field-round-trip`,
-  # `fields-one-vegetation-potential`, `fields-sampled-on-a-device`, `world-frame-budget`), TWO carry
-  # `where = "ci"` and are reported NOT EVALUATED on a developer's machine — `pcg-regeneration-cross-platform`
-  # and `pcg-gpu-domain-agreement`, AND THIS IS THE JOB THEY DEFER TO — and two carry
+  # `fields-one-vegetation-potential`, `fields-sampled-on-a-device`, `world-frame-budget`), ONE carries
+  # `where = "ci"` and is reported NOT EVALUATED on a developer's machine — `pcg-gpu-domain-agreement`,
+  # AND THIS IS THE JOB IT DEFERS TO. `pcg-regeneration-cross-platform` carried one too until M11.a's
+  # repair: its check was a word-grep over this file, it is now `tools/ci/cross_leg_audit.py --claim
+  # pcg` running the comparison job's own command against digests the audit writes, and that is
+  # answerable on any host — so it runs everywhere rather than deferring here. And two carry
   # `requires = "gpu"` with a device-free companion beside each, so this runner judges the claim
   # without the device. `--ci` lifts the `where`, and each of those two `run` bodies then looks for
   # the ONLY shape that could answer it: a job that publishes one leg's digest and compares it with
@@ -1122,6 +1125,19 @@ jobs:
   # continuous integration, satisfied by a single-leg suite. So the comparator refuses a single leg,
   # refuses several legs of one architecture, and refuses a digest of an empty workload; the list is
   # at the top of tools/ci/cross_leg_digests.py and every entry exits non-zero.
+  #
+  # AND THE THREE CRITERIA DID NOT CHECK THIS JOB — THEY CHECKED THAT THIS FILE CONTAINED THE WORDS.
+  # M11.a's closing gate refuted all three: each searched the workflows for a job block carrying
+  # `download-artifact` beside `digest`, `lockstep` or `pcg`, and a six-line job that uploads
+  # nothing, downloads nothing and runs `echo "lockstep and pcg digests compared"` satisfies every
+  # one of them. Deleting the `run:` line below would have left all three green. What checks them now
+  # is `tools/ci/cross_leg_audit.py`: it finds the publisher, the downloader and the command between
+  # them in this file, and then EXECUTES that command against digest files it wrote — agreeing legs
+  # must pass it, and a changed simulation hash, a changed generated world, one leg alone, two legs
+  # of one architecture, a zero digest and an empty workload must each turn it red. The dummy job is
+  # the first fixture of `--selftest`, which `just ci-check` runs; and `just roadmap-falsify` deletes
+  # the `--compare-legs` line, renames `--pcg` and deletes the `download-artifact` lines from a
+  # sandboxed copy of this file, requiring one of the three to go red on each.
   #
   # A DISAGREEMENT IS A FINDING THIS JOB REPORTS, NOT A FAILURE IT HIDES. The engine does not claim
   # `DeterminismProfile::CrossPlatform` today — `DeterminismConfiguration::require()` refuses it with

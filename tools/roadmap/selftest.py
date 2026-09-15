@@ -1304,6 +1304,57 @@ def test_falsifiability_ledger_blind(root: Path) -> None:
           code == 0 and not falsify_module._ledger_blind(sandbox, reads_the_repository))
 
 
+def test_falsifiability_declared_mutations(root: Path) -> None:
+    """Every mutation verb, applied for real — including the ones no derivation produces.
+
+    `delete-lines` and `truncate` exist for the criteria whose mutation cannot be derived, so nothing
+    on the ladder exercises them yet. A verb nobody has run is the next thing to quietly stop
+    working, which is the failure mode this whole file is about.
+    """
+    sandbox = falsify_module.Sandbox.materialise(root / "tree")
+    target = sandbox.root / "docs" / "fixture.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = "keep this line\nLiveEditPolicy is named here\nkeep this one too\n"
+
+    def apply(verb: str, **fields) -> str:
+        target.write_text(original, encoding="utf-8")
+        sandbox.forget()
+        mutation = falsify_module.Mutation(verb=verb, target="docs/fixture.txt", derived=False,
+                                           **fields)
+        changed = sandbox.apply(mutation)
+        after = target.read_text(encoding="utf-8") if target.is_file() else "<deleted>"
+        check(f"the `{verb}` mutation changes the sandbox", changed == 1, f"{changed} file(s)")
+        return after
+
+    check("`delete-lines` removes the line carrying the token, and only that line",
+          apply("delete-lines", token="LiveEditPolicy")
+          == "keep this line\nkeep this one too\n")
+    check("`truncate` empties the file", apply("truncate") == "")
+    check("`delete-path` removes it", apply("delete-path") == "<deleted>")
+    renamed = apply("rename-token", token="LiveEditPolicy")
+    check("`rename-token` replaces the token and leaves everything else alone",
+          "LiveEditPolicy" not in renamed and "keep this line" in renamed, renamed)
+
+    target.write_text(original, encoding="utf-8")
+    sandbox.forget()
+    missing = falsify_module.Mutation(verb="delete-path", target="docs/not-here-at-all.txt",
+                                      derived=False)
+    check("A MUTATION THAT CHANGES NOTHING IS A FINDING, not a silent pass",
+          sandbox.apply(missing) == 0)
+
+    declared = criteria_module.Criterion(
+        id="declared", describe="a fixture", source="a fixture", kind="command",
+        ci_job="milestone-m0", run="grep -q LiveEditPolicy docs/fixture.txt",
+        falsifies={"mutate": "delete-lines", "target": "docs/fixture.txt",
+                   "token": "LiveEditPolicy"})
+    derived = falsify_module.derive(declared)
+    check("a declared mutation is used in place of the derived one",
+          derived is not None and derived.verb == "delete-lines" and not derived.derived)
+    proof = falsify_module.prove(sandbox, "m0", declared)
+    check("and a criterion is proven end to end through the mutation it declared",
+          proof.verdict == falsify_module.PROVEN, f"{proof.verdict}: {proof.detail}")
+
+
 def test_falsifiability_of_the_ladder(root: Path) -> None:
     """The real thing: every criterion on the ladder, proven or accounted for.
 
@@ -1347,6 +1398,7 @@ def main() -> int:
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
         test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
+        test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
         test_falsifiability_of_the_ladder(_area(root, "falsify-ladder"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")

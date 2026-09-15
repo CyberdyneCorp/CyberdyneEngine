@@ -871,35 +871,10 @@ ci_job = "milestone-m9"
 # actually asserts.
 [[criterion]]
 id = "lockstep-cross-platform"
-describe = "LOCKSTEP HOLDS ACROSS TWO PLATFORMS FOR THE CrossPlatform PROFILE — AND NOTHING IN THIS TREE HAS COMPARED A STATE HASH BETWEEN TWO ARCHITECTURES, so this runs, fails, and names the rung. `DeterminismConfiguration::require(DeterminismProfile::Lockstep)` refuses in this tree with DeterministicMathMissing rather than granting what nothing measured, and `docs/roadmap/status.yaml` does not record `simulation-and-determinism` as claiming cross-architecture determinism. The check looks for the only shape that could close it: a continuous-integration job that downloads one leg's published hash and compares it with another's"
+describe = "A CONTINUOUS-INTEGRATION JOB COMPARES ONE ARCHITECTURE'S SIMULATION STATE HASH WITH ANOTHER'S, AND GOES RED WHEN THEY DIFFER. `DeterminismConfiguration::require(DeterminismProfile::Lockstep)` refuses in this tree with DeterministicMathMissing rather than granting what nothing measured, and `docs/roadmap/status.yaml` does not record `simulation-and-determinism` as claiming cross-architecture determinism, so the shape that closes this is the job — one leg publishes `determinism.cross_leg`'s digest, a following job downloads every leg's and compares them. **THIS WAS A WORD-GREP UNTIL M11.a's GATE READ IT, AND THAT IS THE EIGHTH UNFALSIFIABLE CHECK THIS LADDER HAS FOUND**: it asked for a job block containing `lockstep` and `download-artifact`, which a job that uploads nothing, downloads nothing and runs `echo \"lockstep digests compared\"` satisfies — that dummy is the first fixture of `tools/ci/cross_leg_audit.py --selftest` and it is REFUSED there. What runs now reads the workflow only far enough to find which job publishes a digest per leg and what command the job downloading them RUNS, and then executes THAT COMMAND against digests it wrote itself: two architectures that agree must pass it, and a changed simulation hash, one leg alone, two legs of one architecture, and a digest of zero must each turn it red. A job that compares nothing cannot do that"
 source = "tasks 0.3, 3.3, ROADMAP M9, design.md §1.4"
 kind = "command"
-run = '''
-python3 - <<'CHECK'
-import pathlib, re, sys
-
-workflows = sorted(pathlib.Path(".github/workflows").glob("*.y*ml"))
-comparing = []
-for path in workflows:
-    text = path.read_text(encoding="utf-8")
-    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
-        name = block.strip().split(":", 1)[0].strip()
-        lowered = block.lower()
-        if "lockstep" not in lowered:
-            continue
-        if "download-artifact" not in lowered:
-            continue
-        comparing.append(f"{path.name}:{name}")
-print(f"{len(workflows)} workflow(s) examined; "
-      f"{len(comparing)} job(s) compare a lockstep hash between legs: {comparing or 'none'}")
-if not comparing:
-    print("  no job publishes one architecture's state hash and compares it with another's, so the")
-    print("  CrossPlatform guarantee is unmeasured rather than met. The six-leg matrix in ci.yml")
-    print("  includes linux-arm64, macos-arm64 and windows-arm64: the legs exist and the comparison")
-    print("  between them does not.")
-sys.exit(0 if comparing else 1)
-CHECK
-'''
+run = "python3 tools/ci/cross_leg_audit.py --claim lockstep"
 # THE DECLARATION IS DELETED HERE AND THE RULE SAYS IT MUST BE: a declared gap that starts passing
 # FAILS the ledger, reported as "the gap is closed, delete the declaration". M11.a section 4 built
 # the job — `cross-leg-publish` and `cross-leg-compare` in ci.yml, publishing
@@ -916,6 +891,16 @@ CHECK
 # `DeterminismConfiguration::require()` refuses it with `DeterministicMathMissing` — so a
 # disagreement is a plausible outcome, and M11.a's ledger is where it lands.
 ci_job = "milestone-m9"
+
+# WHAT MUST BREAK IT, AND THE TOOLING BREAKS IT RATHER THAN BELIEVING THIS PARAGRAPH. Deleting the
+# `--compare-legs` line from ci.yml leaves the comparison job downloading four legs' digests and
+# running no command over them — which is precisely the dummy job the old word-grep accepted — and
+# `just roadmap-falsify` requires this criterion to go RED on that, in a sandboxed copy of the tree.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token = "--compare-legs"
+note = "the comparison step's command, deleted: the job still publishes and still downloads, and compares nothing"
 
 # --- Section 7: the record and the next rung ------------------------------------------------------
 

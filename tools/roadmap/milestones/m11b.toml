@@ -114,43 +114,78 @@ ci_job = "profiles"
 #   grep -rniI 'SeparateProcess\|RemoteDevice\|InEditor' src/ editor/ tools/
 #   grep -rniI 'LiveEditPolicy\|ReinitializeComponent\|RecreateEntity\|RestartWorld' src/ editor/ tools/
 # Those two absences are what put `editor-architecture` and `live-editing` at Seed and kept them
-# there while five milestones built on top of them. The criteria below are those greps inverted.
+# there while five milestones built on top of them.
+#
+# THE CRITERIA BELOW WERE THOSE GREPS INVERTED AND M11's GATE REFUSED ALL OF THEM AS "word-greps a
+# dummy job satisfies". Inverting a grep does not make it a check: "the token is absent" can be made
+# false by a person who does the work, and "the token is present" can be made true by a person who
+# types it. What replaced them is a gate that compares things that can DISAGREE — the engine's
+# declarations, the editor's, and the requirements' own tables — and a suite that drives the compiled
+# engine. Each pair is one static criterion and one behavioural one, and neither replaces the other.
 
+# THIS CRITERION WAS A GREP AND M11's GATE REFUSED IT, IN THREE WORDS: "word-greps a dummy job
+# satisfies". It ran `grep -rniIl SeparateProcess ...` and passed when the token appeared anywhere —
+# in a comment, in a task list, in this file. One file containing three words closed it. That is the
+# eighth instance of the defect tools/roadmap/falsify.py enumerates, and the fix is not a better
+# regex: the check has to compare things that can DISAGREE.
+#
+# `tools/editor/play_contract.py play-modes` derives the mode table from the declaration that fixes
+# it on each side of the boundary — the engine's `constexpr kNames` and its `capabilities_of` and
+# `availability_of` switch arms, the editor's `const fn name()` and its `matches!` predicates, and
+# the markdown tables in `live-editing` and `editor-architecture` — and requires them to agree on
+# the enumerators, their order, their spellings, which modes can step a frame, which isolate editor
+# state, and whether every refusal names the rung the mode is due at. A word typed into a comment
+# satisfies none of it, and `tools/editor/selftest.py` breaks each input in turn and requires the
+# gate to notice. Registered as `integration.editor_contract_play_modes` as well, so it does not run
+# only when a ledger remembers it.
+#
+# The BEHAVIOURAL half is `play-mode-round-trip` below, which drives one world through all three
+# modes in the compiled engine. The two are complementary and neither replaces the other: a suite
+# cannot establish that its own subject is the specification's subject, and this cannot establish
+# that the modes run.
 [[criterion]]
 id = "play-modes-exist"
-describe = "the three play modes are named in the tree and reachable. `InEditor`, `SeparateProcess` and `RemoteDevice` are one requirement in two specifications and no grep finds any of the three today, which is most of why `editor-architecture` is at Seed"
+describe = "the three play modes are declared consistently by everything that has to agree about them. `InEditor`, `SeparateProcess` and `RemoteDevice` are one requirement in two specifications, and the engine, the editor and both specifications are required to name the same three, spell them the same way, and agree on which of them can step a frame and which isolate editor state"
 source = "tasks, editor-architecture (Play modes), live-editing"
 kind = "command"
-run = '''
-set -eo pipefail
-missing=""
-for mode in SeparateProcess RemoteDevice InEditor; do
-    hits=$(grep -rniIl "$mode" src/ editor/crates/ tools/ | grep -v "^tools/roadmap/" 2>/dev/null | grep -v "/target/" || true)
-    count=$(printf '%s' "$hits" | grep -c . || true)
-    echo "  $mode: $count file(s)"
-    test "$count" -gt 0 || missing="$missing $mode"
-done
-test -z "$missing" || { echo "play modes with no implementation:$missing"; exit 1; }
-'''
+run = "python3 tools/editor/play_contract.py play-modes"
 ci_job = "milestone-m11b"
 
+# The mutation cannot be derived — there is no text search in the body to derive it from — so it is
+# DECLARED, as a verb and a target `falsify.py` executes rather than as a sentence. Renaming the
+# engine's own spelling of a mode is the break this criterion exists to catch: the editor and the
+# two specifications still say `separate-process` and the engine no longer does.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/gameplay/play/src/mode.cpp"
+token = "separate-process"
+
+# THE SAME GREP, THE SAME REFUSAL, AND THE SAME REPAIR. This one searched for four symbol names and
+# passed when each appeared in any file, which a comment naming them satisfies.
+#
+# `tools/editor/play_contract.py live-edit-policy` compares the engine's policy table against the
+# requirement's own table and against the classification the defaults are derived FROM
+# (`reflect::PersistenceKind`, which `live-editing` says "until now had no consumer"). The leg that
+# carries the rung's claim is the last one: `RecreateEntity` and `RestartWorld` must never be
+# DERIVED. policy.h argues that at length — nothing about a field's classification can tell you that
+# changing it invalidates the entity or the world — and `live-edit-applies-without-a-restart` below
+# is written against exactly that distinction, "the policy is DECLARED per field rather than
+# inferred". A build in which the classification could produce those two would make the per-field
+# declaration unnecessary and that criterion vacuous, and this is what refuses it.
 [[criterion]]
 id = "live-edit-policy-exists"
-describe = "a per-field live edit policy exists with the three outcomes the requirement names — reinitialise the component, recreate the entity, restart the world. A capability with no per-field policy and no play modes is Seed, and this is the other half of why"
+describe = "a per-field live edit policy exists, with the six outcomes the requirement names, a total order over what they disturb, a derivation arm for every field classification the engine has — and with `RecreateEntity` and `RestartWorld` NEVER derived from a classification, because a policy that is always inferred is not per field"
 source = "tasks, live-editing (Live edit policy)"
 kind = "command"
-run = '''
-set -eo pipefail
-missing=""
-for symbol in LiveEditPolicy ReinitializeComponent RecreateEntity RestartWorld; do
-    hits=$(grep -rniIl "$symbol" src/ editor/crates/ tools/ | grep -v "^tools/roadmap/" 2>/dev/null | grep -v "/target/" || true)
-    count=$(printf '%s' "$hits" | grep -c . || true)
-    echo "  $symbol: $count file(s)"
-    test "$count" -gt 0 || missing="$missing $symbol"
-done
-test -z "$missing" || { echo "live edit policy symbols absent:$missing"; exit 1; }
-'''
+run = "python3 tools/editor/play_contract.py live-edit-policy"
 ci_job = "milestone-m11b"
+
+# Declared for the reason the one above is. Renaming the engine's spelling of a policy breaks the
+# kebab-case derivation the table and the enumeration are pinned to each other by.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/gameplay/live/src/policy.cpp"
+token = "recreate-entity"
 
 [[criterion]]
 id = "play-mode-round-trip"

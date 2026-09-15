@@ -161,6 +161,34 @@ quality-abi *args:
     echo "==> abi-gate    src/abi/include/cy/abi/cy_abi.h against src/abi/abi_baseline.json"
     python3 tools/abi/abi_gate.py {{args}}
 
+# The play-mode and live-edit-policy contracts. `editor-architecture` and `live-editing` sat at Seed
+# from M5 to M11 because two greps returned nothing, and the first attempt to take them off it was
+# those same greps INVERTED — which M11's gate called "word-greps a dummy job satisfies". This is
+# what replaced them: each side's table is DERIVED from the declaration that fixes it — the engine's
+# `constexpr` name arrays and switch arms, the editor's `const fn` matches, the specification's own
+# markdown tables — and the sides are required to agree.
+#
+# It needs no build, for the reason `just quality-abi` needs none: the spellings and the capability
+# rows are fixed by the declarations, so reading them states the rule rather than sampling one
+# instance of it. See tools/editor/README.md.
+#
+#   just quality-editor-contract             both contracts against the tree
+#   just quality-editor-contract --selftest  prove the gate still refuses each break of it
+
+# Check the engine's play-mode and live-edit-policy tables against the editor's and the specification's.
+quality-editor-contract *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if [ "{{args}}" = "--selftest" ]; then
+        echo "==> editor-contract  the gate's own negative cases"
+        exec python3 tools/editor/selftest.py
+    fi
+    echo "==> editor-contract  play-modes"
+    python3 tools/editor/play_contract.py play-modes {{args}}
+    echo "==> editor-contract  live-edit-policy"
+    python3 tools/editor/play_contract.py live-edit-policy {{args}}
+
 # Validate the specification set: openspec validate --specs --strict. Seconds.
 quality-specs *args:
     #!/usr/bin/env bash

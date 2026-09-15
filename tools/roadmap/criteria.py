@@ -57,7 +57,7 @@ DEFAULT_TIMEOUT_S = 1800
 
 CRITERION_KEYS = frozenset(
     {"id", "describe", "source", "kind", "run", "path", "expect_tiers", "where", "ci_job",
-     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "falsifies"}
+     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "falsifies", "evaluates"}
 )
 MILESTONE_KEYS = frozenset({"schema", "id", "name", "artefact", "notes", "criterion"})
 
@@ -93,6 +93,17 @@ class Criterion:
     #: only where the tooling cannot derive one from the criterion's own text; `falsify.py` derives
     #: the mutation for a `path` criterion, a `tiers` criterion and a text search without being told.
     falsifies: dict = field(default_factory=dict)
+    #: The capability ROWS this criterion evaluates — a machine-readable declaration, not prose.
+    #:
+    #: WHY IT IS NOT `source`. M11.a's guard over the four unevaluated rows asked whether the row's
+    #: name appeared in some criterion's `source`, and M11's gate refuted it in one line: it "cannot
+    #: detect the deletion of two of the four evaluators". `source` is a citation — eight criteria
+    #: name `testing-and-quality` because that specification governs them, and seven name
+    #: `developer-workflow-and-just` — so deleting the criterion that actually EVALUATES the row left
+    #: the guard green with seven bystanders standing in for it. A substring of a citation is not a
+    #: declaration; this field is, it is declared by exactly the criterion that does the evaluating,
+    #: and `evaluators` below is the only way to ask who they are.
+    evaluates: list = field(default_factory=list)
 
     @property
     def is_declared_gap(self) -> bool:
@@ -182,6 +193,7 @@ def _criterion(table: dict, source: str) -> Criterion:
     _check_kind(table, where)
     _check_scope(table, where)
     _check_falsifies(table, where)
+    _check_evaluates(table, where)
     return Criterion(**{key: value for key, value in table.items()})
 
 
@@ -270,6 +282,37 @@ def _check_falsifies(table: dict, where: str) -> None:
         raise CriteriaError(f"{where}: falsifies.mutate = {verb!r} needs a 'target' path or glob")
     if verb in ("delete-lines", "rename-token") and not str(declared.get("token", "")).strip():
         raise CriteriaError(f"{where}: falsifies.mutate = {verb!r} needs the 'token' it removes")
+
+
+def _check_evaluates(table: dict, where: str) -> None:
+    """`evaluates` is a list of capability rows, and a row is named once.
+
+    The shape is all that is checked here: whether the rows are real capabilities is the RECORD's
+    question, and `criteria.load` does not read the record. A row misspelt here does not quietly
+    pass — it leaves the real row with no evaluator, which is exactly what the guard over the four
+    rows fails on.
+    """
+    declared = table.get("evaluates")
+    if declared is None:
+        return
+    if not isinstance(declared, list) or not declared:
+        raise CriteriaError(f"{where}: 'evaluates' is a non-empty list of capability rows")
+    seen: set[str] = set()
+    for row in declared:
+        if not isinstance(row, str) or not row.strip():
+            raise CriteriaError(f"{where}: 'evaluates' holds capability names, not {row!r}")
+        if row in seen:
+            raise CriteriaError(f"{where}: 'evaluates' names {row!r} twice")
+        seen.add(row)
+
+
+def evaluators(entries, row: str) -> list:
+    """The plan entries whose criterion DECLARES that it evaluates this row.
+
+    One function so that no caller re-invents the question as a substring search over prose, which
+    is the defect this field exists to end.
+    """
+    return [entry for entry in entries if row in getattr(entry.criterion, "evaluates", ())]
 
 
 # --- The flat, deduplicated plan ------------------------------------------------------------------

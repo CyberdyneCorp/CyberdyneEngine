@@ -125,3 +125,23 @@ nothing else changes.
 * **`SeparateProcess` is a session, not yet a launcher.** The mode is available and the live bridge
   already crosses a real socket, but *starting and supervising* a second runtime process is
   `build-and-packaging`'s and is M11.d's. `PlayModeSupport::runtime_launcher` is where that lands.
+
+## What checks the mode table, and why it is not a grep
+
+`editor-architecture` sat at Seed from M5 to M11 because `grep -rniI 'SeparateProcess|RemoteDevice|
+InEditor' src/ editor/ tools/` returned nothing across five milestones. M11.b's first criterion was
+that grep INVERTED, and M11's gate refused it in three words: *word-greps a dummy job satisfies*.
+Reproduced since — with this directory deleted outright and one comment file holding the three words
+added, the inverted grep passes.
+
+Two checks replaced it, and they answer different questions:
+
+| | |
+|---|---|
+| `tools/editor/play_contract.py play-modes` | the engine, the editor and both specifications name the same three modes, spell them the same way, and agree on which can step a frame and which isolate editor state |
+| `cy_test_integration_editor_play` | one world, one command stream, three modes, and the simulated result compared between them |
+
+A suite cannot establish that its own subject is the specification's subject; a contract cannot
+establish that the modes run. `just quality-editor-contract` runs the first,
+`integration.editor_contract_play_modes` and `integration.editor_contract_gate` run it and its own
+negative cases in CI, and `m11b:play-modes-exist` names it. See `tools/editor/README.md`.

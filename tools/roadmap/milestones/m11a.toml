@@ -123,7 +123,7 @@ ci_job = "profiles"
 
 [[criterion]]
 id = "field-sampler-written"
-describe = "`cy/field.slang` exists and is written against the buffer layout `gpu.h` already fixes. `src/environment/`'s README says this module is owed by the first renderer-facing row to sample a field in a shader, and no renderer-facing row has: the fifteen modules under src/rendering/shaders/cy/ are brdf, cluster, color, frame, fullscreen, globals, light, material, noise, packing, particle, sampling, shadow, tonemap and view"
+describe = "`cy/field.slang` exists and is WRITTEN AGAINST THE BUFFER LAYOUT `gpu.h` ALREADY FIXES — checked by comparing the two, constant for constant, rather than by finding the word `kFieldImage` in the file. `src/environment/`'s README says this module is owed by the first renderer-facing row to sample a field in a shader, and no renderer-facing row had: the fifteen modules under src/rendering/shaders/cy/ were brdf, cluster, color, frame, fullscreen, globals, light, material, noise, packing, particle, sampling, shadow, tonemap and view. THE FIRST VERSION OF THIS CHECK WAS A WORD-GREP AND `falsify.py audit --weak` NAMED IT `presence-only`: the verdict is that this text exists, which is the shape this project has shipped seven times. What `written against the layout gpu.h fixes` actually asserts is an AGREEMENT between two artefacts, and an agreement is checkable — sixteen numbers, the image magic, the layout version, the header and entry word counts, the tile edge, the five `FieldEncoding` members, the five `FieldLayerRule` members and `FieldInterpolation::Linear`, read out of the shader and out of `gpu.h`, `field.h` and `store.h` and required to be equal. A shader that decodes a layout the engine does not write is what this closes, and it is invisible to a grep because both files still contain the word"
 source = "tasks 1.1, environment-fields (CPU and GPU access), src/environment/README.md"
 kind = "command"
 run = '''
@@ -135,9 +135,92 @@ if [ ! -f "$module" ]; then
     exit 1
 fi
 echo "$module exists, $(wc -l < "$module") line(s)"
-grep -q "FieldImageHeader\|field_image\|kFieldImage" "$module"
+python3 - <<'CHECK'
+import re
+import sys
+
+SHADER = "src/rendering/shaders/cy/field.slang"
+GPU = "src/environment/include/cy/environment/gpu.h"
+FIELD = "src/environment/include/cy/environment/field.h"
+STORE = "src/environment/include/cy/environment/store.h"
+shader, gpu, field_h, store_h = (open(path).read() for path in (SHADER, GPU, FIELD, STORE))
+
+
+def shader_constant(name):
+    found = re.search(rf"public static const uint {name}\s*=\s*([0-9a-fA-Fx']+)u;", shader)
+    if not found:
+        sys.exit(f"{SHADER} no longer declares {name}: the module cannot be compared with the "
+                 f"layout gpu.h fixes, so nothing holds the shader and the engine in step")
+    return int(found.group(1).replace("'", ""), 0)
+
+
+def engine_constant(text, where, name):
+    found = re.search(rf"inline constexpr u32 {name}\s*=\s*([0-9a-fA-Fx']+)U?;", text)
+    if not found:
+        sys.exit(f"{where} no longer declares {name}")
+    return int(found.group(1).replace("'", ""), 0)
+
+
+def engine_enum(name):
+    """`enum class <name> : u8 { A = 0, B, ... }` as {member: value}, comments and all."""
+    found = re.search(rf"enum class {name}\s*:\s*u8\s*\{{(.*?)\}};", field_h, re.S)
+    if not found:
+        sys.exit(f"{FIELD} no longer declares enum class {name}")
+    members, value = {}, 0
+    for line in re.sub(r"//[^\n]*", "", found.group(1)).splitlines():
+        for piece in (part.strip() for part in line.split(",")):
+            if not piece:
+                continue
+            member = re.match(r"(\w+)\s*(?:=\s*([0-9]+))?$", piece)
+            if not member:
+                sys.exit(f"{FIELD}'s {name} has a member this check cannot read: {piece!r}")
+            if member.group(2) is not None:
+                value = int(member.group(2))
+            members[member.group(1)] = value
+            value += 1
+    return members
+
+
+pairs = [(name, shader_constant(name), engine_constant(gpu, GPU, name))
+         for name in ("kFieldImageMagic", "kFieldImageVersion", "kFieldImageHeaderWords",
+                      "kFieldImageEntryWords")]
+pairs.append(("the tile edge in cells", shader_constant("kFieldTileCells"),
+              engine_constant(store_h, STORE, "kTileCells")))
+encoding = engine_enum("FieldEncoding")
+pairs += [(f"FieldEncoding::{member}", shader_constant(f"kFieldEncoding{member}"),
+           encoding[member]) for member in ("F32", "UNorm8", "UNorm16", "Uint8", "Uint16")]
+rule = engine_enum("FieldLayerRule")
+pairs += [(f"FieldLayerRule::{member}", shader_constant(f"kFieldRule{member}"), rule[member])
+          for member in ("Replace", "Add", "Multiply", "Max", "Min")]
+pairs.append(("FieldInterpolation::Linear", shader_constant("kFieldInterpolationLinear"),
+              engine_enum("FieldInterpolation")["Linear"]))
+
+for name, mine, theirs in pairs:
+    print(f"  {name}: shader {mine}, engine {theirs}"
+          f"{'' if mine == theirs else '   <-- DISAGREE'}")
+wrong = [(name, mine, theirs) for name, mine, theirs in pairs if mine != theirs]
+if wrong:
+    sys.exit("cy/field.slang decodes a layout the engine does not write: " +
+             "; ".join(f"{name} is {mine} in the shader and {theirs} in the engine"
+                       for name, mine, theirs in wrong) +
+             ". The shader would read a buffer it agrees with nobody about, and every value it "
+             "returned would be wrong in a way no grep over either file can see.")
+print(f"{len(pairs)} layout constants agree between cy/field.slang and gpu.h, field.h and store.h")
+CHECK
 '''
 ci_job = "milestone-m11a"
+
+# WHAT MUST BREAK IT: rename `kFieldImageHeaderWords` in `cy/field.slang` and the shader stops
+# declaring the header size the engine writes — the module is then no longer written against the
+# layout, which is exactly what this criterion claims. `just roadmap-falsify` applies that to a
+# sandboxed copy of the tree and requires this criterion to go RED on it. It is DECLARED rather than
+# derived because the check greps nothing: it reads four files and compares sixteen numbers, and the
+# tooling derives mutations from a criterion's own searches.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/shaders/cy/field.slang"
+token = "kFieldImageHeaderWords"
+note = "the shader stops naming the header word count gpu.h fixes, so the two artefacts no longer agree"
 
 [[criterion]]
 id = "field-sampler-consumed"
@@ -146,12 +229,90 @@ source = "tasks 1.1, 1.3, environment-fields, atmosphere-sky-and-clouds (Cloud s
 kind = "command"
 run = '''
 set -eo pipefail
-users=$(grep -rl "cy/field.slang\|cy.field" --include='*.slang' src/ 2>/dev/null | grep -v "cy/field.slang" || true)
-count=$(printf '%s' "$users" | grep -c . || true)
-echo "$count .slang module(s) include the field sampler: ${users:-none}"
-test "$count" -ge 2
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+
+# WHAT THIS USED TO BE: `grep -rl "cy/field.slang\|cy.field" --include='*.slang' src/ | grep -v field.slang`,
+# count at least two. `falsify.py audit --weak` calls that `presence-only`, and it is satisfied by two
+# modules that write `import cy.field;` and never call it — which is the exact defect the criterion's
+# own text names, "a shader module nothing includes is a file", one level up.
+#
+# WHAT IT IS NOW: each named consumer is COMPILED, on its own, through a probe that calls only that
+# consumer's public entry, and the emitted SPIR-V must reference the bindless table `cy/field.slang`
+# declares at set 0, binding 3. A consumer that stops sampling leaves the table unreferenced and the
+# compiler drops it, so the check goes red on the thing that matters rather than on the import line.
+# The negative control is recorded rather than asserted: a probe calling `cyTerrainShade` — which
+# takes an already-sampled substrate — compiles to SPIR-V with ZERO references to the table, so this
+# is a discriminating test and not one every program passes.
+slangc="$d/Development/bin/slangc"
+test -x "$slangc" || slangc="$(find "$d" -type f -name slangc -perm -u+x 2>/dev/null | head -1)"
+test -x "${slangc:-/nonexistent}" || { echo "no slangc under $d: this build has no Slang front end, so whether a consumer samples cannot be judged here"; exit 1; }
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+cat > "$work/cy_terrain_shade.slang" <<'PROBE'
+import cy.terrain_shade;
+[[vk::binding(0, 3)]] RWStructuredBuffer<float> cyConsumerProbeOut;
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyConsumerProbe(uint3 thread : SV_DispatchThreadID)
+{
+    CyTerrainFields fields;
+    fields.waterDistance = 0u;
+    fields.wetness = 1u;
+    fields.snowDepth = 2u;
+    fields.vegetation = 3u;
+    const CyTerrainSubstrate substrate = cyTerrainSampleSubstrate(fields, 1.0, 2.0, 3.0);
+    cyConsumerProbeOut[thread.x] = substrate.waterDistanceMetres + substrate.wetness +
+                                   substrate.snowDepthMetres + substrate.vegetation;
+}
+PROBE
+
+cat > "$work/cy_cloud_shadow.slang" <<'PROBE'
+import cy.cloud_shadow;
+[[vk::binding(0, 3)]] RWStructuredBuffer<float> cyConsumerProbeOut;
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cyConsumerProbe(uint3 thread : SV_DispatchThreadID)
+{
+    cyConsumerProbeOut[thread.x] = cyCloudShadowAt(4u, 1.0, 2.0, 3.0) +
+                                   cyCloudShadowAttenuate(float3(1.0), 4u, 1.0, 2.0, 3.0).x;
+}
+PROBE
+
+sampling=0
+for probe in "$work"/cy_*.slang; do
+    module="$(basename "$probe" .slang)"
+    if ! "$slangc" "$probe" -I src/rendering/shaders -target spirv -profile spirv_1_5 \
+            -entry cyConsumerProbe -stage compute -fvk-use-entrypoint-name \
+            -o "$work/$module.spv" > "$work/$module.log" 2>&1; then
+        echo "$module does not compile against cy/field.slang:"
+        tail -20 "$work/$module.log"
+        continue
+    fi
+    hits=$(strings -a "$work/$module.spv" | grep -c '^cyEnvironmentFields$' || true)
+    if [ "$hits" -gt 0 ]; then
+        sampling=$((sampling + 1))
+        echo "$module samples: its compiled module references the bindless field table"
+    else
+        echo "$module compiles and NEVER SAMPLES: nothing in its emitted SPIR-V reaches the"
+        echo "  bindless table cy/field.slang declares, so the import is decoration"
+    fi
+done
+echo "$sampling of 2 named consumers sample an environment field through cy/field.slang"
+test "$sampling" -ge 2
 '''
 ci_job = "milestone-m11a"
+
+# WHAT MUST BREAK IT: rename `cyFieldSampleScene` in `cy/field.slang` and the two consumers stop
+# compiling — a module that cannot resolve the sampler is not consuming it. That is the mutation the
+# tooling applies; the OTHER direction, a consumer that compiles and stops sampling, is what the
+# SPIR-V reference test above catches and what the negative control in its comment measures.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/shaders/cy/field.slang"
+token = "cyFieldSampleScene"
+note = "the sampler's entry point renamed: both consumers fail to compile, because they call it"
 
 [[criterion]]
 id = "field-device-agrees-with-cpu"
@@ -340,30 +501,21 @@ ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "cross-leg-digest-job"
-describe = "a continuous-integration job publishes one leg's digest and downloads another's to compare them. The check reads the workflows rather than trusting a name: a job that uploads an artefact and never downloads one from a second leg is a publication, not a comparison"
+describe = "THE JOB COMPARES, AND THE CHECK PROVES IT BY RUNNING THE JOB'S OWN COMPARISON. One job publishes a digest from each leg of a four-leg matrix and a second job downloads all of them and compares them; that much a reader can see. What a reader cannot see, and what M11.a's gate correctly refused to take on trust, is whether the command that job runs would NOTICE a disagreement — the first draft of this criterion asked only that one job block contain `upload-artifact`, `download-artifact` and the word `digest`, which a job that moves no bytes and runs `echo` satisfies in three lines. `tools/ci/cross_leg_audit.py` reads the workflow for the publisher, the downloader and the command between them, and then EXECUTES that command against digests it wrote: identical digests from two architectures must pass, and a changed simulation hash, a changed generated world, one leg alone, two legs of one architecture, a digest of zero and an empty workload must each turn it red. The dummy job is fixture one of `--selftest`, beside a publication with no comparison, a comparison that does not `needs:` its publication, a one-leg matrix, a matrix of one runner image, and a job that fails whatever it is given — six shapes that must be refused, checked on every `just ci-check`"
 source = "tasks 2.1, simulation-and-determinism (CrossPlatform), procedural-content-generation"
 kind = "command"
-run = '''
-set -eo pipefail
-python3 - <<'CHECK'
-import pathlib, re, sys
-comparing = []
-for path in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
-    text = path.read_text(encoding="utf-8")
-    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
-        name = block.strip().split(":", 1)[0].strip()
-        lowered = block.lower()
-        if "upload-artifact" in lowered and "download-artifact" in lowered and "digest" in lowered:
-            comparing.append(f"{path.name}:{name}")
-print(f"{len(comparing)} job(s) publish one leg's digest and compare another's: {comparing or 'none'}")
-if not comparing:
-    print("  three criteria in three ledgers look for this one job: m9:lockstep-cross-platform,")
-    print("  m10:pcg-regeneration-cross-platform and m10:pcg-gpu-domain-agreement. The legs exist")
-    print("  and run independently; the comparison between them does not.")
-sys.exit(0 if comparing else 1)
-CHECK
-'''
+run = "python3 tools/ci/cross_leg_audit.py --claim job"
 ci_job = "milestone-m11a"
+
+# WHAT MUST BREAK IT: deleting every `download-artifact` line from ci.yml leaves the legs
+# publishing into artefacts nothing collects, which is the state this rung found and the state
+# the word-grep could not tell from the state it built. `just roadmap-falsify` applies that to a
+# sandboxed copy of the tree and requires this criterion to go RED on it.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token = "download-artifact"
+note = "the download step removed: four legs publish a digest and no job collects them"
 
 [[criterion]]
 id = "cross-leg-digest-published"
@@ -547,7 +699,15 @@ describe = "the M3 evidence for `testing-and-quality` still holds: the taxonomy 
 source = "tasks 5.1, 5.2, testing-and-quality, docs/roadmap/capability-matrix.md"
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py testing-and-quality"
+evaluates = ["testing-and-quality"]
+# THE TAXONOMY IS THE ROW'S FIRST LEG: delete the per-case budgets and a suite can be declared
+# without one, which is the half of the claim that is not a convention.
 ci_job = "milestone-m11a"
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tests/CMakeLists.txt"
+token = "CY_TEST_BUDGET_"
+
 
 [[criterion]]
 id = "build-system-at-working"
@@ -555,7 +715,16 @@ describe = "the M4 evidence for `build-system-and-platforms` still holds, and it
 source = "tasks 5.1, 5.2, build-system-and-platforms, docs/roadmap/capability-matrix.md"
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py build-system-and-platforms"
+evaluates = ["build-system-and-platforms"]
+# FOUR PROFILES THAT MEAN THE SAME THING IN EVERY TOOLCHAIN is the row's first leg, and
+# `set(CY_PROFILES ...)` is where CMake states its half of it. Without that line the two files
+# have nothing to disagree about, which is the shape this criterion exists to catch.
 ci_job = "milestone-m11a"
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "cmake/profiles.cmake"
+token = "set(CY_PROFILES"
+
 
 [[criterion]]
 id = "developer-workflow-at-working"
@@ -563,9 +732,24 @@ describe = "the M6 evidence for `developer-workflow-and-just` still holds: every
 source = "tasks 5.1, 5.2, developer-workflow-and-just, docs/roadmap/capability-matrix.md"
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py developer-workflow-and-just"
+evaluates = ["developer-workflow-and-just"]
 known_gap = "THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the eleven categories the `Recipe surface` requirement names covers nothing — against a matrix row whose Working evidence reads `Every category of the required recipe surface does something from M6: Environment, Build, Run, Test, Quality, Generate, Content, Diagnose, Roadmap, Maintenance, Release`. THIS IS THE FIRST THING AN EVALUATING CRITERION FOUND, and it is exactly what §5 was written to make possible: the row's stated evidence was one quarter false and no check could say so, because the only expectation naming the row expected `seed` and an exit tier is a floor. It is declared rather than fixed here because the fix is M11.d's scope — `m11d:release-recipes-stop-refusing` is that criterion, and `developer-workflow-and-just` reaches Complete at M11.d `with the targets a release and a second platform bring`. What this rung owes is that the claim is now checked; what M11.d owes is that it becomes true. The other three legs pass, so a regression in any of them turns this from a one-line gap into a failure with a named cause"
 known_gap_closes = "m11d"
 ci_job = "milestone-m11a"
+# THE PROOF OF A DECLARED GAP RUNS THE OTHER WAY ROUND, and `falsify.prove` says why: this
+# criterion is RED on the unmutated tree, so "it goes red under mutation" is nothing to
+# demonstrate — it has already failed, in the open, and the whole ledger reads it. What a gap
+# has to show is that it is not PERMANENTLY red, which is the difference between a deadline
+# and a check that can never pass. So the mutation below is the gap's own closing act made
+# small: the Release category stops refusing, and the criterion must go GREEN. `just/release.just`
+# is the only file touched, so the leg that asserts the justfile still DEFINES `_not-implemented`
+# — the leg that stops "rename the helper away" reading as "everything is implemented" — still
+# holds while this runs.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "just/release.just"
+token = "_not-implemented"
+note = "the gap closes at m11d:release-recipes-stop-refusing; this is that fix in miniature"
 
 [[criterion]]
 id = "thirdparty-dependencies-at-working"
@@ -573,6 +757,7 @@ describe = "the M8.b evidence for `thirdparty-dependencies` still holds: every d
 source = "tasks 5.1, 5.2, thirdparty-dependencies, docs/roadmap/capability-matrix.md"
 kind = "command"
 run = "python3 tools/roadmap/row_evidence.py thirdparty-dependencies"
+evaluates = ["thirdparty-dependencies"]
 # THE GATING LEG CONFIGURES TWICE AND THE SECOND CONFIGURE FETCHES EVERY GATED DEPENDENCY, Slang and
 # its submodules among them — about 1.5 GB of git on a cold cache, measured at six minutes on a quiet
 # machine and over twenty on a loaded one. `tools/deps/test_gating.py` keeps its own FetchContent
@@ -583,7 +768,7 @@ ci_job = "milestone-m11a"
 
 [[criterion]]
 id = "the-four-rows-are-evaluated"
-describe = "each of `testing-and-quality`, `build-system-and-platforms`, `developer-workflow-and-just` and `thirdparty-dependencies` is BOTH evaluated by a criterion THIS LEDGER ACTUALLY RUNS AND expected above `seed` by some ledger's `expect_tiers`. Before the five M11 ledgers were written, `build-system-and-platforms` appeared in no ledger but m0.toml at all, and the only tier expectation naming any of the four was `m0:roadmap-tiers` expecting `seed` — which is a FLOOR and can never contradict a Working claim. **THE `ACTUALLY RUNS` HALF IS NOT DECORATION**: when the five ledgers landed, this check went green on criteria declared in m11d and m11e, which `criteria.build_plan` does not put in M11.a's plan at all — so a row could be `evaluated` by something that will not execute until two rungs after the tier is recorded. It reads the plan rather than the directory for that reason, and it excludes itself, because a check that counted its own declaration would be the same defect one level up. The other half — the tiers actually being RECORDED — is `m9:record-matches-plan-history`, which fails today and closes at M11.e"
+describe = "each of `testing-and-quality`, `build-system-and-platforms`, `developer-workflow-and-just` and `thirdparty-dependencies` is evaluated by a criterion THIS LEDGER ACTUALLY RUNS which DECLARES that it evaluates the row, is expected above `seed` by some ledger, and IS EVALUATED BEFORE IT IS RECORDED — no rung that expects the row above `seed` comes before the rung that evaluates it, and the tier the record holds today is not ahead of the evaluation either. **THE FIRST HALF WAS REFUTED AT M11's GATE AND THIS IS THE REPAIR**: it asked whether the row's name appeared in a criterion's `source`, and `source` is a CITATION — eight criteria in this plan cite `testing-and-quality` because that specification governs them, seven cite `developer-workflow-and-just` — so deleting either row's evaluator left the guard green with bystanders standing in for it, and the gate said so: it \"cannot detect the deletion of two of the four evaluators\". The question is now asked of `criterion.evaluates`, a field only the evaluating criterion declares, through `criteria.evaluators` so that no caller can re-invent it as a substring of prose. The `ACTUALLY RUNS` half is the second repair, from the first time this check passed: it went green on criteria declared in m11d and m11e, which `criteria.build_plan` does not put in M11.a's plan at all — a row `evaluated` by something that will not execute until two rungs after the tier is recorded. It reads the plan rather than the directory for that reason"
 source = "tasks 5.1, delivery-roadmap (A recorded tier is evaluated by a criterion)"
 kind = "command"
 run = '''
@@ -591,50 +776,85 @@ set -eo pipefail
 python3 - <<'CHECK'
 import pathlib, sys, tomllib
 sys.path.insert(0, "tools/roadmap")
-import criteria, gates
-rows = ["testing-and-quality", "build-system-and-platforms",
-        "developer-workflow-and-just", "thirdparty-dependencies"]
-# TWO HALVES, AND THE GAP IS ABOUT BOTH.
+import criteria, gates, record
+# FOUR LEGS PER ROW, AND EACH IS A DIFFERENT WAY THE SAME CLAIM HAS ALREADY FAILED.
 #
-# ONE: a criterion that RUNS something, declares the row it is evaluating, and is IN THIS LEDGER'S
-# OWN PLAN. `source` is the declaration — `describe` is prose, so only `source` is read — and
-# `build_plan` is the second half of it: a ledger evaluates the permanent set plus its own criteria
-# and nothing else, so a criterion declared in m11d is not a check this rung has, however well it
-# reads in the directory. That is precisely how this criterion first passed.
+# ONE: something in THIS LEDGER'S PLAN declares that it evaluates the row. `criterion.evaluates`
+# rather than a substring of `criterion.source`, because `source` is a citation and citations are
+# what made this check green over two deleted evaluators; `build_plan` rather than the directory,
+# because a criterion declared in m11d is not a check this rung runs, however well it reads.
 #
-# TWO: a tier expectation ABOVE `seed` somewhere, because `_check_tiers` treats an exit tier as a
-# FLOOR and a `seed` expectation can never contradict a Working claim. That half reads every ledger,
-# including the rungs that will record the tier, because the floor is the thing a later gate is held
-# to rather than a check this rung runs.
+# TWO: a tier expectation ABOVE `seed` somewhere on the ladder, because `criteria._check_tiers`
+# treats an exit tier as a FLOOR and a `seed` expectation can never contradict a Working claim.
+# That half reads every ledger, including the rungs that will record the tier.
+#
+# THREE: THE RECORDING NEVER PRECEDES THE EVALUATION. A floor is what a later gate is held to, so
+# every rung declaring one must sit at or after the rung whose criterion evaluates the row. This is
+# the ordering `m9:record-matches-plan-history` was re-declared for: M10 recorded four tiers no
+# criterion evaluated and M10's own gate put the record back.
+#
+# FOUR: the same rule against the record as it stands. A row the record holds above `seed` names the
+# milestone that advanced it, and that milestone may not come before the rung that evaluates it.
+ROWS = ("testing-and-quality", "build-system-and-platforms",
+        "developer-workflow-and-just", "thirdparty-dependencies")
 RANK = {"seed": 0, "working": 1, "complete": 2}
+LADDER = {rung: index for index, rung in enumerate(record.MILESTONES)}
+
 plan = criteria.build_plan("m11a", gates.permanent_milestones(gates.load()))
-evaluating = {row: [] for row in rows}
-floors = {row: [] for row in rows}
-for entry in plan.entries:
-    criterion = entry.criterion
-    if criterion.kind == "tiers" or criterion.id == "the-four-rows-are-evaluated":
-        continue
-    for row in rows:
-        if row in criterion.source:
-            evaluating[row].append(entry.label)
+declares_anywhere = {row: [] for row in ROWS}
+floors = {row: [] for row in ROWS}
 for path in sorted(pathlib.Path("tools/roadmap/milestones").glob("*.toml")):
-    for criterion in tomllib.loads(path.read_text(encoding="utf-8")).get("criterion", ()):
-        if criterion["kind"] != "tiers":
+    for declaration in criteria.load(path.stem).criteria:
+        for row in declaration.evaluates:
+            if row in declares_anywhere:
+                declares_anywhere[row].append(path.stem)
+        if declaration.kind != "tiers":
             continue
-        for row, tier in criterion.get("expect_tiers", {}).items():
-            if row in rows and RANK.get(tier, 0) > RANK["seed"]:
-                floors[row].append(f"{path.stem}:{criterion['id']} expects {tier}")
+        for row, tier in declaration.expect_tiers.items():
+            if row in floors and RANK.get(tier, 0) > RANK["seed"]:
+                floors[row].append((path.stem, f"{path.stem}:{declaration.id} expects {tier}"))
+
+entries = {entry.capability: entry for entry in record.load()}
 short = []
-print(f"M11.a's plan is {len(plan.entries)} criteria; these are the ones that name a row:")
-for row in rows:
+print(f"M11.a's plan is {len(plan.entries)} criteria; these are the ones that DECLARE a row:")
+for row in ROWS:
+    here = [entry.label for entry in criteria.evaluators(plan.entries, row)]
+    earliest = min((LADDER[rung] for rung in declares_anywhere[row]), default=None)
+    held = entries.get(row)
+    too_early = [why for rung, why in floors[row]
+                 if earliest is None or LADDER.get(rung, len(LADDER)) < earliest]
     print(f"  {row}")
-    print(f"    runs here: {', '.join(evaluating[row]) or 'NOTHING IN THIS PLAN RUNS FOR THIS ROW'}")
-    print(f"    floor:     {', '.join(floors[row]) or 'NO LEDGER EXPECTS IT ABOVE seed'}")
-    if not evaluating[row] or not floors[row]:
-        short.append(row)
+    print(f"    runs here:  {', '.join(here) or 'NOTHING IN THIS PLAN DECLARES IT EVALUATES THIS ROW'}")
+    print(f"    declared:   {', '.join(sorted(declares_anywhere[row])) or 'no ledger at all'}")
+    print(f"    floor:      {'; '.join(why for _rung, why in floors[row]) or 'NO LEDGER EXPECTS IT ABOVE seed'}")
+    print(f"    recorded:   {held.tier if held else 'not in the record'} at {held.milestone if held else '-'}")
+    if not here:
+        short.append(f"{row}: no criterion this ledger runs declares that it evaluates it")
+    if not floors[row]:
+        short.append(f"{row}: no ledger expects it above seed, so no floor can contradict a claim")
+    if too_early:
+        short.append(f"{row}: recorded before it is evaluated — {'; '.join(too_early)} "
+                     f"but the evaluator is declared at {sorted(declares_anywhere[row]) or 'nowhere'}")
+    if held and RANK.get(held.tier, 0) > RANK["seed"] and (
+            earliest is None or LADDER.get((held.milestone or "").lower(), -1) < earliest):
+        short.append(f"{row}: the record holds {held.tier} from {held.milestone}, "
+                     f"which is before the rung that evaluates it")
+for line in short:
+    print(f"  SHORT {line}")
+print(f"{len(short)} shortfall(s) over {len(ROWS)} rows")
 sys.exit(1 if short else 0)
 CHECK'''
 ci_job = "milestone-m11a"
+# THE MUTATION IS THE GATE'S OWN COMPLAINT, EXECUTED: take away one evaluator's declaration and the
+# row has nothing in this plan that evaluates it. The line deleted is the declaration itself rather
+# than the whole criterion, because `delete-lines` is a line-wise verb and half a TOML table is a
+# criterion that fails to LOAD — a mutation that kills the tool proves nothing about the subject.
+# Deleting each of the four criteria whole is the same mutation by hand, and the change that wrote
+# this records that it was done for all four.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones/m11a.toml"
+token = 'evaluates = ["testing-and-quality"]'
 
 # --- Section 10: determinism, replay and the network -----------------------------------------------
 #

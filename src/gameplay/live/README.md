@@ -104,3 +104,20 @@ authoring state implies.
   knows how to build it, and an asset rebind needs one wired to an asset system. Both refusals are
   deliberate: a policy that quietly did nothing would report applied over a rebind that did not
   happen.
+
+## What checks the policy table, and the one leg that carries the claim
+
+`m11b:live-edit-policy-exists` was four inverted greps — `LiveEditPolicy`, `ReinitializeComponent`,
+`RecreateEntity`, `RestartWorld` — which a comment naming them satisfies, and M11's gate refused it
+as such. It is now `tools/editor/play_contract.py live-edit-policy`, which compares the table above
+against `live-editing`'s own markdown table and against `reflect::PersistenceKind`, the
+classification the defaults are derived FROM.
+
+Its load-bearing leg is the one `policy.h` argues at length: **`RecreateEntity` and `RestartWorld`
+are never derived.** Nothing about a field's classification can tell you that changing it invalidates
+the entity or the world; that has to be DECLARED, and `m11b:live-edit-applies-without-a-restart` is
+written against exactly that distinction. A build in which `derived_policy_for` could return either
+would make the per-field declaration unnecessary and that criterion vacuous — so inserting
+`LiveEditPolicy::RestartWorld` into one of its arms turns the gate red, which is one of the eighteen
+cases `tools/editor/selftest.py` checks. Run by `just quality-editor-contract` and by
+`integration.editor_contract_live_edit_policy`.

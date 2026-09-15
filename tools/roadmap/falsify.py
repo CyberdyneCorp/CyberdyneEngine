@@ -40,6 +40,12 @@ itself:
     mutation           the derived or declared mutation     must FAIL
     ledger-blind       tools/roadmap/milestones/ removed    must PASS
 
+A DECLARED GAP IS JUDGED THE OTHER WAY ROUND (`_prove_a_declared_gap`). A criterion its ledger
+declares as an expected failure is already red on the unmutated tree, in the open, on every run of
+that ledger: "show that it can go red" asks for what is in front of the reader. What it has not
+shown is that it is not PERMANENTLY red, so its declared mutation is the gap's own closing act made
+small, and it must take the criterion GREEN.
+
 The third is there because two of the seven were a grep that found its own ledger. A criterion whose
 verdict changes when the ledgers are deleted is reading the roadmap instead of the repository, and no
 amount of reading the regex catches that reliably — deleting the ledgers catches it every time.
@@ -92,9 +98,32 @@ LEDGER_DIR_NAME = "tools/roadmap/milestones"
 PROOF_TIMEOUT_S = 240
 
 PROVEN = "proven"
+#: THE SECOND SHAPE A PROOF COMES IN, and it is the strongest evidence there is: the tooling ran the
+#: criterion, unmutated, and WATCHED IT FAIL. A criterion that is red today has not been argued to be
+#: falsifiable — it has been observed falsified, by the repository as it stands.
+#:
+#: WHY THIS IS A RATCHET AND NOT A HOLE. The defect this module exists to end is one-directional: a
+#: criterion that is GREEN and that nothing can turn red. A red criterion is not that. And the moment
+#: it goes green — which is what closing the rung means — the recorded verdict stops matching what is
+#: observed, `reconcile` says so, and the criterion has to earn an ordinary mutation proof before the
+#: ledger accepts it again. So the rung cannot close by turning these green quietly.
+#:
+#: WHAT KEEPS IT HONEST is the tree control below: red in the SANDBOX is not enough, because the
+#: sandbox is source-only and a criterion can be red there for want of a generated or untracked file.
+#: The criterion has to be red in the repository as well, which is what makes the redness a property
+#: of the repository rather than of the copy.
+RED_IN_THE_TREE = "red in the tree"
+#: The same shape for a criterion the source-only sandbox cannot run at all: observed red against a
+#: real build tree, named on the command line. Recorded apart because a source-only run cannot
+#: re-earn it — see `reconcile`.
+RED_WITH_A_BUILD = "red against a built tree"
 REFUTED = "refuted"
 UNPROVABLE = "not provable here"
 NO_MUTATION = "no mutation"
+
+#: Every verdict that counts as a proof. `reconcile` requires the recorded one to be the observed
+#: one, so a criterion that changes proof shape is re-judged rather than carried.
+PROOF_VERDICTS = (PROVEN, RED_IN_THE_TREE, RED_WITH_A_BUILD)
 
 
 # --- Reading a criterion's shell ------------------------------------------------------------------
@@ -478,7 +507,7 @@ def weakness(criterion: criteria_module.Criterion) -> tuple[Finding, ...]:
         return (Finding("artefact-presence", f"a file matching {criterion.path} exists"),)
     if criterion.kind not in ("command", "recipe"):
         return ()
-    body = criterion.run
+    body = without_comments(criterion.run)
     if not searches(body) or _EXERCISES_THE_TREE.search(body):
         return ()
     patterns = ", ".join(sorted({search.pattern for search in searches(body)}))[:90]
@@ -637,6 +666,10 @@ class Sandbox:
         if path in self._saved:
             return
         self._saved[path] = path.read_bytes() if path.is_file() else None
+
+    def forget(self) -> None:
+        """Drop what is remembered without restoring it — for a file the caller wrote itself."""
+        self._saved.clear()
 
     def restore(self) -> None:
         for path, content in self._saved.items():
@@ -820,18 +853,144 @@ _NEEDS_A_BUILD = re.compile(
     r"just (build|test|run|ci|content|release|generate|quality-lint|quality-tidy)")
 
 
+#: A whole-line shell comment. Stripped before asking whether a body needs a build, because a
+#: criterion that EXPLAINS in a comment why it no longer runs `ctest` was being reported as needing
+#: a build over the sentence saying it does not — `m11b:specialised-editors` is that criterion, and
+#: it is source-only in every command it actually runs.
+_COMMENT_LINE = re.compile(r"^[ \t]*#.*$", re.MULTILINE)
+
+
+def without_comments(run: str) -> str:
+    return _COMMENT_LINE.sub("", run)
+
+
 def unsandboxable(criterion: criteria_module.Criterion) -> str:
     """Why a sandbox of the tracked tree cannot judge this criterion, or an empty string."""
     if criterion.kind in ("path", "tiers"):
         return ""
-    found = _NEEDS_A_BUILD.search(criterion.run)
+    found = _NEEDS_A_BUILD.search(without_comments(criterion.run))
     if found:
         return f"it needs a built tree ({found.group(0)!r}); the sandbox is source only"
     return ""
 
 
-def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion) -> Proof:
-    """Positive control, mutation, ledger-blind control. Anything short of all three is not a proof."""
+#: A criterion whose body runs this module, or the recipe that runs it. The tree control below
+#: executes a criterion in the repository, and executing one of THESE in the repository starts a
+#: second prover inside the first: `just roadmap-test` runs `falsify check`, which proves the whole
+#: ladder, which reaches this criterion again. The cost is not the objection — the objection is that
+#: a nested run sees `CY_FALSIFY` set, refuses its own tree controls, and so returns DIFFERENT
+#: verdicts from the outer one, which would make the outer run record "red in the tree" about a
+#: criterion that is red only because it was run inside itself. Refused by name instead.
+_RUNS_THE_ROADMAP_TOOLING = re.compile(r"just roadmap-(test|falsify)\b|falsify\.py|selftest\.py")
+
+#: How long the tree control gets. It runs the body the sandbox has just run, so it is the same work;
+#: the cap is there so that a criterion which is cheap over source and expensive against a real tree
+#: is reported unjudged rather than hanging the prover.
+TREE_CONTROL_TIMEOUT_S = 300
+
+#: How long a criterion gets against a real build tree (`prove --build-dir`). These are the suites,
+#: the samples and the four-profile builds — minutes rather than seconds.
+BUILD_PROOF_TIMEOUT_S = 3600
+
+
+def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
+                         timeout_s: int) -> tuple[int, str]:
+    """Run the criterion, UNMUTATED, in the repository itself.
+
+    THE WORKING TREE IS NEVER MUTATED HERE, and that is the whole licence for this function. The
+    sandbox exists so that a mutation cannot escape into the repository and nothing about that
+    changes: this runs the criterion exactly as `just roadmap-milestone` runs it, reads the exit
+    code, and stops. What it buys is the one question a source-only copy cannot answer — whether a
+    criterion that is red in the copy is red in the original.
+    """
+    if os.environ.get("CY_FALSIFY"):
+        return -1, "refusing to nest: a prover is already running"
+    if _RUNS_THE_ROADMAP_TOOLING.search(without_comments(criterion.run)):
+        return -1, "a criterion that runs this module cannot be controlled by running it again"
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("CY_")}
+    environment["CY_FALSIFY"] = "1"
+    if build_dir:
+        environment["CY_BUILD_DIR"] = build_dir
+    try:
+        completed = subprocess.run(  # noqa: S603 — the command is committed data
+            ["bash", "-c", criterion.run], cwd=REPO_ROOT, capture_output=True, text=True,
+            timeout=timeout_s, check=False, env=environment)
+    except subprocess.TimeoutExpired:
+        return 124, f"no result within {timeout_s} s"
+    return completed.returncode, (completed.stdout or "") + (completed.stderr or "")
+
+
+def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: str, finished) -> Proof:
+    """A criterion that failed unmutated: watched going red, or red for the sandbox's own reasons.
+
+    THE TREE CONTROL IS WHAT SEPARATES THOSE TWO. The sandbox is a copy of the TRACKED tree, so a
+    criterion can be red in it for a reason that has nothing to do with its subject — a generated
+    header nobody commits, an untracked fixture. Red in the sandbox AND red in the repository is a
+    property of the repository; red only in the sandbox is a property of the copy, and is reported
+    `not provable here` with that said in as many words.
+    """
+    if code == 124:
+        return finished(UNPROVABLE, "-", f"the unmutated run did not finish: {_first_line(output)}")
+    tree_code, tree_output = run_in_the_repository(criterion, "", TREE_CONTROL_TIMEOUT_S)
+    if tree_code < 0:
+        return finished(UNPROVABLE, "-", f"red in the sandbox, and the tree control cannot run: "
+                                         f"{tree_output}")
+    if tree_code == 124:
+        return finished(UNPROVABLE, "-", "red in the sandbox, and the tree control did not finish "
+                                         f"within {TREE_CONTROL_TIMEOUT_S} s")
+    if tree_code == 0:
+        return finished(UNPROVABLE, "-",
+                        "it is red in the sandbox and GREEN in the repository, so the copy is what "
+                        f"made it red, not the tree: {_first_line(output)}")
+    return finished(RED_IN_THE_TREE, "-",
+                    f"red unmutated, in the sandbox and in the repository (exit {code}): "
+                    f"{_first_line(output)}")
+
+
+def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str, blocked: str,
+                           mutation: Mutation | None, finished) -> Proof:
+    """A criterion the source-only sandbox cannot run at all, judged against a real build tree.
+
+    WITHOUT `--build-dir` NOTHING IS CLAIMED: it is `not provable here`, named, with the reason. With
+    one, the criterion is RUN — unmutated, in the repository, against that tree — and if it fails it
+    has been watched going red, which is the same shape as `_red_in_the_tree` and is recorded apart
+    only because a source-only run cannot re-earn it.
+
+    A criterion that PASSES against a build is NOT proven here, and this is the honest edge of the
+    tool: turning it red needs its source mutated and the tree rebuilt, which this prover does not do
+    — mutating the repository is exactly what the sandbox exists to prevent. Those are named, with
+    the mutation their own text implies, so that whoever builds the job that proves them knows what
+    to break.
+    """
+    if not build_dir:
+        return finished(UNPROVABLE, mutation.describe() if mutation else "-", blocked)
+    budget = min(BUILD_PROOF_TIMEOUT_S, criterion.timeout_s or BUILD_PROOF_TIMEOUT_S)
+    code, output = run_in_the_repository(criterion, build_dir, budget)
+    if code < 0:
+        return finished(UNPROVABLE, "-", f"{blocked}; and {output}")
+    if code == 124:
+        return finished(UNPROVABLE, "-", f"against {build_dir} it did not finish within {budget} s")
+    if code != 0:
+        return finished(RED_WITH_A_BUILD, "-",
+                        f"red unmutated against the build tree {build_dir} (exit {code}): "
+                        f"{_first_line(output)}")
+    return finished(UNPROVABLE, mutation.describe() if mutation else "-",
+                    f"it PASSES against the build tree {build_dir}; turning it red needs its source "
+                    "mutated and the tree rebuilt, which this prover does not do")
+
+
+def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
+          build_dir: str = "") -> Proof:
+    """Positive control, mutation, ledger-blind control. Anything short of all three is not a proof.
+
+    UNLESS THE UNMUTATED RUN IS ITSELF THE PROOF. A criterion that FAILS as written has been watched
+    going red, which is the claim a mutation exists to demonstrate; `_red_in_the_tree` is that shape
+    and `_prove_a_declared_gap` is its sibling for the criteria a ledger declares expecting to fail.
+    Both are checked before the mutation, and they have to be: a criterion whose subject does not
+    exist yet — a game nobody has written, a benchmark nobody has committed — has no file for a
+    mutation to break, and the older order reported "the mutation changed nothing" about criteria
+    that were red for precisely the reason they were declared.
+    """
     started = time.monotonic()
 
     def finished(verdict: str, mutation: str, detail: str) -> Proof:
@@ -848,18 +1007,26 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion) -
             f"{finding.rule}: {finding.detail}" for finding in blocking))
 
     mutation = derive(criterion)
-    if mutation is None:
-        return finished(NO_MUTATION, "-", "no mutation can be derived from this criterion's text; "
-                                          "it must declare a [criterion.falsifies]")
     blocked = unsandboxable(criterion)
     if blocked:
-        return finished(UNPROVABLE, mutation.describe(), blocked)
+        return _prove_against_a_build(criterion, build_dir, blocked, mutation, finished)
 
     code, output = sandbox.run(criterion)
     if code != 0:
-        return finished(UNPROVABLE, mutation.describe(),
-                        f"the positive control failed in the sandbox (exit {code}): "
-                        f"{_first_line(output)}")
+        # A DECLARED GAP IS JUDGED THE OTHER WAY ROUND and keeps its own route: its ledger says it is
+        # expected to fail, so what it owes is a mutation that makes it GREEN. Only a criterion that
+        # is red WITHOUT having declared itself so falls through to the tree control.
+        if criterion.is_declared_gap:
+            if mutation is None:
+                return finished(NO_MUTATION, "-",
+                                "a declared gap owes a mutation that makes it GREEN, and none can be "
+                                "derived from its text: it must declare a [criterion.falsifies]")
+            return _prove_a_declared_gap(sandbox, criterion, mutation, output, finished)
+        return _red_in_the_tree(criterion, code, output, finished)
+
+    if mutation is None:
+        return finished(NO_MUTATION, "-", "no mutation can be derived from this criterion's text; "
+                                          "it must declare a [criterion.falsifies]")
 
     try:
         changed = sandbox.apply(mutation)
@@ -882,6 +1049,47 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion) -
     return finished(PROVEN, mutation.describe(), f"red under mutation of {changed} file(s)")
 
 
+def _prove_a_declared_gap(sandbox: Sandbox, criterion: criteria_module.Criterion,
+                          mutation: Mutation, red: str, finished) -> Proof:
+    """A criterion that is RED on the unmutated tree, judged the other way round.
+
+    THE POSITIVE CONTROL CANNOT APPLY TO IT, and demanding one would be the wrong question twice
+    over. A declared gap is a criterion its own ledger says is expected to fail — it is failing, in
+    the open, on every run of that ledger — so "show that it can go red" is a demonstration of
+    something already demonstrated, and reporting it `not provable here` puts a check that is
+    visibly working on the list of checks nobody has judged.
+
+    What such a criterion has NOT shown is that it is not PERMANENTLY red, and that is the whole
+    difference between a gap that is a deadline and a criterion that can never pass — the shape
+    `_check_known_gap` exists to keep honest at the other end, where a gap that starts passing is a
+    ledger failure. So the mutation is required to make it GREEN: it is the gap's own closing act,
+    made small, executed by the tooling rather than described. A mutation that leaves it red proves
+    nothing about what it measures, and says so rather than counting.
+
+    The ledger-blind control is not run here: it asks whether a PASS survives the ledgers being
+    deleted, and this criterion does not pass.
+    """
+    try:
+        changed = sandbox.apply(mutation)
+    except (OSError, ValueError) as error:
+        sandbox.restore()
+        return finished(UNPROVABLE, mutation.describe(), f"the mutation could not be applied: {error}")
+    if not changed:
+        sandbox.restore()
+        return finished(REFUTED, mutation.describe(),
+                        "the mutation changed nothing — it names a file or a token that is not there")
+    code, output = sandbox.run(criterion)
+    sandbox.restore()
+    if code != 0:
+        return finished(UNPROVABLE, mutation.describe(),
+                        "this criterion is a declared gap and is RED on the unmutated tree, and the "
+                        "declared mutation does not make it green, so what it measures is "
+                        f"undetermined: {_last_line(output)}")
+    return finished(PROVEN, mutation.describe(),
+                    f"a declared gap: RED unmutated ({_last_line(red)}), GREEN under the mutation of "
+                    f"{changed} file(s) — the gap is a deadline rather than a permanent red")
+
+
 def _ledger_blind(sandbox: Sandbox, criterion: criteria_module.Criterion) -> str:
     """Whether the criterion's verdict comes from tools/roadmap/ rather than from the repository."""
     if criterion.kind != "command" and criterion.kind != "recipe":
@@ -901,6 +1109,14 @@ def _ledger_blind(sandbox: Sandbox, criterion: criteria_module.Criterion) -> str
 
 def _first_line(output: str) -> str:
     for line in output.splitlines():
+        if line.strip():
+            return line.strip()[:160]
+    return "(no output)"
+
+
+def _last_line(output: str) -> str:
+    """The LAST thing a check said, which is where a report that prints its legs puts the verdict."""
+    for line in reversed(output.splitlines()):
         if line.strip():
             return line.strip()[:160]
     return "(no output)"
@@ -957,7 +1173,11 @@ def write_inventory(inventory: Inventory, path: Path = INVENTORY) -> None:
              f"# {len(inventory.proofs)} proven, {len(inventory.unproven)} not yet shown able to "
              f"fail.", ""]
     for _key, proof in sorted(inventory.proofs.items()):
-        lines.extend(_entry_lines("proof", proof, with_verdict=False))
+        # THE VERDICT IS WRITTEN OUT for proofs as well as for unproven entries, because a proof now
+        # comes in more than one shape and `reconcile` requires the recorded shape to be the observed
+        # one. An entry written before this carried no `verdict` key and reads back as `proven`,
+        # which is what it was.
+        lines.extend(_entry_lines("proof", proof, with_verdict=True))
     for _key, proof in sorted(inventory.unproven.items()):
         lines.extend(_entry_lines("unproven", proof, with_verdict=True))
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -987,11 +1207,17 @@ _INVENTORY_HEADER = '''# What the ladder has shown can FAIL, and what it has not
 # --- Reconciling what is observed with what is recorded -------------------------------------------
 
 
-def prove_the_ladder(ledgers=()) -> list[Proof]:
+#: How `check` — and therefore `just roadmap-test` — is told that this machine has a build tree the
+#: criteria needing one can be judged against. A flag would not reach it: `check` is run by a recipe
+#: inside a self-test, so the environment is the only channel that survives the three layers.
+BUILD_DIR_VARIABLE = "CY_FALSIFY_BUILD_DIR"
+
+
+def prove_the_ladder(ledgers=(), build_dir: str = "") -> list[Proof]:
     """Run every proof, in one sandbox. Two seconds for the whole ladder, so a gate can afford it."""
     with tempfile.TemporaryDirectory(prefix="cy-falsify-") as directory:
         sandbox = Sandbox.materialise(Path(directory) / "tree")
-        return _prove_all(sandbox, tuple(ledgers), "")
+        return _prove_all(sandbox, tuple(ledgers), "", build_dir)
 
 
 def reconcile(observed: list[Proof], inventory: Inventory) -> list[str]:
@@ -1026,14 +1252,30 @@ def reconcile(observed: list[Proof], inventory: Inventory) -> list[str]:
                 f"{label}: what this criterion CHECKS has changed since it was last judged "
                 f"({recorded.digest} -> {proof.digest}). Re-run `just roadmap-falsify --record`.")
             continue
-        if proof.verdict == PROVEN and key in inventory.unproven:
+        if proof.verdict in PROOF_VERDICTS and key in inventory.unproven:
             findings.append(
-                f"{label}: is listed as not yet shown able to fail, and it now goes red under "
-                f"{proof.mutation}. DELETE THE ENTRY from falsifiability.toml.")
-        if proof.verdict != PROVEN and key in inventory.proofs:
+                f"{label}: is listed as not yet shown able to fail, and it has now been shown to go "
+                f"red ({proof.verdict}: {proof.detail}). DELETE THE ENTRY from falsifiability.toml.")
+        if proof.verdict not in PROOF_VERDICTS and key in inventory.proofs:
+            # A BUILD-BACKED PROOF IS NOT RE-EARNED BY A SOURCE-ONLY RUN, and pretending otherwise
+            # would turn every laptop's `just roadmap-test` red over a proof that is not in question.
+            # The run that CAN re-earn it is the one with a build: `prove --build-dir`, or
+            # `CY_FALSIFY_BUILD_DIR` in the environment of `check`. Anything else is a finding.
+            if recorded.verdict == RED_WITH_A_BUILD and proof.verdict == UNPROVABLE:
+                continue
             findings.append(
-                f"{label}: is recorded as proven and no longer proves — {proof.verdict}: "
-                f"{proof.detail}")
+                f"{label}: is recorded as {recorded.verdict} and no longer proves — "
+                f"{proof.verdict}: {proof.detail}")
+            continue
+        if (proof.verdict in PROOF_VERDICTS and key in inventory.proofs
+                and recorded.verdict != proof.verdict):
+            # THE SHAPE OF THE PROOF CHANGED, which is the direction that matters: a criterion
+            # recorded `red in the tree` has gone GREEN, so the evidence that it can fail is now the
+            # evidence nobody has — it owes an ordinary mutation proof. This is what stops a rung
+            # closing by quietly turning its red criteria green.
+            findings.append(
+                f"{label}: was recorded as '{recorded.verdict}' and is now '{proof.verdict}' "
+                f"({proof.detail}). Re-run `just roadmap-falsify --record`.")
     for key in sorted(set(inventory.proofs) | set(inventory.unproven)):
         if key not in seen:
             findings.append(f"{key[0]}:{key[1]}: is in falsifiability.toml and in no ledger. "
@@ -1091,9 +1333,13 @@ def command_audit(arguments: argparse.Namespace) -> int:
 
 
 def command_prove(arguments: argparse.Namespace) -> int:
+    build_dir = arguments.build_dir or os.environ.get(BUILD_DIR_VARIABLE, "")
+    if build_dir and not (REPO_ROOT / build_dir).is_dir():
+        print(f"falsify: no build tree at {build_dir}", file=sys.stderr)
+        return 2
     with tempfile.TemporaryDirectory(prefix="cy-falsify-") as directory:
         sandbox = Sandbox.materialise(Path(directory) / "tree")
-        proofs = _prove_all(sandbox, tuple(arguments.milestone), arguments.only)
+        proofs = _prove_all(sandbox, tuple(arguments.milestone), arguments.only, build_dir)
     counts: dict[str, int] = {}
     for proof in proofs:
         counts[proof.verdict] = counts.get(proof.verdict, 0) + 1
@@ -1111,13 +1357,14 @@ def command_prove(arguments: argparse.Namespace) -> int:
     return 1 if any(proof.verdict == REFUTED for proof in proofs) else 0
 
 
-def _prove_all(sandbox: Sandbox, ledgers: tuple[str, ...], only: str) -> list[Proof]:
+def _prove_all(sandbox: Sandbox, ledgers: tuple[str, ...], only: str,
+               build_dir: str = "") -> list[Proof]:
     proofs = []
     for identifier in (ledgers or criteria_module.available()):
         for criterion in criteria_module.load(identifier).criteria:
             if only and only not in criterion.id:
                 continue
-            proof = prove(sandbox, identifier, criterion)
+            proof = prove(sandbox, identifier, criterion, build_dir)
             sandbox.restore()
             proofs.append(proof)
     return proofs
@@ -1138,9 +1385,16 @@ def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = Fals
     refused: list[str] = []
     for proof in proofs:
         key = (proof.ledger, proof.criterion)
-        if proof.verdict == PROVEN:
+        if proof.verdict in PROOF_VERDICTS:
             inventory.proofs[key] = proof
             inventory.unproven.pop(key, None)
+            continue
+        # A BUILD-BACKED PROOF SURVIVES A SOURCE-ONLY RE-RECORD for the same reason `reconcile` does
+        # not flag it: this run had no build and did not judge it. It is re-earned, or contradicted,
+        # by a run that has one.
+        standing_proof = inventory.proofs.get(key)
+        if (standing_proof is not None and standing_proof.verdict == RED_WITH_A_BUILD
+                and standing_proof.digest == proof.digest and proof.verdict == UNPROVABLE):
             continue
         standing = inventory.unproven.get(key)
         if not baseline and (standing is None or standing.digest != proof.digest):
@@ -1171,7 +1425,8 @@ def _forget_deleted(inventory: Inventory) -> None:
 
 def command_check(arguments: argparse.Namespace) -> int:
     del arguments
-    findings = reconcile(prove_the_ladder(), read_inventory())
+    findings = reconcile(prove_the_ladder(build_dir=os.environ.get(BUILD_DIR_VARIABLE, "")),
+                         read_inventory())
     for finding in findings:
         print(f"  {finding}")
     print(f"{len(findings)} disagreement(s) between the ladder and falsifiability.toml")
@@ -1197,6 +1452,11 @@ def _parser() -> argparse.ArgumentParser:
         "--baseline", action="store_true",
         help="allow NEW unproven entries. The one-time flag that wrote this ladder's existing debt; "
              "after that the list only shrinks")
+    prove_command.add_argument(
+        "--build-dir", default="",
+        help="a BUILT tree to judge the criteria a source-only sandbox cannot run against. They are "
+             "run unmutated, in the repository, and a failure is recorded as observed rather than "
+             f"argued. Also read from {BUILD_DIR_VARIABLE}")
     prove_command.add_argument("--verbose", action="store_true", help="print the proven ones too")
     prove_command.set_defaults(handler=command_prove)
 

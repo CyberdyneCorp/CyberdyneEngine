@@ -72,38 +72,27 @@ notes = [
 
 [[criterion]]
 id = "pcg-regeneration-cross-platform"
-describe = "A REGION GENERATED ON ONE ARCHITECTURE REPRODUCES ON ANOTHER — AND NOTHING IN THIS TREE HAS COMPARED A GENERATED REGION'S DIGEST BETWEEN TWO OF THEM. The M10 spike measured, over 24 configurations and 12 trials, that a dependency-driven partial regeneration reproduces a full one bit for bit on ONE x86-64 host (design.md §1.1); it says nothing about a second architecture, and M9 §1.2 already measured that the engine's own math primitives move under `-march=native` with contraction at the compiler's default. The check looks for the only shape that could close it: a continuous-integration job that publishes one leg's generated-region digest and compares it with another leg's"
+describe = "A CONTINUOUS-INTEGRATION JOB COMPARES ONE ARCHITECTURE'S GENERATED-REGION DIGEST WITH ANOTHER'S, AND GOES RED WHEN THEY DIFFER. The M10 spike measured, over 24 configurations and 12 trials, that a dependency-driven partial regeneration reproduces a full one bit for bit on ONE x86-64 host (design.md §1.1); it says nothing about a second architecture, and M9 §1.2 already measured that the engine's own math primitives move under `-march=native` with contraction at the compiler's default. **THE CHECK WAS A WORD-GREP AND M11.a's GATE SAID SO**: it asked for a job block mentioning a `pcg` word beside `download-artifact`, which a job that compares nothing satisfies by saying those words. It now RUNS the comparison job's own command over digests written for it — two architectures whose generated world differs must turn that command red, which requires the job to ask for the generation claim at all and not the simulation claim alone, and an empty world and a single leg must be refused rather than reported as agreement. WHETHER THE TWO ARCHITECTURES ACTUALLY AGREE IS NOT THIS CRITERION: that is `m11a:pcg-regenerates-across-architectures`, which carries `where = \"ci\"` because this host has one architecture. What is answerable here, on any host, is whether the job would notice"
 source = "tasks 0.2, design.md §1.5"
 kind = "command"
-run = '''
-python3 - <<'CHECK'
-import pathlib, re, sys
-
-workflows = sorted(pathlib.Path(".github/workflows").glob("*.y*ml"))
-comparing = []
-for path in workflows:
-    text = path.read_text(encoding="utf-8")
-    for block in re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", text):
-        name = block.strip().split(":", 1)[0].strip()
-        lowered = block.lower()
-        if not re.search(r"\bpcg\b|procedural|generated-region", lowered):
-            continue
-        if "download-artifact" not in lowered:
-            continue
-        comparing.append(f"{path.name}:{name}")
-print(f"{len(workflows)} workflow(s) examined; "
-      f"{len(comparing)} job(s) compare a generated-region digest between legs: {comparing or 'none'}")
-if not comparing:
-    print("  no job publishes one architecture's generated-region digest and compares it with")
-    print("  another's, so cross-architecture reproducibility of PCG is UNMEASURED rather than met.")
-    print("  The legs exist — ci.yml's matrices include linux-arm64, macos-arm64 and windows-arm64 —")
-    print("  and they run independently. Closing this needs an upload-then-compare job.")
-sys.exit(0 if comparing else 1)
-CHECK
-'''
-where = "ci"
-reason = "this host is one x86-64 machine, so a claim about a second architecture cannot be measured here and must not be reported as passing"
+run = "python3 tools/ci/cross_leg_audit.py --claim pcg"
 ci_job = "milestone-m10"
+
+# IT NO LONGER CARRIES `where = "ci"`, AND THE REASON IS THAT THE CHECK CHANGED RATHER THAN THE HOST.
+# `where = "ci"` was correct while the criterion's only hope was to be answered by a second
+# architecture, and it is what let the word-grep sit unread on every developer's machine. What it
+# asks now — does the comparison this workflow runs go red when two legs disagree? — needs a
+# workflow, a shell and python3, all of which this host has. The claim that needs the second
+# architecture is `m11a:pcg-regenerates-across-architectures` and it still carries its `where`.
+#
+# WHAT MUST BREAK IT: renaming `--pcg` in ci.yml leaves the job comparing the simulation hash and no
+# longer the generated world, so two legs whose worlds differ pass it. `just roadmap-falsify` applies
+# that mutation to a sandboxed copy of the tree and requires this criterion to go RED on it.
+[criterion.falsifies]
+mutate = "rename-token"
+target = ".github/workflows/ci.yml"
+token = "--pcg"
+note = "the generation claim dropped from the comparison: the job still compares, and no longer compares this"
 
 [[criterion]]
 id = "pcg-gpu-domain-agreement"
@@ -1414,21 +1403,94 @@ ci_job = "milestone-m10"
 # PROCESSOR every frame and why `world-frame-budget` above is 63 ms of one band.
 [[criterion]]
 id = "fields-sampled-on-a-device"
-describe = "**AN ENVIRONMENT FIELD IS SAMPLED IN A SHADER, AND NO SHADER IN THIS TREE SAMPLES ONE.** `environment-fields` requires CPU and GPU access to the same field; `gpu.h` fixes and documents the buffer layout and `integration.environment_gpu` proves the decode agrees — on the processor, twice. The device half needs a `.slang` module written against that layout, bound through the GPU scene, and measured against a real device, and it does not exist. Six of M10's module READMEs record the same absence against their own rows: no shader for an environment field, a terrain material, a water surface, grass expansion or a cloud march. The check looks for a shader module that reads the field buffer"
+describe = "**AN ENVIRONMENT FIELD IS SAMPLED IN A SHADER, AND NO SHADER IN THIS TREE SAMPLES ONE.** `environment-fields` requires CPU and GPU access to the same field; `gpu.h` fixes and documents the buffer layout and `integration.environment_gpu` proves the decode agrees — on the processor, twice. The device half needs a `.slang` module written against that layout, bound through the GPU scene, and measured against a real device, and it does not exist. Six of M10's module READMEs record the same absence against their own rows: no shader for an environment field, a terrain material, a water surface, grass expansion or a cloud march. **THE CHECK NO LONGER LOOKS FOR A SHADER MODULE, IT RUNS THE SHADER'S COMPILER**: the first version of it greped `*.slang` for `field_image`, which a comment satisfies — `falsify.py audit --weak` calls that shape `presence-only` and this project has shipped seven checks that could not fail. It now requires `cy/field.slang` and its two consumers to TYPE-CHECK through the engine's own Slang front end inside a program that calls them, and requires the checked-in SPIR-V `render.environment_field` measures to be word-for-word what this module compiles to today — the only thing in the tree that ties that suite's ULP figures to a source file, because the probe's SPIR-V is embedded for builds with no compiler"
 source = "tasks 1.1, environment-fields (CPU and GPU access), src/environment/README.md"
 kind = "command"
 run = '''
 set -eo pipefail
-shaders=$(grep -rl "FieldImageHeader\|field_image\|kFieldImage" --include='*.slang' src/ 2>/dev/null || true)
-count=$(printf '%s' "$shaders" | grep -c . || true)
-echo "$count .slang module(s) sample an environment field: ${shaders:-none}"
-if [ "$count" -eq 0 ]; then
-    echo "  the buffer layout is fixed and tested on the processor and nothing on a device reads it,"
-    echo "  so 'CPU and GPU access to the same field' is half-discharged. It is also the largest"
-    echo "  single band in samples/10-world's frame: 63 ms of substrate re-sampled per terrain"
-    echo "  vertex, which a field sampler in a shader deletes rather than reduces."
-fi
-test "$count" -gt 0
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+
+# WHAT THIS CHECK USED TO BE, AND WHY IT IS NOT THAT ANY MORE. It was
+# `grep -rl "FieldImageHeader\|field_image\|kFieldImage" --include='*.slang' src/`, and a comment
+# carrying one of those words satisfied it. `tools/roadmap/falsify.py audit --weak` names that shape
+# `presence-only`: the verdict is that some text exists. This project has now shipped SEVEN checks
+# that could not fail, and a criterion whose subject is "a shader SAMPLES a field" answered by a
+# string in a file is the same defect, so it is answered by running the shader's compiler instead.
+#
+# TWO HALVES, AND NEITHER IS A STRING.
+#
+#   the module TYPE-CHECKS through the engine's own Slang front end, inside a program that CALLS it
+#   — `smoke.material_slang`'s last case, whose probe calls `cyFieldSampleScene`,
+#   `cyTerrainSampleSubstrate`, `cyTerrainShade`, `cyCloudShadowAt` and `cyCloudShadowAttenuate`, so
+#   a sampler that is deleted, renamed or given a signature nothing can call fails to compile;
+#
+#   the SPIR-V that `render.environment_field` measures is the SPIR-V THIS MODULE COMPILES TO TODAY.
+#   `tests/render/shaders/field_probe_spirv.h` is checked in — the render suite must run in builds
+#   with no shader compiler at all — so without this half, editing `cy/field.slang` changes nothing
+#   that any suite executes, and the ULP numbers that criterion prints are about bytes nobody can
+#   trace to a source file. Recompiling the probe and requiring word-for-word equality is what ties
+#   the measurement to the module, and it is the only thing in the tree that does.
+binary="$d/src/rendering/material/tests/cy_test_smoke_material_slang"
+test -x "$binary" || binary="$d/cy_test_smoke_material_slang"
+test -x "$binary" || { echo "no cy_test_smoke_material_slang under $d: this build has no Slang front end, so nothing in it compiles a shader and the claim cannot be judged here"; exit 1; }
+filter='the environment field sampler and its consumers compile against the standard library'
+out="$("$binary" "-tc=$filter" 2>&1)" || {
+    printf '%s\n' "$out" | tail -40
+    echo "the environment field sampler and its two consumers do NOT compile against the engine's standard library"
+    exit 1
+}
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 1 || { echo "the compile case is no longer in smoke.material_slang — renamed, deleted, or this filter is stale"; exit 1; }
+printf '%s\n' "$out" | grep -o 'cy.field + cy.terrain_shade + cy.cloud_shadow compiled to .*'
+
+slangc="$d/Development/bin/slangc"
+test -x "$slangc" || slangc="$(find "$d" -type f -name slangc -perm -u+x 2>/dev/null | head -1)"
+test -x "${slangc:-/nonexistent}" || { echo "no slangc under $d: the checked-in SPIR-V cannot be re-derived, so nothing ties cy/field.slang to what render.environment_field measures"; exit 1; }
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+for entry in sampleFieldBound sampleFieldBindless; do
+    "$slangc" tests/render/shaders/field_probe.slang -I src/rendering/shaders \
+        -target spirv -profile spirv_1_5 -entry "$entry" -stage compute \
+        -fvk-use-entrypoint-name -o "$work/$entry.spv"
+done
+python3 - "$work/sampleFieldBound.spv" "$work/sampleFieldBindless.spv" \
+    tests/render/shaders/field_probe_spirv.h <<'CHECK'
+import re
+import struct
+import sys
+
+
+def compiled(path):
+    data = open(path, "rb").read()
+    if len(data) % 4 or len(data) < 20:
+        sys.exit(f"{path}: slangc produced no whole SPIR-V module")
+    return list(struct.unpack(f"<{len(data) // 4}I", data))
+
+
+text = open(sys.argv[3]).read()
+embedded = {name: [int(word, 16) for word in re.findall(r"0x([0-9A-Fa-f]+)U", body)]
+            for name, body in re.findall(r"(k\w+Spirv)\[\]\s*=\s*\{(.*?)\};", text, re.S)}
+fresh = {"kFieldProbeBoundSpirv": compiled(sys.argv[1]),
+         "kFieldProbeBindlessSpirv": compiled(sys.argv[2])}
+stale = []
+for name in sorted(fresh):
+    mine, theirs = fresh[name], embedded.get(name)
+    if theirs is None:
+        sys.exit(f"{name} is not in field_probe_spirv.h: the suite that measures the device "
+                 f"sampler no longer runs a module this check can re-derive")
+    verdict = "identical" if mine == theirs else "DIFFERENT"
+    print(f"  {name}: {len(mine)} words recompiled, {len(theirs)} embedded — {verdict}")
+    if mine != theirs:
+        stale.append(name)
+if stale:
+    sys.exit("the checked-in SPIR-V is not what cy/field.slang compiles to today (" +
+             ", ".join(stale) + "). render.environment_field measures those bytes, so its "
+             "agreement figures are about a shader that is no longer in the tree. Regenerate with "
+             "the invocation in tests/render/shaders/field_probe.slang's header comment.")
+print("an environment field is sampled in a shader: the sampler and its two consumers type-check "
+      "through the engine's own front end, and the module the device suite measures is this one")
+CHECK
 '''
 ci_job = "milestone-m10"
 
