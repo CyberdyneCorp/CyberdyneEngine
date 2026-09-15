@@ -1604,6 +1604,46 @@ def test_falsifiability_by_mutating_the_tree(root: Path) -> None:
           (tree_root / "bystander.txt").read_text(encoding="utf-8"))
     subprocess.run(["git", "checkout", "--", "."], cwd=tree_root, check=True, capture_output=True)
 
+    # AND A FILE SOMEBODY ELSE CHANGED WHILE THE RUN WAS GOING IS LEFT ALONE. The recovery is
+    # `git checkout`, which discards; a prover takes minutes and an editor does not stop for it, so
+    # the recovery is aimed only at paths THIS mutation wrote to. Anything else is reported.
+    elsewhere = falsify_module.WorkingTree(tree_root)
+    elsewhere.apply(mutation)
+    (tree_root / "bystander.txt").write_text("someone edited this mid-run\n", encoding="utf-8")
+    try:
+        elsewhere.restore()
+        check("a file changed by somebody else mid-run is REPORTED, not discarded", False,
+              "restore() returned quietly over a tree it had not put back")
+    except falsify_module.TreeNotRestored as error:
+        check("a file changed by somebody else mid-run is REPORTED, not discarded",
+              "bystander.txt" in str(error), str(error))
+    check("and it still has the bytes that other person wrote",
+          (tree_root / "bystander.txt").read_text(encoding="utf-8").startswith("someone edited"),
+          (tree_root / "bystander.txt").read_text(encoding="utf-8"))
+    check("while the file the mutation DID write to was put back",
+          (tree_root / "subject.txt").read_bytes() == before)
+    subprocess.run(["git", "checkout", "--", "."], cwd=tree_root, check=True, capture_output=True)
+
+    # A COMMIT TAKEN WHILE THE TREE WAS MUTATED IS THE ONE THING A RESTORE CANNOT UNDO, and this
+    # repository met it on the very first run: an orchestrator snapshotting between phases caught a
+    # renamed token in a test file and committed it. Afterwards the file on disk was right and HEAD
+    # was wrong, which is the one direction `git status` calls clean — so HEAD is read before and
+    # after, and a HEAD that moved is raised rather than reported.
+    moved = falsify_module.WorkingTree(tree_root)
+    moved.apply(mutation)
+    subprocess.run(["git", "add", "-A"], cwd=tree_root, check=True, capture_output=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "snapshot"],
+                   cwd=tree_root, check=True, capture_output=True)
+    try:
+        moved.restore()
+        check("A COMMIT TAKEN DURING THE MUTATION WINDOW IS RAISED, not restored away", False,
+              "restore() returned quietly with the mutation in the history")
+    except falsify_module.TreeNotRestored as error:
+        check("A COMMIT TAKEN DURING THE MUTATION WINDOW IS RAISED, not restored away",
+              "HEAD MOVED" in str(error), str(error))
+    check("and the bytes on disk are put back even so",
+          (tree_root / "subject.txt").read_bytes() == before)
+
     # AND IT REFUSES TO RUN INSIDE ANOTHER PROVER, where two runs would mutate one tree.
     os.environ[NESTED_IN_THE_PROVER] = "1"
     try:

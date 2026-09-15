@@ -489,7 +489,12 @@ test "$parked" -eq 0
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
 out="$(ctest --test-dir "$d" -R '^integration.render_sky_fields$' -V 2>&1)" || { printf '%s\n' "$out" | tail -40; exit 1; }
-line="$(printf '%s\n' "$out" | grep -o 'through the store: .*' | head -1)"
+# `if !` RATHER THAN A BARE ASSIGNMENT, and the next line is the reason. Under `set -eo pipefail` a
+# command substitution whose pipeline ends in a grep that matched nothing makes the ASSIGNMENT fail,
+# so the shell exits at this line and the message below — the one that says which of the ways this
+# criterion can fail actually happened — is never printed. Watched: with the round-trip line renamed
+# in the suite, this criterion went red with no output after its first echo.
+if ! line="$(printf '%s\n' "$out" | grep -o 'through the store: .*' | head -1)"; then line=""; fi
 test -n "$line" || { echo "the round-trip case printed nothing — it has been renamed, skipped or deleted"; exit 1; }
 echo "$line"
 printf '%s\n' "$line" | python3 -c '

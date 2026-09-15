@@ -46,7 +46,7 @@ that ledger: "show that it can go red" asks for what is in front of the reader. 
 shown is that it is not PERMANENTLY red, so its declared mutation is the gap's own closing act made
 small, and it must take the criterion GREEN.
 
-AND A PROOF COMES IN THREE SHAPES, for the same reason one level down: a criterion that cannot pass
+AND A PROOF COMES IN FOUR SHAPES, for the same reason one level down: a criterion that cannot pass
 the positive control is not thereby unjudged.
 
     proven              it passes, and the mutation turns it RED
@@ -54,6 +54,21 @@ the positive control is not thereby unjudged.
                         watched it go red, which is the whole of what a mutation stands in for
     red against a       the same, for a criterion a source-only sandbox cannot run at all: observed
     built tree          against a real build named on the command line (`prove --build-dir`)
+    proven against a    it PASSES against that build, and the mutation applied to the WORKING TREE,
+    built tree          rebuilt over by the criterion's own body, turns it RED — and restoring the
+                        tree turns it green again (`prove --build-dir --mutate-the-tree`)
+
+WHY THE FOURTH EXISTS, AND IT IS THE HOLE THE OTHER THREE LEFT. A criterion whose subject is a
+COMPILED artefact cannot be judged by a copy of the tracked tree. With `--build-dir` it was run
+unmutated against a real one, and when it PASSED this module had nothing left to say: "turning it red
+needs its source mutated and the tree rebuilt, which this prover does not do." That sentence named
+SIXTEEN of M11.a's and M11.b's seventy criteria, and it is a description of the seven — green, with
+nothing in the tooling able to turn it red. The rule that produced it ("never mutate the working
+tree") is therefore narrowed rather than kept: `WorkingTree` mutates the repository under a flag,
+under a guard that refuses to run inside another prover, remembers every byte it overwrites, restores
+on every exit path including a signal, and afterwards requires `git status` — a witness that took no
+part in the bookkeeping — to report exactly what it reported before. A tree that does not come back,
+or a HEAD that moved while the tree was mutated, raises and stops the run.
 
 WHY `red in the tree` IS A RATCHET AND NOT A HOLE, since it is the shape that could become one. The
 defect this module exists to end runs in ONE direction: a criterion that is green and that nothing
@@ -907,6 +922,11 @@ class WorkingTree:
         self._armed = False
         self._previous: dict = {}
         self._baseline = self._status()
+        self._head = self._revision()
+        #: Every path a mutation in this window has written to. Kept by this class rather than read
+        #: off the sandbox, because `Sandbox.forget()` exists and clears the sandbox's copy — and
+        #: this set is what bounds the recovery below.
+        self._touched: set[str] = set()
 
     # --- what git says --------------------------------------------------------------------------
 
@@ -923,6 +943,12 @@ class WorkingTree:
         if reported.returncode != 0:
             return (f"git could not report the state of {self.root}: {reported.stderr.strip()}",)
         return tuple(sorted(line for line in reported.stdout.splitlines() if line.strip()))
+
+    def _revision(self) -> str:
+        """What HEAD is. Read before the mutation and again after, for the reason in `restore`."""
+        reported = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root,
+                                  capture_output=True, text=True, check=False)
+        return reported.stdout.strip() if reported.returncode == 0 else ""
 
     def drift(self) -> tuple[str, ...]:
         """Everything git reports now that it did not report when this object was made."""
@@ -948,7 +974,10 @@ class WorkingTree:
     def apply(self, mutation: Mutation) -> int:
         """Apply the mutation to the repository, arming the restore FIRST."""
         self._arm()
-        return self._files.apply(mutation)
+        self._head = self._revision()
+        changed = self._files.apply(mutation)
+        self._touched.update(str(path.relative_to(self.root)) for path in self._files._saved)
+        return changed
 
     def restore(self) -> None:
         """Put every remembered byte back, and require git to agree the tree is as it was.
@@ -960,24 +989,50 @@ class WorkingTree:
             self._files.restore()
         finally:
             self._disarm()
+        # THE HAZARD A RESTORE CANNOT UNDO, AND IT IS CHECKED FIRST, WHICH THIS REPOSITORY LEARNED
+        # THE EXPENSIVE WAY ON THIS TOOL'S FIRST RUN. The working tree is restored; a COMMIT taken
+        # while it was mutated is not. An orchestrator snapshotting between phases caught
+        # `src/rendering/sky/tests/test_cloud_shadows.cpp` with a renamed token in it and committed
+        # it — and afterwards the file on disk was right and HEAD was wrong, which is the one
+        # direction `git status` reads as a stray modification to be tidied away. That is why this
+        # is checked BEFORE the recovery below: `git checkout --` restores from the index, so
+        # against a commit that contains the mutation it would faithfully put the mutation back.
+        after = self._revision()
+        if after != self._head:
+            raise TreeNotRestored(
+                f"the working tree was restored, but HEAD MOVED while it was mutated "
+                f"({self._head[:12] or '(none)'} -> {after[:12] or '(none)'}). Whatever was "
+                "committed in that window contains the mutation — check that commit and correct it "
+                "before trusting the history. The tree on disk is correct; the commit is not.")
         left = self.drift()
         if left:
             # ONE RECOVERY ATTEMPT, AND IT IS GIT'S — `_remember` can only put back what it was asked
-            # to change, and a criterion's own body may have written to a tracked file. Offered only
-            # to paths that were CLEAN at the baseline: a path that was already modified when this
-            # run started is somebody's work in flight, and discarding it would be a worse outcome
-            # than the one being recovered from.
+            # to change, and a criterion's own body may have written to a tracked file. It is
+            # `git checkout`, which discards, so it is aimed at as little as it can be and not at
+            # "whatever git is complaining about":
+            #
+            #   * not a path that was ALREADY modified when this run began. That is somebody's work
+            #     in flight — this module's own source, while the phase that wrote this was editing
+            #     it — and throwing it away would be a worse outcome than the one being recovered
+            #     from;
+            #   * not a path this run never wrote to. A prover takes minutes and an editor does not
+            #     stop for it; a file that changed underneath belongs to whoever changed it, and the
+            #     most this class may do about one is say so.
             already = {line[3:] for line in self._baseline}
-            recoverable = [line[3:] for line in left if line[3:] not in already]
+            recoverable = [line[3:] for line in left
+                           if line[3:] not in already and line[3:] in self._touched]
             if recoverable:
                 subprocess.run(["git", "checkout", "--", *recoverable], cwd=self.root,
                                capture_output=True, check=False)
             left = self.drift()
         if left:
+            mine = [line for line in left if line[3:] in self._touched]
             raise TreeNotRestored(
                 "the working tree was mutated and has NOT been put back. Restore it before anything "
                 "else is done in it — `git status` reports this, which it did not before:\n"
-                + "\n".join(left))
+                + "\n".join(left)
+                + ("\n(none of those is a file this mutation wrote to, so they are somebody else's "
+                   "and were deliberately left alone)" if not mine else ""))
 
     def _arm(self) -> None:
         if self._armed:

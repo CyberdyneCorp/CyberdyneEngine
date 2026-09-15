@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 123 proven, 518 not yet shown able to fail.
+# 126 proven, 515 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -154,6 +154,14 @@ digest = "a269492dee76d4fd"
 verdict = "proven"
 mutation = "rename-token '_not-implemented' in just/release.just (declared)"
 detail = "a declared gap: RED unmutated (every category of the required recipe surface does something rather than refusing), GREEN under the mutation of 1 file(s) — the gap is a deadline rather than a permanent red"
+
+[[proof]]
+ledger = "m11a"
+criterion = "field-device-agrees-with-cpu"
+digest = "6d53c87d39b58ed9"
+verdict = "proven against a built tree"
+mutation = "rename-token 'sentinels alive' in tests/render/test_field_device.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the suite no longer reports its sentinel count: the dispatch cannot be shown to have run), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -294,10 +302,10 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): 0 file(s
 [[proof]]
 ledger = "m11a"
 criterion = "sky-field-round-trips"
-digest = "e7bb87f95dc16103"
+digest = "6086aa9617e282a6"
 verdict = "proven against a built tree"
 mutation = "rename-token 'through the store' in src/rendering/sky/tests/test_cloud_shadows.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: Interprocedural optimizations are turned on), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the round-trip case printed nothing — it has been renamed, skipped or deleted), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -421,6 +429,14 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): error: J
 
 [[proof]]
 ledger = "m11b"
+criterion = "gameplay-suites"
+digest = "a0bcb41602b6140a"
+verdict = "proven against a built tree"
+mutation = "rename-token 'ability_core' in src/gameplay/abilities/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: a suite this criterion names is not registered — renamed, deleted, or never written), and green again once restored"
+
+[[proof]]
+ledger = "m11b"
 criterion = "generated-code"
 digest = "8b08108238322586"
 verdict = "proven against a built tree"
@@ -506,6 +522,14 @@ digest = "d4e6c1db6fb2a65b"
 verdict = "proven"
 mutation = "rename-token 'separate-process' in src/gameplay/play/src/mode.cpp (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "plugins"
+digest = "837f94bf1c7f3559"
+verdict = "proven against a built tree"
+mutation = "rename-token 'virtual-texture-producer' in src/core/plugins/src/host.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 8: Errors while running CTest), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -1765,14 +1789,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11a"
-criterion = "field-device-agrees-with-cpu"
-digest = "7b6e52db122f5dde"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11a"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
 verdict = "not provable here"
@@ -1797,24 +1813,8 @@ detail = "this host cannot evaluate it, so it cannot judge it either: one host w
 
 [[unproven]]
 ledger = "m11b"
-criterion = "gameplay-suites"
-digest = "5c0edfed12e35349"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "plugins"
-digest = "9c516e5944caa8b7"
 verdict = "not provable here"
 mutation = "-"
 detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
