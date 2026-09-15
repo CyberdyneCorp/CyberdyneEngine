@@ -87,8 +87,8 @@ ci_job = "layering"
 [criterion.falsifies]
 mutate = "rename-token"
 target = "tools/layercheck/layercheck.py"
-token  = 'relative.startswith("platform/")'
-note   = "the sdl rule is `no SDL header outside platform/`; renaming the test that recognises platform/ makes the SDL includes that legitimately live there into violations, so the checker fires over real source files rather than over its own fixtures"
+token  = "platform/"
+note   = "the sdl rule is `no SDL header appears outside platform/`. Renaming the directory the rule exempts turns the eight SDL includes that legitimately live in platform/desktop-sdl3/ into eight reported violations over real source files — the check fires, rather than crashing. Renaming the EXPRESSION was tried first and rejected: it made the checker raise a NameError, which is a red for a reason no reader of this criterion could act on."
 
 [[criterion]]
 id = "workflows"
@@ -97,6 +97,12 @@ source = "tasks 9.6, developer-workflow-and-just"
 kind = "recipe"
 run = "just ci-check"
 ci_job = "workflows"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token  = "just quality-layers"
+note   = "this gate is the one that stops the CI copy of the gate list from drifting: a permanent gate whose commands no job runs fails it. The mutation takes the layering gate's command out of every job, which is exactly that drift."
 
 [[criterion]]
 id = "generated-code"
@@ -131,9 +137,9 @@ ci_job = "roadmap-status"
 
 [criterion.falsifies]
 mutate = "delete-lines"
-target = "tools/roadmap/milestones"
-token  = "ci_job = "
-note   = "every criterion must name the CI job that runs it, and the self-test loads every ledger; the mutation takes that field out of all of them"
+target = "openspec/specs/audio/spec.md"
+token  = "### Requirement:"
+note   = "the self-test checks that the capability matrix's Reqs column matches the specification each row links to; the mutation takes the requirements out of one specification and the matrix then over-counts it. One named case fails and the other 299 pass, which is what a check reporting a real disagreement looks like. Deleting `ci_job` from every ledger was tried first: it is also red and also on-subject, but it kills the self-test with a traceback at load instead of reporting a case, and a check that dies reads the same whatever killed it."
 
 [[criterion]]
 id = "four-profiles"

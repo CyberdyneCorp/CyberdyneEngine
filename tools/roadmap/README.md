@@ -113,6 +113,44 @@ The third exists because two of the seven were a grep that found its own ledger.
 every spelling of that; deleting the ledgers catches all of them, because a criterion whose verdict
 changes when the roadmap is deleted was reading the roadmap.
 
+### A criterion that is already red has been watched going red
+
+A proof therefore comes in three shapes, and the second and third are for the criteria that cannot
+pass a positive control because they are failing *right now* — which is most of a rung's ledger
+while the rung is open:
+
+| Verdict | What was observed |
+|---|---|
+| `proven` | it passes, and the mutation the tooling applied turned it **red** |
+| `red in the tree` | it **fails as written**, in the sandbox *and* in the repository |
+| `red against a built tree` | the same, for a criterion a source-only sandbox cannot run at all, observed against a real build: `just roadmap-falsify prove --build-dir build/dev` |
+
+**Why this is a ratchet and not a hole.** The defect runs in one direction: a criterion that is green
+and that nothing can turn red. A criterion that is red is not that, and it is red in the open on
+every run of its ledger. The day it goes green — which is what closing the rung means — the recorded
+verdict stops matching the observed one, `reconcile` says so by name, and the criterion owes an
+ordinary mutation proof before the ladder will take it again. **A rung cannot close by turning its
+red criteria green quietly.**
+
+**What keeps it honest is the tree control.** Red in the *sandbox* is not enough: the sandbox is a
+copy of the tracked tree, so a criterion can be red in it for a reason that has nothing to do with
+its subject — a generated header nobody commits, a `.git` that is not there. It has to be red in the
+repository too. That control runs the criterion **unmutated** and nothing else; this tool never
+mutates the working tree, which is the whole reason the sandbox exists.
+
+**A criterion that needs a build** is `not provable here` unless a build is named, and then it is
+*run* rather than argued about. `--build-dir`, or `CY_FALSIFY_BUILD_DIR` in the environment, which is
+how `just roadmap-test` is told. A source-only run does not re-earn such a proof and does not destroy
+it either: it reports that it could not judge it. The edge of the tool is the criterion that **passes**
+against a build — turning that red needs its source mutated and the tree rebuilt, which this prover
+does not do, so it says so and names the mutation its text implies.
+
+**`plan-consistency` is the one criterion this prover cannot prove by running it**, because running
+it runs the prover. `selftest.py` prints a line and skips its four sandbox-materialising cases when
+`CY_FALSIFY` is set — which no pull request and no developer's `just roadmap-test` ever sets — so
+what the criterion proves here is that `just roadmap-test` goes red when a ledger is broken, which
+is the claim it makes.
+
 ### The mutation is derived, not described
 
 The author writes nothing. A `path` criterion names the artefact, a `tiers` criterion names the

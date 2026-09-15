@@ -46,6 +46,29 @@ that ledger: "show that it can go red" asks for what is in front of the reader. 
 shown is that it is not PERMANENTLY red, so its declared mutation is the gap's own closing act made
 small, and it must take the criterion GREEN.
 
+AND A PROOF COMES IN THREE SHAPES, for the same reason one level down: a criterion that cannot pass
+the positive control is not thereby unjudged.
+
+    proven              it passes, and the mutation turns it RED
+    red in the tree     it FAILS as written, in the sandbox AND in the repository — the tooling has
+                        watched it go red, which is the whole of what a mutation stands in for
+    red against a       the same, for a criterion a source-only sandbox cannot run at all: observed
+    built tree          against a real build named on the command line (`prove --build-dir`)
+
+WHY `red in the tree` IS A RATCHET AND NOT A HOLE, since it is the shape that could become one. The
+defect this module exists to end runs in ONE direction: a criterion that is green and that nothing
+can turn red. A criterion that is red is not that. And the day it goes green — which is what closing
+a rung means — the recorded verdict stops matching the observed one, `reconcile` says so by name,
+and the criterion must earn an ordinary mutation proof before the ladder will take it again. A rung
+cannot close by turning its red criteria green quietly.
+
+WHAT KEEPS THAT HONEST IS THE TREE CONTROL. Red in the SANDBOX is not enough: the sandbox is a copy
+of the TRACKED tree, so a criterion can be red in it for a reason that has nothing to do with its
+subject — a generated header nobody commits, a `.git` that is not there. It has to be red in the
+repository as well, which is what makes the redness a property of the repository rather than of the
+copy. That control runs the criterion UNMUTATED and nothing else: this module never mutates the
+working tree, which is the entire reason the sandbox exists.
+
 The third is there because two of the seven were a grep that found its own ledger. A criterion whose
 verdict changes when the ledgers are deleted is reading the roadmap instead of the repository, and no
 amount of reading the regex catches that reliably — deleting the ledgers catches it every time.
@@ -855,9 +878,14 @@ def digest(criterion: criteria_module.Criterion) -> str:
 #: source, not a build: a criterion that needs a compiled engine is reported `not provable here` and
 #: named, rather than being handed four hours and a timeout. Continuous integration, which has the
 #: build, is where those are proven.
+#: `just ci-check` is EXCLUDED from the `ci` alternative on purpose. It is `tools/ci/check_workflows
+#: .py`, which reads .github/workflows/, gates.toml and the justfile and compiles nothing — and the
+#: regex matched it only because "just ci" is a prefix of it. A criterion reported as needing a build
+#: it does not need is a criterion nothing ever proves, which is the same silence one door along.
 _NEEDS_A_BUILD = re.compile(
     r"\bCY_BUILD_DIR\b|\bbuild/|\bctest\b|\bcmake\b|\bcargo\b|\bninja\b|"
-    r"just (build|test|run|ci|content|release|generate|quality-lint|quality-tidy)")
+    r"just ci(?!-check)|"
+    r"just (build|test|run|content|release|generate|quality-lint|quality-tidy)")
 
 
 #: A whole-line shell comment. Stripped before asking whether a body needs a build, because a
@@ -1038,6 +1066,18 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
     if blocking:
         return finished(REFUTED, "-", "; ".join(
             f"{finding.rule}: {finding.detail}" for finding in blocking))
+
+    # A CRITERION THIS HOST CANNOT EVALUATE MAY NOT BE JUDGED HERE EITHER, and getting this wrong
+    # would have been this module committing the defect it polices. `just run-editor --smoke` fails
+    # on a machine with no display and `just test-determinism --compare-legs` fails on a machine with
+    # one architecture — and a build-backed run would have read both as "watched going red", which is
+    # a verdict about this laptop rather than about the repository. `criteria.unmet_requirement` is
+    # the same probe the ledger uses to report NOT EVALUATED rather than passed.
+    unmet = criteria_module.unmet_requirement(criterion)
+    if unmet:
+        return finished(UNPROVABLE, "-", f"this host cannot evaluate it, so it cannot judge it "
+                                         f"either: {unmet} — CI job '{criterion.ci_job}'",
+                        unjudged=True)
 
     mutation = derive(criterion)
     blocked = unsandboxable(criterion)
@@ -1462,10 +1502,22 @@ def _forget_deleted(inventory: Inventory) -> None:
 
 def command_check(arguments: argparse.Namespace) -> int:
     del arguments
-    findings = reconcile(prove_the_ladder(build_dir=os.environ.get(BUILD_DIR_VARIABLE, "")),
-                         read_inventory())
+    observed = prove_the_ladder()
+    inventory = read_inventory()
+    findings = reconcile(observed, inventory)
     for finding in findings:
         print(f"  {finding}")
+    # SAY OUT LOUD WHAT THIS RUN DID NOT JUDGE. A proof taken against a build tree is carried by a
+    # source-only run rather than re-earned, and a carried proof nobody can see is the beginning of
+    # a recorded number nobody re-earns — which is the decay this whole module was written against.
+    carried = [proof for proof in observed
+               if proof.unjudged and (proof.ledger, proof.criterion) in inventory.proofs]
+    if carried:
+        print(f"{len(carried)} recorded proof(s) this run could not re-earn — it has no build tree. "
+              f"Set {BUILD_DIR_VARIABLE} to one, or run "
+              "`just roadmap-falsify prove --build-dir <dir>`:")
+        for proof in carried[:10]:
+            print(f"    {proof.ledger}:{proof.criterion}")
     print(f"{len(findings)} disagreement(s) between the ladder and falsifiability.toml")
     return 1 if findings else 0
 

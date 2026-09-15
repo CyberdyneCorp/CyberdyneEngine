@@ -1437,6 +1437,87 @@ def test_falsifiability_of_a_declared_gap(root: Path) -> None:
     target.unlink(missing_ok=True)
 
 
+def test_falsifiability_red_in_the_tree(root: Path) -> None:
+    """The second shape a proof comes in, and the control that keeps it from being a hole.
+
+    A criterion that FAILS as written has been watched going red, which is the claim a mutation is
+    there to demonstrate. What makes that a proof rather than an excuse is the TREE CONTROL: the
+    sandbox is a copy of the TRACKED tree, so a criterion can be red in it for a reason that has
+    nothing to do with its subject, and `test -d .git` is exactly such a criterion — true in the
+    repository, false in every sandbox. Both directions are exercised, because the second one is
+    what would otherwise let anything at all be recorded as proven by failing for the wrong reason.
+    """
+    sandbox = falsify_module.Sandbox.materialise(root / "tree")
+
+    nowhere = _criterion("nowhere", "grep -q kTokenNoFileInThisRepositoryContains README.md")
+    proof = falsify_module.prove(sandbox, "m0", nowhere)
+    check("A CRITERION THAT IS RED IN THE SANDBOX AND RED IN THE REPOSITORY IS PROVEN BY THAT",
+          proof.verdict == falsify_module.RED_IN_THE_TREE, f"{proof.verdict}: {proof.detail}")
+
+    only_in_a_checkout = _criterion("checkout", "test -d .git")
+    proof = falsify_module.prove(sandbox, "m0", only_in_a_checkout)
+    check("and one that is red ONLY in the sandbox is refused, because the copy made it red",
+          proof.verdict == falsify_module.UNPROVABLE
+          and "the copy is what made it red" in proof.detail,
+          f"{proof.verdict}: {proof.detail}")
+
+    # THE REGRESSION THAT MADE THIS CONTROL LIE. `path` and `tiers` criteria carry no shell, and the
+    # first draft of the tree control ran `bash -c criterion.run` for every kind — so an empty
+    # command exited ZERO and every artefact and every tier claim was reported GREEN in the
+    # repository, which is this module's own defect committed inside the control that exists to
+    # catch it.
+    missing = _criterion("missing", "", kind="path", path="docs/design/images/no-such-image*.png")
+    code, _output = falsify_module.run_in_the_repository(missing, "", 30)
+    check("the tree control EVALUATES a `path` criterion rather than running its empty shell",
+          code != 0, f"exit {code} for an artefact that is not there")
+    present = _criterion("present", "", kind="path", path="README.md")
+    code, _output = falsify_module.run_in_the_repository(present, "", 30)
+    check("and reports the artefact that is there as green", code == 0, f"exit {code}")
+
+    # AND IT NEVER RUNS ITSELF. `plan-consistency` runs `just roadmap-test`, which runs this prover.
+    runs_the_prover = _criterion("nested", "just roadmap-test")
+    code, output = falsify_module.run_in_the_repository(runs_the_prover, "", 30)
+    check("the tree control refuses a criterion that would start a second prover inside it",
+          code < 0 and "cannot be controlled by running it again" in output, output)
+
+
+def test_falsifiability_unjudged(root: Path) -> None:
+    """A run that could not judge a criterion neither confirms a proof nor destroys one.
+
+    The two cases are a build-backed proof re-run on a machine with no build, and a prover running
+    inside another prover. Both are `not provable here`, and both must leave a standing proof
+    exactly as it was — while a criterion with NO standing entry is still refused, because that is
+    the direction that stops the eighth.
+    """
+    del root
+    standing = falsify_module.Proof("m0", "built", "aaaa", falsify_module.RED_WITH_A_BUILD, "-",
+                                    "red against build/dev")
+    inventory = falsify_module.Inventory(proofs={("m0", "built"): standing})
+    unjudged = falsify_module.Proof("m0", "built", "aaaa", falsify_module.UNPROVABLE, "-",
+                                    "it needs a built tree", unjudged=True)
+    check("a run with no build leaves a build-backed proof standing",
+          not falsify_module.reconcile([unjudged], inventory),
+          str(falsify_module.reconcile([unjudged], inventory)))
+    judged = falsify_module.Proof("m0", "built", "aaaa", falsify_module.REFUTED, "-",
+                                  "it still passes mutated")
+    check("while a run that DID judge it and found nothing fails, as it always did",
+          any("no longer proves" in finding
+              for finding in falsify_module.reconcile([judged], inventory)))
+    check("and an unjudged criterion nothing has ever judged is still refused",
+          any("nothing in falsifiability.toml has judged" in finding
+              for finding in falsify_module.reconcile([unjudged], falsify_module.Inventory())))
+
+    # THE SHAPE OF A PROOF IS PART OF IT. A criterion recorded `red in the tree` that has gone GREEN
+    # is a criterion whose evidence has lapsed: it owes an ordinary mutation proof now.
+    was_red = falsify_module.Proof("m0", "gap", "bbbb", falsify_module.RED_IN_THE_TREE, "-", "red")
+    inventory = falsify_module.Inventory(proofs={("m0", "gap"): was_red})
+    now_proven = falsify_module.Proof("m0", "gap", "bbbb", falsify_module.PROVEN, "delete-path",
+                                      "red under mutation")
+    check("A CRITERION THAT WAS RED AND IS NOW GREEN HAS TO BE RE-JUDGED, not carried",
+          any("was recorded as" in finding
+              for finding in falsify_module.reconcile([now_proven], inventory)))
+
+
 def test_falsifiability_of_the_ladder(root: Path) -> None:
     """The real thing: every criterion on the ladder, proven or accounted for.
 
@@ -1511,6 +1592,8 @@ def main() -> int:
             test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
             test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
             test_falsifiability_of_a_declared_gap(_area(root, "falsify-gap"))
+            test_falsifiability_red_in_the_tree(_area(root, "falsify-red"))
+            test_falsifiability_unjudged(_area(root, "falsify-unjudged"))
             test_falsifiability_of_the_ladder(_area(root, "falsify-ladder"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")
