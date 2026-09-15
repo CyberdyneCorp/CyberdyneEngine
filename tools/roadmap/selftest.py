@@ -1257,6 +1257,39 @@ def test_falsifiability_rules(root: Path) -> None:
     check("nor is `CY_BUILD_DIR=... cargo test`, whose command is cargo and not the assignment",
           "no-assertion" not in _rules('CARGO_TARGET_DIR="$(just _editor-target-dir)" cargo test'))
 
+    # THE NINTH, AND `absent-recipe` ONE LEVEL DOWN. `m11a:world-budget-headless`,
+    # `world-budget-on-a-device` and `world-streams` ran `just run-sample 10-world ...`; the recipe
+    # exists, the sample is called `world` and `10-world` is the DIRECTORY, so run.just printed
+    # `no sample '10-world'` and exited 2 having measured nothing — and all three were recorded by
+    # the prover as `red against a built tree`, the verdict a criterion earns by being watched
+    # failing for its subject's sake.
+    check("a sample name `just run-sample` cannot resolve is refused: it exits 2 having run nothing",
+          "absent-sample" in _rules(
+              "just run-sample 10-world --headless --seed 1 --budget-ms 16.7"))
+    check("and the same line is accepted once it names the binary samples/ actually declares",
+          "absent-sample" not in _rules(
+              "just run-sample world --headless --seed 1 --budget-ms 16.7"))
+    check("`just run-sample --headless` with no name at all is not accused: run.just means `empty`",
+          "absent-sample" not in _rules("just run-sample --headless"))
+    check("a sample name assembled at run time is not guessed at, in either direction",
+          "absent-sample" not in _rules('just run-sample "$name" --headless'))
+    check("and a `just` recipe that is not run-sample is not read as one",
+          "absent-sample" not in _rules("just build-engine --profile dev"))
+
+    # AND WHAT THE RECORD SAYS ABOUT A RED CRITERION. The three above were filed with the detail
+    # `==> configure   profile=dev ...` — the FIRST line every build-backed criterion prints — and
+    # nothing of the failure, so a reader could not tell a criterion that ran and failed from one
+    # that never resolved its own command.
+    both_ends = falsify_module._why_it_is_red(
+        "==> configure   profile=dev\nrun-sample: no sample '10-world'\n"
+        "error: Recipe `run-sample` failed with exit code 2\n")
+    check("a red criterion's recorded reason carries the LAST thing it said, not only the first",
+          "no sample '10-world'" in both_ends, both_ends)
+    check("and `just`'s own epilogue is not mistaken for the criterion's verdict",
+          "failed with exit code" not in both_ends, both_ends)
+    check("while a one-line failure is recorded once rather than twice",
+          falsify_module._why_it_is_red("the only thing it said") == "the only thing it said")
+
 
 def test_absent_recipe_rule(root: Path) -> None:
     """A criterion that names a `just` recipe the justfile does not define is REFUSED, not proven.
