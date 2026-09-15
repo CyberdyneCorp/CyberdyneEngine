@@ -249,16 +249,36 @@ ci_job = "render-frame"
 id = "render-null"
 describe = "the artefact's frame compiles and records with no GPU at all: five passes then four, one submit, the barrier batches in the recorded stream equal to the number the plan derived, and two runs producing an identical plan hash and an identical command stream"
 source = "tasks 6.4, 7.1, 7.2, 7.6, ROADMAP M3 (rendering identically through the null backend in continuous integration)"
-kind = "recipe"
-run = "just test-render -R null_frame"
+kind = "command"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+ctest --test-dir "$d" -N -R '^render.null_frame$' 2>/dev/null | grep -q 'render.null_frame' || {
+    echo "render.null_frame is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.null_frame$'
+"""
 ci_job = "render-device"
 
 [[criterion]]
 id = "xr-prerequisites"
 describe = "the three deferred-scope checks tests/render/README.md has recorded since M0: two views are ONE submission of the geometry, the frame's inputs are arguments rather than a clock, and the view reaches submission through memory rather than through a re-recorded command"
 source = "tasks 6.5, 7.7, ROADMAP M3 (the XR prerequisite checks pass)"
-kind = "recipe"
-run = "just test-render -R xr_prerequisites"
+kind = "command"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+ctest --test-dir "$d" -N -R '^render.xr_prerequisites$' 2>/dev/null | grep -q 'render.xr_prerequisites' || {
+    echo "render.xr_prerequisites is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.xr_prerequisites$'
+"""
 ci_job = "render-device"
 
 # ONE BUILD DIRECTORY OF ITS OWN, AND CY_RENDERER_VULKAN=ON. The default build has the backend off
@@ -270,7 +290,18 @@ id = "conventions"
 describe = "the conventions asserted FROM THE DEVICE: the depth buffer clears to 0, near maps to 1 and far to 0 as sampled back, the nearer surface wins whichever order the two are drawn in, a scene a million units out renders bit-identically to the same scene at the origin, and the axis conventions hold against rendered output rather than only against the arithmetic"
 source = "tasks 5.1, 5.2, 5.3, 5.4, 7.5, ROADMAP M3 (camera-relative rendering and reversed-Z proven by test)"
 kind = "command"
-run = "d=\"${CY_BUILD_DIR:-build/vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine -D CY_RENDERER_VULKAN=ON && CY_BUILD_DIR=\"$d\" just test-render -R conventions"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+CY_BUILD_DIR="$d" just build-engine -D CY_RENDERER_VULKAN=ON > /dev/null
+ctest --test-dir "$d" -N -R '^render.conventions$' 2>/dev/null | grep -q 'render.conventions' || {
+    echo "render.conventions is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.conventions$'
+"""
 timeout_s = 3600
 requires = "gpu"
 reason = "this host has no graphics device, and a convention sampled back off a device cannot be sampled back off nothing"
@@ -281,7 +312,18 @@ id = "golden"
 describe = "the golden images pass on Vulkan: the artefact's frame against its committed reference with zero validation errors, the same frame a million units out against THE SAME reference file, the shadow-off control against a different one, and the null backend deriving the same frame structure the device did"
 source = "tasks 6.3, 7.1, 7.5, ROADMAP M3 (golden-image tests pass on Vulkan)"
 kind = "command"
-run = "d=\"${CY_BUILD_DIR:-build/vulkan}\"; CY_BUILD_DIR=\"$d\" just build-engine -D CY_RENDERER_VULKAN=ON && CY_BUILD_DIR=\"$d\" just test-render -R golden"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+CY_BUILD_DIR="$d" just build-engine -D CY_RENDERER_VULKAN=ON > /dev/null
+ctest --test-dir "$d" -N -R '^render.golden$' 2>/dev/null | grep -q 'render.golden' || {
+    echo "render.golden is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.golden$'
+"""
 timeout_s = 3600
 requires = "gpu"
 reason = "this host has no graphics device, and a golden image cannot be photographed without one"

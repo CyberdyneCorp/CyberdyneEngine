@@ -430,8 +430,18 @@ ci_job = "milestone-m8b"
 id = "render-assembly-device"
 describe = "the same frame on a real device, which is the half a hosted runner cannot judge"
 source = "tasks 11.2"
-kind = "recipe"
-run = "just test-render -R assembly"
+kind = "command"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+ctest --test-dir "$d" -N -R '^render.assembly$' 2>/dev/null | grep -q 'render.assembly' || {
+    echo "render.assembly is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.assembly$'
+"""
 requires = "gpu"
 reason = "it puts an assembled frame on a graphics device; on a machine without one it is reported NOT EVALUATED rather than passed, which is what delivery-roadmap requires"
 ci_job = "milestone-m8b"

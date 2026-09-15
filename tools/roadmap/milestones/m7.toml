@@ -355,8 +355,18 @@ ci_job = "milestone-m7"
 id = "virtual-geometry-gpu"
 describe = "the GPU traversal against the CPU reference over 24 views on a real device with synchronisation validation on, and the visibility buffer's identification, binning and attribute reconstruction against the same asset by a completely separate path"
 source = "tasks 7.3, 7.4, ROADMAP M7"
-kind = "recipe"
-run = "just test-render -R render.virtual_geometry_gpu"
+kind = "command"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+ctest --test-dir "$d" -N -R '^render.virtual_geometry_gpu$' 2>/dev/null | grep -q 'render.virtual_geometry_gpu' || {
+    echo "render.virtual_geometry_gpu is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.virtual_geometry_gpu$'
+"""
 requires = "gpu"
 reason = "the traversal is a compute dispatch and the visibility buffer is a compute rasteriser; a hosted runner has no device and the entry is reported not evaluated rather than passed"
 ci_job = "render-device"
@@ -480,8 +490,18 @@ ci_job = "milestone-m7"
 id = "gpu-culling"
 describe = "the cull dispatch computes what M6's CPU reference computes, on a device: the same visible set, the same LOD decisions and the same counters, with `select_lods` deliberately NOT re-run afterwards because the dispatch already made that decision. It found a defect that had survived M3 to M6 — `bind_descriptor_sets` derived its bind point from the QUEUE, so every compute pass on the graphics queue bound its set to the graphics bind point and the pipeline saw no set at all"
 source = "tasks 5.1, 5.2, ROADMAP M7"
-kind = "recipe"
-run = "just test-render -R render.gpu_culling"
+kind = "command"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+ctest --test-dir "$d" -N -R '^render.gpu_culling$' 2>/dev/null | grep -q 'render.gpu_culling' || {
+    echo "render.gpu_culling is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.gpu_culling$'
+"""
 requires = "gpu"
 reason = "the cull is a compute dispatch compared against a CPU reference; a hosted runner has no device and the entry is reported not evaluated rather than passed"
 ci_job = "render-device"
@@ -490,8 +510,18 @@ ci_job = "render-device"
 id = "virtual-texturing-gpu"
 describe = "a feedback buffer written by a shader and a page table sampled by one — the half m6.toml recorded as missing in so many words — with `bytes_read` making 'no per-pixel stream reaches the CPU' a measurement rather than a promise, and the CPU mirror of `record_feedback` compared line for line against the shader's"
 source = "tasks 4.1, 4.2, ROADMAP M7"
-kind = "recipe"
-run = "just test-render -R render.virtual_texturing_gpu"
+kind = "command"
+run = """
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+ctest --test-dir "$d" -N -R '^render.virtual_texturing_gpu$' 2>/dev/null | grep -q 'render.virtual_texturing_gpu' || {
+    echo "render.virtual_texturing_gpu is not registered in $d — the suite has been renamed or deleted, or this tree"
+    echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
+    echo "just test-render passes --no-tests=ignore, so it would report running nothing as a pass."
+    exit 1
+}
+just test-render -R '^render.virtual_texturing_gpu$'
+"""
 requires = "gpu"
 reason = "the feedback pass and the page-table sample are shader work; a hosted runner has no device and the entry is reported not evaluated rather than passed"
 ci_job = "render-device"
