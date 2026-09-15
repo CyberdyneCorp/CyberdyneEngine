@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 69 proven, 572 not yet shown able to fail.
+# 112 proven, 529 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -125,6 +125,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
+criterion = "determinism-suites"
+digest = "d6c127d14d156240"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3 suite(s) match ^(determinism.simulation|integration.replay|integration.network)$"
+
+[[proof]]
+ledger = "m11a"
 criterion = "developer-workflow-at-working"
 digest = "a269492dee76d4fd"
 verdict = "proven"
@@ -138,6 +146,134 @@ digest = "d1b243eab6798454"
 verdict = "proven"
 mutation = "rename-token 'kFieldImageHeaderWords' in src/rendering/shaders/cy/field.slang (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "format"
+digest = "0db84aa9a0fe0e4a"
+verdict = "proven"
+mutation = "delete-lines 'IndentWidth: 4' in .clang-format (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "four-profiles"
+digest = "021dbef044895d07"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure   profile=debug  configuration=Debug  platform=linux"
+
+[[proof]]
+ledger = "m11a"
+criterion = "ladder-carries-five-rungs"
+digest = "63df714589330be2"
+verdict = "proven"
+mutation = "delete-lines '\"m11c\"' in tools/roadmap/record.py (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "layering"
+digest = "332ed56e5ef61f0e"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "m11b-open"
+digest = "d4fd32d914d02474"
+verdict = "proven"
+mutation = "delete-lines '- [x] ' in openspec/changes/**/*m11b*/tasks.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "network-at-complete-grade"
+digest = "8f637a6c1ce6c505"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): error: Justfile does not contain recipes `quality-requirements`, `networking-and-replication`, `replay-and-rollback`, or `simulation-and-determinism`."
+
+[[proof]]
+ledger = "m11a"
+criterion = "plan-consistency"
+digest = "d12efb2be60123ee"
+verdict = "proven"
+mutation = "delete-lines '### Requirement:' in openspec/specs/audio/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "roadmap-record"
+digest = "7bb4126bf3f19917"
+verdict = "proven"
+mutation = "delete-lines '    change:' in docs/roadmap/status.yaml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "roadmap-tiers"
+digest = "e2e2df440c8ee672"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): audio: recorded 'working', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11a"
+criterion = "save-benchmark"
+digest = "c4722c452c33e394"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "save-forbidden-patterns-checked"
+digest = "7ec57a945b64ce2a"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): no tools/save/check_forbidden.py — not one of the ten forbidden save patterns is checked by anything"
+
+[[proof]]
+ledger = "m11a"
+criterion = "save-has-an-engine-consumer"
+digest = "c76b49833f1b1f77"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): 0 engine module(s) above src/save/ link cy::save:"
+
+[[proof]]
+ledger = "m11a"
+criterion = "save-inspector"
+digest = "6a3c8cc007dc70c6"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 | 0 passed | 0 failed | 45 skipped"
+
+[[proof]]
+ledger = "m11a"
+criterion = "sky-field-consumed-outside-the-sky"
+digest = "fa3d2bfd1ee4cb12"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): 0 file(s) outside src/rendering/sky/ read the cloud shadow field:"
+
+[[proof]]
+ledger = "m11a"
+criterion = "specs"
+digest = "dd5897022f9b2a03"
+verdict = "proven"
+mutation = "delete-lines '#### Scenario:' in openspec/specs/delivery-roadmap/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "steam-audio-simulates"
+digest = "1e6b304f34a2ac22"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 | 0 passed | 0 failed | 31 skipped"
 
 [[proof]]
 ledger = "m11a"
@@ -161,7 +297,103 @@ criterion = "thirdparty-dependencies-at-working"
 digest = "067556bc4d188f0d"
 verdict = "red against a built tree"
 mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-2 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree"
+
+[[proof]]
+ledger = "m11a"
+criterion = "workflows"
+digest = "1077408579d6044a"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "world-budget-headless"
+digest = "b20229fc6ffab30d"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> configure   profile=dev  configuration=Development  platform=linux"
+
+[[proof]]
+ledger = "m11a"
+criterion = "world-budget-on-a-device"
+digest = "87399e4b9fc0cf66"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> configure   profile=dev  configuration=Development  platform=linux"
+
+[[proof]]
+ledger = "m11a"
+criterion = "world-streams"
+digest = "85888613a6984d4b"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> configure   profile=dev  configuration=Development  platform=linux"
+
+[[proof]]
+ledger = "m11b"
+criterion = "editor-at-complete-grade"
+digest = "6aed660b056c19e2"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): error: Justfile does not contain recipes `quality-requirements`, `editor-architecture`, `live-editing`, `editor-rust-application`, `editor-ui-ux`, `editor-visua"
+
+[[proof]]
+ledger = "m11b"
+criterion = "editor-window"
+digest = "ae392617b0e6139c"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> cargo build profile=dev  cargo-profile=development  target=/home/leonardo/work/CyberdyneEngine/build/repair-1-4/editor"
+
+[[proof]]
+ledger = "m11b"
+criterion = "format"
+digest = "0db84aa9a0fe0e4a"
+verdict = "proven"
+mutation = "delete-lines 'IndentWidth: 4' in .clang-format (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "four-profiles"
+digest = "021dbef044895d07"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure   profile=debug  configuration=Debug  platform=linux"
+
+[[proof]]
+ledger = "m11b"
+criterion = "gameplay-at-complete-grade"
+digest = "edb0e2bfbec8b42b"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): error: Justfile does not contain recipes `quality-requirements`, `gameplay-abilities-and-effects`, `ai-system`, `animation-and-skinning`, `camera-system`, `navi"
+
+[[proof]]
+ledger = "m11b"
+criterion = "image-codecs"
+digest = "b12abc558997b189"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_asset_import — the suite unit.asset_import does not exist"
+
+[[proof]]
+ledger = "m11b"
+criterion = "import-from-the-editor"
+digest = "4f4b2793eb1c164b"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_editor_import — the suite integration.editor_import does not exist"
+
+[[proof]]
+ledger = "m11b"
+criterion = "layering"
+digest = "332ed56e5ef61f0e"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"
@@ -173,10 +405,122 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"
+criterion = "m11c-open"
+digest = "1cb83e8853c0a122"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11c-image/proposal.md"
+
+[[proof]]
+ledger = "m11b"
+criterion = "ml-inference-or-a-deferral"
+digest = "44f7f6c50c9d31e4"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_ai — the suite integration.ai does not exist"
+
+[[proof]]
+ledger = "m11b"
+criterion = "plan-consistency"
+digest = "d12efb2be60123ee"
+verdict = "proven"
+mutation = "delete-lines '### Requirement:' in openspec/specs/audio/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
 criterion = "play-modes-exist"
 digest = "d4e6c1db6fb2a65b"
 verdict = "proven"
 mutation = "rename-token 'separate-process' in src/gameplay/play/src/mode.cpp (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "roadmap-record"
+digest = "7bb4126bf3f19917"
+verdict = "proven"
+mutation = "delete-lines '    change:' in docs/roadmap/status.yaml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "roadmap-tiers"
+digest = "441f7c83c650b924"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11b"
+criterion = "specialised-editors"
+digest = "60d4d2384a621e23"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): 1 file(s) reference the CentreLower region: editor/crates/cy-editor-visual/src/chrome.rs"
+
+[[proof]]
+ledger = "m11b"
+criterion = "specs"
+digest = "dd5897022f9b2a03"
+verdict = "proven"
+mutation = "delete-lines '#### Scenario:' in openspec/specs/delivery-roadmap/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "texture-encoders"
+digest = "0cb21697906a004e"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_asset_import — the suite unit.asset_import does not exist"
+
+[[proof]]
+ledger = "m11b"
+criterion = "the-game-drawn"
+digest = "e01b81152bb6b4da"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "the-game-exists"
+digest = "13329d95fafa1474"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/"
+
+[[proof]]
+ledger = "m11b"
+criterion = "the-game-is-honest-about-its-content"
+digest = "301059307f97e124"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): the game project has no README"
+
+[[proof]]
+ledger = "m11b"
+criterion = "the-game-is-playable"
+digest = "6d8dd1218db7e259"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/"
+
+[[proof]]
+ledger = "m11b"
+criterion = "view-modes"
+digest = "750daf17c31cf30d"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_editor_views — the suite unit.editor_views does not exist"
+
+[[proof]]
+ledger = "m11b"
+criterion = "workflows"
+digest = "1077408579d6044a"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
@@ -1335,9 +1679,9 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m11a"
 criterion = "both-producers-register"
 digest = "a4321ff60b149292"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11a"
@@ -1345,23 +1689,15 @@ criterion = "cross-leg-digest-published"
 digest = "d53da63bc153a547"
 verdict = "not provable here"
 mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "determinism-suites"
-digest = "d6c127d14d156240"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11a"
 criterion = "field-device-agrees-with-cpu"
 digest = "7b6e52db122f5dde"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11a"
@@ -1369,55 +1705,23 @@ criterion = "field-sampler-consumed"
 digest = "e143f298df27f35b"
 verdict = "not provable here"
 mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "format"
-digest = "71ba6ab76cd42f2d"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11a"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "ladder-carries-five-rungs"
-digest = "c71dfa1ef4c1f112"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11a"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11a"
@@ -1425,23 +1729,7 @@ criterion = "lockstep-agrees-across-architectures"
 digest = "60e6f3a4e2189346"
 verdict = "not provable here"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "m11b-open"
-digest = "fcf14741d9012430"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "network-at-complete-grade"
-digest = "8f637a6c1ce6c505"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "this host cannot evaluate it, so it cannot judge it either: this host has one architecture and one operating system, so the comparison cannot be made here at all; it is reported NOT EVALUATED rather than passed by a single-leg suite, which is the defect m9:lockstep-cross-platform was declared to avoid — CI job 'milestone-m11a'"
 
 [[unproven]]
 ledger = "m11a"
@@ -1449,71 +1737,7 @@ criterion = "pcg-regenerates-across-architectures"
 digest = "565916878ca0f292"
 verdict = "not provable here"
 mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "plan-consistency"
-digest = "222149cbbdac18cb"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "roadmap-record"
-digest = "bd88005f43ddec38"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "roadmap-tiers"
-digest = "e2e2df440c8ee672"
-verdict = "not provable here"
-mutation = "lower-tiers (derived)"
-detail = "the positive control failed in the sandbox (exit 1): audio: recorded 'working', below this milestone's exit of 'complete'"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "save-benchmark"
-digest = "c4722c452c33e394"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "save-forbidden-patterns-checked"
-digest = "7ec57a945b64ce2a"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "save-has-an-engine-consumer"
-digest = "c76b49833f1b1f77"
-verdict = "not provable here"
-mutation = "rename-token 'cy::save' in src/ (derived)"
-detail = "the positive control failed in the sandbox (exit 1): 0 engine module(s) above src/save/ link cy::save:"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "save-inspector"
-digest = "6a3c8cc007dc70c6"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "sky-field-consumed-outside-the-sky"
-digest = "fa3d2bfd1ee4cb12"
-verdict = "not provable here"
-mutation = "rename-token 'CloudShadowField::sample\\x1fcloud_shadow_field_id' in src/ (derived)"
-detail = "the positive control failed in the sandbox (exit 1): 0 file(s) outside src/rendering/sky/ read the cloud shadow field:"
+detail = "this host cannot evaluate it, so it cannot judge it either: one host with one GPU vendor cannot compare two; `requires = \"gpu\"` would make this RUN here and PASS on one driver's floating-point behaviour, which is not the claim — CI job 'milestone-m11a'"
 
 [[unproven]]
 ledger = "m11a"
@@ -1521,223 +1745,71 @@ criterion = "sky-field-round-trips"
 digest = "f10d8ea0583844e1"
 verdict = "not provable here"
 mutation = "rename-token 'M11\\x1fdisabled\\x1fparked' in src/rendering/sky/tests/test_cloud_shadows.cpp (derived)"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "specs"
-digest = "5990f183bc47c962"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "steam-audio-simulates"
-digest = "1e6b304f34a2ac22"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "world-budget-headless"
-digest = "b20229fc6ffab30d"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "world-budget-on-a-device"
-digest = "87399e4b9fc0cf66"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "world-streams"
-digest = "85888613a6984d4b"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "a-node-has-a-name"
 digest = "1165e03ae4f307ca"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "editor-at-complete-grade"
-digest = "6aed660b056c19e2"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "editor-window"
-digest = "ae392617b0e6139c"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "format"
-digest = "71ba6ab76cd42f2d"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "four-profiles"
-digest = "021dbef044895d07"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "gameplay-at-complete-grade"
-digest = "edb0e2bfbec8b42b"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "gameplay-suites"
 digest = "5c0edfed12e35349"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "image-codecs"
-digest = "b12abc558997b189"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "import-from-the-editor"
-digest = "4f4b2793eb1c164b"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "lint"
 digest = "3cf233aba6556ea2"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "live-edit-applies-without-a-restart"
 digest = "2d4ce5668a271fab"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "m11c-open"
-digest = "1cb83e8853c0a122"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "ml-inference-or-a-deferral"
-digest = "44f7f6c50c9d31e4"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "plan-consistency"
-digest = "222149cbbdac18cb"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "play-mode-round-trip"
 digest = "a004dcbbc3f026bf"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "plugins"
 digest = "9c516e5944caa8b7"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "roadmap-record"
-digest = "bd88005f43ddec38"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "roadmap-tiers"
-digest = "441f7c83c650b924"
 verdict = "not provable here"
-mutation = "lower-tiers (derived)"
-detail = "the positive control failed in the sandbox (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete'"
+mutation = "-"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
 criterion = "skins-and-animations-import"
 digest = "2f215964af8a7e45"
-verdict = "no mutation"
+verdict = "not provable here"
 mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11b"
@@ -1745,79 +1817,7 @@ criterion = "source-control-provider"
 digest = "bb8deacc6f10dcfc"
 verdict = "not provable here"
 mutation = "rename-token 'NullSourceControl\\x1fSourceControlProvider' in 2,editor/crates/,src/ (derived)"
-detail = "it needs a built tree ('cargo'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "specialised-editors"
-digest = "60d4d2384a621e23"
-verdict = "not provable here"
-mutation = "rename-token 'CentreLower' in 2,editor/crates/ (derived)"
-detail = "it needs a built tree ('ctest'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "specs"
-digest = "5990f183bc47c962"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "texture-encoders"
-digest = "0cb21697906a004e"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "the-game-drawn"
-digest = "e01b81152bb6b4da"
-verdict = "not provable here"
-mutation = "delete-path in docs/design/images/m11b-game*.png (derived)"
-detail = "the positive control failed in the sandbox (exit 1): (no output)"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "the-game-exists"
-digest = "13329d95fafa1474"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "the-game-is-honest-about-its-content"
-digest = "301059307f97e124"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "the-game-is-playable"
-digest = "6d8dd1218db7e259"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "view-modes"
-digest = "750daf17c31cf30d"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11b"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+detail = "it PASSES against the build tree build/repair-1-4; turning it red needs its source mutated and the tree rebuilt, which this prover does not do"
 
 [[unproven]]
 ledger = "m11c"
