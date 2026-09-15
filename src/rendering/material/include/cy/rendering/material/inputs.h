@@ -47,7 +47,8 @@ namespace cy::rendering::material {
 
 /// What supplies one surface input. Ordered by strength — see the header note.
 enum class InputBinding : u8 {
-    /// A literal, after folding. Nothing reads it at runtime and no picture can show a change in it.
+    /// A literal, after folding. Nothing reads it at runtime and no picture can show a change in
+    /// it.
     Constant = 0,
     /// A geometry attribute or an environment field: the mesh or the world supplies it.
     Varying = 1,
@@ -61,9 +62,9 @@ enum class InputBinding : u8 {
 
 /// One surface input and what supplies it.
 struct MaterialInput {
-    /// `diffuse.colour`, `specular.roughness`, `opacity` — the closure's own name and its operand's.
-    /// A literal rather than a `Name`, because these are fixed by the closure vocabulary and
-    /// interning them would put a string table between a report and its reader.
+    /// `diffuse.colour`, `specular.roughness`, `opacity` — the closure's own name and its
+    /// operand's. A literal rather than a `Name`, because these are fixed by the closure vocabulary
+    /// and interning them would put a string table between a report and its reader.
     const char* name = "";
     /// The IR value the input is, so an editor can preview exactly this.
     NodeId value = kInvalidNode;

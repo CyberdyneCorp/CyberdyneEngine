@@ -32,7 +32,8 @@ Allocator& allocator() noexcept {
 
 }  // namespace
 
-CY_TEST_CASE("material_inputs: the compile report says which inputs are textures and which are constants") {
+CY_TEST_CASE(
+    "material_inputs: the compile report says which inputs are textures and which are constants") {
     MaterialGraph graph(allocator(), Name::intern("worn_metal"));
     GraphIds ids;
     CY_REQUIRE(build_reference_graph(graph, ids));
@@ -93,4 +94,3 @@ CY_TEST_CASE("material_inputs: the compile report says which inputs are textures
     CY_CHECK_EQ(far->inputs.textures, 0U);
     CY_CHECK_GT(far->inputs.inputs.size(), usize{0});
 }
-

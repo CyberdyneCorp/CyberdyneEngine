@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 152 proven, 492 not yet shown able to fail.
+# 154 proven, 490 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -717,6 +717,14 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requ
 
 [[proof]]
 ledger = "m11c"
+criterion = "lowering-stages-inspectable"
+digest = "2d12b5922f15ec92"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'backend.reason = kBackendStageIsOwed;' in src/rendering/material/src/stages.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-compilers (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
 criterion = "m11d-open"
 digest = "510629bace6a8da2"
 verdict = "red in the tree"
@@ -730,6 +738,14 @@ digest = "877a445a2c606598"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  material-compiler shader-system … 0 of 34 requirement(s) across 2 row(s) map to a test, a gate or a recorded exemption"
+
+[[proof]]
+ledger = "m11c"
+criterion = "material-node-previews"
+digest = "b648bde3adc72fcd"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'return make_unexpected(kNoCompilerBehindThePreview);' in src/rendering/material/src/preview.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-compilers (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -2066,22 +2082,6 @@ digest = "3cf233aba6556ea2"
 verdict = "not provable here"
 mutation = "-"
 detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "lowering-stages-inspectable"
-digest = "f9d52bf69e028cdd"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "material-node-previews"
-digest = "de115a4a047252af"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"

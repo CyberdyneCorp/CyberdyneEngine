@@ -89,3 +89,32 @@ annotation on a numeric parameter, a closure set the target profile cannot evalu
 field the project does not declare, or a material the validator refuses. `build-and-packaging`
 requires a failed node to produce nothing, and the reason is sharper here than usual — a cached
 failure is a failure you cannot clear by fixing the source.
+
+## `--stages`
+
+`cy_material compile <file.cymat> --stages` prints every stage of the material's lowering — the
+graph or the authored text, the IR before optimisation, the IR after it, the generated Slang, and
+the compiled backend output — each with its byte count and a content digest:
+
+```
+stages primary/high  4 of 5 available
+  graph: 413 bytes  digest 0x6909647cab0d4c52
+  ir: 692 bytes  digest 0x2c712c8f1381921f
+  optimised-ir: 723 bytes  digest 0x5acb4f4694ce2adb
+  slang: 811 bytes  digest 0x8a5ed0a6183f8d10
+  compiled: ABSENT — the compiled backend output is `shader-system`'s: this target does not link
+            the shader toolchain, and `attach_backend_stage` in cy::rendering-material-slang fills
+            it in
+```
+
+**The list is the library's and this is one caller of it.** `shader-system`'s "Visual material
+editor" requires the editor to show the same five stages, and two lists cannot be compared if one of
+them is assembled inside a `main` — the command line would then be the only caller, and "they agree"
+would be a statement about one function. So `rendering::material::inspect_lowering` produces the
+list, `material::write_stage_report` renders it, and `integration.material_cook`'s
+*the command line and the library agree about the lowering stages* RUNS this binary and compares what
+it printed against what a second caller obtains.
+
+The cook report also states, per program, **which of the material's inputs are textures and which are
+constants**, with a `[constants only: this program samples no texture]` marker — which is what makes
+a claim about a published picture's materials checkable from the artefact rather than from memory.

@@ -46,6 +46,20 @@ private:
     Status status_ = ok();
 };
 
+/// The refusal a preview gives when the front end behind it cannot compile source.
+///
+/// A NAMED CONSTANT RATHER THAN AN INLINE LITERAL, and the reason is falsifiability rather than
+/// tidiness: it makes the guard's body ONE STATEMENT, so `just roadmap-falsify` can delete that
+/// statement and leave a tree that still COMPILES — a preview attempted with no compiler behind it,
+/// which is the defect this requirement's negative control exists to catch. A mutation that merely
+/// breaks the build proves the build is load-bearing and says nothing about the check.
+constexpr Error kNoCompilerBehindThePreview{
+    ErrorCode::Unsupported,
+    "the shader front end in this build cannot compile source, so a node preview cannot be "
+    "produced: `material-compiler` forbids a second editor-only shading path, so this is an error "
+    "rather than a fallback",
+    0};
+
 /// A module name that is unique per material, per program and per previewed value.
 ///
 /// Distinct names rather than one reused name, because `SourceRegistry::add_generated` REPLACES a
@@ -68,12 +82,9 @@ private:
 
 }  // namespace
 
-Expected<PreludeReport, Error> assemble_preview_unit(const Module& module,
-                                                     const GeneratedSource& generated,
-                                                     NodeId preview_root, ProgramKind kind,
-                                                     QualityTier tier,
-                                                     const PreludeOptions& options,
-                                                     Array<char>& out) noexcept {
+Expected<PreludeReport, Error> assemble_preview_unit(
+    const Module& module, const GeneratedSource& generated, NodeId preview_root, ProgramKind kind,
+    QualityTier tier, const PreludeOptions& options, Array<char>& out) noexcept {
     out.clear();
     Expected<PreludeReport, Error> report = emit_prelude(module, options, out);
     if (!report.has_value()) {
@@ -95,8 +106,8 @@ Expected<PreludeReport, Error> assemble_preview_unit(const Module& module,
     // `surface.closures` for a closure-typed root and `surface.preview` for every other value. A
     // probe that read the wrong one would compile and report zero, which is the shape of a green
     // that means nothing.
-    const bool closure = preview_root < module.size() &&
-                         module.node(preview_root).type == ValueType::Closure;
+    const bool closure =
+        preview_root < module.size() && module.node(preview_root).type == ValueType::Closure;
 
     writer.text("[[vk::binding(1, ");
     writer.number(options.material_set);
@@ -135,12 +146,7 @@ Expected<CompiledPreview, Error> compile_preview(const CompiledProgram& program,
     // the compiler behind a preview is gone — and there is nothing below this line that could
     // produce a preview anyway. See preview.h.
     if (!compiler.compiles_source()) {
-        return make_unexpected(
-            Error{ErrorCode::Unsupported,
-                  "the shader front end in this build cannot compile source, so a node preview "
-                  "cannot be produced: `material-compiler` forbids a second editor-only shading "
-                  "path, so this is an error rather than a fallback",
-                  0});
+        return make_unexpected(kNoCompilerBehindThePreview);
     }
 
     CompiledPreview preview(allocator);
@@ -185,8 +191,7 @@ Expected<CompiledPreview, Error> compile_preview(const CompiledProgram& program,
     if (diagnostics.has_errors()) {
         return make_unexpected(
             Error{ErrorCode::InvalidArgument,
-                  "the preview's generated Slang did not compile; the diagnostics say where",
-                  0});
+                  "the preview's generated Slang did not compile; the diagnostics say where", 0});
     }
     preview.shader = std::move(compiled.value());
     return preview;
@@ -224,8 +229,8 @@ Status attach_backend_stage(LoweringInspection& inspection, const Module& module
         }
     }
     PreludeOptions prelude;
-    auto report = assemble_translation_unit(module, carrier, inspection.kind, inspection.tier,
-                                            prelude, unit);
+    auto report =
+        assemble_translation_unit(module, carrier, inspection.kind, inspection.tier, prelude, unit);
     if (!report) {
         return make_unexpected(report.error());
     }

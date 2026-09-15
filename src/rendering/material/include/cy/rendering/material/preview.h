@@ -84,13 +84,9 @@ public:
 /// The emitter's text is copied byte for byte, exactly as `assemble_translation_unit` copies a
 /// shipping program's — a preview that was rewritten on its way to the compiler would be a preview
 /// of the rewrite.
-[[nodiscard]] Expected<PreludeReport, Error> assemble_preview_unit(const Module& module,
-                                                                   const GeneratedSource& generated,
-                                                                   NodeId preview_root,
-                                                                   ProgramKind kind,
-                                                                   QualityTier tier,
-                                                                   const PreludeOptions& options,
-                                                                   Array<char>& out) noexcept;
+[[nodiscard]] Expected<PreludeReport, Error> assemble_preview_unit(
+    const Module& module, const GeneratedSource& generated, NodeId preview_root, ProgramKind kind,
+    QualityTier tier, const PreludeOptions& options, Array<char>& out) noexcept;
 
 /// Preview one value of a compiled program, through the runtime compiler and the shader pipeline.
 ///

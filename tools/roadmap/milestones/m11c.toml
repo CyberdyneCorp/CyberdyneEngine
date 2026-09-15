@@ -155,8 +155,8 @@ ci_job = "milestone-m11c"
 [criterion.falsifies]
 mutate = "delete-lines"
 target = "src/rendering/material/src/preview.cpp"
-token = "if (!compiler.compiles_source()) {"
-note = "with the refusal gone the preview no longer fails when the front end cannot compile source, and the negative control in smoke.material_preview goes red."
+token = "return make_unexpected(kNoCompilerBehindThePreview);"
+note = "the guard's body is ONE statement — the refusal is a named constant so that it can be — and deleting it leaves a tree that still COMPILES and a preview that is attempted with no compiler behind it. That is the defect, not a broken build: `smoke.material_preview` then gets a value back where the requirement says it must get an error, and goes red."
 
 [[criterion]]
 id = "lowering-stages-inspectable"
@@ -183,10 +183,10 @@ ci_job = "milestone-m11c"
 # back empty and unexplained, which is exactly the panel that shows what it has and calls it what it
 # was asked for. The case reads the reason and goes red.
 [criterion.falsifies]
-mutate = "rename-token"
+mutate = "delete-lines"
 target = "src/rendering/material/src/stages.cpp"
-token = "backend.reason"
-note = "with the reason gone the fifth stage is an empty dump rather than a named absence, and the case that requires it to name `shader-system` goes red."
+token = "backend.reason = kBackendStageIsOwed;"
+note = "the reason is a named constant so that its assignment is one deletable statement and the tree still COMPILES without it. The fifth stage then comes back unavailable AND unexplained — the blank a panel would show as a stage — and the case that requires it to name `shader-system` goes red."
 
 # --- Section 2: the eight rows that are the image ---------------------------------------------------
 

@@ -359,6 +359,11 @@ CY_TEST_CASE("material_stages: the command line and the library agree about the 
         std::string(CY_MATERIAL_BINARY) + " compile " + source + " --stages 2>/dev/null";
     std::string printed;
     {
+        // The command is the build-generated path to `cy_material` plus this case's own
+        // arguments — the same shape, and the same NOLINT, as
+        // `src/runtime/tests/test_tick_loop.cpp` uses to run its probe. clang-tidy is right in
+        // general and wrong here, and silencing it in the .clang-tidy would silence it for the
+        // whole engine. NOLINTNEXTLINE(bugprone-command-processor,cert-env33-c)
         FILE* pipe = ::popen(command.c_str(), "r");
         CY_REQUIRE(pipe != nullptr);
         char buffer[4096];
@@ -372,10 +377,9 @@ CY_TEST_CASE("material_stages: the command line and the library agree about the 
     // --- the library's answer, in this process --------------------------------------------------
     material::CompileOptions options;
     rendering::material::ParseDiagnostic diagnostic(allocator());
-    auto inspected = material::inspect_material(kWornMetal, options,
-                                               rendering::material::ProgramKind::Primary,
-                                               rendering::material::QualityTier::High, allocator(),
-                                               diagnostic);
+    auto inspected =
+        material::inspect_material(kWornMetal, options, rendering::material::ProgramKind::Primary,
+                                   rendering::material::QualityTier::High, allocator(), diagnostic);
     CY_REQUIRE(inspected.has_value());
     Array<char> expected(allocator());
     CY_REQUIRE(material::write_stage_report(inspected.value(), expected).has_value());

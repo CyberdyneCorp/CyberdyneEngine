@@ -241,9 +241,9 @@ CY_TEST_CASE("a node previews through the runtime compiler, and refuses when it 
         if (asked.selection.fell_back) {
             CY_CHECK_FALSE(asked.handle->compiles_source());
             shader::DiagnosticLog diagnostics(allocator());
-            auto preview = compile_preview(primary, primary.module.surface(), options,
-                                           *asked.handle, library.registry, library.resolver(),
-                                           diagnostics, allocator());
+            auto preview =
+                compile_preview(primary, primary.module.surface(), options, *asked.handle,
+                                library.registry, library.resolver(), diagnostics, allocator());
             CY_REQUIRE_FALSE(preview.has_value());
         }
     }
@@ -280,9 +280,8 @@ CY_TEST_CASE("the fifth lowering stage is a compilation, and is absent until one
             compiled.value().find(ProgramKind::Primary, QualityTier::High);
         CY_REQUIRE(primary != nullptr);
 
-        Status attached =
-            attach_backend_stage(stages, primary->module, *slang.handle, library.registry,
-                                 library.resolver(), diagnostics);
+        Status attached = attach_backend_stage(stages, primary->module, *slang.handle,
+                                               library.registry, library.resolver(), diagnostics);
         if (!attached) {
             print_diagnostics(diagnostics);
         }
@@ -304,9 +303,8 @@ CY_TEST_CASE("the fifth lowering stage is a compilation, and is absent until one
     CY_REQUIRE(module.has_value());
     Front passthrough(shader::kSpirvBackendName);
     shader::DiagnosticLog quiet(allocator());
-    const Status refused =
-        attach_backend_stage(second.value(), module.value(), *passthrough.handle, library.registry,
-                             library.resolver(), quiet);
+    const Status refused = attach_backend_stage(second.value(), module.value(), *passthrough.handle,
+                                                library.registry, library.resolver(), quiet);
     CY_CHECK_FALSE(refused.has_value());
     CY_CHECK_FALSE(second.value().complete());
     CY_CHECK(std::string_view(second.value().stage(LoweringStage::CompiledProgram).reason)

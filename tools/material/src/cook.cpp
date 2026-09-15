@@ -141,8 +141,8 @@ void write_inputs(const CompiledProgram& program, Array<char>& out) noexcept {
     append_count(out, ", ", inputs.parameters, " parameter");
     append_count(out, ", ", inputs.varying, " varying");
     append_count(out, ", ", inputs.constants, " constant");
-    append_text(out, inputs.constants_only() ? "  [constants only: this program samples no texture]"
-                                             : "");
+    append_text(
+        out, inputs.constants_only() ? "  [constants only: this program samples no texture]" : "");
     append_text(out, "\n");
     for (const MaterialInput& input : inputs.inputs) {
         append_text(out, "      ");

@@ -5,6 +5,8 @@
 
 #include <cy/rendering/material/inputs.h>
 
+#include <algorithm>
+
 namespace cy::rendering::material {
 
 namespace {
@@ -31,22 +33,38 @@ constexpr ClosureInputs kClosureInputs[] = {
 /// The fixed spellings, so `MaterialInput::name` is a literal with a static lifetime rather than a
 /// buffer a report would have to own. Fourteen of them, which is the closure vocabulary.
 constexpr const char* kInputNames[] = {
-    "diffuse.colour",      "specular.colour",     "specular.roughness", "coat.roughness",
-    "transmission.colour", "subsurface.colour",   "sheen.colour",       "emission.colour",
-    "opacity",
+    "diffuse.colour", "specular.colour",     "specular.roughness",
+    "coat.roughness", "transmission.colour", "subsurface.colour",
+    "sheen.colour",   "emission.colour",     "opacity",
 };
 
 [[nodiscard]] const char* input_name(Op op, u32 operand) noexcept {
     switch (op) {
-        case Op::Diffuse: return kInputNames[0];
-        case Op::Specular: return operand == 0 ? kInputNames[1] : kInputNames[2];
-        case Op::Coat: return kInputNames[3];
-        case Op::Transmission: return kInputNames[4];
-        case Op::Subsurface: return kInputNames[5];
-        case Op::Sheen: return kInputNames[6];
-        case Op::Emission: return kInputNames[7];
-        default: return "";
+        case Op::Diffuse:
+            return kInputNames[0];
+        case Op::Specular:
+            return operand == 0 ? kInputNames[1] : kInputNames[2];
+        case Op::Coat:
+            return kInputNames[3];
+        case Op::Transmission:
+            return kInputNames[4];
+        case Op::Subsurface:
+            return kInputNames[5];
+        case Op::Sheen:
+            return kInputNames[6];
+        case Op::Emission:
+            return kInputNames[7];
+        default:
+            return "";
     }
+}
+
+/// Raise an input's binding to `candidate` when that is the stronger answer.
+///
+/// The ordering of `InputBinding` IS the rule — see inputs.h — so "what supplies this input" is a
+/// maximum over everything the walk reaches, and this is that maximum spelled once.
+void raise(InputBinding& binding, InputBinding candidate) noexcept {
+    binding = std::max(binding, candidate);
 }
 
 /// What supplies `root`, and the first texture reaching it in name order.
@@ -65,7 +83,7 @@ constexpr const char* kInputNames[] = {
         const Node& node = module.node(id);
         switch (node.op) {
             case Op::TextureSample:
-                out.binding = InputBinding::Texture;
+                raise(out.binding, InputBinding::Texture);
                 // The first in NAME order, so two runs of one material name the same map. Node ids
                 // are construction order and would not be stable across front-ends.
                 if (out.texture.is_empty() || node.symbol.text() < out.texture.text()) {
@@ -73,23 +91,16 @@ constexpr const char* kInputNames[] = {
                 }
                 break;
             case Op::Parameter:
-                if (out.binding < InputBinding::Parameter) {
-                    out.binding = InputBinding::Parameter;
-                }
+                raise(out.binding, InputBinding::Parameter);
                 break;
+            // An attribute or a field is the mesh or the world speaking. `Custom` is Slang the
+            // compiler cannot see into and is the SAME answer deliberately: it is not a constant —
+            // an author put an expression there precisely because it varies — and calling it one
+            // would be the report overstating in the direction this whole file exists to stop.
             case Op::Attribute:
             case Op::Field:
-                if (out.binding < InputBinding::Varying) {
-                    out.binding = InputBinding::Varying;
-                }
-                break;
             case Op::Custom:
-                // Slang the compiler cannot see into. It is not a constant — an author put an
-                // expression there precisely because it varies — and calling it one would be the
-                // report overstating in the direction this whole file exists to stop.
-                if (out.binding < InputBinding::Varying) {
-                    out.binding = InputBinding::Varying;
-                }
+                raise(out.binding, InputBinding::Varying);
                 break;
             default:
                 break;
@@ -103,10 +114,18 @@ constexpr const char* kInputNames[] = {
         return pushed;
     }
     switch (input.binding) {
-        case InputBinding::Constant: ++report.constants; break;
-        case InputBinding::Varying: ++report.varying; break;
-        case InputBinding::Parameter: ++report.parameters; break;
-        case InputBinding::Texture: ++report.textures; break;
+        case InputBinding::Constant:
+            ++report.constants;
+            break;
+        case InputBinding::Varying:
+            ++report.varying;
+            break;
+        case InputBinding::Parameter:
+            ++report.parameters;
+            break;
+        case InputBinding::Texture:
+            ++report.textures;
+            break;
     }
     return ok();
 }
@@ -115,10 +134,14 @@ constexpr const char* kInputNames[] = {
 
 const char* input_binding_name(InputBinding binding) noexcept {
     switch (binding) {
-        case InputBinding::Constant: return "constant";
-        case InputBinding::Varying: return "varying";
-        case InputBinding::Parameter: return "parameter";
-        case InputBinding::Texture: return "texture";
+        case InputBinding::Constant:
+            return "constant";
+        case InputBinding::Varying:
+            return "varying";
+        case InputBinding::Parameter:
+            return "parameter";
+        case InputBinding::Texture:
+            return "texture";
     }
     return "constant";
 }

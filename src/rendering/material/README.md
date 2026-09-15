@@ -137,3 +137,54 @@ keep apart before the pipeline ever ran.
 * **The cook.** `tools/material/` owns it, as a node in the derivation graph.
 * **The GPU classification dispatch.** `binning.h` is the CPU reference the dispatch is checked
   against, the way `cpu_reference_cull` is for culling. The dispatch itself belongs to the frame.
+
+## M11.c section 1 — what a compiled material can now be asked
+
+Three things were added, and each closes a sentence in a requirement that had no implementation
+behind it rather than a feature somebody wanted.
+
+### Which inputs are textures and which are constants — `inputs.h`
+
+**Every material in every picture this project has published is made of constants**, and nothing in
+the compiled artefact distinguished one from a fully textured material. A constants-only material
+renders, shades and photographs; the M11.c spike's `out/shot-average-post.png` is a lit, tone-mapped,
+entirely plausible picture of one. So a sentence about what a published picture demonstrates could
+not be checked, only believed.
+
+`classify_inputs` answers it off the IR: one `MaterialInput` per operand of every leaf closure the
+surface reaches, plus opacity, each classified `Constant`, `Varying`, `Parameter` or `Texture` — the
+**strongest** thing reachable from that input, which is why `sample(map, uv).xyz * base_color` is a
+texture input. It is **per program and not per material**, because the far-field program of a fully
+textured material substitutes averages and samples nothing: a report answered per material would
+call it textured, which is the single most efficient way for a caption to be wrong.
+`cy_material compile` prints the counts on one line a tool can read, and says
+`[constants only: this program samples no texture]` in those words.
+
+### Every stage of the lowering, readable — `stages.h`
+
+`shader-system` requires the editor to be able to show "the graph, the material IR before and after
+optimisation, the generated Slang, and the compiled backend output", and `material-compiler`
+requires the IR to be "dumpable in a readable form, before and after optimisation". **Four of those
+five existed as data and none of them could be read**: no function in this tree turned a `Module`
+into anything a person can look at.
+
+`dump_graph` and `dump_module` are those readable forms — canonical order, not node order, so two
+front-ends producing one material produce comparable text — and `inspect_lowering` collects the five
+stages **in the specification's order from one compilation**. The fifth is `shader-system`'s and
+this target does not link the shader toolchain, so it comes back unavailable **with a reason naming
+who owes it**: an inspection with four stages says so, because a panel that showed four and called
+it "every stage" is the same defect as a preview drawn by a second renderer.
+
+### A preview that is a compiled program — `preview.h`, in `cy::rendering-material-slang`
+
+`unit.material_compiler` proves a preview's **text** is the shipping program's own, byte for byte.
+That is half the requirement. The other half — "the same compiler, lowering, **and shader pipeline**
+as runtime" — **had no caller anywhere in this tree**: nothing ever took a preview's text to a
+shader compiler, and a preview is a picture.
+
+`compile_preview` is that path: `preview_node`, the generated prelude, a preview probe entry point,
+and `cy::shader`. It **refuses first** when the front end cannot compile source, which is the state a
+shipping build is in, and there is no second branch in the file for a cached thumbnail or a stand-in
+renderer to be returned from. `smoke.material_preview` compiles a preview to SPIR-V against the
+engine's standard library — 592 words for the reference material's surface root, the first time this
+path has run — and then asks the same call with the compiler gone and requires it to fail.

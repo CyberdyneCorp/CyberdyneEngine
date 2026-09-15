@@ -2,6 +2,7 @@
 
 #include <cy/rendering/material/stages.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <utility>
 
@@ -89,12 +90,18 @@ void put_declarations(Array<char>& out, Span<const ParameterDecl> parameters,
 
 const char* lowering_stage_name(LoweringStage stage) noexcept {
     switch (stage) {
-        case LoweringStage::Graph: return "graph";
-        case LoweringStage::AuthoredIr: return "ir";
-        case LoweringStage::OptimisedIr: return "optimised-ir";
-        case LoweringStage::GeneratedSlang: return "slang";
-        case LoweringStage::CompiledProgram: return "compiled";
-        case LoweringStage::Count: break;
+        case LoweringStage::Graph:
+            return "graph";
+        case LoweringStage::AuthoredIr:
+            return "ir";
+        case LoweringStage::OptimisedIr:
+            return "optimised-ir";
+        case LoweringStage::GeneratedSlang:
+            return "slang";
+        case LoweringStage::CompiledProgram:
+            return "compiled";
+        case LoweringStage::Count:
+            break;
     }
     return "?";
 }
@@ -108,15 +115,9 @@ LoweringInspection::LoweringInspection(Allocator& allocator) noexcept : stages_(
 }
 
 bool LoweringInspection::complete() const noexcept {
-    if (stages_.size() != kLoweringStageCount) {
-        return false;
-    }
-    for (const StageDump& dump : stages_) {
-        if (!dump.available) {
-            return false;
-        }
-    }
-    return true;
+    return stages_.size() == kLoweringStageCount &&
+           std::ranges::all_of(stages_,
+                               [](const StageDump& dump) noexcept { return dump.available; });
 }
 
 u32 LoweringInspection::available() const noexcept {
@@ -180,7 +181,8 @@ Status dump_graph(const MaterialGraph& graph, Array<char>& out) noexcept {
         }
         put(out, "\n");
     }
-    return out.push_back('\0') ? ok() : fail(ErrorCode::OutOfMemory, "the graph dump could not grow");
+    return out.push_back('\0') ? ok()
+                               : fail(ErrorCode::OutOfMemory, "the graph dump could not grow");
 }
 
 Status dump_module(const Module& module, Array<char>& out) noexcept {
@@ -262,6 +264,17 @@ Status dump_module(const Module& module, Array<char>& out) noexcept {
 
 namespace {
 
+/// Why the fifth stage is not here, said where the fifth stage would be.
+///
+/// A NAMED CONSTANT, for the same reason `preview.cpp`'s refusal is one: it makes the assignment a
+/// single statement that `just roadmap-falsify` can DELETE and still get a tree that compiles — an
+/// inspection presenting an unexplained blank as its fifth stage, which is precisely the panel that
+/// shows four stages and calls them five. A mutation that only breaks the build would prove nothing
+/// about this check.
+constexpr const char* kBackendStageIsOwed =
+    "the compiled backend output is `shader-system`'s: this target does not link the shader "
+    "toolchain, and `attach_backend_stage` in cy::rendering-material-slang fills it in";
+
 /// Fill the four stages the material compiler owns, from an already-lowered authored module.
 [[nodiscard]] Status collect(LoweringInspection& inspection, const Module& authored,
                              const CompileOptions& options, ProgramKind kind, QualityTier tier,
@@ -308,9 +321,7 @@ namespace {
 
     StageDump& backend = inspection.stage(LoweringStage::CompiledProgram);
     backend.available = false;
-    backend.reason =
-        "the compiled backend output is `shader-system`'s: this target does not link the shader "
-        "toolchain, and `attach_backend_stage` in cy::rendering-material-slang fills it in";
+    backend.reason = kBackendStageIsOwed;
     return ok();
 }
 
@@ -335,15 +346,15 @@ Expected<LoweringInspection, Error> inspect_lowering(const MaterialGraph& graph,
     if (!authored) {
         return make_unexpected(authored.error());
     }
-    if (Status collected =
-            collect(inspection, authored.value(), options, kind, tier, allocator);
+    if (Status collected = collect(inspection, authored.value(), options, kind, tier, allocator);
         !collected) {
         return make_unexpected(collected.error());
     }
     return inspection;
 }
 
-Expected<LoweringInspection, Error> inspect_lowering(std::string_view source, const Module& authored,
+Expected<LoweringInspection, Error> inspect_lowering(std::string_view source,
+                                                     const Module& authored,
                                                      const CompileOptions& options,
                                                      ProgramKind kind, QualityTier tier,
                                                      Allocator& allocator) noexcept {

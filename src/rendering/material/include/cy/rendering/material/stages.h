@@ -151,11 +151,8 @@ private:
 
 /// The same, for a material already compiled from text. `authored` is the un-optimised module a
 /// front end produced; `source` is the text it was parsed from, which stands in for the graph.
-[[nodiscard]] Expected<LoweringInspection, Error> inspect_lowering(std::string_view source,
-                                                                   const Module& authored,
-                                                                   const CompileOptions& options,
-                                                                   ProgramKind kind,
-                                                                   QualityTier tier,
-                                                                   Allocator& allocator) noexcept;
+[[nodiscard]] Expected<LoweringInspection, Error> inspect_lowering(
+    std::string_view source, const Module& authored, const CompileOptions& options,
+    ProgramKind kind, QualityTier tier, Allocator& allocator) noexcept;
 
 }  // namespace cy::rendering::material
