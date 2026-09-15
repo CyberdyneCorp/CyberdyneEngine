@@ -109,6 +109,13 @@ inline constexpr std::string_view kRuntimeHostBinary = "cy_play_runtime_host";
 /// different number is refused rather than tolerated.
 inline constexpr u32 kPlayProtocolVersion = 1;
 
+/// How long a reply may take before the child is reported unresponsive.
+///
+/// Generous, because what is being bounded is a HANG rather than a slow machine: a request that
+/// takes ten seconds on a loaded continuous-integration runner is fine, and one that never arrives
+/// must not turn the suite into a timeout with no message in it.
+inline constexpr i64 kReplyDeadlineNanoseconds = 30LL * 1000 * 1000 * 1000;
+
 /// The path of the runtime host binary for this build, written into `out`.
 ///
 /// It is the directory of `platform.executable_path()` plus `kRuntimeHostBinary` plus the
@@ -214,6 +221,13 @@ public:
 
 private:
     /// Read one `\n`-terminated line from the child into `line`, without the newline.
+    ///
+    /// The child's output is non-blocking (see `Platform::read_process_output`), so this polls: it
+    /// reads what is there, and when nothing is, asks the operating system whether the child is
+    /// still alive. A child that exited without replying is reported as a dead runtime; a child
+    /// that is merely slow is waited for up to `kReplyDeadlineNanoseconds`, after which it is
+    /// reported as unresponsive rather than waited for forever — a hung child would otherwise
+    /// present as a suite that never finishes, which is the failure hardest to read.
     [[nodiscard]] Status read_line(Array<char>& line) noexcept;
 
     Allocator* allocator_;

@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 128 proven, 513 not yet shown able to fail.
+# 131 proven, 510 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -50,6 +50,14 @@ digest = "25bf82f06c8b05a5"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 7 file(s)"
+
+[[proof]]
+ledger = "m10"
+criterion = "fields-sampled-on-a-device"
+digest = "839d7d113aa4e4a3"
+verdict = "proven against a built tree"
+mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-2-0 (exit 1: the environment field sampler and its two consumers do NOT compile against the engine's standard library), and green again once restored"
 
 [[proof]]
 ledger = "m10"
@@ -229,6 +237,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 
 [[proof]]
 ledger = "m11a"
+criterion = "lockstep-agrees-across-architectures"
+digest = "2ca19e98ba9c2688"
+verdict = "proven in the environment CI supplies"
+mutation = "rename-token '44d0feadcb7cd95d' in cross-leg-digests/cross-leg-digest-1/beta.digest (declared)"
+detail = "green against the environment `python3 tools/ci/cross_leg_audit.py --claim lockstep --write-legs cross-leg-digests` builds, RED under the mutation of 1 file(s) of it (exit 1: error: Recipe `test-determinism` failed with exit code 1), and green again once restored"
+
+[[proof]]
+ledger = "m11a"
 criterion = "m11b-open"
 digest = "d4fd32d914d02474"
 verdict = "proven"
@@ -238,10 +254,18 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "network-at-complete-grade"
-digest = "8f637a6c1ce6c505"
+digest = "b3cd586f0fb7b0f1"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): error: Justfile does not contain recipes `quality-requirements`, `networking-and-replication`, `replay-and-rollback`, or `simulation-and-determinism`."
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 row(s) map to a test, a gate or a recorded exemption"
+
+[[proof]]
+ledger = "m11a"
+criterion = "pcg-regenerates-across-architectures"
+digest = "0dd25cb36134864b"
+verdict = "proven in the environment CI supplies"
+mutation = "rename-token '7bc377fd2fc0872b' in cross-leg-digests/cross-leg-digest-1/beta.digest (declared)"
+detail = "green against the environment `python3 tools/ci/cross_leg_audit.py --claim pcg --write-legs cross-leg-digests` builds, RED under the mutation of 1 file(s) of it (exit 1: error: Recipe `test-determinism` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -366,26 +390,26 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11a"
 criterion = "world-budget-headless"
-digest = "b20229fc6ffab30d"
+digest = "2b1096aab44b450e"
 verdict = "red against a built tree"
 mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> configure   profile=dev  configuration=Development  platform=linux"
+detail = "red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … the three largest bands: terrain_shade_ms 73.3 ms, sky_ms 27.4 ms, water_ms 14.2 ms"
 
 [[proof]]
 ledger = "m11a"
 criterion = "world-budget-on-a-device"
-digest = "87399e4b9fc0cf66"
+digest = "47af657d935861ed"
 verdict = "red against a built tree"
 mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> configure   profile=dev  configuration=Development  platform=linux"
+detail = "red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … 64 frames written to /tmp/tmp.oBJGK6FayS/frames, vulkan validation errors: 0"
 
 [[proof]]
 ledger = "m11a"
 criterion = "world-streams"
-digest = "85888613a6984d4b"
+digest = "95c7c8adfcb01a52"
 verdict = "red against a built tree"
 mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 2): ==> configure   profile=dev  configuration=Development  platform=linux"
+detail = "red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49  tiles_resident: 49  evicted: 0  stitched_vertices: 0"
 
 [[proof]]
 ledger = "m11b"
@@ -398,10 +422,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 [[proof]]
 ledger = "m11b"
 criterion = "editor-at-complete-grade"
-digest = "6aed660b056c19e2"
+digest = "42c1eb1a855d5730"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): error: Justfile does not contain recipes `quality-requirements`, `editor-architecture`, `live-editing`, `editor-rust-application`, `editor-ui-ux`, `editor-visua"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-and-gizmos editor-docume … 0 of 133 requirement(s) across 9 row(s) map to a test, a gate or a recorded exemption"
 
 [[proof]]
 ledger = "m11b"
@@ -430,10 +454,10 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): ==> co
 [[proof]]
 ledger = "m11b"
 criterion = "gameplay-at-complete-grade"
-digest = "edb0e2bfbec8b42b"
+digest = "d6432b9754ac1f53"
 verdict = "red in the tree"
 mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): error: Justfile does not contain recipes `quality-requirements`, `gameplay-abilities-and-effects`, `ai-system`, `animation-and-skinning`, `camera-system`, `navi"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-and-cinematics input-and- … 0 of 183 requirement(s) across 8 row(s) map to a test, a gate or a recorded exemption"
 
 [[proof]]
 ledger = "m11b"
@@ -1349,14 +1373,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m10"
-criterion = "fields-sampled-on-a-device"
-digest = "5f1ba11e49b27f2a"
-verdict = "not provable here"
-mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m10"
 criterion = "fields-substrate"
 digest = "c7fefafbfffec24b"
 verdict = "no mutation"
@@ -1802,22 +1818,6 @@ digest = "331c12bfb048572f"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "lockstep-agrees-across-architectures"
-digest = "60e6f3a4e2189346"
-verdict = "not provable here"
-mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: this host has one architecture and one operating system, so the comparison cannot be made here at all; it is reported NOT EVALUATED rather than passed by a single-leg suite, which is the defect m9:lockstep-cross-platform was declared to avoid — CI job 'milestone-m11a'"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "pcg-regenerates-across-architectures"
-digest = "565916878ca0f292"
-verdict = "not provable here"
-mutation = "-"
-detail = "this host cannot evaluate it, so it cannot judge it either: one host with one GPU vendor cannot compare two; `requires = \"gpu\"` would make this RUN here and PASS on one driver's floating-point behaviour, which is not the claim — CI job 'milestone-m11a'"
 
 [[unproven]]
 ledger = "m11c"

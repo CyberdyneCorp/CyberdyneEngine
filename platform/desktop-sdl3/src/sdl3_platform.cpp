@@ -454,16 +454,14 @@ Expected<usize, Error> Sdl3Platform::read_process_output(ProcessHandle process, 
     if (read > 0) {
         return static_cast<usize>(read);
     }
-    // Zero means one of three things and they are not interchangeable: end of stream is the child
-    // having closed its output, NOT_READY cannot happen on a blocking pipe but is answered as "read
-    // again" rather than as an end, and anything else is a failure that must not read as a quiet
-    // child.
+    // SDL's process streams are non-blocking, so a zero is ordinary: NOT_READY is "the child has
+    // not answered yet" and EOF is "the child closed its output". Both are reported as zero, per
+    // the interface — telling them apart is poll_process()'s job, and answering it here as well
+    // would put two sources of truth behind one fact. Anything else is a real failure and must not
+    // be read as a quiet child.
     const SDL_IOStatus status = SDL_GetIOStatus(output);
-    if (status == SDL_IO_STATUS_EOF) {
+    if (status == SDL_IO_STATUS_EOF || status == SDL_IO_STATUS_NOT_READY) {
         return usize{0};
-    }
-    if (status == SDL_IO_STATUS_NOT_READY) {
-        return fail(ErrorCode::Unavailable, "the child has not written anything yet");
     }
     return sdl_failure(ErrorCode::Internal);
 }

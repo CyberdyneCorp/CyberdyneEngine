@@ -53,6 +53,25 @@
 // delta specification's second scenario asks for exactly that demonstration).
 //
 // The day an encoder lands, the one thing that changes is what fills in `PlayModeSupport`.
+//
+// ================================================================================================
+// WHAT THIS FILE GOT WRONG THE FIRST TIME, BECAUSE THE PARAGRAPH ABOVE WAS ONLY HALF APPLIED
+// ================================================================================================
+//
+// The argument above is right and was made about `RemoteDevice` only. `runtime_launcher` — the bit
+// `SeparateProcess` hangs on — was initialised to `true` BY A LITERAL, beside a comment in
+// `mode.cpp` reading "this build carries no launcher yet" and a `due` string naming M11.d as the
+// rung that would write one. So the very constant this file argues against having was there, for
+// the one mode that had no implementation at all, and every check over it was a check that could
+// not fail. M11.b's gate found it in one grep.
+//
+// It is now measured. `cy/gameplay/play/launcher.h` carries `play_mode_support(platform)`, which
+// resolves `cy_play_runtime_host` beside the calling executable and asks the filesystem whether it
+// is there; the no-argument overload below answers `false`, because a caller with no `Platform`
+// cannot start a process. And `PlayModeSupport::hosted_runtime_process` is the second question the
+// first one hid: `availability_of` answers the EDITOR's — may I offer this mode — while
+// `PlaySession::enter` asks whether THIS process is the one the mode's runtime lives in, and
+// refuses a session that would be the in-editor world under another name.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>

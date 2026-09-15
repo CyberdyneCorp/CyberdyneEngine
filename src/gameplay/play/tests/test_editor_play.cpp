@@ -62,9 +62,9 @@
 #include <string>
 
 #if defined(_WIN32)
-#include <windows.h>
+#    include <windows.h>
 #else
-#include <unistd.h>
+#    include <unistd.h>
 #endif
 
 using cy::f32;
@@ -155,9 +155,9 @@ struct Driven {
 }
 
 /// THE COMMAND STREAM. One function, one sequence of calls, and the only thing that varies between
-/// runs is which `PlayDriver` receives them — which is the requirement restated as code: *"All three
-/// SHALL be driven through the same live bridge interface. Locality SHALL be an optimisation of
-/// transport, not a different architecture."*
+/// runs is which `PlayDriver` receives them — which is the requirement restated as code: *"All
+/// three SHALL be driven through the same live bridge interface. Locality SHALL be an optimisation
+/// of transport, not a different architecture."*
 [[nodiscard]] Driven drive(PlayDriver& driver, u64 sphere) {
     Driven result;
     if (!driver.enter()) {
@@ -284,7 +284,12 @@ CY_TEST_CASE("a world plays in the editor's process and in a second one, driven 
     CY_REQUIRE(exit_code.has_value());
     // A child asked to leave exits zero. A child that crashed, was killed, or died mid-session does
     // not, and the difference is what distinguishes a run from a launch.
-    CY_CHECK_EQ(*exit_code, 0);
+    //
+    // Read through a fallback rather than dereferenced: this harness builds with exceptions
+    // disabled, so a failed REQUIRE records the failure and CARRIES ON, and a `*` on an errored
+    // Expected would end the whole binary in SIGABRT — which reports one crashed case instead of
+    // the several assertions that were about to say what went wrong.
+    CY_CHECK_EQ(exit_code.has_value() ? *exit_code : -1, 0);
 
     // --- ONE WORLD MODEL, TWO PROCESSES ---------------------------------------------------------
     //
@@ -351,6 +356,77 @@ CY_TEST_CASE("separate-process play refuses when there is no runtime host to lau
     CY_CHECK_FALSE(driver.enter().has_value());
     CY_CHECK_FALSE(driver.tick().has_value());
     CY_CHECK_FALSE(driver.observe().has_value());
+
+    (void)cy::assets::fs::remove_file(kWorldFile);
+}
+
+CY_TEST_CASE("standalone play can be launched stopped so a debugger can attach") {
+    // `editor-architecture` ("Standalone play"): *"the game SHALL launch as a separate process WITH
+    // THE DEBUGGER ATTACHED"*. An engine cannot attach a debugger — which debugger, and whether one
+    // is installed, is the developer's — but it can do the half that makes attaching possible:
+    // start the runtime, announce which process it is, and BUILD NOTHING until it is told to go.
+    //
+    // The case is here because the alternative is a flag that is passed, plumbed, documented, and
+    // never exercised — which is the shape of every defect this repair round is about.
+    PlatformFixture host;
+    CY_REQUIRE(host.ready());
+    Authored authored;
+    CY_REQUIRE(authored.started);
+    CY_REQUIRE(runtime_launcher_available(host.platform()));
+
+    constexpr const char* kWorldFile = "editor_play_wait_for_debugger.cyworld";
+    CY_REQUIRE(write_world(authored.text, kWorldFile));
+
+    RuntimeLaunchRequest request;
+    request.world_path = kWorldFile;
+    request.asset_path = kAssetPath;
+    request.wait_for_debugger = true;
+
+    RuntimeProcess child(allocator());
+    const cy::Status launched = child.launch(host.platform(), request);
+    if (!launched) {
+        CY_TEST_MESSAGE(std::string(launched.error().message));
+    }
+    CY_REQUIRE(launched.has_value());
+    // It announced itself, which is what a developer needs in order to attach: the handshake
+    // completed and the identifier is the one the operating system gave this launch.
+    CY_CHECK(child.reported_process_id() != 0);
+    CY_CHECK_EQ(child.reported_process_id(), child.observed_process_id());
+
+    // AND IT REFUSES EVERY COMMAND UNTIL IT IS RELEASED — `resume-launch` and `quit` excepted. A
+    // host that accepted `enter` and waited afterwards would already have built the world, which is
+    // the thing a developer attached a debugger in order to watch being built.
+    ProcessPlayDriver driver(child, allocator());
+    CY_CHECK_FALSE(driver.enter().has_value());
+    CY_CHECK_FALSE(driver.tick().has_value());
+    CY_CHECK_FALSE(driver.observe().has_value());
+
+    // Released. The world is still unbuilt at this point, which is what proves the wait was a wait
+    // rather than a delay after the fact.
+    cy::Array<char> reply(allocator());
+    CY_REQUIRE(child.request("resume-launch", reply).has_value());
+    CY_CHECK_EQ(std::string(reply.data(), reply.size()), std::string("ok"));
+    const cy::Expected<PlayObservation, cy::Error> before = driver.observe();
+    CY_REQUIRE(before.has_value());
+    if (before) {
+        CY_CHECK_EQ(before->ticks, 0U);
+        CY_CHECK_EQ(before->entities, 0U);
+    }
+
+    // And then the same process runs the same world.
+    CY_REQUIRE(driver.enter().has_value());
+    CY_REQUIRE(driver.tick().has_value());
+    const cy::Expected<PlayObservation, cy::Error> running = driver.observe();
+    CY_REQUIRE(running.has_value());
+    if (running) {
+        CY_CHECK_EQ(running->ticks, 1U);
+        CY_CHECK_EQ(running->entities, 2U);
+    }
+    CY_REQUIRE(driver.stop().has_value());
+
+    const cy::Expected<cy::i32, cy::Error> exit_code = child.shutdown();
+    CY_REQUIRE(exit_code.has_value());
+    CY_CHECK_EQ(exit_code.has_value() ? *exit_code : -1, 0);
 
     (void)cy::assets::fs::remove_file(kWorldFile);
 }

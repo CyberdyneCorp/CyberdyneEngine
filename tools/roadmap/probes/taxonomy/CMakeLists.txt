@@ -11,10 +11,10 @@
 # care is not the fix.
 #
 # So this is the fix: a project CMake configures FOR REAL, with the taxonomy's own file included and
-# cy_add_module() stubbed to record what it was handed. `add_subdirectory()` is stubbed to nothing so
-# that the engine's suites are not declared — the subject is the FUNCTION, not the tree that calls
-# it — and the probe declares one suite per kind the taxonomy names. What comes back is CMake's
-# answer, twice over:
+# cy_add_module() stubbed to record what it was handed. `add_subdirectory()` is stubbed to nothing
+# so that the engine's suites are not declared — the subject is the FUNCTION, not the tree that
+# calls it — and the probe declares one suite per kind the taxonomy names. What comes back is
+# CMake's answer, twice over:
 #
 #   * `${CY_PROBE_REPORT}` — one `taxonomy|<kind>|<budget>|<timeout>` line per kind, read from the
 #     CMake variables rather than from the file's text, and one `module|<target>|<definitions>` line
@@ -23,8 +23,8 @@
 #     see, written by CMake's generator and not by anything in this repository.
 #
 # LANGUAGES NONE, so no compiler is required and the configure costs about a tenth of a second: this
-# runs on every pull request through `milestone-m11a`, and in `falsify.prove`'s sandboxed copy of the
-# tracked tree, which has no build.
+# runs on every pull request through `milestone-m11a`, and in `falsify.prove`'s sandboxed copy of
+# the tracked tree, which has no build.
 #
 # Driven by `tools/roadmap/row_evidence.py`. Three variables come in on the command line:
 #   CY_REPO          the repository root to read tests/CMakeLists.txt from
@@ -51,15 +51,16 @@ endfunction()
 # arguments is how the budget reaches this probe: `PRIVATE_DEFINITIONS CY_TEST_BUDGET_NS=...` is
 # what "compiles the budget into the binary" MEANS, and it is a fact about the call, not the file.
 function(cy_add_module)
-    cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME;LAYER;TYPE"
-                          "SOURCES;PRIVATE_DEFINITIONS;PRIVATE_DEPENDENCIES;PUBLIC_DEFINITIONS;PUBLIC_DEPENDENCIES")
+    set(_lists "SOURCES;PRIVATE_DEFINITIONS;PRIVATE_DEPENDENCIES")
+    list(APPEND _lists "PUBLIC_DEFINITIONS" "PUBLIC_DEPENDENCIES")
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "NAME;LAYER;TYPE" "${_lists}")
     file(APPEND "${CY_PROBE_REPORT}" "module|${arg_NAME}|${arg_PRIVATE_DEFINITIONS}\n")
 endfunction()
 
 include("${CY_REPO}/tests/CMakeLists.txt")
 
 # The kinds are whatever the taxonomy DEFINED, asked of CMake's variable set rather than matched out
-# of the text: a kind that is only spelled in a comment defines no variable and appears nowhere here.
+# of the text: a kind only spelled in a comment defines no variable and appears nowhere here.
 get_cmake_property(_variables VARIABLES)
 list(SORT _variables)
 set(_kinds "")

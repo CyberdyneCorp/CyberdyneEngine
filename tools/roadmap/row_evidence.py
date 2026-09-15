@@ -310,54 +310,67 @@ def _kinds_detail(kinds: dict[str, tuple[str, str]], incomplete: list[str]) -> s
     """What CMake says the taxonomy is, for the reader of a run."""
     if not kinds:
         return "the probe found no CY_TEST_BUDGET_<kind> at all"
-    stated = "  ".join(f"{kind}={budget}ns/{timeout}s" for kind, (budget, timeout) in sorted(kinds.items()))
+    stated = "  ".join(f"{kind}={budget}ns/{timeout}s"
+                       for kind, (budget, timeout) in sorted(kinds.items()))
     return stated + (f"\nwithout both: {', '.join(incomplete)}" if incomplete else "")
 
 
-def _taxonomy_legs(report: Report, probe: Probe, properties: dict[str, dict[str, str]]) -> None:
-    """The four legs that are about what cy_add_test() PRODUCES, read out of CMake's own answers."""
-    kinds = {kind: (budget, timeout) for kind, budget, timeout in probe.of("taxonomy")}
-    incomplete = sorted(kind for kind, (budget, timeout) in kinds.items() if not budget or not timeout)
-    report.leg(bool(kinds) and not incomplete,
-               "the taxonomy gives every kind both a per-case budget and a CTest timeout",
-               _kinds_detail(kinds, incomplete))
+def _budget_leg(report: Report, probe: Probe, kinds: dict[str, tuple[str, str]]) -> None:
+    """`PRIVATE_DEFINITIONS` as cy_add_test() actually passed them, captured by the probe's stub.
 
-    # `PRIVATE_DEFINITIONS` as cy_add_test() actually passed them, captured by the probe's stub. A
-    # budget that is spelled in the file and not passed on does not appear here.
-    handed = {name: definitions for name, definitions in probe.of("module")}
+    A budget that is spelled in tests/CMakeLists.txt and not passed on does not appear here.
+    """
+    handed = dict(probe.of("module"))
     wrong = []
     for kind, (budget, _timeout) in sorted(kinds.items()):
-        definitions = handed.get(f"cy_test_{kind}_probe_{kind}", "")
-        if f"CY_TEST_BUDGET_NS={budget}ULL" not in definitions:
-            wrong.append(f"{kind}: cy_add_module got {definitions or 'no definitions'!r}, "
+        given = handed.get(f"cy_test_{kind}_probe_{kind}", "")
+        if f"CY_TEST_BUDGET_NS={budget}ULL" not in given:
+            wrong.append(f"{kind}: cy_add_module got {given or 'no definitions'!r}, "
                          f"not CY_TEST_BUDGET_NS={budget}ULL")
     report.leg(bool(kinds) and not wrong,
                "cy_add_test compiles the kind's per-case budget into the binary it declares",
                "\n".join(wrong) or "\n".join(f"{name}: {definitions}"
                                              for name, definitions in sorted(handed.items())))
 
-    # And what CTest will see, read from the file CMake's generator wrote.
+
+def _ctest_legs(report: Report, kinds: dict[str, tuple[str, str]],
+                properties: dict[str, dict[str, str]]) -> None:
+    """What CTest will see, read from the file CMake's own generator wrote."""
     unlabelled, mistimed = [], []
     for kind, (_budget, timeout) in sorted(kinds.items()):
         given = properties.get(f"{kind}.probe_{kind}")
         if given is None:
             unlabelled.append(f"{kind}: cy_add_test registered no test for it at all")
             mistimed.append(f"{kind}: no test registered")
-            continue
-        if given.get("LABELS") != kind:
-            unlabelled.append(f"{kind}: CTest sees LABELS {given.get('LABELS', 'none')!r}")
-        if given.get("TIMEOUT") != timeout:
-            mistimed.append(f"{kind}: CTest sees TIMEOUT {given.get('TIMEOUT', 'none')!r}, "
-                            f"the taxonomy says {timeout}")
+        else:
+            if given.get("LABELS") != kind:
+                unlabelled.append(f"{kind}: CTest sees LABELS {given.get('LABELS', 'none')!r}")
+            if given.get("TIMEOUT") != timeout:
+                mistimed.append(f"{kind}: CTest sees TIMEOUT {given.get('TIMEOUT', 'none')!r}, "
+                                f"the taxonomy says {timeout}")
     registered = "\n".join(f"{name}: LABELS {given.get('LABELS', 'none')!r} "
-                            f"TIMEOUT {given.get('TIMEOUT', 'none')!r}"
-                            for name, given in sorted(properties.items()))
+                           f"TIMEOUT {given.get('TIMEOUT', 'none')!r}"
+                           for name, given in sorted(properties.items()))
     report.leg(bool(properties) and not unlabelled,
                "cy_add_test gives every suite its kind as a CTest label",
                "\n".join(unlabelled) or registered)
     report.leg(bool(properties) and not mistimed,
                "cy_add_test gives every suite the taxonomy's CTest timeout",
                "\n".join(mistimed) or "every registered suite carries the taxonomy's timeout")
+
+
+def _taxonomy_legs(report: Report, probe: Probe,
+                   properties: dict[str, dict[str, str]]) -> dict[str, tuple[str, str]]:
+    """The four legs about what cy_add_test() PRODUCES, read out of CMake's own answers."""
+    kinds = {kind: (budget, timeout) for kind, budget, timeout in probe.of("taxonomy")}
+    incomplete = sorted(kind for kind, (budget, timeout) in kinds.items()
+                        if not budget or not timeout)
+    report.leg(bool(kinds) and not incomplete,
+               "the taxonomy gives every kind both a per-case budget and a CTest timeout",
+               _kinds_detail(kinds, incomplete))
+    _budget_leg(report, probe, kinds)
+    _ctest_legs(report, kinds, properties)
+    return kinds
 
 
 def _benchmark_leg(report: Report) -> None:
@@ -369,7 +382,8 @@ def _benchmark_leg(report: Report) -> None:
     """
     registered = set()
     for path in (REPO_ROOT / "benchmarks").rglob("*.cpp"):
-        registered.update(re.findall(r'CY_BENCHMARK\(\s*"([^"]+)"', path.read_text(encoding="utf-8")))
+        registered.update(re.findall(r'CY_BENCHMARK\(\s*"([^"]+)"',
+                                     path.read_text(encoding="utf-8")))
     baseline = json.loads(read("benchmarks/baseline.json"))["benchmarks"]
     missing = sorted(registered - set(baseline))
     orphans = sorted(set(baseline) - registered)
@@ -390,7 +404,8 @@ def _ci_jobs_leg(report: Report) -> None:
     THIS LEG WAS A WORD-GREP AND THE M11 GATE SAID SO IN THOSE WORDS: `^  <job>:$` in ci.yml is
     "a word-grep a dummy job satisfies", demonstrated in the repair round by replacing all seven
     jobs with `run: echo dummy` and watching the criterion stay green. The row's evidence is that
-    these jobs RUN the quality work, so that is what is asked: every one of them invokes at least one
+    these jobs RUN the quality work, so that is what is asked: every one of them invokes at least
+    one
     `just` recipe, and every recipe any of them invokes is one the recipe surface actually carries —
     a step calling a recipe that no longer exists is a job that fails on the runner and a gate that
     gates nothing until someone reads the log.
@@ -401,11 +416,12 @@ def _ci_jobs_leg(report: Report) -> None:
     inert = [job for job in TESTING_CI_JOBS if job in jobs and not recipes_a_job_runs(jobs[job])]
     unknown = sorted({f"{job} -> just {recipe}" for job in TESTING_CI_JOBS if job in jobs
                       for recipe in recipes_a_job_runs(jobs[job]) if recipe not in recipes})
-    detail = "\n".join(f"{job:<18} {', '.join(recipes_a_job_runs(jobs.get(job, ''))) or 'runs no recipe'}"
+    detail = "\n".join(f"{job:<18} "
+                       f"{', '.join(recipes_a_job_runs(jobs.get(job, ''))) or 'runs no recipe'}"
                        for job in TESTING_CI_JOBS)
     report.leg(not absent and not inert and not unknown and not unavailable,
-               "the quality jobs the row is argued on are declared in ci.yml AND each runs a recipe "
-               "the workflow carries",
+               "the quality jobs the row is argued on are declared in ci.yml AND each runs "
+               "a recipe the workflow carries",
                detail
                + (f"\nnot declared: {', '.join(absent)}" if absent else "")
                + (f"\ndeclared but running no recipe: {', '.join(inert)}" if inert else "")
@@ -422,19 +438,19 @@ def check_testing_and_quality() -> int:
                probe.failure or f"tools/roadmap/probes/taxonomy configured; "
                                 f"{len(probe.of('taxonomy'))} kind(s), "
                                 f"{len(properties)} suite(s) registered with CTest")
-    _taxonomy_legs(report, probe, properties)
+    kinds = _taxonomy_legs(report, probe, properties)
 
     # A kind in the table with no suite behind it is a budget nobody is under. Matched over every
     # committed CMakeLists.txt because suites are declared beside the module they test, and with
     # comment lines removed, because a commented-out declaration declares nothing.
-    kinds = [kind for kind, _budget, _timeout in probe.of("taxonomy")]
     declared: dict[str, int] = {kind: 0 for kind in sorted(kinds)}
     for path in cmake_files():
         text = without_cmake_comments(path.read_text(encoding="utf-8"))
         for kind in re.findall(r"cy_add_test\([^)]*?KIND\s+(\w+)", text, re.DOTALL):
             declared[kind] = declared.get(kind, 0) + 1
     empty = [kind for kind in sorted(kinds) if not declared.get(kind)]
-    report.leg(bool(kinds) and not empty, "every kind in the taxonomy has at least one suite declared",
+    report.leg(bool(kinds) and not empty,
+               "every kind in the taxonomy has at least one suite declared",
                "  ".join(f"{kind}={declared.get(kind, 0)}" for kind in sorted(kinds))
                + (f"\nno suite for: {', '.join(empty)}" if empty else ""))
 
@@ -487,9 +503,9 @@ def profile_columns_disagreeing(rows: dict[str, list[str]],
     itself against the justfile at CONFIGURE time and only when a caller supplies both, and neither
     file has ever been compared with the Cargo profile the editor is actually built with.
 
-    `derived` is the probe's answer per profile, not a regular expression over the file: the leg this
-    replaced matched commented-out `set()` lines and stayed green over a build system with no profile
-    table at all.
+    `derived` is the probe's answer per profile, not a regular expression over the file: the leg
+    this replaced matched commented-out `set()` lines and stayed green over a build system with no
+    profile table at all.
     """
     found = []
     for profile in PROFILES:

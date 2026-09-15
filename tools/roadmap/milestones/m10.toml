@@ -1491,7 +1491,77 @@ if stale:
 print("an environment field is sampled in a shader: the sampler and its two consumers type-check "
       "through the engine's own front end, and the module the device suite measures is this one")
 CHECK
+
+# ================================================================================================
+# AND THE THIRD HALF: MEASURED AGAINST A DEVICE — REPAIR 2
+# ================================================================================================
+#
+# THE GAP'S DECLARATION NAMED THREE THINGS and this check was closing it on one. Its own words:
+# "Closing it is `cy/field.slang` written against the layout `gpu.h` already fixes, BOUND THROUGH THE
+# GPU SCENE, and MEASURED AGAINST A DEVICE." The two halves above establish that the module compiles
+# and that the checked-in SPIR-V is this module's — both of which pass on a machine with no graphics
+# device at all. So the marker was deleted for a reason the declaration does not name: the criterion
+# said "a shader exists and compiles" where the declaration said "a field is sampled on a device".
+#
+# `render.environment_field` is the run that measures it, and it is asserted here rather than left to
+# `m11a:field-device-agreement` alone because THIS is the criterion whose gap is being closed. It
+# dispatches both entry points of `tests/render/shaders/field_probe.slang` — `sampleFieldBound` and
+# `sampleFieldBindless`, the second through `cyFieldSampleScene`, which is the "bound through the GPU
+# scene" clause — and requires them to agree bit for bit.
+#
+# A SKIP IS NOT A PASS, which is the whole reason this criterion now carries `requires = "gpu"`: on a
+# machine with no device it is reported NOT EVALUATED, and `fields-gpu-agreement` above carries the
+# processor-side half on every machine. A version of this that let the suite skip quietly would be
+# `m8:quality-gates` again — a selection that matches nothing, read as a green.
+d="${CY_BUILD_DIR:-build/dev}"
+# `case` AND NOT `ctest -N | grep -q`, and the difference is a race this check hit on its second run.
+# Under `set -o pipefail`, `grep -q` closes the pipe the moment it matches, ctest takes SIGPIPE, and
+# the pipeline's status is 141 — sometimes. The criterion then reported "the suite is not registered"
+# about a suite that is, which is a check failing for a reason that is not its subject: the exact
+# shape this repair exists to remove.
+listed="$(ctest --test-dir "$d" -N -R '^render.environment_field$' 2>&1 || true)"
+case "$listed" in
+    *render.environment_field*) ;;
+    *)
+        echo "render.environment_field is not registered in this build: the suite that samples the"
+        echo "field on a device has been renamed or deleted, and nothing measures the device half"
+        printf '%s\n' "$listed" | tail -5
+        exit 1
+        ;;
+esac
+device="$(ctest --test-dir "$d" -R '^render.environment_field$' -V 2>&1)" || {
+    printf '%s\n' "$device" | tail -30
+    echo "the device sampler does NOT agree with the processor over the same bytes"
+    exit 1
+}
+case "$device" in
+    *"no Vulkan device on this machine"*)
+        echo "the suite SKIPPED for want of a device, so the half of this gap's declaration that"
+        echo "says 'measured against a device' is undischarged here. That is NOT a pass."
+        exit 1
+        ;;
+esac
+printf '%s\n' "$device" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+rows = re.findall(r"(\w[\w ()]*?): ([0-9]+) comparisons, ([0-9]+) bit-identical, worst ([0-9]+) ulp",
+                  text)
+if len(rows) < 4:
+    sys.exit(f"the suite reported {len(rows)} comparisons and not the four it makes (two fields, "
+             "sweep and lattice centres): it has been cut down rather than run")
+unresolved = [int(count) for count in re.findall(r"([0-9]+) unresolved", text)]
+if not unresolved or any(count != 0 for count in unresolved):
+    sys.exit(f"positions fell outside the written tiles: {unresolved} unresolved — both samplers "
+             "then answer the declared default and agree about nothing")
+compared = sum(int(row[1]) for row in rows)
+for name, count, identical, ulp in rows:
+    print(f"  {name.strip()}: {count} comparisons, {identical} bit-identical, worst {ulp} ulp")
+print(f"the field is sampled ON A DEVICE and agrees with the processor over {compared} comparisons, "
+      "through the bound buffer and through the bindless table of the GPU scene alike")
+'
 '''
+requires = "gpu"
+reason = "the third half of this gap's own declaration is `measured against a device`, and a device is what that needs. `fields-gpu-agreement` above carries the layout half on every machine — two processor-side implementations that share no code — so the claim is not judgeable only where a GPU is, which is M8.c's rule. What is refused here is the shape that preceded this repair: a criterion that closed a device gap while passing on a machine with no device."
 ci_job = "milestone-m10"
 
 # WHAT MUST BREAK IT, AND IT WAS BROKEN: renaming `cyFieldSampleScene` in `cy/field.slang` leaves the

@@ -21,6 +21,8 @@ just roadmap-test                  # the tooling's own tests, including the thre
 | `record.py`, `criteria.py`, `gates.py` | Reading and validating those three. Each raises one error type with a message that names the file, the line or the entry, and what to do. |
 | `falsify.py` | Whether a criterion can go RED. Breaks what each one names — in a sandboxed copy of the tree, or, for the criteria only a build can judge, in the working tree under `--mutate-the-tree` — and requires it to fail. `just roadmap-falsify`. |
 | `falsifiability.toml` | Generated. What the ladder has shown can fail, and the list — which only shrinks — of what it has not. |
+| `requirements.py` | Every requirement of a capability row against the test, gate or recorded exemption that answers it. `just quality-requirements <row>…`. |
+| `requirements-coverage.toml` | Hand-written. The map `requirements.py` reads; every entry is resolved against the tree, so a renamed suite turns the row red. |
 | `roadmap.py` | The command line behind the recipes. |
 | `selftest.py` | The tests. `just roadmap-test`. |
 
@@ -115,9 +117,10 @@ changes when the roadmap is deleted was reading the roadmap.
 
 ### A criterion that is already red has been watched going red
 
-A proof therefore comes in four shapes. The second and third are for the criteria that cannot pass a
+A proof therefore comes in five shapes. The second and third are for the criteria that cannot pass a
 positive control because they are failing *right now* — which is most of a rung's ledger while the
-rung is open — and the fourth is for the ones whose subject is a **compiled artefact**:
+rung is open — the fourth is for the ones whose subject is a **compiled artefact**, and the fifth is
+for the ones this host cannot evaluate at all:
 
 | Verdict | What was observed |
 |---|---|
@@ -125,6 +128,39 @@ rung is open — and the fourth is for the ones whose subject is a **compiled ar
 | `red in the tree` | it **fails as written**, in the sandbox *and* in the repository |
 | `red against a built tree` | the same, for a criterion a source-only sandbox cannot run at all, observed against a real build: `just roadmap-falsify prove --build-dir build/dev` |
 | `proven against a built tree` | it **passes** against that build, the mutation applied to the **working tree** and rebuilt over turned it red, and restoring the tree turned it green again: `just roadmap-falsify prove --build-dir build/dev --mutate-the-tree` |
+| `proven in the environment CI supplies` | a `where = "ci"` criterion: its `[criterion.ci_proof]` **built** the environment continuous integration hands it, the criterion passed against that, the mutation of *the environment* turned it red, and restoring it turned it green again |
+
+### The criterion this host cannot evaluate, which was the other hole
+
+`just test-determinism --compare-legs` compares digests published by several architectures. This
+machine has one, so the ledger reports the criterion **NOT EVALUATED** rather than passed — and
+`falsify.prove` refused to judge it for the same reason, correctly: a red produced by the laptop is a
+verdict about the laptop. What that left was two of M11.a's seventy criteria that **nobody had shown
+could fail**, and M11's repair gate was right to call that dispositive.
+
+The missing piece was the **environment**, never the criterion. So a `where = "ci"` criterion may
+declare the command that *constructs* what CI hands it:
+
+```toml
+[criterion.ci_proof]
+provide = "python3 tools/ci/cross_leg_audit.py --claim lockstep --write-legs cross-leg-digests"
+mutate  = "rename-token"
+target  = "cross-leg-digests/cross-leg-digest-1/beta.digest"
+token   = "44d0feadcb7cd95d"
+```
+
+`provide` is **executed**, not read, and the criterion's own body then runs verbatim three times: it
+must pass against what `provide` produced, go red under the mutation *of that environment*, and come
+back green once it is restored. A `provide` that supplies nothing leaves the criterion red at its
+positive control and the verdict is `not provable here` — exactly the answer this shape replaced — so
+there is nothing here that can be filled in falsely. The field is refused on any criterion that is
+not `where = "ci"`, and refused outright beside `requires = "gpu"` or `requires = "display"`: no
+shell command conjures a graphics device, and pretending otherwise would be this mechanism
+committing the defect it exists to refuse.
+
+**It claims nothing about the answer.** The criterion still reports NOT EVALUATED here and is still
+answered only in CI. What it earns is the thing every other criterion on the ladder had and these two
+did not: a demonstration that the check is capable of saying no.
 
 **Why this is a ratchet and not a hole.** The defect runs in one direction: a criterion that is green
 and that nothing can turn red. A criterion that is red is not that, and it is red in the open on
@@ -247,6 +283,15 @@ run, and each rule has a negative fixture in `selftest.py` spelled the way the l
 | `vacuous-suite` | `just test-render -R <suite>` and `ctest -R <suite>` — an empty selection exits zero unless the registration is asserted |
 | `no-assertion` | a body whose every command is inert: it reports and returns |
 | `swallowed-verdict` | `… || true` at the end: the exit code cannot reach the criterion |
+| `absent-recipe` | the body runs a `just` recipe the justfile does not define: `just` aborts at argument parsing and nothing the criterion names is ever measured |
+
+`absent-recipe` is the eighth defect of the seven, and the first one the prover **committed** rather
+than caught. Three criteria ran `just quality-requirements <rows…>`; there was no such recipe, so
+`just` stopped with *"Justfile does not contain recipes"*, ran nothing, and exited 1 — which is red
+unmutated in the sandbox and in the repository, which is `red in the tree`, which is a **proof**. An
+exit code cannot tell a subject failing from a name failing to resolve, so the shape is refused
+before any run. The recipe those criteria were written for is `tools/roadmap/requirements.py`, and
+its map is `tools/roadmap/requirements-coverage.toml`.
 
 Two further shapes are reported apart, because they are a weaker complaint: `presence-only`, whose
 whole verdict is that some text exists, and `artefact-presence`, a `path` criterion satisfied by a

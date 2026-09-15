@@ -231,6 +231,41 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       Proven by `just roadmap-falsify` (`rename-token 'separate-process' in
       src/gameplay/play/src/mode.cpp`), watched red by hand under five separate breaks, and run
       outside the ledger as `integration.editor_contract_play_modes` so it cannot stop firing
+      **CORRECTED A SECOND TIME AT M11.b's GATE, AND THIS IS THE CORRECTION THAT COST CODE.** The
+      gate refuted "the engine gained what the specification asks for" on `SeparateProcess`:
+      *"NO process launch of any kind … mode.cpp:66-68 says it itself"*. It was right.
+      `PlayModeSupport::runtime_launcher` was a literal `true` beside a comment reading "this build
+      carries no launcher yet", `kSeparateProcessDue` named M11.d as the rung that would write one,
+      and `cy_test_integration_editor_play` "drove three modes" by building THREE `PlaySession`s IN
+      ONE PROCESS and comparing the three results — which agree whatever the mode argument said.
+      Deleting separate-process play outright would have left every one of those green.
+      **What is in the tree now:**
+      `src/gameplay/play/include/cy/gameplay/play/launcher.h` + `src/launcher.cpp` — `RuntimeProcess`
+      launches, supervises, drives and reaps a real second process over a versioned one-line-per-
+      request protocol; `driver.h` + `src/driver.cpp` — `PlayDriver` is the one command vocabulary
+      and `LocalPlayDriver`/`ProcessPlayDriver` are its two localities, which is *"locality SHALL be
+      an optimisation of transport, not a different architecture"* as code rather than as a
+      sentence; `host/main.cpp` → `cy_play_runtime_host`, the binary that IS separate-process play,
+      built unconditionally rather than behind `CY_BUILD_TESTS` because it is a product;
+      `Platform::spawn_process` (there since M0, never once called from `src/gameplay/`) gained
+      `ProcessOptions::piped_standard_streams`, `write_process_input`, `close_process_input`,
+      `read_process_output` and `process_id`, because a spawned child with inherited streams is
+      started but not addressable and a play mode has to be DRIVEN.
+      **What makes it unfakeable.** `launch` requires the identifier the CHILD reports and the one
+      the OPERATING SYSTEM gives this launch to agree, and the case requires that identifier not to
+      be this process's. `play_mode_support(platform)` MEASURES `runtime_launcher` by resolving the
+      host binary on disk, so the no-argument overload now answers `false` and a tree without the
+      binary reports the mode unavailable. `PlaySession::enter` REFUSES `SeparateProcess` unless
+      `support.hosted_runtime_process` — set only by `cy_play_runtime_host` — so the exact shape
+      this rung shipped is now an error naming `ProcessPlayDriver`.
+      **And the comparison is bit for bit**: one world, one command stream, two processes, the
+      sphere's height compared as its raw `u32` bits rather than "near", because two processes
+      running the same compiled simulation over the same bytes produce the same float and anything
+      weaker would let a real divergence through. 8 cases, 150 assertions, all green.
+      `m11b:play-mode-round-trip` was rewritten around it and `m11b:separate-process-is-a-second-
+      process` added beside it; both watched red under `rename-token 'cy_play_runtime_host' in
+      launcher.h` (rebuilt, red, restored, rebuilt, green) and under the declared case rename, with
+      md5 restores verified
 - [x] 3.2 **DONE, AND IT IS A COMPILER RATHER THAN A FIELD.** `src/gameplay/live/` — `cy::gameplay-live`:
       `LiveEditPolicy` with all six of the specification's outcomes, `derived_policy_for` deriving
       only the three the classification can justify (`reflect::PersistenceKind` gets its first
@@ -612,6 +647,16 @@ is the forcing function `ui-system` requires by name (task 7.5).
       rung being open. Nine of those criteria had no proof of any kind before this round: they PASSED
       against a build and the prover had nothing that could turn them red, which is the shape of all
       seven unfalsifiable criteria this mechanism exists to end
+      **NOT DONE FOR THE TWO CRITERIA THIS REPAIR ROUND TOUCHED, AND THE REGISTRY SAYS SO RATHER
+      THAN THIS LIST.** `m11b.toml` now carries 34 criteria: `play-mode-round-trip` was rewritten
+      (its digest moved, so its existing entry is stale by construction) and
+      `separate-process-is-a-second-process` is new and has no entry at all. Both were proven BY HAND
+      — mutate `kRuntimeHostBinary` in `launcher.h`, rebuild, watch both go red, restore, rebuild,
+      watch both go green, `md5sum -c` the restore — but the generated record cannot be written from
+      here: `just roadmap-falsify prove --record --build-dir <dir> --mutate-the-tree` refuses a tree
+      `git status` calls dirty, and this phase does not commit. The registry entry is therefore owed
+      by the phase that commits, and until it is written `plan-consistency` is the criterion that
+      says so
 - [ ] 13.3 **Adversarial pass on this rung's own invariants**: select a play mode that is not
       available and confirm it refuses by name rather than falling back; reach past the public plugin
       API from a built-in editor and confirm the build fails; give two authored nodes the same name

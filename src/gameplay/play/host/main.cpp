@@ -55,9 +55,9 @@
 // function, in the one binary that needs it — the alternative is a `Platform` call that would exist
 // solely so that this file could avoid an `#ifdef`, and `Platform` reports facts about CHILDREN.
 #if defined(_WIN32)
-#include <windows.h>
+#    include <windows.h>
 #else
-#include <unistd.h>
+#    include <unistd.h>
 #endif
 
 namespace {
@@ -317,14 +317,14 @@ private:
                             "entities=%u bodies=%u restored_exactly=%u",
                             static_cast<unsigned long long>(report.ticks),
                             static_cast<unsigned long long>(report.stepped_ticks),
-                            static_cast<unsigned long long>(report.stepped_frames),
-                            report.entities, report.bodies, report.restored_exactly ? 1U : 0U);
+                            static_cast<unsigned long long>(report.stepped_frames), report.entities,
+                            report.bodies, report.restored_exactly ? 1U : 0U);
         reply(line);
         return true;
     }
 
     constexpr std::string_view kHeight = "translation-y ";
-    if (command.size() > kHeight.size() && command.substr(0, kHeight.size()) == kHeight) {
+    if (command.size() > kHeight.size() && command.starts_with(kHeight)) {
         const std::string digits(command.substr(kHeight.size()));
         const auto identity = static_cast<cy::u64>(std::strtoull(digits.c_str(), nullptr, 10));
         cy::f32 height = 0.0F;

@@ -1301,6 +1301,11 @@ def digest(criterion: criteria_module.Criterion) -> str:
         criterion.kind, criterion.run, criterion.path,
         repr(sorted(criterion.expect_tiers.items())),
         repr(sorted((criterion.falsifies or {}).items())),
+        # THE DECLARED CI ENVIRONMENT IS PART OF WHAT THE PROOF WAS ABOUT, exactly as the declared
+        # mutation is. A `where = "ci"` criterion is judged against what its `provide` builds, so
+        # changing that command — or the mutation of it — changes what was demonstrated, and the
+        # standing proof lapses rather than being carried over a different experiment.
+        repr(sorted((criterion.ci_proof or {}).items())),
     ])
     return hashlib.sha256(material.encode()).hexdigest()[:16]
 
@@ -1451,7 +1456,7 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
     # recorded sentence is what a reader has.
     return finished(RED_IN_THE_TREE, "-",
                     f"red unmutated, in the sandbox and in the repository (exit {tree_code}): "
-                    f"{_first_line(tree_output)}")
+                    f"{_why_it_is_red(tree_output)}")
 
 
 def _prove_by_mutating_the_tree(criterion: criteria_module.Criterion, build_dir: str,
@@ -1545,7 +1550,7 @@ def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str,
     if code != 0:
         return finished(RED_WITH_A_BUILD, "-",
                         f"red unmutated against the build tree {build_dir} (exit {code}): "
-                        f"{_first_line(output)}")
+                        f"{_why_it_is_red(output)}")
     if tree is not None and mutation is not None:
         return _prove_by_mutating_the_tree(criterion, build_dir, mutation, tree, finished)
     if mutation is None:
@@ -1828,6 +1833,35 @@ def _last_line(output: str) -> str:
         if line.strip():
             return _SANDBOX_PATH.sub("<sandbox>", line.strip())[:160]
     return "(no output)"
+
+
+def _why_it_is_red(output: str) -> str:
+    """Both ends of what a red criterion said, because one end is usually boilerplate.
+
+    `m11a:world-budget-headless` was recorded as red with the detail
+    `==> configure   profile=dev  configuration=Development  platform=linux` — the FIRST line a
+    `just` recipe prints, and a line every build-backed criterion in the ladder prints whether it
+    then measured anything or not. What that criterion actually said was
+    `run-sample: no sample '10-world' in build/…/samples.`, three lines further down, and the record
+    carried no trace of it. A reader of `falsifiability.toml` could not tell a criterion that ran and
+    failed from one that never resolved its own command, which is the distinction this whole module
+    exists to keep.
+
+    So the recorded sentence is the first line AND the last, when they differ: the first is where a
+    harness refusal lands and the last is where a check that ran puts its verdict.
+    """
+    first, last = _first_line(output), _last_line(_without_just_epilogue(output))
+    return first if first == last else f"{first} … {last}"
+
+
+#: `just`'s own last word when a recipe fails. It is not the check's verdict — it is the same
+#: sentence for every failing recipe in the ladder — so it is stepped over when looking for what the
+#: criterion actually said. Recognised narrowly: anything else `just` prints is kept.
+_JUST_EPILOGUE = re.compile(r"^error: Recipe `[^`]+` failed with exit code \d+\s*$")
+
+
+def _without_just_epilogue(output: str) -> str:
+    return "\n".join(line for line in output.splitlines() if not _JUST_EPILOGUE.match(line.strip()))
 
 
 # --- The inventory: what the ladder has not yet shown can fail ------------------------------------

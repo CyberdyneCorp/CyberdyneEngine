@@ -177,13 +177,18 @@ public:
     // Closes the child's standard input, which is how a child that reads to end-of-file is told
     // there is no more. Idempotent.
     virtual Status close_process_input(ProcessHandle process) = 0;
-    // Reads from the child's standard output. BLOCKS until at least one byte is available, the
-    // child closes the stream, or the read fails — which is what a request/response protocol over a
-    // pipe wants, and why a caller that cannot afford to block must poll the process instead.
+    // Reads from the child's standard output. NEVER BLOCKS.
     //
-    // Returns 0 ONLY at end of stream: the child closed its output, which for a child that replies
-    // to every request means it exited. A failed read is an error rather than a zero, so that a
-    // caller cannot mistake a broken pipe for a quiet child.
+    //   > 0   that many bytes were read.
+    //   == 0  nothing is available AT THIS INSTANT. It does NOT distinguish "the child has not
+    //         answered yet" from "the child has closed its output", and it deliberately does not:
+    //         a caller that needs to tell them apart asks poll_process(), which is the call whose
+    //         subject is whether the child is alive. Answering it here would mean two sources of
+    //         truth about one fact.
+    //   error a real read failure.
+    //
+    // It is non-blocking because the underlying stream is, and a "blocking" wrapper over it would
+    // be this loop written once, in the platform, where a caller could not put a deadline on it.
     virtual Expected<usize, Error> read_process_output(ProcessHandle process, char* buffer,
                                                        usize capacity) = 0;
 

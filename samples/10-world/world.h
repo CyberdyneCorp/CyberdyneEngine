@@ -353,13 +353,13 @@ public:
 
     /// WHAT THIS ARTEFACT STREAMS, WHICH IS NOTHING, MEASURED RATHER THAN STATED.
     ///
-    /// `world-partition-and-streaming`'s Complete cell was moved off M10 by its own gate because the
-    /// world is kept wholly resident: every level-0 tile is cooked at build and none is ever
-    /// evicted, so every neighbour is at the same level and `MeshReport::stitched_vertices` is zero.
-    /// `m11a:world-streams` is the criterion that says so, and it used to say it by running the
-    /// sample with a `--stream-report` flag that did not exist, against a sample name that did not
-    /// resolve — it exited 2 having measured nothing, and was recorded as a criterion watched going
-    /// red.
+    /// `world-partition-and-streaming`'s Complete cell was moved off M10 by its own gate because
+    /// the world is kept wholly resident: every level-0 tile is cooked at build and none is ever
+    /// evicted, so every neighbour is at the same level and `MeshReport::stitched_vertices` is
+    /// zero. `m11a:world-streams` is the criterion that says so, and it used to say it by running
+    /// the sample with a `--stream-report` flag that did not exist, against a sample name that did
+    /// not resolve — it exited 2 having measured nothing, and was recorded as a criterion watched
+    /// going red.
     ///
     /// SO THE NUMBERS COME OFF THE STORE. `tiles_resident` is `TerrainStore::tile_count()` read at
     /// the moment it is asked for, and `tiles_evicted` is the difference between what `build()`

@@ -234,10 +234,24 @@ mutate = "rename-token"
 target = "src/gameplay/live/src/policy.cpp"
 token = "recreate-entity"
 
+# WHAT THIS CRITERION SAID BEFORE THE REPAIR ROUND, AND WHY IT WAS NOT A CHECK.
+#
+# It named the case "a world plays in each of the three modes" and required the filter to select it.
+# The case existed, ran, and passed — by building THREE `PlaySession`s IN ONE PROCESS, giving each a
+# different `PlayMode`, and comparing the three results. Three copies of one in-process simulation
+# agree whatever the mode argument said, so the comparison measured nothing about locality; and
+# `PlayModeSupport::runtime_launcher` was a literal `true` beside a comment reading "this build
+# carries no launcher yet", so the availability it gated was a constant. M11.b's gate found it:
+# "NO process launch of any kind … mode.cpp:66-68 says it itself".
+#
+# Deleting separate-process play outright would have left the old criterion GREEN. The repair is
+# `cy/gameplay/play/launcher.h` (a real launch, supervised, over a versioned line protocol),
+# `driver.h` (ONE command vocabulary, two localities) and a rewritten suite that drives the same
+# stream through both and compares the two PROCESSES' results bit for bit.
 [[criterion]]
 id = "play-mode-round-trip"
-describe = "a world is played in each of the three modes and the same command stream drives all three. The spike this rung names asks whether the hosted runtime carries all three WITHOUT A SECOND WORLD MODEL; this is the case that answers it in the tree rather than in a design document"
-source = "tasks, design.md §1, editor-architecture (Play modes)"
+describe = "one authored world, one command stream, and TWO PROCESSES — the editor's own and a second runtime process the engine launches — simulating to the same float, bit for bit. The spike this rung names asks whether the hosted runtime carries the modes WITHOUT A SECOND WORLD MODEL; the answer is only worth anything if the second locality is a second process, which is what the case now is and was not"
+source = "tasks, design.md §1, editor-architecture (Play modes), live-editing (Play modes)"
 kind = "command"
 run = '''
 set -e
@@ -245,7 +259,11 @@ d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
 binary="$d/cy_test_integration_editor_play"
 test -x "$binary" || { echo "no $binary — the suite integration.editor_play does not exist"; exit 1; }
-filter='a world plays in each of the three modes*'
+# The second process itself. A tree that did not build it would report the mode unavailable, which
+# is an honest answer to give about that tree and a useless one to accept here.
+host="$d/cy_play_runtime_host"
+test -x "$host" || { echo "no $host — separate-process play has no second process to launch"; exit 1; }
+filter="a world plays in the editor's process and in a second one*"
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
@@ -258,8 +276,68 @@ ci_job = "milestone-m11b"
 [criterion.falsifies]
 mutate = "rename-token"
 target = "src/gameplay/play/tests/test_editor_play.cpp"
-token  = "a world plays in each of the three modes"
-note   = "the criterion names one case and checks that the filter SELECTED it, because `-tc=<a name that is not there>` exits zero having run nothing. Renaming the case leaves the suite green and takes the criterion red on the count."
+token  = "a world plays in the editor's process and in a second one"
+note   = "the criterion names one case and checks that the filter SELECTED it, because `-tc=<a name that is not there>` exits zero having run nothing. Renaming the case leaves the suite green and takes the criterion red on the count. The MECHANISM mutation is the one on `separate-process-is-a-second-process` below: rename the host binary the launcher resolves and this case goes red too, on the comparison rather than on the count."
+
+# THE MECHANISM, MUTATED AT ITS ROOT RATHER THAN AT A CASE NAME.
+#
+# `play-mode-round-trip` above is falsified by renaming its case, which catches a stale filter and
+# nothing else. This one is falsified by renaming THE BINARY THE LAUNCHER RESOLVES: with
+# `kRuntimeHostBinary` pointing at a name nothing builds, `runtime_launcher_available()` is false,
+# `availability_of(SeparateProcess, …)` refuses, and every assertion about a second process fails —
+# which is the property the literal `true` destroyed and the reason M11.b's gate could not tell a
+# working mode from an absent one.
+#
+# It needs a COMPILED ENGINE, so `just roadmap-falsify` reports it "not provable here" and it is
+# proved by hand: rename the constant, rebuild, watch the suite go red, restore, rebuild, watch it
+# go green. The negative control without a rebuild is cheaper and also real — move
+# `cy_play_runtime_host` out of the build directory and the suite fails at
+# `runtime_launcher_available`.
+[[criterion]]
+id = "separate-process-is-a-second-process"
+describe = "separate-process play launches a SECOND OPERATING-SYSTEM PROCESS, and the operating system agrees it is one: the child reports its own process identifier, the parent reads the same identifier from the kernel, and it is not the parent's. A play session built in the process that did the launching is REFUSED by name, which is the shape M11.b shipped and called three modes; and `--wait-for-debugger` starts the runtime stopped and builds nothing until it is released, which is the half of 'with the debugger attached' an engine can do"
+source = "tasks 0.5 and 3.1, live-editing (Play modes), editor-architecture (Standalone play)"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_integration_editor_play"
+test -x "$binary" || { echo "no $binary — the suite integration.editor_play does not exist"; exit 1; }
+host="$d/cy_play_runtime_host"
+test -x "$host" || { echo "no $host — there is no second runtime process for this build to launch"; exit 1; }
+
+# The engine actually calls a process launcher. Four string literals satisfied the old grep; this
+# looks for the CALL, in the module that owns play mode.
+grep -q "spawn_process" src/gameplay/play/src/launcher.cpp || {
+    echo "src/gameplay/play/src/launcher.cpp does not spawn a process — separate-process play is a word again"; exit 1; }
+
+# The three cases, by name, and the count is asserted because `-tc=<a name that is not there>` exits
+# zero having run nothing.
+names="a world plays in the editor's process and in a second one*
+separate-process play refuses when there is no runtime host*
+standalone play can be launched stopped so a debugger*
+a play session in the launching process cannot call itself separate-process*"
+found=0
+while IFS= read -r filter; do
+    out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "FAILED: $filter"; exit 1; }
+    selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+    test "${selected:-0}" -ge 1 || { echo "not in the suite any more: $filter"; exit 1; }
+    found=$((found + 1))
+done <<NAMES
+${names}
+NAMES
+echo "four named cases, ${found} selected and green"
+test "${found}" -eq 4
+'''
+timeout_s = 3600
+ci_job = "milestone-m11b"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/gameplay/play/include/cy/gameplay/play/launcher.h"
+token  = "cy_play_runtime_host"
+note   = "renaming the binary the launcher resolves leaves the engine building and every word in place, and takes the mode away: `runtime_launcher_available()` asks the filesystem for a file nothing produces, so the mode is unavailable and the suite fails at `runtime_launcher_available`, at `launch`, and at every comparison between the two processes. It needs a rebuild, so the prover reports it not provable in a source-only sandbox; the same break without a rebuild is `mv $CY_BUILD_DIR/cy_play_runtime_host elsewhere`."
 
 [[criterion]]
 id = "live-edit-applies-without-a-restart"

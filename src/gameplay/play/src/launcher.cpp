@@ -4,20 +4,23 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/gameplay/play/launcher.h>
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 
 namespace cy::gameplay {
 namespace {
 
 /// The executable suffix this platform's binaries carry. A resolution rule that forgot it would
 /// find nothing on Windows and would report the launcher absent on a build that has one.
-constexpr std::string_view kExecutableSuffix =
 #if defined(_WIN32)
-    ".exe";
+constexpr std::string_view kExecutableSuffix = ".exe";
 #else
-    "";
+// Written as an explicit empty view rather than defaulted, so the two branches read as two answers
+// to one question.
+constexpr std::string_view kExecutableSuffix = std::string_view();
 #endif
 
 /// The largest path this resolution will build. A path longer than this is a broken installation
@@ -207,7 +210,7 @@ Status RuntimeProcess::launch(Platform& platform, const RuntimeLaunchRequest& re
     char expected[64];
     (void)std::snprintf(expected, sizeof(expected), "welcome %u pid=", kPlayProtocolVersion);
     const std::string_view prefix(expected);
-    if (welcome.size() <= prefix.size() || welcome.substr(0, prefix.size()) != prefix) {
+    if (welcome.size() <= prefix.size() || !welcome.starts_with(prefix)) {
         (void)kill();
         return fail(ErrorCode::Unsupported,
                     "separate-process: the runtime host answered a protocol version this build "
@@ -243,6 +246,7 @@ Status RuntimeProcess::launch(Platform& platform, const RuntimeLaunchRequest& re
 
 Status RuntimeProcess::read_line(Array<char>& line) noexcept {
     line.clear();
+    i64 deadline = platform_->monotonic_nanoseconds() + kReplyDeadlineNanoseconds;
     for (;;) {
         // Anything already buffered first: a pipe splits where it likes, and a reply may have
         // arrived in the same read as the previous one.
@@ -270,14 +274,36 @@ Status RuntimeProcess::read_line(Array<char>& line) noexcept {
         if (!read) {
             return make_unexpected(read.error());
         }
-        if (*read == 0) {
+        if (*read > 0) {
+            if (Status kept = pending_.append(Span<const char>(buffer, *read)); !kept) {
+                return kept;
+            }
+            // A byte arrived, so the child is answering: the deadline starts again from here rather
+            // than from the request, or a long reply delivered in small pieces would time out.
+            deadline = platform_->monotonic_nanoseconds() + kReplyDeadlineNanoseconds;
+            continue;
+        }
+
+        // Nothing at this instant, which the platform deliberately does not distinguish from end of
+        // stream. `poll_process` is the call whose subject is whether the child is alive, so it is
+        // the one asked.
+        const Expected<ProcessStatus, Error> alive = platform_->poll_process(handle_);
+        if (!alive) {
+            return make_unexpected(alive.error());
+        }
+        if (!alive->running) {
             return fail(ErrorCode::Unavailable,
-                        "separate-process: the runtime host closed its output before replying — "
-                        "the second process died");
+                        "separate-process: the runtime host exited before it replied — the second "
+                        "process died");
         }
-        if (Status kept = pending_.append(Span<const char>(buffer, *read)); !kept) {
-            return kept;
+        if (platform_->monotonic_nanoseconds() > deadline) {
+            return fail(ErrorCode::Unavailable,
+                        "separate-process: the runtime host is alive and has not answered — the "
+                        "second process is unresponsive");
         }
+        // A short sleep rather than a spin: the child is doing the work, and a busy parent on a
+        // one-core runner would be taking the processor away from the thing it is waiting for.
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
 }
 

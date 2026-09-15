@@ -26,6 +26,9 @@ the module above keeps its short list unchanged. `cy::servers-input` is not here
 | `spawn.h` | `SpawnRequest`, three policies, reservation, spawn points as metadata, batch spawning |
 | `session.h` | `PlaySession`: `enter`, `tick`, `pause`, `resume`, `step_tick`, `step_frame`, `stop`, and the report |
 | `mode.h` | `PlayMode`, its per-mode capabilities, and the refusal an unavailable mode produces |
+| `launcher.h` | `RuntimeProcess`: the second runtime process, launched, supervised, and driven over a versioned line protocol |
+| `driver.h` | `PlayDriver` and its two implementations — one command vocabulary, two localities |
+| `host/main.cpp` | `cy_play_runtime_host`, the binary the launcher starts. It *is* separate-process play |
 
 ## The three play modes, and the one rule that makes them worth naming
 
@@ -35,10 +38,43 @@ architecture."* Until M11.b no code in this tree named any of the three, which i
 `editor-architecture` sat at Seed from M5. `mode.h` is the table, and `PlayConfiguration::mode`
 carries the choice into a session.
 
-**One world model, three transports, and it is measured rather than argued.**
-`tests/test_editor_play.cpp` drives one authored world through one command stream in each of the
-three modes and compares the simulated result. A second world model could not produce agreement by
-accident.
+**One world model, two processes, and it is measured rather than argued.**
+`tests/test_editor_play.cpp` drives one authored world through one command stream in the editor's own
+process and in a second runtime process this engine launches, and compares the simulated float BIT
+FOR BIT. A second world model could not produce that agreement by accident, and neither could a
+second `PlaySession` in the same process — see below.
+
+### What this section said before the repair round, and why it was worth rewriting
+
+It said the suite drove *three modes* and compared them. It did: it built three `PlaySession`s in one
+process, gave each a different `PlayMode`, and compared the three results — which agree whatever the
+mode argument said. `PlayModeSupport::runtime_launcher` was a literal `true` beside a comment reading
+"this build carries no launcher yet", so the availability it gated was a constant, and `grep -rn
+'fork\|exec\|posix_spawn\|CreateProcess'` over this directory returned four string literals and no
+code. Deleting separate-process play outright would have left the suite green. M11.b's gate found it
+and refused the rung.
+
+The repair is three parts:
+
+* **`launcher.h` launches a real process.** `Platform::spawn_process` has existed since M0 and
+  nothing in `src/gameplay/` had ever called it; what it lacked was a channel, so
+  `ProcessOptions::piped_standard_streams` and the three stream calls beside it were added and this
+  is their first consumer. `RuntimeProcess::launch` asks the operating system for the child's
+  identifier and requires the CHILD to report the same one in its handshake — an agreement no
+  in-process stand-in can manufacture.
+* **`driver.h` makes locality a transport.** `PlayDriver` is the command vocabulary
+  `editor-architecture` requires of play mode and says nothing about where the runtime is;
+  `LocalPlayDriver` calls a session here and `ProcessPlayDriver` sends the same calls, one line each,
+  to the launched process.
+* **`PlaySession::enter` refuses the old shape.** A session labelled `SeparateProcess` in the process
+  that did the launching is the in-editor world under another name, and it is now an error naming
+  `ProcessPlayDriver`. Only `cy_play_runtime_host` sets `PlayModeSupport::hosted_runtime_process`.
+
+**Availability is measured.** `play_mode_support(platform)` resolves `cy_play_runtime_host` beside the
+calling executable and asks the filesystem whether it is there; the no-argument overload answers
+`runtime_launcher = false`, because a caller with no `Platform` cannot start anything. Move the host
+binary out of a build directory and the suite fails at `runtime_launcher_available` — which is the
+negative control the old constant made impossible.
 
 **A mode that is not available refuses BY NAME and starts nothing.** `RemoteDevice` is unavailable in
 every configuration of this tree because nothing encodes a frame — `EncodedStream` is declared on
@@ -49,7 +85,16 @@ of a check.
 
 Availability is a function of `PlayModeSupport` rather than a constant, and that is the point: the
 suite flips `frame_encoder` and watches the same mode become available, then flips it back and
-watches it refuse. A refusal that cannot be made to stop refusing is untested.
+watches it refuse. A refusal that cannot be made to stop refusing is untested. The suite does **not**
+claim a remote runtime ran — there is no machine at the other end, and what it asserts is the
+capability table and the refusal, not a console.
+
+**Standalone play can be launched stopped.** `editor-architecture` asks for standalone play to launch
+*"with the debugger attached"*. Which debugger, and whether one is installed, is not an engine's to
+know; the half an engine can do is start the runtime, announce which process it is, and build nothing
+until told to go. `RuntimeLaunchRequest::wait_for_debugger` is that, `resume-launch` releases it, and
+a case drives both — a flag that is plumbed and never exercised is the shape of the defect this
+directory was rewritten to remove.
 
 **A capability is queried, not discovered by trying.** `capabilities_of` declares what each mode can
 be asked to do, and the one thing that differs — `RemoteDevice` cannot step a single *frame*, because

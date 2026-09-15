@@ -25,8 +25,7 @@ namespace ser = scene::serialization;
         }
         Transform placement;
         if (!ser::transform_of(world, node, placement)) {
-            return fail(ErrorCode::NotFound,
-                        "that node carries no Transform this build can read");
+            return fail(ErrorCode::NotFound, "that node carries no Transform this build can read");
         }
         return placement.translation.y;
     }
@@ -60,8 +59,7 @@ namespace ser = scene::serialization;
         const usize end = reply.find(' ', at);
         const std::string_view token =
             reply.substr(at, end == std::string_view::npos ? std::string_view::npos : end - at);
-        if (token.size() > key.size() + 1 && token.substr(0, key.size()) == key &&
-            token[key.size()] == '=') {
+        if (token.size() > key.size() + 1 && token.starts_with(key) && token[key.size()] == '=') {
             const std::string_view digits = token.substr(key.size() + 1);
             char number[32];
             if (digits.empty() || digits.size() >= sizeof(number)) {
@@ -81,7 +79,8 @@ namespace ser = scene::serialization;
         }
         at = end + 1;
     }
-    return fail(ErrorCode::NotFound, "the runtime host's reply is missing a field this build needs");
+    return fail(ErrorCode::NotFound,
+                "the runtime host's reply is missing a field this build needs");
 }
 
 }  // namespace
@@ -92,13 +91,27 @@ LocalPlayDriver::LocalPlayDriver(PlaySession& session, const PlayConfiguration& 
                                  ser::World& authored) noexcept
     : session_(&session), configuration_(configuration), authored_(&authored) {}
 
-Status LocalPlayDriver::enter() noexcept { return session_->enter(configuration_); }
-Status LocalPlayDriver::tick() noexcept { return session_->tick(); }
-Status LocalPlayDriver::pause() noexcept { return session_->pause(); }
-Status LocalPlayDriver::resume() noexcept { return session_->resume(); }
-Status LocalPlayDriver::step_tick() noexcept { return session_->step_tick(); }
-Status LocalPlayDriver::step_frame() noexcept { return session_->step_frame(); }
-Status LocalPlayDriver::stop() noexcept { return session_->stop(); }
+Status LocalPlayDriver::enter() noexcept {
+    return session_->enter(configuration_);
+}
+Status LocalPlayDriver::tick() noexcept {
+    return session_->tick();
+}
+Status LocalPlayDriver::pause() noexcept {
+    return session_->pause();
+}
+Status LocalPlayDriver::resume() noexcept {
+    return session_->resume();
+}
+Status LocalPlayDriver::step_tick() noexcept {
+    return session_->step_tick();
+}
+Status LocalPlayDriver::step_frame() noexcept {
+    return session_->step_frame();
+}
+Status LocalPlayDriver::stop() noexcept {
+    return session_->stop();
+}
 
 Expected<f32, Error> LocalPlayDriver::translation_y(u64 identity) noexcept {
     return authored_height(*authored_, identity);
@@ -140,13 +153,27 @@ Status ProcessPlayDriver::command(std::string_view request) noexcept {
                 "separate-process: the runtime host refused a command from the live bridge");
 }
 
-Status ProcessPlayDriver::enter() noexcept { return command("enter"); }
-Status ProcessPlayDriver::tick() noexcept { return command("tick"); }
-Status ProcessPlayDriver::pause() noexcept { return command("pause"); }
-Status ProcessPlayDriver::resume() noexcept { return command("resume"); }
-Status ProcessPlayDriver::step_tick() noexcept { return command("step-tick"); }
-Status ProcessPlayDriver::step_frame() noexcept { return command("step-frame"); }
-Status ProcessPlayDriver::stop() noexcept { return command("stop"); }
+Status ProcessPlayDriver::enter() noexcept {
+    return command("enter");
+}
+Status ProcessPlayDriver::tick() noexcept {
+    return command("tick");
+}
+Status ProcessPlayDriver::pause() noexcept {
+    return command("pause");
+}
+Status ProcessPlayDriver::resume() noexcept {
+    return command("resume");
+}
+Status ProcessPlayDriver::step_tick() noexcept {
+    return command("step-tick");
+}
+Status ProcessPlayDriver::step_frame() noexcept {
+    return command("step-frame");
+}
+Status ProcessPlayDriver::stop() noexcept {
+    return command("stop");
+}
 
 Expected<f32, Error> ProcessPlayDriver::translation_y(u64 identity) noexcept {
     char request[64];
@@ -159,7 +186,7 @@ Expected<f32, Error> ProcessPlayDriver::translation_y(u64 identity) noexcept {
     }
     const std::string_view answer(reply.data(), reply.size());
     constexpr std::string_view kPrefix = "value ";
-    if (answer.size() <= kPrefix.size() || answer.substr(0, kPrefix.size()) != kPrefix) {
+    if (answer.size() <= kPrefix.size() || !answer.starts_with(kPrefix)) {
         return fail(ErrorCode::NotFound,
                     "separate-process: the runtime host has no such node in its world");
     }
@@ -172,7 +199,7 @@ Expected<PlayObservation, Error> ProcessPlayDriver::observe() noexcept {
         return make_unexpected(spoke.error());
     }
     const std::string_view answer(reply.data(), reply.size());
-    if (answer.size() < 6 || answer.substr(0, 6) != "report") {
+    if (!answer.starts_with("report")) {
         return fail(ErrorCode::Internal, "separate-process: that is not a report");
     }
 
@@ -190,9 +217,12 @@ Expected<PlayObservation, Error> ProcessPlayDriver::observe() noexcept {
     u64 bodies = 0;
     u64 restored = 0;
     const Binding bindings[] = {
-        {"ticks", &ticks},     {"stepped_ticks", &stepped_ticks},
-        {"stepped_frames", &stepped_frames}, {"entities", &entities},
-        {"bodies", &bodies},   {"restored_exactly", &restored},
+        {"ticks", &ticks},
+        {"stepped_ticks", &stepped_ticks},
+        {"stepped_frames", &stepped_frames},
+        {"entities", &entities},
+        {"bodies", &bodies},
+        {"restored_exactly", &restored},
     };
     for (const Binding& binding : bindings) {
         const Expected<u64, Error> value = field_of(answer, binding.key);

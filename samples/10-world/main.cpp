@@ -211,8 +211,7 @@ private:
             cursor.number("--still-frame", out.still_frame) ||
             cursor.number("--regions", out.regions) || cursor.number("--seed", out.seed) ||
             cursor.number("--seconds", out.seconds) ||
-            cursor.number("--budget-ms", out.budget_ms) ||
-            cursor.flag("--headless", out.headless);
+            cursor.number("--budget-ms", out.budget_ms) || cursor.flag("--headless", out.headless);
         if (!recognised) {
             const std::string_view argument = cursor.current();
             std::fprintf(stderr, "unknown argument: %.*s\n", static_cast<int>(argument.size()),
@@ -484,8 +483,9 @@ struct Band {
 /// JUDGE the take against a budget. Returns false when the worst frame is over it.
 ///
 /// THE WORST FRAME AND NOT THE MEAN, because a budget a frame misses is a frame that stutters, and
-/// a mean inside 16.7 ms with a worst at 40 is a scene that hitches once a second. `m10:world-frame-
-/// budget` judges the worst for the same reason and this reproduces its arithmetic.
+/// a mean inside 16.7 ms with a worst at 40 is a scene that hitches once a second.
+/// `m10:world-frame- budget` judges the worst for the same reason and this reproduces its
+/// arithmetic.
 [[nodiscard]] bool judge_budget(const Take& take, f32 budget_ms) {
     if (take.costs.empty()) {
         std::fprintf(stderr,
@@ -498,10 +498,9 @@ struct Band {
     f64 worst = 0.0;
     f64 mean = 0.0;
     usize worst_frame = 0;
-    Band bands[] = {{"weather_ms", 0.0},       {"water_ms", 0.0},
-                    {"ocean_ms", 0.0},         {"sky_ms", 0.0},
-                    {"terrain_shade_ms", 0.0}, {"foliage_ms", 0.0},
-                    {"stage_build_ms", 0.0},   {"stage_submit_ms", 0.0}};
+    Band bands[] = {{"weather_ms", 0.0},     {"water_ms", 0.0},         {"ocean_ms", 0.0},
+                    {"sky_ms", 0.0},         {"terrain_shade_ms", 0.0}, {"foliage_ms", 0.0},
+                    {"stage_build_ms", 0.0}, {"stage_submit_ms", 0.0}};
     for (usize frame = 0; frame < take.costs.size(); ++frame) {
         const FrameCosts& cost = take.costs[frame];
         const StageReport& drawn = take.drawn[frame];
@@ -535,10 +534,11 @@ struct Band {
         }
     }
     std::printf("\n=== judged against a %.1f ms budget ===\n", static_cast<double>(budget_ms));
-    std::printf("  %llu frames: %.1f ms mean, %.1f ms worst (frame %llu), %.1fx the budget at the "
-                "worst frame\n",
-                static_cast<unsigned long long>(take.costs.size()), mean, worst,
-                static_cast<unsigned long long>(worst_frame), worst / static_cast<f64>(budget_ms));
+    std::printf(
+        "  %llu frames: %.1f ms mean, %.1f ms worst (frame %llu), %.1fx the budget at the "
+        "worst frame\n",
+        static_cast<unsigned long long>(take.costs.size()), mean, worst,
+        static_cast<unsigned long long>(worst_frame), worst / static_cast<f64>(budget_ms));
     std::printf("  the three largest bands: %s %.1f ms, %s %.1f ms, %s %.1f ms\n", bands[0].name,
                 bands[0].mean_ms, bands[1].name, bands[1].mean_ms, bands[2].name, bands[2].mean_ms);
     if (worst <= static_cast<f64>(budget_ms)) {

@@ -316,7 +316,31 @@ and `_check_tiers` treats an exit tier as a **floor**, so `seed` can never contr
       **One mutation of this pass was itself defective and is recorded beside its fix**: the first
       attempt at "a second whole category refuses" left `just/content.just` unparseable, so the
       criterion went red because `just --summary` failed rather than because the category refused —
-      a mutation that kills the tool proves nothing about the subject
+      a mutation that kills the tool proves nothing about the subject.
+      **REPAIR 2 — TWENTY-SIX MUTATIONS AND NOT ONE OF THEM BROKE A BEHAVIOUR.** M11's second repair
+      round re-read what those twenty-six actually did and found the eighth instance of this
+      project's one defect, in two of the four criteria above. `testing-and-quality-at-working` had
+      three legs that were `fragment in taxonomy` — a substring search over `tests/CMakeLists.txt` —
+      and a fourth that was `^  <job>:$` over `ci.yml`; `build-system-at-working` read
+      `cmake/profiles.cmake` with regular expressions. Both were shown GREEN over a broken tree:
+      `cy_add_test`'s `PRIVATE_DEFINITIONS`, `LABELS` and `TIMEOUT` lines commented out, with the
+      words left behind in the comments, so no suite would carry a budget, a label or a timeout —
+      green; all seven quality jobs replaced by `run: echo dummy` — green; every
+      `set(CY_PROFILE...)` statement in `cmake/profiles.cmake` commented out, leaving a build system
+      with no profile table at all — green on every profile leg. **The subject is handed to CMake
+      now**: `tools/roadmap/probes/taxonomy/` configures a project that includes the taxonomy,
+      declares one suite per kind CMake DEFINES, and reports the `CY_TEST_BUDGET_NS` `cy_add_test`
+      passed to `cy_add_module` and the `LABELS`/`TIMEOUT` the generator wrote into
+      `CTestTestfile.cmake`; `tools/roadmap/probes/profiles/` calls
+      `cy_declare_build_configurations()` before `project()` exactly as the top-level CMakeLists.txt
+      does, then `cy_profile_for_configuration()` and `cy_declare_features()`. The CI leg asks what
+      each of the seven jobs RUNS against the live recipe surface. All three mutations above are RED
+      now — the profiles one answering with the shipped macro's own `CY_PROFILE is 'debug', which is
+      not a build profile` — and two more were added: the `CY_FEATURE_OPTIONS` table commented out
+      (`cy_declare_features() declared nothing`) and the `_not-implemented` helper renamed away,
+      which the `developer-workflow-and-just` guard leg now catches by RUNNING it rather than by
+      spelling it. Every source md5-restored; `falsify.py prove m11a --only at-working` re-earns
+      PROVEN for the first two and the declared-gap proof for the third
 - [x] 5.4 **The tier cells stay where they are; this rung does not write them.** Recording a tier is a
       closing gate's act. The four rows' **Complete** cells remain at M11.d and M11.e, where the work
       that earns them is scoped; what this rung owes is that their **Working** tier stops being an
