@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 149 proven, 492 not yet shown able to fail.
+# 152 proven, 492 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -550,10 +550,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "play-mode-round-trip"
-digest = "f68e506e1949e4c5"
+digest = "251414e944d7b1fb"
 verdict = "proven against a built tree"
-mutation = "rename-token 'a world plays in each of the three modes' in src/gameplay/play/tests/test_editor_play.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exit 1: the named case(s) are not in integration.editor_play any more — renamed, deleted, or the filter is stale), and green again once restored"
+mutation = "rename-token \"a world plays in the editor's process and in a second one\" in src/gameplay/play/tests/test_editor_play.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-3-3 (exit 1: the named case(s) are not in integration.editor_play any more — renamed, deleted, or the filter is stale), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -573,6 +573,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 
 [[proof]]
 ledger = "m11b"
+criterion = "project-settings-in-version-control"
+digest = "251aaf766d03cbb3"
+verdict = "proven against a built tree"
+mutation = "rename-token 'changing_one_setting_changes_one_line_of_the_project_file' in editor/crates/cy-editor-services/src/settings.rs (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-3-2 (exit 1: a case this criterion names is gone — renamed, deleted, or the filter is stale), and green again once restored"
+
+[[proof]]
+ledger = "m11b"
 criterion = "roadmap-record"
 digest = "7bb4126bf3f19917"
 verdict = "proven"
@@ -586,6 +594,14 @@ digest = "441f7c83c650b924"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11b"
+criterion = "separate-process-is-a-second-process"
+digest = "3e237caf5156ffe0"
+verdict = "proven against a built tree"
+mutation = "rename-token 'cy_play_runtime_host' in src/gameplay/play/include/cy/gameplay/play/launcher.h (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-3-3 (exit 1: FAILED: a world plays in the editor's process and in a second one*), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -606,10 +622,18 @@ detail = "red under mutation of 2 file(s), rebuilt against build/repair-1-4 (exi
 [[proof]]
 ledger = "m11b"
 criterion = "specialised-editors"
-digest = "60d4d2384a621e23"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): 1 file(s) reference the CentreLower region: editor/crates/cy-editor-visual/src/chrome.rs"
+digest = "7f6f88588e742ffe"
+verdict = "proven"
+mutation = "rename-token 'Surface::Timeline' in editor/crates/cy-editor-interface/src/specialised/mod.rs (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11b"
+criterion = "specialised-editors-open"
+digest = "d986517951fb5e4c"
+verdict = "proven against a built tree"
+mutation = "rename-token 'every_graph_editor_opens_the_same_one_canvas' in editor/crates/cy-editor-interface/src/specialised/mod.rs (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/repair-3-2 (exit 1: a case this criterion names is gone — renamed, deleted, or the filter is stale), and green again once restored"
 
 [[proof]]
 ledger = "m11b"

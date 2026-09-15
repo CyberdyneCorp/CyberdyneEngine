@@ -345,7 +345,32 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       region THEN the tool SHALL name the rule input responsible"*. This is a join with M10's PCG and
       foliage provenance, and it is a real requirement rather than a nicety: a procedural result that
       cannot be explained cannot be corrected
-- [ ] 3.6 **Project creation from templates and project settings**, stored in text form suitable for
+- [ ] 3.6 **THE SETTINGS HALF IS DONE AND THE PACKAGE HALF IS NOT, SO THE BOX STAYS UNTICKED.**
+      `editor/crates/cy-editor-services/src/settings.rs` — `Catalogue` (declared settings by
+      category, with the categories the requirement names: layers, tags, input actions, quality,
+      rendering — searched over summaries as well as keys, because a person looking for the frame
+      budget types "frame rate" and not `target_frame_rate`), `ProjectSettings` with per-platform
+      overrides, `UserPreferences`, and `Template` with two project templates and a `create` that
+      refuses to write over an existing manifest.
+      **The requirement's only scenario is the check.** *"WHEN a project setting changes THEN the
+      diff SHALL show only that setting, and user preferences SHALL not appear in the project
+      file."* That is false of every settings file serialised out of a hash map or re-indented by
+      its writer, so the text form is canonical — one setting a line, in key order, overrides after
+      the defaults, reals written with `{:?}` so a file read and written again is the same bytes —
+      and `SettingsService::project_diff` makes the scenario a function the case calls. The second
+      half is enforced by shape: a declaration says which file a setting belongs in, `set_project`
+      on a preference is refused BY NAME, and the two files have different writers, so there is no
+      path that would put a preference in the project file.
+      Criterion `m11b:project-settings-in-version-control`, seven named cases with the count
+      asserted, **proven against a built tree** — the case rename, and by hand two mechanism
+      mutations: the writer emitting settings in reverse key order (red on the canonical-order
+      assertion) and the project writer also writing the preferences (red on the separation case).
+      Restores md5-verified.
+      **NOT DONE, and why the requirement is not recorded as answered**: package and dependency
+      management for engine modules and Swift packages. `ProjectService` carries the module list and
+      `SwiftModuleBuilder` builds one; neither is joined to this, and a requirement with a clause
+      nobody implemented recorded as answered is the green tick that outlives its subject
+      Original: **Project creation from templates and project settings**, stored in text form suitable for
       version control with user preferences stored separately — neither has an implementation
 - [ ] 3.7 **Build and deployment as a client of the build service**, which the requirement states in
       the negative: the editor *"SHALL NOT invoke shell scripts and parse their output"*. Select a
@@ -689,16 +714,56 @@ is the forcing function `ui-system` requires by name (task 7.5).
       shape before any run, and `tools/roadmap/requirements.py` is the recipe those criteria were
       written for. Both now execute: 0 of 183 requirements across eight gameplay rows and 0 of 133
       across nine editor rows map to a test, a gate or a recorded exemption, each named
-      **NOT DONE FOR THE TWO CRITERIA THIS REPAIR ROUND TOUCHED, AND THE REGISTRY SAYS SO RATHER
-      THAN THIS LIST.** `m11b.toml` now carries 34 criteria: `play-mode-round-trip` was rewritten
-      (its digest moved, so its existing entry is stale by construction) and
-      `separate-process-is-a-second-process` is new and has no entry at all. Both were proven BY HAND
-      — mutate `kRuntimeHostBinary` in `launcher.h`, rebuild, watch both go red, restore, rebuild,
-      watch both go green, `md5sum -c` the restore — but the generated record cannot be written from
-      here: `just roadmap-falsify prove --record --build-dir <dir> --mutate-the-tree` refuses a tree
-      `git status` calls dirty, and this phase does not commit. The registry entry is therefore owed
-      by the phase that commits, and until it is written `plan-consistency` is the criterion that
-      says so
+      **REPAIR ROUND 3 CORRECTED `requirements.py` ITSELF, BEFORE THE MAP HAD AN ENTRY IN IT.** The
+      recipe accepted `test:<kind>.<name>` and asked only whether a suite of that name was declared
+      somewhere — so twenty-four requirements could have been answered by naming one suite
+      twenty-four times, and every one of them would have resolved. That is the ninth instance of
+      the defect, in the tool built to count the other eight. A `test:` entry now carries a **case**,
+      searched for in the sources beside the `cy_add_test` that declares the suite, so it cannot be
+      borrowed from another suite and a rename turns it red; a `criterion:` entry is accepted only
+      where `falsifiability.toml` records a PROOF, so a requirement cannot be answered by a check
+      nobody has shown can fail; and a `rust:` kind was added for the editor's own suites, resolved
+      against the crate it names. `tools/roadmap/selftest.py::test_requirements_coverage` breaks
+      each of those on purpose — five new checks beside the ten it had.
+      The map now carries **nine entries across two rows, read requirement by requirement**:
+      live-editing 5 of 11, editor-architecture 4 of 13. The fifteen that are not there are named in
+      the map's own comments with the task that owes each, because several of them have a case in
+      the tree that answers PART of the requirement — and a part recorded as an answer is exactly
+      the tick that outlives its subject
+      **THE TWO PLAY-MODE CRITERIA ARE NOW IN THE REGISTRY, PROVEN AGAINST A BUILT TREE.** The two
+      repair round 2 left owed — `play-mode-round-trip`, rewritten so its digest moved and its entry
+      went stale by construction, and `separate-process-is-a-second-process`, which had no entry of
+      any kind and which `just roadmap-test` named verbatim — were re-earned by the tooling rather
+      than argued: `prove --build-dir build/repair-3-3 --mutate-the-tree --record`, one criterion at
+      a time. `separate-process-is-a-second-process` is `proven against a built tree` under
+      `rename-token 'cy_play_runtime_host' in launcher.h` — the mode's ROOT, not a case name: with
+      the constant pointing at a binary nothing builds, `runtime_launcher_available()` is false and
+      the criterion dies at `FAILED: a world plays in the editor's process and in a second one*`.
+      `play-mode-round-trip` is `proven against a built tree` under the rename of its own case,
+      which takes it red on the SELECTED count — the assertion that exists because
+      `-tc=<a name that is not there>` exits zero having run nothing. The same break was also
+      watched by hand before the recorder ran: `kRuntimeHostBinary` renamed, rebuilt into
+      `build/repair-3-3`, three of the four named cases red at `REQUIRE(runtime_launcher_available)`,
+      `REQUIRE(launched.has_value())` and `REQUIRE(configuration.support.runtime_launcher)`,
+      restored, rebuilt, green, `md5sum -c` on both files. Note the rebuild is what makes the
+      recorded red mean anything: a stale binary still carries the old case name, so the count
+      assertion would have stayed GREEN had the mutation not actually been compiled
+      **REPAIR ROUND 3 — DONE FOR THE THREE CRITERIA IT TOUCHED, AND RECORDED.** `m11b.toml` now
+      carries 36. `specialised-editors` was rewritten from `grep -l CentreLower` — a check whose own
+      body called it a placeholder that "three comments satisfy" — into the static contract
+      `tools/editor/play_contract.py specialised-editors`, and it is **`proven`** by
+      `just roadmap-falsify` itself in the source-only sandbox (`rename-token 'Surface::Timeline'`).
+      `specialised-editors-open` and `project-settings-in-version-control` are new, need a compiled
+      editor, and are both **`proven against a built tree`** — mutation applied to the working tree,
+      rebuilt over, watched red, restored, watched green, `git status` clean after each
+      (`prove --build-dir build/repair-3-2 --mutate-the-tree --record`). Beyond the recorded
+      mutations, five more breaks were watched red by hand and every restore md5-verified: the
+      engine registering `pose.mirror` in place of `pose.transition` (the palette leg), `chrome.rs`
+      reserving `CentreLower` for something else (the region leg), the settings writer emitting
+      settings in reverse key order (the canonical-order leg), the project writer also writing the
+      preferences (the separation leg), and a named case renamed (the count leg on each).
+      `tools/editor/selftest.py` gained eleven cases, one per input the new contract reads, and
+      stands at 29
 - [ ] 13.3 **Adversarial pass on this rung's own invariants**: select a play mode that is not
       available and confirm it refuses by name rather than falling back; reach past the public plugin
       API from a built-in editor and confirm the build fails; give two authored nodes the same name

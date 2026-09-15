@@ -270,6 +270,35 @@ field.
       `m11a:cross-leg-digest-job`'s declared mutation moves off `download-artifact`, which broke the
       half that was already defended, onto `--publish-digest`, which is the half that was not; it is
       re-PROVEN in `tools/roadmap/falsifiability.toml` and m9's and m10's proofs still stand
+- [x] 4.8 **AND A JOB IS NOT A RUN — REPAIR 3, after the gate refuted repair 2.** The gate added ONE
+      LINE to `.github/workflows/ci.yml` — `continue-on-error: true` on the
+      `One leg's digest against another's` step — and all three criteria stayed GREEN, as did
+      `just ci-check`, which printed *"this repository's own workflows carry a comparison that
+      discriminates"* over a comparison whose answer was being thrown away. The comparator still runs.
+      It still exits 1 when two architectures disagree. The step is marked failed and **the job's
+      conclusion is SUCCESS**, so the run is green and the disagreement is a grey tick nobody looks
+      at. Every check written so far measured the comparison's COMMAND, then whether that command was
+      REACHED; none asked whether the pipeline can SEE the answer, and red is a property of the RUN
+      rather than of a process's exit code. **`tools/ci/cross_leg_audit.py` now walks the chain a
+      third time asking DOES THE RED REACH THE PIPELINE, and it fails CLOSED like the other two.**
+      Every `continue-on-error:` on the publishing job, on the comparison job and on each step the
+      chain is made of — publish, upload, download, compare — evaluated with the same expression
+      reader per trigger, so forgiveness granted only on pull requests is still forgiveness and is
+      reported as such; and the `if-no-files-found:` of the step that uploads the digest, which at
+      anything but `error` (the action's default is `warn`) lets a leg that computed nothing stay
+      green and drop out of the comparison in silence while the legs that remain agree with each
+      other. An expression the reader cannot evaluate is a finding, because "I could not tell whether
+      a red would fail the run" must never print the same as "a red fails the run". **Watched red in a
+      sandbox copy of the tracked tree, the repository's `.github/workflows/ci.yml` `md5sum`
+      31543d5d4264e3638d4a6bc1a0cfcf03 before and after**: the gate's own one-liner, the same flag on
+      the comparison JOB, the same flag on the publishing step, `if-no-files-found: error` deleted,
+      and `continue-on-error: ${{ vars.CY_TOLERATE_DRIFT }}` each take all three criteria to exit 1,
+      and the gate's one-liner takes `just ci-check` to exit 1 as well. Five more `--selftest`
+      fixtures, seventeen in all, each still naming the finding it must provoke; **deleting the new
+      check's call site turns `just ci-check` red with five fixtures ACCEPTED**, and `just ci-check`
+      is a criterion of m5, m10, m11a and every M11 rung, so the check cannot be removed quietly. What
+      it does not claim: that anyone has made the run REQUIRED for a merge — branch protection is a
+      repository setting and lives in no file in this tree
 
 ## 5. The four rows whose Working tier is claimed by a column and checked by nothing
 
@@ -638,3 +667,64 @@ same way, with the numbers moved**.
       suite is not registered" about a suite that is — a check failing for a reason that is not its
       subject, in the very repair that exists to remove those. It is a `case` over a captured string
       now, and three consecutive runs agree.
+- [x] 10.9 **THE FOURTH GAP CANNOT BE CLOSED BY THE WORK ITS OWN DECLARATION NAMES, AND THAT IS NOW
+      MEASURED RATHER THAN ARGUED — REPAIR 3.** Every run below is against the repository tree in
+      `build/repair-3-0`, every mutation was restored and `md5sum -c` verified, and `git status` is
+      clean of them afterwards.
+      - **THE THREE THAT CLOSED ARE GREEN AND EACH WAS WATCHED GOING RED AGAIN HERE.**
+        `sky-field-round-trip`: green at `through the store: 2048 samples, lowest 0.00392157,
+        highest 1`; RED with `writer.value().publish()` in `src/rendering/sky/src/cloud_shadows.cpp`
+        wrapped in `if (false)` → `through the store: 0 samples, lowest 1, highest 0`, EXIT=1.
+        `fields-one-vegetation-potential`: green at `25 declaration(s) from 5 module(s); refused
+        forwards 0, backwards 0`; RED with the M11.a diff to `src/foliage/src/system.cpp`
+        reverse-applied, which reinstates `vegetation_potential_declaration()` → `26 declaration(s)
+        … refused forwards 1, backwards 1`, EXIT=1. `fields-sampled-on-a-device`: green at 78 486
+        SPIR-V words, both probes word-identical, 17 152 comparisons on the device; RED **once per
+        half** — `/ 255.0` → `/ 254.0` in `cy/field.slang` gives `the checked-in SPIR-V is not what
+        cy/field.slang compiles to today`, and `commands.dispatch` removed from
+        `tests/render/test_field_device.cpp` gives `the device sampler does NOT agree with the
+        processor over the same bytes`.
+      - **AND NOTHING WAS WEAKENED, CHECKED RATHER THAN SAID.** Parsing both ledgers with `tomllib`:
+        the `run` strings of `sky-field-round-trip`, `fields-one-vegetation-potential` and
+        `world-frame-budget` are byte-identical to `3d44e2f`'s. `fields-sampled-on-a-device`'s is the
+        one that differs, and repairs 1 and 2 record why — it gained the Slang front end, the SPIR-V
+        equality and the device run.
+      - **THE FOURTH IS STILL RED AND IS NOW WORSE THAN WHEN IT WAS DECLARED**: 115.7 ms mean,
+        127.6 ms worst over the 64-frame take at 0x5EED on an idle host and 126.8/137.8 with this
+        machine busy, against 122/106 in the declaration. Bands:
+        `terrain_shade_ms` 68.7, `sky_ms` 25.4, `water_ms` 13.3, `ocean_ms` 5.6, `weather_ms` 1.7,
+        `foliage_ms` 0.9.
+      - **WHAT `water_ms` IS, MEASURED AND NOT INFERRED.** The band was split in place for one run:
+        `drive_ocean_from_wind` is **0.00 ms** and `WaterSystem::tick` — `foam_.recentre()` then
+        `foam_.advect()` — is **12.74 ms mean, 14.46 ms worst**. `water_ms` IS the foam field, which
+        is the third of the three bands the gap names.
+      - **THE CLOSING ACT, EXECUTED AND MADE SMALL, DOES NOT CLOSE IT.** Band one (`shade_terrain`)
+        and band two (the `compose_sky` loop over the dome) removed from the frame, and the ocean
+        patch build with them — what a shader doing them during the draw would leave behind:
+        **21.6 ms worst, 18.7 ms mean, STILL RED at 1.3x over**, the remainder being the foam field
+        at 14.1 ms. Remove the foam too and the same criterion reads **7.9 ms worst and passes**.
+      - **SO THE CRITERION CANNOT GO GREEN FOR THE REASON ITS GAP NAMES, WHICH IS THE MIRROR OF THIS
+        PROJECT'S SEVEN.** Those could not fail; this one cannot pass. Its `run` measures the sample
+        under `--headless`, and `samples/10-world/main.cpp`'s `wants_pictures` opens a stage only
+        when frames are asked for and `--headless` is not given, so **no shader of any kind executes
+        inside the number being judged** — and the one band that would have to leave the processor
+        for the take to fit is the one a headless run must do on it.
+      - **WHAT CHANGED IN THE LEDGER, AND IT IS NOT A CHECK.** `m10:world-frame-budget` keeps its
+        `describe` and its byte-identical `run`; its `known_gap` is restated to the measured numbers
+        and the finding above, and `known_gap_closes` moves from `m11a` to **`m11c`** — the rung
+        whose subject is the image, and which must write the three shaders AND settle what a headless
+        budget claims once the visual work is on the device. `m11a:world-budget-headless` and
+        `m11a:world-budget-on-a-device` stay RED at this rung, so the deadline moved and the failure
+        did not. `m10:sky-field-round-trip`'s `describe` is rewritten: it asserted the sky's write
+        path was broken, and `git diff 3d44e2f HEAD -- src/rendering/sky/` touches the README and the
+        test and **not one line of `cloud_shadows.cpp`** — the store had the shadow all along, and
+        what closed is the half the declaration's second sentence names, a case asserting against the
+        producer's own statistics from twenty-five probes standing in full sun.
+      - **WHAT THIS ROUND DID NOT DO.** 2.3, 2.4 and 2.5 are still unticked and honestly so: no
+        shader is dispatched anywhere in `samples/10-world`'s frame path. And neither
+        `m10:sky-field-round-trip` nor `m10:world-frame-budget` gained a `[criterion.falsifies]`,
+        because no mutation the five verbs can express is faithful to either subject — suppressing a
+        `publish()` that spans three lines, or moving three bands into shaders, is not a token rename
+        or a line deletion — and a proof recorded on a mutation that misses the subject would be the
+        defect wearing the mechanism's clothes. Both stay recorded debt, and the reds above were
+        watched by hand instead.

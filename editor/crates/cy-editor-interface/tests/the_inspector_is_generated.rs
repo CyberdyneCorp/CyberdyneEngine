@@ -166,6 +166,83 @@ fn editing_a_reflected_type_is_one_transaction_and_the_engine_takes_the_value() 
     );
 }
 
+/// The names of engine component types, in the position a SPECIAL CASE would put them.
+///
+/// --- WHY THIS IS A FUNCTION AND WHAT IT DELIBERATELY DOES NOT FLAG ------------------------------
+///
+/// It used to be `code.contains("\"Transform\"")`, and section 3.3 is what showed that to be one
+/// character too wide. `cy_editor_interface::specialised::timeline::TrackKind::name` returns the
+/// ENGINE's spelling of each `cy::sequencing::TrackKind` — `TrackKind::Transform => "Transform"`,
+/// `TrackKind::Light => "Light"` — and `tools/editor/play_contract.py specialised-editors` compares
+/// that table against `cy::sequencing::track_kind_name` arm for arm. It is a transcription of the
+/// engine's own vocabulary, checked against it; it is not a panel deciding to lay Transform out by
+/// hand.
+///
+/// So a literal that is **returned by a match arm** is not an offence, and every other position
+/// still is: a comparison, a `contains`, a match arm that switches ON the name, an `if` on it.
+/// `the_guard_still_catches_a_special_case` below is what keeps that narrowing honest — it feeds
+/// this function the shapes a special case actually takes and requires each to be flagged.
+fn names_a_component_type_in_a_special_case(code: &str) -> bool {
+    // `=> "Transform"` is a spelling table. Remove those before looking, so that everything left is
+    // a literal in a position that decides something.
+    let deciding = regex_free_strip_returned_literals(code);
+    [
+        "\"Transform\"",
+        "\"Health\"",
+        "\"MeshInstance\"",
+        "\"Light\"",
+    ]
+    .iter()
+    .any(|name| deciding.contains(name))
+}
+
+/// `a => "X", b => "Y"` with the returned literals removed. No regular expression crate in a test.
+fn regex_free_strip_returned_literals(code: &str) -> String {
+    let mut kept = String::with_capacity(code.len());
+    let mut rest = code;
+    while let Some(at) = rest.find("=>") {
+        kept.push_str(&rest[..at]);
+        let after = &rest[at + 2..];
+        let trimmed = after.trim_start();
+        if let Some(literal) = trimmed.strip_prefix('"').and_then(|tail| tail.find('"')) {
+            rest = &trimmed[literal + 2..];
+        } else {
+            kept.push_str("=>");
+            rest = after;
+        }
+    }
+    kept.push_str(rest);
+    kept
+}
+
+#[test]
+fn the_guard_still_catches_a_special_case() {
+    // THE NARROWING, PROVEN NOT TO HAVE BLUNTED THE GUARD. Each of these is a shape per-type editor
+    // code actually takes, and each must still be an offence.
+    for special in [
+        r#"if component.name() == "Transform" {"#,
+        r#"    "Transform" => transform_editor(),"#,
+        r#"if names.contains("Light") {"#,
+        r#"let custom = matches!(name, "MeshInstance");"#,
+        r#"const SPECIAL: &[&str] = &["Health"];"#,
+    ] {
+        assert!(
+            names_a_component_type_in_a_special_case(special),
+            "the guard no longer catches: {special}"
+        );
+    }
+    // And the one shape it must NOT flag: an enumerator's own spelling, returned.
+    for spelling in [
+        r#"            TrackKind::Transform => "Transform","#,
+        r#"            TrackKind::Light => "Light","#,
+    ] {
+        assert!(
+            !names_a_component_type_in_a_special_case(spelling),
+            "the guard flags a spelling table: {spelling}"
+        );
+    }
+}
+
 #[test]
 fn no_per_type_editor_code_exists_anywhere_in_the_interface_crate() {
     // The requirement is about the *absence* of code, so the test reads the source. Crude, and the
@@ -194,17 +271,8 @@ fn no_per_type_editor_code_exists_anywhere_in_the_interface_crate() {
                 .map_or(text.as_str(), |(before, _)| before);
             for (number, line) in shipping.lines().enumerate() {
                 let code = line.split("//").next().unwrap_or_default();
-                // The names of engine component types, in the position a special case would put
-                // them: a string literal being compared against, in non-test code.
-                for name in [
-                    "\"Transform\"",
-                    "\"Health\"",
-                    "\"MeshInstance\"",
-                    "\"Light\"",
-                ] {
-                    if code.contains(name) {
-                        offenders.push(format!("{}:{}", path.display(), number + 1));
-                    }
+                if names_a_component_type_in_a_special_case(code) {
+                    offenders.push(format!("{}:{}", path.display(), number + 1));
                 }
             }
         }
