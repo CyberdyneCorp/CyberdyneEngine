@@ -34,6 +34,8 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/material/compiler.h>
+#include <cy/rendering/material/stages.h>
+#include <cy/rendering/material/text.h>
 
 #include <string_view>
 
@@ -89,6 +91,29 @@ struct CookedBundle {
 [[nodiscard]] Status cook_material(std::string_view source, const CompileOptions& options,
                                    Allocator& allocator, Array<u8>& out,
                                    Array<char>& report) noexcept;
+
+/// Print every stage of a material's lowering, as `cy_material compile --stages` prints it.
+///
+/// M11.c TASK 1.3, AND THE REASON IT IS HERE RATHER THAN IN `main.cpp`. `shader-system`'s "Visual
+/// material editor" requires the editor to be able to show "each stage of its lowering: the graph,
+/// the material IR before and after optimisation, the generated Slang, and the compiled backend
+/// output", and the check the task asks for compares the stage list a front end obtains against the
+/// command line's. TWO LISTS CANNOT BE COMPARED IF ONE OF THEM IS ASSEMBLED INSIDE A `main`: the
+/// command line would be the only caller, and "they agree" would be a statement about one function.
+/// So the list is `rendering::material::inspect_lowering`'s, this is the rendering of it, and the
+/// command line is one caller of both.
+[[nodiscard]] Status write_stage_report(const rendering::material::LoweringInspection& inspection,
+                                        Array<char>& out) noexcept;
+
+/// Compile a text material definition and collect every stage of its lowering.
+///
+/// The four stages the material compiler owns. The fifth — the compiled backend output — is
+/// `shader-system`'s and is attached by `cy::rendering-material-slang`, which this tool does not
+/// link; `inspect_lowering` reports it absent with the reason rather than leaving a blank.
+[[nodiscard]] Expected<rendering::material::LoweringInspection, Error> inspect_material(
+    std::string_view source, const CompileOptions& options, rendering::material::ProgramKind kind,
+    rendering::material::QualityTier tier, Allocator& allocator,
+    rendering::material::ParseDiagnostic& diagnostic) noexcept;
 
 /// Read a bundle back.
 [[nodiscard]] Expected<CookedBundle, Error> decode_bundle(Span<const u8> bytes,

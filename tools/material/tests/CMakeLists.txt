@@ -28,11 +28,19 @@ function(cy_material_cook_declare_tests)
     set(CY_TEST_BUDGET_integration "${budget}")
     set(CY_TEST_TIMEOUT_integration "${timeout}")
 
+    # CY_MATERIAL_BINARY is compiled in because M11.c task 1.3's case RUNS THE COMMAND LINE and
+    # compares what it printed against what a second caller of the same function obtains. A case
+    # that called the library twice would be comparing one function with itself; the whole claim is
+    # that the front end and the command line show the same stages, and the only way to observe the
+    # command line is to run it.
     cy_add_test(
         NAME material_cook
         KIND integration
         SOURCES "${tests_dir}/test_material_cook.cpp"
         DEPENDENCIES cy::material-cook cy::build-graph)
+    target_compile_definitions(cy_test_integration_material_cook
+                               PRIVATE CY_MATERIAL_BINARY="$<TARGET_FILE:cy_material>")
+    add_dependencies(cy_test_integration_material_cook cy_material)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_material_cook_declare_tests)

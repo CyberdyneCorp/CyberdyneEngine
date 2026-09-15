@@ -233,13 +233,19 @@ CY_TEST_CASE("a node previews through the runtime compiler, and refuses when it 
                  std::string_view::npos);
     }
     {
-        // And the other spelling of "the compiler is gone": the default one a build with
-        // CY_SHADER_SLANG off is left holding.
-        shader::DiagnosticLog diagnostics(allocator());
-        auto preview = compile_preview(primary, primary.module.surface(), options,
-                                       shader::unavailable_compiler(), library.registry,
-                                       library.resolver(), diagnostics, allocator());
-        CY_REQUIRE_FALSE(preview.has_value());
+        // And the other spelling of "the compiler is gone": ASK FOR SLANG AND TAKE WHAT COMES. A
+        // build with CY_SHADER_SLANG off falls back to the passthrough and reports that it did —
+        // which is the state this control stands in for, and the fallback is reported here too
+        // rather than inferred.
+        Front asked(shader::kSlangBackendName);
+        if (asked.selection.fell_back) {
+            CY_CHECK_FALSE(asked.handle->compiles_source());
+            shader::DiagnosticLog diagnostics(allocator());
+            auto preview = compile_preview(primary, primary.module.surface(), options,
+                                           *asked.handle, library.registry, library.resolver(),
+                                           diagnostics, allocator());
+            CY_REQUIRE_FALSE(preview.has_value());
+        }
     }
 }
 

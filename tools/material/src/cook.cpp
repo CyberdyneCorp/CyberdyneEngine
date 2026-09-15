@@ -128,6 +128,35 @@ void append_scaled(Array<char>& out, std::string_view prefix, f32 value,
     append_text(out, suffix);
 }
 
+/// WHICH OF THIS PROGRAM'S INPUTS ARE TEXTURES AND WHICH ARE CONSTANTS. M11.c task 1.2.
+///
+/// `material-compiler`: "the count of each SHALL be readable by a tool without opening the shader
+/// source". So the counts come first, on one line a grep can read, and the per-input lines follow
+/// for a person. A constants-only program SAYS SO in those words, because that is the sentence
+/// somebody has to be able to write about a published picture and check.
+void write_inputs(const CompiledProgram& program, Array<char>& out) noexcept {
+    const InputReport& inputs = program.inputs;
+    append_text(out, "    inputs: ");
+    append_count(out, "", inputs.textures, " texture");
+    append_count(out, ", ", inputs.parameters, " parameter");
+    append_count(out, ", ", inputs.varying, " varying");
+    append_count(out, ", ", inputs.constants, " constant");
+    append_text(out, inputs.constants_only() ? "  [constants only: this program samples no texture]"
+                                             : "");
+    append_text(out, "\n");
+    for (const MaterialInput& input : inputs.inputs) {
+        append_text(out, "      ");
+        append_text(out, input.name);
+        append_text(out, " = ");
+        append_text(out, input_binding_name(input.binding));
+        if (!input.texture.is_empty()) {
+            append_text(out, " ");
+            append_text(out, input.texture.text());
+        }
+        append_text(out, "\n");
+    }
+}
+
 /// The cook report `material-compiler` asks for, as text a build log carries and a person reads.
 void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
     append_text(out, "material ");
@@ -157,6 +186,7 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
             append_scaled(out, "  [generic evaluator, x", program.cost.generic_cost_multiple, "]");
         }
         append_text(out, "\n");
+        write_inputs(program, out);
     }
     for (const CompileDiagnostic& diagnostic : material.diagnostics()) {
         append_text(out, "  ");
@@ -246,6 +276,44 @@ void write_report(const CompiledMaterial& material, Array<char>& out) noexcept {
 }
 
 }  // namespace
+
+Status write_stage_report(const rendering::material::LoweringInspection& inspection,
+                          Array<char>& out) noexcept {
+    append_text(out, "stages ");
+    append_text(out, program_kind_name(inspection.kind));
+    append_text(out, "/");
+    append_text(out, quality_tier_name(inspection.tier));
+    append_count(out, "  ", inspection.available(), " of ");
+    append_count(out, "", kLoweringStageCount, " available\n");
+    for (const StageDump& stage : inspection.stages()) {
+        append_text(out, "  ");
+        append_text(out, lowering_stage_name(stage.stage));
+        if (!stage.available) {
+            append_text(out, ": ABSENT — ");
+            append_text(out, stage.reason);
+            append_text(out, "\n");
+            continue;
+        }
+        append_count(out, ": ", static_cast<u32>(stage.text.size()), " bytes  digest 0x");
+        char digest[24] = {};
+        (void)std::snprintf(digest, sizeof(digest), "%016llx",
+                            static_cast<unsigned long long>(stage.digest));
+        append_text(out, digest);
+        append_text(out, "\n");
+    }
+    return out.empty() ? fail(ErrorCode::OutOfMemory, "the stage report could not be grown") : ok();
+}
+
+Expected<rendering::material::LoweringInspection, Error> inspect_material(
+    std::string_view source, const CompileOptions& options, rendering::material::ProgramKind kind,
+    rendering::material::QualityTier tier, Allocator& allocator,
+    rendering::material::ParseDiagnostic& diagnostic) noexcept {
+    auto authored = parse_material(source, allocator, diagnostic);
+    if (!authored) {
+        return make_unexpected(authored.error());
+    }
+    return inspect_lowering(source, authored.value(), options, kind, tier, allocator);
+}
 
 Expected<rendering::material::Profile, Error> profile_from_name(std::string_view name) noexcept {
     if (name == "desktop") {

@@ -117,3 +117,239 @@ row = "editor-architecture"
 requirement = "Specialised editors"
 evidence = "criterion:m11b:specialised-editors"
 note = "the editors the requirement enumerates against the ones registered, and the requirement's two prohibitions — one node-graph canvas, one curve surface — checked where they are decided rather than by a word search."
+
+# --- material-compiler ------------------------------------------------------------------------------
+#
+# SIXTEEN OF TWENTY-ONE, written by M11.c section 1 by reading the specification requirement by
+# requirement. THE FIVE THAT ARE NOT HERE ARE NOT HERE ON PURPOSE, and each is named with what is
+# missing rather than left silent — the run prints their titles:
+#
+#   Surface closures                       the closure SET and its composition are exercised by
+#                                          `material_lowering: generality is priced, not hidden`
+#                                          (a coat layered over diffuse + specular + sheen), but the
+#                                          requirement's load-bearing sentence is "a layer SHALL
+#                                          attenuate the layers beneath it" and that arithmetic is
+#                                          `cy/brdf.slang`'s. NO C++ CASE EVALUATES IT, and a
+#                                          composition case recorded as an energy case is the green
+#                                          tick this map's header warns about.
+#   Geometry attribute interface           one of three scenarios has a case (`the vertex-stage
+#                                          variant count is reported rather than hidden`). The other
+#                                          two are the per-source ATTRIBUTE DECODERS — static mesh,
+#                                          skinned, virtual geometry, terrain, mesh particle — which
+#                                          are `rendering-geometry-and-resources`' and M11.c §5's.
+#   GPU material table                     the bytes and the batched upload have cases in
+#                                          `unit.material`; "shading SHALL reach a material's data
+#                                          by indexing that table, with no CPU-side per-object
+#                                          binding" is a claim about a FRAME, and the M11.c spike
+#                                          measured that nothing in this tree binds a material
+#                                          texture at all (design.md §1.3b). It is task 3.7's.
+#   Material API                           the C ABI and the Swift overlay are `scripting-and-abi`'s
+#                                          surface; no case in this tree loads a material through
+#                                          either.
+#   Materials are portable across          two pipelines, and the second one's frame is M11.c §3's.
+#   pipelines and profiles
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Engine-owned material compiler"
+evidence = "test:smoke.material_slang"
+case = "the assembled unit compiles to SPIR-V against the engine's standard library"
+note = "the requirement's whole content is that the compiler emits Slang and hands it to `shader-system` rather than owning a second toolchain. The case takes the text `cy_material compile --slang` writes, wraps it in the generated prelude and compiles it through cy::shader's Slang front end against the engine's own standard library. Its third case is the control: the same text WITHOUT the prelude must fail naming an undefined identifier."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Authoring forms share one representation"
+evidence = "test:unit.material_compiler"
+case = "material_frontends: a graph and a text definition are one material"
+note = "one material authored twice, as unalike as two real authoring paths are — the graph carries a weight port on every closure, pairwise sums, one texture dragged in twice, a muted node and a disconnected one; the text has none of them. The case requires identical IR and identical generated programs after the compiler runs, which is the requirement's own scenario."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material intermediate representation"
+evidence = "test:unit.material_compiler"
+case = "every lowering stage is inspectable, and the fifth names who owes it"
+note = "the requirement's second scenario — 'its IR SHALL be dumpable in a readable form, before and after optimisation' — had NO IMPLEMENTATION in this tree until M11.c task 1.3: nothing turned a Module into anything a person can read. The case dumps both, requires them to differ in the ways the pipeline actually changes the module, and requires the fifth stage to name who owes it rather than come back empty. The serialisation half is `material_ir: a module round-trips through its serialised form` in the same suite."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Optimisation passes"
+evidence = "test:integration.material_lowering"
+case = "material_passes: every switch is load-bearing, and the one that is not says why"
+note = "'Each pass SHALL be individually disableable in development builds, so a suspected miscompilation can be bisected' is the requirement's operative sentence, and the case turns each switch off in turn and requires the compiled program to CHANGE — a switch that changed nothing would be a pass that does nothing, which is what a bisection would be misled by."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Lowering to shading models"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: a matched closure set costs what its shading model costs"
+note = "'A material whose closures match a known model SHALL cost the same as a material authored directly against that model. Generality SHALL NOT impose cost on materials that do not use it' — the case compares the two costs. `generality is priced, not hidden` and `a field the project does not declare is a cook-time failure` beside it carry the other two scenarios."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Static and runtime parameters"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: a purely numeric parameter cannot be forced static"
+note = "classification is derived from USE and an author cannot promote a number to a permutation axis — the case marks a scaling parameter static and requires the compiler to refuse with a diagnostic naming it, which is the requirement's third scenario and the one that keeps variant counts finite."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material programs and instances"
+evidence = "test:unit.material"
+case = "an instance copies its parent's parameters and shares its program"
+note = "both scenarios at once: a hundred variants share one program and differ in data, and creating an instance compiles nothing. The case allocates a slot from a parent, checks the parameter block was copied and the program is the same object, and no compilation happens on the path."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material classification and binning"
+evidence = "test:integration.material_lowering"
+case = "material_binning: cost scales with programs, not with instances"
+note = "the requirement's load-bearing sentence is that 'the number of shading dispatches scales with the number of distinct programs rather than with the number of objects or material instances', and the case builds a thousand instances over twelve programs and requires twelve bins. The GPU half — classification computed on the device with indirect dispatches — is the renderer's and is not claimed here."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material quality tiers"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: tiers are three, declared, and counted"
+note = "'Tiers SHALL be a declared permutation axis of small, fixed cardinality (default 3), counting against the permutation budget' — the case reads the count off a compiled material and checks it against the budget. `tier selection does not oscillate over a sweep of weights` beside it is the hysteresis scenario."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Custom code and escape hatches"
+evidence = "test:integration.material_lowering"
+case = "material_passes: a custom node takes part in elimination like any other"
+note = "the requirement's own first scenario: a custom expression node whose output is unused SHALL be eliminated like any other node. That is the whole of 'each SHALL integrate through the same IR, cost model, cooking path, and diagnostics' that can be observed without a plugin system, and it is the half that would rot first."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material cost analysis"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: cost is attributed to the authoring nodes that caused it"
+note = "'Costs SHALL be attributed back to graph nodes, so an author sees which nodes are expensive rather than only that the material is expensive.' The case reads the per-node attribution back out of the cost report and matches it against the authoring nodes of the reference graph."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Node previews use the real compiler"
+evidence = "test:smoke.material_preview"
+case = "a node previews through the runtime compiler, and refuses when it is gone"
+note = "the requirement's third word is the one that had no caller: 'the same compiler, lowering, AND SHADER PIPELINE as runtime'. The case compiles a preview to SPIR-V through cy::shader against the engine's standard library, checks two different nodes produce two different programs, and then asks the same call with the front end GONE — the SPIR-V passthrough, which is what a shipping build has — and requires it to FAIL. That refusal is the requirement's prohibition on a second editor-only shading path, observed."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Cooking, caching, and versioning"
+evidence = "test:integration.material_cook"
+case = "material_cook: a material is a node, and a second build is a cache hit"
+note = "cooking is a node in the derivation graph over the content-addressed cook cache, and the key carries the compiler version — `kMaterialProducerVersion` is DEFINED as `kCompilerVersion`, so 'a compiler change invalidates derived data without invalidating the authored asset' is a fact about the key. The case builds twice and requires the second to be a hit."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material validation"
+evidence = "test:unit.material"
+case = "subsurface scattering with an additive blend mode does not cook"
+note = "the requirement's first scenario verbatim: an impossible closure/blend combination fails at cook time with an explanation rather than producing undefined shading. Six cases beside it in the same suite carry the rest of the refusal list and the warning list."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Secondary material programs"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: an opaque material has no shadow program at all"
+note = "'Opaque materials SHALL produce no fragment work in the shadow program at all' is the requirement's sharpest sentence and the one an implementation is most tempted to answer with an empty function. The case requires the derived module to have NO ROOTS — a structural absence rather than an empty program — and `an alpha-tested material's shadow program carries only opacity`, `an author's override survives the heuristic` and `a derivation that changes albedo is flagged` beside it carry the family, the override and the report."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Environment-aware material inputs"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: a field the project does not declare is a cook-time failure"
+note = "'WHEN a material samples a field that the project does not declare THEN cooking SHALL fail naming the field and the material, rather than silently substituting a default' — the case compiles against a declared field list and requires the diagnostic to name both."
+
+# --- shader-system ----------------------------------------------------------------------------------
+#
+# NINE OF THIRTEEN. The four that are not here are the row's real open edges and each is a finding
+# rather than an omission:
+#
+#   Compilation pipeline          step 4 is "per backend: SPIR-V retained (Vulkan), or SPIRV-Cross →
+#                                 MSL → Metal library (Metal), or SPIR-V → DXIL (D3D12)". NEITHER
+#                                 MSL NOR DXIL IS EMITTED ANYWHERE IN THIS TREE — `cy::shader`'s
+#                                 `Target` enumerator has the two values and the Slang front end
+#                                 hard-codes `SLANG_SPIRV` — which is what `m11c:shader-targets-for-
+#                                 the-next-rung` exists to say, and it is M11.d's hard prerequisite.
+#   Compute and utility shaders   compute shaders are first class and reflected (`a compute module
+#                                 reports its workgroup size`), but the requirement's own scenarios
+#                                 are about the VFX graph compiler's generated kernels and about
+#                                 mesh, task and ray-tracing shaders as capability-gated additions.
+#                                 `Capability::RayTracing` is an enumerator nothing sets.
+#   Visual material editor        the engine half is answered — every lowering stage is inspectable
+#                                 and `unit.material_compiler` proves it — and THE PANEL IS NOT
+#                                 THERE. `SpecialisedEditors::open(Domain::Materials)` refuses with
+#                                 "this build declares no authoring vocabulary for materials", which
+#                                 the M11.c spike measured by running the editor's own host. M11.c
+#                                 task 6.1a owns it; recording this requirement as answered by the
+#                                 stage list would be answering "is there an editor?" with "there is
+#                                 something for an editor to show".
+#   Hot reload                    `integration.shader_pipeline` has the artefact half — an edit
+#                                 replaces a library entry, a broken edit keeps the previous one —
+#                                 and the requirement is about a VIEWPORT: "the change SHALL appear
+#                                 in the viewport within a frame or two, with no restart and no
+#                                 visible stall". Nothing in this tree observes that.
+
+[[coverage]]
+row = "shader-system"
+requirement = "Slang as the authoring language"
+evidence = "test:smoke.material_slang"
+case = "a material with no textures, no attributes and no parameters still compiles"
+note = "the requirement is Slang plus a shader standard library plus a documented material interface a surface function is written against. The case is the DEGENERATE shape of that interface — an unlit constant material, every conditional in the prelude off — compiled against the engine's own `cy.material` and the modules it imports. It is the case that would break first if the standard library or the interface moved."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Permutations and specialization"
+evidence = "test:unit.shader"
+case = "specialization multiplies pipelines and not compilations"
+note = "the requirement's order of preference has specialization constants first precisely because they create a pipeline from the same SPIR-V rather than a new compilation, and the case counts both: two variants differing only in a specialization constant share one compilation key and produce two pipelines."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Reflection-driven binding"
+evidence = "test:unit.shader"
+case = "the descriptor set convention is checked, and names itself when it is broken"
+note = "the requirement fixes a four-set convention and requires the cook step to FAIL with a diagnostic naming it when a shader binds a per-frame resource in set 3. The case reflects a module that breaks the convention and requires the diagnostic to name the convention rather than the binding."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Material shader generation"
+evidence = "test:integration.shader_pipeline"
+case = "generated source is published, attributed, and indistinguishable downstream"
+note = "this requirement owns what happens to generated source and explicitly not the authoring model: it SHALL be compiled, reflected, cached, hot-reloaded and packaged 'exactly as hand-authored shaders are'. The case publishes a generated unit through `SourceRegistry::add_generated`, checks the attribution survives for a diagnostic, and checks that nothing downstream branches on the origin."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Shader library and caching"
+evidence = "test:unit.shader"
+case = "a hit in a remote tier is promoted into the local one"
+note = "'Libraries SHALL be stored in the tiered content-addressed cache, so a result compiled by CI or another developer is fetched rather than recompiled' — the case reads through the tiers in order and requires a remote hit to be promoted locally. The pipeline cache's own key is `the disk cache is named by device, driver and engine version` in the same suite."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Global shader parameters"
+evidence = "test:unit.shader"
+case = "setting a parameter writes its bytes and moves the revision"
+note = "the requirement is one global uniform block readable by any shader with no per-material update. The case sets a named parameter, checks the bytes land at the std140 offset the block declared and that the revision moves — which is what makes 'every shader referencing it SHALL observe the new value the next frame' a fact about one buffer rather than about a broadcast."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Shader diagnostics"
+evidence = "test:unit.shader"
+case = "a permutation explosion is a warning with the axis breakdown"
+note = "'the build SHALL report ... permutation counts per axis', and the scenario is that an excess is flagged BEFORE compile times become a problem. The case declares axes whose product exceeds the budget and requires the warning to carry the per-axis breakdown rather than a total."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Pipeline state object management"
+evidence = "test:unit.shader"
+case = "a missing state hands back the fallback and does not build inline"
+note = "'use a generic fallback pipeline for any state not yet compiled, so a missing state causes a temporary visual approximation rather than a hitch' and 'blocking the frame to compile a pipeline state SHALL NOT occur in shipping builds'. The case asks for a state the manifest lacks and requires the fallback back immediately with the real build queued rather than run inline."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Shader compilation service and tiered cache"
+evidence = "test:unit.shader"
+case = "every field the specification names changes the key"
+note = "the requirement enumerates what the cache key must include — the source, the material graph where applicable, the compiler version, the IR version, the target platform, the renderer profile and the feature set — 'so a compiler change invalidates derived data without invalidating authored assets'. The case varies each field in turn and requires the key to move for every one of them."

@@ -50,13 +50,16 @@ CY_TEST_CASE("material_inputs: the compile report says which inputs are textures
 
     // THE REFERENCE MATERIAL, READ OFF THE FIXTURE. `surface = diffuse(albedo * (1 - metallic) *
     // grime.x) + specular(albedo, roughness)` with `albedo = sample(base_color_map, uv0).xyz *
-    // base_color` — so diffuse.colour and specular.colour reach a texture, specular.roughness
-    // reaches only the `roughness` parameter, and opacity folded to the constant one and is gone.
-    CY_REQUIRE_EQ(inputs.inputs.size(), usize{3});
+    // base_color`, and `opacity = 1.0`. So four inputs: diffuse.colour and specular.colour reach a
+    // texture, specular.roughness reaches the `roughness` parameter and nothing else, and opacity
+    // is the literal one — WHICH IS COUNTED. A report that silently dropped the constant would be a
+    // report whose denominator moved with its numerator.
+    CY_REQUIRE_EQ(inputs.inputs.size(), usize{4});
     CY_CHECK_FALSE(inputs.constants_only());
     CY_CHECK_EQ(inputs.textures, 2U);
     CY_CHECK_EQ(inputs.parameters, 1U);
-    CY_CHECK_EQ(inputs.constants, 0U);
+    CY_CHECK_EQ(inputs.constants, 1U);
+    CY_CHECK_EQ(inputs.varying, 0U);
 
     u32 named = 0;
     for (const MaterialInput& input : inputs.inputs) {
@@ -73,9 +76,13 @@ CY_TEST_CASE("material_inputs: the compile report says which inputs are textures
             CY_CHECK(input.texture.is_empty());
             ++named;
         }
+        if (name == "opacity") {
+            CY_CHECK_EQ(input.binding, InputBinding::Constant);
+            ++named;
+        }
         CY_CHECK_NE(input.value, kInvalidNode);
     }
-    CY_CHECK_EQ(named, 3U);
+    CY_CHECK_EQ(named, 4U);
 
     // THE FAR-FIELD PROGRAM SAMPLES NOTHING, BY DERIVATION, and the report says so. A report
     // answered per MATERIAL rather than per program would call this one textured — which is the

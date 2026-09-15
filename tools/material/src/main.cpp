@@ -35,9 +35,19 @@ int usage() {
     std::fprintf(stderr,
                  "usage:\n"
                  "  cy_material compile <file.cymat> [--profile desktop|mobile] [--slang <dir>]\n"
+                 "                      [--stages]\n"
                  "  cy_material cook <project-dir> <artefact-dir> [--profile desktop|mobile]\n"
                  "                   [--cache <dir>] <material.cymat>...\n");
     return 2;
+}
+
+[[nodiscard]] bool has_flag(int argc, char** argv, std::string_view name) {
+    for (int index = 1; index < argc; ++index) {
+        if (argv[index] == name) {
+            return true;
+        }
+    }
+    return false;
 }
 
 [[nodiscard]] std::string option_value(int argc, char** argv, std::string_view name,
@@ -78,6 +88,29 @@ int compile_one(int argc, char** argv) {
         return 1;
     }
     std::printf("bundle: %zu bytes\n", bundle.size());
+
+    // --stages: EVERY STAGE OF THE LOWERING, which `shader-system`'s "Visual material editor"
+    // requires an editor to be able to show and which no front end could obtain before M11.c. The
+    // list is the library's; this prints it, and so does whatever panel asks the same function.
+    if (has_flag(argc, argv, "--stages")) {
+        material::CompileOptions stage_options;
+        stage_options.profile = profile.value();
+        rendering::material::ParseDiagnostic diagnostic(allocator());
+        auto inspected = material::inspect_material(
+            std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
+            stage_options, rendering::material::ProgramKind::Primary,
+            rendering::material::QualityTier::High, allocator(), diagnostic);
+        if (!inspected) {
+            std::fprintf(stderr, "cy_material: %s\n", inspected.error().message);
+            return 1;
+        }
+        Array<char> stages(allocator());
+        if (Status written = material::write_stage_report(inspected.value(), stages); !written) {
+            std::fprintf(stderr, "cy_material: %s\n", written.error().message);
+            return 1;
+        }
+        std::fwrite(stages.data(), 1, stages.size(), stdout);
+    }
 
     const std::string slang_dir = option_value(argc, argv, "--slang", "");
     if (slang_dir.empty()) {

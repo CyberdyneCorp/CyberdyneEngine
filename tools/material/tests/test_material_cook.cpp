@@ -20,6 +20,8 @@
 #include <cy/test/fixtures.h>
 #include <cy/test/test.h>
 
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -317,4 +319,81 @@ CY_TEST_CASE("material_cook: the bundle carries the IR, the programs and their c
         CY_CHECK_FALSE(material::decode_bundle(Span<const u8>(bundle.data(), length), allocator())
                            .has_value());
     }
+}
+
+// ================================================================================================
+// M11.c TASK 1.3: THE COMMAND LINE AND A SECOND CALLER SHOW THE SAME STAGES
+// ================================================================================================
+//
+// `shader-system` — "Visual material editor": the editor "SHALL be able to show, for any material,
+// each stage of its lowering: the graph, the material IR before and after optimisation, the
+// generated Slang, and the compiled backend output", and it is "a front-end onto the material
+// compiler, not an independent shader compiler and not an independent authoring model".
+//
+// So the check is a COMPARISON OF TWO OBSERVATIONS rather than a search for a word: the stage list
+// `cy_material compile --stages` prints for one material, against the stage list a second caller of
+// `inspect_material` obtains for the same source in this process. They agree on the count, on every
+// stage's name, on every stage's digest, and on WHICH stage is absent and why.
+//
+// It goes red when they diverge, which is what a second lowering path inside a front end would do,
+// and it goes red when the command line stops printing a stage — the failure this task names.
+// MEASURED, by mutation: pointing `cy_material compile --stages` at a DIFFERENT program of the same
+// family turns the whole-report comparison red, and deleting the absent stage's line from the
+// report turns the `compiled: ABSENT` check red.
+//
+// AND THE LIMIT OF IT, STATED RATHER THAN LEFT TO BE DISCOVERED. Both sides render the list through
+// `write_stage_report`, so a change to that FUNCTION moves both answers together and the comparison
+// alone cannot see it. What the comparison does see is the two sides disagreeing about WHICH
+// material, which program, or which stages — which is the divergence the task is about; the
+// standalone checks below carry the shape of the report itself.
+
+CY_TEST_CASE("material_stages: the command line and the library agree about the lowering stages") {
+    cy::test::TempDir temp{"material-stages"};
+    CY_REQUIRE(temp.valid());
+    const std::string source = temp.path() + "/worn_metal.cymat";
+    CY_REQUIRE(
+        assets::fs::write_atomic(source.c_str(), kWornMetal, std::strlen(kWornMetal)).has_value());
+
+    // --- the command line's answer --------------------------------------------------------------
+    const std::string command =
+        std::string(CY_MATERIAL_BINARY) + " compile " + source + " --stages 2>/dev/null";
+    std::string printed;
+    {
+        FILE* pipe = ::popen(command.c_str(), "r");
+        CY_REQUIRE(pipe != nullptr);
+        char buffer[4096];
+        while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            printed += buffer;
+        }
+        CY_REQUIRE_EQ(::pclose(pipe), 0);
+    }
+    CY_REQUIRE_FALSE(printed.empty());
+
+    // --- the library's answer, in this process --------------------------------------------------
+    material::CompileOptions options;
+    rendering::material::ParseDiagnostic diagnostic(allocator());
+    auto inspected = material::inspect_material(kWornMetal, options,
+                                               rendering::material::ProgramKind::Primary,
+                                               rendering::material::QualityTier::High, allocator(),
+                                               diagnostic);
+    CY_REQUIRE(inspected.has_value());
+    Array<char> expected(allocator());
+    CY_REQUIRE(material::write_stage_report(inspected.value(), expected).has_value());
+    const std::string_view wanted(expected.data(), expected.size());
+
+    // THE WHOLE REPORT, not a word out of it. Every stage's name, byte count and digest is in here,
+    // so a command line that dropped a stage, reordered them, or printed another material's digests
+    // fails on the first character that differs.
+    CY_CHECK(printed.find(wanted) != std::string::npos);
+    if (printed.find(wanted) == std::string::npos) {
+        std::printf("--- the command line printed ---\n%s\n--- the library says ---\n%.*s\n",
+                    printed.c_str(), static_cast<int>(wanted.size()), wanted.data());
+    }
+
+    // And the list is the specification's five, with the fifth named as owed rather than missing.
+    CY_CHECK(printed.find("4 of 5 available") != std::string::npos);
+    for (const char* stage : {"  graph: ", "  ir: ", "  optimised-ir: ", "  slang: "}) {
+        CY_CHECK(printed.find(stage) != std::string::npos);
+    }
+    CY_CHECK(printed.find("  compiled: ABSENT") != std::string::npos);
 }
