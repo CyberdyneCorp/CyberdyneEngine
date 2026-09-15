@@ -133,6 +133,28 @@ token  = "LiveEditPolicy"
 
 A mutation that changes nothing is itself a finding: it names a file or a token that is not there.
 
+**A declared gap is judged the other way round.** A criterion its ledger declares as an expected
+failure (`known_gap`) is already red on the unmutated tree, in the open, on every run of that
+ledger — "show that it can go red" asks for what the reader is looking at. What it has not shown is
+that it is not *permanently* red, so its mutation is the gap's own closing act made small and must
+take the criterion **green**. A mutation that leaves it red proves nothing and is reported as such.
+
+### Which criterion evaluates which capability row
+
+`delivery-roadmap` requires a recorded tier to be evaluated by a criterion, so a criterion says
+which rows it evaluates in a field, not in prose:
+
+```toml
+evaluates = ["testing-and-quality"]
+```
+
+`criteria.evaluators(entries, row)` is the only way to ask, and `m11a:the-four-rows-are-evaluated` is
+the guard that does. The field exists because the guard used to ask whether the row's name appeared
+in a criterion's `source` — and `source` is a **citation**: eight criteria in M11.a's plan cite
+`testing-and-quality` because that specification governs them. Deleting the criterion that actually
+evaluated the row left the bystanders answering for it, and M11's gate found it: the guard "cannot
+detect the deletion of two of the four evaluators".
+
 ### Shapes refused on sight
 
 Some criteria cannot be judged by mutation because the sandbox has no build tree, and some cannot be

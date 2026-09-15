@@ -99,6 +99,43 @@ field.
 - [ ] 2.6 The gap says in as many words that it closes **when those shaders exist, not by optimising
       the CPU loop**. A CPU optimisation that reaches 16.7 ms closes nothing and SHALL NOT be
       recorded as closing it
+- [x] 2.7 **AND THE GAP'S OWN CHECK WAS A WORD-GREP — REPAIR 1, after this rung's gate refused the
+      claim that the four M10 gaps were closed without weakening anything.**
+      `m10:fields-sampled-on-a-device` asked
+      `grep -rl "FieldImageHeader\|field_image\|kFieldImage" --include='*.slang' src/` and wanted a
+      non-zero count; `m11a:field-sampler-written` greped the same three words in one file;
+      `m11a:field-sampler-consumed` counted files containing `cy.field`. `falsify.py audit --weak`
+      names all three `presence-only` — **the verdict is that this text exists** — so a `.slang` file
+      whose whole content is a comment closed the gap, and the two consumers satisfied `consumed` by
+      carrying an `import` line they never call. Nothing weakened those checks at this rung; they
+      were already too weak to tell the shader that was written from the shader that was not.
+      **They now run the shader's compiler.** `m10:fields-sampled-on-a-device` requires the module and
+      its two consumers to TYPE-CHECK through the engine's own Slang front end inside
+      `smoke.material_slang`'s probe, which CALLS `cyFieldSampleScene`, `cyTerrainSampleSubstrate`,
+      `cyTerrainShade`, `cyCloudShadowAt` and `cyCloudShadowAttenuate`; and it recompiles
+      `tests/render/shaders/field_probe.slang` and requires the result to equal
+      `field_probe_spirv.h` word for word — **the only thing in the tree that ties
+      `render.environment_field`'s ULP figures to a source file**, because that SPIR-V is checked in
+      for builds with no compiler and until now editing `cy/field.slang` changed nothing any suite
+      executed. `m11a:field-sampler-written` compares SIXTEEN layout constants — magic, version,
+      header and entry words, tile edge, five `FieldEncoding` members, five `FieldLayerRule` members,
+      `FieldInterpolation::Linear` — between the shader and `gpu.h`, `field.h` and `store.h`, which is
+      what "written against the layout gpu.h fixes" actually asserts. `m11a:field-sampler-consumed`
+      compiles ONE PROBE PER CONSUMER and requires the emitted SPIR-V to reference the bindless table
+      at set 0 binding 3; the negative control is recorded rather than claimed — a probe calling
+      `cyTerrainShade`, which takes an already-sampled substrate, compiles to SPIR-V with ZERO
+      references to it.
+      **Four reds, run and restored md5-identical.** Renaming `cyFieldSampleScene` in
+      `cy/field.slang` (the word `kFieldImage` and both `import cy.field;` lines left exactly where
+      the greps found them) takes `fields-sampled-on-a-device` and `field-sampler-consumed` red;
+      reassociating line 486's `wx * wz * wy` to `wy * wz * wx` still COMPILES and takes the SPIR-V
+      half red with both embedded modules DIFFERENT; `kFieldImageVersion = 2u` takes
+      `field-sampler-written` red; and replacing `cyTerrainSampleSubstrate`'s four samples with
+      constants leaves `terrain_shade.slang` compiling, leaves its `import` line in place, and takes
+      `field-sampler-consumed` red at **1 of 2 consumers** — the defect the old grep counted as two.
+      `field-sampler-written` is now PROVEN by `just roadmap-falsify` itself; the other two are
+      recorded `not provable here` because the prover's sandbox is the tracked tree and they need a
+      build, and each declares the `[criterion.falsifies]` a prover with a build would apply
 
 ## 3. The two defects in the field model
 
@@ -184,6 +221,25 @@ field.
       could not make — one leg, one architecture, a zero digest, an empty workload, an unreadable
       schema — which must never be read as a pass. Fifteen negative fixtures in
       `tools/ci/test_cross_leg_digests.py` hold that, and they run under `just ci-check`
+- [x] 4.6 **AND THE THREE CRITERIA WERE WORD-GREPS THE WHOLE TIME — REPAIR 1, after this rung's gate
+      refuted the claim.** The job above is real and its comparator's refusals are tested, and none
+      of that reached the three criteria: each searched `.github/workflows/*.yml` for a job block
+      carrying `download-artifact` beside `digest`, `lockstep` or a `pcg` word. A six-line job that
+      uploads nothing, downloads nothing and runs `echo "lockstep and pcg digests compared"` turns
+      all three green — measured, on this tree, against the checks as they stood. So deleting the
+      `run:` line from `cross-leg-compare` would have left every one of them green, which is the
+      eighth unfalsifiable check this ladder has found and the reason `just roadmap-falsify` exists.
+      **`tools/ci/cross_leg_audit.py` replaces the search with the job's own behaviour**: it reads
+      the workflow only as far as the publisher, the downloader and the command between them, and
+      then EXECUTES that command against digest files it writes — two architectures that agree must
+      pass it, and a changed simulation hash, a changed generated world, one leg alone, two legs of
+      one architecture, a zero digest and an empty workload must each turn it red. `m9`'s criterion
+      runs `--claim lockstep`, `m10`'s runs `--claim pcg` (and gives up its `where = "ci"`, because
+      what it asks now is answerable on any host), `m11a`'s runs `--claim job`. Six workflows it must
+      refuse — the dummy first — are `--selftest` fixtures under `just ci-check`, and all three
+      criteria declare a `[criterion.falsifies]` the tooling executes: delete the `--compare-legs`
+      line, rename `--pcg`, delete the `download-artifact` lines. All three are PROVEN in
+      `tools/roadmap/falsifiability.toml`, which is three entries shorter than it was
 
 ## 5. The four rows whose Working tier is claimed by a column and checked by nothing
 
@@ -384,3 +440,21 @@ same way, with the numbers moved**.
       close here. A false green on any one of the seven is the one outcome this rung cannot survive
 - [ ] 10.5 Records verified against what the code supports, including this rung's own tier cells
       against the status record — `m9:record-matches-plan` is not milestone-specific in shape
+- [x] 10.6 **The four M10 gaps, one at a time, with the third clause checked rather than asserted —
+      REPAIR 1.** Not all seven: 10.4 stays open because `m8c:steam-audio-configures` is 7.2's and
+      `m9:record-matches-plan-history` closes at M11.e. Of M10's four:
+      `sky-field-round-trip` PASSES — `through the store: 2048 samples, lowest 0.00392157, highest 1`
+      — and goes RED when `CloudShadowField::update`'s `publish()` is suppressed (`0 samples`);
+      `fields-one-vegetation-potential` PASSES — `refused forwards 0, backwards 0` over 25
+      declarations from 5 modules — and goes RED when foliage re-declares `vegetation-potential`
+      (`refused forwards 1, backwards 1`); `fields-sampled-on-a-device` passes for the reasons 2.7
+      records; and **`world-frame-budget` IS NOT CLOSED and its `known_gap` marker is still there**,
+      re-measured on this host at **114.4 ms mean, 128.9 ms worst, 7.7x over at the worst frame**,
+      with the same three bands the gap names — `terrain_shade_ms 69.0`, `sky_ms 24.5`,
+      `water_ms 12.9`. Sections 2.3, 2.4 and 2.5 are why: `cy/field.slang` and its two consumers
+      exist and compile, and **nothing in `samples/10-world`'s frame path dispatches them**.
+      **The "not by weakening its check" clause is now evidence rather than a sentence**: the `run`
+      strings of `sky-field-round-trip`, `fields-one-vegetation-potential` and `world-frame-budget`
+      are BYTE-IDENTICAL to what `3d44e2f` (Close M10 — Worlds) shipped, so those two closures moved
+      the code and not the check; `fields-sampled-on-a-device`'s `run` is the one that changed, and it
+      changed in this repair, in the direction of a check that can fail

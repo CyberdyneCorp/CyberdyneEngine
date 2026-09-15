@@ -1494,6 +1494,22 @@ CHECK
 '''
 ci_job = "milestone-m10"
 
+# WHAT MUST BREAK IT, AND IT WAS BROKEN: renaming `cyFieldSampleScene` in `cy/field.slang` leaves the
+# module, the word `kFieldImage` and both `import cy.field;` lines exactly where the old grep found
+# them, and takes this criterion RED — "the environment field sampler and its two consumers do NOT
+# compile against the engine's standard library", because the probe in `smoke.material_slang` calls
+# it. The other half was demonstrated with a mutation that still COMPILES — reassociating the
+# bilinear weight on line 486 from `wx * wz * wy` to `wy * wz * wx` — which leaves the checked-in
+# SPIR-V unchanged and is therefore invisible to every suite in the tree except this comparison:
+# both embedded modules came back DIFFERENT. `just roadmap-falsify` cannot apply either in its own
+# sandbox, which is source-only and has no build; the declaration below is what a prover with a
+# build applies, and the two runs above are recorded in the change that wrote this.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/shaders/cy/field.slang"
+token = "cyFieldSampleScene"
+note = "the sampler's entry point renamed: the probe that calls it stops compiling, and the module is a file again"
+
 # --- Section 8: the record, the tiers, and the next rung -------------------------------------------
 
 # TASK 8.2, AND THE DOUBLE-STAR GLOB IS THE POINT. m6.toml's own comment says why: a change lives at

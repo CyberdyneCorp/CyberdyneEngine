@@ -48,6 +48,12 @@ kind = "recipe"
 run = "just quality-specs"
 ci_job = "specs"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/specs/delivery-roadmap/spec.md"
+token  = "#### Scenario:"
+note   = "a requirement with no scenario is what --strict refuses; the mutation takes the scenarios out of one specification and the gate has to say so"
+
 [[criterion]]
 id = "format"
 describe = "the formatting gate is green over a tree that gained a shader-side field sampler, the sky's write path, a streaming binder, the save inspector and the Steam Audio simulation path"
@@ -55,6 +61,12 @@ source = "tasks 10.1"
 kind = "recipe"
 run = "just quality-format-check"
 ci_job = "format"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".clang-format"
+token  = "IndentWidth: 4"
+note   = "the gate's claim is that the tree matches .clang-format; the mutation changes what .clang-format asks for — indentation falls back to the Google default of two — so every file in the tree differs from the style and the gate has to report it. Deleting a line of C++ was tried first and refuted: this project does not indent inside a namespace, so removing the namespace line left every remaining line already correctly formatted and the gate stayed green."
 
 [[criterion]]
 id = "lint"
@@ -71,6 +83,12 @@ source = "tasks 10.1, engine-architecture"
 kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token  = 'relative.startswith("platform/")'
+note   = "the sdl rule is `no SDL header outside platform/`; renaming the test that recognises platform/ makes the SDL includes that legitimately live there into violations, so the checker fires over real source files rather than over its own fixtures"
 
 [[criterion]]
 id = "workflows"
@@ -97,6 +115,12 @@ kind = "recipe"
 run = "just roadmap-status"
 ci_job = "roadmap-status"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "docs/roadmap/status.yaml"
+token  = "    change:"
+note   = "the criterion's own words are `every tier claim names the change that made it`; the mutation takes those lines out of the record"
+
 [[criterion]]
 id = "plan-consistency"
 describe = "the roadmap tooling's own self-test: the four plan documents agree with the five M11 columns in them, every ledger under milestones/ has a floor recorded, the ladder places m11a between m10 and m11b, and a declared gap that started passing fails"
@@ -104,6 +128,12 @@ source = "tasks 9.2, 9.4, delivery-roadmap"
 kind = "recipe"
 run = "just roadmap-test"
 ci_job = "roadmap-status"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones"
+token  = "ci_job = "
+note   = "every criterion must name the CI job that runs it, and the self-test loads every ledger; the mutation takes that field out of all of them"
 
 [[criterion]]
 id = "four-profiles"
@@ -958,6 +988,12 @@ echo "entered:$entered"
 '''
 ci_job = "milestone-m11a"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/changes/**/*m11b*/tasks.md"
+token  = "- [x] "
+note   = "what this criterion asks is that somebody has ENTERED the next rung; the mutation unchecks every box in that change's task list"
+
 [[criterion]]
 id = "ladder-carries-five-rungs"
 describe = "the split is applied in every place that reads it, and not in four of the five. `record.MILESTONES` carries m11a … m11e in position and no longer carries `m11`; each has a ledger, a gate and a floor in `selftest.MINIMUM_CRITERIA`; and the matrix has five M11 columns. M8's split found THREE readers that silently dropped its new columns, and this is the check that would have caught all three"
@@ -999,3 +1035,9 @@ sys.exit(1 if problems else 0)
 CHECK
 '''
 ci_job = "milestone-m11a"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/record.py"
+token  = '"m11c"'
+note   = "M8's split found three readers that silently dropped its new columns; the mutation drops one rung from the first of them"

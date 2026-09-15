@@ -240,6 +240,41 @@ def test_criteria(root: Path) -> None:
         lambda: criteria_module.load("m99"))
 
 
+def test_evaluates(root: Path) -> None:
+    """`evaluates` is a declaration, and `evaluators` is the only way to ask who declared it.
+
+    THE DEFECT IT REPLACES, in one line from M11's gate: the guard over the four rows whose Working
+    tier nothing evaluated "cannot detect the deletion of two of the four evaluators". It asked
+    whether the row's name appeared in a criterion's `source`, and `source` is a CITATION — eight
+    criteria in M11.a's plan cite `testing-and-quality` because that specification governs them — so
+    deleting the criterion that did the evaluating left seven bystanders answering for it.
+    """
+    head = 'schema = 1\nid = "m0"\nname = "Ground"\n'
+    body = ('[[criterion]]\nid = "x"\ndescribe = "d"\nsource = "s"\nkind = "recipe"\n'
+            'run = "just quality-layers"\nci_job = "layering"\n')
+    loaded = criteria_module.load("m0", milestone_file(
+        root, "evaluates", head + body + 'evaluates = ["testing-and-quality"]\n'))
+    check("a criterion declares the capability rows it evaluates",
+          loaded.criteria[0].evaluates == ["testing-and-quality"])
+    for name, value in (("not-a-list", '"testing-and-quality"'), ("empty", "[]"),
+                        ("not-a-string", "[3]"), ("twice", '["a", "a"]')):
+        expect_error(
+            f"'evaluates' as {name} is rejected", criteria_module.CriteriaError,
+            lambda value=value, name=name: criteria_module.load("m0", milestone_file(
+                root, f"evaluates-{name}", head + body + f"evaluates = {value}\n")))
+
+    declares = criteria_module.PlanEntry(loaded.criteria[0], ("m0",), False)
+    cites = criteria_module.PlanEntry(
+        criteria_module.Criterion(id="y", describe="d", source="testing-and-quality", kind="command",
+                                  ci_job="layering", run="true"), ("m0",), False)
+    entries = (declares, cites)
+    check("`evaluators` answers with the criterion that DECLARED the row",
+          [entry.criterion.id for entry in criteria_module.evaluators(entries, "testing-and-quality")]
+          == ["x"])
+    check("AND NOT with the one that merely cites the specification, which is the refuted check",
+          not criteria_module.evaluators((cites,), "testing-and-quality"))
+
+
 def test_exit_tiers(root: Path) -> None:
     """An exit tier is a floor, so a closed milestone stays closed when a later one advances past it.
 
@@ -1355,6 +1390,53 @@ def test_falsifiability_declared_mutations(root: Path) -> None:
           proof.verdict == falsify_module.PROVEN, f"{proof.verdict}: {proof.detail}")
 
 
+def test_falsifiability_of_a_declared_gap(root: Path) -> None:
+    """A criterion its ledger declares as an expected failure is judged the other way round.
+
+    It is RED on the unmutated tree — that is what a declared gap IS — so "show that it can go red"
+    asks for what every run of that ledger already prints. What it has not shown is that it is not
+    PERMANENTLY red, which is the difference between a deadline and a check that can never pass, so
+    its mutation must take it GREEN. Both directions are exercised here, because the second one —
+    a mutation that leaves it red proves nothing and must not count — is the one that would quietly
+    turn this route into a way of recording anything at all as proven.
+    """
+    sandbox = falsify_module.Sandbox.materialise(root / "tree")
+    target = sandbox.root / "docs" / "gap-fixture.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("the release recipes still refuse\n", encoding="utf-8")
+    sandbox.forget()
+
+    def gap(identifier: str, run: str = "! grep -q refuse docs/gap-fixture.txt",
+            **falsifies) -> criteria_module.Criterion:
+        return criteria_module.Criterion(
+            id=identifier, describe="a fixture", source="a fixture", kind="command",
+            ci_job="milestone-m0", run=run,
+            known_gap="the fixture refuses, and the rung that fixes it is named",
+            known_gap_closes="m11d", falsifies=falsifies)
+
+    red = falsify_module.prove(sandbox, "m0", gap(
+        "closes", mutate="rename-token", target="docs/gap-fixture.txt", token="refuse"))
+    check("a declared gap that is RED unmutated and GREEN under its mutation is proven",
+          red.verdict == falsify_module.PROVEN, f"{red.verdict}: {red.detail}")
+    check("and the proof says which way round it was judged",
+          "RED unmutated" in red.detail and "GREEN under the mutation" in red.detail, red.detail)
+
+    target.write_text("the release recipes still refuse\n", encoding="utf-8")
+    sandbox.forget()
+    stays = falsify_module.prove(sandbox, "m0", gap(
+        "stays-red", mutate="rename-token", target="docs/gap-fixture.txt", token="recipes"))
+    check("A MUTATION THAT LEAVES A DECLARED GAP RED PROVES NOTHING and does not count",
+          stays.verdict == falsify_module.UNPROVABLE, f"{stays.verdict}: {stays.detail}")
+
+    target.write_text("the release recipes still refuse\n", encoding="utf-8")
+    sandbox.forget()
+    # No search in the body, so nothing can be derived from it and nothing is declared either.
+    none = falsify_module.prove(sandbox, "m0", gap("no-mutation", run="[ ! -s docs/gap-fixture.txt ]"))
+    check("and a declared gap with no mutation at all is on the list, not in the proofs",
+          none.verdict == falsify_module.NO_MUTATION, f"{none.verdict}: {none.detail}")
+    target.unlink(missing_ok=True)
+
+
 def test_falsifiability_of_the_ladder(root: Path) -> None:
     """The real thing: every criterion on the ladder, proven or accounted for.
 
@@ -1377,12 +1459,40 @@ def test_falsifiability_of_the_ladder(root: Path) -> None:
           not findings, "\n".join(findings[:20]))
 
 
+#: `falsify.prove` sets this while it is running a criterion, and `plan-consistency` — a criterion of
+#: every ledger on the ladder — runs THIS file. So this file runs inside the prover, inside a sandbox
+#: that is a copy of the tracked tree and is not a git repository.
+#:
+#: WHAT THAT BREAKS, AND WHY THE ANSWER IS A SKIP RATHER THAN A FIX. The four tests below materialise
+#: a sandbox of their own, which is `git ls-files` over a directory that has no `.git` — so they fail
+#: for a reason that has nothing to do with what they check, and `plan-consistency` was RED in every
+#: sandbox for that reason alone. Making the sandbox git-independent would only move the wall: the
+#: ladder proof would then prove the ladder, reach `plan-consistency`, run this file again, and
+#: descend without a bottom. A prover cannot prove the criterion that runs the prover, and the honest
+#: shape of that is to say so out loud, once, at the one place it happens.
+#:
+#: THIS IS NOT A WAY TO SKIP THE LADDER. It fires only when a prover has set the variable, which no
+#: pull request and no developer's `just roadmap-test` does; the line is printed rather than silent;
+#: and what the criterion then proves is that `just roadmap-test` goes red when a ledger is broken,
+#: which is the claim it makes.
+NESTED_IN_THE_PROVER = "CY_FALSIFY"
+
+
+def _nested() -> bool:
+    return bool(os.environ.get(NESTED_IN_THE_PROVER))
+
+
 def main() -> int:
+    if _nested():
+        print(f"note: {NESTED_IN_THE_PROVER} is set — this self-test is running INSIDE the prover, "
+              "so the four cases that materialise a sandbox of their own are not run here. They run "
+              "on every ordinary `just roadmap-test`.")
     with tempfile.TemporaryDirectory(prefix="cy-roadmap-selftest-") as directory:
         root = Path(directory)
         test_drift(_area(root, "drift"))
         test_record_rules(_area(root, "record"))
         test_criteria(_area(root, "criteria"))
+        test_evaluates(_area(root, "evaluates"))
         test_declared_gaps(_area(root, "declared-gaps"))
         test_exit_tiers(_area(root, "tiers"))
         test_milestone_ladder(_area(root, "ladder"))
@@ -1397,9 +1507,11 @@ def main() -> int:
         test_falsifiability_rules(_area(root, "falsify-rules"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
-        test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
-        test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
-        test_falsifiability_of_the_ladder(_area(root, "falsify-ladder"))
+        if not _nested():
+            test_falsifiability_ledger_blind(_area(root, "falsify-blind"))
+            test_falsifiability_declared_mutations(_area(root, "falsify-verbs"))
+            test_falsifiability_of_a_declared_gap(_area(root, "falsify-gap"))
+            test_falsifiability_of_the_ladder(_area(root, "falsify-ladder"))
     passed = len(_cases) - len(_failures)
     print(f"\nselftest: {passed}/{len(_cases)} passed")
     return 1 if _failures else 0

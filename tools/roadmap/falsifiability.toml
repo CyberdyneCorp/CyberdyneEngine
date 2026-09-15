@@ -53,14 +53,6 @@ detail = "red under mutation of 7 file(s)"
 
 [[proof]]
 ledger = "m10"
-criterion = "fields-sampled-on-a-device"
-digest = "b9dc1dd6db347d7a"
-verdict = "proven"
-mutation = "rename-token 'FieldImageHeader\\x1ffield_image\\x1fkFieldImage' in 2,src/ (derived)"
-detail = "red under mutation of 10 file(s)"
-
-[[proof]]
-ledger = "m10"
 criterion = "m11-open"
 digest = "a15b340462013969"
 verdict = "proven"
@@ -142,9 +134,9 @@ detail = "a declared gap: RED unmutated (every category of the required recipe s
 [[proof]]
 ledger = "m11a"
 criterion = "field-sampler-written"
-digest = "67d7df018e6c7e4c"
+digest = "d1b243eab6798454"
 verdict = "proven"
-mutation = "rename-token 'FieldImageHeader\\x1ffield_image\\x1fkFieldImage' in src/rendering/shaders/cy/field.slang (derived)"
+mutation = "rename-token 'kFieldImageHeaderWords' in src/rendering/shaders/cy/field.slang (declared)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
@@ -162,6 +154,14 @@ digest = "46c45c2daf003137"
 verdict = "proven"
 mutation = "delete-lines 'evaluates = [\"testing-and-quality\"]' in tools/roadmap/milestones/m11a.toml (declared)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11a"
+criterion = "thirdparty-dependencies-at-working"
+digest = "067556bc4d188f0d"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/repair-1-2 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree"
 
 [[proof]]
 ledger = "m11b"
@@ -853,6 +853,14 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m10"
+criterion = "fields-sampled-on-a-device"
+digest = "5f1ba11e49b27f2a"
+verdict = "not provable here"
+mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
+
+[[unproven]]
+ledger = "m10"
 criterion = "fields-substrate"
 digest = "c7fefafbfffec24b"
 verdict = "no mutation"
@@ -1334,10 +1342,10 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 [[unproven]]
 ledger = "m11a"
 criterion = "field-sampler-consumed"
-digest = "91a16a5cd8fa6ef5"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
+digest = "e143f298df27f35b"
+verdict = "not provable here"
+mutation = "rename-token 'cyFieldSampleScene' in src/rendering/shaders/cy/field.slang (declared)"
+detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11a"
@@ -1506,14 +1514,6 @@ digest = "1e6b304f34a2ac22"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11a"
-criterion = "thirdparty-dependencies-at-working"
-digest = "067556bc4d188f0d"
-verdict = "not provable here"
-mutation = "-"
-detail = "the unmutated run did not finish: no result within 240 s"
 
 [[unproven]]
 ledger = "m11a"

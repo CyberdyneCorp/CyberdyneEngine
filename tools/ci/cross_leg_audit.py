@@ -305,28 +305,34 @@ def _downloads_from(job: Job, publisher: Job) -> tuple[str, str] | None:
     return None
 
 
+def _pair(publisher: Job, job: Job) -> tuple[Comparison | None, str]:
+    """Whether `job` compares what `publisher` published, or why it does not."""
+    downloaded = _downloads_from(job, publisher)
+    if downloaded is None:
+        return None, ""
+    artefact, directory = downloaded
+    if publisher.name not in job.needs:
+        return None, (f"{job.label} downloads {artefact} and does not `needs:` {publisher.name}, "
+                      f"so it can run before anything published")
+    commands = [str(step["run"]) for step in job.steps
+                if "run" in step and directory in str(step["run"])]
+    if not commands:
+        return None, (f"{job.label} downloads {artefact} into {directory}/ and no `run:` step of it "
+                      f"reads {directory}/: it collects the digests and compares nothing")
+    return Comparison(publisher, job, artefact, directory, "\n".join(commands)), ""
+
+
 def comparisons(jobs: list[Job]) -> tuple[list[Comparison], list[str]]:
     """Every publish-then-compare pair in these workflows, and why the near misses are not pairs."""
     found: list[Comparison] = []
     rejected: list[str] = []
     for publisher in publishers(jobs):
         for job in jobs:
-            downloaded = _downloads_from(job, publisher)
-            if downloaded is None:
-                continue
-            artefact, directory = downloaded
-            if publisher.name not in job.needs:
-                rejected.append(f"{job.label} downloads {artefact} and does not `needs:` "
-                                f"{publisher.name}, so it can run before anything published")
-                continue
-            commands = [str(step["run"]) for step in job.steps
-                        if "run" in step and directory in str(step["run"])]
-            if not commands:
-                rejected.append(f"{job.label} downloads {artefact} into {directory}/ and no `run:` "
-                                f"step of it reads {directory}/: it collects the digests and "
-                                f"compares nothing")
-                continue
-            found.append(Comparison(publisher, job, artefact, directory, "\n".join(commands)))
+            pair, refusal = _pair(publisher, job)
+            if pair is not None:
+                found.append(pair)
+            elif refusal:
+                rejected.append(refusal)
     return found, rejected
 
 
@@ -641,9 +647,36 @@ jobs:
 }
 
 
+def _reader_agrees_with_check_workflows() -> list[str]:
+    """The job names this module reads are the job names `check_workflows.py` reads.
+
+    A hand-written reader over a workflow is a thing that can quietly stop understanding the file,
+    and a reader that found no jobs would report "no comparison" — a red for the wrong reason, which
+    is a false green upside down. `check_workflows.py` finds jobs by an unrelated method (a regex
+    over `^  <name>:`), so the two disagreeing is a finding rather than a matter of taste.
+    """
+    import check_workflows  # noqa: PLC0415 — only the selftest needs it
+
+    complaints = []
+    for path in sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml")):
+        mine = {job.name for job in jobs_of(path)}
+        theirs = {command.job for command in check_workflows.commands_in(path)} - {"?"}
+        missing = sorted(theirs - mine)
+        if missing:
+            complaints.append(f"{path.name}: check_workflows.py sees {', '.join(missing)} and this "
+                              f"reader does not — it has stopped understanding the file")
+    return complaints
+
+
 def selftest() -> int:
     """Every fixture above must be REFUSED, and this repository's own workflows must pass."""
     failures = 0
+    complaints = _reader_agrees_with_check_workflows()
+    for complaint in complaints:
+        print(f"FAIL {complaint}")
+    failures += len(complaints)
+    if not complaints:
+        print("ok   the workflow reader finds every job check_workflows.py finds\n")
     for name, (text, why) in _FIXTURES.items():
         with tempfile.TemporaryDirectory(prefix="cy-audit-fixture-") as directory:
             path = pathlib.Path(directory)
@@ -663,7 +696,8 @@ def selftest() -> int:
             print(f"     {finding}")
     else:
         print("ok   this repository's own workflows carry a comparison that discriminates")
-    print(f"\ncross-leg audit selftest: {len(_FIXTURES) + 1 - failures}/{len(_FIXTURES) + 1} passed")
+    total = len(_FIXTURES) + 2
+    print(f"\ncross-leg audit selftest: {total - failures}/{total} passed")
     return 1 if failures else 0
 
 

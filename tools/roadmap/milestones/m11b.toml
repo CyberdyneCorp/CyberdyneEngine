@@ -42,6 +42,12 @@ kind = "recipe"
 run = "just quality-specs"
 ci_job = "specs"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/specs/delivery-roadmap/spec.md"
+token  = "#### Scenario:"
+note   = "a requirement with no scenario is what --strict refuses; the mutation takes the scenarios out of one specification and the gate has to say so"
+
 [[criterion]]
 id = "format"
 describe = "the formatting gate is green over a tree that gained the play modes, the live edit policy, the specialised editor panels, a source-control provider interface, a texture encoder and a game"
@@ -49,6 +55,12 @@ source = "tasks 13.1"
 kind = "recipe"
 run = "just quality-format-check"
 ci_job = "format"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".clang-format"
+token  = "IndentWidth: 4"
+note   = "the gate's claim is that the tree matches .clang-format; the mutation changes what .clang-format asks for — indentation falls back to the Google default of two — so every file in the tree differs from the style and the gate has to report it. Deleting a line of C++ was tried first and refuted: this project does not indent inside a namespace, so removing the namespace line left every remaining line already correctly formatted and the gate stayed green."
 
 [[criterion]]
 id = "lint"
@@ -65,6 +77,12 @@ source = "tasks 13.1, engine-architecture, editor-architecture"
 kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
+
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token  = 'relative.startswith("platform/")'
+note   = "the sdl rule is `no SDL header outside platform/`; renaming the test that recognises platform/ makes the SDL includes that legitimately live there into violations, so the checker fires over real source files rather than over its own fixtures"
 
 [[criterion]]
 id = "workflows"
@@ -91,6 +109,12 @@ kind = "recipe"
 run = "just roadmap-status"
 ci_job = "roadmap-status"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "docs/roadmap/status.yaml"
+token  = "    change:"
+note   = "the criterion's own words are `every tier claim names the change that made it`; the mutation takes those lines out of the record"
+
 [[criterion]]
 id = "plan-consistency"
 describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, the ladder places m11b between m11a and m11c, and a declared gap that started passing fails"
@@ -98,6 +122,12 @@ source = "tasks 12.1, 12.4, delivery-roadmap"
 kind = "recipe"
 run = "just roadmap-test"
 ci_job = "roadmap-status"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/roadmap/milestones"
+token  = "ci_job = "
+note   = "every criterion must name the CI job that runs it, and the self-test loads every ledger; the mutation takes that field out of all of them"
 
 [[criterion]]
 id = "four-profiles"

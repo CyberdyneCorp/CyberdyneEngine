@@ -828,6 +828,13 @@ class Proof:
     mutation: str
     detail: str
     seconds: float = 0.0
+    #: THIS RUN COULD NOT JUDGE THE CRITERION AT ALL — as opposed to judging it and finding nothing.
+    #: A source-only run cannot re-earn a proof taken against a build tree, and a prover running
+    #: inside another prover cannot run its own tree control; in both cases the honest report is "not
+    #: here", and a standing proof is neither confirmed nor destroyed by it. `reconcile` and `_record`
+    #: read this rather than pattern-matching the detail string, because a sentence is not a flag.
+    #: It is never written to the inventory: it is a property of the RUN, not of the criterion.
+    unjudged: bool = False
 
 
 def digest(criterion: criteria_module.Criterion) -> str:
@@ -871,6 +878,18 @@ def unsandboxable(criterion: criteria_module.Criterion) -> str:
     found = _NEEDS_A_BUILD.search(without_comments(criterion.run))
     if found:
         return f"it needs a built tree ({found.group(0)!r}); the sandbox is source only"
+    # AND THE SECOND WAY A CRITERION SAYS SO, WHICH IS ALSO ITS OWN DATA. A ledger's default budget
+    # is half an hour; a criterion that asked for MORE than that has said, in the only field there is
+    # for saying it, that what it runs is not reading files. `m11a:thirdparty-dependencies-at-working`
+    # is the case that forced this: it invokes a script whose name carries no build word, and the leg
+    # inside configures CMake twice and fetches every gated dependency — about 1.5 GB on a cold
+    # cache, which is why its ledger entry says 7200. Against the 240 s stall detector that is a
+    # timeout, and a timeout is not a verdict: it was reported `not provable here` with a reason that
+    # named the prover's clock rather than the criterion. Routed to the build-backed proof instead,
+    # where a real tree answers the question.
+    if criterion.timeout_s > criteria_module.DEFAULT_TIMEOUT_S:
+        return (f"its ledger asks for {criterion.timeout_s} s, past the {criteria_module.DEFAULT_TIMEOUT_S} s "
+                "default: it fetches or builds, and the sandbox is source only")
     return ""
 
 
@@ -892,6 +911,14 @@ TREE_CONTROL_TIMEOUT_S = 300
 #: the samples and the four-profile builds — minutes rather than seconds.
 BUILD_PROOF_TIMEOUT_S = 3600
 
+#: `--budget`, in seconds, when a run wants a tighter cap than a criterion's own. A criterion that
+#: runs out of it is reported unjudged rather than red: a clock is not a verdict.
+_BUILD_BUDGET: list[int] = []
+
+
+def build_budget() -> int:
+    return _BUILD_BUDGET[0] if _BUILD_BUDGET else BUILD_PROOF_TIMEOUT_S
+
 
 def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
                          timeout_s: int) -> tuple[int, str]:
@@ -905,6 +932,12 @@ def run_in_the_repository(criterion: criteria_module.Criterion, build_dir: str,
     """
     if os.environ.get("CY_FALSIFY"):
         return -1, "refusing to nest: a prover is already running"
+    if criterion.kind in ("path", "tiers"):
+        # NOT `bash -c criterion.run`: these kinds carry no shell at all, and an empty command exits
+        # ZERO. Reading the repository through the same evaluator the sandbox uses IS the control;
+        # running an empty string reported every artefact and every tier claim as green in the tree,
+        # which is this module's own defect committed inside the control that exists to catch it.
+        return Sandbox(REPO_ROOT).run(criterion)
     if _RUNS_THE_ROADMAP_TOOLING.search(without_comments(criterion.run)):
         return -1, "a criterion that runs this module cannot be controlled by running it again"
     environment = {key: value for key, value in os.environ.items() if not key.startswith("CY_")}
@@ -934,7 +967,7 @@ def _red_in_the_tree(criterion: criteria_module.Criterion, code: int, output: st
     tree_code, tree_output = run_in_the_repository(criterion, "", TREE_CONTROL_TIMEOUT_S)
     if tree_code < 0:
         return finished(UNPROVABLE, "-", f"red in the sandbox, and the tree control cannot run: "
-                                         f"{tree_output}")
+                                         f"{tree_output}", unjudged=True)
     if tree_code == 124:
         return finished(UNPROVABLE, "-", "red in the sandbox, and the tree control did not finish "
                                          f"within {TREE_CONTROL_TIMEOUT_S} s")
@@ -963,11 +996,11 @@ def _prove_against_a_build(criterion: criteria_module.Criterion, build_dir: str,
     to break.
     """
     if not build_dir:
-        return finished(UNPROVABLE, mutation.describe() if mutation else "-", blocked)
-    budget = min(BUILD_PROOF_TIMEOUT_S, criterion.timeout_s or BUILD_PROOF_TIMEOUT_S)
+        return finished(UNPROVABLE, mutation.describe() if mutation else "-", blocked, unjudged=True)
+    budget = min(build_budget(), criterion.timeout_s or BUILD_PROOF_TIMEOUT_S)
     code, output = run_in_the_repository(criterion, build_dir, budget)
     if code < 0:
-        return finished(UNPROVABLE, "-", f"{blocked}; and {output}")
+        return finished(UNPROVABLE, "-", f"{blocked}; and {output}", unjudged=True)
     if code == 124:
         return finished(UNPROVABLE, "-", f"against {build_dir} it did not finish within {budget} s")
     if code != 0:
@@ -993,9 +1026,9 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
     """
     started = time.monotonic()
 
-    def finished(verdict: str, mutation: str, detail: str) -> Proof:
+    def finished(verdict: str, mutation: str, detail: str, unjudged: bool = False) -> Proof:
         return Proof(ledger, criterion.id, digest(criterion), verdict, mutation, detail,
-                     round(time.monotonic() - started, 2))
+                     round(time.monotonic() - started, 2), unjudged)
 
     # THE STATIC RULES DECIDE FIRST, and they have to, because the shapes they name are exactly the
     # ones a sandbox cannot reach: `just test-render -R <suite>` selects nothing and passes, and the
@@ -1213,9 +1246,11 @@ _INVENTORY_HEADER = '''# What the ladder has shown can FAIL, and what it has not
 BUILD_DIR_VARIABLE = "CY_FALSIFY_BUILD_DIR"
 
 
-def prove_the_ladder(ledgers=(), build_dir: str = "") -> list[Proof]:
+def prove_the_ladder(ledgers=(), build_dir: str | None = None) -> list[Proof]:
     """Run every proof, in one sandbox. Two seconds for the whole ladder, so a gate can afford it."""
-    with tempfile.TemporaryDirectory(prefix="cy-falsify-") as directory:
+    if build_dir is None:
+        build_dir = os.environ.get(BUILD_DIR_VARIABLE, "")
+    with tempfile.TemporaryDirectory(prefix="cy-falsify-", ignore_cleanup_errors=True) as directory:
         sandbox = Sandbox.materialise(Path(directory) / "tree")
         return _prove_all(sandbox, tuple(ledgers), "", build_dir)
 
@@ -1261,7 +1296,7 @@ def reconcile(observed: list[Proof], inventory: Inventory) -> list[str]:
             # would turn every laptop's `just roadmap-test` red over a proof that is not in question.
             # The run that CAN re-earn it is the one with a build: `prove --build-dir`, or
             # `CY_FALSIFY_BUILD_DIR` in the environment of `check`. Anything else is a finding.
-            if recorded.verdict == RED_WITH_A_BUILD and proof.verdict == UNPROVABLE:
+            if proof.unjudged:
                 continue
             findings.append(
                 f"{label}: is recorded as {recorded.verdict} and no longer proves — "
@@ -1334,10 +1369,12 @@ def command_audit(arguments: argparse.Namespace) -> int:
 
 def command_prove(arguments: argparse.Namespace) -> int:
     build_dir = arguments.build_dir or os.environ.get(BUILD_DIR_VARIABLE, "")
+    if arguments.budget:
+        _BUILD_BUDGET[:] = [arguments.budget]
     if build_dir and not (REPO_ROOT / build_dir).is_dir():
         print(f"falsify: no build tree at {build_dir}", file=sys.stderr)
         return 2
-    with tempfile.TemporaryDirectory(prefix="cy-falsify-") as directory:
+    with tempfile.TemporaryDirectory(prefix="cy-falsify-", ignore_cleanup_errors=True) as directory:
         sandbox = Sandbox.materialise(Path(directory) / "tree")
         proofs = _prove_all(sandbox, tuple(arguments.milestone), arguments.only, build_dir)
     counts: dict[str, int] = {}
@@ -1393,8 +1430,8 @@ def _record(proofs: list[Proof], ledgers: tuple[str, ...], baseline: bool = Fals
         # not flag it: this run had no build and did not judge it. It is re-earned, or contradicted,
         # by a run that has one.
         standing_proof = inventory.proofs.get(key)
-        if (standing_proof is not None and standing_proof.verdict == RED_WITH_A_BUILD
-                and standing_proof.digest == proof.digest and proof.verdict == UNPROVABLE):
+        if (proof.unjudged and standing_proof is not None
+                and standing_proof.digest == proof.digest):
             continue
         standing = inventory.unproven.get(key)
         if not baseline and (standing is None or standing.digest != proof.digest):
@@ -1457,6 +1494,9 @@ def _parser() -> argparse.ArgumentParser:
         help="a BUILT tree to judge the criteria a source-only sandbox cannot run against. They are "
              "run unmutated, in the repository, and a failure is recorded as observed rather than "
              f"argued. Also read from {BUILD_DIR_VARIABLE}")
+    prove_command.add_argument(
+        "--budget", type=int, default=0,
+        help="seconds a build-backed criterion gets, when that is tighter than its own timeout_s")
     prove_command.add_argument("--verbose", action="store_true", help="print the proven ones too")
     prove_command.set_defaults(handler=command_prove)
 
