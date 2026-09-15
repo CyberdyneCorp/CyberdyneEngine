@@ -226,6 +226,7 @@ Status FrameAssembly::decide_features(const AssemblyView& /*view*/, FrameFeature
     }
 
     features = FrameFeatures{};
+    features.depth_prepass = description_.depth_prepass;
     features.ambient_occlusion = config.ambient_occlusion;
     features.screen_space_reflections = config.screen_space_reflections;
     features.temporal = config.temporal_antialiasing || config.temporal_upscaling;
@@ -498,7 +499,8 @@ Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyRep
         // samples one.
         if (selection.selected != ShadowMode::Virtual &&
             selection.selected != ShadowMode::Conventional &&
-            selection.selected != ShadowMode::RayTraced && selection.selected != ShadowMode::Hybrid) {
+            selection.selected != ShadowMode::RayTraced &&
+            selection.selected != ShadowMode::Hybrid) {
             continue;
         }
         for (u8 level = 0; level < kShadowLevels; ++level) {
@@ -522,9 +524,9 @@ Status FrameAssembly::request_shadow_pages(const AssemblyView& view, AssemblyRep
             FallbackOptions options;
             options.tail_level = 0;
             options.coarser_levels = kShadowLevels;
-            options.approximation_available =
-                view.shadow_profile.traced || selection.selected == ShadowMode::Hybrid ||
-                selection.selected == ShadowMode::RayTraced;
+            options.approximation_available = view.shadow_profile.traced ||
+                                              selection.selected == ShadowMode::Hybrid ||
+                                              selection.selected == ShadowMode::RayTraced;
             const FallbackResult resolved =
                 resolve_shadow_lookup(shadows_, frame_index_, page, options);
             out.shadow_substitutions.record(resolved.substitution);

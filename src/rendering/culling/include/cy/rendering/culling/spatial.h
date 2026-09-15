@@ -68,6 +68,20 @@ enum SpatialFlagBits : u32 {
     kSpatialCastsShadow = 1U << 6U,
     /// `rendering-culling-and-lod`: "Instances MAY opt out with an `IgnoreOcclusion` flag."
     kSpatialIgnoreOcclusion = 1U << 7U,
+    /// The instance's vertices come from the skinning pass's output rather than from its mesh.
+    /// Mirrors `render::kInstanceSkinned`.
+    ///
+    /// M11.c task 5.6, AND IT IS HERE BECAUSE NOTHING DECIDED IT. `src/rendering/skinning/README.md`
+    /// recorded the absence at M6 and it did not move for five milestones: "there is no
+    /// per-instance skinning table, no `kSpatialSkinned` bit and no route from
+    /// `render::kInstanceSkinned` to a shader; `GpuDrawInstance::flags` is still never written by
+    /// `build_draw_list`". The bit is the route's first step — the broad phase already loads this
+    /// word per instance, so carrying it costs nothing a frame does not already pay.
+    kSpatialSkinned = 1U << 8U,
+    /// Drawn with no back-face cull. Mirrors `render::kInstanceTwoSided`, and it travels with the
+    /// skinned bit because both are read out of `GpuDrawInstance::flags` by the same shader for the
+    /// same reason: one word rather than a whole instance record for one bit.
+    kSpatialTwoSided = 1U << 9U,
 };
 
 /// Which index an entry belongs to. A volume is a light, a probe, a decal, a GI volume or a fog

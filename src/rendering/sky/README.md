@@ -152,6 +152,26 @@ granularities because a cell that changed and a state that changed fail differen
   not, which is why suppressing `publish()` did not move them. `test_cloud_shadows.cpp` now reads
   back every cell at both levels and compares the extremes with the producer's own `stats()`; both
   halves go red when `publish()` is suppressed.
+
+  **AND THAT REPAIR WAS REFUTED IN TURN, WHICH IS WHY THE GAP STAYED OPEN THROUGH M11.a AND CLOSED AT
+  M11.c.** The rewrite reads through `FieldStore::sample_at(field, position, level)` with an explicit
+  residency, which is a better test of the STORE and is no longer a test of the function the
+  requirement's four consumers call. M11.a's own gate proved it: it replaced the body of
+  `CloudShadowField::sample` with `return 1.0F` — the literal symptom the gap names — rebuilt, and
+  the criterion stayed GREEN, because the only call to that function left in the suite was one probe
+  nine million metres from anything. The case now walks the same cell centres a SECOND time through
+  `CloudShadowField::sample` and compares the two answers: `through CloudShadowField::sample: 5120
+  samples, lowest 0.00392157, highest 1, disagreeing 0`. Not one cell reads one number through the
+  consumer path and another through the store.
+
+* **THE FIELD HAS A CONSUMER OUTSIDE THIS DIRECTORY, AND UNTIL M11.c IT HAD NONE.**
+  `CloudShadowField::declare_consumers()` has declared terrain, foliage, water and illumination to
+  the registry since M10 and `FieldRegistry::validate()` has been happy with all four, because
+  declaring a consumer is a configuration entry. `src/rendering/lighting/src/cloud_shadow.cpp` is
+  illumination's half: it attenuates a DIRECTIONAL light's illuminance by
+  `CloudShadowField::sample`, and `integration.render_illumination_clouds` searches the written
+  ground for the darkest and the brightest cell and reports both — 10 980 lux under the cloud against
+  100 000 beside it. Terrain, foliage and water are still declared and still do not sample.
 * **The lighting integral's cloud term is a hemispherical mean.** `compose_sky_lighting()` measures
   the clouds' effect over twelve probes and applies one attenuation plus one addition. It is right in
   magnitude — thicker cover gives less irradiance — and wrong in DIRECTION: a cloud bank on one

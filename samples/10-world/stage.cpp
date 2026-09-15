@@ -6,8 +6,13 @@
 #include <cy/backends/rhi/pipeline.h>
 #include <cy/backends/rhi/validation.h>
 #include <cy/core/math/projection.h>
+#include <cy/rendering/assembly/capture_manifest.h>
+#include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/pipeline/frame_bindings.h>
+#include <cy/rendering/pipeline/frame_pipelines.h>
+#include <cy/rendering/pipeline/frame_recorder.h>
 #include <cy/water/shading.h>
 
 #if defined(CY_SAMPLE_WORLD_VULKAN)
@@ -20,6 +25,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <new>
 
 namespace cy::sample::world {
@@ -30,11 +37,40 @@ using cy::rendering::ResourceId;
 using rhi::Access;
 using rhi::QueueKind;
 
+// THE FRAME'S OWN VOCABULARY, brought in by name. M11.c task 3.1: before this rung
+// `samples/10-world` linked `cy::rendering-graph`, `cy::rendering-sky` and `cy::rhi` and NOTHING
+// ELSE under `src/rendering/`, so the largest picture this project publishes went through no
+// assembled frame, no tone mapping and no post chain at all. These are what that sentence stops
+// being true.
+using cy::rendering::FramePassKind;
+using cy::rendering::kInvalidResource;
+using cy::rendering::assembly::AssemblyDescription;
+using cy::rendering::assembly::AssemblyReport;
+using cy::rendering::assembly::AssemblyView;
+using cy::rendering::assembly::CaptureManifest;
+using cy::rendering::assembly::CaptureProvenance;
+using cy::rendering::assembly::CapturePurpose;
+using cy::rendering::assembly::FrameAssembly;
+using cy::rendering::assembly::FrameSinks;
+using cy::rendering::pipeline::FrameBindings;
+using cy::rendering::pipeline::FramePipelineKind;
+using cy::rendering::pipeline::FramePipelines;
+using cy::rendering::pipeline::GlobalsData;
+
+/// The frame's HDR scene colour, which is what makes tone mapping a transformation rather than a
+/// no-op: the world's own shading writes radiance here and the resolve is what turns it into
+/// something a display can show.
+constexpr rhi::Format kSceneFormat = rhi::Format::Rgba16Sfloat;
+constexpr rhi::Format kOutputFormat = rhi::Format::Rgba8Unorm;
+
 /// The sky dome's radius, in metres. Inside the far plane and outside everything else, so the dome
 /// is depth-tested like any other geometry and no second pipeline state is needed for it.
 constexpr f32 kSkyRadius = 9'000.0F;
 constexpr f32 kFarPlane = 24'000.0F;
 constexpr f32 kNearPlane = 1.0F;
+/// The vertical field of view, in radians. Named because three places need the same number now:
+/// the projection, the cull view and the cluster grid's slice mapping.
+constexpr f32 kFieldOfView = 0.95F;
 
 /// The most plants drawn in one frame, and the distance beyond which none is.
 ///
@@ -128,6 +164,9 @@ void record_draw(const PassContext& context, void* user) noexcept {
     color.view = state->executor->view(state->color);
     color.load = rhi::LoadOp::Clear;
     color.store = rhi::StoreOp::Store;
+    // THE TARGET IS THE ASSEMBLED FRAME'S SCENE COLOUR NOW, not a texture this file created. It is
+    // `Rgba16Sfloat` and linear, and the values written into it are radiance rather than display
+    // values — which is what makes the post chain's exposure and tonemap stages do something.
     // Black, and NOT a stand-in sky: the dome covers every pixel the world does not, so a frame in
     // which black is visible is a frame in which the dome failed to draw — which is information a
     // plausible clear colour would have hidden.
@@ -178,6 +217,55 @@ void record_readback(const PassContext& context, void* user) noexcept {
     region.texture_extent = rhi::Extent3D{state->width, state->height, 1};
     context.commands->copy_texture_to_buffer(state->executor->texture(state->color), state->buffer,
                                              Span<const rhi::BufferTextureCopy>(&region, 1));
+}
+
+/// What the tonemapping resolve reads. `cy::rendering-pipeline` owns the pipeline and the sets;
+/// this records the one triangle that runs them.
+struct ResolveState {
+    const cy::rendering::GraphExecutor* executor = nullptr;
+    FramePipelines* pipelines = nullptr;
+    FrameBindings* bindings = nullptr;
+    ResourceId scene = kInvalidResource;
+    ResourceId output = kInvalidResource;
+    u32 width = 0;
+    u32 height = 0;
+};
+
+/// THE POST CHAIN, RECORDED. M11.c task 3.1.
+///
+/// `cy/fullscreen.slang`'s resolve — the engine's own, the same one `cy::rendering-pipeline` binds
+/// for every other caller — divides the scene colour by the exposure the globals block carries and
+/// runs the tonemap curve `rendering-post-processing` fixes at step 12. Before this rung the world
+/// picture reached its PNG straight out of the rasteriser, so `exposure_stops` in the block below
+/// is the first exposure this artefact has ever had.
+void record_resolve(const PassContext& context, void* user) noexcept {
+    auto* state = static_cast<ResolveState*>(user);
+    // The scene colour is a transient the graph realised a moment ago, so its view cannot be named
+    // before this point — the same reason `FrameRecorder` writes the pass set here.
+    if (Status bound = state->bindings->bind_scene_color(state->executor->view(state->scene));
+        !bound) {
+        return;
+    }
+    rhi::RenderAttachment color;
+    color.view = state->executor->view(state->output);
+    color.load = rhi::LoadOp::Clear;
+    color.store = rhi::StoreOp::Store;
+    color.clear.color[3] = 1.0F;
+
+    rhi::RenderingInfo info;
+    info.render_area = rhi::Rect2D{0, 0, state->width, state->height};
+    info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
+
+    context.commands->begin_rendering(info);
+    context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
+                                                 static_cast<f32>(state->height), 0.0F, 1.0F});
+    context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
+    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
+    context.commands->bind_graphics_pipeline(
+        state->pipelines->pipeline(FramePipelineKind::Resolve));
+    // One oversized triangle from `SV_VertexID`; the resolve pipeline has no vertex bindings.
+    context.commands->draw(3, 1, 0, 0);
+    context.commands->end_rendering();
 }
 
 void count_validation(rhi::ValidationSeverity severity, const char* message, void* user) noexcept {
@@ -246,7 +334,7 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
 /// Everything that needs a device, so the header names none of it and a build without the Vulkan
 /// backend still compiles this file.
 struct Stage::Device {
-    Device() noexcept = default;
+    explicit Device(Allocator& allocator) noexcept : assembly(allocator) {}
 
     Expected<rhi::Device*, Error> handle = fail(ErrorCode::Unavailable, "not created");
     rhi::BackendSelection selection{};
@@ -263,6 +351,23 @@ struct Stage::Device {
     rhi::BufferHandle dynamic_colours;
     rhi::BufferHandle dynamic_indices;
     rhi::BufferHandle readback;
+
+    // --- THE ASSEMBLED FRAME. M11.c task 3.1. --------------------------------------------------
+    //
+    // `FrameAssembly` is the renderer's own frame: the post chain decides the feature set, the
+    // temporal framework advances one jitter, the shadow cache spends its budget, the sky table
+    // updates, and thirteen stages go into the graph in the specification's order. This program
+    // supplies the record callback for the stage its geometry belongs in and `cy::rendering-
+    // pipeline` supplies the tonemapping resolve; neither existed in this file before M11.c.
+    FrameAssembly assembly;
+    FramePipelines pipelines;
+    FrameBindings bindings;
+    /// The display-referred image the resolve writes and the readback copies. Imported into the
+    /// frame every frame, because the resolve clears it.
+    rhi::TextureHandle output;
+    /// The sun, as the frame's light list. One directional light, which is what this world has.
+    cy::render::LightDescription sun;
+    bool frame_ready = false;
 };
 
 Stage::Stage(Allocator& allocator) noexcept
@@ -295,7 +400,7 @@ const char* Stage::absence() const noexcept {
 Status Stage::open(u32 width, u32 height) noexcept {
     width_ = width;
     height_ = height;
-    device_ = new (std::nothrow) Device();
+    device_ = new (std::nothrow) Device(*allocator_);
     if (device_ == nullptr) {
         return fail(ErrorCode::OutOfMemory, "the stage did not allocate");
     }
@@ -371,8 +476,13 @@ Status Stage::create_pipeline() noexcept {
                                                 {1, 0, rhi::Format::Rgb32Sfloat, sizeof(Vec3)},
                                                 {2, 1, rhi::Format::Rgb32Sfloat, 0}};
 
+    // THE FRAME'S SCENE COLOUR AND NOT THE SWAPCHAIN'S FORMAT. M11.c task 3.1: this pipeline now
+    // draws into `FrameResources::color`, which is linear `Rgba16Sfloat`, and the tonemapping
+    // resolve is what produces the 8-bit image. A pipeline created for `Rgba8Unorm` against an
+    // `Rgba16Sfloat` attachment is a dynamic-rendering format mismatch — a validation error at draw
+    // time from a pipeline created long before.
     rhi::ColorAttachmentState color;
-    color.format = rhi::Format::Rgba8Unorm;
+    color.format = kSceneFormat;
 
     rhi::GraphicsPipelineDescription pipeline;
     pipeline.name = "world";
@@ -406,7 +516,112 @@ Status Stage::create_pipeline() noexcept {
         return make_unexpected(buffer.error());
     }
     device_->readback = *buffer;
-    return pixels_.resize(static_cast<usize>(width_) * height_);
+    if (Status sized = pixels_.resize(static_cast<usize>(width_) * height_); !sized) {
+        return sized;
+    }
+    return create_frame();
+}
+
+// ================================================================================================
+// THE ASSEMBLED FRAME. M11.c task 3.1.
+// ================================================================================================
+//
+// THE SENTENCE THIS METHOD EXISTS TO MAKE FALSE, from this rung's own ledger: "`samples/10-world`
+// links neither `cy::rendering-assembly` nor the post, temporal, forward or shadow libraries, so
+// the world picture never passes through tone mapping or anti-aliasing at all."
+//
+// WHAT IS CLAIMED, AND IT IS NARROWER THAN "THE WORLD GOES THROUGH THE RENDERER". The frame is the
+// engine's: `FrameAssembly` decides the feature set from the post chain, advances the temporal
+// framework, requests the sun's shadow pages, updates the sky table and declares the stages into
+// the render graph, and `cy::rendering-pipeline`'s resolve tonemaps the result. The GEOMETRY is
+// still this file's — the world is not in a mesh table, its vertices are not the render server's
+// three streams, and its shading is still per-vertex colour computed on the processor. So this
+// program draws ITS geometry INSIDE the engine's frame through `FrameSinks::passes`, which is
+// exactly the seam `ForwardFrame` documents: "ForwardFrame knows the frame STRUCTURE and the caller
+// knows how to draw".
+//
+// WHAT IS STILL ABSENT AND IS NOT CLAIMED: no anti-aliasing. `FramePassKind::Temporal` is declared
+// by the frame and NOTHING IN THIS TREE RECORDS IT — there is no temporal resolve shader anywhere
+// under `src/rendering/` — so switching `temporal_antialiasing` on here would put a stage in the
+// manifest that no pass ran, which is the exact dishonesty `capture_manifest.h` exists to detect.
+// The chain this frame runs is the three unconditional stages, and the manifest says three.
+
+Status Stage::create_frame() noexcept {
+    rhi::Device& device = *device_->handle.value();
+
+    AssemblyDescription description;
+    description.width = width_;
+    description.height = height_;
+    description.near_plane = kNearPlane;
+    description.far_plane = kFarPlane;
+    description.clusters = cy::rendering::ClusterGridConfig{16, 8, 24};
+    description.color_format = kSceneFormat;
+    description.depth_format = rhi::Format::D32Sfloat;
+    description.material_capacity = 4;
+    description.max_draws = 16;
+    description.max_instances = 16;
+    // No instances reach the cull — see the header note — so the device dispatch would be a
+    // dispatch over nothing. The CPU path is the same answer at no cost.
+    description.gpu_culling = false;
+    // NO DEPTH PREPASS, and the reason is a validation hazard rather than a preference: this
+    // program's geometry is not in the frame's draw list — it draws its own buffers in the opaque
+    // stage — so a declared prepass would record nothing, and the opaque pass's `LoadOp::Clear` on
+    // a depth target the graph had barriered for a READER is a write-after-write the
+    // synchronisation validator reports three times a frame. With the prepass off, `ForwardFrame`
+    // declares the opaque pass as the depth WRITER, which is what this frame actually is.
+    description.depth_prepass = false;
+    // THE LOWEST SKY TABLE, DELIBERATELY. This world composes its own sky on the processor, dome
+    // vertex by dome vertex, and the assembly's table is read only for the frame's ambient term.
+    // A higher quality here would be a second atmosphere integration per frame for a number one
+    // shader reads.
+    description.sky = cy::rendering::sky::SkyTableQuality::Low;
+    // PINNED, because a capture has to be reproducible: `m10:world-still` requires two runs at one
+    // seed to draw the byte-identical still, and `temporal-rendering`'s determinism requirement is
+    // what makes that a property of the engine rather than of the machine.
+    description.pin_jitter = true;
+    if (Status made = device_->assembly.initialize(description); !made) {
+        return made;
+    }
+    if (Status attached = device_->assembly.attach_device(device); !attached) {
+        return attached;
+    }
+
+    cy::rendering::pipeline::PipelineSetup setup;
+    setup.color_format = kSceneFormat;
+    setup.depth_format = rhi::Format::D32Sfloat;
+    setup.output_format = kOutputFormat;
+    // Neither is recorded by this program: its geometry is one opaque pass of its own, and the
+    // layer's transparent pipeline would be a pipeline state created for a pass nothing binds.
+    setup.transparency = false;
+    if (Status made = device_->pipelines.initialize(device, setup); !made) {
+        return made;
+    }
+
+    Expected<cy::rendering::ClusterGrid, Error> grid = cy::rendering::make_cluster_grid(
+        description.clusters, width_, height_, kNearPlane, kFarPlane);
+    if (!grid.has_value()) {
+        return make_unexpected(grid.error());
+    }
+    const cy::rendering::pipeline::BindingCapacity capacity =
+        cy::rendering::pipeline::BindingCapacity::for_grid(*grid, description.max_draws,
+                                                           description.max_instances,
+                                                           description.material_capacity, 4);
+    if (Status made = device_->bindings.initialize(device, device_->pipelines, capacity); !made) {
+        return made;
+    }
+
+    rhi::TextureDescription output;
+    output.name = "world output";
+    output.format = kOutputFormat;
+    output.extent = rhi::Extent3D{width_, height_, 1};
+    output.usage = rhi::TextureUsage::ColorAttachment | rhi::TextureUsage::TransferSource;
+    Expected<rhi::TextureHandle, Error> created = device.create_texture(output);
+    if (!created.has_value()) {
+        return make_unexpected(created.error());
+    }
+    device_->output = *created;
+    device_->frame_ready = true;
+    return ok();
 }
 
 Status Stage::stage_world(const World& world) noexcept {
@@ -794,68 +1009,92 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     out.build_ms = now_millis() - mark;
 
     mark = now_millis();
-    if (Expected<u32, Error> began = device.begin_frame(); !began) {
+    const Expected<u32, Error> began = device.begin_frame();
+    if (!began) {
         return make_unexpected(began.error());
     }
+    const u32 slot = *began;
 
     cy::rendering::RenderGraph graph(*allocator_);
-    cy::rendering::GraphExecutor executor(*allocator_, device);
-
-    cy::rendering::TextureRequest color_request;
-    color_request.name = "world colour";
-    color_request.format = rhi::Format::Rgba8Unorm;
-    color_request.width = width_;
-    color_request.height = height_;
-    const ResourceId color = graph.create_texture(color_request);
-
-    cy::rendering::TextureRequest depth_request;
-    depth_request.name = "world depth";
-    depth_request.format = rhi::Format::D32Sfloat;
-    depth_request.width = width_;
-    depth_request.height = height_;
-    const ResourceId depth = graph.create_texture(depth_request);
-
-    cy::rendering::BufferRequest readback_request;
-    readback_request.name = "world colour readback";
-    readback_request.size = static_cast<u64>(width_) * height_ * sizeof(u32);
-    readback_request.extra_usage = rhi::BufferUsage::TransferDestination;
-    const ResourceId color_out = graph.import_buffer(readback_request, device_->readback);
 
     const WorldVec3d middle = world.centre();
     const Vec3 relative_eye{static_cast<f32>(eye.x - middle.x), static_cast<f32>(eye.y),
                             static_cast<f32>(eye.z - middle.z)};
     const Vec3 relative_target{static_cast<f32>(target.x - middle.x), static_cast<f32>(target.y),
                                static_cast<f32>(target.z - middle.z)};
-    const Mat4 projection = perspective_reversed_z(
-        0.95F, static_cast<f32>(width_) / static_cast<f32>(height_), kNearPlane, kFarPlane);
-    const Mat4 world_to_clip = projection * look_at(relative_eye, relative_target);
+    const f32 aspect = static_cast<f32>(width_) / static_cast<f32>(height_);
+    const Mat4 projection = perspective_reversed_z(kFieldOfView, aspect, kNearPlane, kFarPlane);
+    const Mat4 camera = look_at(relative_eye, relative_target);
+    const Mat4 world_to_clip = projection * camera;
 
-    WorldPush view;
+    const Lighting& lighting = world.lighting();
+
+    // --- The view the assembly is handed -------------------------------------------------------
+    //
+    // ONE DIRECTIONAL LIGHT, AND IT IS THE WORLD'S OWN SUN rather than a light invented for the
+    // frame. `lighting.sun_travel` points FROM the surface TO the sun, which is what both the
+    // assembly's sky table and this file's shader mean by it, so the frame's shadow request, its
+    // ambient term and the picture's own shading cannot disagree about where the sun is.
+    device_->sun.kind = cy::render::LightKind::Directional;
+    device_->sun.transform = cy::Transform::identity();
+    device_->sun.transform.rotation =
+        cy::Quat::from_to(Vec3{0.0F, 0.0F, -1.0F}, -normalised(lighting.sun_travel));
+    device_->sun.intensity = 100'000.0F;
+    device_->sun.color[0] = lighting.sun_colour.x;
+    device_->sun.color[1] = lighting.sun_colour.y;
+    device_->sun.color[2] = lighting.sun_colour.z;
+    device_->sun.casts_shadow = true;
+    device_->sun.stable_id = 1;
+
+    AssemblyView view;
+    view.fov_y_radians = kFieldOfView;
+    view.projection = projection;
+    view.view = camera;
+    view.cull.frustum = cy::Frustum::from_view_projection(world_to_clip);
+    view.cull.camera_position = relative_eye;
+    view.cull.camera_forward = normalised(relative_target - relative_eye);
+    view.cull.fov_y_radians = kFieldOfView;
+    view.lights = Span<const cy::render::LightDescription>(&device_->sun, 1);
+    view.sun_direction = normalised(lighting.sun_travel);
+
+    // IMPORTED WITH `Undefined`, and that is the truth rather than a shortcut: the resolve clears
+    // the image, so last frame's contents are discarded and the graph derives the transition from
+    // there.
+    cy::rendering::TextureRequest output_request;
+    output_request.name = "world output";
+    output_request.format = kOutputFormat;
+    output_request.width = width_;
+    output_request.height = height_;
+    output_request.extra_usage = rhi::TextureUsage::TransferSource;
+    view.output =
+        graph.import_texture(output_request, device_->output, rhi::ImageLayout::Undefined);
+
+    // --- What this program records into the frame ----------------------------------------------
+
+    WorldPush push;
     for (usize row = 0; row < 4; ++row) {
         const Vec4 values = world_to_clip.row(row);
         switch (row) {
             case 0:
-                write_row(view.row0, values);
+                write_row(push.row0, values);
                 break;
             case 1:
-                write_row(view.row1, values);
+                write_row(push.row1, values);
                 break;
             case 2:
-                write_row(view.row2, values);
+                write_row(push.row2, values);
                 break;
             default:
-                write_row(view.row3, values);
+                write_row(push.row3, values);
                 break;
         }
     }
-    const Lighting& lighting = world.lighting();
-    write_vec3(view.light, lighting.sun_travel, 0.0F);
-    write_vec3(view.eye, relative_eye, 0.0F);
-    write_vec3(view.sun, lighting.sun_colour, 0.0F);
-    write_vec3(view.ambient, lighting.ambient, 0.0F);
+    write_vec3(push.light, lighting.sun_travel, 0.0F);
+    write_vec3(push.eye, relative_eye, 0.0F);
+    write_vec3(push.sun, lighting.sun_colour, 0.0F);
+    write_vec3(push.ambient, lighting.ambient, 0.0F);
 
     DrawState state;
-    state.executor = &executor;
     state.pipeline = device_->pipeline;
     state.layout = device_->layout;
     state.static_vertices = device_->static_vertices;
@@ -864,8 +1103,6 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     state.dynamic_vertices = device_->dynamic_vertices;
     state.dynamic_colours = device_->dynamic_colours;
     state.dynamic_indices = device_->dynamic_indices;
-    state.color = color;
-    state.depth = depth;
     state.width = width_;
     state.height = height_;
 
@@ -874,74 +1111,209 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     state.runs[0].first_index = sky_first_index_;
     state.runs[0].index_count = sky_index_count_;
     state.runs[0].dynamic = true;
-    state.runs[0].push = view;
+    state.runs[0].push = push;
     state.runs[0].push.eye[3] = 1.0F;
 
     state.runs[1].first_index = 0;
     state.runs[1].index_count = terrain_indices_;
     state.runs[1].dynamic = false;
-    state.runs[1].push = view;
+    state.runs[1].push = push;
 
     state.runs[2].first_index = water_first_index_;
     state.runs[2].index_count = water_index_count_;
     state.runs[2].dynamic = true;
-    state.runs[2].push = view;
+    state.runs[2].push = push;
     // The specular lobe is water's alone. See the shader.
     state.runs[2].push.sun[3] = 24.0F;
 
     state.runs[3].first_index = star_first_index_;
     state.runs[3].index_count = star_index_count_;
     state.runs[3].dynamic = true;
-    state.runs[3].push = view;
+    state.runs[3].push = push;
     state.runs[3].push.eye[3] = 1.0F;
 
     state.runs[4].first_index = foliage_first_index_;
     state.runs[4].index_count = foliage_index_count_;
     state.runs[4].dynamic = true;
-    state.runs[4].push = view;
+    state.runs[4].push = push;
     state.run_count = 5;
 
+    ResolveState resolve;
+    resolve.pipelines = &device_->pipelines;
+    resolve.bindings = &device_->bindings;
+    resolve.width = width_;
+    resolve.height = height_;
+
+    // THE TWO CALLBACKS, AND WHICH STAGES THEY ARE ON. The world's geometry records in the frame's
+    // OPAQUE stage and the tonemapping resolve in its POST-PROCESS stage — the same two seams
+    // `FrameSinks` leaves for every other caller. Every other stage the frame declares runs with no
+    // callback, which `ForwardFrame` calls "a legitimate frame": this program has no transparent
+    // layer, no screen-space effects and no interface.
+    FrameSinks sinks;
+    sinks.passes[static_cast<usize>(FramePassKind::Opaque)] =
+        cy::rendering::FramePassCallback{&record_draw, &state};
+    sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
+        cy::rendering::FramePassCallback{&record_resolve, &resolve};
+
+    cy::rendering::SpatialIndex index(*allocator_);
+    AssemblyReport report;
+    if (Status assembled = device_->assembly.assemble(index, view, sinks, graph, report);
+        !assembled) {
+        (void)device.end_frame();
+        return assembled;
+    }
+    out.frame_passes = report.passes_declared;
+    out.post_stages = report.post_stages;
+
+    // The resources the callbacks draw into are the FRAME's, and they are named only after
+    // `assemble` has declared them.
+    const cy::rendering::FrameResources& resources = device_->assembly.resources();
+    state.color = resources.color;
+    state.depth = resources.depth;
+    resolve.scene = resources.color;
+    resolve.output = resources.output;
+
+    // --- The uploads the resolve reads ---------------------------------------------------------
+    //
+    // THE EXPOSURE IS CONTENT. M11.c task 3.3: `samples/10-world/frame.cypost` carries it, this
+    // file reads it, and the resolve divides by it before it tonemaps. A number typed here would
+    // be a grade nobody could change without a compiler.
+    GlobalsData globals;
+    globals.exposure_stops = exposure_stops_;
+    const u32 material_offsets[4] = {0, 0, 0, 0};
+    const cy::rendering::pipeline::FrameUpload upload = cy::rendering::pipeline::upload_for(
+        device_->assembly, report, world_to_clip, camera,
+        Span<const cy::rendering::pipeline::InstanceTransform>(), globals, material_offsets);
+    if (Status uploaded = device_->bindings.upload(slot, upload); !uploaded) {
+        (void)device.end_frame();
+        return uploaded;
+    }
+
+    // --- The read-back, declared as a write so the graph cannot cull it -------------------------
+
     ReadbackState readback;
-    readback.executor = &executor;
-    readback.color = color;
+    readback.color = resources.output;
     readback.buffer = device_->readback;
     readback.width = width_;
     readback.height = height_;
 
-    graph.add_pass("world draw", QueueKind::Graphics)
-        .write(color, Access::ColorAttachmentWrite)
-        .write(depth, Access::DepthStencilAttachmentWrite)
-        .record(&record_draw, &state);
+    cy::rendering::BufferRequest readback_request;
+    readback_request.name = "world colour readback";
+    readback_request.size = static_cast<u64>(width_) * height_ * sizeof(u32);
+    readback_request.extra_usage = rhi::BufferUsage::TransferDestination;
+    const ResourceId color_out = graph.import_buffer(readback_request, device_->readback);
     graph.add_pass("world readback", QueueKind::Graphics)
-        .read(color, Access::TransferRead)
+        .read(readback.color, Access::TransferRead)
         .write(color_out, Access::TransferWrite)
         .record(&record_readback, &readback);
     graph.add_pass("world host", QueueKind::Graphics)
         .read(color_out, Access::HostRead)
         .side_effect();
     if (Status declared = graph.status(); !declared) {
+        (void)device.end_frame();
         return declared;
     }
 
     Status frame = ok();
-    if (Expected<cy::rendering::ExecutionResult, Error> executed = executor.execute(
-            graph, cy::rendering::CompileOptions{}, cy::rendering::ExecuteOptions{});
-        !executed) {
-        frame = make_unexpected(executed.error());
+    {
+        cy::rendering::GraphExecutor executor(*allocator_, device);
+        state.executor = &executor;
+        resolve.executor = &executor;
+        readback.executor = &executor;
+        frame = device_->assembly.execute(executor, graph, report);
+        if (frame) {
+            frame = device.wait_idle();
+        }
+        out.submit_ms = now_millis() - mark;
+        if (frame && png_path != nullptr) {
+            frame = write_png(png_path);
+        }
+        executor.release();
     }
-    if (frame) {
-        frame = device.wait_idle();
-    }
-    out.submit_ms = now_millis() - mark;
-    if (frame && png_path != nullptr) {
-        frame = write_png(png_path);
-    }
-    executor.release();
     if (Status ended = device.end_frame(); !ended && frame) {
         frame = ended;
     }
+
+    // --- WHAT THE FRAME SAYS IT DID ------------------------------------------------------------
+    //
+    // The manifest is built from `AssemblyReport` and from nothing this file believes. It is a
+    // PUBLICATION capture because the artefact is published: `capture_manifest` refuses one whose
+    // frame never executed, and would refuse one taken while a budget arbiter was free to degrade
+    // it — this program runs no arbiter at all, which is what `arbiter_pinned` says here.
+    if (frame) {
+        CaptureProvenance provenance;
+        provenance.title = "samples/10-world";
+        provenance.purpose = CapturePurpose::Publication;
+        provenance.arbiter_pinned = true;
+        provenance.ev100 = -exposure_stops_;
+        provenance.quality = cy::rendering::post_quality_preset(cy::rendering::QualityLevel::High);
+        const Expected<CaptureManifest, Error> manifest = cy::rendering::assembly::capture_manifest(
+            device_->assembly.description(), report, provenance);
+        if (!manifest.has_value()) {
+            return make_unexpected(manifest.error());
+        }
+        out.manifest = *manifest;
+        out.manifest_valid = true;
+    }
+
     out.validation_errors = device_->validation_errors;
     return frame;
+}
+
+Status Stage::read_grade(const char* path) noexcept {
+    // THE GRADE IS A COMMITTED FILE AND NOT A DEFAULT IN THIS FUNCTION. A missing file is an error:
+    // a shot that silently fell back to zero stops is an ungraded shot photographed as a graded
+    // one, which is the same class of claim `capture_manifest` refuses one level up.
+    std::FILE* file = std::fopen(path, "r");
+    if (file == nullptr) {
+        return fail(ErrorCode::NotFound, "the committed grade could not be opened");
+    }
+    bool saw_exposure = false;
+    char line[256];
+    while (std::fgets(line, sizeof(line), file) != nullptr) {
+        if (line[0] == '#' || line[0] == '\n') {
+            continue;
+        }
+        char key[64] = {};
+        double value = 0.0;
+        if (std::sscanf(line, "%63[a-z_-] = %lf", key, &value) != 2) {
+            continue;
+        }
+        if (std::strcmp(key, "exposure-stops") == 0) {
+            exposure_stops_ = static_cast<f32>(value);
+            saw_exposure = true;
+        } else if (std::strcmp(key, "contrast") == 0) {
+            grade_contrast_ = static_cast<f32>(value);
+        } else if (std::strcmp(key, "saturation") == 0) {
+            grade_saturation_ = static_cast<f32>(value);
+        }
+    }
+    (void)std::fclose(file);
+    if (!saw_exposure) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the grade file names no `exposure-stops`, so the shot has no exposure");
+    }
+    return ok();
+}
+
+Status Stage::write_manifest(const StageReport& report, const char* path) const noexcept {
+    if (!report.manifest_valid) {
+        return fail(ErrorCode::InvalidArgument,
+                    "no frame executed, so there is no stage list to publish");
+    }
+    char text[4096] = {};
+    const Expected<usize, Error> written =
+        cy::rendering::assembly::write_capture_manifest(report.manifest, text, sizeof(text));
+    if (!written.has_value()) {
+        return make_unexpected(written.error());
+    }
+    std::FILE* file = std::fopen(path, "w");
+    if (file == nullptr) {
+        return fail(ErrorCode::Io, "the manifest could not be written");
+    }
+    const usize wrote = std::fwrite(text, 1, *written, file);
+    (void)std::fclose(file);
+    return wrote == *written ? ok() : fail(ErrorCode::Io, "the manifest was written short");
 }
 
 Status Stage::write_png(const char* path) noexcept {
@@ -967,6 +1339,14 @@ void Stage::close() noexcept {
     if (device_->handle.has_value()) {
         rhi::Device& device = *device_->handle.value();
         (void)device.wait_idle();
+        // THE FRAME'S OWN OBJECTS FIRST, and before the device is destroyed: both hold device
+        // handles and both state the same contract every device-owning object in this tree does.
+        device_->bindings.shutdown();
+        device_->pipelines.shutdown();
+        if (!device_->output.is_null()) {
+            device.destroy_texture(device_->output);
+            device_->output = rhi::TextureHandle{};
+        }
         device.destroy_graphics_pipeline(device_->pipeline);
         device.destroy_pipeline_layout(device_->layout);
         device.destroy_shader_module(device_->vertex);

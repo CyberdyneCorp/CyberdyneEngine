@@ -94,6 +94,12 @@ struct VisibleInstance {
     u32 lod_fade_to = kInvalidLod;
     f32 lod_fade = 0.0F;
     f32 importance = 1.0F;
+    /// The instance's `SpatialFlagBits`, carried out of the broad phase rather than looked up again.
+    ///
+    /// M11.c task 5.6. The word is loaded by `test_slot` to decide whether the instance is live at
+    /// all, so carrying it costs nothing; without it `build_draw_list` has no way to know whether a
+    /// survivor is skinned, and `GpuDrawInstance::flags` was written by nobody for five milestones.
+    u32 flags = 0;
 };
 
 /// `rendering-culling-and-lod` — "Culling diagnostics": "instances tested, rejected by layer,

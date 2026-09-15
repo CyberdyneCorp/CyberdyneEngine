@@ -40,6 +40,8 @@
 #include <cy/rendering/arbiter/subsystem.h>
 #include <cy/rendering/sky/budget.h>
 
+#include <cstring>
+
 namespace {
 
 using cy::f32;
@@ -56,6 +58,11 @@ using cy::rendering::sky::kSkyBudgetSubsystem;
 using cy::rendering::sky::SkyBudget;
 using cy::rendering::sky::SkyWorkload;
 
+/// How many rays a frame marches. Twenty thousand is a 960x540 cloud buffer at half resolution's
+/// worth, which puts the milliseconds this case reports in the range the arbiter's own constants
+/// were tuned for rather than three orders below `reserved_minimum_ms`.
+inline constexpr u64 kRays = 20000;
+
 /// One frame of sky work at a given size, as the counters would come back from the march.
 [[nodiscard]] SkyWorkload workload_of(u64 rays, u32 steps) {
     SkyWorkload work;
@@ -63,6 +70,19 @@ using cy::rendering::sky::SkyWorkload;
     work.cloud_light_samples = rays * (steps / 4U);
     work.shadow_density_samples = 4096;
     work.sky_view_rows = 4;
+    return work;
+}
+
+/// The same, DERIVED FROM THE TIER the controller currently holds — which is what a frame actually
+/// counts and what makes the reported cost respond to the arbiter's own decisions.
+[[nodiscard]] SkyWorkload workload_for(const cy::rendering::sky::SkyQualitySettings& settings) {
+    SkyWorkload work;
+    if (settings.volumetric_clouds) {
+        work.cloud_density_samples = kRays * settings.clouds.steps;
+        work.cloud_light_samples = kRays * settings.clouds.light_steps;
+    }
+    work.shadow_density_samples = 4096;
+    work.sky_view_rows = settings.sky_view_row_budget;
     return work;
 }
 
@@ -118,9 +138,11 @@ CY_TEST_CASE(
     report = arbiter.update();
     CY_CHECK_EQ(sky.cost_source(), CostSource::Measured);
     CY_CHECK_EQ(report.cost_source[static_cast<u32>(kSkyBudgetSubsystem)], CostSource::Measured);
-    CY_TEST_MESSAGE("cost source: sky reports ",
-                    cy::rendering::cost_source_name(
-                        report.cost_source[static_cast<u32>(kSkyBudgetSubsystem)]));
+    // The NAME too, because a report a person cannot read is a report nobody reads. doctest renders
+    // a `const char*` as its address, so it is compared rather than printed.
+    CY_CHECK(std::strcmp(cy::rendering::cost_source_name(
+                             report.cost_source[static_cast<u32>(kSkyBudgetSubsystem)]),
+                         "measured") == 0);
 
     // A CONSTANT IS NOT A MEASUREMENT, and it is the arbiter that says so rather than a reviewer.
     // This controller CLAIMS a measurement — it calls `report_measured_ms` — and reports the same
@@ -156,40 +178,66 @@ CY_TEST_CASE(
 }
 
 CY_TEST_CASE("the arbiter is fed measured costs and the allocation responds to them changing") {
-    // TWO RUNS OF ONE FRAME SEQUENCE, identical in everything except what the sky measured. If the
-    // allocation the sky receives is the same in both, the arbiter is arbitrating over a
-    // declaration and the measurement is decoration.
-    const auto run = [](u32 steps, f32& out_allocation, u32& out_position) {
+    // TWO RUNS OF ONE FRAME SEQUENCE. The work is identical, the frame time is identical, and the
+    // MACHINE differs: one run converts a sample into two nanoseconds and the other into forty,
+    // which is what a second GPU is. If the allocation the sky receives is the same in both, the
+    // arbiter is arbitrating over a declaration and the measurement is decoration.
+    //
+    // THE WORK IS DERIVED FROM THE TIER, which is what closes the loop and what the seven
+    // controllers in `samples/07-fidelity` cannot do: a cheaper tier marches fewer steps, so it
+    // takes fewer samples, so it reports a smaller cost — rather than a smaller number being looked
+    // up in a table indexed by the tier.
+    const auto run = [](f32 nanoseconds_per_sample, f32& out_allocation, u32& out_position,
+                        f32& out_cost) {
         BudgetArbiter arbiter;
         CY_REQUIRE(arbiter.configure(ArbiterConfig{}));
         SkyBudget sky;
         CY_REQUIRE(sky.declare(arbiter));
 
-        const SkyWorkload work = workload_of(20000, steps);
-        for (u32 frame = 0; frame < 96; ++frame) {
-            sky.observe(work, elapsed_for(work));
-            // The frame is over budget by the same amount in both runs: what differs between them
-            // is only what the SKY says it cost, which is the variable under test.
-            arbiter.report_frame_ms(18.0F);
+        // EIGHT FRAMES, WHICH IS ONE ARBITER PERIOD, and the allocation is read at the moment the
+        // arbiter first ACTS on what it was told — the moment the measurement is the only thing
+        // deciding the number. Run it longer and every load ends at the same place, the bottom of
+        // the ladder, where the arbiter stops re-allocating because there is no step left to buy.
+        //
+        // AND `sky.apply()` IS DELIBERATELY NOT CALLED HERE. There are two loops — the controller
+        // tightening on its own authority every frame, and the arbiter re-allocating every eighth —
+        // and this case is about the second. Letting the first run would walk the sky to its
+        // cheapest tier within the first eight frames, at which point what it reports is a mobile
+        // sky's cost on both machines and the experiment has measured the controller instead. The
+        // pinning case below is where `apply()` is exercised.
+        ArbiterReport last;
+        for (u32 frame = 0; frame < 8; ++frame) {
+            const SkyWorkload work = workload_for(sky.settings());
+            const auto elapsed =
+                static_cast<u64>(static_cast<f32>(work.samples()) * nanoseconds_per_sample);
+            sky.observe(work, elapsed);
+            arbiter.report_frame_ms(16.0F);
             sky.submit(arbiter);
-            const ArbiterReport report = arbiter.update();
-            const auto update = sky.apply(report);
-            (void)update;
+            last = arbiter.update();
         }
-        out_allocation = arbiter.allocation_ms(kSkyBudgetSubsystem);
+        CY_REQUIRE(last.arbitrated);
+        out_allocation = last.allocation_ms[static_cast<u32>(kSkyBudgetSubsystem)];
         out_position = sky.controller().position();
+        out_cost = sky.cost_ms();
     };
 
     f32 cheap_allocation = 0.0F;
     f32 dear_allocation = 0.0F;
+    f32 cheap_cost = 0.0F;
+    f32 dear_cost = 0.0F;
     u32 cheap_position = 0;
     u32 dear_position = 0;
-    run(32, cheap_allocation, cheap_position);
-    run(192, dear_allocation, dear_position);
+    run(2.0F, cheap_allocation, cheap_position, cheap_cost);
+    run(8.0F, dear_allocation, dear_position, dear_cost);
 
-    CY_TEST_MESSAGE("allocation follows the measurement: cheap sky ", cheap_allocation,
-                    " ms at position ", cheap_position, ", expensive sky ", dear_allocation,
-                    " ms at position ", dear_position);
+    CY_TEST_MESSAGE("allocation follows the measurement: a 2 ns/sample machine measured ",
+                    cheap_cost, " ms and holds ", cheap_allocation, " ms at position ",
+                    cheap_position, "; an 8 ns/sample machine measured ", dear_cost, " ms and holds ",
+                    dear_allocation, " ms at position ", dear_position);
+    // The measurement differs, so the allocation differs. Neither number is asserted against a
+    // constant: what is asserted is that they are not the same number, which is the only thing a
+    // control loop fed a declaration could not produce.
+    CY_CHECK_GT(dear_cost, cheap_cost);
     CY_CHECK_GT(dear_allocation, cheap_allocation);
 }
 
@@ -243,8 +291,8 @@ CY_TEST_CASE("the arbiter is fed measured costs and pinning stops the arbiter an
         (void)sky.apply(report);
     }
     const u32 degraded = sky.controller().position();
-    CY_TEST_MESSAGE("unpinned, a 40 ms frame drove the sky to ladder position ", degraded, " (",
-                    sky_quality_tier_name(sky.tier()), ")");
+    CY_TEST_MESSAGE("unpinned, a 40 ms frame drove the sky to ladder position ", degraded, " of ",
+                    static_cast<u32>(cy::rendering::sky::SkyQualityTier::Count) - 1U);
     CY_CHECK_GT(degraded, 0U);
 
     // Now pin, from a tier the arbiter did NOT choose, and run the same overrun.

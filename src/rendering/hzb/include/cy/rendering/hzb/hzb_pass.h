@@ -145,7 +145,8 @@ public:
     /// the dispatch that reads it — so the graph derives no barrier, and the answer is right on
     /// some frames and "nothing was occluded" on others. `GpuCullPass::declare` takes this id for
     /// exactly that reason, and refuses when a pyramid is attached and no id was passed.
-    [[nodiscard]] Expected<ResourceId, Error> declare(RenderGraph& graph, ResourceId depth) noexcept;
+    [[nodiscard]] Expected<ResourceId, Error> declare(RenderGraph& graph,
+                                                      ResourceId depth) noexcept;
 
     /// Mark the pyramid built. `valid()` is what `params()` reports as `enabled`, and it exists for
     /// the same reason `Hzb::mark_valid()` does: a pyramid nobody has filled must occlude nothing.

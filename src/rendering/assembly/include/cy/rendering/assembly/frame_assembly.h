@@ -158,6 +158,20 @@ struct AssemblyDescription {
     /// construction rather than by a caller remembering to reach into the framework.
     bool pin_jitter = false;
     u32 pinned_jitter_index = 0;
+    /// Whether the frame runs a depth prepass.
+    ///
+    /// ON, because a forward-clustered frame wants one and every caller that draws through the
+    /// pipeline layer has one. OFF is for a caller whose geometry is not in the draw list the
+    /// prepass walks — `samples/10-world` draws a sky dome, a terrain mesh, an ocean patch and
+    /// forty thousand plant proxies out of its own buffers — where a declared prepass that records
+    /// nothing leaves the depth target CLEARED BY THE OPAQUE PASS against a barrier derived for a
+    /// reader, which is a write-after-write hazard the synchronisation validator reports and the
+    /// picture does not show. `ForwardFrame` already derives the right access from this
+    /// (`frame.cpp:246`); what was missing was a way for the assembly's caller to say so.
+    ///
+    /// The frame REFUSES to turn it off under any screen-space or temporal feature, because those
+    /// read the targets the prepass fills.
+    bool depth_prepass = true;
 };
 
 /// One view of one world, this frame.

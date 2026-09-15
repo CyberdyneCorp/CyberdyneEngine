@@ -6,7 +6,8 @@
 // the requirement's own second one —
 //
 //   > WHEN a device cannot support virtual shadows
-//   > THEN the light SHALL fall back to its conventional mode with a diagnostic, NOT LOSE ITS SHADOW
+//   > THEN the light SHALL fall back to its conventional mode with a diagnostic,
+//   > NOT LOSE ITS SHADOW
 //
 // — and the last case is the one that makes "not lose its shadow" checkable in the only direction
 // that matters: a profile with nothing left reports `NothingAvailable` by name rather than quietly
@@ -59,7 +60,8 @@ CY_TEST_CASE("a traced mode on a frame with no trace falls back and says which")
     ShadowModeProfile profile = everything();
     profile.traced = false;
 
-    const ShadowModeSelection traced = select_shadow_mode(declaring(ShadowMode::RayTraced), profile);
+    const ShadowModeSelection traced =
+        select_shadow_mode(declaring(ShadowMode::RayTraced), profile);
     CY_CHECK_EQ(traced.selected, ShadowMode::Virtual);
     CY_CHECK(traced.degraded());
     CY_CHECK_EQ(traced.fallback, ShadowModeFallback::NoTraceThisFrame);

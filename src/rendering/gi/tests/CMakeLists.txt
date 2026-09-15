@@ -13,6 +13,11 @@
 #                       visibility term stops, the tiers and their confidence, the reflection
 #                       capture, the bake's seeding, and a frame of the composed system. Every case
 #                       traces real rays through a real field; that is what an integration test is.
+#   render_gi_signals   the five stochastic signals the denoiser declares, PRODUCED — indirect
+#                       diffuse, indirect specular, ray-traced shadows, ambient occlusion and
+#                       stochastic direct — and each routed through `denoise::Denoiser`. M11.c task
+#                       2.5: until that rung, nothing in this tree called `denoise()` outside the
+#                       denoiser's own suites.
 #   render_gi_fallback  M7's own exit criterion: ray tracing disabled falls back to software tracing
 #                       with no visual discontinuity beyond tolerance. Its own suite because it is a
 #                       milestone criterion rather than a unit of behaviour, and because a criterion
@@ -56,6 +61,18 @@ function(cy_render_gi_declare_tests)
         NAME render_gi_fallback
         KIND integration
         SOURCES "${tests_dir}/test_fallback.cpp"
+        DEPENDENCIES cy::rendering-gi)
+
+    # THE FIVE STOCHASTIC SIGNALS, PRODUCED AND ROUTED. M11.c task 2.5. Its own suite for the reason
+    # render_gi_fallback has one: it answers a milestone criterion rather than a unit of behaviour,
+    # and a criterion buried in a larger file is a criterion nobody runs on its own. INTEGRATION
+    # because every case traces real rays through a real field and puts real buffers through the
+    # real denoiser — the whole point being that no buffer here was written by the test asserting on
+    # it.
+    cy_add_test(
+        NAME render_gi_signals
+        KIND integration
+        SOURCES "${tests_dir}/test_signals.cpp"
         DEPENDENCIES cy::rendering-gi)
 endfunction()
 

@@ -500,34 +500,59 @@ note   = "the same mutation as the headless criterion above and owed for the sam
 
 [[criterion]]
 id = "sky-field-consumed-outside-the-sky"
-describe = "something outside `src/rendering/sky/` reads the cloud shadow field. `m10:sky-field-round-trip` is about the write path — `update` reports writing tiles darker than 0.5 and `sample` returns the declared 1.0 at all twenty-five points inside `radius_metres` — and this is the half that gap does NOT check: the requirement says the field is consumed by terrain, foliage, water and illumination, and at M10 nothing outside that one directory read it at all"
-source = "tasks 1.3, atmosphere-sky-and-clouds (Cloud shadows)"
+describe = '''ILLUMINATION READS THE CLOUD SHADOW FIELD, AND THE TWO ANSWERS DIFFER. CLOSED AT M11.c. `m10:sky-field-round-trip` is about the write path; this is the half that gap does NOT check — `atmosphere-sky-and-clouds` says the field is consumed by terrain, foliage, water and illumination, and at M10 nothing outside `src/rendering/sky/` read it at all. **WHAT THIS CRITERION WAS UNTIL M11.c WAS A `grep -rln`**, and M11.a/b gate classified the shape: presence-only, nothing built is run, no two observations compared, so it goes red for a word and not for a defect — and a word is all it would have taken to turn green. **WHAT IT IS NOW IS A RUN.** `integration.render_illumination_clouds` builds a real `CloudWeatherMap`, produces a real field, searches the written ground THROUGH `rendering::cloud_shadow_at` for the darkest and the brightest cell — found rather than chosen, because M10 dug exactly that hole with twenty-five hand-picked probes on ground that is genuinely in full sun — and runs `apply_cloud_shadows` at both. This criterion reads the two numbers it prints and REQUIRES THEM TO DIFFER: `authored 100000 lux, shaded 10980.4 lux, lit 100000 lux`. A consumer that read the field and ignored it, or a sampler that answered its declared default, makes the shaded and the lit answer the same number and this goes red. The grep is kept as a cheap precondition — the consumer must be under `src/` and outside the sky and outside a test directory — but it is no longer the verdict.'''
+source = "tasks 1.3, atmosphere-sky-and-clouds (Cloud shadows); M11.c task 5.2"
 kind = "command"
 run = '''
-set -eo pipefail
-# TESTS AND COMMENTS ARE NOT CONSUMERS, and the first version of this check counted one. It matched
-# src/rendering/material/tests/test_slang_program.cpp, which compiles `cy.cloud_shadow` and never
-# reads the field — a criterion satisfied by a string in a file is the shape this project has
-# shipped five times. So: no test directories, and the match must be a CALL — `cloud_shadow_field_id`
-# or `CloudShadowField::sample` — rather than the words appearing anywhere in the file.
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+
+# THE PRECONDITION, AND IT IS NO LONGER THE VERDICT. TESTS AND COMMENTS ARE NOT CONSUMERS: the first
+# version of this check counted src/rendering/material/tests/test_slang_program.cpp, which compiles
+# `cy.cloud_shadow` and never reads the field. So: no test directories, and the match must be a CALL.
 readers=$(grep -rln "cloud_shadow_field_id\|CloudShadowField::sample" \
     --include='*.cpp' --include='*.h' src/ \
     | grep -v "^src/rendering/sky/" | grep -v "/tests/" || true)
 count=$(printf '%s' "$readers" | grep -c . || true)
 echo "$count file(s) outside src/rendering/sky/ read the cloud shadow field:"
 printf '%s\n' "${readers:-  none}"
-if [ "$count" -lt 2 ]; then
-    echo "  `atmosphere-sky-and-clouds` requires the field to be consumed by terrain, foliage,"
-    echo "  water and illumination. `CloudShadowField::declare_consumers()` declares all four to"
-    echo "  the registry and none of them reads it: a declared consumer that never samples is a"
-    echo "  configuration entry, not a consumer."
-fi
-test "$count" -ge 2
+test "$count" -ge 1 || {
+    echo "  nothing outside the sky calls the field's sampler, so there is no consumer to run"
+    exit 1
+}
+
+# THE VERDICT: run the consumer and compare two answers.
+binary="$d/cy_test_integration_render_illumination_clouds"
+test -x "$binary" || { echo "no $binary — illumination has no suite that reads the field"; exit 1; }
+out="$("$binary" 2>&1)" || { printf '%s\n' "$out" | tail -40; echo "the illumination consumer suite FAILED"; exit 1; }
+if ! line="$(printf '%s\n' "$out" | grep -o 'illumination through the cloud shadow field: .*' | head -1)"; then line=""; fi
+test -n "$line" || { echo "the consumer case printed nothing — it has been renamed, skipped or deleted"; exit 1; }
+echo "$line"
+printf '%s\n' "$line" | python3 -c '
+import re, sys
+line = sys.stdin.read()
+found = re.search(r"authored ([0-9.eE+-]+) lux, shaded ([0-9.eE+-]+) lux, lit ([0-9.eE+-]+) lux", line)
+if not found:
+    sys.exit("the consumer line no longer reports an authored, a shaded and a lit illuminance")
+authored, shaded, lit = (float(found.group(index)) for index in (1, 2, 3))
+if authored <= 0.0:
+    sys.exit("the sun this case shades is dark before the cloud reaches it: nothing is being measured")
+if shaded >= lit:
+    sys.exit(f"the sun under the darkest cloud the producer wrote delivers {shaded} lux and the sun "
+             f"in the open delivers {lit}: illumination declares the field as a consumer and does "
+             f"not read it, or the sampler answers its declared default")
+print(f"illumination reads the field: {shaded} lux under the cloud against {lit} lux beside it, "
+      f"{100.0 * (1.0 - shaded / lit):.1f}% darker")
+'
 '''
 ci_job = "milestone-m11a"
 
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."""
-known_gap_closes = "m11c"
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/lighting/src/cloud_shadow.cpp"
+token  = "light.intensity *= report.transmittance;"
+note   = "the claim is that ILLUMINATION READS the field rather than declaring that it does. The mutation deletes the one line that applies what it read — the consumer still samples, still reports a transmittance, still compiles, and the sun it hands back is the sun it was given. That is precisely the state M10 left the tree in with four consumers declared to the registry and none of them sampling, and it is what the grep this criterion used to be could not tell apart from a working one. Watched: shaded and lit both read 100000 lux and the criterion says so by name."
 
 [[criterion]]
 id = "sky-field-round-trips"

@@ -92,6 +92,7 @@ struct CullContext {
                        ? screen_coverage_orthographic(entry.radius, view.ortho_height)
                        : screen_coverage(entry.radius, out.view_depth, view.fov_y_radians);
     out.importance = entry.importance;
+    out.flags = flags;
     return true;
 }
 
@@ -364,6 +365,10 @@ Status cull_shadow_casters(const SpatialIndex& index, const ShadowCullView& view
         caster.gpu_slot = entry.gpu_slot;
         caster.stable_id = entry.stable_id;
         caster.importance = entry.importance;
+        // A SHADOW CASTER IS SKINNED OR NOT FOR THE SAME REASON A VISIBLE ONE IS, and a shadow pass
+        // that read the mesh's own vertices for a skinned instance would draw the bind pose's
+        // silhouette under a moving character. The flags word is already loaded above.
+        caster.flags = flags;
         if (Status pushed = casters.push_back(caster); !pushed) {
             return pushed;
         }

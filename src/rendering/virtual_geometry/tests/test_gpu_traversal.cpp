@@ -32,10 +32,10 @@
 #include <cy/core/math/matrix.h>
 #include <cy/core/math/projection.h>
 #include <cy/core/memory/system_allocator.h>
-#include <cy/servers/render/culling/hzb.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 #include <cy/rendering/virtual_geometry/gpu.h>
+#include <cy/servers/render/culling/hzb.h>
 
 #include "meshes.h"
 
@@ -443,8 +443,9 @@ CY_TEST_CASE("a traversal is destroyed with its frames in flight, in a loop") {
 // `cy::rendering::hzb::HzbPass` built, and `TraversalView::occlusion` is
 // `cy::render::culling::HzbOcclusionTester` over the CPU model of the same pyramid — which is the
 // SAME interface `GpuCullOptions::occlusion` takes. One piece of device work, two rows.
-CY_TEST_CASE("cluster occlusion reads the shared hierarchical depth buffer and agrees with the "
-             "reference") {
+CY_TEST_CASE(
+    "cluster occlusion reads the shared hierarchical depth buffer and agrees with the "
+    "reference") {
     DeviceFixture fixture;
     if (!fixture.have_vulkan()) {
         fixture.report_skip();
@@ -456,46 +457,27 @@ CY_TEST_CASE("cluster occlusion reads the shared hierarchical depth buffer and a
     constexpr u32 kHeight = 72;
     constexpr f32 kDistance = 4.0F;
 
-    // TWO OCCLUDERS, AND THE SECOND ONE GRAZES. A pyramid that occluded everything would agree
-    // with a reference that occluded everything and would say nothing, so the left half of the
-    // screen is held by a NEAR occluder — which hides whole subtrees and fires the node prune — and
-    // the right half by one at the depth of the object's own centre, which hides a cluster on the
-    // far side of the object while the GROUP sphere that contains it still reaches nearer than the
-    // occluder. That second case is the only way the cluster-granular test fires at all, and
-    // without it a sweep could pass while the cluster test did nothing.
+    // A FLAT OCCLUDER AT A CHOSEN DEPTH, AND THE DEPTH IS SWEPT. Under reversed Z with a near plane
+    // of 0.1, an occluder at `0.1 / d` hides everything further than `d` units from the camera, so
+    // sweeping `d` across the object sweeps the plane through it — and the two occlusion tests the
+    // requirement names answer differently on either side of that plane.
     //
-    // 0.1 / 4.0 is the reversed-Z depth of the object's centre for a near plane of 0.1 at four
-    // units: the near half of the object is in front of it and the far half behind.
+    // WHY FLAT RATHER THAN A SHAPE. The pyramid's test reads a level chosen from the rectangle's
+    // own span, so a narrow occluder is diluted away by the conservative minimum before a large
+    // rectangle ever reads it. That is correct and it means a SHAPED occluder makes the two tests
+    // differ for a reason about the pyramid's levels rather than about what is hidden. A flat one
+    // is uniform at every level, so the only thing that separates a NODE prune from a CLUSTER
+    // rejection is the thing the requirement is about: a group sphere contains the cluster and
+    // reaches nearer than it, so there is a band of depths where the cluster is hidden and the
+    // group that contains it is not.
     Array<f32> depths(allocator);
     CY_REQUIRE(depths.resize(static_cast<usize>(kWidth) * kHeight).has_value());
-    for (u32 y = 0; y < kHeight; ++y) {
-        for (u32 x = 0; x < kWidth; ++x) {
-            // Reversed Z: 1 is the near plane, so 0.9 is an occluder close to the camera and 0 is
-            // the far plane, which occludes nothing.
-            depths[(static_cast<usize>(y) * kWidth) + x] = x < kWidth / 2U ? 0.9F : 0.1F / kDistance;
-        }
-    }
 
     const Mat4 projection = cy::perspective_reversed_z(
         1.0471975512F, static_cast<f32>(kWidth) / static_cast<f32>(kHeight), 0.1F, 1000.0F);
-    const Mat4 look = cy::look_at(Vec3{0.0F, 0.0F, kDistance}, Vec3{0.0F, 0.0F, 0.0F},
-                             Vec3{0.0F, 1.0F, 0.0F});
+    const Mat4 look =
+        cy::look_at(Vec3{0.0F, 0.0F, kDistance}, Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F});
     const Mat4 view_projection = projection * look;
-
-    // The CPU model: level 0 is the depths above and `reduce()` fills the rest. It is the expected
-    // value for the device pyramid AND the tester the reference traversal culls with.
-    render::culling::Hzb model(allocator);
-    CY_REQUIRE(model.resize(kWidth, kHeight).has_value());
-    {
-        const Span<f32> level0 = model.level(0);
-        CY_REQUIRE(level0.size() == depths.size());
-        for (usize index = 0; index < depths.size(); ++index) {
-            level0[index] = depths[index];
-        }
-    }
-    model.reduce();
-    model.mark_valid();
-    const render::culling::HzbOcclusionTester tester(model, view_projection);
 
     const vg::test::MeshData mesh = vg::test::icosphere(allocator, 3);
     Expected<vg::GeometryBuild, Error> build =
@@ -556,79 +538,107 @@ CY_TEST_CASE("cluster occlusion reads the shared hierarchical depth buffer and a
     inputs.assets = Span<const vg::DecodedAsset* const>(assets, 1);
     inputs.instances = instances.span();
 
-    // A SWEEP RATHER THAN ONE VIEW, and for a reason the counters make plain. The two occlusion
-    // tests are at different granularities: a NODE is pruned when the group sphere that contains
-    // every cluster beneath it is hidden, and a CLUSTER is rejected when its own bounds are hidden
-    // though its group's were not. A coarse threshold selects large clusters and only the first
-    // fires; a fine one selects small clusters near the occluder's edge and the second does. One
-    // view would leave whichever did not fire untested, which is how a test ends up unable to
-    // detect the deletion of half of what it is about.
+    // THE SWEEP IS TWO-DIMENSIONAL: the occluder's distance and the selection threshold.
+    //
+    // The threshold decides WHICH clusters are selected — a coarse one selects interior clusters,
+    // whose `lod_sphere` is the group they were simplified from and is strictly larger than their
+    // own bounds; a fine one selects leaves, whose `lod_sphere` IS their own sphere, so for a leaf
+    // the two occlusion tests ask the same question and the node prune answers first. The occluder
+    // distance decides WHAT is hidden. Both are swept because either alone leaves one of the two
+    // tests unexercised, and a test that cannot detect the deletion of half its subject is exactly
+    // the shape this project has found seven times.
     vg::TraversalResult reference(allocator);
     vg::TraversalReadback readback(allocator);
     u32 total_pruned = 0;
     u32 total_rejected = 0;
     u32 total_visible = 0;
     u32 mismatches = 0;
+    u32 views = 0;
 
-    for (u32 step = 0; step < 6; ++step) {
-        const f32 threshold = 2.0F * static_cast<f32>(1U << step);
-        vg::TraversalView view = view_at(kDistance, threshold);
-        view.occlusion = &tester;
-
-        CY_REQUIRE(vg::traverse_reference(inputs, view, reference).has_value());
-
-        RenderGraph graph(allocator);
-        BufferRequest depth_request;
-        depth_request.name = "vg.test.depth";
-        depth_request.size = depths.size() * sizeof(f32);
-        depth_request.extra_usage = rhi::BufferUsage::TransferSource;
-        const ResourceId depth_resource = graph.import_buffer(depth_request, *depth_buffer);
-        Expected<ResourceId, Error> pyramid_resource = pyramid.declare(graph, depth_resource);
-        CY_REQUIRE(pyramid_resource.has_value());
-        CY_REQUIRE(gpu.traversal
-                       .record(graph, view, static_cast<u32>(instances.size()), *pyramid_resource)
-                       .has_value());
-        CY_REQUIRE(graph.status().has_value());
-        Expected<ExecutionResult, Error> executed =
-            gpu.executor.execute(graph, CompileOptions{}, ExecuteOptions{});
-        CY_REQUIRE(executed.has_value());
-        CY_REQUIRE(fixture.device().wait_idle().has_value());
-        CY_REQUIRE(gpu.traversal.read_back(readback).has_value());
-
-        total_pruned += reference.stats.nodes_pruned_by_occlusion;
-        total_rejected += reference.stats.rejected_by_occlusion;
-        total_visible += reference.stats.visible_clusters;
-
-        std::ranges::sort(reference.visible, visible_before);
-        std::ranges::sort(readback.visible, visible_before);
-        if (readback.stats.nodes_pruned_by_occlusion != reference.stats.nodes_pruned_by_occlusion ||
-            readback.stats.rejected_by_occlusion != reference.stats.rejected_by_occlusion ||
-            readback.stats.visible_clusters != reference.stats.visible_clusters ||
-            readback.visible.size() != reference.visible.size()) {
-            ++mismatches;
-            std::fprintf(stderr,
-                         "threshold %.3f: reference pruned %u rejected %u visible %u; device "
-                         "pruned %u rejected %u visible %u\n",
-                         static_cast<double>(threshold),
-                         reference.stats.nodes_pruned_by_occlusion,
-                         reference.stats.rejected_by_occlusion, reference.stats.visible_clusters,
-                         readback.stats.nodes_pruned_by_occlusion,
-                         readback.stats.rejected_by_occlusion, readback.stats.visible_clusters);
-            continue;
+    const f32 occluder_distances[6] = {3.2F, 3.6F, 4.0F, 4.4F, 4.8F, 5.2F};
+    for (const f32 occluder : occluder_distances) {
+        const f32 depth = 0.1F / occluder;
+        for (f32& texel : depths) {
+            texel = depth;
         }
-        for (usize index = 0; index < reference.visible.size(); ++index) {
-            if (readback.visible[index].instance != reference.visible[index].instance ||
-                readback.visible[index].cluster != reference.visible[index].cluster) {
+        std::memcpy(mapped, depths.data(), depths.size() * sizeof(f32));
+
+        render::culling::Hzb model(allocator);
+        CY_REQUIRE(model.resize(kWidth, kHeight).has_value());
+        {
+            const Span<f32> level0 = model.level(0);
+            CY_REQUIRE(level0.size() == depths.size());
+            for (usize index = 0; index < depths.size(); ++index) {
+                level0[index] = depths[index];
+            }
+        }
+        model.reduce();
+        model.mark_valid();
+        const render::culling::HzbOcclusionTester tester(model, view_projection);
+
+        for (u32 step = 0; step < 4; ++step) {
+            const f32 threshold = 0.25F * static_cast<f32>(1U << (step * 2U));
+            vg::TraversalView view = view_at(kDistance, threshold);
+            view.occlusion = &tester;
+
+            CY_REQUIRE(vg::traverse_reference(inputs, view, reference).has_value());
+
+            RenderGraph graph(allocator);
+            BufferRequest depth_request;
+            depth_request.name = "vg.test.depth";
+            depth_request.size = depths.size() * sizeof(f32);
+            depth_request.extra_usage = rhi::BufferUsage::TransferSource;
+            const ResourceId depth_resource = graph.import_buffer(depth_request, *depth_buffer);
+            Expected<ResourceId, Error> pyramid_resource = pyramid.declare(graph, depth_resource);
+            CY_REQUIRE(pyramid_resource.has_value());
+            CY_REQUIRE(
+                gpu.traversal
+                    .record(graph, view, static_cast<u32>(instances.size()), *pyramid_resource)
+                    .has_value());
+            CY_REQUIRE(graph.status().has_value());
+            Expected<ExecutionResult, Error> executed =
+                gpu.executor.execute(graph, CompileOptions{}, ExecuteOptions{});
+            CY_REQUIRE(executed.has_value());
+            CY_REQUIRE(fixture.device().wait_idle().has_value());
+            CY_REQUIRE(gpu.traversal.read_back(readback).has_value());
+
+            ++views;
+            total_pruned += reference.stats.nodes_pruned_by_occlusion;
+            total_rejected += reference.stats.rejected_by_occlusion;
+            total_visible += reference.stats.visible_clusters;
+
+            std::ranges::sort(reference.visible, visible_before);
+            std::ranges::sort(readback.visible, visible_before);
+            if (readback.stats.nodes_pruned_by_occlusion !=
+                    reference.stats.nodes_pruned_by_occlusion ||
+                readback.stats.rejected_by_occlusion != reference.stats.rejected_by_occlusion ||
+                readback.stats.visible_clusters != reference.stats.visible_clusters ||
+                readback.visible.size() != reference.visible.size()) {
                 ++mismatches;
-                break;
+                std::fprintf(stderr,
+                             "occluder %.2f threshold %.3f: reference pruned %u rejected %u "
+                             "visible %u; device pruned %u rejected %u visible %u\n",
+                             static_cast<double>(occluder), static_cast<double>(threshold),
+                             reference.stats.nodes_pruned_by_occlusion,
+                             reference.stats.rejected_by_occlusion,
+                             reference.stats.visible_clusters,
+                             readback.stats.nodes_pruned_by_occlusion,
+                             readback.stats.rejected_by_occlusion, readback.stats.visible_clusters);
+                continue;
+            }
+            for (usize index = 0; index < reference.visible.size(); ++index) {
+                if (readback.visible[index].instance != reference.visible[index].instance ||
+                    readback.visible[index].cluster != reference.visible[index].cluster) {
+                    ++mismatches;
+                    break;
+                }
             }
         }
     }
 
-    CY_TEST_MESSAGE("occlusion over 6 thresholds: "
-                    << total_pruned << " node(s) pruned, " << total_rejected
-                    << " cluster(s) rejected, " << total_visible << " left visible, " << mismatches
-                    << " view(s) mismatched");
+    CY_TEST_MESSAGE("occlusion over " << views << " views: " << total_pruned << " node(s) pruned, "
+                                      << total_rejected << " cluster(s) rejected, " << total_visible
+                                      << " left visible, " << mismatches << " view(s) mismatched");
 
     // NOT VACUOUS, AND IN THREE DIRECTIONS: BOTH occlusion tests fired somewhere in the sweep, and
     // something survived. An agreement between two answers of zero is not evidence of anything.
@@ -640,7 +650,7 @@ CY_TEST_CASE("cluster occlusion reads the shared hierarchical depth buffer and a
     // AND THE PYRAMID IS THE ONE THE CULLING PASS WOULD READ: the same object, the same buffer, the
     // same `hzb_sample.slang`. `integration.rendering_culling` compares that pyramid against the
     // CPU model texel for texel; this case compares what a second consumer does with it.
-    CY_CHECK_EQ(pyramid.level_count(), model.level_count());
+    CY_CHECK_EQ(pyramid.level_count(), render::culling::hzb_level_count(kWidth, kHeight));
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 
     pyramid.destroy();

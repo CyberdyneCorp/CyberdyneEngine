@@ -74,7 +74,19 @@ So what the renderer beside `world.cpp` draws is geometry and per-vertex colour 
 computed on the CPU, through one pipeline with one Lambert term and a Blinn-Phong lobe for water.
 Specifically it is **not**:
 
-* not `rendering::pipeline`'s forward frame, not the visibility buffer, not virtual geometry;
+* **since M11.c it IS assembled by `rendering::assembly`'s frame and resolved by
+  `rendering::pipeline`'s tone mapping** — the post chain decides the feature set, the temporal
+  framework advances a pinned jitter, the shadow cache spends its budget, the sky table updates, and
+  `cy/fullscreen.slang`'s resolve turns linear HDR scene colour into the image that is written out,
+  at the exposure `frame.cypost` commits. The stage list the frame ran is published beside the still
+  as `<still>.manifest.txt`. **It is still not `rendering::pipeline`'s forward SHADING**: the
+  geometry is this file's, drawn into the frame's opaque stage through `FrameSinks::passes`, not the
+  render server's mesh table drawn by the layer's own path. Not the visibility buffer, not virtual
+  geometry;
+* **not anti-aliased.** The frame declares `FramePassKind::Temporal` and nothing in this tree
+  records it — there is no temporal resolve shader under `src/rendering/` at all — so the chain is
+  exposure, tone mapping and output encoding, and the manifest says three stages. Switching
+  `temporal_antialiasing` on would put a stage in the manifest that no pass ran;
 * not the material system — no terrain material page is bound on a device, and
   `terrain::MaterialPageCache` is not in the link line;
 * not `environment::build_field_image()`'s GPU field image — every field read here is
@@ -90,8 +102,9 @@ Specifically it is **not**:
   atmosphere's gradient and far too coarse for a cloud edge, so a cloud bank arrives as a faceted
   wedge; the MODEL under it is the shipped march and the RESOLUTION is a dome. A sky shader would
   draw the same clouds per pixel and this is the artefact of not having one;
-* not `rendering-post`'s tone mapping or auto-exposure — `World::shade_sky()` divides by the frame's
-  own mean sky radiance and the fragment stage applies Reinhard and a gamma, and both say so.
+* not `rendering-post`'s AUTO-exposure — the exposure is the one `frame.cypost` commits, not a
+  metered one. `World::shade_sky()` still divides by the frame's own mean sky radiance before the
+  frame's own exposure and tonemap stages see it, and both say so.
 
 There is also no STREAMING: the whole world is resident, every terrain tile is meshed at level 0,
 and `MeshReport::stitched_vertices` is reported precisely so that a reader can see it is zero. The

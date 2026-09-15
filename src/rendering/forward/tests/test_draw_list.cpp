@@ -218,3 +218,49 @@ CY_TEST_CASE("an empty list sorts without touching anything") {
     CY_CHECK(cy::rendering::sort_draw_list(list, scratch).has_value());
     CY_CHECK_EQ(cy::rendering::analyse_sort_keys(list.items.span()).draws, 0U);
 }
+
+CY_TEST_CASE("which instances are skinned reaches the draw's own flags word") {
+    // M11.c task 5.6, and the record it closes is `src/rendering/skinning/README.md`'s:
+    //
+    //   "Anything that decides WHICH instances are skinned. There is no per-instance skinning table,
+    //    no `kSpatialSkinned` bit and no route from `render::kInstanceSkinned` to a shader;
+    //    `GpuDrawInstance::flags` is still never written by `build_draw_list`."
+    //
+    // Written at M6 and unmoved for five milestones. `GpuDrawInstance::flags`' own comment has said
+    // since M7 that it is "copied so a shader that needs the two-sided or skinned bit does not have
+    // to read the whole instance record for one word" — and nothing copied it, so every draw in this
+    // engine claimed to be unskinned and every two-sided surface was drawn one-sided.
+    //
+    // WHAT MAKES THIS A CHECK RATHER THAN A SENTENCE is that it compares two instances: one skinned
+    // and two-sided, one neither, through the same call. A function that returned a constant would
+    // fail one of them.
+    SurfaceTable table;
+    table.surfaces[0].blend = cy::render::BlendMode::Opaque;
+    table.surfaces[1].blend = cy::render::BlendMode::Opaque;
+
+    VisibleInstance visible[2] = {make_visible(0, 1, 5.0F), make_visible(1, 2, 6.0F)};
+    visible[0].flags = cy::rendering::kSpatialActive | cy::rendering::kSpatialVisible |
+                       cy::rendering::kSpatialSkinned | cy::rendering::kSpatialTwoSided;
+    visible[1].flags = cy::rendering::kSpatialActive | cy::rendering::kSpatialVisible |
+                       cy::rendering::kSpatialCastsShadow;
+
+    DrawList list(allocator());
+    CY_REQUIRE(cy::rendering::build_draw_list(cy::Span<const VisibleInstance>(visible, 2),
+                                              &surface_of, &table, list)
+                   .has_value());
+    CY_REQUIRE_EQ(list.instances.size(), 2U);
+
+    CY_CHECK((list.instances[0].flags & cy::render::kInstanceSkinned) != 0U);
+    CY_CHECK((list.instances[0].flags & cy::render::kInstanceTwoSided) != 0U);
+    CY_CHECK((list.instances[0].flags & cy::render::kInstanceCastsShadow) == 0U);
+
+    CY_CHECK((list.instances[1].flags & cy::render::kInstanceSkinned) == 0U);
+    CY_CHECK((list.instances[1].flags & cy::render::kInstanceTwoSided) == 0U);
+    CY_CHECK((list.instances[1].flags & cy::render::kInstanceCastsShadow) != 0U);
+
+    // AND THE TWO ENUMERATIONS ARE NOT THE SAME NUMBERS, which is why the mapping is a function and
+    // not a copy: `kSpatialSkinned` is bit 8 and `render::kInstanceSkinned` is bit 5. A `memcpy` of
+    // the word would have produced a plausible-looking flags field meaning something else.
+    CY_CHECK_NE(static_cast<cy::u32>(cy::rendering::kSpatialSkinned),
+                static_cast<cy::u32>(cy::render::kInstanceSkinned));
+}

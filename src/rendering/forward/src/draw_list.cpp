@@ -49,6 +49,33 @@ void DrawList::clear() noexcept {
     batches.clear();
 }
 
+namespace {
+
+/// Translate the broad phase's flags into the GPU scene's, for the bits a draw needs.
+///
+/// TWO ENUMERATIONS AND NOT ONE, deliberately: `SpatialFlagBits` is what the broad phase tests in a
+/// single load and `render::InstanceFlagBits` is what the shader reads, and they have different
+/// members for the same reason `residency::Subsystem` and `BudgetSubsystem` do. This is the one
+/// place the mapping exists, so the two can move apart without a silent reinterpretation.
+[[nodiscard]] u32 instance_flags_of(u32 spatial_flags) noexcept {
+    u32 flags = 0;
+    if ((spatial_flags & kSpatialSkinned) != 0U) {
+        flags |= render::kInstanceSkinned;
+    }
+    if ((spatial_flags & kSpatialTwoSided) != 0U) {
+        flags |= render::kInstanceTwoSided;
+    }
+    if ((spatial_flags & kSpatialMoved) != 0U) {
+        flags |= render::kInstanceMoved;
+    }
+    if ((spatial_flags & kSpatialCastsShadow) != 0U) {
+        flags |= render::kInstanceCastsShadow;
+    }
+    return flags;
+}
+
+}  // namespace
+
 Status build_draw_list(Span<const VisibleInstance> visible, SurfaceQueryFn surfaces_of, void* user,
                        DrawList& out) noexcept {
     if (surfaces_of == nullptr) {
@@ -84,6 +111,16 @@ Status build_draw_list(Span<const VisibleInstance> visible, SurfaceQueryFn surfa
             record.gi_address = surface.gi_address;
             record.lod_and_fade = pack_lod_and_fade(instance.lod_level, instance.lod_fade);
             record.surface = surface.surface;
+            // WHICH INSTANCES ARE SKINNED, AND THIS LINE IS THE WHOLE OF IT. M11.c task 5.6.
+            //
+            // `GpuDrawInstance::flags` has said "copied so a shader that needs the two-sided or
+            // skinned bit does not have to read the whole instance record for one word" since M7,
+            // and until M11.c NOTHING WROTE IT — `src/rendering/skinning/README.md` recorded the
+            // absence at M6 and it survived five milestones, so every draw in this engine claimed
+            // to be unskinned and two-sided geometry was drawn one-sided. The bits come out of the
+            // broad phase's own flags word, which `test_slot` already loaded to decide the instance
+            // was live.
+            record.flags = instance_flags_of(instance.flags);
             if (Status pushed = out.instances.push_back(record); !pushed) {
                 return pushed;
             }

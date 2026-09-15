@@ -37,6 +37,14 @@ struct GiLight {
     f32 intensity = 1.0F;
     /// Metres. Zero means unbounded, which only a directional light should be.
     f32 range = 0.0F;
+    /// THE LIGHT'S OWN EXTENT, in metres, and the only thing a shadow's penumbra comes from.
+    ///
+    /// Zero is a mathematical point and casts a shadow with no penumbra at all — correct for the
+    /// analytic direct term, which is what this record was written for, and the reason a stochastic
+    /// shadow producer has no noise to reconstruct without it. For a directional light it is the
+    /// body's angular radius in radians instead: the sun's is about 0.00465, which is a quarter of a
+    /// degree and is where contact hardening comes from outdoors.
+    f32 radius = 0.0F;
     bool directional = false;
     /// The identity an invalidation is attributed to when this light changes.
     u64 id = 0;

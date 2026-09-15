@@ -174,11 +174,15 @@ CY_TEST_CASE("cloud shadow illumination: the sun under a cloud is dimmer than th
         apply_cloud_shadows(Span<GpuLight>(lights, 2), store, lit);
     const f32 lit_sun = lights[0].intensity;
 
-    CY_TEST_MESSAGE("illumination through the cloud shadow field: sun ", authored_sun, " lux -> ",
-                    shaded_sun, " lux at (", shaded.x, ", ", shaded.z, "), ", lit_sun, " lux at (",
-                    lit.x, ", ", lit.z, "), transmittance ", under_cloud.transmittance, " and ",
-                    in_the_open.transmittance, ", punctual lights untouched ",
-                    under_cloud.punctual_lights);
+    // ONE LINE, IN A SHAPE A CRITERION CAN READ. `m11a:sky-field-consumed-outside-the-sky` runs this
+    // suite and parses this line, because what it has to establish is that the two answers DIFFER —
+    // and a suite's exit code says only that nothing asserted here was violated, which a suite with
+    // no assertions also says.
+    CY_TEST_MESSAGE("illumination through the cloud shadow field: authored ", authored_sun,
+                    " lux, shaded ", shaded_sun, " lux, lit ", lit_sun,
+                    " lux, transmittance shaded ", under_cloud.transmittance, " lit ",
+                    in_the_open.transmittance, ", punctual untouched ", under_cloud.punctual_lights,
+                    ", shaded point (", shaded.x, ", ", shaded.z, ")");
 
     // THE TWO ANSWERS DIFFER, which is the whole claim and the thing a search for the words could
     // not establish.

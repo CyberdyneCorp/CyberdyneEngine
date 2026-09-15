@@ -552,8 +552,8 @@ struct ExecutedFrame {
         SpatialIndex index(allocator());
         for (u32 which = 0; which < 3; ++which) {
             SpatialEntry entry;
-            entry.bounds = cy::Aabb::from_center_extents(
-                Vec3{static_cast<f32>(which), 0.0F, -6.0F}, Vec3{0.5F, 0.5F, 0.5F});
+            entry.bounds = cy::Aabb::from_center_extents(Vec3{static_cast<f32>(which), 0.0F, -6.0F},
+                                                         Vec3{0.5F, 0.5F, 0.5F});
             entry.stable_id = 900U + which;
             entry.radius = 0.9F;
             if (!index.insert(entry)) {
@@ -732,7 +732,10 @@ CY_TEST_CASE("the frame passes through anti-aliasing, and the structure under it
     const auto bare = capture_manifest(without, aliased.report, publication_provenance());
     CY_REQUIRE(bare.has_value());
     CY_CHECK_FALSE(bare->ran(PostStage::TemporalAntiAliasing));
-    CY_CHECK_EQ(bare->prepass, PrepassMode::DepthOnly);
+    // NOT `DepthOnly`: `make_description()` leaves ambient occlusion on, which asks for normals.
+    // The claim is the narrower and truer one — the prepass stopped producing VELOCITY, which is
+    // what the temporal stage was the only consumer of.
+    CY_CHECK_NE(bare->prepass, PrepassMode::DepthNormalVelocity);
     CY_CHECK_FALSE(bare->velocity_written);
     CY_CHECK_EQ(aliased.assembly.resources().velocity, kInvalidResource);
     CY_CHECK_EQ(aliased.assembly.frame().pass_of(FramePassKind::Temporal), kInvalidPass);

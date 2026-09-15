@@ -15,13 +15,23 @@
 // atmosphere, the volumetric cloud deck weather drives, and the light everything is shaded by.
 // Every module writes into or reads out of `cy::environment` and NONE of them links another.
 //
-// IT DOES NOT CLAIM a rendered frame of the engine's own forward pipeline. Every producer above
-// runs on the PROCESSOR and the picture is a rasteriser drawing per-vertex colour those producers
-// computed. There is no terrain material page bound on a device, no environment field sampled
-// through its GPU image, no water surface published into the GPU scene, no grass expanded on the
-// device and no cloud marched per pixel — six of this milestone's modules each recorded exactly
-// that gap against their own row, and this artefact closes none of them. README.md says so, the
-// report below says so, and the video's caption says so.
+// SINCE M11.c IT ALSO CLAIMS THE ENGINE'S OWN FRAME, and that sentence is narrower than it sounds.
+// The picture is assembled by `cy::rendering::assembly::FrameAssembly` — the post chain decides the
+// feature set, the temporal framework advances a PINNED jitter, the shadow cache spends its budget,
+// the sky table updates, and the stages go into the render graph in the specification's order —
+// and it is resolved by `cy::rendering-pipeline`'s tonemapping pass at the exposure
+// `samples/10-world/frame.cypost` commits. The stage list the frame ran is written beside the still
+// as `<still>.manifest.txt`, so a caption claiming a stage is a claim something can check.
+//
+// IT STILL DOES NOT CLAIM the engine's own forward SHADING. Every producer above runs on the
+// PROCESSOR, this program's geometry is its own rather than the render server's mesh table, and the
+// colour it draws is per-vertex colour those producers computed. There is no terrain material page
+// bound on a device, no environment field sampled through its GPU image, no water surface published
+// into the GPU scene, no grass expanded on the device and no cloud marched per pixel — six of M10's
+// modules each recorded exactly that gap against their own row, and this artefact closes none of
+// them. AND THERE IS NO ANTI-ALIASING: nothing in this tree records `FramePassKind::Temporal`, so
+// the chain this frame runs is exposure, tone mapping and output encoding, and the manifest says
+// three. README.md says so, the report below says so, and the video's caption says so.
 //
 // ================================================================================================
 // THE TIMESTEP IS FIXED, AND THAT IS A REPRODUCIBILITY CLAIM
@@ -55,6 +65,9 @@ struct Options {
     std::string frames;
     std::string still;
     std::string budget;
+    /// Where the committed grade lives. M11.c task 3.3: a path rather than a constant, so a person
+    /// grading the shot edits a file. Defaults to the one this sample ships.
+    std::string grade = "samples/10-world/frame.cypost";
     /// 960x540 AND NOT 720p, AND THE REASON IS THE COMMITTED VIDEO RATHER THAN THE PICTURE. This
     /// default is what `just capture-world` writes into `docs/design/videos/`, and a forest of a
     /// hundred thousand small triangles is the hardest thing x264 is ever asked to carry: the same
@@ -206,9 +219,9 @@ private:
     while (cursor.advance()) {
         const bool recognised =
             cursor.text("--frames", out.frames) || cursor.text("--still", out.still) ||
-            cursor.text("--budget", out.budget) || cursor.number("--width", out.width) ||
-            cursor.number("--height", out.height) || cursor.number("--fps", out.fps) ||
-            cursor.number("--still-frame", out.still_frame) ||
+            cursor.text("--grade", out.grade) || cursor.text("--budget", out.budget) ||
+            cursor.number("--width", out.width) || cursor.number("--height", out.height) ||
+            cursor.number("--fps", out.fps) || cursor.number("--still-frame", out.still_frame) ||
             cursor.number("--regions", out.regions) || cursor.number("--seed", out.seed) ||
             cursor.number("--seconds", out.seconds) ||
             cursor.number("--budget-ms", out.budget_ms) || cursor.flag("--headless", out.headless);
@@ -400,7 +413,18 @@ void print_hour(u64 frame, const WorldState& state) {
     if (frame != still_frame || options.still.empty()) {
         return ok();
     }
-    return stage.shoot(world, eye, target, options.still.c_str(), out);
+    if (Status shot = stage.shoot(world, eye, target, options.still.c_str(), out); !shot) {
+        return shot;
+    }
+    // THE STILL IS PUBLISHED WITH THE FRAME'S OWN STAGE LIST BESIDE IT. M11.c task 3.2, and
+    // `rendering-post-processing`'s new requirement in as many words: "a published capture SHALL be
+    // accompanied by that stage list, and where a caption states that a stage ran, the statement
+    // SHALL be checkable against it". The manifest is emitted by the frame — every line of it comes
+    // off `AssemblyReport` — so a caption claiming a stage this frame did not run is a check that
+    // fails rather than a sentence a reader has to take on trust.
+    char manifest_path[600];
+    std::snprintf(manifest_path, sizeof(manifest_path), "%s.manifest.txt", options.still.c_str());
+    return stage.write_manifest(out, manifest_path);
 }
 
 /// Simulate and film the whole cycle.
@@ -554,6 +578,15 @@ struct Band {
 /// Open the device and upload what never changes. Absent-device is SUCCESS with `available()`
 /// false, and the caller decides what that means.
 [[nodiscard]] Status open_stage(Stage& stage, const World& world, const Options& options) {
+    // THE GRADE IS READ BEFORE THE DEVICE IS OPENED, and a missing file stops the run. M11.c task
+    // 3.3: the exposure this shot is tuned at is content — `samples/10-world/frame.cypost` — and a
+    // program that fell back to a default when it could not find it would photograph an ungraded
+    // shot and report a graded one.
+    if (Status graded = stage.read_grade(options.grade.c_str()); !graded) {
+        std::fprintf(stderr, "the committed grade '%s' could not be read: %s\n",
+                     options.grade.c_str(), graded.error().message);
+        return graded;
+    }
     if (Status opened = stage.open(options.width, options.height); !opened) {
         return opened;
     }
@@ -679,6 +712,27 @@ int main(int argc, char** argv) {
     const bool budget_held = options.budget_ms <= 0.0F || judge_budget(take, options.budget_ms);
 
     if (wants_pictures) {
+        // WHAT THE FRAME RAN, READ OFF THE FRAME. M11.c task 3.2: the report names the post stages
+        // the LAST frame actually executed, in order, out of the manifest the frame emitted — not
+        // out of what this program configured. The two differ exactly when something is wrong, and
+        // that is the case this line exists for.
+        if (!take.drawn.empty() && take.drawn[take.drawn.size() - 1].manifest_valid) {
+            const cy::rendering::assembly::CaptureManifest& manifest =
+                take.drawn[take.drawn.size() - 1].manifest;
+            std::printf("\n=== the frame, as the frame reported it ===\n");
+            std::printf(
+                "  %u pass(es) declared, %u post stage(s), exposure %.2f stops, jitter %s\n",
+                take.drawn[take.drawn.size() - 1].frame_passes, manifest.stage_count,
+                static_cast<double>(-manifest.ev100),
+                manifest.jitter_pinned ? "pinned" : "free-running");
+            std::printf("  chain:");
+            for (u32 step = 0; step < manifest.stage_count; ++step) {
+                std::printf(" %s", cy::rendering::post_stage_name(manifest.stages[step].stage));
+            }
+            std::printf(
+                "\n  NO anti-aliasing stage: nothing in this tree records the frame's "
+                "temporal pass.\n");
+        }
         std::printf("\n  %llu frames written to %s, vulkan validation errors: %u\n",
                     static_cast<unsigned long long>(frames), options.frames.c_str(),
                     take.validation_errors);

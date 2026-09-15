@@ -45,10 +45,23 @@ between a C++ standard library and a SPIR-V driver. The measured worst relative 
 RTX 5060 is **4.77e-07**, and the suite prints it so a tolerance quietly absorbing a real divergence
 shows up as a number that moved.
 
-**An occlusion view is refused, not ignored.** `hzb.h` is a CPU model of a depth pyramid and no
-pyramid exists on a device yet. `upload()` fails naming `kGpuCullOcclusion` rather than dispatching,
+**An occlusion view is refused when there is nothing to test against — M11.c task 4.1 narrowed it.**
+Through M10 the refusal was unconditional: `hzb.h` was a CPU model of a depth pyramid and nothing
+built one on a device, so `upload()` failed naming `kGpuCullOcclusion` rather than dispatching,
 because a dispatch that ignored the flag would report "nothing was occluded" and be
 indistinguishable from a working occlusion cull over an empty pyramid.
+
+`cy::rendering-hzb` is now that pyramid. `set_occlusion()` attaches one and rewrites binding 13;
+`gpu_cull.slang` runs `hzb_sample.slang`'s test, which is the same file `vg_traversal.slang`
+includes over the same buffer. **The refusal did not go away** — a caller that sets the flag and
+attaches no pyramid still gets an error naming it, because that caller is asking for a cull that
+cannot occlude anything.
+
+What makes the claim a device claim rather than a model one is
+`tests/integration/test_rendering_culling.cpp`: it reads the DEVICE pyramid back and compares it
+against the CPU model texel for texel across all eight levels, then culls one scene twice — through
+`cpu_reference_cull` with `HzbOcclusionTester` and through this dispatch with the pyramid attached —
+and compares the counters and the surviving draws. A model passing its own tests is not a pass.
 
 ## Why this is a module and not part of `src/rendering/culling/`
 

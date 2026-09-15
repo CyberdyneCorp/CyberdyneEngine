@@ -22,6 +22,26 @@
 # checkable by the link graph, and the wiring has to happen SOMEWHERE — an artefact is where.
 #
 # ================================================================================================
+# WHAT M11.c ADDED TO THIS LIST, AND WHY IT IS THE POINT OF THAT RUNG'S SECTION 3
+# ================================================================================================
+#
+# M11.c's own ledger states the defect in as many words: "`samples/10-world` links neither
+# `cy::rendering-assembly` nor the post, temporal, forward or shadow libraries, so the world picture
+# never passes through tone mapping or anti-aliasing at all." Two entries close it, and they bring
+# the rest with them because `cy::rendering-assembly` links all eight of the modules M7's gate found
+# unreachable:
+#
+#   cy::rendering-assembly   the frame: the post chain decides the feature set, the temporal
+#                            framework advances one jitter, the shadow cache spends its budget, the
+#                            sky table updates, and the stages go into the graph in order.
+#   cy::rendering-pipeline   the tonemapping resolve — `cy/fullscreen.slang`'s own, the same one
+#                            every other caller of the layer binds.
+#
+# WHAT IS STILL NOT CLAIMED. There is no temporal resolve in this tree for `FramePassKind::Temporal`
+# to record, so this program runs no anti-aliasing stage and its manifest says so. stage.h's header
+# carries the rest of the list.
+#
+# ================================================================================================
 # THE VULKAN BACKEND IS A LINK-TIME CHOICE AND NOT A COMPILE-TIME ONE
 # ================================================================================================
 #
@@ -45,7 +65,9 @@ cy_add_module(
         cy::foliage
         cy::pcg
         cy::pcg-adapters
+        cy::rendering-assembly
         cy::rendering-graph
+        cy::rendering-pipeline
         cy::rendering-sky
         cy::rhi
         cy::rhi-null

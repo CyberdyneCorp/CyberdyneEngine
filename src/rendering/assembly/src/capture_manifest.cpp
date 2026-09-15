@@ -103,7 +103,8 @@ Expected<CaptureManifest, Error> capture_manifest(const AssemblyDescription& des
     // `build_post_chain` filled, in the order it filled it. Rebuilding the chain here from
     // `description.post` would answer what the project asked for, which is the question this
     // manifest exists NOT to answer.
-    manifest.stage_count = report.post_stages < kMaxPostStages ? report.post_stages : kMaxPostStages;
+    manifest.stage_count =
+        report.post_stages < kMaxPostStages ? report.post_stages : kMaxPostStages;
     for (u32 index = 0; index < manifest.stage_count; ++index) {
         const PostStage stage = report.post_stage[index];
         manifest.stages[index].stage = stage;
@@ -129,14 +130,13 @@ Expected<usize, Error> write_capture_manifest(const CaptureManifest& manifest, c
         return fail(ErrorCode::InvalidArgument, "no buffer to write into");
     }
     usize written = 0;
-    // A single append helper, because every one of the appends below has the same two failure
-    // modes — a negative return and a truncation — and a manifest that was silently truncated is a
-    // stage list published as complete.
-    const auto append = [&](const char* format, auto... args) noexcept -> bool {
-        if (written >= capacity) {
-            return false;
-        }
-        const int count = std::snprintf(out + written, capacity - written, format, args...);
+    // EVERY FORMAT STRING BELOW IS A LITERAL AT ITS CALL SITE, which is why this is a "take the
+    // count" helper rather than a variadic one that forwards the format: `-Wformat-nonliteral` is
+    // on and `-Werror` with it, and a forwarded format is a format the compiler cannot check.
+    //
+    // The invariant the helper keeps is that `written` stays strictly below `capacity`, so
+    // `capacity - written` is never zero and never wraps.
+    const auto step = [&](int count) noexcept -> bool {
         if (count < 0 || static_cast<usize>(count) >= capacity - written) {
             return false;
         }
@@ -144,33 +144,47 @@ Expected<usize, Error> write_capture_manifest(const CaptureManifest& manifest, c
         return true;
     };
 
-    bool fits = append("capture %s\n", manifest.title);
-    fits = fits && append("purpose %s\n", manifest.purpose == CapturePurpose::Publication
-                                              ? "publication"
-                                              : "diagnostic");
-    fits = fits && append("resolution %ux%u\n", manifest.width, manifest.height);
-    fits = fits && append("exposure-ev100 %.3f\n", static_cast<double>(manifest.ev100));
-    fits = fits && append("tonemap %s\n", tonemap_operator_name(manifest.tonemap));
-    fits = fits && append("arbiter %s\n", manifest.arbiter_pinned ? "pinned" : "unpinned");
-    fits = fits && append("prepass %s\n", prepass_mode_name(manifest.prepass));
-    fits = fits && append("velocity %s\n", manifest.velocity_written ? "written" : "absent");
-    fits = fits && append("temporal-frame %llu\n",
-                          static_cast<unsigned long long>(manifest.temporal_frame));
-    fits = fits && append("temporal-invalidated %s\n", manifest.temporal_invalidated ? "yes" : "no");
-    fits = fits && append("jitter %s\n", manifest.jitter_pinned ? "pinned" : "free-running");
-    fits = fits && append("jitter-index %u\n", manifest.jitter_index);
-    fits = fits && append("passes %u\n", manifest.passes_declared);
-    fits = fits && append("draws %u\n", manifest.draws);
-    fits = fits && append("post-stages %u\n", manifest.stage_count);
+    bool fits = step(std::snprintf(out, capacity, "capture %s\n", manifest.title));
+    fits =
+        fits && step(std::snprintf(out + written, capacity - written, "purpose %s\n",
+                                   manifest.purpose == CapturePurpose::Publication ? "publication"
+                                                                                   : "diagnostic"));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "resolution %ux%u\n",
+                                      manifest.width, manifest.height));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "exposure-ev100 %.3f\n",
+                                      static_cast<double>(manifest.ev100)));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "tonemap %s\n",
+                                      tonemap_operator_name(manifest.tonemap)));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "arbiter %s\n",
+                                      manifest.arbiter_pinned ? "pinned" : "unpinned"));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "prepass %s\n",
+                                      prepass_mode_name(manifest.prepass)));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "velocity %s\n",
+                                      manifest.velocity_written ? "written" : "absent"));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "temporal-frame %llu\n",
+                                      static_cast<unsigned long long>(manifest.temporal_frame)));
+    fits =
+        fits && step(std::snprintf(out + written, capacity - written, "temporal-invalidated %s\n",
+                                   manifest.temporal_invalidated ? "yes" : "no"));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "jitter %s\n",
+                                      manifest.jitter_pinned ? "pinned" : "free-running"));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "jitter-index %u\n",
+                                      manifest.jitter_index));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "passes %u\n",
+                                      manifest.passes_declared));
+    fits = fits &&
+           step(std::snprintf(out + written, capacity - written, "draws %u\n", manifest.draws));
+    fits = fits && step(std::snprintf(out + written, capacity - written, "post-stages %u\n",
+                                      manifest.stage_count));
     for (u32 index = 0; index < manifest.stage_count && fits; ++index) {
         const CaptureStage& stage = manifest.stages[index];
-        fits = append("  %u step %u %s %s %s\n", index + 1, stage.step,
-                      post_stage_name(stage.stage), colour_space_name(stage.space),
-                      quality_level_name(stage.quality));
+        fits =
+            step(std::snprintf(out + written, capacity - written, "  %u step %u %s %s %s\n",
+                               index + 1, stage.step, post_stage_name(stage.stage),
+                               colour_space_name(stage.space), quality_level_name(stage.quality)));
     }
     if (!fits) {
-        return fail(ErrorCode::OutOfMemory,
-                    "the manifest does not fit the buffer it was given");
+        return fail(ErrorCode::OutOfMemory, "the manifest does not fit the buffer it was given");
     }
     return written;
 }

@@ -1,0 +1,29 @@
+# samples/10-world/frame.cypost — THE GRADE THIS SHOT IS TUNED AT. M11.c task 3.3.
+#
+# WHY THIS IS A FILE AND NOT A CONSTANT IN `main.cpp`. The task list's own wording is "exposure,
+# tone mapping and colour grading tuned against the shot, with the values committed as CONTENT
+# rather than as constants in a sample's `main`" — and the difference is not tidiness. A number in
+# a `main` is changed by a person with a compiler; a number in a file is changed by whoever is
+# grading the shot, and the value that was used is recoverable from the repository rather than from
+# a build.
+#
+# `Stage::read_grade` REFUSES A MISSING FILE and refuses a file with no `exposure-stops` in it.
+# A shot that silently fell back to zero stops would be an ungraded shot published as a graded one,
+# which is the same class of claim `capture_manifest.h` exists to refuse one level up.
+#
+# HOW THE NUMBER WAS ARRIVED AT. The frame's scene colour is linear and this world's shading is
+# `sun_colour * N·L + ambient` evaluated per vertex on the processor, which lands a lit midday
+# surface a little above 1.0 and a night one far below it. `cy/fullscreen.slang`'s resolve divides
+# by 2^-stops before it tonemaps, so zero stops photographs the day correctly and crushes the
+# night, and a large negative exposure does the reverse. Measured over the committed take at seed
+# 0x10C0FFEE: the still frame's mean luminance against the tonemap curve's shoulder.
+#
+# WHAT IS NOT HERE YET. `contrast` and `saturation` are read and are NOT APPLIED: the colour
+# grading stage is not in this frame's chain, because `cy/fullscreen.slang`'s resolve runs exposure
+# and the tonemap curve and nothing else. They are recorded rather than dropped so that the grade a
+# person authors and the grade the frame runs stay visibly different until the second one catches
+# up — the manifest is where that difference is read off, and it lists three stages.
+
+exposure-stops = 0.35
+contrast = 1.0
+saturation = 1.0

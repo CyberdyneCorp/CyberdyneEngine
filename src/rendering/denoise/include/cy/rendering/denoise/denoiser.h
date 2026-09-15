@@ -201,6 +201,16 @@ inline constexpr u32 kQualityPositionCount = 4;
 /// What one signal cost and how well it went. `denoising` — "Denoising diagnostics", field for
 /// field, plus the two that answer "why is there still noise".
 struct Diagnostics {
+    /// HOW MANY TIMES A PRODUCER DROVE THIS SIGNAL. Zero is the interesting value and it is why
+    /// this field exists: `denoising` declares five signals, and for four milestones the only code
+    /// in this tree that put a buffer through the framework was the framework's own suite. "The
+    /// framework handles five signals" was readable off an enumerator and off nothing else.
+    ///
+    /// `m11c:denoiser-signals-have-producers` reads this table after a frame of the real producer,
+    /// which is what makes "which signals have producers and which do not" an observation rather
+    /// than a grep. It counts calls to `denoise()` since construction, and is reset only by
+    /// `resize()` — a camera cut drops the history and changes nothing about who is producing.
+    u32 invocations = 0;
     f32 mean_sample_count = 0.0F;
     f32 mean_variance = 0.0F;
     /// The mean a-trous step actually applied, in pixels. Zero where the filter was skipped.
@@ -275,6 +285,10 @@ private:
         Array<f32> history_moment1;
         Array<f32> history_moment2;
         Array<f32> history_samples;
+        /// Kept beside the diagnostics rather than in them, because `denoise()` resets the
+        /// diagnostics on every call and a census that started again each frame would answer a
+        /// different question from the one asked.
+        u32 invocations = 0;
         bool has_history = false;
     };
 

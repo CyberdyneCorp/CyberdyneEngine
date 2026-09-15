@@ -1,12 +1,13 @@
 #pragma once
-// The stage: a graphics device, one pipeline, four draws and the PNG that comes back.
-// M10, samples/10-world.
+// The stage: a graphics device, the ENGINE'S OWN ASSEMBLED FRAME, four draws and the PNG that comes
+// back. M10, samples/10-world; the frame is M11.c task 3.1.
 //
 // ================================================================================================
 // WHAT IS DRAWN, AND BY WHAT
 // ================================================================================================
 //
-// Four draws per frame through ONE graphics pipeline, in this order:
+// Five runs per frame through ONE graphics pipeline of this file's own, recorded into the OPAQUE
+// stage of `cy::rendering::assembly::FrameAssembly`'s frame, in this order:
 //
 //   the sky      a dome of triangles around the eye, each vertex carrying the radiance
 //                `rendering::sky::compose_sky()` answered for its direction — the engine's own
@@ -22,15 +23,44 @@
 //                top of the canopy.
 //
 // ================================================================================================
-// WHAT IT DOES NOT CLAIM, AND THE LIST IS LONG ON PURPOSE
+// WHAT THE FRAME IS, AFTER M11.c — AND THE SENTENCE THIS REPLACES
 // ================================================================================================
 //
-// This is NOT `rendering::pipeline`'s forward frame, NOT the visibility buffer, NOT virtual
-// geometry, and NOT the material system. No terrain material page is bound, no environment field is
-// sampled through `environment::build_field_image()`'s GPU layout, no water surface is published
-// into the GPU scene, and no grass blade is expanded on the device. Every one of those is a gap
-// M10's own module READMEs record against their own rows, and an artefact that implied otherwise
-// would be the false green this milestone's brief forbids.
+// Until M11.c this file said "this is NOT `rendering::pipeline`'s forward frame", and it was true:
+// the picture was two passes this file declared into a render graph, with no post chain, no
+// exposure and no tone mapping anywhere in it. M11.c's ledger names that as the defect — "the world
+// picture never passes through tone mapping or anti-aliasing at all" — and `Stage::create_frame` is
+// what closes it.
+//
+// WHAT IS THE ENGINE'S NOW. `FrameAssembly` decides the frame's feature set from the post chain,
+// advances the temporal framework's jitter (PINNED, so the still is reproducible), asks the shadow
+// cache for the sun's pages, updates the sky table, and declares the frame's stages into the graph
+// in the specification's order. `cy::rendering-pipeline`'s tonemapping resolve — `cy/fullscreen.
+// slang`'s own — turns the linear HDR scene colour into the 8-bit image that is written out, at the
+// exposure `samples/10-world/frame.cypost` commits. The stage list the frame ran is published
+// beside the still by `write_manifest`.
+//
+// ================================================================================================
+// WHAT IT STILL DOES NOT CLAIM, AND THE LIST IS LONG ON PURPOSE
+// ================================================================================================
+//
+// **The geometry is this file's and not the renderer's.** The world is not in a mesh table, its
+// vertices are not the render server's three streams, and its shading is still per-vertex colour
+// computed on the processor. It is drawn INSIDE the engine's frame through `FrameSinks::passes`,
+// which is the seam `ForwardFrame` documents — "ForwardFrame knows the frame STRUCTURE and the
+// caller knows how to draw" — and not through the pipeline layer's own draw path.
+//
+// **There is no anti-aliasing.** `FramePassKind::Temporal` is declared by the frame and nothing in
+// this tree records it; there is no temporal resolve shader under `src/rendering/` at all. Turning
+// `temporal_antialiasing` on here would put a stage in the manifest that no pass ran, which is
+// precisely the dishonesty `cy/rendering/assembly/capture_manifest.h` exists to detect. The chain
+// this frame runs is the three unconditional stages and the manifest says three.
+//
+// **No visibility buffer, no virtual geometry, no material system.** No terrain material page is
+// bound, no environment field is sampled through `environment::build_field_image()`'s GPU layout,
+// no water surface is published into the GPU scene, and no grass blade is expanded on the device.
+// Every one of those is a gap M10's own module READMEs record against their own rows, and an
+// artefact that implied otherwise would be the false green this milestone's brief forbids.
 //
 // The foliage proxies in particular are THIS FILE'S geometry and not an asset: `foliage` stores 16
 // bytes an instance and names a species, and what a species' mesh looks like is the project's. A
@@ -52,6 +82,7 @@
 #include <cy/core/math/vec.h>
 #include <cy/core/memory/allocator.h>
 #include <cy/core/memory/array.h>
+#include <cy/rendering/assembly/capture_manifest.h>
 
 #include "world.h"
 
@@ -87,6 +118,21 @@ struct StageReport {
     f64 build_ms = 0.0;
     /// Milliseconds spent inside `execute()` and the wait for the device.
     f64 submit_ms = 0.0;
+
+    // --- WHAT THE ASSEMBLED FRAME DID. M11.c task 3.1. -----------------------------------------
+    //
+    // Read off `AssemblyReport` rather than off this file's own intentions, which is the whole
+    // point of the change: before M11.c this program linked no part of `src/rendering/` but the
+    // graph and the sky, so there was no frame to report on and every number about the picture was
+    // this file's own claim.
+
+    /// Passes the assembled frame declared, and post stages it ran.
+    u32 frame_passes = 0;
+    u32 post_stages = 0;
+    /// The manifest the frame emitted, as it would be published beside the still. Empty until a
+    /// frame has executed.
+    cy::rendering::assembly::CaptureManifest manifest;
+    bool manifest_valid = false;
 };
 
 /// The device, the pipeline, the buffers and the picture.
@@ -112,12 +158,28 @@ public:
     [[nodiscard]] Status shoot(const World& world, const WorldVec3d& eye, const WorldVec3d& target,
                                const char* png_path, StageReport& out) noexcept;
 
+    /// Write the frame's own stage list beside a still. `rendering-post-processing`: "a published
+    /// capture SHALL be accompanied by that stage list, and where a caption states that a stage
+    /// ran, the statement SHALL be checkable against it". Refuses a report with no manifest in it,
+    /// which is a frame that never executed.
+    [[nodiscard]] Status write_manifest(const StageReport& report, const char* path) const noexcept;
+
+    /// The exposure this shot is graded at, in stops, as `samples/10-world/frame.cypost` committed
+    /// it. M11.c task 3.3: the grade is content, not a constant in a sample's `main`.
+    [[nodiscard]] f32 exposure_stops() const noexcept { return exposure_stops_; }
+    /// Read the committed grade. Called before `open`; a missing file is an error rather than a
+    /// silent default, because a shot tuned against a file nobody read is an untuned shot.
+    [[nodiscard]] Status read_grade(const char* path) noexcept;
+
     void close() noexcept;
 
 private:
     struct Device;
 
     [[nodiscard]] Status create_pipeline() noexcept;
+    /// Build the assembled frame: the assembly, the pipeline layer and the image the resolve
+    /// writes. M11.c task 3.1.
+    [[nodiscard]] Status create_frame() noexcept;
     [[nodiscard]] Status write_png(const char* path) noexcept;
     /// Refill the per-frame streams: the sky dome's vertices, the water patch and the foliage
     /// proxies. Everything here is CPU work over what `World::advance()` produced.
@@ -127,6 +189,9 @@ private:
 
     Allocator* allocator_;
     Device* device_ = nullptr;
+    f32 exposure_stops_ = 0.0F;
+    f32 grade_contrast_ = 1.0F;
+    f32 grade_saturation_ = 1.0F;
     u32 width_ = 0;
     u32 height_ = 0;
     bool available_ = false;

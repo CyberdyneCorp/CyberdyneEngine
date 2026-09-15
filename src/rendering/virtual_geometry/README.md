@@ -93,29 +93,58 @@ Measured on a 1,280-triangle icosphere at the suite's smaller policy (32-triangl
 bytes per triangle, a 4,072-byte resident root, and a 2.2e-5 quantisation error against a unit
 sphere. Editing one vertex and recooking left **64% of clusters byte-identical**.
 
-## What is deliberately absent at M7, and where the seam is
+## What is absent, and where the seam is
 
-Stated here rather than discovered from a counter that reads zero.
+Stated here rather than discovered from a counter that reads zero. The list was written at M7 as
+"deliberately absent at M7"; M11.c task 4.1 closed the first entry and task 4.5 requires every
+remaining one to carry its **re-entry point** rather than be quietly absorbed by a row's tier
+moving.
 
-* **Occlusion culling.** `virtual-geometry` specifies a two-pass HZB scheme and the renderer has no
-  hierarchical depth buffer yet. `TraversalStatistics::nodes_pruned_by_occlusion` and
-  `rejected_by_occlusion` exist, read zero, and are the seam: the shader takes the cull tests in the
-  order the requirement fixes and the HZB test slots in beside the cone test.
-* **The hardware rasterisation path.** What ships is the compute rasteriser, which the specification
-  accommodates explicitly ("cluster dispatch, output format, and the visibility buffer SHALL not
-  assume hardware rasterisation exclusively"). The requirement's default is hardware, and that path
-  is the same visibility buffer written by a vertex and fragment shader over the same records; it
-  lands when virtual geometry is wired into the forward frame's pass order.
-* **Assemblies.** An asset referencing other assets with transforms is specified and not built. The
-  seam is `GpuAsset`: an assembly resolves to more instances of an already-registered asset, which
-  is what the instance buffer already carries.
-* **A suballocator in the geometry cache.** The cache is one shared allocation and a page's location
-  is a byte offset into it, bumped over the accounted total. Eviction is what the requirement is
-  about and is fully scored; packing is what a suballocator would add, and its tests would be about
-  fragmentation.
-* **A hash for the DAG visit marks.** GPU traversal marks visited nodes with one word per
-  (instance, cluster). `GpuTraversal::initialise` computes the allocation and **refuses** above 64 Mi
-  marks rather than overflowing on the device.
+* **Occlusion culling — SUPPLIED AT M11.c, task 4.1.** Through M10 this line read "the renderer has
+  no hierarchical depth buffer yet" and the two counters read zero. `cy::rendering-hzb` is now that
+  pyramid, `GpuTraversal::set_occlusion` attaches it, `TraversalView::occlusion` is the CPU half —
+  the SAME `render::culling::OcclusionTester` interface `GpuCullOptions` takes — and the cull chain
+  takes the tests in the order the requirement fixes: frustum, cone, screen size, occlusion.
+  `nodes_pruned_by_occlusion` and `rejected_by_occlusion` are what fills them now.
+
+  **It is the same pyramid `rendering-culling-and-lod`'s occlusion cull reads**, built by the same
+  `HzbPass` and tested by the same `hzb_sample.slang`, which both shaders `#include`. Two rows were
+  waiting on one piece of device work and one piece of work must not be recorded as two satisfied
+  requirements — `src/rendering/hzb/README.md` carries that argument.
+
+  Measured in `render.virtual_geometry_gpu`'s *"cluster occlusion reads the shared hierarchical
+  depth buffer"*, over twenty-four views sweeping occluder depth and selection threshold: 108 node
+  prunes, 11 cluster rejections, 723 clusters left visible, and no view where the device and the
+  reference traversal disagreed. **Both counters are asserted non-zero over the sweep**, because a
+  fixture in which only one of the two tests ever fires cannot detect the deletion of the other —
+  and a single view is such a fixture: for a LEAF cluster `lod_sphere` is the cluster's own sphere,
+  so the node prune answers first and the cluster test never runs.
+* **The hardware rasterisation path — STILL ABSENT AFTER M11.c (task 4.3 unfinished).** What ships
+  is the compute rasteriser, which the specification accommodates explicitly ("cluster dispatch,
+  output format, and the visibility buffer SHALL not assume hardware rasterisation exclusively").
+  The requirement's default is hardware, and that path is the same visibility buffer written by a
+  vertex and fragment shader over the same records; it lands when virtual geometry is wired into the
+  forward frame's pass order. **Nothing in the tree links `cy::rendering-virtual-geometry` from
+  `cy::rendering-forward`**, which is the link-graph fact behind that sentence and the re-entry
+  point for it.
+* **Assemblies — STILL ABSENT AFTER M11.c, and this is its re-entry point.** An asset referencing
+  other assets with transforms is specified and not built. The seam is `GpuAsset`: an assembly
+  resolves to more instances of an already-registered asset, which is what the instance buffer
+  already carries, so the work is a cook-side expansion and a `GpuScene::add_assembly` beside
+  `add_asset` — not a change to the traversal. **`virtual-geometry` does not reach Complete while
+  this is open**, and M11.c's task 4.5 is the rule that says so: a named absence is not closed by a
+  row's tier moving.
+* **A suballocator in the geometry cache — STILL ABSENT AFTER M11.c.** The cache is one shared
+  allocation and a page's location is a byte offset into it, bumped over the accounted total.
+  Eviction is what the requirement is about and is fully scored; packing is what a suballocator
+  would add, and its tests would be about fragmentation. **Re-entry point**: `GeometryCache`'s
+  `location` field is already the whole interface a suballocator would change, so the work is
+  contained to `residency.cpp` and a fragmentation suite beside `test_residency.cpp`.
+* **A hash for the DAG visit marks — STILL ABSENT AFTER M11.c.** GPU traversal marks visited nodes
+  with one word per (instance, cluster). `GpuTraversal::initialise` computes the allocation and
+  **refuses** above 64 Mi marks rather than overflowing on the device. **Re-entry point**: the
+  refusal names the limit and the growth path in its own message, and the change is confined to the
+  `visited` buffer's indexing in `vg_traversal.slang` plus the allocation in `initialise`.
 * **The collision proxy.** `GeometryCookReport::collision_triangles` is a separate figure and it is
   zero: render geometry is explicitly not collision geometry, and generating the proxy is `physics`'s.
   Zero rather than the render count is the point — a mismatch has to be visible.

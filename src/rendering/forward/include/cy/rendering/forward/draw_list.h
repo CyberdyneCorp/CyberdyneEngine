@@ -49,6 +49,7 @@
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/culling/cull.h>
+#include <cy/servers/render/gpu_scene.h>
 #include <cy/servers/render/mesh.h>
 #include <cy/servers/render/sort.h>
 #include <cy/servers/render/types.h>

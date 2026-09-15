@@ -127,6 +127,31 @@ were written before this class existed and they stay, because each maps a compos
 onto levers only it understands; what they take from the arbiter is `set_allocation_ms` and
 `grant_relax_step`, which are the same two calls.
 
+## A measured cost, and how the arbiter tells one from a number somebody wrote down
+
+M11.c added a requirement under "Subsystem controllers SHALL report their measured cost to the
+arbiter", because that sentence was satisfied by nothing: every `SubsystemController` in the tree
+lived in `samples/07-fidelity` over a hard-coded table, and two engine modules declared a priced
+ladder without ever reporting what a frame cost them. **An arbiter fed declarations converges
+beautifully on a model of the frame rather than on the frame** — which is not a figure of speech,
+since the model IS `samples/07-fidelity` and it is exactly as stable today as it was at M7.
+
+`CostSource` is where the difference lives, and it is **the reporter's claim confirmed against the
+numbers, never the claim alone**. `report_measured_ms` says "I measured this"; `cost_source()`
+answers `Measured` only if the values reported have also MOVED. A controller handing in the same
+number every frame is reported `Estimated` however it arrived, which is the requirement's own
+scenario made mechanical: *a constant is not a measurement*. `ArbiterReport::cost_source[]` carries
+the verdict per subsystem, so a subsystem with no measurement is visible as such rather than
+indistinguishable from one that is cheap.
+
+The engine's first measured controller is `cy::rendering::sky::SkyBudget`
+(`src/rendering/sky/budget.h`). It takes the middle of the three observations the requirement
+admits — a counter scaled by a measured unit cost: the sky's own density-sample counts, converted by
+a nanoseconds-per-sample it learns from a clock. Neither half would do alone, and the header there
+says why. `unit.rendering_architecture` is the suite: it compares two machines over one frame
+sequence and requires the ALLOCATION to differ — 8.17 ms measured buying 2.47 ms of budget against
+32.68 ms buying 9.88 ms.
+
 ## What is not here
 
 * **No adapter to `residency`.** That layer's levers are arbitrated in *bytes* by the memory

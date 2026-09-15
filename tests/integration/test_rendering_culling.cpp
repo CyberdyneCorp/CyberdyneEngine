@@ -48,9 +48,9 @@
 #include <cy/core/math/matrix.h>
 #include <cy/core/math/projection.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/rendering/gpu_culling/cull_pass.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
-#include <cy/rendering/gpu_culling/cull_pass.h>
 #include <cy/rendering/hzb/hzb_pass.h>
 #include <cy/servers/render/culling/gpu_cull.h>
 #include <cy/servers/render/culling/hzb.h>
@@ -60,14 +60,9 @@
 #include <vector>
 
 using cy::f32;
-using cy::u32;
 using cy::Mat4;
+using cy::u32;
 using cy::Vec3;
-using cy::rendering::gpu_culling::GpuCullPass;
-using cy::rendering::gpu_culling::GpuCullPassDescription;
-using cy::rendering::gpu_culling::GpuCullReadback;
-using cy::rendering::hzb::HzbPass;
-using cy::rendering::hzb::HzbPassDescription;
 using cy::render::GpuInstance;
 using cy::render::kDefaultLayer;
 using cy::render::kInstanceActive;
@@ -88,11 +83,16 @@ using cy::render::culling::project_sphere;
 using cy::render::culling::ScreenRect;
 using cy::render::culling::write_field_of_view;
 using cy::render::culling::write_frustum;
+using cy::rendering::gpu_culling::GpuCullPass;
+using cy::rendering::gpu_culling::GpuCullPassDescription;
+using cy::rendering::gpu_culling::GpuCullReadback;
+using cy::rendering::hzb::HzbPass;
+using cy::rendering::hzb::HzbPassDescription;
 
 namespace {
 
-/// Small on purpose: eight levels is enough to exercise the whole chain, including the odd-dimension
-/// fold at 9 -> 5 and 5 -> 3, and the whole pyramid is about 12k floats.
+/// Small on purpose: eight levels is enough to exercise the whole chain, including the
+/// odd-dimension fold at 9 -> 5 and 5 -> 3, and the whole pyramid is about 12k floats.
 constexpr u32 kWidth = 128;
 constexpr u32 kHeight = 72;
 
@@ -357,8 +357,8 @@ CY_TEST_CASE(
                     std::fprintf(stderr,
                                  "hzb level %u texel %zu: the model says %.9g and the device says "
                                  "%.9g\n",
-                                 level, static_cast<size_t>(index), static_cast<double>(want[index]),
-                                 static_cast<double>(got[index]));
+                                 level, static_cast<size_t>(index),
+                                 static_cast<double>(want[index]), static_cast<double>(got[index]));
                 }
                 ++differing;
             }
@@ -375,8 +375,9 @@ CY_TEST_CASE(
 // --- The occlusion cull the pyramid was built for
 // ------------------------------------------------
 
-CY_TEST_CASE("the device occlusion cull rejects the instances the CPU model rejects, and names a "
-             "disagreement") {
+CY_TEST_CASE(
+    "the device occlusion cull rejects the instances the CPU model rejects, and names a "
+    "disagreement") {
     DeviceFixture gpu;
     if (!gpu.has_gpu()) {
         gpu.report_skip();
@@ -499,8 +500,9 @@ CY_TEST_CASE("the device occlusion cull rejects the instances the CPU model reje
     gpu.device().destroy_buffer(depth);
 }
 
-CY_TEST_CASE("an occlusion cull with no pyramid attached is refused rather than reported as "
-             "'nothing was occluded'") {
+CY_TEST_CASE(
+    "an occlusion cull with no pyramid attached is refused rather than reported as "
+    "'nothing was occluded'") {
     DeviceFixture gpu;
     if (!gpu.has_gpu()) {
         gpu.report_skip();

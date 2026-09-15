@@ -250,6 +250,43 @@ void compare_frames(Span<const PackedNormalTangent> expected, Span<const PackedN
     CY_CHECK(worst <= kFrameTolerance);
 }
 
+/// Compare two frames as DIRECTIONS rather than as encoded bytes, reporting the worst angle.
+///
+/// WHY THIS EXISTS AND WHY IT IS NOT A LOOSER TOLERANCE ON THE SAME NUMBERS. The octahedral
+/// encoding has a FOLD: a direction whose two encoded components sum to exactly one lies on the
+/// seam, and the two encodings either side of it decode to the same direction. A tangent sitting on
+/// that seam is encoded as (0.99997, +0.729) by one implementation and (0.99997, -0.729) by the
+/// other — 47 800 snorm steps apart, and 0.00006 apart as a direction.
+///
+/// The dual-quaternion blend puts the arm's tangents exactly there, because `v + 2r x (r x v + wv)`
+/// and a matrix multiply differ in the last bits and the last bits are what decides which side of
+/// the seam a value lands on. Comparing the bytes would therefore be comparing which of two correct
+/// encodings each implementation chose. What the reference is the expected value OF is the frame,
+/// so the frame is what is compared — and the BITANGENT SIGN is still compared exactly, because a
+/// flipped bitangent is a normal map read inside out and is not a rounding.
+void compare_frame_directions(Span<const PackedNormalTangent> expected,
+                              Span<const PackedNormalTangent> got, u32 first, u32 count,
+                              f32 tolerance, const char* what) {
+    f32 worst = 0.0F;
+    const auto difference = [](Vec3 a, Vec3 b) {
+        return std::sqrt(((a.x - b.x) * (a.x - b.x)) + ((a.y - b.y) * (a.y - b.y)) +
+                         ((a.z - b.z) * (a.z - b.z)));
+    };
+    for (u32 index = 0; index < count; ++index) {
+        const PackedNormalTangent& want = expected[first + index];
+        const PackedNormalTangent& have = got[first + index];
+        worst = std::fmax(worst, difference(cy::render::unpack_normal(want),
+                                            cy::render::unpack_normal(have)));
+        worst = std::fmax(worst, difference(cy::render::unpack_tangent(want),
+                                            cy::render::unpack_tangent(have)));
+        CY_CHECK(cy::render::unpack_bitangent_sign(want) ==
+                 cy::render::unpack_bitangent_sign(have));
+    }
+    std::fprintf(stderr, "%s: worst frame direction difference %g over %u vertices\n", what,
+                 static_cast<double>(worst), count);
+    CY_CHECK(worst <= tolerance);
+}
+
 }  // namespace
 
 CY_TEST_CASE("skinning: the dispatch and the CPU reference skin one arm to the same vertices") {
@@ -488,15 +525,22 @@ CY_TEST_CASE(
                        Span<const GpuSkinInfluence>(mesh.influences.data(), mesh.influences.size()))
                    .has_value());
 
+    // UNTIL M11.c THIS CASE ASSERTED THAT DUAL QUATERNIONS AND BLEND SHAPES WERE REFUSED with
+    // `NotImplemented`. Both are implemented; what is checked here now is that the pass still
+    // refuses what it genuinely cannot execute, and the dual-quaternion path is exercised against
+    // the reference by `skinning: the dispatch and the reference agree on a dual-quaternion skin`.
     SkinningDescriptor dual = descriptor;
     dual.method = SkinningMethod::DualQuaternion;
-    const Status refused_dual = pass.upload(dual, Span<const Mat4>(pose.data(), pose.size()), 0);
-    CY_REQUIRE(!refused_dual.has_value());
-    CY_CHECK(refused_dual.error().code == ErrorCode::NotImplemented);
+    CY_CHECK(pass.upload(dual, Span<const Mat4>(pose.data(), pose.size()), 0).has_value());
 
-    SkinningDescriptor shapes = descriptor;
-    shapes.blend_shape_count = 4;
-    CY_CHECK(!pass.upload(shapes, Span<const Mat4>(pose.data(), pose.size()), 0).has_value());
+    // A blend shape whose delta range runs past the end of the array the pass was given. Refused
+    // here rather than read past on the device, where the read is undefined behaviour and there is
+    // no diagnostic to return.
+    const cy::render::geometry::GpuActiveBlendShape overrun[1] = {{0, 4, 1.0F, 0}};
+    CY_CHECK(!pass.upload_blend_shapes(
+                      Span<const cy::render::geometry::BlendShapeDelta>(),
+                      Span<const cy::render::geometry::GpuActiveBlendShape>(overrun, 1))
+                  .has_value());
 
     // A pose that does not reach the skin's slice.
     SkinningDescriptor offset = descriptor;
@@ -509,5 +553,118 @@ CY_TEST_CASE(
     SkinPass fresh;
     CY_REQUIRE(fresh.create(allocator(), gpu.device(), description).has_value());
     CY_CHECK(!fresh.declare(graph).has_value());
+    CY_CHECK_EQ(gpu.validation_errors(), 0U);
+}
+
+CY_TEST_CASE(
+    "skinning: the dispatch and the reference agree on a dual-quaternion skin with blend shapes") {
+    // BOTH FEATURES IN ONE CASE, because both were refused by one line each until M11.c and because
+    // the interesting arrangement is the one where they meet: a delta applied to the bind pose and
+    // carried into the world by a blend that is not a matrix average.
+    //
+    // What is compared is what every other case here compares — the device's buffer against
+    // `cpu_reference_skin`'s — because a skinning path verified by looking at a picture is a
+    // skinning path verified by nobody.
+    DeviceFixture gpu("cy_test_render_skinning_dual_quaternion");
+    if (!gpu.has_gpu()) {
+        gpu.report_skip();
+        return;
+    }
+    const ArmMesh mesh;
+
+    // One shape, moving every second vertex out along +z by a unit. Sorted by vertex index, which
+    // `BlendShapeSet::add` refuses an unsorted list for and which is what lets both the dispatch and
+    // the reference binary-search it.
+    std::vector<cy::render::geometry::BlendShapeDelta> deltas;
+    for (u32 vertex = 0; vertex < ArmMesh::kVertices; vertex += 2U) {
+        cy::render::geometry::BlendShapeDelta delta;
+        delta.vertex = vertex;
+        delta.position[2] = 1.0F;
+        delta.normal[0] = 0.25F;
+        deltas.push_back(delta);
+    }
+    const cy::render::geometry::GpuActiveBlendShape active[1] = {
+        {0, static_cast<u32>(deltas.size()), 0.5F, 0}};
+    const cy::u32 kActiveCount = 1;
+
+    SkinPassDescription description;
+    description.max_vertices = ArmMesh::kVertices;
+    description.max_bones = 2;
+    description.max_blend_shape_deltas = static_cast<u32>(deltas.size());
+    description.max_active_blend_shapes = 1;
+    description.read_back = true;
+
+    SkinPass pass;
+    CY_REQUIRE(pass.create(allocator(), gpu.device(), description).has_value());
+    CY_REQUIRE(pass.upload_mesh(
+                       Span<const Vec3>(mesh.positions.data(), mesh.positions.size()),
+                       Span<const PackedNormalTangent>(mesh.frames.data(), mesh.frames.size()),
+                       Span<const GpuSkinInfluence>(mesh.influences.data(), mesh.influences.size()))
+                   .has_value());
+    // BEFORE `upload`, because the active count is part of the constant block `upload` builds.
+    CY_REQUIRE(pass.upload_blend_shapes(
+                       Span<const cy::render::geometry::BlendShapeDelta>(deltas.data(),
+                                                                         deltas.size()),
+                       Span<const cy::render::geometry::GpuActiveBlendShape>(active, kActiveCount))
+                   .has_value());
+
+    SkinningDescriptor descriptor = arm_descriptor(ArmMesh::kVertices);
+    descriptor.method = SkinningMethod::DualQuaternion;
+    descriptor.blend_shape_count = 1;
+    const std::vector<Mat4> pose = elbow_pose(std::numbers::pi_v<f32> * 0.5F);
+
+    DispatchResult measured;
+    CY_REQUIRE(run_dispatch(gpu, pass, mesh, descriptor, Span<const Mat4>(pose.data(), pose.size()),
+                            0, measured));
+    CY_REQUIRE_EQ(pass.constants().active_blend_shapes, kActiveCount);
+    CY_CHECK((pass.constants().flags & cy::render::geometry::kSkinDualQuaternion) != 0U);
+
+    // The reference, over the same description and the same buffers. The pose is converted here the
+    // same way the pass converts it — once per bone, through `pack_bone_dual_quaternion` — because
+    // a test that packed it differently would be comparing two conversions rather than two skins.
+    std::vector<cy::render::geometry::GpuBoneDualQuaternion> dual_pose;
+    dual_pose.reserve(pose.size());
+    for (const Mat4& matrix : pose) {
+        dual_pose.push_back(cy::render::geometry::pack_bone_dual_quaternion(matrix));
+    }
+    std::vector<Vec3> expected_positions(static_cast<usize>(ArmMesh::kVertices) * 2U,
+                                         Vec3{0.0F, 0.0F, 0.0F});
+    std::vector<PackedNormalTangent> expected_frames(static_cast<usize>(ArmMesh::kVertices) * 2U,
+                                                     PackedNormalTangent{});
+    cy::render::geometry::SkinInputs inputs;
+    inputs.bone_dual_quaternions = Span<const cy::render::geometry::GpuBoneDualQuaternion>(
+        dual_pose.data(), dual_pose.size());
+    inputs.positions = Span<const Vec3>(mesh.positions.data(), mesh.positions.size());
+    inputs.frames = Span<const PackedNormalTangent>(mesh.frames.data(), mesh.frames.size());
+    inputs.influences = Span<const GpuSkinInfluence>(mesh.influences.data(), mesh.influences.size());
+    inputs.blend_shape_deltas =
+        Span<const cy::render::geometry::BlendShapeDelta>(deltas.data(), deltas.size());
+    inputs.active_shapes =
+        Span<const cy::render::geometry::GpuActiveBlendShape>(active, kActiveCount);
+    cy::render::geometry::SkinOutputs outputs;
+    outputs.positions = Span<Vec3>(expected_positions.data(), expected_positions.size());
+    outputs.frames =
+        Span<PackedNormalTangent>(expected_frames.data(), expected_frames.size());
+    CY_REQUIRE(cpu_reference_skin(pass.constants(), inputs, outputs).has_value());
+
+    compare(Span<const Vec3>(expected_positions.data(), expected_positions.size()),
+            Span<const Vec3>(measured.positions.data(), measured.positions.size()),
+            measured.vertex_offset, ArmMesh::kVertices, "dual quaternion with blend shapes");
+    // 1e-3 of a unit vector, which is about a twentieth of a degree — three orders coarser than
+    // the 6e-5 the seam actually costs and three orders finer than anything a blend could get
+    // wrong. It is stated here rather than widened until the case passed.
+    compare_frame_directions(
+        Span<const PackedNormalTangent>(expected_frames.data(), expected_frames.size()),
+        Span<const PackedNormalTangent>(measured.frames.data(), measured.frames.size()),
+        measured.vertex_offset, ArmMesh::kVertices, 1.0e-3F, "dual quaternion with blend shapes");
+
+    // AND THE SHAPE ACTUALLY MOVED SOMETHING. A delta of +1 on z at half weight puts every even
+    // vertex half a unit off the arm's plane, and the odd ones stay on it — so the comparison above
+    // is over a picture the shapes changed rather than over one they did not.
+    const Vec3& shaped = measured.positions[measured.vertex_offset];
+    const Vec3& unshaped = measured.positions[measured.vertex_offset + 1U];
+    std::fprintf(stderr, "blend-shaped vertex z %g against an unshaped %g\n",
+                 static_cast<double>(shaped.z), static_cast<double>(unshaped.z));
+    CY_CHECK(std::fabs(shaped.z - unshaped.z) > 0.4F);
     CY_CHECK_EQ(gpu.validation_errors(), 0U);
 }

@@ -61,17 +61,40 @@ positions. One `SkinPass` still owns one descriptor set naming one set of buffer
 flight over one pass is a genuine write-after-write the graph cannot see — the remedy is a pass per
 frame in flight. The suite drains each frame before beginning the next, and says so.
 
-## What it does not do
+## What M11.c closed, and what it did not
 
-* **Dual quaternion skinning.** `SkinningMethod::DualQuaternion` is refused by name. A dual-quaternion
-  skin needs the pose *as dual quaternions* and `PoseWorld` publishes matrices; deriving a rotation
-  per vertex per influence in the dispatch is the wrong place by two orders of magnitude, and adding
-  a second pose representation is `animation-and-skinning`'s to add.
-* **Blend shapes.** `BlendShapeSet` is the storage and the active-shape compaction; applying the
-  deltas belongs in this same dispatch and is not written.
-* **Anything that decides WHICH instances are skinned.** There is no per-instance skinning table, no
-  `kSpatialSkinned` bit and no route from `render::kInstanceSkinned` to a shader; `GpuDrawInstance::flags`
-  is still never written by `build_draw_list`. A caller drives one `SkinPass` per skin by hand.
+Three absences were recorded here at M6 and M8.d and did not move for five milestones. All three are
+closed; the record of what they were is kept because the arguments that justified them are the ones
+that had to be answered.
 
-Both refusals follow `GpuCullPass`'s refusal of `kGpuCullOcclusion`: a dispatch that quietly ignored a
-field would be indistinguishable from one that honoured it over empty data.
+* **Dual quaternion skinning.** Was refused by name, on the argument that a dual-quaternion skin
+  needs the pose *as dual quaternions* while `PoseWorld` publishes matrices, and that deriving a
+  rotation "per vertex per influence" is the wrong place by two orders of magnitude. The second half
+  was right and it is an argument about WHERE: per bone it is a hundred conversions a frame, the same
+  order as composing `model * inverse_bind` in the first place. `GpuBoneDualQuaternion` and
+  `pack_bone_dual_quaternion` are the second representation, defined beside `GpuBoneMatrix` and
+  `pack_bone_matrix` because a buffer layout the dispatch reads is the dispatch's; `PoseWorld` still
+  publishes `Mat4` and nothing about it changed. The blend is DLB with the antipodality fix, which is
+  not optional — `q` and `−q` are one rotation and their sum is zero — and `unit.render_geometry`'s
+  *the elbow keeps its length where a matrix blend shortens it* is the candy wrapper in numbers:
+  0.707 of a unit from the elbow under a matrix blend against exactly 1 under a dual one.
+* **Blend shapes.** `BlendShapeSet` was the storage and the active-shape compaction and the
+  arithmetic was missing. It is here now, applied to the BIND POSE before the skin — a delta is
+  authored against the modelled shape — by a binary search per active shape, which is what
+  `BlendShapeSet::add`'s refusal of an unsorted delta list has always been for. Only the active
+  shapes are read, which is the requirement's "WHEN 50 blend shapes exist and 5 have non-zero weight"
+  made mechanical rather than asserted.
+* **Which instances are skinned.** `kSpatialSkinned` and `kSpatialTwoSided` are bits the broad phase
+  already loads per instance, `VisibleInstance::flags` carries them out of culling, and
+  `build_draw_list` writes `GpuDrawInstance::flags` through `instance_flags_of` — the one place the
+  two flag enumerations are mapped, because they are different bit numbers and a copy of the word
+  would have produced a plausible flags field meaning something else. Until M11.c that field was
+  written by NOBODY, so every draw in this engine claimed to be unskinned.
+
+**What is still true:** a caller drives one `SkinPass` per skin by hand. There is no per-instance
+skinning *table* and no dispatch that skins a scene's worth of characters in one submit; what exists
+is the bit that says which instances would need one.
+
+`GpuCullPass`'s refusal of `kGpuCullOcclusion` remains the pattern for anything this module cannot
+do: a dispatch that quietly ignored a field would be indistinguishable from one that honoured it over
+empty data.

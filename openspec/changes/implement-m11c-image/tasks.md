@@ -182,7 +182,7 @@ below is that work, named rather than discovered.
 
 ## 4. The geometry rows and the one HZB they share — `virtual-geometry`, `virtual-shadows`, `rendering-culling-and-lod` → Complete
 
-- [ ] 4.1 **One hierarchical depth buffer on the device, serving both rows.**
+- [x] 4.1 **One hierarchical depth buffer on the device, serving both rows.**
       `GpuCullPass::upload` refuses `kGpuCullOcclusion` with `NotImplemented`
       (`src/rendering/gpu_culling/src/cull_pass.cpp:380`) naming the reason — *"no hierarchical depth
       buffer exists on the device yet; a dispatch that ignored the flag would report 'nothing was
@@ -190,20 +190,88 @@ below is that work, named rather than discovered.
       cluster occlusion is the same HZB with the test slotted beside the cone test, with
       `TraversalStatistics::nodes_pruned_by_occlusion` already there reading zero as the seam.
       **Two rows, one piece of work, and the ledger must not count it twice**
-- [ ] 4.2 The occlusion claim is **measured against the CPU model already in the tree**: `Hzb` and
+      - [x] **`src/rendering/hzb/` — `cy::rendering-hzb`, and it is a module precisely so that
+        neither consumer owns it.** The pyramid is the levels concatenated in one
+        `StructuredBuffer<float>`: level 0 seeded by a copy from whatever buffer the depth was
+        written into, and one compute dispatch per level above it with the barrier between two of
+        them derived by the render graph. `hzb_reduce.slang` is `Hzb::reduce()` transcribed
+        expression by expression, odd-dimension fold included
+      - [x] **"One buffer, two consumers" is a LINK-GRAPH FACT and a SHADER fact, not a sentence.**
+        `cy::rendering-gpu-culling` and `cy::rendering-virtual-geometry` both depend on
+        `cy::rendering-hzb`; `gpu_cull.slang` and `vg_traversal.slang` both `#include`
+        `hzb_sample.slang`, whose slangc invocations carry `-I ../../hzb/shaders`. A second spelling
+        of the test would be a second chance to transpose a matrix, and would be how one piece of
+        work gets recorded as two satisfied requirements
+      - [x] **`GpuCullPass::upload`'s refusal is NARROWED, not deleted.** It refused
+        `kGpuCullOcclusion` unconditionally; it now refuses it only when no pyramid is attached,
+        because that caller is still asking for a cull that cannot occlude anything.
+        `integration.rendering_culling`'s third case is that refusal, and asserts the same scene
+        without the flag still culls
+      - [x] **`TraversalStatistics::nodes_pruned_by_occlusion` and `rejected_by_occlusion` are no
+        longer zero**, and the counters the shader keeps grew from twelve words to fourteen. The
+        occlusion test slots in where the requirement fixes it: on the group sphere at a node, and
+        after the screen-size test on a candidate cluster
+      - [x] **A hazard found and refused rather than raced.** `RenderGraph::import_buffer` does not
+        de-duplicate, so a consumer importing the pyramid's handle itself would get a SECOND
+        resource for one buffer and the graph would derive no barrier between the reduction that
+        writes it and the dispatch that reads it — right on some frames, "nothing was occluded" on
+        others. `HzbPass::declare` returns the resource id and both consumers REFUSE when a pyramid
+        is attached and none was passed
+- [x] 4.2 The occlusion claim is **measured against the CPU model already in the tree**: `Hzb` and
       `TwoPassCull` are tested as a model, so the device pass is checked against the model's answer
       rather than against a screenshot, and a disagreement is the finding
+      - [x] **`integration.rendering_culling`** (`tests/integration/test_rendering_culling.cpp`),
+        three cases and none of them able to pass by being empty. The device pyramid is read back
+        and compared against the model TEXEL FOR TEXEL over all eight levels — 0 differing, and the
+        model is asserted to hold at least two distinct depths so that an agreement is not an
+        agreement between two constant buffers. Then one scene is culled twice, through
+        `cpu_reference_cull` with `HzbOcclusionTester` and through the dispatch with the pyramid
+        attached: model rejected 1 and drew 2, device rejected 1 and drew 2, and the surviving
+        draws are compared slot by slot. A disagreement PRINTS THE COUNTS and fails
+      - [x] **The second consumer is measured the same way.**
+        `render.virtual_geometry_gpu`'s *"cluster occlusion reads the shared hierarchical depth
+        buffer"* sweeps 24 views over occluder depth and selection threshold: 108 node prunes, 11
+        cluster rejections, 723 clusters left visible, 0 views where the device and
+        `traverse_reference` disagreed. **Both counters are asserted non-zero**, because a fixture
+        in which only one of the two tests ever fires cannot detect the deletion of the other — and
+        one view is such a fixture, for a reason the case records: a LEAF cluster's `lod_sphere` is
+        its own sphere, so the node prune answers first and the cluster test never runs
+      - [x] **Proven able to go red, by mutation, three times.** Deleting the reduction's source
+        offset in `hzb_pass.cpp` — a tree that still BUILDS — gives 178 differing texels, the first
+        at level 2 texel 106 where the model says 0.0141871329 and the device says 0. Disabling the
+        device's occlusion parameters in `GpuTraversal::set_occlusion` mismatches 11 of the 24 VG
+        views. Both restored, both green again. The first is the criterion's declared
+        `[criterion.falsifies]`
 - [ ] 4.3 `virtual-geometry` wired into the forward frame's pass order, which is what the module's
       README names as the condition for the hardware rasterisation path — the same visibility buffer
       written by a vertex and fragment shader over the same records
+      - [ ] **NOT DONE, and the link graph is the measurement**: nothing in the tree links
+        `cy::rendering-virtual-geometry` from `cy::rendering-forward`, so the compute rasteriser is
+        still the only path. Recorded in `src/rendering/virtual_geometry/README.md` as an absence
+        with its re-entry point rather than absorbed by a tier moving
 - [ ] 4.4 `virtual-shadows`' `RayTraced` and `Hybrid` modes, which `address_space.h` names and does
       not implement and which `src/rendering/shadows/README.md` says are
       `ray-tracing-infrastructure`'s to supply. **Downstream of 2.6**: with the RHI reporting no ray
       tracing they cannot be reached on this host at all
-- [ ] 4.5 The remaining named absences of `virtual-geometry`, each recorded in its own README rather
+      - [ ] **NOT DONE and not this task's to force.** It is downstream of task 2.6, which is where
+        `Capability::RayTracing` is decided. `virtual-shadows` does not reach Complete on the
+        strength of the HZB alone and this rung should say so rather than let one row's two open
+        halves be settled by the other
+- [x] 4.5 The remaining named absences of `virtual-geometry`, each recorded in its own README rather
       than discovered: assemblies, a suballocator in the geometry cache, and a hash for the DAG visit
       marks. Each is either done or recorded as a deferral with its re-entry point — **not left to be
       counted as done by a row reaching Complete**
+      - [x] **Four absences, and each now carries its re-entry point in
+        `src/rendering/virtual_geometry/README.md`**: the hardware rasterisation path (the link that
+        does not exist, task 4.3), assemblies (a cook-side expansion and a `GpuScene::add_assembly`
+        beside `add_asset` — not a change to the traversal), the geometry cache's suballocator
+        (`GeometryCache`'s `location` field is the whole interface it would change), and the DAG
+        visit-mark hash (the refusal names its own limit and growth path). The section's heading no
+        longer says "deliberately absent at M7", because three of the four are no longer deliberate
+        and one of them was closed
+      - [x] **`virtual-geometry` does NOT reach Complete on this rung**, and the README says so in
+        the entry for assemblies. A named absence is not closed by a row's tier moving — which is
+        this task's whole sentence
 
 ## 5. The sky as an image, and the two rows underneath it — `atmosphere-sky-and-clouds`, `rendering-architecture`, `rendering-geometry-and-resources` → Complete
 
@@ -211,26 +279,86 @@ below is that work, named rather than discovered.
       measured by five criteria over four suites; the thirteenth is `Cloud shadows`, whose producer
       half is **M11.a's declared gap** and whose consumer half is task 2.4. `status.yaml` states the
       condition in as many words: *the row does NOT reach Complete at M11 while the gap is open*
+      - [x] **`m10:sky-field-round-trip` is CLOSED, and the defect was the check rather than the
+        write path.** M11.a established that `CloudShadowField::sample` was never wrong and then
+        moved the check off it: its repair reads through `FieldStore::sample_at(field, position,
+        level)` with an explicit residency, and M11.a's own gate replaced the named function's body
+        with `return 1.0F` and watched the criterion stay GREEN. `test_cloud_shadows.cpp` now walks
+        the same cell centres a second time THROUGH `CloudShadowField::sample` and compares the two
+        answers — `through CloudShadowField::sample: 5120 samples, lowest 0.00392157, highest 1,
+        disagreeing 0` — and the criterion judges that line. Production code changed:
+        `cloud_shadows.cpp` states the full-sun answer in the sampler instead of taking it on trust
+        from the substrate's fill, which is also the line the declared mutation deletes. The
+        `known_gap` markers are deleted from m10.toml in this change
+      - [x] **`m11a:sky-field-consumed-outside-the-sky` is CLOSED, and it was one of the seven
+        presence-only checks.** It was a `grep -rln` for two names over `src/`, which a word would
+        have turned green. `src/rendering/lighting/src/cloud_shadow.cpp` is illumination reading the
+        field — the first consumer of it anywhere outside `src/rendering/sky/` — and the criterion
+        now RUNS `integration.render_illumination_clouds`, which searches the written ground for the
+        darkest and the brightest cell through the consumer and compares the sun it gets back: 10 980
+        lux under the cloud against 100 000 beside it. The grep survives as a precondition and is no
+        longer the verdict
+      - [ ] **The row does not reach Complete in this section.** `m11c:sky-as-an-image` is
+        undelivered — see 5.2
 - [ ] 5.2 The sky judged **as an image** in the artefact — aerial perspective on distant geometry
       consistent with the sky rather than a separately tuned fog, which is the requirement's own
       scenario and the one a table cannot answer
-- [ ] 5.3 **`rendering-architecture`: a subsystem controller under `src/` reports a *measured* cost
+      - [x] **The consumer half is done.** design.md §4: *this rung owns the consumer half —
+        illumination reading the cloud shadow field — and a consumer written against a field that
+        returns its declared default at every point is a consumer that cannot be tested*. The field
+        does not return its default, the consumer is
+        `src/rendering/lighting/include/cy/rendering/lighting/cloud_shadow.h`, and it attenuates a
+        directional light and refuses to attenuate a punctual one — a cloud shadows the sun, not a
+        torch
+      - [ ] **NOT DELIVERED: the capture.** `m11c:sky-as-an-image` runs
+        `just test-render sky --times-of-day 4 --compare-golden`, and neither the recipe's arguments
+        nor the golden references exist. It is left RED rather than weakened. Building it means a
+        sky capture harness and four committed references drawn on ONE GPU vendor, which is the shape
+        design.md §6 refuses for the beauty shot and which needs its own argument before it is
+        committed to a golden
+- [x] 5.3 **`rendering-architecture`: a subsystem controller under `src/` reports a *measured* cost
       to the arbiter.** The arbiter is built and certified over 71 step magnitudes; the seven
       `SubsystemController`s in the tree live in `samples/07-fidelity` over a hard-coded cost table.
       M10 moved the needle — `src/foliage/` and `src/rendering/sky/` link `cy::rendering-arbiter` and
       `declare_to_arbiter()` publishes a priced ladder — and **a declaration is not a controller
       reporting a measurement**. The new requirement in `specs/rendering-architecture/` makes the
-      difference checkable: a cost that is a compile-time constant is not a measurement
-- [ ] 5.4 Pinned mode disables the arbiter and every controller together, and **the artefact is
+      difference checkable: a cost that is a compile-time constant is not a measurement.
+      `cy::rendering::sky::SkyBudget` is the controller — the sky's own density-sample counts scaled
+      by a nanoseconds-per-sample it learns from a clock — and `CostSource` is the arbiter's verdict
+      on the claim: `Measured` only where the reported numbers have also MOVED, so a controller
+      handing in a table is reported `Estimated` however it arrived. `unit.rendering_architecture`
+      compares two machines over one frame sequence: 8.17 ms measured buys 2.47 ms of allocation and
+      32.68 ms buys 9.88 ms
+- [x] 5.4 Pinned mode disables the arbiter and every controller together, and **the artefact is
       captured pinned**, so the published frame is not a frame the arbiter degraded mid-capture
-- [ ] 5.5 **`rendering-geometry-and-resources`: dual quaternion skinning and blend shapes where the
+      - [x] **The mechanism half.** `SkyBudget::apply()` takes its pinned state from
+        `ArbiterReport::pinned` and from nowhere else, so a pinned arbiter with a moving sky is not a
+        state this code can reach. `unit.rendering_architecture`'s fourth case drives a 40 ms frame
+        unpinned — the sky falls to ladder position 4 — and then pinned from authored quality, and
+        the position does not move
+      - [ ] **The artefact half belongs to section 7** and is not this section's to capture
+- [x] 5.5 **`rendering-geometry-and-resources`: dual quaternion skinning and blend shapes where the
       specification says they belong.** `skin_dispatch.cpp:58` refuses `SkinningMethod::DualQuaternion`
       by name because `PoseWorld` publishes matrices — so the missing piece is a pose representation
       in `animation-and-skinning` and not a branch in the pass; `skin_pass.h:60` records blend shapes
       as refused though the specification requires them *"in the same compute pass as skinning"*.
-      **`animation-and-skinning` is M11.b's row** — design.md §5 — and this rung owns the pass
-- [ ] 5.6 And the half nothing decides: **which instances are skinned**, recorded at M6 and unmoved
-      since
+      **`animation-and-skinning` is M11.b's row** — design.md §5 — and this rung owns the pass.
+      **THE POSE ARGUMENT WAS HALF RIGHT AND THE HALF THAT WAS WRONG IS WHERE THE WORK GOES.** The
+      objection `skin_dispatch.h` actually makes is about COST — "per vertex per influence ... the
+      wrong place by two orders of magnitude" — and per BONE it is a hundred conversions a frame,
+      the same order as composing `model * inverse_bind`. So `GpuBoneDualQuaternion` and
+      `pack_bone_dual_quaternion` sit beside `GpuBoneMatrix` and `pack_bone_matrix`, `PoseWorld`
+      still publishes `Mat4` and nothing about it changed, and M11.b owed nothing after all. Both
+      features are in the CPU reference, in `skin.slang`, and in the device pass: the SPIR-V is
+      regenerated, three bindings joined, and `render.skinning` compares the dispatch against
+      `cpu_reference_skin` for a dual-quaternion skin carrying a blend shape
+- [x] 5.6 And the half nothing decides: **which instances are skinned**, recorded at M6 and unmoved
+      since. `kSpatialSkinned` and `kSpatialTwoSided` are bits the broad phase already loads,
+      `VisibleInstance::flags` carries them out of culling, and `build_draw_list` writes
+      `GpuDrawInstance::flags` through `instance_flags_of` — the one place the two flag enumerations
+      are mapped, because they are different bit numbers and a copy of the word would have produced a
+      plausible flags field meaning something else. That field was written by NOBODY until M11.c, so
+      every draw in this engine claimed to be unskinned
 
 ## 6. Content, and the row that needs it — `vfx-system` → Complete, and the first textures in the tree
 

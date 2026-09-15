@@ -8,6 +8,8 @@ namespace cy::rendering::skinning {
 namespace {
 
 using render::PackedNormalTangent;
+using render::geometry::GpuActiveBlendShape;
+using render::geometry::GpuBoneDualQuaternion;
 using render::geometry::GpuBoneMatrix;
 using render::geometry::GpuSkinConstants;
 using render::geometry::GpuSkinInfluence;
@@ -19,7 +21,12 @@ using render::geometry::SkinningDescriptor;
 /// not reflected here covers the wrong number of vertices rather than a comment.
 constexpr u32 kSkinGroupSize = 64;
 
-/// The six bindings the shader declares, in the order it declares them.
+/// The nine bindings the shader declares, in the order it declares them.
+///
+/// SIX UNTIL M11.c, and the three that joined are the dual-quaternion pose and the two blend-shape
+/// buffers. Every one of them is bound on every pass, empty or not, for the reason `at_least_one`
+/// below gives: a descriptor must name something, and the flags and the active count in the constant
+/// block are what tell the shader whether to read it.
 enum Binding : u32 {
     kBindingBones = 0,
     kBindingInPositions = 1,
@@ -27,7 +34,10 @@ enum Binding : u32 {
     kBindingInfluences = 3,
     kBindingOutPositions = 4,
     kBindingOutFrames = 5,
-    kBindingCount = 6,
+    kBindingBoneDualQuaternions = 6,
+    kBindingBlendShapeDeltas = 7,
+    kBindingActiveBlendShapes = 8,
+    kBindingCount = 9,
 };
 
 /// Vulkan has no zero-length buffer, and a descriptor must name something even when the stream
@@ -185,6 +195,19 @@ Status SkinPass::create_buffers() noexcept {
     const Request requests[] = {
         {"skin bones", at_least_one(desc_.max_bones, sizeof(GpuBoneMatrix)), storage,
          rhi::MemoryUse::Upload, &buffers_.bones},
+        // THE SAME POSE IN THE OTHER REPRESENTATION, and both are allocated because the method is a
+        // property of the DESCRIPTOR a caller passes to `upload()` and not of the pass. The two
+        // records are the same 48 bytes, so a pass that never skins a dual quaternion pays exactly
+        // the pose's own size for a buffer it never binds a write to.
+        {"skin bone dual quaternions",
+         at_least_one(desc_.max_bones, sizeof(GpuBoneDualQuaternion)), storage,
+         rhi::MemoryUse::Upload, &buffers_.bone_dual_quaternions},
+        {"skin blend shape deltas",
+         at_least_one(desc_.max_blend_shape_deltas, sizeof(render::geometry::BlendShapeDelta)),
+         storage, rhi::MemoryUse::Upload, &buffers_.blend_shape_deltas},
+        {"skin active blend shapes",
+         at_least_one(desc_.max_active_blend_shapes, sizeof(GpuActiveBlendShape)), storage,
+         rhi::MemoryUse::Upload, &buffers_.active_blend_shapes},
         {"skin input positions", at_least_one(desc_.max_vertices, sizeof(Vec3)), storage,
          rhi::MemoryUse::Upload, &buffers_.in_positions},
         {"skin input frames", at_least_one(frame_inputs, sizeof(PackedNormalTangent)), storage,
@@ -246,8 +269,15 @@ Status SkinPass::write_descriptors() noexcept {
     descriptor_set_ = *set;
 
     const rhi::BufferHandle handles[kBindingCount] = {
-        buffers_.bones,      buffers_.in_positions, buffers_.in_frames,
-        buffers_.influences, buffers_.positions,    buffers_.frames,
+        buffers_.bones,
+        buffers_.in_positions,
+        buffers_.in_frames,
+        buffers_.influences,
+        buffers_.positions,
+        buffers_.frames,
+        buffers_.bone_dual_quaternions,
+        buffers_.blend_shape_deltas,
+        buffers_.active_blend_shapes,
     };
     rhi::DescriptorWrite writes[kBindingCount] = {};
     for (u32 index = 0; index < kBindingCount; ++index) {
@@ -266,6 +296,9 @@ void SkinPass::destroy() noexcept {
     }
     const rhi::BufferHandle buffers[] = {
         buffers_.bones,
+        buffers_.bone_dual_quaternions,
+        buffers_.blend_shape_deltas,
+        buffers_.active_blend_shapes,
         buffers_.in_positions,
         buffers_.in_frames,
         buffers_.influences,
@@ -348,7 +381,7 @@ Status SkinPass::upload(const SkinningDescriptor& descriptor, Span<const Mat4> s
     // the previous frame's positions, which is what motion vectors read.
     const SkinnedBuffers halves = SkinnedBuffers::for_frame(frame_index);
     Expected<GpuSkinConstants, Error> constants = render::geometry::make_skin_constants(
-        descriptor, desc_.with_frames, 0, halves.current * desc_.max_vertices);
+        descriptor, desc_.with_frames, 0, halves.current * desc_.max_vertices, active_shapes_);
     if (!constants.has_value()) {
         return make_unexpected(constants.error());
     }
@@ -370,8 +403,22 @@ Status SkinPass::upload(const SkinningDescriptor& descriptor, Span<const Mat4> s
     constants_ = *constants;
     previous_offset_ = halves.previous * desc_.max_vertices;
 
-    // THE ONE TRANSPOSITION IN THE PATH. `Mat4` is column-major and the dispatch reads three rows;
-    // `pack_bone_matrix` is where the convention changes and it is the only place it does.
+    // ONE PUBLISHED POSE, CONVERTED ONCE PER BONE INTO WHICHEVER REPRESENTATION THE SKIN ASKED FOR.
+    // `PoseWorld` publishes `Mat4` and this is the only place the convention changes — into three
+    // rows for a matrix skin, or into a rotation, a dual part and a uniform scale for a
+    // dual-quaternion one. Per BONE, which is the cost argument skin_dispatch.h's header makes: a
+    // hundred conversions a frame, against the tens of thousands a per-vertex derivation would be.
+    if ((constants_.flags & render::geometry::kSkinDualQuaternion) != 0U) {
+        auto* target = static_cast<GpuBoneDualQuaternion*>(
+            device_->buffer_mapped_pointer(buffers_.bone_dual_quaternions));
+        if (target == nullptr) {
+            return fail(ErrorCode::Internal, "the skinning dual-quaternion pose buffer is not mapped");
+        }
+        for (usize bone = 0; bone < skinning_matrices.size(); ++bone) {
+            target[bone] = render::geometry::pack_bone_dual_quaternion(skinning_matrices[bone]);
+        }
+        return ok();
+    }
     auto* target = static_cast<GpuBoneMatrix*>(device_->buffer_mapped_pointer(buffers_.bones));
     if (target == nullptr) {
         return fail(ErrorCode::Internal, "the skinning pose buffer is not mapped");
@@ -379,6 +426,39 @@ Status SkinPass::upload(const SkinningDescriptor& descriptor, Span<const Mat4> s
     for (usize bone = 0; bone < skinning_matrices.size(); ++bone) {
         target[bone] = pack_bone_matrix(skinning_matrices[bone]);
     }
+    return ok();
+}
+
+Status SkinPass::upload_blend_shapes(Span<const render::geometry::BlendShapeDelta> deltas,
+                                     Span<const GpuActiveBlendShape> active) noexcept {
+    if (device_ == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "the skinning pass has not been created");
+    }
+    if (deltas.size() > desc_.max_blend_shape_deltas) {
+        return fail(ErrorCode::OutOfRange,
+                    "the mesh carries more blend shape deltas than the skinning pass was sized for");
+    }
+    if (active.size() > desc_.max_active_blend_shapes) {
+        return fail(ErrorCode::OutOfRange,
+                    "more shapes are active than the skinning pass was sized for; the cap belongs "
+                    "in `active_blend_shapes()` so the dispatch and the reference truncate the same "
+                    "list rather than two");
+    }
+    for (const GpuActiveBlendShape& shape : active) {
+        if (static_cast<usize>(shape.first) + shape.count > deltas.size()) {
+            return fail(ErrorCode::OutOfRange,
+                        "an active blend shape's range runs past the end of the delta array; a "
+                        "storage buffer read past its end is undefined behaviour on the device and "
+                        "has no diagnostic there");
+        }
+    }
+    if (Status written = copy_into(*device_, buffers_.blend_shape_deltas, deltas); !written) {
+        return written;
+    }
+    if (Status written = copy_into(*device_, buffers_.active_blend_shapes, active); !written) {
+        return written;
+    }
+    active_shapes_ = static_cast<u32>(active.size());
     return ok();
 }
 

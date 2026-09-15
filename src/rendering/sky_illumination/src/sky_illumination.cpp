@@ -148,13 +148,18 @@ SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
                            (!fitted_ || report_.sun_delta_rad >= settings_.refit_threshold_rad) &&
                            settings_.max_fits_per_update > 0;
     if (wants_fit) {
-        const Vec3 before = fitted_ ? term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F})
-                                    : Vec3{0.0F, 0.0F, 0.0F};
+        // THE FIRST FIT IS AN INSTALLATION AND NOT A STEP. There is no previous term for it to
+        // step from, and reporting 1.0 there would make "the sky never jumped" a claim about a
+        // frame that had no sky a moment earlier. Every subsequent fit is a continuity event and is
+        // measured as one.
+        const bool continuing = fitted_;
+        const Vec3 before = continuing ? term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F})
+                                       : Vec3{0.0F, 0.0F, 0.0F};
         fit(sun);
         const Vec3 after = term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F});
         const f32 reference = math::max(magnitude_of(before), magnitude_of(after));
         report_.irradiance_step =
-            reference > 0.0F ? magnitude_of(after - before) / reference : 0.0F;
+            continuing && reference > 0.0F ? magnitude_of(after - before) / reference : 0.0F;
 
         system.set_sky_term(term_);
         // THE INVALIDATION, UNDER ITS OWN CAUSE. `SkyChanged` is what stops the sparse distance

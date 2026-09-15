@@ -122,6 +122,8 @@ void ShadowModeLedger::record(const ShadowModeSelection& selection) noexcept {
     lights += 1;
 }
 
-void ShadowModeLedger::reset() noexcept { *this = ShadowModeLedger{}; }
+void ShadowModeLedger::reset() noexcept {
+    *this = ShadowModeLedger{};
+}
 
 }  // namespace cy::rendering

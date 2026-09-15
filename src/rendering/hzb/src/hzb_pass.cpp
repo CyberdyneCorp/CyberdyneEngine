@@ -75,8 +75,9 @@ bool HzbPass::supported(const rhi::Device& device) noexcept {
 Status HzbPass::create(Allocator& allocator, rhi::Device& device,
                        const HzbPassDescription& desc) noexcept {
     if (device_ != nullptr) {
-        return fail(ErrorCode::InvalidArgument, "the hierarchical depth pass has already been "
-                                                "created");
+        return fail(ErrorCode::InvalidArgument,
+                    "the hierarchical depth pass has already been "
+                    "created");
     }
     if (!supported(device)) {
         return fail(ErrorCode::Unsupported,
@@ -259,8 +260,7 @@ void HzbPass::record_seed(const PassContext& context, void* user) noexcept {
     const rhi::BufferHandle source = context.executor->buffer(self->seed_depth_);
     const rhi::BufferCopy copy{
         0, 0, static_cast<u64>(self->desc_.width) * self->desc_.height * sizeof(f32)};
-    context.commands->copy_buffer(source, self->pyramid_,
-                                  Span<const rhi::BufferCopy>(&copy, 1));
+    context.commands->copy_buffer(source, self->pyramid_, Span<const rhi::BufferCopy>(&copy, 1));
 }
 
 void HzbPass::record_reduce(const PassContext& context, void* user) noexcept {
@@ -272,10 +272,8 @@ void HzbPass::record_reduce(const PassContext& context, void* user) noexcept {
     context.commands->push_constants(
         self->pipeline_layout_, rhi::ShaderStage::Compute, 0,
         Span<const u8>(reinterpret_cast<const u8*>(&step->push), sizeof(Reduce)));
-    const u32 groups_x =
-        (step->push.destination_width + kReduceGroupSize - 1U) / kReduceGroupSize;
-    const u32 groups_y =
-        (step->push.destination_height + kReduceGroupSize - 1U) / kReduceGroupSize;
+    const u32 groups_x = (step->push.destination_width + kReduceGroupSize - 1U) / kReduceGroupSize;
+    const u32 groups_y = (step->push.destination_height + kReduceGroupSize - 1U) / kReduceGroupSize;
     context.commands->dispatch(groups_x == 0 ? 1 : groups_x, groups_y == 0 ? 1 : groups_y, 1);
 }
 
@@ -286,8 +284,7 @@ void HzbPass::record_readback(const PassContext& context, void* user) noexcept {
                                   Span<const rhi::BufferCopy>(&copy, 1));
 }
 
-Expected<ResourceId, Error> HzbPass::declare(RenderGraph& graph,
-                                            ResourceId depth) noexcept {
+Expected<ResourceId, Error> HzbPass::declare(RenderGraph& graph, ResourceId depth) noexcept {
     if (device_ == nullptr) {
         return fail(ErrorCode::InvalidArgument, "the hierarchical depth pass has not been created");
     }
@@ -375,8 +372,9 @@ Status HzbPass::read_back(render::culling::Hzb& model) const noexcept {
         const Span<f32> destination = model.level(level);
         const u32 offset = hzb_level_offset(desc_.width, desc_.height, level);
         if (destination.empty()) {
-            return fail(ErrorCode::Internal, "the CPU model has fewer levels than the device "
-                                             "pyramid; hzb_level_count disagrees with itself");
+            return fail(ErrorCode::Internal,
+                        "the CPU model has fewer levels than the device "
+                        "pyramid; hzb_level_count disagrees with itself");
         }
         std::memcpy(destination.data(), texels + offset, destination.size() * sizeof(f32));
     }

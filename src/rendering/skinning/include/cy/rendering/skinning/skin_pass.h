@@ -57,9 +57,16 @@
 // WHAT IT REFUSES
 // ================================================================================================
 //
-// Everything `make_skin_constants` refuses: dual quaternion skinning, blend shapes, a baked tier,
-// and every rule `SkinningDescriptor::validate()` already carries. The refusals are by name and at
-// `upload()`, not at `declare()`, so a caller learns before a command buffer exists.
+// Everything `make_skin_constants` refuses: a baked tier, an active blend shape list longer than the
+// mesh authors, and every rule `SkinningDescriptor::validate()` already carries — plus, here, a pose
+// or a shape set larger than the pass was sized for and a delta range that runs past the end of the
+// array it was given. The refusals are by name and at `upload()`, not at `declare()`, so a caller
+// learns before a command buffer exists.
+//
+// UNTIL M11.c THE LIST BEGAN WITH DUAL QUATERNION SKINNING AND BLEND SHAPES. Both are implemented —
+// `kSkinDualQuaternion` in the flags and `active_blend_shapes` in the constant block — and the
+// dispatch reads a dual-quaternion pose from a second buffer rather than reinterpreting the first.
+// See `skin_dispatch.h`'s header for why the pose conversion happens once per BONE.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/handles.h>
@@ -88,6 +95,14 @@ struct SkinPassDescription {
     /// which binds `render::kDepthPassStreams` and reads no frame — and the buffers are then not
     /// created rather than created and ignored.
     bool with_frames = true;
+    /// How many blend shape deltas the mesh's shapes hold in total — `BlendShapeSet::deltas()`.
+    /// Zero for a mesh with no shapes, and the buffer is then sized for one record rather than for
+    /// none, because Vulkan has no zero-length buffer and the descriptor must still name something.
+    u32 max_blend_shape_deltas = 0;
+    /// How many shapes may be ACTIVE in one frame. The cap a budget sets: "WHEN 50 blend shapes
+    /// exist and 5 have non-zero weight THEN only the 5 active shapes' deltas SHALL be read", and
+    /// this is the ceiling on that 5.
+    u32 max_active_blend_shapes = 0;
     /// Whether the pass creates host-visible copies of its output and declares the transfer that
     /// fills them.
     ///
@@ -146,6 +161,19 @@ public:
     [[nodiscard]] Status upload(const render::geometry::SkinningDescriptor& descriptor,
                                 Span<const Mat4> skinning_matrices, u64 frame_index) noexcept;
 
+    /// Write the mesh's blend shape deltas and the shapes active THIS FRAME.
+    ///
+    /// Call it BEFORE `upload()` in any frame whose active set changed: `upload()` builds the
+    /// constant block, and the active count is part of it. The deltas themselves are a property of
+    /// the mesh and only have to be written once; the active list is a property of the frame.
+    ///
+    /// `active` is what `render::geometry::active_blend_shapes()` compacted, which is the same
+    /// function `cpu_reference_skin`'s caller uses — so the dispatch and the reference truncate one
+    /// list rather than two.
+    [[nodiscard]] Status upload_blend_shapes(
+        Span<const render::geometry::BlendShapeDelta> deltas,
+        Span<const render::geometry::GpuActiveBlendShape> active) noexcept;
+
     /// Declare the dispatch into `graph`. Call between `upload` and the graph's execution.
     ///
     /// The output buffers are declared as WRITTEN, so a caller's draw pass that declares them read
@@ -187,6 +215,9 @@ public:
 private:
     struct Buffers {
         rhi::BufferHandle bones;
+        rhi::BufferHandle bone_dual_quaternions;
+        rhi::BufferHandle blend_shape_deltas;
+        rhi::BufferHandle active_blend_shapes;
         rhi::BufferHandle in_positions;
         rhi::BufferHandle in_frames;
         rhi::BufferHandle influences;
@@ -208,6 +239,10 @@ private:
     SkinPassDescription desc_{};
     render::geometry::GpuSkinConstants constants_{};
     u32 previous_offset_ = 0;
+    /// How many shapes the last `upload_blend_shapes` said were active. Held rather than passed to
+    /// `upload()` because the active set is a property of the frame and the descriptor is a
+    /// property of the skin, and mixing the two is how a stale count survives a frame.
+    u32 active_shapes_ = 0;
     bool mesh_uploaded_ = false;
 
     rhi::ShaderModuleHandle shader_;

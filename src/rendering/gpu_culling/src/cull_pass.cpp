@@ -337,24 +337,15 @@ void GpuCullPass::destroy() noexcept {
         return;
     }
     const rhi::BufferHandle buffers[] = {
-        buffers_.no_pyramid,
-        buffers_.view,
-        buffers_.instances,
-        buffers_.chains,
-        buffers_.mesh_lods,
-        buffers_.ranges,
-        buffers_.previous_levels,
-        buffers_.slot_emit,
-        buffers_.slot_command,
-        buffers_.slot_payload,
-        buffers_.counters,
-        buffers_.commands,
-        buffers_.payloads,
-        buffers_.virtual_geometry,
-        readback_.counters_zero,
-        readback_.counters,
-        readback_.commands,
-        readback_.payloads,
+        buffers_.no_pyramid,        buffers_.view,
+        buffers_.instances,         buffers_.chains,
+        buffers_.mesh_lods,         buffers_.ranges,
+        buffers_.previous_levels,   buffers_.slot_emit,
+        buffers_.slot_command,      buffers_.slot_payload,
+        buffers_.counters,          buffers_.commands,
+        buffers_.payloads,          buffers_.virtual_geometry,
+        readback_.counters_zero,    readback_.counters,
+        readback_.commands,         readback_.payloads,
         readback_.virtual_geometry,
     };
     for (rhi::BufferHandle handle : buffers) {

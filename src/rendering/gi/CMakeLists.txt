@@ -31,6 +31,7 @@ cy_add_module(
         src/reflections.cpp
         src/resolve.cpp
         src/scene.cpp
+        src/signals.cpp
         src/surface_cache.cpp
         src/system.cpp
         src/tracing.cpp

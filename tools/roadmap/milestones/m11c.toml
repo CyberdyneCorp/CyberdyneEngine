@@ -338,25 +338,57 @@ ci_job = "milestone-m11c"
 
 [[criterion]]
 id = "hierarchical-depth-on-a-device"
-describe = "a hierarchical depth buffer is built and read on the device, and occlusion is cluster-granular. `cull_pass.cpp` carries the two-pass model on the processor and no device path exists — which is why this rung predicts demoting `rendering-culling-and-lod` and says so before its gate does"
-source = "tasks 3, rendering-culling-and-lod"
+describe = "a hierarchical depth buffer is built and read on the device, and occlusion is cluster-granular. `cull_pass.cpp` carried the two-pass model on the processor and no device path existed — which is why this rung predicted demoting `rendering-culling-and-lod` and said so before its gate did. TWO CASES, BECAUSE THE SENTENCE HAS TWO HALVES: `integration.rendering_culling` compares the DEVICE pyramid against the CPU model TEXEL FOR TEXEL, and `render.virtual_geometry_gpu` runs the second consumer over that same pyramid and compares its node prunes and cluster rejections against the reference traversal's. ONE PIECE OF DEVICE WORK, TWO ROWS: `cy::rendering-hzb` is linked by both consumers and `hzb_sample.slang` is included by both shaders, so the ledger is not counting one implementation twice"
+source = "tasks 4.1, 4.2, rendering-culling-and-lod, virtual-geometry"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_integration_rendering_culling"
-test -x "$binary" || { echo "no $binary — the suite integration.rendering_culling does not exist"; exit 1; }
-filter='a hierarchical depth buffer is built on the device*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
-selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.rendering_culling any more — renamed, deleted, or the filter is stale"; exit 1; }
+failures=0
+check() {
+    binary="$1"
+    suite="$2"
+    filter="$3"
+    test -x "$binary" || { echo "no $binary — the suite $suite does not exist"; exit 1; }
+    out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out" | tail -20; echo "the named case(s) of $suite FAILED"; failures=1; return; }
+    echo "$out" | grep -E "MESSAGE|hzb:|occlusion cull:" || true
+    echo "$out" | tail -3
+    selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+    echo "$suite: the filter selected ${selected:-0} case(s) of the 1 it names"
+    test "${selected:-0}" -ge 1 || { echo "the named case is not in $suite any more — renamed, deleted, or the filter is stale"; exit 1; }
+}
+# 1. THE PYRAMID ITSELF, against the CPU model that has passed its own tests since M6. A model
+#    passing its own tests is not a pass; this case reads the DEVICE pyramid back and compares every
+#    texel of every level.
+check "$d/tests/integration/cy_test_integration_rendering_culling" "integration.rendering_culling" \
+      'a hierarchical depth buffer is built on the device*'
+# 2. THE SECOND CONSUMER, over the same pyramid: virtual geometry's cluster-granular occlusion,
+#    swept over occluder depth and selection threshold so that BOTH the node prune and the cluster
+#    rejection fire, and compared against the reference traversal.
+check "$d/cy_test_render_virtual_geometry_gpu" "render.virtual_geometry_gpu" \
+      'cluster occlusion reads the shared*'
+test "$failures" -eq 0
 '''
 requires = "gpu"
-reason = "an HZB is built by the device; the CPU two-pass model it replaces is already covered by `unit.rendering-culling`, so a green here must mean the device path and not the model. AND THIS HOST HAS ONE GPU VENDOR, so an agreement measured here is agreement with one driver — design.md §1.3 and §4"
+reason = "an HZB is built by the device; the CPU two-pass model it replaces is already covered by `unit.render_culling`, so a green here must mean the device path and not the model. AND THIS HOST HAS ONE GPU VENDOR, so an agreement measured here is agreement with one driver — design.md §1.3 and §4"
 ci_job = "milestone-m11c"
+
+# THE MUTATION IS A DEFECT IN THE PYRAMID'S CONSTRUCTION, and it is production code rather than a
+# test. `declare()` computes each reduction's source offset from the level below it; deleting that
+# assignment leaves the offset at its default of zero, so every level above the first reduces from
+# LEVEL 0's texels while believing they are the previous level's. The tree still compiles, the
+# dispatches still run, the counters still move — and the pyramid is wrong from level 2 up.
+#
+# Measured before it was written down: 178 differing texels, the first at level 2 texel 106, where
+# the model says 0.0141871329 and the device says 0. That is the shape the whole criterion exists
+# for — a device pass that produces A pyramid rather than THE pyramid — and it is invisible to
+# anything that checks a counter instead of the contents.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/hzb/src/hzb_pass.cpp"
+token = "step.push.source_offset = hzb_level_offset(desc_.width, desc_.height, level - 1U);"
+note = "the assignment is one statement and deleting it leaves a tree that BUILDS and a pyramid whose upper levels are reduced from the wrong source. A criterion that only asked whether the dispatches ran, or whether `rejected_by_occlusion` was non-zero, would stay green through it."
 
 [[criterion]]
 id = "sky-as-an-image"
@@ -388,6 +420,12 @@ test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.renderi
 '''
 ci_job = "milestone-m11c"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/sky/src/budget.cpp"
+token  = "controller_.report_measured_ms(stats_.reported_ms);"
+note   = "the claim is that a controller UNDER `src/` reports a measured cost, and the one line that does it is the one that hands the observation to the controller. Deleting it leaves the sky observing its own work, learning a unit cost from a clock and reporting NOTHING — so the controller stays on its declared `base_cost_ms`, the arbiter reports the subsystem as `Estimated`, and the allocation stops responding. That is precisely the state M10 left the tree in: `declare_to_arbiter()` publishing a priced ladder and no instance of `SubsystemController` under `src/` at all. Watched: two of four cases go red, the first on `cost_source() == Measured` and the second on the two machines receiving the same allocation. Renaming `report_measured_ms` was tried first and rejected: the file stops compiling, which is a red that says nothing about whether anything is measured."
+
 [[criterion]]
 id = "skin-pass-complete"
 describe = "the skin pass does dual quaternions and blend shapes where the specification puts them. `skin_dispatch.cpp` and `skin_pass.h` each record the absence against `rendering-geometry-and-resources`, which has been Working since M3"
@@ -417,8 +455,8 @@ ci_job = "milestone-m11c"
 [criterion.falsifies]
 mutate = "delete-lines"
 target = "src/servers/render/geometry/src/skin_dispatch.cpp"
-token  = "position = dual_apply(blend, source.position);"
-note   = "the claim is that the pass DOES dual quaternions, and the one line that makes it so applies the blended dual quaternion to the vertex. Deleting it leaves the dual path answering with the BIND POSE, which is exactly what a dispatch that read `SkinningMethod::DualQuaternion` and ignored it would do. What catches it is the half of that case which asserts the two methods AGREE: a vertex bound entirely to the rotated bone must land at (1, 1, 0) and sits at (2, 0, 0) instead. THE DISTANCE-FROM-THE-ELBOW ASSERTION ALONE DOES NOT CATCH IT — the bind vertex is also exactly one unit from the elbow — which is why that case carries both and why this note names the one that fires. Renaming `make_skin_constants`' refusal was tried first and rejected: it stops the file compiling, which is a red no reader of this criterion could act on."
+token  = "blend.dual[component] *= inverse;"
+note   = "the claim is that the pass DOES dual quaternions. A dual quaternion is a UNIT one and both halves are divided by the real part's length; the mutation deletes the half that scales the dual part, so the rotation is still right and the TRANSLATION is short by the blend's own length. It compiles — `inverse` and `component` are both still used one line up — which is what makes it a defect rather than a build failure, and it is the shape a hand-written blend actually gets wrong. Watched: both dual-quaternion cases go red on the limb's length, 1.0 becoming 0.92, and the four matrix cases and the two blend-shape cases stay green. TWO OTHER MUTATIONS WERE TRIED AND REJECTED: deleting the line that applies the blend leaves `dual_apply` defined-but-not-used and `-Werror` stops the compile, which is a red no reader of this criterion could act on; and deleting a blend-shape delta line turns the OTHER half of this criterion red, which is equally good and says less about the half the criterion is named for."
 
 [[criterion]]
 id = "vfx-in-the-shot"

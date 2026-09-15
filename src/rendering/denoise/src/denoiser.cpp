@@ -176,6 +176,7 @@ Status Denoiser::resize(u32 width, u32 height) noexcept {
     width_ = width;
     height_ = height;
     for (SignalState& state : states_) {
+        state.invocations = 0;
         if (Status sized = resize_state(state); !sized) {
             return sized;
         }
@@ -489,6 +490,10 @@ Expected<Span<const Vec3>, Error> Denoiser::denoise(SignalKind kind, const Noisy
     SignalState& state = states_[static_cast<u32>(kind)];
     const i64 started = jobs::monotonic_now_ns();
     state.diagnostics = Diagnostics{};
+    // THE CENSUS OF WHO IS ACTUALLY DRIVING THIS FRAMEWORK, incremented before any early return so
+    // that a bypassed frame still counts as a producer having been there. See `Diagnostics`.
+    state.invocations += 1;
+    state.diagnostics.invocations = state.invocations;
 
     if (!enabled_) {
         // The raw signal, unchanged. Not a cheaper filter — the point is to see what the filter is
