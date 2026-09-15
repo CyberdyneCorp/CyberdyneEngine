@@ -32,13 +32,18 @@ ci-check *args:
     # them, so what checks them now RUNS the job's own comparison command against digests it wrote —
     # and, since the repair-2 gate showed that A COMMAND IS NOT A JOB, also evaluates every `if:`
     # between the trigger and the comparison, and runs the LEG's own publishing command to see
-    # whether it routes the path its job uploads. Its twelve fixtures are the dummy job the greps
-    # accepted, the gate's own three (`if: false` on the comparison job, the publishing step
-    # deleted, that step replaced by an `echo`), a condition nobody can read, a publication with no
-    # comparison, a comparison that does not `needs:` its publication, a one-leg matrix, a
-    # one-runner matrix, and a job that fails whatever it is handed. Every one must be refused, and
-    # refused SAYING the thing it is about — a rule that began refusing everything would otherwise
-    # read exactly like twelve discriminating ones.
+    # whether it routes the path its job uploads. THE REPAIR-3 GATE THEN SHOWED THAT A JOB IS NOT A
+    # RUN, in one line: `continue-on-error: true` on the comparison step leaves the comparator
+    # running, exiting 1 on a disagreement, and the job's conclusion SUCCESS — so the audit now also
+    # asks whether a red anywhere in the chain reaches the pipeline at all. Its seventeen fixtures
+    # are the dummy job the greps accepted, the repair-2 gate's three (`if: false` on the comparison
+    # job, the publishing step deleted, that step replaced by an `echo`), the repair-3 gate's own
+    # one-liner and the rest of its family (the comparison job forgiven, the publishing step
+    # forgiven, `if-no-files-found` left at `warn`, forgiveness behind an unreadable expression), a
+    # condition nobody can read, a publication with no comparison, a comparison that does not
+    # `needs:` its publication, a one-leg matrix, a one-runner matrix, and a job that fails whatever
+    # it is handed. Every one must be refused, and refused SAYING the thing it is about — a rule that
+    # began refusing everything would otherwise read exactly like seventeen discriminating ones.
     echo "==> cross-leg   the audit behind m9:lockstep-cross-platform and two more, against a dummy job"
     python3 tools/ci/cross_leg_audit.py --selftest
 

@@ -53,6 +53,30 @@ nothing to the path it uploads. So two more questions are asked here, and both f
                                    that path creates it before it fails; `echo` exits 0 and creates
                                    nothing; a renamed flag fails having touched nothing at all.
 
+AND A JOB IS NOT A RUN, WHICH IS WHAT THE REPAIR-3 GATE PROVED IN ONE LINE:
+
+      - name: One leg's digest against another's
+    +   continue-on-error: true
+        run: just test-determinism --compare-legs --pcg --digests cross-leg-digests
+
+The comparator still runs. It still exits 1 when two architectures disagree. The step is marked
+failed — and the JOB'S CONCLUSION IS SUCCESS, so the run is green and the disagreement is a grey
+tick. All three criteria passed on that tree, and so did `just ci-check`, which printed "this
+repository's own workflows carry a comparison that discriminates" over a comparison whose answer was
+being thrown away. Red is a property of the RUN, not of a process's exit code, so a third question
+is asked and it fails closed like the other two —
+
+    DOES THE RED REACH THE       every `continue-on-error:` on the publishing job, the comparison
+    PIPELINE?                    job and each step of the chain, evaluated per trigger; and the
+                                 `if-no-files-found:` of the step that uploads the digest, which at
+                                 anything but `error` lets a leg that computed nothing stay green
+                                 and drop out of the comparison in silence. An expression this
+                                 reader cannot evaluate is a finding, never a pass.
+
+It does not claim anyone has made that run REQUIRED for a merge: branch protection is a repository
+setting and lives in no file here. The line drawn is the same one drawn above — between a failure
+that announces itself and a failure that is swallowed inside the pipeline.
+
 WHAT THIS DOES NOT CLAIM, AND THE SECOND OF THESE IS A HOLE LEFT OPEN DELIBERATELY. A publishing
 step that creates the directory and then fails on every run would satisfy the routing check — and it
 would also be RED in the pipeline on every run, which is the state this whole module exists to tell
@@ -226,6 +250,10 @@ class Job:
     #: this job is ever SCHEDULED, which is a different question from what its steps say.
     condition: str = ""
     events: tuple[Event, ...] = ()
+    #: The job's own `continue-on-error:`. A job carrying it may fail without failing the run, which
+    #: is a third question again: not what the command says, and not whether it runs, but whether
+    #: anyone downstream is allowed to see the answer.
+    continues: str = ""
 
     @property
     def label(self) -> str:
@@ -278,7 +306,8 @@ def jobs_of(path: pathlib.Path) -> list[Job]:
         found.append(Job(workflow=path.name, name=name, needs=_as_list(body.get("needs")),
                          runs_on=str(body.get("runs-on", "")), legs=_legs(body),
                          steps=tuple(step for step in steps if isinstance(step, dict)),
-                         condition=str(body.get("if", "")), events=events))
+                         condition=str(body.get("if", "")), events=events,
+                         continues=str(body.get("continue-on-error", ""))))
     return found
 
 
@@ -884,6 +913,116 @@ def _steps_blocked(comparison: Comparison, event: Event) -> str:
     return ""
 
 
+# --- Can the PIPELINE SEE the comparison's answer? -------------------------------------------------
+#
+# THE NINTH INSTANCE OF THE SAME DEFECT, AND IT IS AGAIN THIS MODULE'S OWN. Everything above proves
+# things about a COMMAND and about whether that command is REACHED. The claim is "goes red when they
+# differ", and red is a property of the RUN, not of a process's exit code. M11's repair-3 gate showed
+# the difference in one line:
+#
+#       - name: One leg's digest against another's
+#     +   continue-on-error: true
+#         run: just test-determinism --compare-legs --pcg --digests cross-leg-digests
+#
+# The comparator still runs. It still exits 1 when two architectures disagree. The step is still
+# marked failed — and the JOB'S CONCLUSION IS SUCCESS, so the pipeline is green and the disagreement
+# is a grey tick nobody looks at. All three criteria stayed green on that mutation, and so did
+# `just ci-check`, which printed "this repository's own workflows carry a comparison that
+# discriminates" over a comparison whose answer was being thrown away.
+#
+# So the chain is walked once more, and this time the question is: IF THIS LINK GOES RED, DOES THE
+# RUN GO RED? The forgiving shapes, each of which leaves a green run over a failure:
+#
+#   `continue-on-error` on the comparison job   the job may fail and the WORKFLOW RUN is still green
+#   `continue-on-error` on any step of the      the step may fail and the JOB'S CONCLUSION is still
+#   chain — publish, upload, download, compare   success
+#   `if-no-files-found:` anything but `error`   a leg that computed no digest uploads nothing and
+#   on the step that uploads the digest          STAYS GREEN, so an architecture drops out of the
+#                                                comparison in silence and the legs left agree
+#
+# Like the scheduling reader above, this one FAILS CLOSED: `continue-on-error: ${{ vars.SOMETHING }}`
+# is a finding, because "I could not tell whether a red would fail the run" must never print the same
+# as "a red fails the run". And it is evaluated per trigger, because `continue-on-error` takes an
+# expression: a comparison forgiven only on pull requests is forgiven, and is reported as such.
+#
+# WHAT THIS DOES NOT CLAIM. It says the run goes red when the comparison does; it does not say anyone
+# has made that run required for a merge, which is a branch-protection setting and lives outside
+# every file in this repository. The line drawn here is the same one drawn above — between a failure
+# that announces itself and a failure that is swallowed inside the pipeline.
+
+
+def _forgives(expression, event: Event) -> bool:
+    """Whether a `continue-on-error:` value is true on this event. Unreadable raises, as a finding."""
+    text = str(expression).strip()
+    if not text:
+        return False
+    return _truth(_Condition(_tokens(text), event).value())
+
+
+def _chain_of(comparison: Comparison) -> tuple[tuple[str, dict], ...]:
+    """Each step the comparison is made of, with what it does, in the order the chain runs."""
+    return (*(("publishes the digest", step) for step in comparison.produced),
+            ("uploads it", comparison.uploaded),
+            ("downloads it", comparison.downloaded),
+            *(("compares", step) for step in comparison.compared))
+
+
+def _forgiven_on(comparison: Comparison, event: Event) -> str:
+    """Empty when a red anywhere in the chain fails the run; otherwise the link that forgives it."""
+    for job, what in ((comparison.publisher, "publishes the digests"),
+                      (comparison.comparer, "compares them")):
+        if _forgives(job.continues, event):
+            return (f"{job.label}, the job that {what}, carries `continue-on-error: "
+                    f"{' '.join(str(job.continues).split())}`: the job is allowed to fail and THE "
+                    f"WORKFLOW RUN IS STILL GREEN, so two architectures that disagreed are reported "
+                    f"exactly the way two that agreed are")
+    for what, step in _chain_of(comparison):
+        if step and _forgives(step.get("continue-on-error", ""), event):
+            return (f"the step that {what} carries `continue-on-error: "
+                    f"{' '.join(str(step.get('continue-on-error')).split())}`: the step still runs "
+                    f"and still exits non-zero, and THE JOB'S CONCLUSION IS STILL SUCCESS — the red "
+                    f"never reaches the pipeline, so a leg that could not publish and a comparison "
+                    f"that disagreed alike end as grey ticks under a green run")
+    return ""
+
+
+def _upload_forgives_an_empty_leg(comparison: Comparison) -> str:
+    """Empty when a leg that computed no digest fails; otherwise why it is green instead.
+
+    `actions/upload-artifact` defaults to `if-no-files-found: warn`, so the absence of the setting is
+    the forgiving case and is reported as one.
+    """
+    with_ = comparison.uploaded.get("with", {})
+    setting = str(with_.get("if-no-files-found", "warn") if isinstance(with_, dict) else "warn")
+    if setting.strip().lower() == "error":
+        return ""
+    return (f"the step that uploads {comparison.stem}\u2026 carries `if-no-files-found: "
+            f"{setting.strip() or 'warn'}` (the default is `warn`): a leg that computed no digest "
+            f"uploads nothing AND STAYS GREEN, so an architecture can drop out of the comparison in "
+            f"silence and the legs that remain agree with each other")
+
+
+def _check_the_red_reaches_the_pipeline(audit: Audit, comparison: Comparison) -> None:
+    """A red inside a job that forgives it is a green run over two architectures that disagreed."""
+    for event in comparison.comparer.events:
+        try:
+            forgiven = _forgiven_on(comparison, event)
+        except Unreadable as unreadable:
+            audit.failed(f"{comparison.comparer.label} is forgiven by an expression this audit "
+                         f"cannot evaluate, and 'I could not tell whether a red would fail the run' "
+                         f"must not print the same as 'a red fails the run': {unreadable}")
+            return
+        if forgiven:
+            audit.failed(f"on {event}, {forgiven}")
+            return
+    empty = _upload_forgives_an_empty_leg(comparison)
+    if empty:
+        audit.failed(empty)
+        return
+    print("  ok    nothing in the chain forgives a failure: a leg that publishes no digest and a "
+          "comparison that disagrees each fail the run")
+
+
 def _check_the_publication(audit: Audit, comparison: Comparison) -> None:
     publisher = comparison.publisher
     if not comparison.stem:
@@ -929,6 +1068,7 @@ def audit_claim(claim: str, directory: pathlib.Path) -> Audit:
         for line in comparison.command.splitlines():
             print(f"    {line}")
         _check_it_runs(audit, comparison, index)
+        _check_the_red_reaches_the_pipeline(audit, comparison)
         _check_the_legs(audit, comparison)
         _check_the_publication(audit, comparison)
         _check_the_comparison(audit, comparison)
@@ -970,6 +1110,7 @@ _UPLOAD = """      - uses: actions/upload-artifact@v4
         with:
           name: cross-leg-digest-${{ matrix.label }}
           path: cross-leg-digests/${{ matrix.label }}.digest
+          if-no-files-found: error
 """
 
 _DOWNLOAD = """      - uses: actions/download-artifact@v4
@@ -986,14 +1127,16 @@ _REAL_COMPARISON = """      - name: One leg's digest against another's
 def _workflow(*, triggers: str = _TRIGGERS, legs: str = _TWO_LEGS, publish_if: str = "",
               publication: str = _REAL_PUBLICATION, upload: str = _UPLOAD, compare: bool = True,
               needs: str = "    needs: publish\n", compare_if: str = "", download: str = _DOWNLOAD,
-              comparison: str = _REAL_COMPARISON) -> str:
+              comparison: str = _REAL_COMPARISON, publish_continues: str = "",
+              compare_continues: str = "") -> str:
     """The working workflow, with one thing changed. Every fixture is a call to this."""
-    text = triggers + "jobs:\n  publish:\n" + publish_if + (
+    text = triggers + "jobs:\n  publish:\n" + publish_if + publish_continues + (
         "    strategy:\n      fail-fast: false\n      matrix:\n        include:\n" + legs +
         "    runs-on: ${{ matrix.os }}\n    steps:\n      - uses: actions/checkout@v4\n" +
         publication + upload)
     if compare:
-        text += ("  compare:\n" + needs + compare_if + "    runs-on: ubuntu-24.04\n    steps:\n"
+        text += ("  compare:\n" + needs + compare_if + compare_continues
+                 + "    runs-on: ubuntu-24.04\n    steps:\n"
                  "      - uses: actions/checkout@v4\n" + download + comparison)
     return text
 
@@ -1036,11 +1179,51 @@ _FIXTURES = {
         "the publishing flag misspelt: the leg runs, fails, and never routes the path it uploads",
         "WITHOUT EVER TOUCHING the path"),
 
+    # --- the repair-3 gate's own mutation, and the rest of its family ----------------------------
+    #
+    # Each of these leaves a comparison that RUNS, that DISCRIMINATES, and whose answer the pipeline
+    # is not allowed to see. They are the shapes that stayed green through every check above.
+    "the-comparison-step-is-forgiven": (
+        _workflow(comparison="      - name: One leg's digest against another's\n"
+                             "        continue-on-error: true\n"
+                             "        run: just test-determinism --compare-legs --pcg "
+                             "--digests cross-leg-digests\n"),
+        "THE REPAIR-3 GATE'S ONE-LINE MUTATION: the comparator runs, exits 1 on a disagreement, and "
+        "the job's conclusion is SUCCESS anyway",
+        "the step that compares carries `continue-on-error"),
+
+    "the-comparison-job-is-forgiven": (
+        _workflow(compare_continues="    continue-on-error: true\n"),
+        "the whole comparison job allowed to fail: the run stays green over a disagreement",
+        "the job that compares them, carries `continue-on-error"),
+
+    "the-publication-step-is-forgiven": (
+        _workflow(publication="      - name: Publish this leg's digests\n"
+                              "        continue-on-error: true\n"
+                              "        run: just test-determinism --publish-digest "
+                              "cross-leg-digests/${{ matrix.label }}.digest\n"),
+        "a leg whose digest computation failed, forgiven: it publishes nothing and stays green",
+        "the step that publishes the digest carries `continue-on-error"),
+
+    "an-empty-leg-uploads-nothing-and-stays-green": (
+        _workflow(upload="      - uses: actions/upload-artifact@v4\n        with:\n"
+                         "          name: cross-leg-digest-${{ matrix.label }}\n"
+                         "          path: cross-leg-digests/${{ matrix.label }}.digest\n"),
+        "`if-no-files-found` left at its default of `warn`: an architecture that computed no digest "
+        "drops out of the comparison in silence and the legs that remain agree with each other",
+        "uploads nothing AND STAYS GREEN"),
+
+    "forgiven-by-an-expression-nobody-can-read": (
+        _workflow(compare_continues="    continue-on-error: ${{ vars.CY_TOLERATE_DRIFT }}\n"),
+        "forgiveness behind an expression this reader cannot evaluate. 'I could not tell whether a "
+        "red would fail the run' must not print the same as 'a red fails the run'",
+        "forgiven by an expression this audit cannot evaluate"),
+
     "scheduled-by-a-condition-nobody-can-read": (
         _workflow(compare_if="    if: ${{ vars.CY_COMPARE_LEGS == 'true' }}\n"),
         "a condition this reader cannot evaluate. 'I could not tell whether it runs' must not "
         "print the same as 'it runs'",
-        "cannot evaluate"),
+        "scheduled by a condition this audit cannot evaluate"),
 
     # --- and the shapes the first repair already refused -----------------------------------------
     "publication-only": (
