@@ -859,6 +859,16 @@ Expected<DescriptorSetLayoutHandle, Error> VulkanDevice::create_descriptor_set_l
 }
 
 void VulkanDevice::destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle) noexcept {
+    // THE GLOBAL TABLE'S LAYOUT IS THE DEVICE'S. It is handed out by
+    // `global_texture_table_layout()` so a pipeline layout can name it, which means every caller
+    // holds the same handle — and one of them destroying it would take the table down under every
+    // other pipeline that named it. Refused by name rather than honoured.
+    if (!handle.is_null() && handle == bindless_layout_handle_) {
+        report_validation(ValidationSeverity::Error,
+                          "destroy_descriptor_set_layout(): the global texture table's layout "
+                          "belongs to the device and is not a caller's to destroy");
+        return;
+    }
     VulkanDescriptorSetLayout* layout = set_layouts_.resolve(handle);
     if (layout == nullptr) {
         return;
@@ -1031,10 +1041,16 @@ BindlessIndex VulkanDevice::bind_texture_globally(TextureViewHandle view,
         return kInvalidBindlessIndex;
     }
     const VulkanTextureView* stored_view = views_.resolve(view);
-    const VulkanSampler* stored_sampler = samplers_.resolve(sampler);
-    if (stored_view == nullptr || stored_sampler == nullptr) {
-        report_validation(ValidationSeverity::Error,
-                          "bind_texture_globally(): a stale view or sampler handle");
+    if (stored_view == nullptr) {
+        report_validation(ValidationSeverity::Error, "bind_texture_globally(): a stale view handle");
+        return kInvalidBindlessIndex;
+    }
+    // THE SAMPLER GOES TO BINDING 2, ONCE, and it is settled BEFORE a slot is taken: the table the
+    // shader declares reads every slot through one `cyMaterialSampler`, so this call's sampler sets
+    // it the first time and is checked against it afterwards. Two callers asking for different
+    // filtering would otherwise silently get whichever arrived last, applied to every texture
+    // already in the table.
+    if (Status shared = set_global_sampler(sampler); !shared) {
         return kInvalidBindlessIndex;
     }
 
@@ -1051,19 +1067,56 @@ BindlessIndex VulkanDevice::bind_texture_globally(TextureViewHandle view,
 
     VkDescriptorImageInfo info{};
     info.imageView = stored_view->view;
-    info.sampler = stored_sampler->sampler;
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = bindless_set_;
-    write.dstBinding = 0;
+    write.dstBinding = kGlobalTableTextureBinding;
     write.dstArrayElement = index;
     write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &info;
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
     return index;
+}
+
+Status VulkanDevice::set_global_sampler(SamplerHandle sampler) noexcept {
+    if (model_ != DescriptorModel::Bindless) {
+        return fail(ErrorCode::Unsupported,
+                    "set_global_sampler(): this device is on the compatibility path and has no "
+                    "global table");
+    }
+    const VulkanSampler* stored = samplers_.resolve(sampler);
+    if (stored == nullptr) {
+        report_validation(ValidationSeverity::Error, "set_global_sampler(): a stale sampler handle");
+        return fail(ErrorCode::NotFound, "set_global_sampler(): a stale sampler handle");
+    }
+    if (!bindless_sampler_.is_null()) {
+        if (bindless_sampler_ == sampler) {
+            return ok();
+        }
+        report_validation(ValidationSeverity::Error,
+                          "set_global_sampler(): the global table already reads through a different "
+                          "sampler, and `cy/material.slang` declares exactly one");
+        return fail(ErrorCode::InvalidArgument,
+                    "the global texture table already has a different sampler");
+    }
+
+    VkDescriptorImageInfo info{};
+    info.sampler = stored->sampler;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = bindless_set_;
+    write.dstBinding = kGlobalTableSamplerBinding;
+    write.dstArrayElement = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    write.pImageInfo = &info;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+    bindless_sampler_ = sampler;
+    return ok();
 }
 
 void VulkanDevice::release_bindless_index(BindlessIndex index) noexcept {

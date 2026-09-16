@@ -740,36 +740,54 @@ Status VulkanDevice::create_bindless_table() noexcept {
         return ok();
     }
 
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    binding.descriptorCount = kBindlessCapacity;
-    binding.stageFlags = VK_SHADER_STAGE_ALL;
+    // THE TWO BINDINGS ARE THE SHADER'S, not this file's. `cy/material.slang` declares
+    // `cyMaterialTextures[]` at binding 1 as a runtime-sized array of `Texture2D` — a SAMPLED_IMAGE,
+    // not a combined one — and `cyMaterialSampler` at binding 2 beside it. A table written as
+    // combined image samplers at binding 0, which is what this was until M11.c, satisfies no
+    // program the standard library produces: the numbering AND the descriptor type both disagree,
+    // and neither disagreement can be seen from a picture because nothing ever bound the set.
+    VkDescriptorSetLayoutBinding bindings[2]{};
+    bindings[0].binding = kGlobalTableTextureBinding;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    bindings[0].descriptorCount = kBindlessCapacity;
+    bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
+    bindings[1].binding = kGlobalTableSamplerBinding;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_ALL;
 
-    const VkDescriptorBindingFlags binding_flags =
+    // PARTIALLY BOUND on the array and not on the sampler: a streaming table has holes in it by
+    // construction and a shader that reads an unwritten slot is the caller's defect, whereas the
+    // single sampler is either there or every sample in the frame is undefined.
+    const VkDescriptorBindingFlags binding_flags[2] = {
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-        VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
-        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+            VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
+            VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+    };
     VkDescriptorSetLayoutBindingFlagsCreateInfo flags{};
     flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flags.bindingCount = 1;
-    flags.pBindingFlags = &binding_flags;
+    flags.bindingCount = 2;
+    flags.pBindingFlags = binding_flags;
 
     VkDescriptorSetLayoutCreateInfo layout{};
     layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layout.pNext = &flags;
-    layout.bindingCount = 1;
-    layout.pBindings = &binding;
+    layout.bindingCount = 2;
+    layout.pBindings = bindings;
     layout.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
     CY_VK_TRY(vkCreateDescriptorSetLayout(device_, &layout, nullptr, &bindless_layout_),
               "vkCreateDescriptorSetLayout (bindless)");
 
-    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kBindlessCapacity};
+    const VkDescriptorPoolSize sizes[2] = {
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kBindlessCapacity},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1},
+    };
     VkDescriptorPoolCreateInfo pool{};
     pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pool.maxSets = 1;
-    pool.poolSizeCount = 1;
-    pool.pPoolSizes = &size;
+    pool.poolSizeCount = 2;
+    pool.pPoolSizes = sizes;
     pool.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     CY_VK_TRY(vkCreateDescriptorPool(device_, &pool, nullptr, &bindless_pool_),
               "vkCreateDescriptorPool (bindless)");
@@ -781,6 +799,33 @@ Status VulkanDevice::create_bindless_table() noexcept {
     allocate.pSetLayouts = &bindless_layout_;
     CY_VK_TRY(vkAllocateDescriptorSets(device_, &allocate, &bindless_set_),
               "vkAllocateDescriptorSets (bindless)");
+    name_object(reinterpret_cast<u64>(bindless_layout_), VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                "global texture table layout");
+    name_object(reinterpret_cast<u64>(bindless_set_), VK_OBJECT_TYPE_DESCRIPTOR_SET,
+                "global texture table");
+
+    // AND THE HANDLES, which is the whole of what "bindable" means here: a pipeline layout takes
+    // DescriptorSetLayoutHandles and `bind_descriptor_sets` takes DescriptorSetHandles, so the
+    // table reaches both through the code paths every other set already uses rather than through a
+    // second one written for it.
+    VulkanDescriptorSetLayout layout_record;
+    layout_record.layout = bindless_layout_;
+    layout_record.binding_count = 2;
+    Expected<DescriptorSetLayoutHandle, Error> layout_handle = set_layouts_.create(layout_record);
+    if (!layout_handle) {
+        return make_unexpected(layout_handle.error());
+    }
+    bindless_layout_handle_ = *layout_handle;
+
+    VulkanDescriptorSet set_record;
+    set_record.set = bindless_set_;
+    set_record.per_frame = false;
+    set_record.frame_slot = 0;
+    Expected<DescriptorSetHandle, Error> set_handle = descriptor_sets_.create(set_record);
+    if (!set_handle) {
+        return make_unexpected(set_handle.error());
+    }
+    bindless_set_handle_ = *set_handle;
     return ok();
 }
 

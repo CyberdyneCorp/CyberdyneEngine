@@ -285,9 +285,49 @@ public:
 
     /// Reserve a slot in the global bindless table for a view or a buffer. kInvalidBindlessIndex
     /// when the device is on the compatibility path or the table is full.
+    ///
+    /// The slot is written at `kGlobalTableTextureBinding` of the set `global_texture_table()`
+    /// returns. `sampler` is what the view is READ THROUGH and the table has exactly one of them —
+    /// see `set_global_sampler` below — so the first non-null sampler to arrive here becomes the
+    /// table's, and a later, different one is refused by name rather than silently replacing it.
     virtual BindlessIndex bind_texture_globally(TextureViewHandle view,
                                                 SamplerHandle sampler) noexcept = 0;
     virtual void release_bindless_index(BindlessIndex index) noexcept = 0;
+
+    // --- THE GLOBAL TABLE, AS A PIPELINE CAN NAME IT AND A COMMAND BUFFER CAN BIND IT ------------
+    //
+    // M11.c's spike measured the defect these two close: the table was created, written by
+    // `bind_texture_globally` and destroyed, and it reached NO pipeline layout and NO command
+    // buffer in the whole tree. Every `BindlessIndex` the device handed out named a descriptor that
+    // no shader could reach, and nothing outside this backend named `DescriptorKind::Bindless` at
+    // all. A table nobody can read is not a table; it is a leak with an index.
+    //
+    // The layout is the one `src/rendering/shaders/cy/material.slang` DECLARES, not one chosen
+    // here: `cyMaterialTextures[]` at (set 0, binding 1) and `cyMaterialSampler` at binding 2, which
+    // is `cy/backends/shader/reflection.h`'s convention that a bindless table appears only in set 0.
+    // So a program that imports the standard library is satisfied by naming this layout as set 0 of
+    // its pipeline layout and binding this set at 0 — nothing is restated in C++ and the two cannot
+    // drift apart.
+    //
+    // NOT EVERY SET 0 IS THIS ONE, and it is worth saying which is not. A pipeline binds ONE
+    // descriptor set per index, so a program that reads `cy/globals.slang`'s block at (set 0,
+    // binding 0) or `cy/field.slang`'s table at binding 3 needs a set 0 that carries those too, and
+    // this one does not. Those programs keep building their own set 0 — what they lose by doing so
+    // is the global texture table, which is exactly the trade `src/rendering/pipeline/` makes today
+    // and the reason its forward pass still reads material constants.
+    //
+    // Both are null handles on the compatibility path, where no table was created at all.
+
+    [[nodiscard]] virtual DescriptorSetLayoutHandle global_texture_table_layout() const noexcept = 0;
+    [[nodiscard]] virtual DescriptorSetHandle global_texture_table() const noexcept = 0;
+
+    /// The one sampler every slot of the table is read through — `cyMaterialSampler`, binding 2.
+    ///
+    /// ONE, because the standard library declares one: `SamplerState cyMaterialSampler` is a scalar
+    /// and a shader sampling slot `i` has no second sampler to choose. A device that wanted per-slot
+    /// filtering would need a sampler array in the same set and a shader that indexes it, which is a
+    /// change to the shading convention rather than to this call.
+    virtual Status set_global_sampler(SamplerHandle sampler) noexcept = 0;
 
     /// Pipelines are cached by a hash of their full state and the cache is persisted across runs,
     /// so a warm start compiles nothing. `pipeline_cache_hits` in DeviceStatistics is how a test

@@ -107,6 +107,18 @@ enum class DescriptorModel : u8 {
 
 [[nodiscard]] const char* descriptor_model_name(DescriptorModel model) noexcept;
 
+// --- Where the global texture table lives -------------------------------------------------------
+//
+// THE SHADER DECLARED THESE FIRST. `src/rendering/shaders/cy/material.slang` puts
+// `cyMaterialTextures[]` at (set 0, binding 1) and `cyMaterialSampler` at (set 0, binding 2), which
+// is `cy/backends/shader/reflection.h`'s convention that a runtime-sized array appears only in set
+// 0. They are written out here so `Device::global_texture_table_layout()` builds exactly that set
+// and a caller can assert against the same numbers instead of two files agreeing by luck.
+
+inline constexpr u32 kGlobalTableSet = 0;
+inline constexpr u32 kGlobalTableTextureBinding = 1;
+inline constexpr u32 kGlobalTableSamplerBinding = 2;
+
 /// One write into a descriptor set. A backend applies a batch of these in one call.
 struct DescriptorWrite {
     u32 binding = 0;

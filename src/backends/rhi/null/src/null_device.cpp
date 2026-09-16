@@ -203,6 +203,24 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
 
     memory_.device_heap_size = 8ULL * 1024 * 1024 * 1024;
     memory_.device_heap_budget = memory_.device_heap_size;
+
+    // THE GLOBAL TEXTURE TABLE, which this backend has because the Vulkan one does and a program
+    // written against it must be buildable with no GPU. `cy/material.slang`'s two bindings, as
+    // records: no descriptor is written anywhere, but the handles are real, they go into a pipeline
+    // layout and a bind, and a caller that forgot to name the layout fails here as it would there.
+    NullDescriptorSetLayout table_layout;
+    table_layout.name.assign("global texture table layout");
+    table_layout.binding_count = 2;
+    table_layout.has_runtime_array = true;
+    if (Expected<DescriptorSetLayoutHandle, Error> handle = set_layouts_.create(table_layout);
+        handle) {
+        bindless_layout_ = *handle;
+        NullDescriptorSet table_set;
+        table_set.layout = bindless_layout_;
+        if (Expected<DescriptorSetHandle, Error> set = descriptor_sets_.create(table_set); set) {
+            bindless_set_ = *set;
+        }
+    }
 }
 
 NullDevice::~NullDevice() noexcept {
@@ -689,6 +707,15 @@ Expected<DescriptorSetLayoutHandle, Error> NullDevice::create_descriptor_set_lay
 }
 
 void NullDevice::destroy_descriptor_set_layout(DescriptorSetLayoutHandle handle) noexcept {
+    // The global table's layout is the device's, as it is on the Vulkan backend: every caller that
+    // names it in a pipeline layout holds the same handle, so one of them destroying it would take
+    // the table down under all the others.
+    if (!handle.is_null() && handle == bindless_layout_) {
+        report_validation(ValidationSeverity::Error,
+                          "destroy_descriptor_set_layout(): the global texture table's layout "
+                          "belongs to the device and is not a caller's to destroy");
+        return;
+    }
     (void)set_layouts_.destroy(handle);
 }
 
@@ -757,10 +784,10 @@ BindlessIndex NullDevice::bind_texture_globally(TextureViewHandle view,
                           "bind_texture_globally(): stale texture view handle");
         return kInvalidBindlessIndex;
     }
-    if (!sampler.is_null() && samplers_.resolve(sampler) == nullptr) {
-        report_validation(ValidationSeverity::Error,
-                          "bind_texture_globally(): stale sampler handle");
-        return kInvalidBindlessIndex;
+    if (!sampler.is_null()) {
+        if (Status shared = set_global_sampler(sampler); !shared) {
+            return kInvalidBindlessIndex;
+        }
     }
     if (!bindless_free_.empty()) {
         const BindlessIndex index = bindless_free_[bindless_free_.size() - 1];
@@ -768,6 +795,22 @@ BindlessIndex NullDevice::bind_texture_globally(TextureViewHandle view,
         return index;
     }
     return bindless_next_++;
+}
+
+Status NullDevice::set_global_sampler(SamplerHandle sampler) noexcept {
+    if (samplers_.resolve(sampler) == nullptr) {
+        report_validation(ValidationSeverity::Error, "set_global_sampler(): stale sampler handle");
+        return fail(ErrorCode::NotFound, "set_global_sampler(): stale sampler handle");
+    }
+    if (!bindless_sampler_.is_null() && !(bindless_sampler_ == sampler)) {
+        report_validation(ValidationSeverity::Error,
+                          "set_global_sampler(): the global table already reads through a different "
+                          "sampler, and `cy/material.slang` declares exactly one");
+        return fail(ErrorCode::InvalidArgument,
+                    "the global texture table already has a different sampler");
+    }
+    bindless_sampler_ = sampler;
+    return ok();
 }
 
 void NullDevice::release_bindless_index(BindlessIndex index) noexcept {

@@ -333,6 +333,13 @@ public:
     BindlessIndex bind_texture_globally(TextureViewHandle view,
                                         SamplerHandle sampler) noexcept override;
     void release_bindless_index(BindlessIndex index) noexcept override;
+    [[nodiscard]] DescriptorSetLayoutHandle global_texture_table_layout() const noexcept override {
+        return bindless_layout_;
+    }
+    [[nodiscard]] DescriptorSetHandle global_texture_table() const noexcept override {
+        return bindless_set_;
+    }
+    Status set_global_sampler(SamplerHandle sampler) noexcept override;
     Expected<GraphicsPipelineHandle, Error> create_graphics_pipeline(
         const GraphicsPipelineDescription& desc) override;
     void destroy_graphics_pipeline(GraphicsPipelineHandle handle) noexcept override;
@@ -464,6 +471,13 @@ private:
     u64 transient_high_water_ = 0;
     u32 bindless_next_ = 0;
     Array<BindlessIndex> bindless_free_;
+    /// The global texture table, as the handles a pipeline layout and a bind take. Built in the
+    /// constructor from the same two bindings `cy/material.slang` declares, so a program written
+    /// against the table can be STRUCTURED on a machine with no GPU even though nothing is sampled
+    /// here — which is the null backend's whole job.
+    DescriptorSetLayoutHandle bindless_layout_;
+    DescriptorSetHandle bindless_set_;
+    SamplerHandle bindless_sampler_;
 
     NullBarrierRecorder barriers_;
     ValidationCallback validation_callback_ = nullptr;

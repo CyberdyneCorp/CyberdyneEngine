@@ -332,6 +332,13 @@ public:
     BindlessIndex bind_texture_globally(TextureViewHandle view,
                                         SamplerHandle sampler) noexcept override;
     void release_bindless_index(BindlessIndex index) noexcept override;
+    [[nodiscard]] DescriptorSetLayoutHandle global_texture_table_layout() const noexcept override {
+        return bindless_layout_handle_;
+    }
+    [[nodiscard]] DescriptorSetHandle global_texture_table() const noexcept override {
+        return bindless_set_handle_;
+    }
+    Status set_global_sampler(SamplerHandle sampler) noexcept override;
     Expected<GraphicsPipelineHandle, Error> create_graphics_pipeline(
         const GraphicsPipelineDescription& desc) override;
     void destroy_graphics_pipeline(GraphicsPipelineHandle handle) noexcept override;
@@ -483,10 +490,23 @@ private:
     // still exited 0. No device suite caught it because none of them renders a third frame.
     VkDescriptorPool persistent_descriptor_pool_ = VK_NULL_HANDLE;
 
-    // Bindless: one global set with a runtime-sized combined-image-sampler array.
+    // Bindless: one global set carrying the two bindings `cy/material.slang` declares — a
+    // runtime-sized sampled-image array at binding 1 and the one sampler at binding 2.
+    //
+    // THE HANDLES BESIDE THEM ARE WHAT MADE THE TABLE READABLE. Until M11.c only the raw Vulkan
+    // objects existed, so nothing above this backend could name the layout in a pipeline layout or
+    // the set in a bind: the table was written and never read. Registering both in the pools the
+    // rest of the device already uses means `create_pipeline_layout` and `bind_descriptor_sets`
+    // take them with no new code path — and the destroy calls refuse them, because the device owns
+    // these two and a caller freeing them would take the table down under every other pipeline.
     VkDescriptorSetLayout bindless_layout_ = VK_NULL_HANDLE;
     VkDescriptorPool bindless_pool_ = VK_NULL_HANDLE;
     VkDescriptorSet bindless_set_ = VK_NULL_HANDLE;
+    DescriptorSetLayoutHandle bindless_layout_handle_;
+    DescriptorSetHandle bindless_set_handle_;
+    /// The sampler `set_global_sampler` wrote at binding 2, kept so a second, different one is a
+    /// refusal rather than a silent change to every material already sampling through it.
+    SamplerHandle bindless_sampler_;
     u32 bindless_next_ = 0;
 
     // The transient pool the render graph places into. One VkDeviceMemory, bound at explicit
