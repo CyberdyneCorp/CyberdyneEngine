@@ -1,10 +1,16 @@
 // `cy_material` — the material compiler's front end. M7 task 6.3.
 //
-// Two subcommands, and the split is the same one `cy_build` makes:
+// Three subcommands, and the first split is the same one `cy_build` makes:
 //
 //   compile <file.cymat>   Compile one material and print its cook report. No graph, no cache, no
 //                          artefact store — the shortest path from a definition to "what does this
 //                          material cost and what did the compiler have to say about it".
+//
+//   author <canvas>        M11.c task 6.1a. Read the interchange the editor's material canvas
+//                          writes, canonicalise it into a `.cygraph` with the ENGINE's writer, lower
+//                          it, compile it, and emit the translation unit the shader pipeline
+//                          compiles. See author.cpp for why the editor does not write the canonical
+//                          form itself.
 //
 //   cook <project> <out>   Build the material NODES of a derivation graph over a project directory.
 //                          This is the path that ships: every material under the project is a node,
@@ -15,6 +21,7 @@
 #include <cy/build/service.h>
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/material/author.h>
 #include <cy/material/cook.h>
 
 #include <cstdio>
@@ -36,6 +43,8 @@ int usage() {
                  "usage:\n"
                  "  cy_material compile <file.cymat> [--profile desktop|mobile] [--slang <dir>]\n"
                  "                      [--stages]\n"
+                 "  cy_material author <canvas.cymatcanvas> --graph <out.cygraph>\n"
+                 "                     [--module <out.slang>] [--info <out.cymatinfo>]\n"
                  "  cy_material cook <project-dir> <artefact-dir> [--profile desktop|mobile]\n"
                  "                   [--cache <dir>] <material.cymat>...\n");
     return 2;
@@ -234,6 +243,9 @@ int main(int argc, char** argv) {
     }
     if (command == "cook") {
         return cook_project(argc, argv);
+    }
+    if (command == "author") {
+        return cy_material_author(argc, argv);
     }
     return usage();
 }

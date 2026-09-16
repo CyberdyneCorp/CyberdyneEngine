@@ -1,0 +1,7 @@
+cyprim 1
+shape cylinder
+name Pillar
+origin base
+radius 0.42
+height 4.4
+segments 40

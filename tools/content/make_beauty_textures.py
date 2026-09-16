@@ -29,7 +29,13 @@ Three materials, each an albedo, a tangent-space normal map and a packed data ma
   |---|---|---|
   | `<name>_albedo.png` | Colour, sRGB | base colour |
   | `<name>_normal.png` | NormalMap, linear | tangent-space normal, +Y up (OpenGL convention, which is `mesh.h`'s) |
-  | `<name>_data.png` | Data, linear | R = roughness, G = ambient occlusion, B = metallic |
+  | `<name>_data.png` | Data, linear | R = roughness, G = ambient occlusion, B = metallic, A = cavity |
+
+**The data map has four channels and that is a format decision, not a convenience.**
+`select_format(Data, has_alpha, Desktop)` answers BC4 — one channel — when the image has no
+meaningful alpha, and BC7 when it has. A three-channel data map would therefore cook to BC4 and lose
+occlusion and metalness silently. The fourth channel is a cavity mask, it is real, and it is what
+keeps all three channels.
 
 --- THE NOISE IS DETERMINISTIC AND MACHINE-INDEPENDENT ----------------------------------------------
 
@@ -186,7 +192,7 @@ def height_to_normal(height: list[float], strength: float) -> bytearray:
 def make_stone(seed: int):
     """Weathered limestone: large blocks, a mortar line, and rain streaks down the faces."""
     albedo = bytearray(SIZE * SIZE * 3)
-    data = bytearray(SIZE * SIZE * 3)
+    data = bytearray(SIZE * SIZE * 4)
     height = [0.0] * (SIZE * SIZE)
     for y in range(SIZE):
         for x in range(SIZE):
@@ -213,9 +219,11 @@ def make_stone(seed: int):
 
             roughness = 0.58 + (pits * 0.26) + (mortar * 0.18) - (grain * 0.08)
             occlusion = 1.0 - (mortar * 0.55) - (pits * 0.12)
-            data[index + 0] = clamp_byte(roughness)
-            data[index + 1] = clamp_byte(occlusion)
-            data[index + 2] = 0
+            packed = ((y * SIZE) + x) * 4
+            data[packed + 0] = clamp_byte(roughness)
+            data[packed + 1] = clamp_byte(occlusion)
+            data[packed + 2] = 0
+            data[packed + 3] = clamp_byte(1.0 - (pits * 0.45) - (mortar * 0.3))
             height[(y * SIZE) + x] = (grain * 0.5) + (pits * 0.35) - (mortar * 1.0)
     return albedo, height_to_normal(height, 2.6), data
 
@@ -223,7 +231,7 @@ def make_stone(seed: int):
 def make_copper(seed: int):
     """Oxidised copper: metal where it is worn, verdigris where the rain sits."""
     albedo = bytearray(SIZE * SIZE * 3)
-    data = bytearray(SIZE * SIZE * 3)
+    data = bytearray(SIZE * SIZE * 4)
     height = [0.0] * (SIZE * SIZE)
     for y in range(SIZE):
         for x in range(SIZE):
@@ -240,9 +248,11 @@ def make_copper(seed: int):
                 )
             # THE ONE THING A CONSTANT MATERIAL CANNOT DO: metalness varies across the surface.
             # Bare metal is metallic and smooth; the patina is a dielectric crust and is neither.
-            data[index + 0] = clamp_byte(0.16 + (patina * 0.62) + (grain * 0.08))
-            data[index + 1] = clamp_byte(1.0 - (patina * 0.25))
-            data[index + 2] = clamp_byte(1.0 - patina)
+            packed = ((y * SIZE) + x) * 4
+            data[packed + 0] = clamp_byte(0.16 + (patina * 0.62) + (grain * 0.08))
+            data[packed + 1] = clamp_byte(1.0 - (patina * 0.25))
+            data[packed + 2] = clamp_byte(1.0 - patina)
+            data[packed + 3] = clamp_byte(1.0 - (patina * 0.35))
             height[(y * SIZE) + x] = (patina * 0.6) + (grain * 0.3)
     return albedo, height_to_normal(height, 1.4), data
 
@@ -250,7 +260,7 @@ def make_copper(seed: int):
 def make_gravel(seed: int):
     """The courtyard floor: packed sand with gravel in it."""
     albedo = bytearray(SIZE * SIZE * 3)
-    data = bytearray(SIZE * SIZE * 3)
+    data = bytearray(SIZE * SIZE * 4)
     height = [0.0] * (SIZE * SIZE)
     for y in range(SIZE):
         for x in range(SIZE):
@@ -263,9 +273,11 @@ def make_gravel(seed: int):
             albedo[index + 0] = clamp_byte(tone * 1.00)
             albedo[index + 1] = clamp_byte(tone * 0.90)
             albedo[index + 2] = clamp_byte(tone * 0.74)
-            data[index + 0] = clamp_byte(0.74 + (sand * 0.18) - (stones * 0.14))
-            data[index + 1] = clamp_byte(1.0 - (stones * 0.22))
-            data[index + 2] = 0
+            packed = ((y * SIZE) + x) * 4
+            data[packed + 0] = clamp_byte(0.74 + (sand * 0.18) - (stones * 0.14))
+            data[packed + 1] = clamp_byte(1.0 - (stones * 0.22))
+            data[packed + 2] = 0
+            data[packed + 3] = clamp_byte(1.0 - (stones * 0.4))
             height[(y * SIZE) + x] = (stones * 0.7) + (sand * 0.3)
     return albedo, height_to_normal(height, 3.2), data
 
@@ -284,9 +296,13 @@ def main() -> int:
     written = []
     for name, build in MATERIALS.items():
         albedo, normal, data = build(arguments.seed)
-        for suffix, pixels in (("albedo", albedo), ("normal", normal), ("data", data)):
+        for suffix, pixels, channels in (
+            ("albedo", albedo, 3),
+            ("normal", normal, 3),
+            ("data", data, 4),
+        ):
             path = arguments.out / f"{name}_{suffix}.png"
-            size = write_png(path, SIZE, SIZE, 3, pixels)
+            size = write_png(path, SIZE, SIZE, channels, pixels)
             written.append((path.name, size))
             print(f"{path}  {SIZE}x{SIZE}  {size} bytes")
 

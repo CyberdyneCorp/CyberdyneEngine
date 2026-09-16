@@ -39,6 +39,7 @@
 //! An empty canvas opened for `terrain` would be a specialised editor that exists in a screenshot.
 
 pub mod graph;
+pub mod material;
 pub mod timeline;
 
 use std::collections::BTreeMap;
@@ -403,12 +404,23 @@ impl SpecialisedEditors {
             if types.is_empty() {
                 continue;
             }
-            let catalogue = Catalogue::new(
-                types
-                    .iter()
-                    .map(|name| NodeType::new(*name, Vec::new()))
-                    .collect(),
-            )?;
+            // MATERIALS CARRIES ITS PINS AND THE OTHER THREE DO NOT, and the asymmetry is recorded
+            // rather than tidied. A catalogue with no pins can be OPENED and cannot be WIRED:
+            // `GraphCanvas::connect` refuses a pin the node type does not declare. M11.c task 6.1a
+            // needed the material editor to be authorable in, so `material::material_catalogue()`
+            // declares the engine's own pins and `unit` checks them against `lower_material.cpp`.
+            // The script, ability and pose vocabularies still carry names only; whoever makes one of
+            // those editors authorable owes it the same table and the same cross-language check.
+            let catalogue = if domain == Domain::Materials {
+                material::catalogue()?
+            } else {
+                Catalogue::new(
+                    types
+                        .iter()
+                        .map(|name| NodeType::new(*name, Vec::new()))
+                        .collect(),
+                )?
+            };
             catalogues.insert(domain, catalogue);
         }
         Ok(Self {

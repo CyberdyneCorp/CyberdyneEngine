@@ -1,0 +1,6 @@
+cyprim 1
+shape plane
+name Ground
+origin centre
+extent 96 96
+subdivisions 1 1

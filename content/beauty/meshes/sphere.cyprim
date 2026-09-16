@@ -1,0 +1,7 @@
+cyprim 1
+shape sphere
+name Orb
+origin base
+radius 0.62
+segments 48
+rings 24

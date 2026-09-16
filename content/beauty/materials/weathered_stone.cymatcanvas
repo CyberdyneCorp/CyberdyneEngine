@@ -1,0 +1,67 @@
+cymatcanvas 1
+material weathered_stone
+node 1 material.attribute
+prop 1 symbol uv0
+prop 1 type float2
+node 2 material.texture_sample
+prop 2 average 0.5 0.48 0.44 1
+prop 2 symbol albedo_map
+prop 2 type float4
+node 3 material.texture_sample
+prop 3 average 0.7 1 0 1
+prop 3 symbol data_map
+prop 3 type float4
+node 4 material.swizzle
+prop 4 swizzle xyz
+node 5 material.parameter
+prop 5 default 0.93 0.9 0.84 0
+prop 5 symbol base_color
+prop 5 type float3
+node 6 material.multiply
+node 7 material.swizzle
+prop 7 swizzle x
+node 8 material.parameter
+prop 8 default 1 0 0 0
+prop 8 symbol roughness
+prop 8 type float
+node 9 material.multiply
+node 10 material.swizzle
+prop 10 swizzle z
+node 11 material.parameter
+prop 11 default 1 0 0 0
+prop 11 symbol metallic
+prop 11 type float
+node 12 material.multiply
+node 13 material.one_minus
+node 14 material.multiply
+node 15 material.diffuse
+node 16 material.multiply
+node 17 material.specular
+node 18 material.add_closures
+node 19 material.constant
+prop 19 type float
+prop 19 value 1 0 0 0
+node 20 material.output
+link 1 out 2 uv
+link 1 out 3 uv
+link 2 out 4 value
+link 4 out 6 a
+link 5 out 6 b
+link 3 out 7 value
+link 7 out 9 a
+link 8 out 9 b
+link 3 out 10 value
+link 10 out 12 a
+link 11 out 12 b
+link 12 out 13 value
+link 6 out 14 a
+link 13 out 14 b
+link 14 out 15 colour
+link 6 out 16 a
+link 12 out 16 b
+link 16 out 17 colour
+link 9 out 17 roughness
+link 15 out 18 a
+link 17 out 18 b
+link 19 out 20 opacity
+link 18 out 20 surface

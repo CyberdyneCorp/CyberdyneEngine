@@ -1,0 +1,89 @@
+cygraph 1
+graph "courtyard_gravel" version 1
+capability
+deterministic true
+node 1 "material.attribute" v1 {
+    prop "symbol" : "name" = "uv0"
+    prop "type" : "name" = "float2"
+}
+node 2 "material.texture_sample" v1 {
+    prop "average" : "vec4" = (0.5, 0.479999989, 0.439999998, 1, 0)
+    prop "symbol" : "name" = "albedo_map"
+    prop "type" : "name" = "float4"
+}
+node 3 "material.texture_sample" v1 {
+    prop "average" : "vec4" = (0.699999988, 1, 0, 1, 0)
+    prop "symbol" : "name" = "data_map"
+    prop "type" : "name" = "float4"
+}
+node 4 "material.swizzle" v1 {
+    prop "value" : "swizzle" = (0, 0, 0, 0, 805306896)
+}
+node 5 "material.parameter" v1 {
+    prop "default" : "vec4" = (0.980000019, 0.949999988, 0.899999976, 0, 0)
+    prop "symbol" : "name" = "base_color"
+    prop "type" : "name" = "float3"
+}
+node 6 "material.multiply" v1 {
+}
+node 7 "material.swizzle" v1 {
+    prop "value" : "swizzle" = (0, 0, 0, 0, 268435456)
+}
+node 8 "material.parameter" v1 {
+    prop "default" : "vec4" = (1.04999995, 0, 0, 0, 0)
+    prop "symbol" : "name" = "roughness"
+    prop "type" : "name" = "float"
+}
+node 9 "material.multiply" v1 {
+}
+node 10 "material.swizzle" v1 {
+    prop "value" : "swizzle" = (0, 0, 0, 0, 268435458)
+}
+node 11 "material.parameter" v1 {
+    prop "default" : "vec4" = (1, 0, 0, 0, 0)
+    prop "symbol" : "name" = "metallic"
+    prop "type" : "name" = "float"
+}
+node 12 "material.multiply" v1 {
+}
+node 13 "material.one_minus" v1 {
+}
+node 14 "material.multiply" v1 {
+}
+node 15 "material.diffuse" v1 {
+}
+node 16 "material.multiply" v1 {
+}
+node 17 "material.specular" v1 {
+}
+node 18 "material.add_closures" v1 {
+}
+node 19 "material.constant" v1 {
+    prop "type" : "name" = "float"
+    prop "value" : "vec4" = (1, 0, 0, 0, 0)
+}
+node 20 "material.output" v1 {
+}
+link 1 "out" -> 2 "uv"
+link 1 "out" -> 3 "uv"
+link 2 "out" -> 4 "value"
+link 4 "out" -> 6 "a"
+link 5 "out" -> 6 "b"
+link 3 "out" -> 7 "value"
+link 7 "out" -> 9 "a"
+link 8 "out" -> 9 "b"
+link 3 "out" -> 10 "value"
+link 10 "out" -> 12 "a"
+link 11 "out" -> 12 "b"
+link 12 "out" -> 13 "value"
+link 6 "out" -> 14 "a"
+link 13 "out" -> 14 "b"
+link 14 "out" -> 15 "colour"
+link 6 "out" -> 16 "a"
+link 12 "out" -> 16 "b"
+link 16 "out" -> 17 "colour"
+link 9 "out" -> 17 "roughness"
+link 15 "out" -> 18 "a"
+link 17 "out" -> 18 "b"
+link 19 "out" -> 20 "opacity"
+link 18 "out" -> 20 "surface"

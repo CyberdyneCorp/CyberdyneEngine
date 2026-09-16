@@ -126,3 +126,15 @@ add_subdirectory(09b-animated-character)
 # It is also the line that answers M10's own gate: seven modules landed this milestone, each reached
 # only from its own suite, and this is the first target that names all seven.
 add_subdirectory(10-world)
+
+# BEAUTY. samples/12-beauty/cy_sample_beauty photographs a committed scene through the engine's own
+# assembled frame, with three materials authored on the editor's node-graph canvas, compiled by the
+# material compiler at capture time, and bound as BC7 and BC5 blocks at the set and binding
+# `cy/material.slang` declares. It is M11.c's closing artefact and the first frame this engine has
+# drawn in which a material decided a pixel — every published capture before it shades from constants
+# or from a debug channel, which is the defect M11.c's ledger opens with.
+#
+# `just capture-beauty-shot` is the recipe. Like every other capture in this tree it needs a graphics
+# device and writes nothing without one, so it has no CTest entry; what is gated automatically is
+# everything underneath it.
+add_subdirectory(12-beauty)

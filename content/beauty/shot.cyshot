@@ -1,0 +1,130 @@
+# content/beauty/shot.cyshot — the beauty shot's scene. M11.c task 7.1.
+#
+# THE SCENE IS CONTENT AND NOT CODE, which is what "captured, not drawn" means: `just
+# capture-beauty-shot` produces `docs/design/images/m11c-beauty-shot.png` from this file, three
+# `.cygraph` materials, nine `.png` textures and six `.cyprim` sources, and from nothing that is
+# compiled in. Moving a pillar is an edit here.
+#
+# COORDINATES ARE WORLD METRES, Y UP, -Z FORWARD — `core-math`'s. The camera's own position is
+# subtracted from every vertex before it reaches the device (design.md §3, "positions reach the GPU
+# relative to the camera"), which is why nothing below has to be near the origin and why nothing in
+# the shader ever holds a world coordinate.
+
+cyshot 1
+name The Colonnade
+
+# --- The camera -------------------------------------------------------------------------------
+#
+# A 42-degree horizontal field of view: a 50 mm lens on full frame, which is the focal length a
+# photographer reaches for when the subject is architecture and the point is the space rather than
+# the drama. Eye height 1.62 m.
+camera position 1.8 1.62 -11.5
+camera target -0.4 2.4 8.0
+camera fov 42
+camera near 0.08
+
+# --- The light --------------------------------------------------------------------------------
+#
+# 7.4 degrees above the horizon, which is about twenty minutes after sunrise at this latitude, and
+# 118 degrees of azimuth so the sun rakes across the colonnade from the left rather than down it.
+# The sun's COLOUR is not here: `rendering::sky::compose_sky_lighting()` answers it from the
+# engine's own atmosphere for this elevation, and a colour typed here would be a second sun.
+sun elevation 7.4
+sun azimuth 118
+sun shadow-extent 26
+sun shadow-bias 0.0016
+
+# The engine's sky, at the quality the still is worth. `cloud-cover` and `cloud-density` reach
+# `sky::CloudField`; `turbidity` is the atmosphere's own.
+sky cloud-cover 0.38
+sky cloud-density 0.26
+sky cloud-steps 48
+sky seed 0x5EEDB107
+
+# --- The grade --------------------------------------------------------------------------------
+#
+# Read by the resolve, not by this file's shading: `cy/fullscreen.slang`'s tonemapping resolve
+# divides the linear scene colour by the exposure and runs the curve `rendering-post-processing`
+# fixes at step 12. A number typed into a shader would be a grade nobody could change without a
+# compiler.
+exposure-stops 12.4
+
+# --- The materials ----------------------------------------------------------------------------
+#
+# `graph` names the AUTHORED file — the `.cygraph` the editor's canvas produced — and the three
+# texture lines name the PNGs the importer cooks. The normal map is listed beside the other two and
+# is NOT one of the material's own declared textures: `CyClosure` has no normal term, so the frame
+# samples it rather than the material. docs/design/beauty-shot.md says so.
+material stone graph content/beauty/materials/weathered_stone.cygraph
+material stone albedo content/beauty/textures/stone_albedo.png
+material stone normal content/beauty/textures/stone_normal.png
+material stone data content/beauty/textures/stone_data.png
+
+material copper graph content/beauty/materials/oxidised_copper.cygraph
+material copper albedo content/beauty/textures/copper_albedo.png
+material copper normal content/beauty/textures/copper_normal.png
+material copper data content/beauty/textures/copper_data.png
+
+material gravel graph content/beauty/materials/courtyard_gravel.cygraph
+material gravel albedo content/beauty/textures/gravel_albedo.png
+material gravel normal content/beauty/textures/gravel_normal.png
+material gravel data content/beauty/textures/gravel_data.png
+
+# --- The meshes -------------------------------------------------------------------------------
+#
+# `.cyprim` sources, built by `cy::import::build_primitive_mesh` — the same generator the editor's
+# `scene.create-primitive` writes for and the same one `PrimitiveImporter` cooks. No mesh file is
+# committed and none is needed: the source is six lines and the geometry is a function of it.
+mesh ground content/beauty/meshes/ground.cyprim
+mesh pillar content/beauty/meshes/pillar.cyprim
+mesh plinth content/beauty/meshes/plinth.cyprim
+mesh monolith content/beauty/meshes/monolith.cyprim
+mesh block content/beauty/meshes/block.cyprim
+mesh orb content/beauty/meshes/sphere.cyprim
+
+# --- The scene --------------------------------------------------------------------------------
+#
+# `instance <mesh> <material> at x y z yaw <degrees> uv <scale> normal <strength>`
+#
+# `uv` is how many times the material tiles across one metre of surface, and it is per instance
+# rather than per material because the ground and a pillar are the same stone at different scales.
+
+instance ground gravel at 0 0 0 yaw 0 uv 0.45 normal 1.0
+
+# The colonnade: six pillars a side, five metres apart, each on its own plinth.
+instance pillar stone at -3.6 0.55 -4 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at -3.6 0 -4 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at -3.6 0.55 1 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at -3.6 0 1 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at -3.6 0.55 6 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at -3.6 0 6 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at -3.6 0.55 11 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at -3.6 0 11 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at -3.6 0.55 16 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at -3.6 0 16 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at -3.6 0.55 21 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at -3.6 0 21 yaw 0 uv 0.6 normal 1.0
+
+instance pillar stone at 3.6 0.55 -4 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at 3.6 0 -4 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at 3.6 0.55 1 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at 3.6 0 1 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at 3.6 0.55 6 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at 3.6 0 6 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at 3.6 0.55 11 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at 3.6 0 11 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at 3.6 0.55 16 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at 3.6 0 16 yaw 0 uv 0.6 normal 1.0
+instance pillar stone at 3.6 0.55 21 yaw 0 uv 1.1 normal 1.2
+instance plinth stone at 3.6 0 21 yaw 0 uv 0.6 normal 1.0
+
+# The subject: a copper monolith on a stone plinth, at the far end of the colonnade where the sun
+# reaches it and the pillars do not.
+instance plinth stone at 0 0 13.5 yaw 22 uv 0.6 normal 1.0
+instance monolith copper at 0 0.55 13.5 yaw 22 uv 0.9 normal 1.4
+
+# Fallen stone, so the floor is not empty and the shadows have something to break over.
+instance block stone at -1.7 0 -1.2 yaw 31 uv 0.8 normal 1.1
+instance block stone at 2.15 0 3.4 yaw -14 uv 0.8 normal 1.1
+instance block stone at -2.3 0 8.8 yaw 47 uv 0.8 normal 1.1
+instance orb copper at 1.35 0 -3.4 yaw 0 uv 1.6 normal 1.0

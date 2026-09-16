@@ -24,9 +24,15 @@ cy_add_module(
     ALIAS cy::material-cook
     TYPE STATIC
     SOURCES
+        src/author.cpp
         src/cook.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PUBLIC_DEPENDENCIES cy::build-graph cy::rendering-material)
+    # M11.c task 6.1a: `author` reads the editor's canvas interchange, canonicalises it with the
+    # ENGINE's `.cygraph` writer, lowers it with the engine's own material lowering and assembles the
+    # translation unit the shader pipeline compiles. Three libraries, none of them re-implemented
+    # here.
+    PUBLIC_DEPENDENCIES cy::build-graph cy::graph cy::graph-material cy::rendering-material
+                        cy::rendering-material-slang)
 
 cy_add_module(
     NAME cy_material

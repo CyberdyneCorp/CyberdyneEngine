@@ -61,7 +61,13 @@ import cy.brdf;
 // has a layout that is a property of the compiler's flags, and `mul(M, v)` against `mul(v, M)`
 // silently transposes the result.
 
-struct BeautyPush
+/// What the frame is, for every stage. Set 2 is "per view" in `cy/backends/shader/reflection.h`'s
+/// convention, and that is exactly what this is.
+///
+/// A UNIFORM BLOCK AND NOT PUSH CONSTANTS, measured rather than preferred: eleven `float4` is 176
+/// bytes and Vulkan guarantees 128. `rhi::kMaxPushConstantBytes` says the same thing, and a layout
+/// that exceeded it would fail at pipeline creation on some devices and not on this one.
+struct BeautyFrame
 {
     float4 viewProjection0;
     float4 viewProjection1;
@@ -71,14 +77,23 @@ struct BeautyPush
     float4 sunToClip1;
     float4 sunToClip2;
     float4 sunToClip3;
-    /// xyz: the sun's direction TOWARDS the light, camera-relative. w: the shadow depth bias.
+    /// xyz: the direction TOWARDS the sun, camera-relative. w: the shadow depth bias.
     float4 sunDirection;
-    /// xyz: the sun's illuminance in linear units. w: the shadow map's texel size.
+    /// xyz: the sun's illuminance, linear. w: one texel of the shadow map.
     float4 sunColor;
-    /// xyz: the sky's ambient irradiance, from the assembly's own sky table. w: unused.
+    /// xyz: the sky's irradiance, from the engine's own `compose_sky_lighting`. w: unused.
     float4 ambient;
-    /// x: the bindless slot of this material's tangent-space normal map, or 0xFFFFFFFF for none.
-    /// y: the UV scale this surface tiles its material at. z: normal strength. w: unused.
+};
+
+[[vk::binding(0, 2)]]
+ConstantBuffer<BeautyFrame> frame;
+
+/// The only thing that differs per draw. Sixteen bytes, which every Vulkan device has.
+///
+/// x: the bindless slot of this surface's tangent-space normal map, bit-cast, or 0xFFFFFFFF.
+/// y: the UV scale this surface tiles its material at. z: normal strength. w: unused.
+struct BeautyPush
+{
     float4 surface;
 };
 
@@ -105,8 +120,8 @@ struct ShadowVarying
 ShadowVarying shadowVertex(float3 position : POSITION)
 {
     ShadowVarying output;
-    output.position = transform(push.sunToClip0, push.sunToClip1, push.sunToClip2,
-                                push.sunToClip3, float4(position, 1.0));
+    output.position = transform(frame.sunToClip0, frame.sunToClip1, frame.sunToClip2,
+                                frame.sunToClip3, float4(position, 1.0));
     return output;
 }
 
@@ -126,8 +141,8 @@ SceneVarying sceneVertex(float3 position : POSITION, float3 normal : NORMAL,
                          float4 tangent : TANGENT, float2 uv : TEXCOORD0)
 {
     SceneVarying output;
-    output.position = transform(push.viewProjection0, push.viewProjection1, push.viewProjection2,
-                                push.viewProjection3, float4(position, 1.0));
+    output.position = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
+                                frame.viewProjection3, float4(position, 1.0));
     output.relativePosition = position;
     output.normal = normal;
     output.tangent = tangent;
@@ -142,8 +157,8 @@ SceneVarying sceneVertex(float3 position : POSITION, float3 normal : NORMAL,
 /// is a hard, aliased edge and the whole point of this artefact is what the picture looks like.
 float sunVisibility(float3 relativePosition)
 {
-    float4 lightClip = transform(push.sunToClip0, push.sunToClip1, push.sunToClip2,
-                                 push.sunToClip3, float4(relativePosition, 1.0));
+    float4 lightClip = transform(frame.sunToClip0, frame.sunToClip1, frame.sunToClip2,
+                                 frame.sunToClip3, float4(relativePosition, 1.0));
     if (lightClip.w <= 0.0)
     {
         return 1.0;
@@ -154,13 +169,13 @@ float sunVisibility(float3 relativePosition)
     {
         return 1.0;
     }
-    float reference = projected.z + push.sunDirection.w;
+    float reference = projected.z + frame.sunDirection.w;
     float total = 0.0;
     for (int y = -1; y <= 1; ++y)
     {
         for (int x = -1; x <= 1; ++x)
         {
-            float2 offset = float2(x, y) * push.sunColor.w;
+            float2 offset = float2(x, y) * frame.sunColor.w;
             total += shadowMap.SampleCmpLevelZero(shadowSampler, uv + offset, reference);
         }
     }
@@ -200,7 +215,7 @@ float4 sceneFragment(SceneVarying input) : SV_Target
     }
 
     float3 view = normalize(-input.relativePosition);
-    float3 light = normalize(push.sunDirection.xyz);
+    float3 light = normalize(frame.sunDirection.xyz);
     float normalDotLight = saturate(dot(shadingNormal, light));
     float visibility = sunVisibility(input.relativePosition);
 
@@ -208,13 +223,13 @@ float4 sceneFragment(SceneVarying input) : SV_Target
     float3 diffuse = diffuseLambert(surface.albedo * (1.0 - surface.metallic));
     float3 specular = specularGgx(shadingNormal, view, light, surface.roughness, f0);
 
-    float3 lit = (diffuse + specular) * push.sunColor.xyz * normalDotLight * visibility;
+    float3 lit = (diffuse + specular) * frame.sunColor.xyz * normalDotLight * visibility;
 
     // The ambient term is the assembly's own sky table, hemispherically weighted by the shading
     // normal so that an upward face is lit by the sky and a downward one is not. It is a
     // one-bounce approximation and the provenance says so: no global illumination pass ran.
     float sky = (dot(shadingNormal, float3(0.0, 1.0, 0.0)) * 0.5) + 0.5;
-    lit += surface.albedo * push.ambient.xyz * sky * surface.occlusion;
+    lit += surface.albedo * frame.ambient.xyz * sky * surface.occlusion;
     lit += surface.emission;
     return float4(lit, 1.0);
 }
@@ -236,8 +251,8 @@ struct SkyVarying
 SkyVarying skyVertex(float3 position : POSITION, float3 radiance : COLOR0)
 {
     SkyVarying output;
-    output.position = transform(push.viewProjection0, push.viewProjection1, push.viewProjection2,
-                                push.viewProjection3, float4(position, 1.0));
+    output.position = transform(frame.viewProjection0, frame.viewProjection1, frame.viewProjection2,
+                                frame.viewProjection3, float4(position, 1.0));
     output.radiance = radiance;
     return output;
 }
