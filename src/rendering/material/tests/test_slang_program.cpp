@@ -372,3 +372,50 @@ void cyMaterialProbe(uint3 thread : SV_DispatchThreadID)
     std::printf("cy.field + cy.terrain_shade + cy.cloud_shadow compiled to %u SPIR-V words\n",
                 words);
 }
+
+// ================================================================================================
+// REGRESSION — the cooked mip chain must be reachable
+// ================================================================================================
+//
+// `cy_material_sample` emitted only `cyMaterialSampleTextureLevel(..., 0.0)`, so every generated
+// program read level 0 whatever the stage, and the mip chain the importer cooks was UNREACHABLE.
+// M11.c's spike measured the consequence rather than arguing it: a frame rendered with eight of the
+// nine cooked levels never uploaded is BYTE-IDENTICAL to one with all nine — mean |delta|
+// 0.000/255, 0.00% of texels. The importer spends about a third more bytes on a chain no program
+// could read, and every minified surface in the artefact would alias.
+//
+// The prelude now emits both forms behind `CY_MATERIAL_PIXEL_STAGE`: a pixel stage defines it and
+// gets the implicit-derivative sampler, and the compute probe does not, because implicit
+// derivatives exist only in a pixel stage — which is why the explicit form was there in the first
+// place.
+//
+// THIS CASE ASSERTS THE TEXT because that is where the defect lived. Delete either branch and it
+// goes red; restore the old unconditional explicit form and it goes red on the implicit one.
+CY_TEST_CASE("the generated prelude can sample a mip chain, not only level zero") {
+    ParseDiagnostic sink(current_allocator());
+    Expected<Module, Error> module = parse_material(kWornMetal, current_allocator(), sink);
+    CY_REQUIRE(module.has_value());
+    CY_CHECK(module->textures().size() > 0U);
+
+    EmitOptions emit;
+    emit.kind = ProgramKind::Primary;
+    emit.tier = QualityTier::High;
+    Expected<GeneratedSource, Error> source = emit_program(*module, emit);
+    CY_REQUIRE(source.has_value());
+
+    Array<char> unit(current_allocator());
+    PreludeOptions prelude;
+    Expected<PreludeReport, Error> report = assemble_translation_unit(
+        *module, *source, ProgramKind::Primary, QualityTier::High, prelude, unit);
+    CY_REQUIRE(report.has_value());
+
+    const std::string_view text(unit.data(), unit.size());
+    // The implicit sampler, which is the one that reads the chain.
+    CY_CHECK(text.find("cyMaterialSampleTexture(ctx.params.textures[slot], uv)") !=
+             std::string_view::npos);
+    // Guarded, so the compute probe still compiles.
+    CY_CHECK(text.find("CY_MATERIAL_PIXEL_STAGE") != std::string_view::npos);
+    // And the explicit form survives for the stages that cannot take derivatives.
+    CY_CHECK(text.find("cyMaterialSampleTextureLevel(ctx.params.textures[slot], uv, 0.0)") !=
+             std::string_view::npos);
+}
