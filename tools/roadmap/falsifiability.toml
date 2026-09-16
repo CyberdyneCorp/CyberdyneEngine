@@ -702,7 +702,7 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "beauty-shot"
-digest = "0877eaf4899f85f5"
+digest = "5c57569e681c7eb3"
 verdict = "proven"
 mutation = "delete-lines 'ExposureApply' in docs/design/images/m11c-beauty-shot.manifest (declared)"
 detail = "red under mutation of 1 file(s)"
@@ -846,10 +846,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit
 [[proof]]
 ledger = "m11c"
 criterion = "the-frame-samples-what-the-material-cannot"
-digest = "c2e6d03b0b03e2fe"
-verdict = "proven"
+digest = "4b6fa3eca8cb8488"
+verdict = "proven against a built tree"
 mutation = "delete-lines 'no normal term' in docs/design/beauty-shot.md (declared)"
-detail = "red under mutation of 1 file(s)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the artefact's provenance no longer states that the compiled-material vocabulary has no normal term), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -862,10 +862,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "the-shot-does-not-overclaim-the-editor"
-digest = "698ab25f5fc6d0c2"
-verdict = "proven"
+digest = "f4d33ba04e4ff1ff"
+verdict = "proven against a built tree"
 mutation = "delete-lines 'honestly missing' in docs/design/beauty-shot.md (declared)"
-detail = "red under mutation of 1 file(s)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
 
 [[proof]]
 ledger = "m11d"

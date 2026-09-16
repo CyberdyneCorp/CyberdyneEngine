@@ -733,28 +733,82 @@ target = "docs/design/images/m11c-beauty-shot-linear.png"
 
 [[criterion]]
 id = "beauty-shot"
-describe = "and the shot itself, captured on a device and committed under docs/design/images/, WITH THE MANIFEST THE FRAME WROTE ABOUT ITSELF. The manifest is built from `AssemblyReport` by `capture_manifest`, which re-derives nothing, so it is the one part of the caption a machine can check: the stage list the frame ran, the exposure, whether the arbiter was pinned, and how many validation errors the device reported while it was drawn"
-source = "tasks 7, ROADMAP M11.c closing artefact"
+describe = "the shot, the manifest the frame wrote about itself, and the AGREEMENT between them and the tree. `capture_manifest` builds the stage list out of `AssemblyReport` and re-derives nothing, so the manifest is the one part of the caption a machine can check — and this checks it against things it did not write: the published image's own dimensions against the resolution and the supersample factor the frame recorded, and every authored graph and source texture the manifest names against the files in `content/`. A caption naming a material nobody committed, or a resolution nobody rendered, is red"
+source = "tasks 7, ROADMAP M11.c closing artefact, design.md section 7"
 kind = "command"
 run = '''
 set -eo pipefail
-still=docs/design/images/m11c-beauty-shot.png
-manifest=docs/design/images/m11c-beauty-shot.manifest
-test -f "$still" || { echo "no beauty shot under docs/design/images/"; exit 1; }
-test -f "$manifest" || { echo "the shot has no manifest, so its caption is unchecked"; exit 1; }
-sed -n '1,20p' "$manifest"
+python3 - <<'PYCHECK'
+import pathlib
+import re
+import sys
 
-grep -q '^purpose publication' "$manifest"
-grep -q '^arbiter pinned' "$manifest"
-grep -q '^validation-errors 0$' "$manifest"
-stages=$(sed -nE 's/^post-stages ([0-9]+)$/\1/p' "$manifest")
-test "${stages:-0}" -ge 3 || { echo "the frame ran ${stages:-0} post stage(s)"; exit 1; }
-grep -q 'ExposureApply' "$manifest"
-grep -q 'Tonemap' "$manifest"
+from PIL import Image
 
-test -f docs/design/beauty-shot.md
-grep -qi 'what a person authored' docs/design/beauty-shot.md
-grep -qi 'what it is not' docs/design/beauty-shot.md
+still = pathlib.Path("docs/design/images/m11c-beauty-shot.png")
+manifest_path = pathlib.Path("docs/design/images/m11c-beauty-shot.manifest")
+caption = pathlib.Path("docs/design/beauty-shot.md")
+for path in (still, manifest_path, caption):
+    if not path.is_file():
+        sys.exit(f"{path} is not in the tree, so the artefact is incomplete")
+
+manifest = manifest_path.read_text()
+print(manifest.split("\n# content")[0].strip())
+
+def one(pattern: str) -> str:
+    found = re.search(pattern, manifest, re.M)
+    if found is None:
+        sys.exit(f"the manifest no longer reports {pattern!r}: it is not the file this check reads")
+    return found.group(1)
+
+# --- WHAT THE FRAME SAID ABOUT ITSELF ---------------------------------------------------------
+if not re.search(r"^purpose publication$", manifest, re.M):
+    sys.exit("the capture is not a publication capture")
+if not re.search(r"^arbiter pinned$", manifest, re.M):
+    sys.exit("the arbiter was free to degrade the frame between assembling it and photographing it")
+errors = int(one(r"^validation-errors (\d+)$"))
+if errors:
+    sys.exit(f"the device reported {errors} validation error(s) while this frame was drawn")
+stages = int(one(r"^post-stages (\d+)$"))
+listed = re.findall(r"^  \d+ step \d+ (\w+)", manifest, re.M)
+if stages < 3 or len(listed) != stages:
+    sys.exit(f"the manifest claims {stages} post stage(s) and lists {len(listed)}: {listed}")
+for stage in ("ExposureApply", "Tonemap"):
+    if stage not in listed:
+        sys.exit(f"the frame ran no {stage} stage, so the picture did not go through the post chain")
+print(f"post chain: {' -> '.join(listed)}")
+
+# --- AND IT AGREES WITH THE PUBLISHED FILE ----------------------------------------------------
+width, height = (int(value) for value in one(r"^resolution (\d+x\d+)$").split("x"))
+supersample = int(one(r"^supersample (\d+)x$"))
+published = Image.open(still).size
+if (width // supersample, height // supersample) != published:
+    sys.exit(f"the frame says {width}x{height} at {supersample}x and the published image is "
+             f"{published[0]}x{published[1]}: the caption and the file disagree about the picture")
+print(f"rendered {width}x{height}, published {published[0]}x{published[1]} at {supersample}x")
+
+# --- AND THE CONTENT IT NAMES IS IN THE TREE ---------------------------------------------------
+named = 0
+for line in manifest.splitlines():
+    found = re.match(r"\s+(?:authored|albedo|normal|data)\s+(\S+\.(?:cygraph|png))", line)
+    if found is None:
+        continue
+    path = pathlib.Path(found.group(1))
+    if not path.is_file():
+        sys.exit(f"the manifest names {path} and it is not in the tree")
+    named += 1
+if named < 12:
+    sys.exit(f"the manifest names {named} content file(s); three textured materials is twelve")
+print(f"{named} committed content file(s) named by the manifest, all present")
+
+# --- AND THE CAPTION EXISTS AND SAYS WHAT IT IS NOT --------------------------------------------
+text = caption.read_text()
+for heading in ("What a person authored", "What the renderer produced", "What it is not"):
+    if heading.lower() not in text.lower():
+        sys.exit(f"docs/design/beauty-shot.md has no '{heading}' section: the picture is published "
+                 "without the half of the artefact that makes it evidence")
+print("the provenance names what was authored, what was rendered, and what the frame is not")
+PYCHECK
 '''
 ci_job = "milestone-m11c"
 
@@ -762,6 +816,7 @@ ci_job = "milestone-m11c"
 mutate = "delete-lines"
 target = "docs/design/images/m11c-beauty-shot.manifest"
 token = "ExposureApply"
+note = "The exposure stage vanishes from the list the frame wrote about itself, and the stage count no longer matches the stages listed. Both legs catch it, which is deliberate: a manifest edited by hand is the one way a caption built from `AssemblyReport` could still lie."
 
 # --- THREE THINGS THIS RUNG DID NOT FINISH, AND THE CHECKS THAT KEEP THE CAPTION HONEST ABOUT THEM --
 #
@@ -774,30 +829,56 @@ token = "ExposureApply"
 
 [[criterion]]
 id = "the-frame-samples-what-the-material-cannot"
-describe = "the compiled-material vocabulary has no normal and no occlusion term, the artefact's frame samples both on the material's behalf, and the published provenance SAYS SO. `CyClosure` is five terms — diffuse, specular, emission, roughness, weight — so `cyResolveSurface` hands the light loop a `Surface` whose normal is (0,0,1) whatever a graph was authored to do. The day the vocabulary gains one this goes red, which is the right moment to delete the frame's stand-in"
+describe = "the compiled-material vocabulary has no normal and no occlusion term, the artefact's frame samples both on the material's behalf, and the published provenance SAYS SO. The check COMPILES one of the shot's own material graphs and reads what the emitter produced: a program that writes `surface.normal` would mean the vocabulary had grown one, and the frame's stand-in should then go. `CyClosure`'s five terms are diffuse, specular, emission, roughness and weight, and `cyResolveSurface` therefore hands the light loop a `Surface` whose normal is (0,0,1) whatever a graph was authored to do"
 source = "tasks 6.1c and 7.5, material-compiler, design.md section 7"
 kind = "command"
 run = '''
 set -eo pipefail
-closure=$(sed -n '/^public struct CyClosure$/,/^};$/p' src/rendering/shaders/cy/material.slang)
-test -n "$closure" || { echo "cy/material.slang no longer declares CyClosure as this check reads it"; exit 1; }
-if printf '%s' "$closure" | grep -q 'normal'; then
-    echo "CyClosure now carries a normal term. The compiled material can express one, so the frame's"
-    echo "stand-in in samples/12-beauty/shaders/beauty.slang should go and the artefact's provenance"
-    echo "should stop saying the frame samples it."
-    exit 1
-fi
-echo "CyClosure carries no normal term and no occlusion term:"
-printf '%s\n' "$closure" | sed -n '1,12p'
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+cooker="$d/tools/material/cy_material"
+test -x "$cooker" || { echo "no $cooker — cy_material was not built"; exit 1; }
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+"$cooker" author content/beauty/materials/weathered_stone.cymatcanvas \
+    --graph "$work/g.cygraph" --module "$work/m.slang" --info "$work/m.cymatinfo" > /dev/null
 
-# THE FRAME DOES IT INSTEAD, at the material's own slot and out of the material's own table.
-grep -q 'cyMaterialSampleTexture(normalSlot' samples/12-beauty/shaders/beauty.slang || { echo "the artefact's frame no longer samples the normal map: either the material does it now, or the shot lost its normal mapping"; exit 1; }
-grep -q 'cyMaterialSampleTexture(dataSlot' samples/12-beauty/shaders/beauty.slang || { echo "the artefact's frame no longer samples the occlusion channel"; exit 1; }
+python3 - "$work/m.slang" <<'PYCHECK'
+import pathlib
+import sys
 
-# AND THE PUBLISHED CAPTION SAYS SO. design.md section 7: the provenance is the deliverable and the
-# image is the evidence for it.
-grep -q 'no normal term' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer states that the compiled-material vocabulary has no normal term"; exit 1; }
-echo "the provenance states it and the frame does it"
+module = pathlib.Path(sys.argv[1]).read_text()
+body = module[module.index("void cy_material_"):]
+print(body.strip()[:400])
+for term in ("surface.normal", "surface.occlusion"):
+    if term in body:
+        sys.exit(f"the generated program writes {term}. The compiled-material vocabulary has grown a "
+                 "term for it, so samples/12-beauty/shaders/beauty.slang should stop sampling it on "
+                 "the material's behalf and docs/design/beauty-shot.md should stop saying it does.")
+written = sorted({line.split("=")[0].strip() for line in body.splitlines()
+                  if line.strip().startswith("surface.")})
+print(f"a compiled material writes exactly: {', '.join(written)}")
+
+closure = pathlib.Path("src/rendering/shaders/cy/material.slang").read_text()
+declaration = closure[closure.index("public struct CyClosure"):]
+declaration = declaration[:declaration.index("};")]
+if "normal" in declaration:
+    sys.exit("CyClosure now carries a normal term")
+print("CyClosure carries no normal term and no occlusion term")
+
+frame = pathlib.Path("samples/12-beauty/shaders/beauty.slang").read_text()
+for call in ("cyMaterialSampleTexture(normalSlot", "cyMaterialSampleTexture(dataSlot"):
+    if call not in frame:
+        sys.exit(f"the artefact's frame no longer calls {call}...): either the material does it now, "
+                 "or the shot lost its normal mapping")
+print("the frame samples both from the material's own table, at the material's own slots")
+
+caption = pathlib.Path("docs/design/beauty-shot.md").read_text()
+if "no normal term" not in caption:
+    sys.exit("the artefact's provenance no longer states that the compiled-material vocabulary has "
+             "no normal term")
+print("and the published provenance says so")
+PYCHECK
 '''
 ci_job = "milestone-m11c"
 
@@ -809,19 +890,28 @@ note = "The caption stops saying what the frame is doing on the material's behal
 
 [[criterion]]
 id = "the-shot-does-not-overclaim-the-editor"
-describe = "the artefact says exactly how much of the editor it went through. M11.c made `SpecialisedEditors::open(Domain::Materials)` succeed — the spike measured it refusing, as junction 1 of six — and authored the shot's materials on the editor's authoring MODEL from a program. It did NOT register `material.*` commands, so the materials cannot be authored over the control socket the way `samples/08a-authoring` authors a scene. The provenance states that, and this checks the statement against the tree: the day a command is registered, this goes red and the caption is owed an update"
-source = "tasks 6.1a and 7.3, editor-architecture, design.md section 7"
+describe = "the artefact says exactly how much of the editor it went through, and the check ASKS THE EDITOR. `cyberdyne-editor --list-commands` prints the registry a control socket can drive; M11.c made `SpecialisedEditors::open(Domain::Materials)` succeed and authored the shot's materials on the editor's authoring MODEL from a program, and registered no `material.*` command — so the materials cannot be authored the way `samples/08a-authoring` authors a scene, and the provenance says that. The day a command appears in that listing this goes red and the caption is owed an update"
+source = "tasks 6.1a and 7.3, editor-architecture, editor-agent-interface, design.md section 7"
 kind = "command"
 run = '''
 set -eo pipefail
-registry=editor/crates/cy-editor-services/src
-if grep -rq '"material\.' "$registry" 2>/dev/null; then
-    grep -rn '"material\.' "$registry" | head -5
+d="${CY_BUILD_DIR:-build/dev}"
+just build-editor --profile dev > /dev/null
+editor="$d/editor/development/cyberdyne-editor"
+test -x "$editor" || { echo "no $editor — the editor was not built, so its registry cannot be read"; exit 1; }
+listing=$(mktemp)
+trap 'rm -f "$listing"' EXIT
+"$editor" --list-commands > "$listing"
+total=$(grep -c '^[a-z][a-z.-]*(' "$listing" || true)
+test "${total:-0}" -ge 20 || { echo "the registry listed ${total:-0} command(s); this is not the listing this check reads"; exit 1; }
+echo "the editor's registry lists $total command(s)"
+if grep -q '^material\.' "$listing"; then
+    grep '^material\.' "$listing" | head -5
     echo "the editor now registers material.* commands, so the shot CAN be authored over the control"
     echo "socket and docs/design/beauty-shot.md's statement that it cannot is out of date."
     exit 1
 fi
-echo "no material.* command is registered under $registry"
+echo "none of them is material.*: a material cannot be authored over the control socket"
 grep -q 'honestly missing' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer states what is missing from \"authored through the editor\""; exit 1; }
 grep -q 'control socket' docs/design/beauty-shot.md || { echo "the artefact's provenance no longer names the surface the materials cannot be authored over"; exit 1; }
 echo "and the provenance says so, in the section that says what the artefact is not"
