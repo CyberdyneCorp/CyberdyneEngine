@@ -2,15 +2,19 @@
 
 #include <cy/graph/material/lower_material.h>
 
+#include <iterator>
+
 namespace cy::graph::material {
 namespace {
 
+// QUALIFIED RATHER THAN IMPORTED, for one specific reason: `cy::graph::Immediate` and
+// `cy::rendering::material::Immediate` are two structurally identical types in two namespaces that
+// are both visible here, and a `using` that pulled the second into this one would make every
+// mention of the name ambiguous — or, worse, silently pick the enclosing namespace's.
 using rendering::material::GraphOp;
-using rendering::material::Immediate;
 using rendering::material::MaterialGraph;
-using rendering::material::ParameterDecl;
-using rendering::material::TextureDecl;
-using rendering::material::ValueType;
+using MaterialImmediate = rendering::material::Immediate;
+using MaterialValueType = rendering::material::ValueType;
 
 /// One entry of the palette: the authored type name, the compiler's op, and the input pins in PORT
 /// ORDER.
@@ -69,6 +73,18 @@ constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
 constexpr std::string_view kValuePin = "value";
 constexpr std::string_view kClosurePin = "closure";
 
+/// One authored annotation: the boolean property that carries it, and the flag it sets.
+struct FlagSpec {
+    std::string_view property;
+    rendering::material::NodeFlags flag;
+};
+
+constexpr FlagSpec kFlags[] = {
+    {"base_reflectance", rendering::material::NodeFlags::BaseReflectance},
+    {"opacity_critical", rendering::material::NodeFlags::OpacityCritical},
+    {"microdetail", rendering::material::NodeFlags::Microdetail},
+};
+
 [[nodiscard]] const NodeSpec* spec_for(std::string_view type) noexcept {
     for (const NodeSpec& spec : kPalette) {
         if (spec.type == type) {
@@ -79,26 +95,27 @@ constexpr std::string_view kClosurePin = "closure";
 }
 
 /// A texture's average, or a parameter's default, read off a node property.
-[[nodiscard]] Immediate immediate_of(const Literal* literal, Immediate fallback) noexcept {
+[[nodiscard]] MaterialImmediate immediate_of(const Literal* literal,
+                                             MaterialImmediate fallback) noexcept {
     if (literal == nullptr) {
         return fallback;
     }
-    return Immediate{literal->value.x, literal->value.y, literal->value.z, literal->value.w,
-                     literal->value.mask};
+    return MaterialImmediate{literal->value.x, literal->value.y, literal->value.z, literal->value.w,
+                             literal->value.mask};
 }
 
-[[nodiscard]] ValueType value_type_of(const Literal* literal) noexcept {
+[[nodiscard]] MaterialValueType value_type_of(const Literal* literal) noexcept {
     if (literal == nullptr || literal->text.is_empty()) {
-        return ValueType::Float;
+        return MaterialValueType::Float;
     }
     const std::string_view text = literal->text.text();
-    for (u8 index = 0; index < static_cast<u8>(ValueType::Count); ++index) {
-        const auto type = static_cast<ValueType>(index);
+    for (u8 index = 0; index < static_cast<u8>(MaterialValueType::Count); ++index) {
+        const auto type = static_cast<MaterialValueType>(index);
         if (text == rendering::material::value_type_name(type)) {
             return type;
         }
     }
-    return ValueType::Float;
+    return MaterialValueType::Float;
 }
 
 /// The mapping from an author's node key to the index `MaterialGraph::add` returned.
@@ -136,7 +153,14 @@ private:
 [[nodiscard]] Status declare_for(const Graph& graph, const GraphNode& node, const NodeSpec& spec,
                                  Name symbol, MaterialGraph& out) noexcept {
     if (spec.op == GraphOp::Parameter) {
-        ParameterDecl decl;
+        // The same argument as for a texture below: an author reads one parameter from three parts
+        // of a graph, and that is three NODES and one declaration.
+        for (const rendering::material::ParameterDecl& declared : out.parameters()) {
+            if (declared.name == symbol) {
+                return ok();
+            }
+        }
+        rendering::material::ParameterDecl decl;
         decl.name = symbol;
         decl.type = value_type_of(graph.property(node.key, Name::intern("type")));
         decl.default_value = immediate_of(graph.property(node.key, Name::intern("default")), {});
@@ -145,17 +169,24 @@ private:
         return out.declare_parameter(decl);
     }
     if (spec.op == GraphOp::TextureSample) {
-        TextureDecl decl;
+        rendering::material::TextureDecl decl;
         decl.name = symbol;
         decl.average = immediate_of(graph.property(node.key, Name::intern("average")),
-                                    Immediate{1.0F, 1.0F, 1.0F, 1.0F, 0});
+                                    MaterialImmediate{1.0F, 1.0F, 1.0F, 1.0F, 0});
         const Literal* critical = graph.property(node.key, Name::intern("shadow_critical"));
         decl.shadow_critical = critical != nullptr && critical->value.mask != 0;
-        // A texture DECLARED TWICE is an author sampling one texture from two places, which
-        // `graph.h` lists among the warts the front end must produce. `declare_texture` refuses a
-        // duplicate, so the second sample reuses the first declaration rather than failing.
-        Status declared = out.declare_texture(decl);
-        return declared ? ok() : ok();
+        // A TEXTURE SAMPLED TWICE IS ONE TEXTURE. `graph.h` lists "one texture sampled from two
+        // separate nodes, because two parts of a graph each dragged the texture in" among the warts
+        // an editor produces, and it is a wart in the NODES rather than in the DECLARATIONS: the
+        // declaration list is what the material's parameter block and its bindless slots are built
+        // from, so declaring `base_color_map` twice would give the material two slots for one
+        // texture. `MaterialGraph::declare_texture` appends unconditionally, so the check is here.
+        for (const rendering::material::TextureDecl& declared : out.textures()) {
+            if (declared.name == symbol) {
+                return ok();
+            }
+        }
+        return out.declare_texture(decl);
     }
     return ok();
 }
@@ -165,8 +196,9 @@ private:
                                  MaterialGraph& out, KeyMap& keys) noexcept {
     const Literal* symbol_property = graph.property(node.key, Name::intern("symbol"));
     const Name symbol = symbol_property != nullptr ? symbol_property->text : Name{};
-    const ValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
-    const Immediate value = immediate_of(graph.property(node.key, Name::intern("value")), {});
+    const MaterialValueType type = value_type_of(graph.property(node.key, Name::intern("type")));
+    const MaterialImmediate value =
+        immediate_of(graph.property(node.key, Name::intern("value")), {});
 
     if (Status declared = declare_for(graph, node, spec, symbol, out); !declared) {
         return declared;
@@ -176,6 +208,23 @@ private:
     if (!added) {
         return make_unexpected(added.error());
     }
+    // THE AUTHOR'S OWN ANNOTATIONS. `ir.h` calls these "what an author said about a node" and
+    // records that none of them reaches a content hash — so they change which program a derivation
+    // keeps and never what the primary program means. A graph that could not carry them would make
+    // `material.output`'s far-field and shadow derivations unauthorable from the editor.
+    rendering::material::NodeFlags flags = rendering::material::NodeFlags::None;
+    for (const FlagSpec& flag : kFlags) {
+        const Literal* property = graph.property(node.key, Name::intern(flag.property));
+        if (property != nullptr && property->value.mask != 0) {
+            flags = flags | flag.flag;
+        }
+    }
+    if (flags != rendering::material::NodeFlags::None) {
+        if (Status annotated = out.annotate(added.value(), flags); !annotated) {
+            return annotated;
+        }
+    }
+
     if (node.muted) {
         // A MUTED NODE STAYS IN THE GRAPH. `graph.h`: "a MUTED node the author did not delete,
         // which lowers to a weight of zero rather than to nothing, because the editor still shows
@@ -237,11 +286,11 @@ Span<const std::string_view> material_node_types() noexcept {
     return Span<const std::string_view>(names, std::size(names));
 }
 
-Span<const PinDesc> material_node_pins(std::string_view type) noexcept {
-    static PinDesc pins[5];
-    static usize count = 0;
-    count = 0;
-    const auto push = [](std::string_view name, std::string_view pin_type, PinDirection direction) {
+Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kMaxPins]) noexcept {
+    usize count = 0;
+    PinDesc* pins = storage;
+    const auto push = [&](std::string_view name, std::string_view pin_type,
+                          PinDirection direction) {
         pins[count].name = Name::intern(name);
         pins[count].type = Name::intern(pin_type);
         pins[count].direction = direction;
@@ -253,7 +302,7 @@ Span<const PinDesc> material_node_pins(std::string_view type) noexcept {
     if (type == kOutputType) {
         push(kOutputPins[0], kClosurePin, PinDirection::Input);
         push(kOutputPins[1], kValuePin, PinDirection::Input);
-        return Span<const PinDesc>(pins, count);
+        return Span<const PinDesc>(storage, count);
     }
     const NodeSpec* spec = spec_for(type);
     if (spec == nullptr) {
@@ -265,16 +314,17 @@ Span<const PinDesc> material_node_pins(std::string_view type) noexcept {
         push(spec->pins[index], closure_input ? kClosurePin : kValuePin, PinDirection::Input);
     }
     push("out", spec->closure ? kClosurePin : kValuePin, PinDirection::Output);
-    return Span<const PinDesc>(pins, count);
+    return Span<const PinDesc>(storage, count);
 }
 
 Status register_material_nodes(NodeRegistry& registry) noexcept {
     for (std::string_view type : material_node_types()) {
+        PinDesc storage[kMaxPins];
         NodeTypeDesc desc;
         desc.name = Name::intern(type);
         desc.plugin = Name::intern("material-compiler");
         desc.version = 1;
-        desc.pins = material_node_pins(type);
+        desc.pins = material_node_pins(type, storage);
         desc.pure = true;
         if (Status registered = registry.register_type(desc); !registered) {
             return registered;

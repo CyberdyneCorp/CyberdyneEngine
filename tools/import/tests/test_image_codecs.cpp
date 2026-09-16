@@ -396,10 +396,45 @@ CY_TEST_CASE("encoder: BC7 reproduces a block whose texels lie on one colour lin
     CY_CHECK(peak <= 2);
 }
 
-CY_TEST_CASE("encoder: BC7 keeps a two-population block within the cost mode 6 is known to have") {
-    // The case mode 6 CANNOT express: two colours with no useful line between them. The assertion
-    // is the measured cost, not a claim of quality — block_encode.h says the partitioned modes are
-    // absent and this is the number that says what their absence costs.
+CY_TEST_CASE("encoder: BC7 keeps a three-population block within the cost mode 6 is known to have") {
+    // THE CASE MODE 6 CANNOT EXPRESS, and it takes three populations rather than two to make it.
+    // Two colours always lie on a line, however anti-correlated their channels are, and the
+    // principal-axis fit finds that line — the encoder scores a peak of 1 on such a block. Three
+    // corners of a colour triangle do not lie on any line, and modes 0 through 3's PARTITIONS are
+    // what a full encoder answers them with. This one has none, and the number below is what their
+    // absence costs. It is asserted as a bound rather than described, so an encoder change that made
+    // it worse is red.
+    u8 source[64];
+    for (u32 texel = 0; texel < 16; ++texel) {
+        const u32 population = texel % 3U;
+        const u8 red[3] = {240U, 10U, 20U};
+        const u8 green[3] = {20U, 200U, 30U};
+        const u8 blue[3] = {30U, 40U, 220U};
+        source[(texel * 4U) + 0] = red[population];
+        source[(texel * 4U) + 1] = green[population];
+        source[(texel * 4U) + 2] = blue[population];
+        source[(texel * 4U) + 3] = 255U;
+    }
+    u8 block[16];
+    encode_bc7_block(source, block);
+    u8 decoded[64];
+    CY_REQUIRE(decode_bc7_mode6(block, decoded));
+    u32 peak = 0;
+    for (u32 index = 0; index < 64; ++index) {
+        const u32 difference = static_cast<u32>(
+            std::abs(static_cast<int>(source[index]) - static_cast<int>(decoded[index])));
+        peak = difference > peak ? difference : peak;
+    }
+    CY_TEST_MESSAGE("peak |delta| over a three-population block = ", peak);
+    CY_CHECK(peak <= 150);
+}
+
+CY_TEST_CASE("encoder: BC7 puts two anti-correlated channels on one line, which a bounding box cannot") {
+    // THE DEFECT THE PRINCIPAL-AXIS FIT EXISTS TO REMOVE, kept as a case because it is the one a
+    // naive encoder gets wrong and nothing else in this suite would notice. A red-to-green
+    // transition has `min r` paired with `max g`, so the bounding box's corners are two colours the
+    // block does not contain; fitting that line measured a peak error of 107 of 255 here, against
+    // the 1 the axis fit measures.
     u8 source[64];
     for (u32 texel = 0; texel < 16; ++texel) {
         const bool second = (texel % 4U) >= 2U;
@@ -418,8 +453,8 @@ CY_TEST_CASE("encoder: BC7 keeps a two-population block within the cost mode 6 i
             std::abs(static_cast<int>(source[index]) - static_cast<int>(decoded[index])));
         peak = difference > peak ? difference : peak;
     }
-    CY_TEST_MESSAGE("peak |delta| over a two-population block = ", peak);
-    CY_CHECK(peak <= 24);
+    CY_TEST_MESSAGE("peak |delta| over an anti-correlated block = ", peak);
+    CY_CHECK(peak <= 4);
 }
 
 CY_TEST_CASE("encoder: BC4 reproduces a single channel to within its three-bit index") {

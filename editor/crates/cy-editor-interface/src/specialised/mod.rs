@@ -225,6 +225,7 @@ impl Domain {
             Domain::GameplayAndUtilityGraphs => SCRIPT_AND_AI_NODES,
             Domain::AbilitiesAndEffects => ABILITY_NODES,
             Domain::AnimationGraphsAndClips => POSE_NODES,
+            Domain::Materials => MATERIAL_NODES,
             _ => &[],
         }
     }
@@ -306,6 +307,48 @@ const ABILITY_NODES: &[&str] = &[
     "script.set_field",
     "script.sub_float",
     "script.wait",
+];
+
+/// `material.*`: the vocabulary `src/graph/material/src/lower_material.cpp` registers.
+///
+/// M11.C TASK 6.1A, AND THE REASON THIS LIST EXISTS AT ALL. Until it did, `Domain::Materials`
+/// answered the empty slice, no catalogue was built, and `open(Domain::Materials)` refused with
+/// *"this build declares no authoring vocabulary for materials — `material-compiler` owes it"*.
+/// M11.c's spike ran the rung's whole authoring path and that refusal is what junction 1 came back
+/// with, so the missing half was the ENGINE'S: `src/graph/src/` had four lowerings and no material
+/// one.
+///
+/// Every name below is `"material." + graph_op_name(op)` for one of the material compiler's own
+/// `GraphOp`s — which `graph.h` already describes as "the editor's palette, not the IR's opcodes" —
+/// plus `material.output`, the root that becomes `set_surface_output` and `set_opacity_output`.
+/// `unit.graph_material` asserts that derivation on the engine's side; the contract gate compares
+/// this list against those literals.
+const MATERIAL_NODES: &[&str] = &[
+    "material.add",
+    "material.add_closures",
+    "material.attribute",
+    "material.coat",
+    "material.combine",
+    "material.constant",
+    "material.custom",
+    "material.diffuse",
+    "material.divide",
+    "material.emission",
+    "material.field",
+    "material.layer_closures",
+    "material.lerp",
+    "material.multiply",
+    "material.one_minus",
+    "material.output",
+    "material.parameter",
+    "material.saturate",
+    "material.sheen",
+    "material.specular",
+    "material.subsurface",
+    "material.subtract",
+    "material.swizzle",
+    "material.texture_sample",
+    "material.transmission",
 ];
 
 /// `pose.*`: the vocabulary `lower_pose.cpp` and `locomotion.cpp` register.

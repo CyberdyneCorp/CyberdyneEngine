@@ -21,13 +21,16 @@
 //   | **BC7** | four channels, 16 bytes a block | **MODE 6 ONLY** — one partition, RGBA at 7 bits plus a p-bit, 4-bit indices |
 //
 // **BC7 mode 6 and not all eight modes, and that is a real limitation rather than a simplification.**
-// Mode 6 is the single-partition, full-alpha mode; it is what a general-purpose encoder falls back to
-// on a block with no useful partitioning, and it is exact on a block whose colours lie on one line.
-// A block with two distinct colour populations — a hard edge between two materials inside four
-// pixels — is where modes 0 through 3's partitions win, and this encoder cannot express that. What it
-// costs is measured rather than asserted: `unit.import`'s BC7 cases report peak error against the
-// source for a gradient, a two-population block and a photograph, and `docs/design/beauty-shot.md`
-// publishes the artefact's own figure.
+// Mode 6 is the single-partition, full-alpha mode: one line through RGBA and sixteen steps along it.
+// The line is found by the block's PRINCIPAL AXIS and then least-squares refined against the indices
+// it produced — a bounding box is the wrong line whenever two channels are anti-correlated, which a
+// red-to-green transition is, and `unit.import` keeps that case with both numbers in it.
+//
+// What mode 6 cannot express is THREE OR MORE colour populations, which do not lie on any line;
+// modes 0 through 3's partitions are the answer to those and this encoder has none. The cost is
+// measured rather than asserted: `unit.import`'s BC7 cases report peak error against the source for
+// a ramp (1 of 255), an anti-correlated pair (1) and a three-population block, and
+// `docs/design/beauty-shot.md` publishes the artefact's own figure.
 //
 // **BC6H and ASTC are NOT here** and the gap is declared rather than hidden: `select_format` still
 // names them for HDR and for mobile, and `encode_mip_chain` refuses them by name, which leaves

@@ -63,6 +63,11 @@ cy_add_module(
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PUBLIC_DEPENDENCIES cy::core-base cy::core-memory cy::core-values)
 
+# The material lowering is its own target, at the rendering layer. See its CMakeLists.txt for why
+# a fifth `lower_*.cpp` in cy_graph would have put the render server into every consumer of the
+# authoring layer.
+add_subdirectory(material)
+
 if(CY_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()

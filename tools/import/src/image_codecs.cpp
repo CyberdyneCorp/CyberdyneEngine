@@ -87,9 +87,11 @@ public:
         if (offsets[kMaxBits + 1] > kMaxSymbols) {
             return false;
         }
+        // Indexed by the LENGTH, not by the length plus one: `offsets[len]` is the number of
+        // symbols shorter than `len`, which is exactly where the first symbol of that length goes.
         for (u32 index = 0; index < count; ++index) {
             if (lengths[index] != 0) {
-                symbols_[offsets[lengths[index] + 1]++] = static_cast<u16>(index);
+                symbols_[offsets[lengths[index]]++] = static_cast<u16>(index);
             }
         }
         return true;

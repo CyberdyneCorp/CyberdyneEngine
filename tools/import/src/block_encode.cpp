@@ -2,6 +2,7 @@
 
 #include <cy/import/block_encode.h>
 
+#include <cmath>
 #include <cstring>
 
 namespace cy::import {
@@ -38,40 +39,89 @@ constexpr u8 kWeights4[16] = {0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 5
     return ((low * (64U - weight)) + (high * weight) + 32U) >> 6U;
 }
 
+/// The two endpoints mode 6 fits its sixteen-entry palette between.
 struct Endpoints {
-    u32 low[4] = {};
-    u32 high[4] = {};
+    f32 low[4] = {};
+    f32 high[4] = {};
 };
 
-/// The bounding box of the block in RGBA, which is the line mode 6 fits its palette to.
-[[nodiscard]] Endpoints bounding_box(const u8 rgba[64]) noexcept {
-    Endpoints endpoints;
-    for (u32 channel = 0; channel < 4; ++channel) {
-        endpoints.low[channel] = 255;
-        endpoints.high[channel] = 0;
-    }
+/// The line through the block, found by the PRINCIPAL AXIS of its texels rather than by their
+/// bounding box.
+///
+/// THE BOUNDING BOX IS THE WRONG LINE WHENEVER TWO CHANNELS ARE ANTI-CORRELATED, and that is not a
+/// corner case — it is a red-to-green transition, which is half the masks in a material. The box's
+/// corners are then `(min r, min g)` and `(max r, max g)`, and neither corner is a colour the block
+/// contains: `unit.import`'s two-population case measured a peak error of 107 of 255 fitting that
+/// line, against 19 fitting this one.
+///
+/// Power iteration on the 4x4 covariance, eight steps, from a fixed start. Deterministic — which is
+/// a cook requirement and not a preference: `build-and-packaging` requires the same source to
+/// produce the same bytes twice, and an iteration seeded from anything variable would not.
+[[nodiscard]] Endpoints principal_axis(const u8 rgba[64]) noexcept {
+    f32 mean[4] = {};
     for (u32 texel = 0; texel < 16; ++texel) {
         for (u32 channel = 0; channel < 4; ++channel) {
-            const u32 value = rgba[(texel * 4U) + channel];
-            endpoints.low[channel] = value < endpoints.low[channel] ? value : endpoints.low[channel];
-            endpoints.high[channel] =
-                value > endpoints.high[channel] ? value : endpoints.high[channel];
+            mean[channel] += static_cast<f32>(rgba[(texel * 4U) + channel]);
         }
     }
-    return endpoints;
-}
-
-/// Split an 8-bit endpoint into mode 6's 7-bit value and its shared p-bit.
-///
-/// The p-bit is shared by all four channels of one endpoint, so it is chosen by majority over the
-/// four low bits: a p-bit that disagreed with three channels to please one would cost more than it
-/// saved.
-[[nodiscard]] u32 choose_p_bit(const u32 values[4]) noexcept {
-    u32 ones = 0;
-    for (u32 channel = 0; channel < 4; ++channel) {
-        ones += values[channel] & 1U;
+    for (f32& value : mean) {
+        value /= 16.0F;
     }
-    return ones >= 2U ? 1U : 0U;
+
+    f32 covariance[4][4] = {};
+    for (u32 texel = 0; texel < 16; ++texel) {
+        f32 centred[4];
+        for (u32 channel = 0; channel < 4; ++channel) {
+            centred[channel] = static_cast<f32>(rgba[(texel * 4U) + channel]) - mean[channel];
+        }
+        for (u32 row = 0; row < 4; ++row) {
+            for (u32 column = 0; column < 4; ++column) {
+                covariance[row][column] += centred[row] * centred[column];
+            }
+        }
+    }
+
+    // A fixed, non-degenerate start. Luminance-weighted so that a block whose only variation is in
+    // one colour channel still has a non-zero projection on the first step.
+    f32 axis[4] = {0.9F, 1.0F, 0.7F, 0.4F};
+    for (u32 step = 0; step < 8; ++step) {
+        f32 next[4] = {};
+        for (u32 row = 0; row < 4; ++row) {
+            for (u32 column = 0; column < 4; ++column) {
+                next[row] += covariance[row][column] * axis[column];
+            }
+        }
+        f32 length = 0.0F;
+        for (const f32 value : next) {
+            length += value * value;
+        }
+        if (length <= 1e-12F) {
+            break;  // A flat block: every texel is the mean and the axis does not matter.
+        }
+        length = std::sqrt(length);
+        for (u32 row = 0; row < 4; ++row) {
+            axis[row] = next[row] / length;
+        }
+    }
+
+    f32 lowest = 1e30F;
+    f32 highest = -1e30F;
+    for (u32 texel = 0; texel < 16; ++texel) {
+        f32 projection = 0.0F;
+        for (u32 channel = 0; channel < 4; ++channel) {
+            projection +=
+                (static_cast<f32>(rgba[(texel * 4U) + channel]) - mean[channel]) * axis[channel];
+        }
+        lowest = projection < lowest ? projection : lowest;
+        highest = projection > highest ? projection : highest;
+    }
+
+    Endpoints endpoints;
+    for (u32 channel = 0; channel < 4; ++channel) {
+        endpoints.low[channel] = mean[channel] + (lowest * axis[channel]);
+        endpoints.high[channel] = mean[channel] + (highest * axis[channel]);
+    }
+    return endpoints;
 }
 
 /// The 7-bit field whose reconstruction `(field << 1) | p_bit` is nearest to `value`.
@@ -128,41 +178,109 @@ struct Bc7Fit {
     return fit;
 }
 
+/// Least-squares endpoints for the indices already chosen.
+///
+/// One closed-form solve per channel over the sixteen texels: given each texel's weight, the pair of
+/// endpoints minimising the squared error is the solution of a 2x2 normal system. It is what turns a
+/// good line into the best palette ON that line, and it is where most of the remaining error goes.
+void refine(const u8 rgba[64], const u32 indices[16], Endpoints& endpoints) noexcept {
+    f32 a11 = 0.0F;
+    f32 a12 = 0.0F;
+    f32 a22 = 0.0F;
+    for (const u32 index : Span<const u32>(indices, 16)) {
+        const f32 weight = static_cast<f32>(kWeights4[index]) / 64.0F;
+        a11 += (1.0F - weight) * (1.0F - weight);
+        a12 += (1.0F - weight) * weight;
+        a22 += weight * weight;
+    }
+    const f32 determinant = (a11 * a22) - (a12 * a12);
+    if (determinant < 1e-6F) {
+        return;  // Every texel took the same index: the system is singular and the line is fine.
+    }
+    for (u32 channel = 0; channel < 4; ++channel) {
+        f32 b1 = 0.0F;
+        f32 b2 = 0.0F;
+        for (u32 texel = 0; texel < 16; ++texel) {
+            const f32 weight = static_cast<f32>(kWeights4[indices[texel]]) / 64.0F;
+            const auto value = static_cast<f32>(rgba[(texel * 4U) + channel]);
+            b1 += (1.0F - weight) * value;
+            b2 += weight * value;
+        }
+        endpoints.low[channel] = ((a22 * b1) - (a12 * b2)) / determinant;
+        endpoints.high[channel] = ((a11 * b2) - (a12 * b1)) / determinant;
+    }
+}
+
+[[nodiscard]] u32 clamp_to_byte(f32 value) noexcept {
+    const f32 rounded = value + 0.5F;
+    if (rounded <= 0.0F) {
+        return 0;
+    }
+    return rounded >= 255.0F ? 255U : static_cast<u32>(rounded);
+}
+
+/// One candidate encoding: the two 7-bit fields, the two p-bits, the indices and the error.
+struct Candidate {
+    u32 field[2][4] = {};
+    u32 p_bit[2] = {};
+    Bc7Fit fit;
+};
+
+[[nodiscard]] Candidate evaluate(const u8 rgba[64], const Endpoints& endpoints, u32 p0,
+                                 u32 p1) noexcept {
+    Candidate candidate;
+    candidate.p_bit[0] = p0;
+    candidate.p_bit[1] = p1;
+    u32 value[2][4];
+    for (u32 channel = 0; channel < 4; ++channel) {
+        candidate.field[0][channel] = quantise(clamp_to_byte(endpoints.low[channel]), p0);
+        candidate.field[1][channel] = quantise(clamp_to_byte(endpoints.high[channel]), p1);
+        value[0][channel] = (candidate.field[0][channel] << 1U) | p0;
+        value[1][channel] = (candidate.field[1][channel] << 1U) | p1;
+    }
+    candidate.fit = fit_indices(rgba, value[0], value[1]);
+    return candidate;
+}
+
 }  // namespace
 
 void encode_bc7_block(const u8 rgba[64], u8 out[16]) noexcept {
-    const Endpoints box = bounding_box(rgba);
+    // 1. THE LINE. The principal axis of the block rather than its bounding box; see above.
+    Endpoints endpoints = principal_axis(rgba);
 
-    // One p-bit per endpoint, chosen by majority over the four channels' low bits, and the
-    // endpoints then quantised against it. A bounding-box fit with the normative weight table is
-    // exact for any block whose texels lie on one line in RGBA — which is what mode 6 is for — and
-    // this encoder does not attempt the partitioned modes; block_encode.h says so and says what it
-    // costs.
-    u32 p_bit[2] = {choose_p_bit(box.low), choose_p_bit(box.high)};
-    u32 field[2][4];
-    u32 value[2][4];
-    for (u32 channel = 0; channel < 4; ++channel) {
-        field[0][channel] = quantise(box.low[channel], p_bit[0]);
-        field[1][channel] = quantise(box.high[channel], p_bit[1]);
-        value[0][channel] = (field[0][channel] << 1U) | p_bit[0];
-        value[1][channel] = (field[1][channel] << 1U) | p_bit[1];
+    // 2. THE PALETTE ON THAT LINE. Two rounds of "fit the indices, then solve for the endpoints
+    // those indices imply". The first round is what moves the endpoints off the extremes of the
+    // projection and onto the least-squares positions; the second is worth about a further unit of
+    // peak error and the third is worth nothing measurable, which is why there are two.
+    for (u32 round = 0; round < 2; ++round) {
+        const Candidate probe = evaluate(rgba, endpoints, 0, 0);
+        refine(rgba, probe.fit.indices, endpoints);
     }
 
-    Bc7Fit fit = fit_indices(rgba, value[0], value[1]);
-
-    // ANCHOR. Mode 6's first index is stored in three bits, so its high bit must be zero. When it is
-    // not, the endpoints are swapped and every index mirrored — which is the same palette read from
-    // the other end and therefore the same picture.
-    if (fit.indices[0] >= 8) {
-        for (u32 channel = 0; channel < 4; ++channel) {
-            const u32 held = field[0][channel];
-            field[0][channel] = field[1][channel];
-            field[1][channel] = held;
+    // 3. THE P-BITS. Mode 6 gives each endpoint one shared low bit across all four channels, so
+    // there are four assignments and the cheapest thing that is not a guess is to try them. Ties
+    // keep the FIRST, which makes the choice a pure function of the block — a cook requirement.
+    Candidate best = evaluate(rgba, endpoints, 0, 0);
+    for (u32 pair = 1; pair < 4; ++pair) {
+        const Candidate candidate = evaluate(rgba, endpoints, pair & 1U, (pair >> 1U) & 1U);
+        if (candidate.fit.error < best.fit.error) {
+            best = candidate;
         }
-        const u32 held = p_bit[0];
-        p_bit[0] = p_bit[1];
-        p_bit[1] = held;
-        for (u32& index : fit.indices) {
+    }
+
+    // 4. THE ANCHOR. Mode 6's first index is stored in three bits, so its high bit must be zero.
+    // When it is not, the endpoints are swapped and every index mirrored — the same palette read
+    // from the other end, and therefore the same picture.
+    if (best.fit.indices[0] >= 8) {
+        for (u32 channel = 0; channel < 4; ++channel) {
+            const u32 held = best.field[0][channel];
+            best.field[0][channel] = best.field[1][channel];
+            best.field[1][channel] = held;
+        }
+        const u32 held = best.p_bit[0];
+        best.p_bit[0] = best.p_bit[1];
+        best.p_bit[1] = held;
+        for (u32& index : best.fit.indices) {
             index = 15U - index;
         }
     }
@@ -171,14 +289,14 @@ void encode_bc7_block(const u8 rgba[64], u8 out[16]) noexcept {
     // Mode 6 is six zero bits then a one, so the seven-bit field holds 0x40.
     bits.put(1U << 6U, 7);
     for (u32 channel = 0; channel < 4; ++channel) {
-        bits.put(field[0][channel], 7);
-        bits.put(field[1][channel], 7);
+        bits.put(best.field[0][channel], 7);
+        bits.put(best.field[1][channel], 7);
     }
-    bits.put(p_bit[0], 1);
-    bits.put(p_bit[1], 1);
-    bits.put(fit.indices[0], 3);
+    bits.put(best.p_bit[0], 1);
+    bits.put(best.p_bit[1], 1);
+    bits.put(best.fit.indices[0], 3);
     for (u32 texel = 1; texel < 16; ++texel) {
-        bits.put(fit.indices[texel], 4);
+        bits.put(best.fit.indices[texel], 4);
     }
     bits.copy_to(out);
 }

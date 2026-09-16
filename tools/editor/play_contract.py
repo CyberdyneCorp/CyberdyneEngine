@@ -109,6 +109,7 @@ SEQUENCING_SOURCE = "src/sequencing/src/source.cpp"
 #: and the palette does not is a node an author cannot place, and one the palette gains and the
 #: engine does not is a node that fails at cook time.
 VOCABULARIES = {
+    "Materials": ("material",),
     "GameplayAndUtilityGraphs": ("ai", "script"),
     "AbilitiesAndEffects": ("ability", "script"),
     "AnimationGraphsAndClips": ("pose",),
@@ -118,6 +119,10 @@ VOCABULARIES = {
 #: because `lower_script.cpp` registers some of its types through a table and some through a
 #: function, and a reader that understood only one of those would compare half a vocabulary.
 LOWERINGS = {
+    # M11.c task 6.1a. Its own target rather than a fifth `lower_*.cpp` in `cy_graph`, because the
+    # material IR is `cy::rendering-material`'s and that module links the render server — see
+    # src/graph/material/CMakeLists.txt.
+    "material": ("src/graph/material/src/lower_material.cpp",),
     "script": ("src/graph/src/lower_script.cpp",),
     "ability": ("src/graph/src/lower_script.cpp",),
     "ai": ("src/graph/src/lower_behaviour.cpp",),

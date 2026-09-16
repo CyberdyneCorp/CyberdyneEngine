@@ -60,13 +60,17 @@ namespace cy::graph::material {
 /// rather than a constant so that a caller cannot hold a pointer into a table and outlive it.
 [[nodiscard]] Span<const std::string_view> material_node_types() noexcept;
 
-/// The input pins of one material node type, in port order.
+/// The most pins any material node type has: three inputs and one output.
+inline constexpr usize kMaxPins = 5;
+
+/// The input pins of one material node type, in port order, written into the caller's `storage`.
 ///
 /// PORT ORDER IS THE POINT. `MaterialGraph::connect` takes a port index and `graph.h` fixes what
 /// each one means — "input 0 is the colour ... and THE LAST INPUT IS ALWAYS THE WEIGHT" — so the
 /// editor's pin names and the compiler's port numbers are one table here rather than two
 /// conventions that agree by luck.
-[[nodiscard]] Span<const PinDesc> material_node_pins(std::string_view type) noexcept;
+[[nodiscard]] Span<const PinDesc> material_node_pins(std::string_view type,
+                                                    PinDesc storage[kMaxPins]) noexcept;
 
 /// Register the `material.*` node types into an authoring registry.
 ///
