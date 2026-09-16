@@ -20,7 +20,7 @@ node 4 "material.swizzle" v1 {
     prop "value" : "swizzle" = (0, 0, 0, 0, 805306896)
 }
 node 5 "material.parameter" v1 {
-    prop "default" : "vec4" = (0.980000019, 0.949999988, 0.899999976, 0, 0)
+    prop "default" : "vec4" = (0.469999999, 0.430000007, 0.370000005, 0, 0)
     prop "symbol" : "name" = "base_color"
     prop "type" : "name" = "float3"
 }

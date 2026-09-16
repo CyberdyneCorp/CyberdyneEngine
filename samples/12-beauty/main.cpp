@@ -8,7 +8,8 @@
 //                    --materials <dir>              where `cy_material author` wrote .spv/.cymatinfo
 //                    --still docs/design/images/m11c-beauty-shot.png
 //                    --no-post-still <path>         the same frame with the chain compiled out
-//                    --manifest <path>            # the provenance a machine can check
+//                    --manifest <path>              the provenance a machine can check
+//                    --frames <dir> --frames-count <n>   a turntable, for the video
 //                    [--width 1920] [--height 1080] [--supersample 2]
 //
 // `just capture-beauty-shot` is the recipe that runs it, and everything it needs that is not
@@ -26,6 +27,7 @@
 
 #include <cy/core/memory/system_allocator.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -73,8 +75,13 @@ using namespace cy::sample::beauty;
         } else if (std::sscanf(line, "cook_key 0x%llx",
                                reinterpret_cast<unsigned long long*>(&material.cook_key)) == 1) {
             continue;
-        } else if (std::sscanf(line, "param %127s %127s", first, second) == 2) {
+        } else if (double values[4] = {};
+                   std::sscanf(line, "param %127s %127s %lf %lf %lf %lf", first, second, &values[0],
+                               &values[1], &values[2], &values[3]) == 6) {
             material.parameters.emplace_back(first);
+            material.parameter_defaults.push_back(Vec4{
+                static_cast<f32>(values[0]), static_cast<f32>(values[1]),
+                static_cast<f32>(values[2]), static_cast<f32>(values[3])});
         } else if (std::sscanf(line, "texture %127s", first) == 1) {
             material.textures.emplace_back(first);
         }
@@ -153,6 +160,7 @@ int main(int argc, char** argv) {
     const std::string still = option(argc, argv, "--still", "");
     const std::string no_post = option(argc, argv, "--no-post-still", "");
     const std::string manifest = option(argc, argv, "--manifest", "");
+    const std::string frames = option(argc, argv, "--frames", "");
     const u32 width = option_number(argc, argv, "--width", 1920);
     const u32 height = option_number(argc, argv, "--height", 1080);
     const u32 supersample = option_number(argc, argv, "--supersample", 2);
@@ -221,6 +229,31 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::printf("manifest      %s\n", manifest.c_str());
+    }
+
+    if (!frames.empty()) {
+        const u32 count = option_number(argc, argv, "--frames-count", 240);
+        const Vec3 pivot = shot.camera_target;
+        const Vec3 offset = Vec3{shot.camera_position.x - pivot.x, 0.0F,
+                                 shot.camera_position.z - pivot.z};
+        const f32 radius = std::sqrt((offset.x * offset.x) + (offset.z * offset.z));
+        const f32 start = std::atan2(offset.z, offset.x);
+        for (u32 index = 0; index < count; ++index) {
+            const f32 turn = start + ((2.0F * 3.14159265F * static_cast<f32>(index)) /
+                                      static_cast<f32>(count));
+            Vec3 eye = shot.camera_position;
+            eye.x = pivot.x + (std::cos(turn) * radius);
+            eye.z = pivot.z + (std::sin(turn) * radius);
+            char path[512] = {};
+            (void)std::snprintf(path, sizeof(path), "%s/frame_%04u.png", frames.c_str(), index);
+            ShotReport frame_report;
+            if (Status drawn = stage.render_from(shot, eye, pivot, path, nullptr, frame_report);
+                !drawn) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
+                return 1;
+            }
+        }
+        std::printf("frames        %u written to %s\n", count, frames.c_str());
     }
 
     if (!no_post.empty()) {

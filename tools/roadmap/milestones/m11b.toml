@@ -683,41 +683,51 @@ ci_job = "milestone-m11b"
 
 [[criterion]]
 id = "texture-encoders"
-describe = "the engine encodes BC7 and ASTC. Neither exists in the tree today, and M11.c's beauty shot cannot show a textured material without them: `gltf.cpp` and `texture.cpp` each record the absence against their own row"
+describe = "the engine ENCODES block-compressed textures rather than naming a format and writing pixels. `CookedTexture::encoded` was an unconditional `false` for six milestones and `select_format` named BC7, BC5, BC4, BC6H and two ASTC block sizes that nobody produced. The cases below encode a block, DECODE IT BACK with a decoder written from the format's own tables, and measure the error against the source — an encoder that wrote zeroes would pass a size check and fails this one"
 source = "tasks, asset-import-pipeline (Texture cooking)"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_asset_import"
-test -x "$binary" || { echo "no $binary — the suite unit.asset_import does not exist"; exit 1; }
-filter='BC7*,ASTC*'
+binary="$d/cy_test_unit_import"
+test -x "$binary" || { echo "no $binary — the suite unit.import does not exist"; exit 1; }
+filter='encoder: *'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
+echo "$out" | tail -12
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 2 it names"
-test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.asset_import any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "the filter selected ${selected:-0} case(s) of the 6 it names"
+test "${selected:-0}" -ge 6 || { echo "the encoder cases are not in unit.import any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11b"
 
+# WHAT M11.c DID TO THIS CRITERION, AND WHY IT IS NOT A GAP MARKER. It was RED for a whole rung, named
+# `cy_test_unit_asset_import` — a binary that has never existed — and selected zero of thirty-four
+# cases when pointed at the real suite; M11.b closed over it with no `known_gap`, no
+# `known_gap_closes` and no `requires`. M11.c task 6.1b wrote BC7 (mode 6, principal-axis fit,
+# least-squares refined), BC5 and BC4, made `CookedTexture::encoded` follow `can_encode` rather than a
+# constant, and pointed this at the suite that exists. What is still absent — BC6H and ASTC — is
+# declared as `m11c:every-format-select-format-names-has-an-encoder` rather than hidden here, because
+# the claim THIS criterion makes is now true and a gap marker on a green criterion would be a lie in
+# the other direction.
+
 [[criterion]]
 id = "image-codecs"
-describe = "PNG and JPEG decode through the importer. A format the importer cannot read is content a person cannot bring, and this is the other half of why the tree has six images in it"
+describe = "PNG and JPEG decode through the importer. A format the importer cannot read is content a person cannot bring, and this is the other half of why the tree had six images in it. The cases decode a real file produced by a third-party encoder and compare it against the FORMULA the image was generated from — a decoder that returned its own input would fail"
 source = "tasks, asset-import-pipeline"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_asset_import"
-test -x "$binary" || { echo "no $binary — the suite unit.asset_import does not exist"; exit 1; }
-filter='a PNG decodes*,a JPEG decodes*'
+binary="$d/cy_test_unit_import"
+test -x "$binary" || { echo "no $binary — the suite unit.import does not exist"; exit 1; }
+filter='codec: a PNG decodes*,codec: a JPEG decodes*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
-echo "$out" | tail -3
+echo "$out" | tail -6
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
 echo "the filter selected ${selected:-0} case(s) of the 2 it names"
-test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.asset_import any more — renamed, deleted, or the filter is stale"; exit 1; }
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.import any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11b"
 

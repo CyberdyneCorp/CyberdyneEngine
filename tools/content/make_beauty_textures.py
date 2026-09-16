@@ -236,11 +236,18 @@ def make_copper(seed: int):
     for y in range(SIZE):
         for x in range(SIZE):
             u, v = x / SIZE, y / SIZE
-            patina = _smooth(min(max((fbm(u, v, 5, 5, seed) - 0.34) * 2.6, 0.0), 1.0))
+            # A SOFTER TRANSITION THAN THE FIRST ATTEMPT, and the reason is that the first one
+            # looked like a map. Real verdigris creeps: the mask is widened and its edge smoothed so
+            # the two states meet over centimetres rather than over a texel, and the green is pulled
+            # towards the metal rather than sitting at full chroma beside it.
+            patina = _smooth(min(max((fbm(u, v, 5, 4, seed) - 0.40) * 1.7, 0.0), 1.0))
             grain = fbm(u * 3.0, v * 3.0, 4, 16, seed + 3)
+            speckle = ridged(u, v, 3, 40, seed + 61)
             # Bare copper, and the carbonate green it turns into.
-            bare = (0.72 + (grain * 0.16), 0.36 + (grain * 0.10), 0.20 + (grain * 0.06))
-            green = (0.16 + (grain * 0.08), 0.46 + (grain * 0.12), 0.40 + (grain * 0.10))
+            bare = (0.58 + (grain * 0.14) + (speckle * 0.06),
+                    0.31 + (grain * 0.09),
+                    0.20 + (grain * 0.05))
+            green = (0.27 + (grain * 0.07), 0.40 + (grain * 0.09), 0.34 + (grain * 0.08))
             index = ((y * SIZE) + x) * 3
             for channel in range(3):
                 albedo[index + channel] = clamp_byte(

@@ -75,6 +75,8 @@ void read_sun(Shot& shot, std::string_view field, std::string_view& rest) {
         shot.shadow_extent_metres = to_float(take(rest));
     } else if (field == "shadow-bias") {
         shot.shadow_bias = to_float(take(rest));
+    } else if (field == "shadow-normal-offset") {
+        shot.shadow_normal_offset = to_float(take(rest));
     }
 }
 

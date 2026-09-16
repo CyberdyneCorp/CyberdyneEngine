@@ -229,9 +229,17 @@ Status write_material_info(const rendering::material::Module& module, u64 cook_k
                         static_cast<unsigned long long>(cook_key),
                         static_cast<int>(entry_point.size()), entry_point.data());
     append(line);
+    // THE AUTHORED DEFAULT TRAVELS WITH THE NAME. A frame that uploaded a zeroed parameter block
+    // would draw a material whose base colour is black however the graph was authored — which is
+    // exactly the failure this line removes, and it was found by looking at a picture.
     for (const rendering::material::ParameterDecl& parameter : module.parameters()) {
-        (void)std::snprintf(line, sizeof(line), "param %s %s\n", parameter.name.text().data(),
-                            rendering::material::value_type_name(parameter.type));
+        (void)std::snprintf(line, sizeof(line), "param %s %s %.9g %.9g %.9g %.9g\n",
+                            parameter.name.text().data(),
+                            rendering::material::value_type_name(parameter.type),
+                            static_cast<double>(parameter.default_value.x),
+                            static_cast<double>(parameter.default_value.y),
+                            static_cast<double>(parameter.default_value.z),
+                            static_cast<double>(parameter.default_value.w));
         append(line);
     }
     for (const rendering::material::TextureDecl& texture : module.textures()) {

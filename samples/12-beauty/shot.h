@@ -91,6 +91,9 @@ struct ShotMaterial {
     /// CHECKED, because the parameter block this program uploads is laid out from it.
     std::string entry_point;
     std::vector<std::string> parameters;
+    /// The authored default of each parameter, in the same order. Uploaded into the material's own
+    /// block: a zeroed block draws a black material however the graph was authored.
+    std::vector<Vec4> parameter_defaults;
     std::vector<std::string> textures;
     u64 cook_key = 0;
 
@@ -136,6 +139,8 @@ struct Shot {
     f32 sun_azimuth_degrees = 120.0F;
     f32 shadow_extent_metres = 24.0F;
     f32 shadow_bias = 0.0015F;
+    /// How far along the surface normal the shadow lookup moves, in metres.
+    f32 shadow_normal_offset = 0.04F;
 
     f32 cloud_cover = 0.4F;
     f32 cloud_density = 0.25F;
@@ -212,6 +217,12 @@ public:
     /// pictures differing in anything but the chain.
     [[nodiscard]] Status render(const Shot& shot, const char* png_path, const char* linear_path,
                                 ShotReport& report) noexcept;
+
+    /// The same frame from somewhere else, which is what a turntable is. World coordinates; the
+    /// geometry stays baked against the shot's own camera and this is expressed as an offset.
+    [[nodiscard]] Status render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world,
+                                     const char* png_path, const char* linear_path,
+                                     ShotReport& report) noexcept;
 
     [[nodiscard]] Status write_manifest(const Shot& shot, const ShotReport& report,
                                         const char* path) const noexcept;

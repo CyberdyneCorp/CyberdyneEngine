@@ -501,3 +501,134 @@ capture-world *args:
     echo "==> encode      world"
     python3 tools/docs/collect_world.py "${work}/frames" \
         --still "${work}/still.png" --budget "${work}/budget.csv" --fps "${fps}"
+
+# ==================================================================================================
+# THE BEAUTY SHOT. M11.c's closing artefact.
+# ==================================================================================================
+#
+# WHAT IT REGENERATES, AND FROM WHAT. Everything below the line is produced; everything above it is
+# committed, and nothing that is produced is committed except the two pictures, the manifest and the
+# video.
+#
+#   content/beauty/materials/*.cymatcanvas   the editor's canvas, written by `cy-author-material`
+#   content/beauty/materials/*.cygraph       the canonical authored graph, written by the ENGINE
+#   content/beauty/textures/*.png            the project's own textures, from tools/content/
+#   content/beauty/meshes/*.cyprim           six primitive sources
+#   content/beauty/shot.cyshot              the scene, the camera, the sun and the grade
+#   ------------------------------------------------------------------------------------------
+#   docs/design/images/m11c-beauty-shot.png          the picture
+#   docs/design/images/m11c-beauty-shot-linear.png   the same frame before the post chain
+#   docs/design/images/m11c-beauty-shot.manifest     what the frame says it did
+#   docs/design/videos/m11c-beauty-shot.mp4          the turntable, when --video is passed
+#
+# THE FIVE STEPS ARE THE FIVE JUNCTIONS M11.c's SPIKE MEASURED, in order:
+#
+#   1 AUTHOR    cy-author-material  — the editor's own canvas, `SpecialisedEditors::open(Materials)`
+#   2 COMPILE   cy_material author  — lower, compile, and assemble the translation unit
+#   3 SHADER    slangc              — the engine's own shader toolchain, over the generated module
+#   4 COOK+BIND cy_sample_beauty    — the importer's BC7/BC5 blocks, uploaded and bound
+#   5 CAPTURE   cy_sample_beauty    — the assembled frame, and a manifest built from its own report
+#
+# IT NEEDS A GRAPHICS DEVICE for step 5 and nothing else. Without one the program still authors,
+# compiles, cooks and reports, says which device it did not find, and writes no picture — the same
+# arrangement `capture-world` and `capture-virtual-geometry` use, and the reason neither is a test.
+
+# Author, compile, cook and photograph M11.c's beauty shot. Usage: just capture-beauty-shot [--profile <p>] [--width <n>] [--height <n>] [--supersample <n>] [--video] [--regenerate-textures]
+capture-beauty-shot *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    want_video=0
+    regenerate=0
+    forwarded=()
+    for argument in ${rest}; do
+        case "${argument}" in
+            --video) want_video=1 ;;
+            --regenerate-textures) regenerate=1 ;;
+            *) forwarded+=("${argument}") ;;
+        esac
+    done
+
+    just build-engine --profile "${profile}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    sample="${build_dir}/samples/12-beauty/cy_sample_beauty"
+    cooker="${build_dir}/tools/material/cy_material"
+    slangc="${build_dir}/Development/bin/slangc"
+    for tool in "${sample}" "${cooker}" "${slangc}"; do
+        if [ ! -x "${tool}" ]; then
+            echo "capture-beauty-shot: ${tool} was not built." >&2
+            exit 1
+        fi
+    done
+
+    # The editor's half. `cargo build` rather than `just build-editor`, because this needs one
+    # binary out of one crate and not the whole application.
+    echo "==> author      the material graphs, on the editor's own canvas"
+    ( cd editor && cargo build --quiet -p cy-editor-interface --bin author_material )
+    ./editor/target/debug/author_material content/beauty/materials
+
+    if [ "${regenerate}" -eq 1 ]; then
+        echo "==> generate    the source textures"
+        python3 tools/content/make_beauty_textures.py
+    fi
+
+    work="${build_dir}/beauty"
+    rm -rf "${work}"
+    mkdir -p "${work}"
+
+    echo "==> compile     the authored graphs, through the engine's own lowering"
+    for canvas in content/beauty/materials/*.cymatcanvas; do
+        name="$(basename "${canvas}" .cymatcanvas)"
+        "${cooker}" author "${canvas}" \
+            --graph "content/beauty/materials/${name}.cygraph" \
+            --module "${work}/${name}.slang" \
+            --info "${work}/${name}.cymatinfo"
+    done
+
+    echo "==> shader      the generated programs, through slangc"
+    for info in "${work}"/*.cymatinfo; do
+        name="$(basename "${info}" .cymatinfo)"
+        entry="$(awk '/^entry /{print $2}' "${info}")"
+        "${slangc}" samples/12-beauty/shaders/beauty.slang \
+            -target spirv -profile spirv_1_5 \
+            -entry sceneVertex -stage vertex -entry sceneFragment -stage fragment \
+            -entry shadowVertex -stage vertex \
+            -entry skyVertex -stage vertex -entry skyFragment -stage fragment \
+            -fvk-use-entrypoint-name \
+            -I src/rendering/shaders -I "${work}" \
+            -DCY_MATERIAL_MODULE="\"${name}.slang\"" -DCY_MATERIAL_ENTRY="${entry}" \
+            -o "${work}/${name}.spv"
+    done
+
+    mkdir -p docs/design/images docs/design/videos
+    frames=()
+    if [ "${want_video}" -eq 1 ]; then
+        rm -rf "${work}/frames"
+        mkdir -p "${work}/frames"
+        frames=(--frames "${work}/frames" --frames-count "${CY_BEAUTY_FRAMES:-240}")
+    fi
+
+    echo "==> capture     the frame"
+    "${sample}" --shot content/beauty/shot.cyshot --materials "${work}" \
+        --still docs/design/images/m11c-beauty-shot.png \
+        --no-post-still docs/design/images/m11c-beauty-shot-linear.png \
+        --manifest docs/design/images/m11c-beauty-shot.manifest \
+        "${frames[@]+"${frames[@]}"}" ${forwarded[@]+"${forwarded[@]}"}
+
+    if [ -f docs/design/images/m11c-beauty-shot.png ]; then
+        echo "==> recompress  the stills"
+        python3 tools/docs/collect_beauty_shot.py
+    fi
+
+    if [ "${want_video}" -eq 1 ] && [ -n "$(ls -A "${work}/frames" 2>/dev/null)" ]; then
+        echo "==> encode      the turntable"
+        ffmpeg -y -loglevel error -framerate "${CY_BEAUTY_FPS:-30}" \
+            -i "${work}/frames/frame_%04d.png" \
+            -c:v libx264 -pix_fmt yuv420p -crf 18 \
+            docs/design/videos/m11c-beauty-shot.mp4
+        rm -rf "${work}/frames"
+        echo "    docs/design/videos/m11c-beauty-shot.mp4"
+    fi

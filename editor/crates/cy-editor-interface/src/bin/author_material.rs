@@ -54,6 +54,12 @@ const PARAMETERS: [(&str, &str); 3] = [
 ];
 
 /// What one material's authored constants are.
+///
+/// THESE ARE ART DIRECTION AND THEY ARE AUTHORED, which is the distinction the artefact's provenance
+/// turns on. `base_color` multiplies the albedo texture: limestone at 0.62 and damp sand at 0.47 are
+/// the reflectances those materials actually have, and the first draft's 0.93 and 0.98 were the
+/// reason the floor clipped to white under a sky whose mean radiance the engine's own atmosphere put
+/// at 2 788. Nothing in the renderer was changed to fix that; the material was.
 struct Recipe {
     name: &'static str,
     /// The albedo tint, multiplied over the base colour texture.
@@ -67,19 +73,19 @@ struct Recipe {
 const RECIPES: [Recipe; 3] = [
     Recipe {
         name: "weathered_stone",
-        base_color: [0.93, 0.90, 0.84],
+        base_color: [0.62, 0.59, 0.53],
         roughness: 1.0,
         metallic: 1.0,
     },
     Recipe {
         name: "oxidised_copper",
-        base_color: [1.0, 0.98, 0.95],
-        roughness: 0.92,
+        base_color: [0.95, 0.92, 0.88],
+        roughness: 0.78,
         metallic: 1.0,
     },
     Recipe {
         name: "courtyard_gravel",
-        base_color: [0.98, 0.95, 0.90],
+        base_color: [0.47, 0.43, 0.37],
         roughness: 1.05,
         metallic: 1.0,
     },

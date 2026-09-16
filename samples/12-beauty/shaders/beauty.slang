@@ -81,8 +81,14 @@ struct BeautyFrame
     float4 sunDirection;
     /// xyz: the sun's illuminance, linear. w: one texel of the shadow map.
     float4 sunColor;
-    /// xyz: the sky's irradiance, from the engine's own `compose_sky_lighting`. w: unused.
+    /// xyz: the sky's mean radiance, from the engine's own `compose_sky_lighting`.
+    /// w: how far along the surface normal the shadow lookup moves, in metres.
     float4 ambient;
+    /// xyz: where the eye is, in the same camera-RELATIVE space the vertices are baked into. Zero
+    /// for the still, and non-zero for every frame of the turntable but the first — the geometry is
+    /// baked once against the shot's own camera and the moving camera is expressed as an offset
+    /// from it, which is what lets a video cost one vertex buffer rather than two hundred and forty.
+    float4 eye;
 };
 
 [[vk::binding(0, 2)]]
@@ -91,7 +97,8 @@ ConstantBuffer<BeautyFrame> frame;
 /// The only thing that differs per draw. Sixteen bytes, which every Vulkan device has.
 ///
 /// x: the bindless slot of this surface's tangent-space normal map, bit-cast, or 0xFFFFFFFF.
-/// y: the UV scale this surface tiles its material at. z: normal strength. w: unused.
+/// y: the UV scale this surface tiles its material at. z: normal strength.
+/// w: the bindless slot of its packed data map, bit-cast — see the occlusion note below.
 struct BeautyPush
 {
     float4 surface;
@@ -155,10 +162,15 @@ SceneVarying sceneVertex(float3 position : POSITION, float3 normal : NORMAL,
 
 /// Percentage-closer filtering over a 3x3 kernel. Nine taps rather than one, because a single tap
 /// is a hard, aliased edge and the whole point of this artefact is what the picture looks like.
-float sunVisibility(float3 relativePosition)
+float sunVisibility(float3 relativePosition, float3 geometricNormal)
 {
+    // THE LOOKUP IS OFFSET ALONG THE SURFACE NORMAL, not only biased in depth. A constant depth bias
+    // is a constant in LIGHT space and the error it has to cover is proportional to the slope, so at
+    // a sun this low it either leaves acne or detaches every contact shadow. Moving the lookup a few
+    // centimetres off the surface is the same correction expressed where the error actually is.
+    float3 offset = relativePosition + (geometricNormal * frame.ambient.w);
     float4 lightClip = transform(frame.sunToClip0, frame.sunToClip1, frame.sunToClip2,
-                                 frame.sunToClip3, float4(relativePosition, 1.0));
+                                 frame.sunToClip3, float4(offset, 1.0));
     if (lightClip.w <= 0.0)
     {
         return 1.0;
@@ -205,19 +217,26 @@ float4 sceneFragment(SceneVarying input) : SV_Target
     uint normalSlot = asuint(push.surface.x);
     if (normalSlot != 0xFFFFFFFFu)
     {
-        float3 tangentNormal = cyMaterialSampleTexture(normalSlot, input.uv).xyz;
-        tangentNormal = (tangentNormal * 2.0) - 1.0;
-        tangentNormal.xy *= push.surface.z;
+        // BC5 STORES TWO CHANNELS AND Z IS RECONSTRUCTED. `texture.h` chose the format for exactly
+        // that reason — "Z is reconstructed in the shader from X and Y, so storing it would cost a
+        // third of the budget for a value the shader already knows" — and a shader that read `.xyz`
+        // from it gets a blue channel of ZERO, which decodes to z = -1 and turns every normal inside
+        // out. That is how this was found: every upward-facing surface in the frame was black, and
+        // nothing else in the picture said so.
+        float2 packed = cyMaterialSampleTexture(normalSlot, input.uv).xy;
+        float2 tangentXY = ((packed * 2.0) - 1.0) * push.surface.z;
+        float3 tangentNormal =
+            float3(tangentXY, sqrt(saturate(1.0 - dot(tangentXY, tangentXY))));
         float3 tangent = normalize(input.tangent.xyz);
         float3 bitangent = cross(geometricNormal, tangent) * input.tangent.w;
         shadingNormal = normalize((tangent * tangentNormal.x) + (bitangent * tangentNormal.y) +
                                   (geometricNormal * tangentNormal.z));
     }
 
-    float3 view = normalize(-input.relativePosition);
+    float3 view = normalize(frame.eye.xyz - input.relativePosition);
     float3 light = normalize(frame.sunDirection.xyz);
     float normalDotLight = saturate(dot(shadingNormal, light));
-    float visibility = sunVisibility(input.relativePosition);
+    float visibility = sunVisibility(input.relativePosition, geometricNormal);
 
     float3 f0 = computeF0(surface.albedo, surface.metallic);
     float3 diffuse = diffuseLambert(surface.albedo * (1.0 - surface.metallic));
@@ -229,7 +248,19 @@ float4 sceneFragment(SceneVarying input) : SV_Target
     // normal so that an upward face is lit by the sky and a downward one is not. It is a
     // one-bounce approximation and the provenance says so: no global illumination pass ran.
     float sky = (dot(shadingNormal, float3(0.0, 1.0, 0.0)) * 0.5) + 0.5;
-    lit += surface.albedo * frame.ambient.xyz * sky * surface.occlusion;
+    // THE OCCLUSION IS SAMPLED BY THE FRAME TOO, and for the same reason the normal is:
+    // `CySurface` has no occlusion term, so `cyResolveSurface` leaves `Surface::occlusion` at 1
+    // whatever the material did. The green channel of the material's own packed data map is what the
+    // generator wrote an ambient occlusion into, and reading it here is the difference between a
+    // mortar joint that is a dark line and one that is a colour change. Declared as a gap beside the
+    // normal: both belong in the closure vocabulary.
+    float occlusion = surface.occlusion;
+    uint dataSlot = asuint(push.surface.w);
+    if (dataSlot != 0xFFFFFFFFu)
+    {
+        occlusion *= cyMaterialSampleTexture(dataSlot, input.uv).y;
+    }
+    lit += surface.albedo * frame.ambient.xyz * sky * occlusion;
     lit += surface.emission;
     return float4(lit, 1.0);
 }

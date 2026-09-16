@@ -14,7 +14,7 @@ prop 3 type float4
 node 4 material.swizzle
 prop 4 swizzle xyz
 node 5 material.parameter
-prop 5 default 0.98 0.95 0.9 0
+prop 5 default 0.47 0.43 0.37 0
 prop 5 symbol base_color
 prop 5 type float3
 node 6 material.multiply

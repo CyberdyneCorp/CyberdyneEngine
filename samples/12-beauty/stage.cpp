@@ -69,9 +69,19 @@ constexpr f32 kFarPlane = 400.0F;
         .count();
 }
 
-void count_validation(rhi::ValidationSeverity severity, const char*, void* user) noexcept {
-    if (severity == rhi::ValidationSeverity::Error) {
-        ++*static_cast<u32*>(user);
+/// Count every validation error and PRINT the first eight of them.
+///
+/// Counting alone is what samples/10-world does and it is enough for a number in a manifest; it is
+/// not enough to fix one. A picture taken with validation errors in it is a picture of a bug, so the
+/// first few are printed where somebody will see them and the rest are counted.
+void count_validation(rhi::ValidationSeverity severity, const char* message, void* user) noexcept {
+    if (severity != rhi::ValidationSeverity::Error) {
+        return;
+    }
+    u32& errors = *static_cast<u32*>(user);
+    ++errors;
+    if (errors <= 8) {
+        std::fprintf(stderr, "cy_sample_beauty: validation: %s\n", message);
     }
 }
 
@@ -105,16 +115,17 @@ struct FrameConstants {
     f32 sun_direction[4] = {};
     f32 sun_color[4] = {};
     f32 ambient[4] = {};
+    f32 eye[4] = {};
 };
 
-static_assert(sizeof(FrameConstants) == 176, "BeautyFrame is eleven float4");
+static_assert(sizeof(FrameConstants) == 192, "BeautyFrame is twelve float4");
 
 /// The per-draw push block, laid out as `BeautyPush`.
 struct SurfacePush {
     f32 normal_slot_bits = 0.0F;
     f32 uv_scale = 1.0F;
     f32 normal_strength = 1.0F;
-    f32 unused = 0.0F;
+    f32 data_slot_bits = 0.0F;
 };
 
 static_assert(sizeof(SurfacePush) == 16, "BeautyPush is one float4");
@@ -542,11 +553,21 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
     rendering::RenderGraph graph(*allocator_);
     std::vector<ResourceId> imported;
     for (usize index = 0; index < device_->textures.size(); ++index) {
+        // THE REQUEST'S FORMAT IS USED, and getting it wrong is a validation error rather than a
+        // silent one: the graph creates the view it barriers from this description, and Vulkan
+        // refuses a view whose format differs from its image's unless the image was created mutable.
+        // Asking the device what it actually made is what keeps the two in step.
+        const rhi::TextureDescription* description =
+            device.texture_description(device_->textures[index]);
+        if (description == nullptr) {
+            return fail(ErrorCode::Internal, "a cooked texture has no description");
+        }
         rendering::TextureRequest request;
         request.name = "beauty material texture";
-        request.format = rhi::Format::Rgba8Unorm;  // the request's format is not used for an import
-        request.width = 1;
-        request.height = 1;
+        request.format = description->format;
+        request.width = description->extent.width;
+        request.height = description->extent.height;
+        request.mip_levels = description->mip_levels;
         imported.push_back(graph.import_texture(request, device_->textures[index],
                                                rhi::ImageLayout::Undefined));
     }
@@ -653,6 +674,7 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
         batch.push.normal_strength = instance.normal_strength;
         batch.push.normal_slot_bits =
             bit_cast_to_float(shot.materials[material_index].normal.slot);
+        batch.push.data_slot_bits = bit_cast_to_float(shot.materials[material_index].data.slot);
 
         const f32 radians = instance.yaw_degrees * 3.14159265F / 180.0F;
         const f32 cosine = std::cos(radians);
@@ -825,8 +847,11 @@ struct SkyBuild {
     inputs.time_seconds = 0.0;
     inputs.view = rendering::sky::planetary_view(atmosphere, world::WorldVec3d{0.0, 0.0, 0.0});
 
-    constexpr u32 kRings = 48;
-    constexpr u32 kSegments = 96;
+    // 96 x 192, which is 18 432 calls to `compose_sky` and about 170 ms on this host. At 48 x 96
+    // the cloud deck's edges facet visibly across a quad — the dome IS the resolution of this sky and
+    // there is still no sky shader in this tree, so the only way to soften it is more vertices.
+    constexpr u32 kRings = 96;
+    constexpr u32 kSegments = 192;
     if (Status sized = out.vertices.resize(static_cast<usize>(kRings + 1) * kSegments); !sized) {
         return sized;
     }
@@ -866,10 +891,13 @@ struct SkyBuild {
 
     const rendering::sky::SkyLighting lighting = rendering::sky::compose_sky_lighting(inputs, 16);
     out.sun_illuminance = lighting.sun_illuminance;
-    // The zeroth spherical-harmonic band, which is the sky's mean irradiance — the ambient term the
-    // fragment stage weights by the shading normal. A one-bounce approximation, and the manifest
-    // says so: `cy::rendering-gi` is not linked by this program.
-    out.sky_irradiance = scale(lighting.mean_sky_radiance, 3.14159265F);
+    // THE SKY'S MEAN RADIANCE AND NOT ITS IRRADIANCE, and the factor of pi between them is the whole
+    // difference between a picture with a sun in it and a flat one. The fragment stage multiplies
+    // this by the albedo directly, which is `albedo / pi * E` written the other way round — the same
+    // Lambertian normalisation `diffuseLambert` applies to the sun's term. Multiplying by the
+    // irradiance instead made the ambient term pi times too strong, the sun invisible against it and
+    // every shadow in the frame a shade of the same grey.
+    out.sky_irradiance = lighting.mean_sky_radiance;
     (void)allocator;
     return ok();
 }
@@ -1072,7 +1100,11 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     shadow_writes[0].binding = 0;
     shadow_writes[0].kind = rhi::DescriptorKind::SampledTexture;
     shadow_writes[0].texture_view = device_->shadow_view;
-    shadow_writes[0].layout = rhi::ImageLayout::DepthStencilReadOnly;
+    // SHADER READ ONLY and not DepthStencilReadOnly: the graph transitions a depth image declared
+    // with `FragmentSampledRead` to the general shader-read layout, and a descriptor that named the
+    // depth-specific one would disagree with it at submit time. Measured, not assumed — the
+    // validation layer says which layout the command buffer expected and which the image was in.
+    shadow_writes[0].layout = rhi::ImageLayout::ShaderReadOnly;
     shadow_writes[1].binding = 1;
     shadow_writes[1].kind = rhi::DescriptorKind::Sampler;
     shadow_writes[1].sampler = device_->shadow_sampler;
@@ -1147,6 +1179,11 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         pipeline.vertex_bindings = Span<const rhi::VertexBinding>(&binding, 1);
         pipeline.vertex_attributes = Span<const rhi::VertexAttribute>(attributes, 4);
         pipeline.color_attachments = Span<const rhi::ColorAttachmentState>(&colour, 1);
+        // THE DEFAULT WINDING, which is the engine's `perspective_reversed_z` and `look_at`
+        // composed with the primitive generator's own triangle order. Checked against a picture
+        // rather than reasoned about: with `Clockwise` the ground plane disappears and every closed
+        // solid still looks plausible, which is what makes a single-sided surface the only shape in
+        // a scene that can tell you the convention is wrong.
         pipeline.rasterisation.cull_mode = rhi::CullMode::Back;
         pipeline.depth_stencil.format = kDepthFormat;
         pipeline.depth_stencil.depth_test_enable = true;
@@ -1160,6 +1197,18 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         // frame uploads: a parameter this program set to something else would be a material the
         // `.cygraph` does not describe.
         u8 params[kMaterialBlockBytes] = {};
+        // THE AUTHORED DEFAULTS, out of the sidecar and in the module's own declaration order:
+        // base_color at 0 (three floats), roughness at 12, metallic at 16. A zeroed block draws a
+        // black material however the graph was authored, which is what the first run of this program
+        // produced and what the picture showed.
+        const f32 base_color[3] = {entry.parameter_defaults[0].x, entry.parameter_defaults[0].y,
+                                   entry.parameter_defaults[0].z};
+        std::memcpy(params + 0, base_color, sizeof(base_color));
+        const f32 roughness = entry.parameter_defaults[1].x;
+        std::memcpy(params + 12, &roughness, sizeof(roughness));
+        const f32 metallic = entry.parameter_defaults[2].x;
+        std::memcpy(params + 16, &metallic, sizeof(metallic));
+
         const u32 slots[2] = {entry.albedo.slot, entry.data.slot};
         for (u32 slot = 0; slot < 2; ++slot) {
             std::memcpy(params + kTextureArrayOffset + (slot * kTextureArrayStride), &slots[slot],
@@ -1237,7 +1286,18 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     // FRONT FACES CULLED in the shadow pass: the occluder recorded is then the BACK of the object,
     // which is half a wall thickness further from the light and removes most of the acne a bias
     // would otherwise have to hide.
+    // THE OUTWARD FACES ARE CULLED IN THE SHADOW PASS, and the winding is the OPPOSITE of the scene
+    // pass's because the sun's orthographic matrix is built here and the scene's projection is
+    // `core-math`'s — they do not agree about handedness, which is a fact about two matrices rather
+    // than a preference.
+    //
+    // WHAT IT BUYS: the ground's only face points at the sky, so it writes nothing into the shadow
+    // map and cannot shadow itself. At a sun 7.4 degrees above the horizon the light-space depth
+    // across one shadow texel of a horizontal surface is about 0.19 m, and no constant bias survives
+    // that. A closed object still records its far side, half a wall thickness behind its lit one,
+    // which is where most of the remaining acne goes.
     shadow_pipeline.rasterisation.cull_mode = rhi::CullMode::Front;
+    shadow_pipeline.rasterisation.front_face = rhi::FrontFace::Clockwise;
     auto shadow_created = device.create_graphics_pipeline(shadow_pipeline);
     if (!shadow_created) {
         return make_unexpected(shadow_created.error());
@@ -1396,6 +1456,7 @@ void record_sky(const PassContext& context, void* user) noexcept {
     context.commands->bind_index_buffer(state->sky_indices, 0, true);
     SurfacePush push;
     push.normal_slot_bits = bit_cast_to_float(0xFFFFFFFFU);
+    push.data_slot_bits = bit_cast_to_float(0xFFFFFFFFU);
     context.commands->push_constants(
         state->layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
         Span<const u8>(reinterpret_cast<const u8*>(&push), sizeof(SurfacePush)));
@@ -1720,6 +1781,12 @@ Status Stage::create_frame() noexcept {
 
 Status Stage::render(const Shot& shot, const char* png_path, const char* linear_path,
                      ShotReport& report) noexcept {
+    return render_from(shot, shot.camera_position, shot.camera_target, png_path, linear_path,
+                       report);
+}
+
+Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, const char* png_path,
+                          const char* linear_path, ShotReport& report) noexcept {
     if (!available_) {
         return fail(ErrorCode::Unavailable, "no graphics device answered");
     }
@@ -1734,8 +1801,12 @@ Status Stage::render(const Shot& shot, const char* png_path, const char* linear_
     const f32 aspect = static_cast<f32>(width_) / static_cast<f32>(height_);
     const f32 fov_y = 2.0F * std::atan(std::tan(shot.field_of_view_degrees * 3.14159265F / 360.0F) /
                                        aspect);
-    const Vec3 eye{0.0F, 0.0F, 0.0F};  // camera-relative: the camera IS the origin
-    const Vec3 target = subtract(shot.camera_target, shot.camera_position);
+    // THE GEOMETRY IS BAKED AGAINST THE SHOT'S OWN CAMERA and the rendering camera is expressed as
+    // an offset from it. For the still they are the same point and `eye` is the origin; for a
+    // turntable they are not, and that is what lets two hundred and forty frames share one vertex
+    // buffer.
+    const Vec3 eye = subtract(eye_world, shot.camera_position);
+    const Vec3 target = subtract(target_world, shot.camera_position);
     const Mat4 projection =
         perspective_reversed_z(fov_y, aspect, shot.near_plane, kFarPlane);
     const Mat4 camera = look_at(eye, target);
@@ -1745,8 +1816,9 @@ Status Stage::render(const Shot& shot, const char* png_path, const char* linear_
     write_rows(constants.view_projection, world_to_clip);
     // The shadow volume is centred a little ahead of the camera, along the view direction, so the
     // 26 metres of extent the shot asks for are spent on what the frame can see.
-    const Vec3 forward = normalise(target);
-    const Vec3 centre = scale(forward, shot.shadow_extent_metres * 0.55F);
+    const Vec3 forward = normalise(subtract(target, eye));
+    const Vec3 ahead = scale(forward, shot.shadow_extent_metres * 0.55F);
+    const Vec3 centre = Vec3{eye.x + ahead.x, eye.y + ahead.y, eye.z + ahead.z};
     write_sun_matrix(constants.sun_to_clip, sun_direction_, centre, shot.shadow_extent_metres);
     constants.sun_direction[0] = sun_direction_.x;
     constants.sun_direction[1] = sun_direction_.y;
@@ -1759,6 +1831,12 @@ Status Stage::render(const Shot& shot, const char* png_path, const char* linear_
     constants.ambient[0] = sky_irradiance_.x;
     constants.ambient[1] = sky_irradiance_.y;
     constants.ambient[2] = sky_irradiance_.z;
+    // How far along the surface normal the shadow lookup is moved, in metres. Content, because it is
+    // a property of the scene's scale and of how low its sun is.
+    constants.ambient[3] = shot.shadow_normal_offset;
+    constants.eye[0] = eye.x;
+    constants.eye[1] = eye.y;
+    constants.eye[2] = eye.z;
     void* mapped = device.buffer_mapped_pointer(device_->frame_constants);
     if (mapped == nullptr) {
         return fail(ErrorCode::Internal, "the frame constants are not mapped");
@@ -2028,7 +2106,7 @@ Status Stage::prepare_shadow() noexcept {
     if (Status ended = device.end_frame(); !ended && executed) {
         executed = ended;
     }
-    device_->shadow_layout = rhi::ImageLayout::DepthStencilReadOnly;
+    device_->shadow_layout = rhi::ImageLayout::ShaderReadOnly;
     return executed;
 }
 
