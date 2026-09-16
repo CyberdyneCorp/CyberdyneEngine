@@ -391,6 +391,69 @@ token = "features.temporal = config.temporal_antialiasing || config.temporal_ups
 note = "the assignment is ONE statement and `FrameFeatures::temporal` defaults to false, so the tree still builds without it. The frame then declares no velocity target and no temporal pass for a chain that contains a temporal stage, and `the frame passes through anti-aliasing` fails on `prepass == DepthNormalVelocity` — the assertion that the STRUCTURE agrees with the stage list."
 
 [[criterion]]
+id = "material-table-is-nameable"
+describe = "the DEVICE-FREE half of the bind junction: the global texture table has handles, a pipeline layout takes the layout at set 0, the device keeps ownership of it, and the table reads through exactly one sampler. M11.c's spike measured the table WRITE-ONLY — `bindless_layout_` and `bindless_set_` were created, written by `bind_texture_globally` and destroyed, appearing in no pipeline layout and no command buffer anywhere in the tree, so every `BindlessIndex` the device handed out named a descriptor no shader could reach. None of that contract needs a GPU, and every continuous-integration machine can hold it"
+source = "tasks 3.7, rhi-and-render-graph, design.md section 1.3b junction 4"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rhi"
+test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
+filter='the global texture table is nameable*,the global table reads through one sampler*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE DEFECT IN THE SHAPE IT REALLY HAD. The null backend builds the table's records
+# in its constructor and the set handle is ONE assignment; without it the Vulkan object equivalent
+# still exists, `bind_texture_globally` still hands out indices, and nothing above the backend can
+# name the set — which is the tree as it stood from M3 to M11.c. The tree still compiles, because a
+# `DescriptorSetHandle` default-constructs null.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/null/src/null_device.cpp"
+token = "bindless_set_ = *set;"
+note = "one assignment inside the `if` that created the record, so the tree still builds and the layout handle is still valid — the table simply has no set for anybody to bind, and `REQUIRE_FALSE(set.is_null())` is what says so."
+
+[[criterion]]
+id = "material-texture-is-bound"
+describe = "a material program SAMPLES a texture the engine uploaded, through the device's own global table, and the rendered texels are compared against the same surface with the texture replaced by its DECLARED AVERAGE. This is M11.c's spike negative control A made permanent — it measured 65.38% of texels and mean |delta| 34.072/255 — and it exists because the average frame is an entirely plausible picture of a flat surface: an unbound table, a slot that always resolves to zero, and a set bound at the wrong index all produce two frames that AGREE. The suite also uploads through `MaterialTextureTable`, the residency path no module under `src/` had, and requires every texel of the textured frame to be the uploaded byte EXACTLY, which is a claim about WHICH texture arrived rather than that one did"
+source = "tasks 3.7, design.md section 1.3b junction 4, rendering-materials-and-shading"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/tests/render/cy_test_render_material_binding"
+test -x "$binary" || { echo "no $binary — the suite render.material_binding does not exist"; exit 1; }
+out="$("$binary" 2>&1)" || { echo "$out"; echo "the material binding case FAILED"; exit 1; }
+echo "$out" | grep -E "material binding:|no Vulkan device" || true
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 1 || { echo "render.material_binding selected no case"; exit 1; }
+'''
+requires = "gpu"
+reason = "the question is whether a shader's sample came back with the texture's own texels, and only a graphics device can answer it: a check that the handles are non-null passes on a table whose descriptors the driver never sees, and a check that the pipeline layout was created passes on a table bound at the wrong set. `material-table-is-nameable` above carries the contract on every machine. AND THIS HOST HAS ONE GPU VENDOR — design.md section 1.3 — so what a green here settles is this driver's answer through the Vulkan backend"
+ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE ABSENCE ITSELF, one assignment down. `create_bindless_table()` registers the
+# set it allocated in the device's own pool so a caller can bind it; without that line the Vulkan
+# set still exists and is still written, `global_texture_table()` answers the null handle, and the
+# residency path refuses to initialize on a device it cannot reach the table of. That IS junction 4
+# as the spike found it, and the tree compiles through it because the handle default-constructs null.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/vulkan/src/vulkan_instance.cpp"
+token = "bindless_set_handle_ = *set_handle;"
+note = "measured: with the line gone the suite goes red on eleven assertions — the table's handle, `MaterialTextureTable::initialize`, both slot lookups and both renders — while the Vulkan objects are created and written exactly as before. Unmutated, the same suite reports 100.00% of texels differing from the declared average at mean |delta| 82.167/255 and 4096 of 4096 texels matching the uploaded byte."
+
+[[criterion]]
 id = "virtual-geometry-image"
 describe = "the virtual-geometry and virtual-shadow evidence is an image of the shaded result rather than a normals debug view. The capture in the tree today is a debug visualisation, which proves the cluster selection and says nothing about what the renderer produces"
 source = "tasks 2, virtual-geometry, virtual-shadows"

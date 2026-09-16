@@ -1042,7 +1042,8 @@ BindlessIndex VulkanDevice::bind_texture_globally(TextureViewHandle view,
     }
     const VulkanTextureView* stored_view = views_.resolve(view);
     if (stored_view == nullptr) {
-        report_validation(ValidationSeverity::Error, "bind_texture_globally(): a stale view handle");
+        report_validation(ValidationSeverity::Error,
+                          "bind_texture_globally(): a stale view handle");
         return kInvalidBindlessIndex;
     }
     // THE SAMPLER GOES TO BINDING 2, ONCE, and it is settled BEFORE a slot is taken: the table the
@@ -1089,16 +1090,18 @@ Status VulkanDevice::set_global_sampler(SamplerHandle sampler) noexcept {
     }
     const VulkanSampler* stored = samplers_.resolve(sampler);
     if (stored == nullptr) {
-        report_validation(ValidationSeverity::Error, "set_global_sampler(): a stale sampler handle");
+        report_validation(ValidationSeverity::Error,
+                          "set_global_sampler(): a stale sampler handle");
         return fail(ErrorCode::NotFound, "set_global_sampler(): a stale sampler handle");
     }
     if (!bindless_sampler_.is_null()) {
         if (bindless_sampler_ == sampler) {
             return ok();
         }
-        report_validation(ValidationSeverity::Error,
-                          "set_global_sampler(): the global table already reads through a different "
-                          "sampler, and `cy/material.slang` declares exactly one");
+        report_validation(
+            ValidationSeverity::Error,
+            "set_global_sampler(): the global table already reads through a different "
+            "sampler, and `cy/material.slang` declares exactly one");
         return fail(ErrorCode::InvalidArgument,
                     "the global texture table already has a different sampler");
     }

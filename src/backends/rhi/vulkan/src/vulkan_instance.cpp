@@ -741,11 +741,12 @@ Status VulkanDevice::create_bindless_table() noexcept {
     }
 
     // THE TWO BINDINGS ARE THE SHADER'S, not this file's. `cy/material.slang` declares
-    // `cyMaterialTextures[]` at binding 1 as a runtime-sized array of `Texture2D` — a SAMPLED_IMAGE,
-    // not a combined one — and `cyMaterialSampler` at binding 2 beside it. A table written as
-    // combined image samplers at binding 0, which is what this was until M11.c, satisfies no
-    // program the standard library produces: the numbering AND the descriptor type both disagree,
-    // and neither disagreement can be seen from a picture because nothing ever bound the set.
+    // `cyMaterialTextures[]` at binding 1 as a runtime-sized array of `Texture2D` — a
+    // SAMPLED_IMAGE, not a combined one — and `cyMaterialSampler` at binding 2 beside it. A table
+    // written as combined image samplers at binding 0, which is what this was until M11.c,
+    // satisfies no program the standard library produces: the numbering AND the descriptor type
+    // both disagree, and neither disagreement can be seen from a picture because nothing ever bound
+    // the set.
     VkDescriptorSetLayoutBinding bindings[2]{};
     bindings[0].binding = kGlobalTableTextureBinding;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;

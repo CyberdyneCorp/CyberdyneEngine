@@ -803,9 +803,10 @@ Status NullDevice::set_global_sampler(SamplerHandle sampler) noexcept {
         return fail(ErrorCode::NotFound, "set_global_sampler(): stale sampler handle");
     }
     if (!bindless_sampler_.is_null() && !(bindless_sampler_ == sampler)) {
-        report_validation(ValidationSeverity::Error,
-                          "set_global_sampler(): the global table already reads through a different "
-                          "sampler, and `cy/material.slang` declares exactly one");
+        report_validation(
+            ValidationSeverity::Error,
+            "set_global_sampler(): the global table already reads through a different "
+            "sampler, and `cy/material.slang` declares exactly one");
         return fail(ErrorCode::InvalidArgument,
                     "the global texture table already has a different sampler");
     }

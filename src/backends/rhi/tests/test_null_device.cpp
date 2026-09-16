@@ -353,3 +353,68 @@ CY_TEST_CASE("the backend registry falls back to null, and says that it did") {
     CY_CHECK(selection.reason[0] != '\0');
     cy::rhi::destroy_device(allocator, *device);
 }
+
+CY_TEST_CASE("the global texture table is nameable in a pipeline layout and is the device's own") {
+    // THE DEVICE-FREE HALF OF M11.c TASK 3.7. What no machine without a GPU can settle is whether a
+    // shader's sample came back with the texture's texels — `render.material_binding` does that.
+    // What every machine can settle is the CONTRACT that made the sample possible: the table has a
+    // set layout handle and a set handle, a pipeline layout takes the layout, and the device keeps
+    // ownership of both. Before M11.c none of those existed: `bindless_layout_` and `bindless_set_`
+    // were Vulkan objects with no handle, so nothing above the backend could name either one and
+    // every index the table handed out addressed a descriptor no shader could reach.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    Device& device = fixture.device();
+
+    const cy::rhi::DescriptorSetLayoutHandle layout = device.global_texture_table_layout();
+    const cy::rhi::DescriptorSetHandle set = device.global_texture_table();
+    CY_REQUIRE_FALSE(layout.is_null());
+    CY_REQUIRE_FALSE(set.is_null());
+
+    // The whole point: a pipeline layout accepts it at set 0, which is where `cy/material.slang`
+    // declares `cyMaterialTextures[]`.
+    cy::rhi::PipelineLayoutDescription description;
+    description.name = "global table only";
+    description.set_layouts = cy::Span<const cy::rhi::DescriptorSetLayoutHandle>(&layout, 1);
+    cy::Expected<cy::rhi::PipelineLayoutHandle, cy::Error> pipeline_layout =
+        device.create_pipeline_layout(description);
+    CY_REQUIRE(pipeline_layout.has_value());
+    device.destroy_pipeline_layout(*pipeline_layout);
+
+    // And the device keeps it. Every caller that names the table holds the SAME handle, so one of
+    // them destroying it would take the table down under all the others.
+    device.destroy_descriptor_set_layout(layout);
+    CY_CHECK_EQ(device.global_texture_table_layout(), layout);
+    cy::Expected<cy::rhi::PipelineLayoutHandle, cy::Error> after =
+        device.create_pipeline_layout(description);
+    CY_CHECK(after.has_value());
+    if (after.has_value()) {
+        device.destroy_pipeline_layout(*after);
+    }
+}
+
+CY_TEST_CASE("the global table reads through one sampler, and says so rather than replacing it") {
+    // `cy/material.slang` declares `SamplerState cyMaterialSampler` — a scalar. A shader sampling
+    // slot `i` has no second sampler to choose, so a device that quietly accepted a different one
+    // would change the filtering of every texture already in the table.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    Device& device = fixture.device();
+
+    cy::rhi::SamplerDescription description;
+    description.name = "table sampler";
+    cy::Expected<cy::rhi::SamplerHandle, cy::Error> first = device.create_sampler(description);
+    CY_REQUIRE(first.has_value());
+    CY_CHECK(device.set_global_sampler(*first).has_value());
+    // The same one again is not a change and is not an error.
+    CY_CHECK(device.set_global_sampler(*first).has_value());
+
+    description.name = "a second table sampler";
+    description.max_anisotropy = 16.0F;
+    cy::Expected<cy::rhi::SamplerHandle, cy::Error> second = device.create_sampler(description);
+    CY_REQUIRE(second.has_value());
+    CY_CHECK_FALSE(device.set_global_sampler(*second).has_value());
+
+    device.destroy_sampler(*second);
+    device.destroy_sampler(*first);
+}

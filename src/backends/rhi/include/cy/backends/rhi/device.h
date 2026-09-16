@@ -303,11 +303,11 @@ public:
     // all. A table nobody can read is not a table; it is a leak with an index.
     //
     // The layout is the one `src/rendering/shaders/cy/material.slang` DECLARES, not one chosen
-    // here: `cyMaterialTextures[]` at (set 0, binding 1) and `cyMaterialSampler` at binding 2, which
-    // is `cy/backends/shader/reflection.h`'s convention that a bindless table appears only in set 0.
-    // So a program that imports the standard library is satisfied by naming this layout as set 0 of
-    // its pipeline layout and binding this set at 0 — nothing is restated in C++ and the two cannot
-    // drift apart.
+    // here: `cyMaterialTextures[]` at (set 0, binding 1) and `cyMaterialSampler` at binding 2,
+    // which is `cy/backends/shader/reflection.h`'s convention that a bindless table appears only in
+    // set 0. So a program that imports the standard library is satisfied by naming this layout as
+    // set 0 of its pipeline layout and binding this set at 0 — nothing is restated in C++ and the
+    // two cannot drift apart.
     //
     // NOT EVERY SET 0 IS THIS ONE, and it is worth saying which is not. A pipeline binds ONE
     // descriptor set per index, so a program that reads `cy/globals.slang`'s block at (set 0,
@@ -318,15 +318,16 @@ public:
     //
     // Both are null handles on the compatibility path, where no table was created at all.
 
-    [[nodiscard]] virtual DescriptorSetLayoutHandle global_texture_table_layout() const noexcept = 0;
+    [[nodiscard]] virtual DescriptorSetLayoutHandle global_texture_table_layout()
+        const noexcept = 0;
     [[nodiscard]] virtual DescriptorSetHandle global_texture_table() const noexcept = 0;
 
     /// The one sampler every slot of the table is read through — `cyMaterialSampler`, binding 2.
     ///
     /// ONE, because the standard library declares one: `SamplerState cyMaterialSampler` is a scalar
-    /// and a shader sampling slot `i` has no second sampler to choose. A device that wanted per-slot
-    /// filtering would need a sampler array in the same set and a shader that indexes it, which is a
-    /// change to the shading convention rather than to this call.
+    /// and a shader sampling slot `i` has no second sampler to choose. A device that wanted
+    /// per-slot filtering would need a sampler array in the same set and a shader that indexes it,
+    /// which is a change to the shading convention rather than to this call.
     virtual Status set_global_sampler(SamplerHandle sampler) noexcept = 0;
 
     /// Pipelines are cached by a hash of their full state and the cache is persisted across runs,

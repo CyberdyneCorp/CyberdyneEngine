@@ -119,6 +119,21 @@ function(cy_render_declare_tests)
     # For "device.h", as the conventions and environment-field suites below.
     target_include_directories(cy_test_render_ray_tracing_capability PRIVATE "${cy_render_tests_dir}")
 
+    # THE MATERIAL TEXTURE BINDING, ON A REAL DEVICE. M11.c task 3.7. The RHI's global bindless
+    # table was created, written and destroyed and reached no pipeline layout and no command buffer
+    # in the whole tree — so every index it handed out named a descriptor no shader could read.
+    # Nothing device-free can tell that table from a working one: the handles are non-null either
+    # way, the pipeline layout is created either way, and only a sampled texel says which. KIND
+    # render because it needs a GPU, and it skips loudly without one like every suite here.
+    cy_add_test(
+        NAME material_binding
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_material_binding.cpp"
+        DEPENDENCIES cy::rendering-graph cy::rendering-pipeline cy::rhi cy::rhi-null cy::rhi-vulkan
+                     cy::servers-render)
+    # For "device.h" and "shaders/material_probe_spirv.h", as the suites above.
+    target_include_directories(cy_test_render_material_binding PRIVATE "${cy_render_tests_dir}")
+
     cy_add_test(
         NAME environment_field
         KIND render

@@ -300,7 +300,7 @@ below is that work, named rather than discovered.
         960x540 against roughly 16 ms before, which is the resolve pass and the frame's own
         declarations; `producers_ms` is ~300 ms in the same rows and is where the budget actually
         goes. The gap stays M11.a's and stays open
-- [ ] 3.7 **A material texture reaches the frame, which today nothing does.** Three pieces the spike
+- [x] 3.7 **A material texture reaches the frame, which today nothing does.** Three pieces the spike
       measured as absent and one it measured as possible: a material texture binding in
       `cy/frame.slang` at the set and binding `cy/material.slang` already declares (set 0, binding 1
       for `cyMaterialTextures[]`, binding 2 for `cyMaterialSampler`); a device upload path from a
@@ -310,6 +310,43 @@ below is that work, named rather than discovered.
       backend requests `runtimeDescriptorArray`, `descriptorIndexing` and
       `descriptorBindingPartiallyBound` (`vulkan_instance.cpp:396`) — so this is plumbing, and the
       spike's stand-in for the missing lowering was 102 non-comment lines per stage
+      - [x] **THE TABLE IS BOUND, AND THE INTERFACE DID NOT HAVE TO CHANGE TO TAKE IT.**
+        `create_bindless_table()` now declares the two bindings `cy/material.slang` declares —
+        `cyMaterialTextures[]` as a runtime-sized SAMPLED_IMAGE array at binding 1, `cyMaterialSampler`
+        at binding 2 — and registers the layout and the set in the pools the device already uses, so
+        `Device::global_texture_table_layout()` goes into a `PipelineLayoutDescription` and
+        `Device::global_texture_table()` into `bind_descriptor_sets` through the code paths every
+        other set takes. Nothing new was needed in the RHI's recording API. The old binding 0 of
+        COMBINED_IMAGE_SAMPLERs is gone: it disagreed with the standard library on the NUMBER and on
+        the descriptor TYPE, and nothing outside the backend had ever named it. The device owns both
+        handles and `destroy_descriptor_set_layout` refuses the table's by name, because every caller
+        that names it holds the same handle
+      - [x] **THE DEVICE UPLOAD PATH EXISTS, in the layer that has a device.**
+        `src/rendering/pipeline/material_textures.{h,cpp}` — `MaterialTextureTable` — takes the
+        record `RenderServer` holds and the pixels it does not, creates the image, stages the whole
+        batch behind ONE submission, and declares a transfer write followed by a fragment sampled
+        read so the GRAPH derives the transition rather than a barrier this module is not allowed to
+        emit. `RenderServer::create_texture` still stores no pixels and that is not a defect to fix
+        there: it is the device-free scene model and says so. The join is `slot_of(TextureHandle)`
+      - [x] **AND THE TEST IS A DEVICE TEST, because nothing else can settle it.**
+        `tests/render/test_material_binding.cpp` (`render.material_binding`) renders a surface whose
+        material samples a texture and compares it against the same surface with the texture replaced
+        by its declared average — the spike's own negative control A, which measured 65.38% of texels
+        and 34.072/255. Measured here: **100.00% of texels differ at mean |delta| 82.167/255**, every
+        one of the 4096 texels is the uploaded byte EXACTLY, and 0 validation errors. Proved red
+        three ways before it was trusted: the average bound at the pattern's slot (0.00%, 0.000/255),
+        the `bind_descriptor_sets` call deleted, and `bindless_set_handle_ = *set_handle;` deleted
+        (eleven assertions red, tree still compiling). `m11c:material-texture-is-bound` runs it, and
+        `m11c:material-table-is-nameable` carries the contract on a machine with no GPU
+      - [ ] **WHAT IS NOT DONE: `cy/frame.slang` STILL SAMPLES NO TEXTURE.** `surfaceOf()` reads four
+        constants out of `cyMaterialWords`, and the engine's forward pipeline cannot bind this table
+        as it stands: `src/rendering/pipeline/`'s set 0 carries `cy/globals.slang`'s block at binding
+        0 and a pipeline binds ONE set per index, so a program that wants both needs a set 0 that
+        carries both. The fragment-stage lowering is still `samples/12-beauty/shaders/beauty.slang`'s
+        stand-in. What closed here is the junction the spike measured ABSENT — the table reaches a
+        pipeline layout and a command buffer and a material program samples through it — not the
+        forward pass's own material path, which is the permutation-and-pipeline-cache question
+        `slang_program.h` names and is M11.d's
 - [ ] 3.8 **The sample is taken at an implicit level of detail, or the shot aliases.** Measured: the
       same frame with eight of the importer's nine cooked mip levels never uploaded is BYTE-IDENTICAL
       — mean |delta| 0.000/255, 0.00% of texels. `cy_material_sample`, which the prelude generates,
@@ -588,8 +625,11 @@ which is 6.4's blocker measured rather than predicted.
         imported rather than restated so the Slang compiler checks the agreement — the material's own
         parameter block at (set 3, binding 0) where the generated prelude puts it, and
         `samples/12-beauty/shaders/beauty.slang` is the **fragment-stage lowering** the engine does
-        not generate. The RHI's own global bindless table is still never placed in a pipeline layout
-        by anything in this tree; this program allocates its own set
+        not generate. This program allocates its own set rather than using the RHI's own global
+        bindless table — which, when the shot was taken, was placed in no pipeline layout by anything
+        in this tree. Task 3.7 has since closed that: the device's table now reaches a pipeline layout
+        and a command buffer and `render.material_binding` samples through it, and the shot could be
+        moved onto it. It has not been, and the artefact stands as it was photographed
       - [x] **AND 3.8's EXPLICIT LEVEL OF DETAIL IS MEASURED RATHER THAN FIXED.** `cy_material_sample`
         still calls `cyMaterialSampleTextureLevel(..., 0.0)`, so the albedo and the data map are
         sampled at mip 0 and the cooked chain below it is unread by the material. The frame's own

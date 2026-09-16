@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 166 proven, 484 not yet shown able to fail.
+# 168 proven, 484 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -794,6 +794,22 @@ digest = "b648bde3adc72fcd"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'return make_unexpected(kNoCompilerBehindThePreview);' in src/rendering/material/src/preview.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-compilers (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "material-table-is-nameable"
+digest = "d1b36d03fff95b09"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'bindless_set_ = *set;' in src/backends/rhi/null/src/null_device.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-bind (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "material-texture-is-bound"
+digest = "e84ec470af3a2b1d"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'bindless_set_handle_ = *set_handle;' in src/backends/rhi/vulkan/src/vulkan_instance.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-bind (exit 1: the material binding case FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"

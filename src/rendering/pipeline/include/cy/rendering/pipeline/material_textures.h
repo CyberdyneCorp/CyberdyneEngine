@@ -76,9 +76,10 @@ public:
     /// Take the device's global table and give it its one sampler.
     ///
     /// REFUSES ON A DEVICE WITH NO TABLE — the compatibility path, where `global_texture_table()`
-    /// is a null handle — rather than uploading images no shader could reach. `rhi-and-render-graph`
-    /// requires the reduced capability to be reported rather than silently degraded, and a caller
-    /// that gets `Unsupported` here is a caller that can bind its own set instead.
+    /// is a null handle — rather than uploading images no shader could reach.
+    /// `rhi-and-render-graph` requires the reduced capability to be reported rather than silently
+    /// degraded, and a caller that gets `Unsupported` here is a caller that can bind its own set
+    /// instead.
     [[nodiscard]] Status initialize(rhi::Device& device, Allocator& allocator,
                                     const rhi::SamplerDescription& sampler) noexcept;
     void shutdown() noexcept;
@@ -104,6 +105,20 @@ public:
     [[nodiscard]] u64 resident_bytes() const noexcept { return resident_bytes_; }
 
 private:
+    /// Create a view per uploaded image and take a slot for it. Transactional: a failure leaves the
+    /// table exactly as it was, so `upload`'s own failure path can destroy every image of the batch
+    /// without destroying one of them twice.
+    [[nodiscard]] Status publish(const render::RenderServer& server,
+                                 Span<const TextureUpload> uploads,
+                                 Span<const rhi::TextureHandle> images) noexcept;
+    /// One image's view and its slot. Leaves nothing behind when it fails.
+    [[nodiscard]] Status publish_one(const render::TextureRecord* record,
+                                     render::TextureHandle texture,
+                                     rhi::TextureHandle image) noexcept;
+    /// Give back the slots and views of every entry from `first` on. The IMAGES are not destroyed
+    /// here: they are the caller's batch and its own failure path owns them.
+    void unpublish_from(const render::RenderServer& server, usize first) noexcept;
+
     struct Entry {
         render::TextureHandle texture;
         rhi::TextureHandle image;
@@ -114,7 +129,7 @@ private:
     rhi::Device* device_ = nullptr;
     Allocator* allocator_ = nullptr;
     rhi::SamplerHandle sampler_;
-    Array<Entry> entries_{};
+    Array<Entry> entries_;
     u64 resident_bytes_ = 0;
 };
 
