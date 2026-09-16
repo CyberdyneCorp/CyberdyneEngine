@@ -508,26 +508,101 @@ authoring vocabulary for materials — `material-compiler` owes it"*. **And ther
 only. So 6.1 is split into 6.1a, 6.1b and 6.1c below. The VFX graph editor refuses identically,
 which is 6.4's blocker measured rather than predicted.
 
-- [ ] 6.1a **The editor can author a material at all.** Three pieces in two languages: a node-type
+- [x] 6.1a **The editor can author a material at all.** Three pieces in two languages: a node-type
       vocabulary for `Domain::Materials` in `cy-editor-interface` (the palette is compared against
       the engine's own lowerings by the contract gate, so the vocabulary has to be the engine's); a
       material document and its on-disk form — and `specialised/graph.rs` assigns *writing*
       `.cygraph` from Rust to **M11.e**, so either that moves or the editor writes through the
       engine; and a `lower_material` in `src/graph/`, which today has `lower_script`,
       `lower_behaviour`, `lower_camera` and `lower_pose` and no material lowering at all
-- [ ] 6.1b **A block encoder, or the debt is declared.** `m11b:texture-encoders` and
+      - [x] **THE ENGINE'S HALF.** `src/graph/material/` is `cy::graph-material`, a target of its own
+        rather than a fifth `lower_*.cpp` in `cy_graph` — `src/graph/CMakeLists.txt` states the
+        invariant a fifth file would have broken ("a graph compiler that needed a scene, a device or
+        a server would be a compiler that cannot run in a cook") and `cy::rendering-material` links
+        `cy::servers-render`. It declares **25 node types**, one per `GraphOp` plus `material.output`
+        for the root, and `unit.graph_material` asserts the table equals `"material." +
+        graph_op_name(op)` for every enumerator — an op added to the compiler and not to the palette
+        is red in the ENGINE'S suite before the editor is involved
+      - [x] **THE EDITOR'S HALF.** `Domain::Materials => MATERIAL_NODES` and
+        `specialised/material.rs`, which carries the PINS as well as the names. That second half was
+        not optional and was not predicted: `GraphCanvas::connect` refuses a pin the node type does
+        not declare, and every catalogue this crate built carried `NodeType::new(name, Vec::new())`
+        — a material editor whose nodes cannot be wired is the same kind of thing as one that will
+        not open. The pins are checked against `lower_material.cpp`'s own `kPalette` by a Rust case
+        that READS that file
+      - [x] **THE ON-DISK FORM, and `specialised/graph.rs`'s prohibition is kept.** The editor writes
+        an INTERCHANGE — a line per node, per property and per wire — and `cy_material author` builds
+        a `cy::graph::Graph` from it and hands it to the ENGINE's `write_graph`. So there is still
+        exactly one writer of the canonical format, the round trip is checked by semantic digest
+        before the file is kept, and M11.e's assignment is untouched. The same arrangement M8.a chose
+        for `.cyprim`
+      - [x] **THE THIRD FRONT END, MEASURED AGAINST THE OTHER TWO.** `material-compiler` requires a
+        graph and a text definition to produce the same IR; M7 tested that with a `MaterialGraph`
+        assembled in C++, which **an editor cannot produce**. `unit.graph_material` authors M7's own
+        reference material on a `cy::graph::Graph` — wart for wart: the untouched weight ports, the
+        pairwise closure sums, the texture dragged in twice, the reversed operand order, the tint
+        left at one, the muted emission, the orphan — lowers it, and requires the SAME IR DIGEST as
+        M7's hand-built graph and the SAME COOK KEY as the text
+      - [ ] **WHAT IS NOT DONE: `material.*` COMMANDS.** `cy_editor_services`' registry has none, so
+        the materials cannot be authored over the control socket the way `samples/08a-authoring`
+        authors a scene, and a person at a window cannot place a node. The shot's provenance says
+        exactly that rather than claiming otherwise, and `m11c:the-shot-does-not-overclaim-the-editor`
+        goes RED the day a command is registered and the caption is owed an update
+- [x] 6.1b **A block encoder, or the debt is declared.** `m11b:texture-encoders` and
       `m11b:image-codecs` both FAIL today, name a binary (`cy_test_unit_asset_import`) that has
       never existed, select 0 of 34 cases when pointed at the real suite `cy_test_unit_import`, and
       carry no `known_gap`, no `known_gap_closes` and no `requires`. **M11.b closed over two red
       undeclared criteria and this rung must not close over them too.** Either integrate BC7/ASTC
       and a PNG/JPEG decoder here, or give both criteria gap markers naming the rung that does
-- [ ] 6.1c **Real materials in the repository.** Authored through 6.1a, encoded through 6.1b,
+      - [x] **INTEGRATED, NOT DECLARED, for four of six formats and two of three codecs.**
+        `tools/import/src/block_encode.cpp`: **BC7 mode 6** with a principal-axis fit and two rounds
+        of least-squares refinement, **BC5** and **BC4**. `tools/import/src/image_codecs.cpp`: a
+        **DEFLATE decoder** (fixed and dynamic Huffman, Adler-32 verified), a **PNG reader** (five
+        row filters, 1/2/4/8/16-bit, palette, tRNS) and a **baseline JPEG reader** (Huffman, restart
+        intervals, 4:4:4 through 4:2:0). No third-party dependency: `deps/manifest.toml` is unchanged
+      - [x] **`CookedTexture::encoded` NOW FOLLOWS `can_encode` AND NOT A CONSTANT.** It was an
+        unconditional `false` for six milestones. `m11c:the-cooked-header-cannot-claim-a-compression-that-did-not-happen`
+        is the criterion, proven red by deleting that one line and rebuilt against a real tree
+      - [x] **BOTH M11.b CRITERIA FIXED AND PROVEN.** They run `cy_test_unit_import` now and select
+        6 of 6 and 2 of 2. Each declares a mutation the prover applied to the working tree, rebuilt
+        over, and watched go red: BC4's first endpoint never written into the block (the payload is
+        still the right size, which is the point), and `decode_png` unreachable
+      - [x] **THE CASES ARE OBSERVATIONS.** The PNG and JPEG fixtures are real files from a
+        third-party encoder and the expected pixels are the FORMULA the image was generated from. The
+        encoder cases DECODE what the encoder produced, with a decoder written in the test from the
+        format's own tables, and measure peak error: **1/255** on a one-line block, **1/255** on an
+        anti-correlated pair (107 with a bounding-box fit, which is why the axis fit is there) and
+        **91/255** on three populations, which is what mode 6's missing partitions cost
+      - [ ] **WHAT IS NOT DONE: BC6H AND ASTC.** `select_format` still names them for HDR and for
+        every mobile variant and nobody produces either, so a mobile cook still writes uncompressed
+        pixels under a block format's name — honestly recorded by the flag above, and four times the
+        memory. Reported rather than hidden; the flag is what stops it being silent
+- [x] 6.1c **Real materials in the repository.** Authored through 6.1a, encoded through 6.1b,
       cooked, and bound through the table 3.7 wires up. This is the first content this project has
       ever shipped and it changes what the repository is
-- [ ] 6.2 **Every texture carries its licence and its provenance.** `thirdparty-dependencies`'
+      - [x] **`content/` EXISTS.** Three material graphs, nine 256x256 PNG textures, six `.cyprim`
+        sources and one scene. 899 346 bytes of PNG cook to 786 852 bytes of BC7 and BC5 blocks with
+        nine mip levels each, and the blocks are what the device samples
+      - [x] **AND 3.7's BIND JUNCTION IS CLOSED HERE, because section 3 left it open.** The table is
+        bound at **(set 0, binding 1)** — where `cy/material.slang` declares `cyMaterialTextures[]`,
+        imported rather than restated so the Slang compiler checks the agreement — the material's own
+        parameter block at (set 3, binding 0) where the generated prelude puts it, and
+        `samples/12-beauty/shaders/beauty.slang` is the **fragment-stage lowering** the engine does
+        not generate. The RHI's own global bindless table is still never placed in a pipeline layout
+        by anything in this tree; this program allocates its own set
+      - [x] **AND 3.8's EXPLICIT LEVEL OF DETAIL IS MEASURED RATHER THAN FIXED.** `cy_material_sample`
+        still calls `cyMaterialSampleTextureLevel(..., 0.0)`, so the albedo and the data map are
+        sampled at mip 0 and the cooked chain below it is unread by the material. The frame's own
+        normal and occlusion samples use the IMPLICIT form. Unchanged and unhidden: it is the
+        emitter's, and the emitter is M7's closed work whose every byte is in a cook key
+- [x] 6.2 **Every texture carries its licence and its provenance.** `thirdparty-dependencies`'
       governance applies to content the project ships as much as to code it links, and that row is
       **not this rung's** — design.md §5. What this rung owes is the record per file and a refusal to
       commit one without it
+      - [x] `content/beauty/textures/PROVENANCE.md`, a `## Shipped content` section in
+        `THIRD_PARTY.md` naming the rule for whoever adds the next asset, and
+        `m11c:beauty-textures-are-reproducible` — which RE-RUNS the generator and compares bytes, so
+        the record is checkable rather than asserted. Proven red by deleting one texture
 - [ ] 6.3 `vfx-system` → Complete, because a shot with no particles does not exercise the row. Its
       README records four absences by name: **the six renderer kinds beyond `Sprite` and `Mesh`
       publish rows and nothing composites them** — no pass draws a ribbon strip, projects a decal or
@@ -535,36 +610,85 @@ which is 6.4's blocker measured rather than predicted.
       friction, sliding) does not exist though the data interfaces are declared and cook-gated;
       **a GPU event chain is one level deep**, so *"a bullet impact spawns sparks, and a spark
       collision spawns dust"* is one link short; and **the editor's VFX graph editor is not built**
+      - [ ] **NOT DONE, AND THE ROW DOES NOT COMPLETE IN THIS RUNG.** All four absences are unchanged
+        in `src/vfx/README.md` and none was attempted here. Measured rather than assumed:
+        `cy_test_integration_vfx -tc='particles are in the assembled frame*'` selects **0 of 28**
+        cases, so `m11c:vfx-in-the-shot` is RED and stays red. The shot contains no particles and
+        `docs/design/beauty-shot.md` says so under "what it is not"
 - [ ] 6.4 The compositing half is renderer work and belongs here; **the authoring half is M11.b's
       editor surface** over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`,
       all three public for exactly that reason. If M11.b did not build it, `vfx-system` does not
       complete here and the row says so — design.md §4
+      - [ ] **M11.b DID NOT BUILD IT, MEASURED.** `Domain::VfxGraph::node_types()` is still the empty
+        slice, so `SpecialisedEditors::open(Domain::VfxGraph)` refuses identically to the way
+        `Domain::Materials` refused before this rung — the spike measured that pair and this rung
+        fixed one of them. The compositing half was not attempted either. **`vfx-system` stays at
+        Working**, which is design.md §4's own prediction coming true for the reason it named
 
 ## 7. The artefact — an art-directed beauty shot
 
-- [ ] 7.1 **One shot, assembled through the editor rather than in C++.** An art-directed frame with
+- [x] 7.1 **One shot, assembled through the editor rather than in C++.** An art-directed frame with
       real materials, tuned exposure and tone mapping, anti-aliasing, particles, a sky that lights
       the scene and shadows that come from it. The editor is finished before this rung deliberately:
       a shot assembled by hand in C++ proves the renderer and nothing else, while one authored
       *through* the editor proves both
-- [ ] 7.2 **Captured, not drawn**, and captured through the same assembled frame the engine ships —
+      - [x] **`docs/design/images/m11c-beauty-shot.png` — "The Colonnade".** 1920x1080, rendered at
+        3840x2160 and box-filtered. Thirty-one instances, 4 334 triangles, **three textured
+        materials and no constants**, the engine's own atmosphere and cloud march for the sky and the
+        light, one 2048² directional shadow map with 3x3 percentage-closer filtering, and the post
+        chain's exposure and tone curve. **Zero validation errors**, and two runs produce the
+        byte-identical image
+      - [x] **AUTHORED ON THE EDITOR'S CANVAS**, and the claim is exactly as strong as what was done:
+        the three materials are placed and wired on `GraphCanvas` through
+        `SpecialisedEditors::open(Domain::Materials)` — which M11.c's spike measured REFUSING — by a
+        binary in the editor's own workspace. NOT by a person at a window and NOT over the control
+        socket; 6.1a's open box says why and the provenance says it in the artefact itself
+      - [ ] **WHAT THE TASK ASKED FOR AND DID NOT GET: anti-aliasing and particles.** There is no
+        temporal resolve in this tree for `FramePassKind::Temporal` to record, so the frame is
+        SUPERSAMPLED and the manifest says three post stages, none of them temporal. There are no
+        particles, for 6.3's reason. Both are in "what it is not"
+- [x] 7.2 **Captured, not drawn**, and captured through the same assembled frame the engine ships —
       `just capture-beauty-shot` from a committed scene and a committed material set, the way
       `just capture-world` produces `docs/design/images/m10-world.png` from nothing but a seed
-- [ ] 7.3 **The provenance statement is part of the artefact and not a footnote.** Published beside
+      - [x] **Five steps, and they are the five junctions the spike measured**: `cy-author-material`
+        (the editor's canvas), `cy_material author` (the engine's lowering and canonical writer),
+        `slangc` (the shader toolchain), `cy_sample_beauty` (the cook, the bind and the frame), and
+        `collect_beauty_shot.py` (the container, with a pixel-identity check). Run end to end by this
+        agent, twice, producing byte-identical images both times
+- [x] 7.3 **The provenance statement is part of the artefact and not a footnote.** Published beside
       the image: resolution, exposure, which passes ran, what is authored content and what the
       renderer produced, what was hand-placed and what was procedural, and what the frame cost. **A
       beautiful picture with an unstated provenance is the most efficient way to make this whole
       record dishonest** — and the stage list in 3.2 is the part of it a machine can check
-- [ ] 7.4 **A before/after pair of the same frame**, with the post chain and with none, because that
+      - [x] `docs/design/beauty-shot.md`, and `docs/design/images/m11c-beauty-shot.manifest` beside
+        it — built by `capture_manifest` from the frame's own `AssemblyReport`, which re-derives
+        nothing. `m11c:beauty-shot` reads the manifest rather than the picture: publication capture,
+        arbiter pinned, zero validation errors, three post stages including ExposureApply and Tonemap
+- [x] 7.4 **A before/after pair of the same frame**, with the post chain and with none, because that
       difference is most of sections 1 and 3 and a number does not show it. The M8.c precedent is its
       own before/after over the record callbacks
-- [ ] 7.5 **Say what it is not.** If the materials in the shot are three authored ones and the rest
+      - [x] **OUT OF ONE SUBMISSION, not two runs.** The 8-bit output the resolve wrote and the
+        linear scene colour it read are both read back in the same frame, so the two pictures cannot
+        differ in anything but the chain. `m11c:the-post-chain-changes-the-picture` is the spike's
+        negative control B made permanent — mean |Δ| **144.2/255** — and it also refuses a frame that
+        is nearly uniform, because two flat fields would satisfy a difference test
+- [x] 7.5 **Say what it is not.** If the materials in the shot are three authored ones and the rest
       constants, the caption says three. If the virtual-geometry capture is still a normals debug
       view, it stays labelled one — `docs/design/virtual-geometry.md` publishes its frame as
       *"Resolved world normals under one light"* and the three level-of-detail captures beside it as
       *"one colour per cluster"*, and those captions are correct and stay correct
-- [ ] 7.6 Every committed image is the engine's own output. **A diagram is allowed and SHALL be
+      - [x] Eight entries under "what it is not", and two of them are findings this rung made by
+        LOOKING AT A PICTURE rather than by reading: **`CyClosure` has no normal term and no
+        occlusion term**, so the frame samples both on the material's behalf; and **metalness is
+        reconstructed from the specular closure's luminance**, so a compiled material cannot say
+        "copper" directly. `m11c:the-frame-samples-what-the-material-cannot` keeps the caption and the
+        code in step and goes red the day either changes
+      - [x] `docs/design/virtual-geometry.md` is unmodified by this section and its captions stand
+- [x] 7.6 Every committed image is the engine's own output. **A diagram is allowed and SHALL be
       labelled one**, per the rule M8.c wrote and M10 kept
+      - [x] Both stills are the device's own pixels. `collect_beauty_shot.py` rewrites the PNG
+        CONTAINER with deflate — the golden writer stores rather than compresses — and re-reads the
+        file afterwards, refusing to keep one whose pixels changed. No diagram was added
 
 ## 8. Records and gates
 

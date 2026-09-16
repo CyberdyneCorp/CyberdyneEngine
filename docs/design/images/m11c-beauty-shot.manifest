@@ -27,7 +27,7 @@ supersample 2x
 validation-errors 0
 sun-illuminance 102332.5 76288.4 47310.0
 sky-irradiance 4421.6 3714.5 3384.7
-build-ms 343.8  sky-ms 123.7  submit-ms 12.46
+build-ms 344.3  sky-ms 122.2  submit-ms 12.71
 
 material stone
   authored content/beauty/materials/weathered_stone.cygraph
