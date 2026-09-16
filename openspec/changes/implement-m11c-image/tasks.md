@@ -648,6 +648,20 @@ work was done.
         criterion that actually carries it, and says so in the comment: nothing in the tooling
         cross-checks a criterion id written in prose, so the error was invisible to
         `roadmap-test`. Comments are not in `falsify.digest`'s material, so no proof lapsed
+      - [x] **AND THE FIXTURES AND THE DECODER CHECKED AGAINST TOOLS OUTSIDE THIS TREE, because
+        "a real file from a third-party encoder" is a claim a reader cannot verify from the hex.**
+        The embedded PNG was re-decoded by a reader written in Python from the specification —
+        chunk CRCs verified, zlib stream inflated, all five row filters applied — and **0 of 256
+        texels** disagree with the formula, so the fixture is a genuine PNG carrying the image the
+        cases say it carries and the engine's `decode_png` agrees with an independent decoder
+        exactly. Both JPEGs were opened with **Pillow 11.1.0 (libjpeg-turbo)** and scored against
+        the same formula: **4:4:4 — Pillow 1.0221, this engine 1.0273**, which is agreement to five
+        thousandths of a level. **4:2:0 — Pillow 2.4245, this engine 4.6979.** That gap is real and
+        it is not a failed claim: `image_codecs.cpp:1031` upsamples chroma by
+        `(x * component.horizontal) / max_horizontal`, which is a **box** filter, where libjpeg
+        defaults to the triangular "fancy" one. Spec-legal, twice the mean chroma error on an image
+        whose chroma varies every texel, and **recorded here rather than left for someone to find in
+        a picture**
       - [ ] **AND THE SAME AUDIT FOUND THE DEFECT TWICE MORE IN THE SAME LEDGER, WHICH THIS RUNG
         CANNOT HONESTLY CLOSE.** The two criteria above were not M11.b's only red undeclared ones.
         `m11b:view-modes` runs `cy_test_unit_editor_views` and `m11b:import-from-the-editor` runs
@@ -662,6 +676,14 @@ work was done.
         would fail `roadmap-falsify` if it were tried and would be a manufactured green if it were
         not. Closing them needs the suites, which are editor work this rung does not own. **For the
         Close phase to route to a rung, in writing**
+      - [ ] **AND NOTHING IN CONTINUOUS INTEGRATION RUNS EITHER OF THEM TODAY.** Both carry
+        `ci_job = "milestone-m11b"` and `gates.toml` declares that gate, but `ci.yml`'s only
+        milestone step is still `just roadmap-milestone m10 --ci` — so every M11.a and M11.b
+        criterion, these two included, is green on a workstation and evaluated by no job.
+        `just ci-check` already says so in those words ("2 closed milestone gate(s) —
+        'milestone-m11a', 'milestone-m11b' — are green and no workflow evaluates them"), which is
+        why every ledger's `workflows` criterion now reads red, so this is a visible debt rather
+        than a silence. **Task 8.4 is where it closes** and it is not touched here
       - [ ] **WHAT IS NOT DONE: BC6H AND ASTC.** `select_format` still names them for HDR and for
         every mobile variant and nobody produces either, so a mobile cook still writes uncompressed
         pixels under a block format's name — honestly recorded by the flag above, and four times the
