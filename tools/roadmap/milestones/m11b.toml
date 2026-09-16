@@ -717,9 +717,15 @@ note = "BC4's first endpoint is never written into the block, so the decoder rea
 # `known_gap_closes` and no `requires`. M11.c task 6.1b wrote BC7 (mode 6, principal-axis fit,
 # least-squares refined), BC5 and BC4, made `CookedTexture::encoded` follow `can_encode` rather than a
 # constant, and pointed this at the suite that exists. What is still absent — BC6H and ASTC — is
-# declared as `m11c:every-format-select-format-names-has-an-encoder` rather than hidden here, because
-# the claim THIS criterion makes is now true and a gap marker on a green criterion would be a lie in
-# the other direction.
+# carried by `m11c:the-cooked-header-cannot-claim-a-compression-that-did-not-happen` — which asserts
+# that `encoded` follows `can_encode`, PRINTS the formats `select_format` still names and nobody
+# produces, and fails if the three that are written stop being written — rather than hidden here,
+# because the claim THIS criterion makes is now true and a gap marker on a green criterion would be a
+# lie in the other direction. THE ID IN THIS COMMENT IS LOAD-BEARING AND WAS WRONG ONCE: it named
+# `m11c:every-format-select-format-names-has-an-encoder`, which no ledger declares, so the sentence
+# that says where the absence is recorded pointed at nothing — the same defect one level up as a
+# criterion naming a binary that has never existed, and nothing in the tooling cross-checks a
+# criterion id written in prose.
 
 [[criterion]]
 id = "image-codecs"

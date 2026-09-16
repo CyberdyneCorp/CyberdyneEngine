@@ -627,6 +627,41 @@ work was done.
         format's own tables, and measure peak error: **1/255** on a one-line block, **1/255** on an
         anti-correlated pair (107 with a bounding-box fit, which is why the axis fit is there) and
         **91/255** on three populations, which is what mode 6's missing partitions cost
+      - [x] **RE-EARNED INDEPENDENTLY, against a build this phase made rather than the one the
+        claim was written over.** `falsify prove m11b --only <id> --build-dir build/m11c-criteria
+        --mutate-the-tree` was run once per criterion and both came back
+        **`PROVEN AGAINST A BUILT TREE`**: `texture-encoders` red on deleting
+        `out[0] = static_cast<u8>(red0);` from `block_encode.cpp` — BC4's first endpoint never
+        reaching the block, which still COMPILES and still writes the right number of bytes — and
+        `image-codecs` red on deleting `return decode_png(bytes);` from `texture.cpp`. Each went
+        green again once the tree was restored, and `git status` agreed the tree came back. The
+        filters select **6 of 6** and **2 of 2** of the 48 cases in `cy_test_unit_import`, and the
+        measured peaks are the ones recorded above: **1**, **91**, **1** and **16** of 255.
+        `falsify check` names neither criterion in its 35 disagreements, so the digests still match
+        the proofs — the bodies have not drifted since they were recorded
+      - [x] **AND ONE DANGLING REFERENCE FIXED, which is the same defect one level up.** The comment
+        under `m11b:texture-encoders` said the BC6H/ASTC absence was "declared as
+        `m11c:every-format-select-format-names-has-an-encoder`" — **an id no ledger declares**. The
+        sentence that says where an absence is recorded pointed at nothing, exactly as the criterion
+        itself had pointed at a binary that has never existed. It now names
+        `m11c:the-cooked-header-cannot-claim-a-compression-that-did-not-happen`, which is the
+        criterion that actually carries it, and says so in the comment: nothing in the tooling
+        cross-checks a criterion id written in prose, so the error was invisible to
+        `roadmap-test`. Comments are not in `falsify.digest`'s material, so no proof lapsed
+      - [ ] **AND THE SAME AUDIT FOUND THE DEFECT TWICE MORE IN THE SAME LEDGER, WHICH THIS RUNG
+        CANNOT HONESTLY CLOSE.** The two criteria above were not M11.b's only red undeclared ones.
+        `m11b:view-modes` runs `cy_test_unit_editor_views` and `m11b:import-from-the-editor` runs
+        `cy_test_integration_editor_import`; **neither target exists** — no `CMakeLists.txt` in the
+        tree names either, and neither is in a built tree — so both are the exact shape the two
+        above were, red for the wrong reason, with no `known_gap`, no `known_gap_closes` and no
+        `requires`. `m11b:the-game-exists`, `-is-playable` and `-drawn` are red undeclared too,
+        though for a substantive reason rather than a misnamed binary, and their fourth sibling
+        `-is-honest-about-its-content` DOES carry a gap. **They are reported and not patched here,
+        and that is the honest move**: a `known_gap` is judged the other way round — its declared
+        mutation must make the criterion GREEN — so declaring one over a suite nobody has written
+        would fail `roadmap-falsify` if it were tried and would be a manufactured green if it were
+        not. Closing them needs the suites, which are editor work this rung does not own. **For the
+        Close phase to route to a rung, in writing**
       - [ ] **WHAT IS NOT DONE: BC6H AND ASTC.** `select_format` still names them for HDR and for
         every mobile variant and nobody produces either, so a mobile cook still writes uncompressed
         pixels under a block format's name — honestly recorded by the flag above, and four times the
