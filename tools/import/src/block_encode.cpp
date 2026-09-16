@@ -8,8 +8,9 @@
 namespace cy::import {
 namespace {
 
-/// A 128-bit little-endian bit writer. BC7 fills its block least-significant bit first, in the order
-/// the mode's field list is written, which is why this is a cursor rather than a set of shifts.
+/// A 128-bit little-endian bit writer. BC7 fills its block least-significant bit first, in the
+/// order the mode's field list is written, which is why this is a cursor rather than a set of
+/// shifts.
 class BlockBits {
 public:
     void put(u32 value, u32 count) noexcept {
@@ -142,7 +143,8 @@ struct Endpoints {
 [[nodiscard]] u32 texel_error(const u8* texel, const u32 palette[4]) noexcept {
     u32 total = 0;
     for (u32 channel = 0; channel < 4; ++channel) {
-        const auto difference = static_cast<i32>(texel[channel]) - static_cast<i32>(palette[channel]);
+        const auto difference =
+            static_cast<i32>(texel[channel]) - static_cast<i32>(palette[channel]);
         total += static_cast<u32>(difference * difference);
     }
     return total;
@@ -153,7 +155,8 @@ struct Bc7Fit {
     u64 error = 0;
 };
 
-/// Project every texel onto the sixteen-entry palette the two endpoints generate, taking the nearest.
+/// Project every texel onto the sixteen-entry palette the two endpoints generate, taking the
+/// nearest.
 [[nodiscard]] Bc7Fit fit_indices(const u8 rgba[64], const u32 low[4], const u32 high[4]) noexcept {
     u32 palette[16][4];
     for (u32 step = 0; step < 16; ++step) {
@@ -180,9 +183,10 @@ struct Bc7Fit {
 
 /// Least-squares endpoints for the indices already chosen.
 ///
-/// One closed-form solve per channel over the sixteen texels: given each texel's weight, the pair of
-/// endpoints minimising the squared error is the solution of a 2x2 normal system. It is what turns a
-/// good line into the best palette ON that line, and it is where most of the remaining error goes.
+/// One closed-form solve per channel over the sixteen texels: given each texel's weight, the pair
+/// of endpoints minimising the squared error is the solution of a 2x2 normal system. It is what
+/// turns a good line into the best palette ON that line, and it is where most of the remaining
+/// error goes.
 void refine(const u8 rgba[64], const u32 indices[16], Endpoints& endpoints) noexcept {
     f32 a11 = 0.0F;
     f32 a12 = 0.0F;
@@ -412,10 +416,11 @@ bool can_encode(TextureFormat format) noexcept {
 Status encode_mip_chain(Span<const u8> levels, u32 width, u32 height, u32 mip_count, u32 channels,
                         TextureFormat format, Array<u8>& out) noexcept {
     if (!can_encode(format)) {
-        return fail(ErrorCode::Unsupported,
-                    "this build encodes BC7, BC5 and BC4; BC6H and ASTC are named by "
-                    "`select_format` and produced by nobody, which is why the cooked header records "
-                    "`encoded = false` for them rather than claiming otherwise");
+        return fail(
+            ErrorCode::Unsupported,
+            "this build encodes BC7, BC5 and BC4; BC6H and ASTC are named by "
+            "`select_format` and produced by nobody, which is why the cooked header records "
+            "`encoded = false` for them rather than claiming otherwise");
     }
     if (channels == 0 || channels > 4) {
         return fail(ErrorCode::InvalidArgument, "an image with an impossible channel count");
@@ -430,9 +435,8 @@ Status encode_mip_chain(Span<const u8> levels, u32 width, u32 height, u32 mip_co
             return fail(ErrorCode::InvalidArgument,
                         "a mip chain shorter than the levels its header declares");
         }
-        if (Status encoded =
-                encode_level(Span<const u8>(levels.data() + cursor, level_bytes), level_width,
-                             level_height, channels, format, out);
+        if (Status encoded = encode_level(Span<const u8>(levels.data() + cursor, level_bytes),
+                                          level_width, level_height, channels, format, out);
             !encoded) {
             return encoded;
         }

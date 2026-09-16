@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 161 proven, 484 not yet shown able to fail.
+# 166 proven, 484 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -478,10 +478,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 [[proof]]
 ledger = "m11b"
 criterion = "image-codecs"
-digest = "b12abc558997b189"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_asset_import — the suite unit.asset_import does not exist"
+digest = "86ecbf020df4b258"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'return decode_png(bytes);' in tools/import/src/texture.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -646,10 +646,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "texture-encoders"
-digest = "0cb21697906a004e"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_asset_import — the suite unit.asset_import does not exist"
+digest = "718747196c76a5d8"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'out[0] = static_cast<u8>(red0);' in tools/import/src/block_encode.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
@@ -702,10 +702,18 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11c"
 criterion = "beauty-shot"
-digest = "276f0c5ff5bce208"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
+digest = "0877eaf4899f85f5"
+verdict = "proven"
+mutation = "delete-lines 'ExposureApply' in docs/design/images/m11c-beauty-shot.manifest (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "beauty-textures-are-reproducible"
+digest = "a33d6a400627db66"
+verdict = "proven"
+mutation = "delete-path in content/beauty/textures/stone_albedo.png (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -790,10 +798,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-compilers 
 [[proof]]
 ledger = "m11c"
 criterion = "materials-are-textures"
-digest = "aab4e27a4ea1fc04"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): no beauty-shot project in the tree"
+digest = "0573132ecae879e3"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'material.texture_sample' in content/beauty/materials/weathered_stone.cymatcanvas,content/beauty/materials/oxidised_copper.cymatcanvas,content/beauty/materials/courtyard_gravel.cymatcanvas (declared)"
+detail = "red under mutation of 3 file(s), rebuilt against build/m11c-shot (exit 1: cy_material: no such node (line 0)), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -822,10 +830,42 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphe
 [[proof]]
 ledger = "m11c"
 criterion = "shot-authored-through-the-editor"
-digest = "1b4f555394a9c9a5"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): no beauty-shot project in the tree"
+digest = "199d30b781d27fc2"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'Domain::Materials => MATERIAL_NODES,' in editor/crates/cy-editor-interface/src/specialised/mod.rs (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: cy-author-material: this build declares no authoring vocabulary for materials, so there is no canvas to author on), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "the-cooked-header-cannot-claim-a-compression-that-did-not-happen"
+digest = "1985613a58061da9"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'header.encoded = can_encode(format);' in tools/import/src/texture.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: `CookedTexture::encoded` is no longer written from `can_encode`: the cooked header can again claim a compression that did not happen), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "the-frame-samples-what-the-material-cannot"
+digest = "c2e6d03b0b03e2fe"
+verdict = "proven"
+mutation = "delete-lines 'no normal term' in docs/design/beauty-shot.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "the-post-chain-changes-the-picture"
+digest = "b01b619bb1bca526"
+verdict = "proven"
+mutation = "delete-path in docs/design/images/m11c-beauty-shot-linear.png (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "the-shot-does-not-overclaim-the-editor"
+digest = "698ab25f5fc6d0c2"
+verdict = "proven"
+mutation = "delete-lines 'honestly missing' in docs/design/beauty-shot.md (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"

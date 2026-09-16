@@ -4,8 +4,9 @@
 // THE JUNCTION THIS IS
 // ================================================================================================
 //
-// M11.c's spike walked the rung's path — author, compile, encode, bind, assemble, capture — and came
-// back with junction 1 REFUSED and junctions 4 and 5 ABSENT. This file is junction 1's second half.
+// M11.c's spike walked the rung's path — author, compile, encode, bind, assemble, capture — and
+// came back with junction 1 REFUSED and junctions 4 and 5 ABSENT. This file is junction 1's second
+// half.
 //
 // The editor authors a material on `GraphCanvas`, the one shared node-graph canvas, and writes an
 // INTERCHANGE: a line per node, per property and per wire. It does not write the canonical
@@ -20,9 +21,9 @@
 // and the round trip is checked here rather than assumed: the file is parsed back and its semantic
 // digest is required to equal the graph's.
 //
-// THE SAME ARRANGEMENT M8.a CHOSE FOR `.cyprim`. The editor writes a source; the engine owns what it
-// becomes. `primitives.rs` states it: "the editor's whole part in a primitive is writing a source
-// asset ... There is no geometry in this crate and nowhere here to put any."
+// THE SAME ARRANGEMENT M8.a CHOSE FOR `.cyprim`. The editor writes a source; the engine owns what
+// it becomes. `primitives.rs` states it: "the editor's whole part in a primitive is writing a
+// source asset ... There is no geometry in this crate and nowhere here to put any."
 //
 // ================================================================================================
 // WHAT ELSE IT WRITES, AND WHY THE SIDECAR IS NOT A CONVENIENCE
@@ -81,28 +82,34 @@ using rendering::material::QualityTier;
 /// `xyz`, `x`, `zw` — the swizzle an author typed — as the mask the IR's builder encodes.
 ///
 /// COMPUTED HERE AND NOT IN THE EDITOR. `Builder::swizzle_mask` is the encoding and it is the
-/// engine's; an editor that packed nibbles itself would be a second encoder of a format that reaches
-/// a content hash.
+/// engine's; an editor that packed nibbles itself would be a second encoder of a format that
+/// reaches a content hash.
 [[nodiscard]] Expected<u32, Error> swizzle_mask_of(std::string_view letters) noexcept {
     u8 components[4] = {};
     if (letters.empty() || letters.size() > 4) {
-        return make_unexpected(Error{ErrorCode::InvalidArgument,
-                                     "a swizzle is one to four of x, y, z, w", 0});
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "a swizzle is one to four of x, y, z, w", 0});
     }
     for (usize index = 0; index < letters.size(); ++index) {
         switch (letters[index]) {
-            case 'x': components[index] = 0; break;
-            case 'y': components[index] = 1; break;
-            case 'z': components[index] = 2; break;
-            case 'w': components[index] = 3; break;
+            case 'x':
+                components[index] = 0;
+                break;
+            case 'y':
+                components[index] = 1;
+                break;
+            case 'z':
+                components[index] = 2;
+                break;
+            case 'w':
+                components[index] = 3;
+                break;
             default:
-                return make_unexpected(
-                    Error{ErrorCode::InvalidArgument, "a swizzle component that is not x, y, z or w",
-                          0});
+                return make_unexpected(Error{ErrorCode::InvalidArgument,
+                                             "a swizzle component that is not x, y, z or w", 0});
         }
     }
-    return rendering::material::Builder::swizzle_mask(
-        Span<const u8>(components, letters.size()));
+    return rendering::material::Builder::swizzle_mask(Span<const u8>(components, letters.size()));
 }
 
 /// Set one authored property, translating the interchange's spellings into the graph's literals.
@@ -122,8 +129,8 @@ using rendering::material::QualityTier;
         literal.type = Name::intern("swizzle");
         literal.value.mask = mask.value();
         // `lower_material` reads a swizzle out of the `value` property, which is where
-        // `MaterialGraph::add` puts it. The interchange spells it in letters because that is what an
-        // author types; the nibbles are the engine's.
+        // `MaterialGraph::add` puts it. The interchange spells it in letters because that is what
+        // an author types; the nibbles are the engine's.
         return out.set_property(key, Name::intern("value"), literal);
     }
     if (name == "value" || name == "default" || name == "average") {
@@ -224,9 +231,9 @@ Status write_material_info(const rendering::material::Module& module, u64 cook_k
         }
     };
     char line[160] = {};
-    (void)std::snprintf(line, sizeof(line), "cymatinfo %u\nmaterial %s\ncook_key 0x%016llx\nentry %.*s\n",
-                        kInfoVersion, module.name().text().data(),
-                        static_cast<unsigned long long>(cook_key),
+    (void)std::snprintf(line, sizeof(line),
+                        "cymatinfo %u\nmaterial %s\ncook_key 0x%016llx\nentry %.*s\n", kInfoVersion,
+                        module.name().text().data(), static_cast<unsigned long long>(cook_key),
                         static_cast<int>(entry_point.size()), entry_point.data());
     append(line);
     // THE AUTHORED DEFAULT TRAVELS WITH THE NAME. A frame that uploaded a zeroed parameter block
@@ -372,8 +379,8 @@ int cy_material_author(int argc, char** argv) {
     }
 
     Array<char> entry(memory);
-    if (Status named = rendering::material::entry_point_name(
-            compiled.value().primary().name(), primary->kind, primary->tier, entry);
+    if (Status named = rendering::material::entry_point_name(compiled.value().primary().name(),
+                                                             primary->kind, primary->tier, entry);
         !named) {
         std::fprintf(stderr, "cy_material: %s\n", named.error().message);
         return 1;

@@ -12,16 +12,17 @@
 // "outside `docs/`, the tree holds six image files, four of them editor identity marks and two of
 // them golden references. There is no albedo, normal, roughness or mask texture anywhere."
 //
-// The path this program runs, end to end, is the one M11.c's spike measured and found broken at both
-// ends:
+// The path this program runs, end to end, is the one M11.c's spike measured and found broken at
+// both ends:
 //
 //   1 AUTHOR    a material graph, placed and wired on the editor's own `GraphCanvas`
 //   2 COMPILE   `lower_material` -> `lower_graph` -> `compile_material` -> the emitter's Slang
 //   3 ENCODE    `cy::import::TextureImporter` — PNG in, BC7 and BC5 blocks with a mip chain out
 //   4 BIND      the cooked blocks uploaded and bound at (set 0, binding 1), where
 //               `cy/material.slang` declares `cyMaterialTextures[]`
-//   5 ASSEMBLE  `cy::rendering::assembly::FrameAssembly` — the post chain, the exposure, the tonemap
-//   6 CAPTURE   `tests/render/golden.cpp`'s PNG writer, and a manifest built from the frame's own
+//   5 ASSEMBLE  `cy::rendering::assembly::FrameAssembly` — the post chain, the exposure, the
+//   tonemap 6 CAPTURE   `tests/render/golden.cpp`'s PNG writer, and a manifest built from the
+//   frame's own
 //               report rather than from what this file believes
 //
 // ================================================================================================
@@ -35,7 +36,8 @@
 //    generator. No mesh was modelled, no mesh file is committed, and nothing here is a scan.
 //  * **The normal map is sampled by the FRAME and not by the material.** `CyClosure` has five terms
 //    and none of them is a normal, so a compiled material cannot express a normal-mapped surface.
-//    `beauty.slang` samples it from the material's own table at the material's own slot, and says so.
+//    `beauty.slang` samples it from the material's own table at the material's own slot, and says
+//    so.
 //  * **There is no global illumination and no ambient occlusion pass.** The ambient term is the
 //    engine's own sky irradiance, hemispherically weighted. `cy::rendering-gi` is not linked.
 //  * **There is no anti-aliasing stage.** `FramePassKind::Temporal` is declared by the frame and

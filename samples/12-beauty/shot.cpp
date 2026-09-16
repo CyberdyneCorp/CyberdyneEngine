@@ -183,8 +183,8 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
         } else if (keyword == "instance") {
             read_instance(shot, line);
         } else {
-            problem = std::string("a keyword the shot format does not define: ") +
-                      std::string(keyword);
+            problem =
+                std::string("a keyword the shot format does not define: ") + std::string(keyword);
             return make_unexpected(Error{ErrorCode::InvalidArgument, "shot keyword", line_number});
         }
     }
@@ -206,16 +206,16 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
             return make_unexpected(Error{ErrorCode::InvalidArgument, "unknown mesh", 0});
         }
         if (shot.material(instance.material) == nullptr) {
-            problem = "an instance names a material the shot does not declare: " +
-                      instance.material;
+            problem =
+                "an instance names a material the shot does not declare: " + instance.material;
             return make_unexpected(Error{ErrorCode::InvalidArgument, "unknown material", 0});
         }
     }
     for (const ShotMaterial& material : shot.materials) {
         if (material.graph_path.empty() || material.albedo_path.empty() ||
             material.normal_path.empty() || material.data_path.empty()) {
-            problem = "material `" + material.key +
-                      "` is missing its graph or one of its three textures";
+            problem =
+                "material `" + material.key + "` is missing its graph or one of its three textures";
             return make_unexpected(Error{ErrorCode::InvalidArgument, "incomplete material", 0});
         }
     }
@@ -242,8 +242,8 @@ Expected<import::MeshData, Error> load_primitive(const char* path, std::string& 
     auto spec = import::parse_primitive_source(
         std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()), &line);
     if (!spec) {
-        problem = std::string(path) + ": line " + std::to_string(line) + ": " +
-                  spec.error().message;
+        problem =
+            std::string(path) + ": line " + std::to_string(line) + ": " + spec.error().message;
         return make_unexpected(spec.error());
     }
 
@@ -252,9 +252,9 @@ Expected<import::MeshData, Error> load_primitive(const char* path, std::string& 
         problem = std::string(path) + ": " + built.error().message;
         return make_unexpected(built.error());
     }
-    // THE TANGENT BASIS IS THE ENGINE'S and is generated here rather than assumed: `generate_tangents`
-    // refuses a mesh with no normals or no UVs by name, and a normal map applied against an
-    // arbitrary basis is "subtly wrong everywhere" — mesh.h's own words.
+    // THE TANGENT BASIS IS THE ENGINE'S and is generated here rather than assumed:
+    // `generate_tangents` refuses a mesh with no normals or no UVs by name, and a normal map
+    // applied against an arbitrary basis is "subtly wrong everywhere" — mesh.h's own words.
     if (mesh.normals.empty()) {
         if (Status made = import::generate_normals(mesh, 60.0F); !made) {
             problem = std::string(path) + ": " + made.error().message;

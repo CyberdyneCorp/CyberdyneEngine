@@ -72,8 +72,8 @@ constexpr f32 kFarPlane = 400.0F;
 /// Count every validation error and PRINT the first eight of them.
 ///
 /// Counting alone is what samples/10-world does and it is enough for a number in a manifest; it is
-/// not enough to fix one. A picture taken with validation errors in it is a picture of a bug, so the
-/// first few are printed where somebody will see them and the rest are counted.
+/// not enough to fix one. A picture taken with validation errors in it is a picture of a bug, so
+/// the first few are printed where somebody will see them and the rest are counted.
 void count_validation(rhi::ValidationSeverity severity, const char* message, void* user) noexcept {
     if (severity != rhi::ValidationSeverity::Error) {
         return;
@@ -85,19 +85,24 @@ void count_validation(rhi::ValidationSeverity severity, const char* message, voi
     }
 }
 
-// --- Small vector maths, written out --------------------------------------------------------------
+// --- Small vector maths, written out
+// --------------------------------------------------------------
 //
-// Four explicit rows rather than a `Mat4`, and dot products rather than `mul`: the shader's own note
-// gives the reason, and the two halves of a convention that can disagree are exactly the two halves
-// this file and `beauty.slang` are.
+// Four explicit rows rather than a `Mat4`, and dot products rather than `mul`: the shader's own
+// note gives the reason, and the two halves of a convention that can disagree are exactly the two
+// halves this file and `beauty.slang` are.
 
 [[nodiscard]] Vec3 subtract(Vec3 a, Vec3 b) noexcept {
     return Vec3{a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
-[[nodiscard]] Vec3 scale(Vec3 a, f32 k) noexcept { return Vec3{a.x * k, a.y * k, a.z * k}; }
+[[nodiscard]] Vec3 scale(Vec3 a, f32 k) noexcept {
+    return Vec3{a.x * k, a.y * k, a.z * k};
+}
 
-[[nodiscard]] f32 dot3(Vec3 a, Vec3 b) noexcept { return (a.x * b.x) + (a.y * b.y) + (a.z * b.z); }
+[[nodiscard]] f32 dot3(Vec3 a, Vec3 b) noexcept {
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+}
 
 [[nodiscard]] Vec3 cross3(Vec3 a, Vec3 b) noexcept {
     return Vec3{(a.y * b.z) - (a.z * b.y), (a.z * b.x) - (a.x * b.z), (a.x * b.y) - (a.y * b.x)};
@@ -268,13 +273,13 @@ Status Stage::open(u32 width, u32 height, u32 supersample) noexcept {
     return ok();
 }
 
-
 // ================================================================================================
 // JUNCTION 3 AND JUNCTION 4 — the textures are cooked, uploaded and BOUND
 // ================================================================================================
 //
 // M11.c's spike found junction 3 PARTIAL ("names BC7, delivers uncompressed RGBA8") and junction 4
-// ABSENT ("nothing in the tree binds the table; the spike had to write the binding"). Both are here.
+// ABSENT ("nothing in the tree binds the table; the spike had to write the binding"). Both are
+// here.
 //
 // The cook is `cy::import::TextureImporter` — the importer `cy_import` drives, unchanged, with the
 // BC7/BC5 encoder M11.c task 6.1b put behind it. What it produces is a payload with a sixteen-byte
@@ -309,8 +314,8 @@ struct CookedTexture {
         return fail(ErrorCode::InvalidArgument, "a cooked texture shorter than its header");
     }
     CookedTexture cooked;
-    cooked.format = static_cast<import::TextureFormat>(
-        static_cast<u16>(payload[4]) | (static_cast<u16>(payload[5]) << 8U));
+    cooked.format = static_cast<import::TextureFormat>(static_cast<u16>(payload[4]) |
+                                                       (static_cast<u16>(payload[5]) << 8U));
     cooked.encoded = payload[6] != 0;
     cooked.srgb = payload[7] != 0;
     cooked.width = read_u32(payload.data() + 8);
@@ -376,9 +381,8 @@ void record_uploads(const PassContext& context, void* user) noexcept {
         region.buffer_offset = copy.offset;
         region.mip_level = copy.mip;
         region.texture_extent = rhi::Extent3D{copy.width, copy.height, 1};
-        context.commands->copy_buffer_to_texture(
-            state->staging, (*state->textures)[copy.texture],
-            Span<const rhi::BufferTextureCopy>(&region, 1));
+        context.commands->copy_buffer_to_texture(state->staging, (*state->textures)[copy.texture],
+                                                 Span<const rhi::BufferTextureCopy>(&region, 1));
     }
 }
 
@@ -555,8 +559,8 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
     for (usize index = 0; index < device_->textures.size(); ++index) {
         // THE REQUEST'S FORMAT IS USED, and getting it wrong is a validation error rather than a
         // silent one: the graph creates the view it barriers from this description, and Vulkan
-        // refuses a view whose format differs from its image's unless the image was created mutable.
-        // Asking the device what it actually made is what keeps the two in step.
+        // refuses a view whose format differs from its image's unless the image was created
+        // mutable. Asking the device what it actually made is what keeps the two in step.
         const rhi::TextureDescription* description =
             device.texture_description(device_->textures[index]);
         if (description == nullptr) {
@@ -568,8 +572,8 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
         request.width = description->extent.width;
         request.height = description->extent.height;
         request.mip_levels = description->mip_levels;
-        imported.push_back(graph.import_texture(request, device_->textures[index],
-                                               rhi::ImageLayout::Undefined));
+        imported.push_back(
+            graph.import_texture(request, device_->textures[index], rhi::ImageLayout::Undefined));
     }
 
     UploadState state;
@@ -599,8 +603,8 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
     {
         rendering::GraphExecutor executor(*allocator_, device);
         state.executor = &executor;
-        auto result = executor.execute(graph, rendering::CompileOptions{},
-                                       rendering::ExecuteOptions{});
+        auto result =
+            executor.execute(graph, rendering::CompileOptions{}, rendering::ExecuteOptions{});
         if (!result) {
             executed = make_unexpected(result.error());
         } else {
@@ -621,10 +625,10 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
 // Every instance's transform is applied on the processor and the camera's position subtracted, so
 // what reaches the device is one vertex buffer of camera-relative positions and one index buffer,
 // sorted into a contiguous range per material. That costs a rebuild if the camera moves, which this
-// artefact never does, and it buys two things worth more than that here: nothing in any shader holds
-// a world coordinate (design.md §3) and the per-draw push block is SIXTEEN bytes, which every Vulkan
-// device has — a model matrix would have taken it past the 128-byte guarantee alongside the frame's
-// own rows.
+// artefact never does, and it buys two things worth more than that here: nothing in any shader
+// holds a world coordinate (design.md §3) and the per-draw push block is SIXTEEN bytes, which every
+// Vulkan device has — a model matrix would have taken it past the 128-byte guarantee alongside the
+// frame's own rows.
 
 Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
     rhi::Device& device = *device_->handle.value();
@@ -645,11 +649,12 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
     Array<u32> indices(memory);
 
     // ONE BATCH PER INSTANCE, and the reason is in the push block rather than in the draw count.
-    // `uv_scale` and `normal_strength` are per INSTANCE — the ground and a pillar are the same stone
-    // at different scales, which is what a real scene does — and they travel in the sixteen-byte
-    // push block. A batch per material would have had to carry one scale for all of them, and the
-    // picture would have been tiled wrongly in a way nothing but a person's eye would catch.
-    // Thirty-one draws is thirty-one pipeline binds, which at this scale costs nothing measurable.
+    // `uv_scale` and `normal_strength` are per INSTANCE — the ground and a pillar are the same
+    // stone at different scales, which is what a real scene does — and they travel in the
+    // sixteen-byte push block. A batch per material would have had to carry one scale for all of
+    // them, and the picture would have been tiled wrongly in a way nothing but a person's eye would
+    // catch. Thirty-one draws is thirty-one pipeline binds, which at this scale costs nothing
+    // measurable.
     for (const Instance& instance : shot.instances) {
         const import::MeshData* mesh = nullptr;
         for (const auto& entry : meshes) {
@@ -672,8 +677,7 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
         batch.material = material_index;
         batch.push.uv_scale = instance.uv_scale;
         batch.push.normal_strength = instance.normal_strength;
-        batch.push.normal_slot_bits =
-            bit_cast_to_float(shot.materials[material_index].normal.slot);
+        batch.push.normal_slot_bits = bit_cast_to_float(shot.materials[material_index].normal.slot);
         batch.push.data_slot_bits = bit_cast_to_float(shot.materials[material_index].data.slot);
 
         const f32 radians = instance.yaw_degrees * 3.14159265F / 180.0F;
@@ -690,16 +694,16 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
             // THE SUBTRACTION, done in f64 for the reason design.md §3 gives: the difference is
             // small and narrowing it afterwards keeps every bit that matters, where narrowing first
             // would not.
-            vertex.position = Vec3{
-                static_cast<f32>((static_cast<f64>(rotated.x) +
-                                  static_cast<f64>(instance.position.x)) -
-                                 static_cast<f64>(shot.camera_position.x)),
-                static_cast<f32>((static_cast<f64>(rotated.y) +
-                                  static_cast<f64>(instance.position.y)) -
-                                 static_cast<f64>(shot.camera_position.y)),
-                static_cast<f32>((static_cast<f64>(rotated.z) +
-                                  static_cast<f64>(instance.position.z)) -
-                                 static_cast<f64>(shot.camera_position.z))};
+            vertex.position =
+                Vec3{static_cast<f32>(
+                         (static_cast<f64>(rotated.x) + static_cast<f64>(instance.position.x)) -
+                         static_cast<f64>(shot.camera_position.x)),
+                     static_cast<f32>(
+                         (static_cast<f64>(rotated.y) + static_cast<f64>(instance.position.y)) -
+                         static_cast<f64>(shot.camera_position.y)),
+                     static_cast<f32>(
+                         (static_cast<f64>(rotated.z) + static_cast<f64>(instance.position.z)) -
+                         static_cast<f64>(shot.camera_position.z))};
             vertex.normal = rotate(mesh->normals[index]);
             const Vec4 tangent = mesh->tangents[index];
             const Vec3 rotated_tangent = rotate(Vec3{tangent.x, tangent.y, tangent.z});
@@ -746,8 +750,7 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
         return make_unexpected(buffer.error());
     }
     device_->vertices = *buffer;
-    if (Status uploaded = upload(device_->vertices, vertices.data(), description.size);
-        !uploaded) {
+    if (Status uploaded = upload(device_->vertices, vertices.data(), description.size); !uploaded) {
         return uploaded;
     }
 
@@ -803,8 +806,8 @@ struct SkyBuild {
         return make_unexpected(built.error());
     }
 
-    // THE SUN IS PLACED BY THE SHOT AND ITS COLOUR IS THE ATMOSPHERE'S. A `CelestialState` carries a
-    // direction; the radiance that reaches the ground from it is what `compose_sky_lighting`
+    // THE SUN IS PLACED BY THE SHOT AND ITS COLOUR IS THE ATMOSPHERE'S. A `CelestialState` carries
+    // a direction; the radiance that reaches the ground from it is what `compose_sky_lighting`
     // integrates, and a colour typed into the shot file would be a second sun.
     const f32 elevation = shot.sun_elevation_degrees * 3.14159265F / 180.0F;
     const f32 azimuth = shot.sun_azimuth_degrees * 3.14159265F / 180.0F;
@@ -822,8 +825,8 @@ struct SkyBuild {
     if (Status configured = map.configure(40, 1'000.0F); !configured) {
         return configured;
     }
-    if (Status generated = map.generate(shot.seed ^ 0xC10D5EULL, shot.cloud_cover,
-                                        shot.cloud_density);
+    if (Status generated =
+            map.generate(shot.seed ^ 0xC10D5EULL, shot.cloud_cover, shot.cloud_density);
         !generated) {
         return generated;
     }
@@ -848,8 +851,8 @@ struct SkyBuild {
     inputs.view = rendering::sky::planetary_view(atmosphere, world::WorldVec3d{0.0, 0.0, 0.0});
 
     // 96 x 192, which is 18 432 calls to `compose_sky` and about 170 ms on this host. At 48 x 96
-    // the cloud deck's edges facet visibly across a quad — the dome IS the resolution of this sky and
-    // there is still no sky shader in this tree, so the only way to soften it is more vertices.
+    // the cloud deck's edges facet visibly across a quad — the dome IS the resolution of this sky
+    // and there is still no sky shader in this tree, so the only way to soften it is more vertices.
     constexpr u32 kRings = 96;
     constexpr u32 kSegments = 192;
     if (Status sized = out.vertices.resize(static_cast<usize>(kRings + 1) * kSegments); !sized) {
@@ -891,12 +894,12 @@ struct SkyBuild {
 
     const rendering::sky::SkyLighting lighting = rendering::sky::compose_sky_lighting(inputs, 16);
     out.sun_illuminance = lighting.sun_illuminance;
-    // THE SKY'S MEAN RADIANCE AND NOT ITS IRRADIANCE, and the factor of pi between them is the whole
-    // difference between a picture with a sun in it and a flat one. The fragment stage multiplies
-    // this by the albedo directly, which is `albedo / pi * E` written the other way round — the same
-    // Lambertian normalisation `diffuseLambert` applies to the sun's term. Multiplying by the
-    // irradiance instead made the ambient term pi times too strong, the sun invisible against it and
-    // every shadow in the frame a shade of the same grey.
+    // THE SKY'S MEAN RADIANCE AND NOT ITS IRRADIANCE, and the factor of pi between them is the
+    // whole difference between a picture with a sun in it and a flat one. The fragment stage
+    // multiplies this by the albedo directly, which is `albedo / pi * E` written the other way
+    // round — the same Lambertian normalisation `diffuseLambert` applies to the sun's term.
+    // Multiplying by the irradiance instead made the ambient term pi times too strong, the sun
+    // invisible against it and every shadow in the frame a shade of the same grey.
     out.sky_irradiance = lighting.mean_sky_radiance;
     (void)allocator;
     return ok();
@@ -1199,8 +1202,8 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
         u8 params[kMaterialBlockBytes] = {};
         // THE AUTHORED DEFAULTS, out of the sidecar and in the module's own declaration order:
         // base_color at 0 (three floats), roughness at 12, metallic at 16. A zeroed block draws a
-        // black material however the graph was authored, which is what the first run of this program
-        // produced and what the picture showed.
+        // black material however the graph was authored, which is what the first run of this
+        // program produced and what the picture showed.
         const f32 base_color[3] = {entry.parameter_defaults[0].x, entry.parameter_defaults[0].y,
                                    entry.parameter_defaults[0].z};
         std::memcpy(params + 0, base_color, sizeof(base_color));
@@ -1293,9 +1296,9 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     //
     // WHAT IT BUYS: the ground's only face points at the sky, so it writes nothing into the shadow
     // map and cannot shadow itself. At a sun 7.4 degrees above the horizon the light-space depth
-    // across one shadow texel of a horizontal surface is about 0.19 m, and no constant bias survives
-    // that. A closed object still records its far side, half a wall thickness behind its lit one,
-    // which is where most of the remaining acne goes.
+    // across one shadow texel of a horizontal surface is about 0.19 m, and no constant bias
+    // survives that. A closed object still records its far side, half a wall thickness behind its
+    // lit one, which is where most of the remaining acne goes.
     shadow_pipeline.rasterisation.cull_mode = rhi::CullMode::Front;
     shadow_pipeline.rasterisation.front_face = rhi::FrontFace::Clockwise;
     auto shadow_created = device.create_graphics_pipeline(shadow_pipeline);
@@ -1416,8 +1419,8 @@ void record_scene(const PassContext& context, void* user) noexcept {
         context.commands->bind_graphics_pipeline(batch.pipeline);
         context.commands->bind_descriptor_sets(
             state->layout, 3, Span<const rhi::DescriptorSetHandle>(&batch.material_set, 1));
-        context.commands->bind_vertex_buffers(
-            0, Span<const rhi::BufferHandle>(&state->vertices, 1), Span<const u64>(&offset, 1));
+        context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
+                                              Span<const u64>(&offset, 1));
         context.commands->bind_index_buffer(state->indices, 0, true);
         context.commands->push_constants(
             state->layout, rhi::ShaderStage::Vertex | rhi::ShaderStage::Fragment, 0,
@@ -1427,8 +1430,8 @@ void record_scene(const PassContext& context, void* user) noexcept {
     context.commands->end_rendering();
 }
 
-/// The sky dome, in the frame's own `Sky` stage — which is the thirteenth stage's fifth, and the one
-/// `ForwardFrame` reserves for exactly this.
+/// The sky dome, in the frame's own `Sky` stage — which is the thirteenth stage's fifth, and the
+/// one `ForwardFrame` reserves for exactly this.
 void record_sky(const PassContext& context, void* user) noexcept {
     auto* state = static_cast<SceneState*>(user);
     rhi::RenderAttachment colour;
@@ -1450,8 +1453,7 @@ void record_sky(const PassContext& context, void* user) noexcept {
     bind_common(context, *state);
     context.commands->bind_graphics_pipeline(state->sky_pipeline);
     const u64 offset = 0;
-    context.commands->bind_vertex_buffers(0,
-                                          Span<const rhi::BufferHandle>(&state->sky_vertices, 1),
+    context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->sky_vertices, 1),
                                           Span<const u64>(&offset, 1));
     context.commands->bind_index_buffer(state->sky_indices, 0, true);
     SurfacePush push;
@@ -1536,8 +1538,7 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
                                                  static_cast<f32>(state->height), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
-    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0,
-                                           state->bindings->sets());
+    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
     context.commands->bind_graphics_pipeline(
         state->pipelines->pipeline(FramePipelineKind::Resolve));
     context.commands->draw(3, 1, 0, 0);
@@ -1797,18 +1798,18 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         }
     }
 
-    // --- The constants, written once --------------------------------------------------------------
+    // --- The constants, written once
+    // --------------------------------------------------------------
     const f32 aspect = static_cast<f32>(width_) / static_cast<f32>(height_);
-    const f32 fov_y = 2.0F * std::atan(std::tan(shot.field_of_view_degrees * 3.14159265F / 360.0F) /
-                                       aspect);
+    const f32 fov_y =
+        2.0F * std::atan(std::tan(shot.field_of_view_degrees * 3.14159265F / 360.0F) / aspect);
     // THE GEOMETRY IS BAKED AGAINST THE SHOT'S OWN CAMERA and the rendering camera is expressed as
     // an offset from it. For the still they are the same point and `eye` is the origin; for a
     // turntable they are not, and that is what lets two hundred and forty frames share one vertex
     // buffer.
     const Vec3 eye = subtract(eye_world, shot.camera_position);
     const Vec3 target = subtract(target_world, shot.camera_position);
-    const Mat4 projection =
-        perspective_reversed_z(fov_y, aspect, shot.near_plane, kFarPlane);
+    const Mat4 projection = perspective_reversed_z(fov_y, aspect, shot.near_plane, kFarPlane);
     const Mat4 camera = look_at(eye, target);
     const Mat4 world_to_clip = projection * camera;
 
@@ -1831,8 +1832,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     constants.ambient[0] = sky_irradiance_.x;
     constants.ambient[1] = sky_irradiance_.y;
     constants.ambient[2] = sky_irradiance_.z;
-    // How far along the surface normal the shadow lookup is moved, in metres. Content, because it is
-    // a property of the scene's scale and of how low its sun is.
+    // How far along the surface normal the shadow lookup is moved, in metres. Content, because it
+    // is a property of the scene's scale and of how low its sun is.
     constants.ambient[3] = shot.shadow_normal_offset;
     constants.eye[0] = eye.x;
     constants.eye[1] = eye.y;
@@ -1921,8 +1922,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
 
     cy::rendering::SpatialIndex index(*allocator_);
     AssemblyReport assembly_report;
-    if (Status assembled =
-            device_->assembly.assemble(index, view, sinks, graph, assembly_report);
+    if (Status assembled = device_->assembly.assemble(index, view, sinks, graph, assembly_report);
         !assembled) {
         (void)device.end_frame();
         return assembled;
@@ -1936,8 +1936,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     resolve.scene = resources.color;
     resolve.output = resources.output;
 
-    // THE EXPOSURE IS CONTENT. `content/beauty/shot.cyshot` carries it and the resolve divides by it
-    // before the tone curve; a number typed here would be a grade nobody could change without a
+    // THE EXPOSURE IS CONTENT. `content/beauty/shot.cyshot` carries it and the resolve divides by
+    // it before the tone curve; a number typed here would be a grade nobody could change without a
     // compiler.
     cy::rendering::pipeline::GlobalsData globals;
     globals.exposure_stops = shot.exposure_stops;
@@ -2035,9 +2035,10 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         CaptureProvenance provenance;
         provenance.title = "samples/12-beauty";
         provenance.purpose = CapturePurpose::Publication;
-        // NO ARBITER RUNS IN THIS PROGRAM, so nothing can degrade the frame between the assemble and
-        // the capture. `capture_manifest` refuses a publication capture whose arbiter was free to
-        // move, which is task 9.3's adversarial case and is why this is a fact rather than a wish.
+        // NO ARBITER RUNS IN THIS PROGRAM, so nothing can degrade the frame between the assemble
+        // and the capture. `capture_manifest` refuses a publication capture whose arbiter was free
+        // to move, which is task 9.3's adversarial case and is why this is a fact rather than a
+        // wish.
         provenance.arbiter_pinned = true;
         provenance.ev100 = -shot.exposure_stops;
         provenance.quality = cy::rendering::post_quality_preset(cy::rendering::QualityLevel::High);
@@ -2122,9 +2123,9 @@ Status Stage::write_png(const char* path) noexcept {
 
     // THE DOWNSAMPLE, AND IT IS SUPERSAMPLING AND NOT ANTI-ALIASING. The frame is drawn at
     // `supersample` times the published resolution and box-filtered here. It is named in the
-    // manifest as supersampling because that is what it is: `FramePassKind::Temporal` is declared by
-    // the frame and nothing in this tree records it, so calling this TAA would put a stage in the
-    // caption that no pass ran.
+    // manifest as supersampling because that is what it is: `FramePassKind::Temporal` is declared
+    // by the frame and nothing in this tree records it, so calling this TAA would put a stage in
+    // the caption that no pass ran.
     const u32 out_width = width_ / supersample_;
     const u32 out_height = height_ / supersample_;
     Array<u32> filtered(*allocator_);
@@ -2196,8 +2197,8 @@ namespace {
 
 Status Stage::write_linear_png(const char* path) noexcept {
     rhi::Device& device = *device_->handle.value();
-    const auto* halves = static_cast<const u16*>(
-        device.buffer_mapped_pointer(device_->linear_readback));
+    const auto* halves =
+        static_cast<const u16*>(device.buffer_mapped_pointer(device_->linear_readback));
     if (halves == nullptr) {
         return fail(ErrorCode::Internal, "the scene colour readback buffer is not mapped");
     }
@@ -2218,10 +2219,9 @@ Status Stage::write_linear_png(const char* path) noexcept {
             f32 sums[3] = {};
             for (u32 sy = 0; sy < supersample_; ++sy) {
                 for (u32 sx = 0; sx < supersample_; ++sx) {
-                    const usize texel =
-                        ((static_cast<usize>((y * supersample_) + sy) * width_) +
-                         (x * supersample_) + sx) *
-                        4U;
+                    const usize texel = ((static_cast<usize>((y * supersample_) + sy) * width_) +
+                                         (x * supersample_) + sx) *
+                                        4U;
                     for (u32 channel = 0; channel < 3; ++channel) {
                         sums[channel] += half_to_float(halves[texel + channel]);
                     }
@@ -2275,8 +2275,7 @@ Status Stage::write_manifest(const Shot& shot, const ShotReport& report,
     (void)std::fprintf(file, "triangles %u\n", report.triangles);
     (void)std::fprintf(file, "materials %u  (all %u are textured; none is constants)\n",
                        report.materials, report.materials);
-    (void)std::fprintf(file, "textures %u  source %llu bytes  cooked %llu bytes\n",
-                       report.textures,
+    (void)std::fprintf(file, "textures %u  source %llu bytes  cooked %llu bytes\n", report.textures,
                        static_cast<unsigned long long>(report.texture_source_bytes),
                        static_cast<unsigned long long>(report.texture_cooked_bytes));
     (void)std::fprintf(file, "supersample %ux\n", report.supersample);
@@ -2285,10 +2284,9 @@ Status Stage::write_manifest(const Shot& shot, const ShotReport& report,
                        static_cast<double>(report.sun_illuminance.x),
                        static_cast<double>(report.sun_illuminance.y),
                        static_cast<double>(report.sun_illuminance.z));
-    (void)std::fprintf(file, "sky-irradiance %.1f %.1f %.1f\n",
-                       static_cast<double>(report.sky_irradiance.x),
-                       static_cast<double>(report.sky_irradiance.y),
-                       static_cast<double>(report.sky_irradiance.z));
+    (void)std::fprintf(
+        file, "sky-irradiance %.1f %.1f %.1f\n", static_cast<double>(report.sky_irradiance.x),
+        static_cast<double>(report.sky_irradiance.y), static_cast<double>(report.sky_irradiance.z));
     (void)std::fprintf(file, "build-ms %.1f  sky-ms %.1f  submit-ms %.2f\n", report.build_ms,
                        report.sky_ms, report.submit_ms);
 
@@ -2303,14 +2301,14 @@ Status Stage::write_manifest(const Shot& shot, const ShotReport& report,
         const std::string* paths[3] = {&material.albedo_path, &material.normal_path,
                                        &material.data_path};
         for (u32 index = 0; index < 3; ++index) {
-            (void)std::fprintf(
-                file, "  %-6s %s  %ux%u  %s  %u mips  slot %u  %llu -> %llu bytes\n", names[index],
-                paths[index]->c_str(), maps[index]->width, maps[index]->height,
-                import::texture_format_name(
-                    static_cast<import::TextureFormat>(maps[index]->format)),
-                maps[index]->mip_count, maps[index]->slot,
-                static_cast<unsigned long long>(maps[index]->source_bytes),
-                static_cast<unsigned long long>(maps[index]->payload_bytes));
+            (void)std::fprintf(file, "  %-6s %s  %ux%u  %s  %u mips  slot %u  %llu -> %llu bytes\n",
+                               names[index], paths[index]->c_str(), maps[index]->width,
+                               maps[index]->height,
+                               import::texture_format_name(
+                                   static_cast<import::TextureFormat>(maps[index]->format)),
+                               maps[index]->mip_count, maps[index]->slot,
+                               static_cast<unsigned long long>(maps[index]->source_bytes),
+                               static_cast<unsigned long long>(maps[index]->payload_bytes));
         }
         (void)std::fprintf(file,
                            "  block-compressed %s  (the normal map is sampled by the FRAME, not by "

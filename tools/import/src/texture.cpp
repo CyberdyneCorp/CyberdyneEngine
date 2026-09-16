@@ -703,9 +703,8 @@ Status TextureImporter::import(const ImportRequest& request, ImportResult& out) 
 
     if (header.encoded) {
         Array<u8> blocks;
-        if (Status encoded =
-                encode_mip_chain(levels.span(), header.width, header.height, header.mip_count,
-                                 image.channels, format, blocks);
+        if (Status encoded = encode_mip_chain(levels.span(), header.width, header.height,
+                                              header.mip_count, image.channels, format, blocks);
             !encoded) {
             return encoded;
         }

@@ -12,8 +12,8 @@
 //     from the format's own tables, and measure the error against the source. An encoder that wrote
 //     zeroes would pass a size check and fails this one.
 //   * the formats this build does NOT encode are asserted to leave `CookedTexture::encoded` false,
-//     because the whole point of that flag is that a cache entry cannot claim a compression that did
-//     not happen.
+//     because the whole point of that flag is that a cache entry cannot claim a compression that
+//     did not happen.
 
 #include <cy/import/block_encode.h>
 #include <cy/import/image_codecs.h>
@@ -33,7 +33,8 @@ using cy::usize;
 
 namespace {
 
-// --- The fixtures ---------------------------------------------------------------------------------
+// --- The fixtures
+// ---------------------------------------------------------------------------------
 //
 // A 16x16 image whose texel (x, y) is (17x, 17y, (xy) mod 256, 255 or 128), saved by a third-party
 // encoder as an optimised PNG, as a 4:4:4 JPEG at quality 90 and as a 4:2:0 JPEG at quality 85. The
@@ -165,7 +166,8 @@ void expected_texel(u32 x, u32 y, u8 out[4]) {
     out[3] = ((x + y) % 5U) != 0 ? 255U : 128U;
 }
 
-// --- Reference decoders, written from the format tables ---------------------------------------------
+// --- Reference decoders, written from the format tables
+// ---------------------------------------------
 
 u32 bc7_bits(const u8 block[16], u32 start, u32 count) {
     u32 value = 0;
@@ -239,7 +241,9 @@ void decode_bc4(const u8 block[8], u8 out[16]) {
     }
 }
 
-cy::Span<const u8> span_of(const u8* data, usize size) { return cy::Span<const u8>(data, size); }
+cy::Span<const u8> span_of(const u8* data, usize size) {
+    return cy::Span<const u8>(data, size);
+}
 
 }  // namespace
 
@@ -261,7 +265,8 @@ CY_TEST_CASE("codec: a PNG decodes through the importer, pixel for pixel") {
         for (u32 x = 0; x < 16; ++x) {
             u8 expected[4];
             expected_texel(x, y, expected);
-            const u8* actual = image.value().pixels.data() + ((static_cast<usize>(y) * 16U + x) * 4U);
+            const u8* actual =
+                image.value().pixels.data() + ((static_cast<usize>(y) * 16U + x) * 4U);
             for (u32 channel = 0; channel < 4; ++channel) {
                 mismatches += expected[channel] == actual[channel] ? 0U : 1U;
             }
@@ -396,14 +401,15 @@ CY_TEST_CASE("encoder: BC7 reproduces a block whose texels lie on one colour lin
     CY_CHECK(peak <= 2);
 }
 
-CY_TEST_CASE("encoder: BC7 keeps a three-population block within the cost mode 6 is known to have") {
+CY_TEST_CASE(
+    "encoder: BC7 keeps a three-population block within the cost mode 6 is known to have") {
     // THE CASE MODE 6 CANNOT EXPRESS, and it takes three populations rather than two to make it.
     // Two colours always lie on a line, however anti-correlated their channels are, and the
     // principal-axis fit finds that line — the encoder scores a peak of 1 on such a block. Three
     // corners of a colour triangle do not lie on any line, and modes 0 through 3's PARTITIONS are
     // what a full encoder answers them with. This one has none, and the number below is what their
-    // absence costs. It is asserted as a bound rather than described, so an encoder change that made
-    // it worse is red.
+    // absence costs. It is asserted as a bound rather than described, so an encoder change that
+    // made it worse is red.
     u8 source[64];
     for (u32 texel = 0; texel < 16; ++texel) {
         const u32 population = texel % 3U;
@@ -429,7 +435,8 @@ CY_TEST_CASE("encoder: BC7 keeps a three-population block within the cost mode 6
     CY_CHECK(peak <= 150);
 }
 
-CY_TEST_CASE("encoder: BC7 puts two anti-correlated channels on one line, which a bounding box cannot") {
+CY_TEST_CASE(
+    "encoder: BC7 puts two anti-correlated channels on one line, which a bounding box cannot") {
     // THE DEFECT THE PRINCIPAL-AXIS FIT EXISTS TO REMOVE, kept as a case because it is the one a
     // naive encoder gets wrong and nothing else in this suite would notice. A red-to-green
     // transition has `min r` paired with `max g`, so the bounding box's corners are two colours the
@@ -497,7 +504,8 @@ CY_TEST_CASE("encoder: the cooked payload is the block size the format declares,
     CY_CHECK(bc4.size() == 16U * 8U);
 }
 
-CY_TEST_CASE("encoder: the formats this build cannot produce are refused by name and stay unencoded") {
+CY_TEST_CASE(
+    "encoder: the formats this build cannot produce are refused by name and stay unencoded") {
     // BC6H and ASTC are named by `select_format` and produced by nobody. The flag and the refusal
     // are the two halves of saying so, and a build that quietly wrote RGBA8 under an ASTC header is
     // what they exist to prevent.

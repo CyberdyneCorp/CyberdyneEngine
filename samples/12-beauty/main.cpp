@@ -5,7 +5,8 @@
 // ================================================================================================
 //
 //   cy_sample_beauty --shot content/beauty/shot.cyshot
-//                    --materials <dir>              where `cy_material author` wrote .spv/.cymatinfo
+//                    --materials <dir>              where `cy_material author` wrote
+//                    .spv/.cymatinfo
 //                    --still docs/design/images/m11c-beauty-shot.png
 //                    --no-post-still <path>         the same frame with the chain compiled out
 //                    --manifest <path>              the provenance a machine can check
@@ -79,9 +80,9 @@ using namespace cy::sample::beauty;
                    std::sscanf(line, "param %127s %127s %lf %lf %lf %lf", first, second, &values[0],
                                &values[1], &values[2], &values[3]) == 6) {
             material.parameters.emplace_back(first);
-            material.parameter_defaults.push_back(Vec4{
-                static_cast<f32>(values[0]), static_cast<f32>(values[1]),
-                static_cast<f32>(values[2]), static_cast<f32>(values[3])});
+            material.parameter_defaults.push_back(
+                Vec4{static_cast<f32>(values[0]), static_cast<f32>(values[1]),
+                     static_cast<f32>(values[2]), static_cast<f32>(values[3])});
         } else if (std::sscanf(line, "texture %127s", first) == 1) {
             material.textures.emplace_back(first);
         }
@@ -145,8 +146,7 @@ void print_report(const Shot& shot, const ShotReport& report) {
                 static_cast<double>(report.sky_irradiance.z), report.sky_ms);
     std::printf("frame         %u passes declared, %u post stages, %ux supersampled\n",
                 report.frame_passes, report.post_stages, report.supersample);
-    std::printf("cost          build %.1f ms, submit %.2f ms\n", report.build_ms,
-                report.submit_ms);
+    std::printf("cost          build %.1f ms, submit %.2f ms\n", report.build_ms, report.submit_ms);
     std::printf("validation    %u error(s)\n", report.validation_errors);
 }
 
@@ -203,8 +203,9 @@ int main(int argc, char** argv) {
     }
     if (!stage.available()) {
         std::printf("device        NOT FOUND: %s\n", stage.absence());
-        std::printf("\nEverything above loaded. The picture needs a graphics device and this "
-                    "machine has none, so nothing was written.\n");
+        std::printf(
+            "\nEverything above loaded. The picture needs a graphics device and this "
+            "machine has none, so nothing was written.\n");
         return 0;
     }
 
@@ -234,13 +235,13 @@ int main(int argc, char** argv) {
     if (!frames.empty()) {
         const u32 count = option_number(argc, argv, "--frames-count", 240);
         const Vec3 pivot = shot.camera_target;
-        const Vec3 offset = Vec3{shot.camera_position.x - pivot.x, 0.0F,
-                                 shot.camera_position.z - pivot.z};
+        const Vec3 offset =
+            Vec3{shot.camera_position.x - pivot.x, 0.0F, shot.camera_position.z - pivot.z};
         const f32 radius = std::sqrt((offset.x * offset.x) + (offset.z * offset.z));
         const f32 start = std::atan2(offset.z, offset.x);
         for (u32 index = 0; index < count; ++index) {
-            const f32 turn = start + ((2.0F * 3.14159265F * static_cast<f32>(index)) /
-                                      static_cast<f32>(count));
+            const f32 turn =
+                start + ((2.0F * 3.14159265F * static_cast<f32>(index)) / static_cast<f32>(count));
             Vec3 eye = shot.camera_position;
             eye.x = pivot.x + (std::cos(turn) * radius);
             eye.z = pivot.z + (std::sin(turn) * radius);
@@ -261,9 +262,10 @@ int main(int argc, char** argv) {
         // tonemapped output the resolve wrote and the linear scene colour it read, so the two
         // pictures differ in the post chain and in nothing else — not in a second set of draws, not
         // in a second sun, not in a second jitter.
-        std::printf("no-post still %s  (the same frame's linear scene colour, display transfer "
-                    "only)\n",
-                    no_post.c_str());
+        std::printf(
+            "no-post still %s  (the same frame's linear scene colour, display transfer "
+            "only)\n",
+            no_post.c_str());
     }
     return report.validation_errors == 0 ? 0 : 1;
 }

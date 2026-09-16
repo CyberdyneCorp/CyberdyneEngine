@@ -7,8 +7,8 @@
 //                          material cost and what did the compiler have to say about it".
 //
 //   author <canvas>        M11.c task 6.1a. Read the interchange the editor's material canvas
-//                          writes, canonicalise it into a `.cygraph` with the ENGINE's writer, lower
-//                          it, compile it, and emit the translation unit the shader pipeline
+//                          writes, canonicalise it into a `.cygraph` with the ENGINE's writer,
+//                          lower it, compile it, and emit the translation unit the shader pipeline
 //                          compiles. See author.cpp for why the editor does not write the canonical
 //                          form itself.
 //

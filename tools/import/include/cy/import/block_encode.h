@@ -6,11 +6,12 @@
 // WHAT THIS CLOSES, AND WHAT IT DELIBERATELY DOES NOT
 // ================================================================================================
 //
-// `texture.h` has said since M5 that "BC7 and ASTC encoding is a third-party dependency ... and none
-// is integrated at M5. `select_format` therefore names the format the cook WOULD produce, the
-// payload carries uncompressed mips, and the cooked header records both". M11.c's beauty shot is the
-// first content this project ships, and shipping it with `encoded = false` would mean the first
-// textured picture in this engine's history costs four times the memory its own format table claims.
+// `texture.h` has said since M5 that "BC7 and ASTC encoding is a third-party dependency ... and
+// none is integrated at M5. `select_format` therefore names the format the cook WOULD produce, the
+// payload carries uncompressed mips, and the cooked header records both". M11.c's beauty shot is
+// the first content this project ships, and shipping it with `encoded = false` would mean the first
+// textured picture in this engine's history costs four times the memory its own format table
+// claims.
 //
 // So the two desktop formats the artefact needs are encoded here:
 //
@@ -18,13 +19,15 @@
 //   |---|---|---|
 //   | **BC4** | one channel, 8 bytes a block | the full 8-value interpolated mode |
 //   | **BC5** | two channels, 16 bytes a block | two BC4 blocks, red then green |
-//   | **BC7** | four channels, 16 bytes a block | **MODE 6 ONLY** — one partition, RGBA at 7 bits plus a p-bit, 4-bit indices |
+//   | **BC7** | four channels, 16 bytes a block | **MODE 6 ONLY** — one partition, RGBA at 7 bits
+//   plus a p-bit, 4-bit indices |
 //
-// **BC7 mode 6 and not all eight modes, and that is a real limitation rather than a simplification.**
-// Mode 6 is the single-partition, full-alpha mode: one line through RGBA and sixteen steps along it.
-// The line is found by the block's PRINCIPAL AXIS and then least-squares refined against the indices
-// it produced — a bounding box is the wrong line whenever two channels are anti-correlated, which a
-// red-to-green transition is, and `unit.import` keeps that case with both numbers in it.
+// **BC7 mode 6 and not all eight modes, and that is a real limitation rather than a
+// simplification.** Mode 6 is the single-partition, full-alpha mode: one line through RGBA and
+// sixteen steps along it. The line is found by the block's PRINCIPAL AXIS and then least-squares
+// refined against the indices it produced — a bounding box is the wrong line whenever two channels
+// are anti-correlated, which a red-to-green transition is, and `unit.import` keeps that case with
+// both numbers in it.
 //
 // What mode 6 cannot express is THREE OR MORE colour populations, which do not lie on any line;
 // modes 0 through 3's partitions are the answer to those and this encoder has none. The cost is

@@ -63,8 +63,9 @@ private:
 
 /// A canonical Huffman decoder, built from code lengths the way RFC 1951 §3.2.2 specifies.
 ///
-/// Counts and offsets rather than a tree: the table is built in two linear passes and decoding walks
-/// one bit at a time through at most fifteen lengths, which is the whole of DEFLATE's code space.
+/// Counts and offsets rather than a tree: the table is built in two linear passes and decoding
+/// walks one bit at a time through at most fifteen lengths, which is the whole of DEFLATE's code
+/// space.
 class Huffman {
 public:
     static constexpr u32 kMaxBits = 15;
@@ -128,9 +129,9 @@ constexpr u16 kLengthBase[29] = {3,  4,  5,  6,  7,  8,  9,  10, 11,  13,  15,  
                                  31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
 constexpr u8 kLengthExtra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
                                  2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
-constexpr u16 kDistanceBase[30] = {1,    2,    3,    4,    5,    7,     9,     13,    17,   25,
-                                   33,   49,   65,   97,   129,  193,   257,   385,   513,  769,
-                                   1025, 1537, 2049, 3073, 4097, 6145,  8193,  12289, 16385, 24577};
+constexpr u16 kDistanceBase[30] = {1,    2,    3,    4,    5,    7,    9,    13,    17,    25,
+                                   33,   49,   65,   97,   129,  193,  257,  385,   513,   769,
+                                   1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
 constexpr u8 kDistanceExtra[30] = {0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
                                    6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
@@ -159,13 +160,13 @@ void build_fixed_tables(Huffman& literals, Huffman& distances) noexcept {
 /// RFC 1951 §3.2.7: the two tables of a dynamic block, themselves Huffman coded.
 [[nodiscard]] Status read_dynamic_tables(BitReader& reader, Huffman& literals,
                                          Huffman& distances) noexcept {
-    constexpr u8 kOrder[19] = {16, 17, 18, 0, 8,  7, 9,  6, 10, 5,
-                               11, 4,  12, 3, 13, 2, 14, 1, 15};
+    constexpr u8 kOrder[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
     const u32 literal_count = reader.read(5) + 257;
     const u32 distance_count = reader.read(5) + 1;
     const u32 code_length_count = reader.read(4) + 4;
     if (!reader.ok() || literal_count > 286 || distance_count > 30) {
-        return fail(ErrorCode::InvalidArgument, "a DEFLATE block declaring an impossible code count");
+        return fail(ErrorCode::InvalidArgument,
+                    "a DEFLATE block declaring an impossible code count");
     }
 
     u8 code_lengths[19] = {};
@@ -174,7 +175,8 @@ void build_fixed_tables(Huffman& literals, Huffman& distances) noexcept {
     }
     Huffman code_length_table;
     if (!reader.ok() || !code_length_table.build(code_lengths, 19)) {
-        return fail(ErrorCode::InvalidArgument, "a DEFLATE code-length table this build cannot read");
+        return fail(ErrorCode::InvalidArgument,
+                    "a DEFLATE code-length table this build cannot read");
     }
 
     u8 lengths[288 + 30] = {};
@@ -183,7 +185,8 @@ void build_fixed_tables(Huffman& literals, Huffman& distances) noexcept {
     while (written < total) {
         const i32 symbol = code_length_table.decode(reader);
         if (symbol < 0) {
-            return fail(ErrorCode::InvalidArgument, "a DEFLATE code length that is not in its table");
+            return fail(ErrorCode::InvalidArgument,
+                        "a DEFLATE code length that is not in its table");
         }
         if (symbol < 16) {
             lengths[written++] = static_cast<u8>(symbol);
@@ -241,8 +244,8 @@ void build_fixed_tables(Huffman& literals, Huffman& distances) noexcept {
         if (distance_symbol < 0 || distance_symbol >= 30) {
             return fail(ErrorCode::InvalidArgument, "a DEFLATE distance code outside the table");
         }
-        const u32 distance = kDistanceBase[distance_symbol] +
-                             reader.read(kDistanceExtra[distance_symbol]);
+        const u32 distance =
+            kDistanceBase[distance_symbol] + reader.read(kDistanceExtra[distance_symbol]);
         if (!reader.ok() || distance == 0 || distance > out.size()) {
             return fail(ErrorCode::InvalidArgument, "a DEFLATE back-reference before the output");
         }
@@ -266,7 +269,8 @@ void build_fixed_tables(Huffman& literals, Huffman& distances) noexcept {
     (void)reader.read(16);  // The one's complement of the length; the framing is checked by size.
     const Span<const u8> block = reader.take(length);
     if (!reader.ok()) {
-        return fail(ErrorCode::InvalidArgument, "a stored DEFLATE block past the end of the stream");
+        return fail(ErrorCode::InvalidArgument,
+                    "a stored DEFLATE block past the end of the stream");
     }
     return out.append(block);
 }
@@ -547,7 +551,8 @@ Expected<ImageData, Error> decode_png(Span<const u8> bytes) noexcept {
         const u8* type = bytes.data() + cursor + 4;
         const usize body = cursor + 8;
         if (body + length + 4 > bytes.size()) {
-            return fail(ErrorCode::InvalidArgument, "a PNG chunk that runs past the end of the file");
+            return fail(ErrorCode::InvalidArgument,
+                        "a PNG chunk that runs past the end of the file");
         }
         if (std::memcmp(type, "IHDR", 4) == 0) {
             if (length < 13) {
@@ -600,7 +605,8 @@ Expected<ImageData, Error> decode_png(Span<const u8> bytes) noexcept {
     }
     const u32 channels = png_channels(header.colour_type);
     if (channels == 0) {
-        return fail(ErrorCode::InvalidArgument, "a PNG colour type that is not one of 0, 2, 3, 4, 6");
+        return fail(ErrorCode::InvalidArgument,
+                    "a PNG colour type that is not one of 0, 2, 3, 4, 6");
     }
     if (header.bit_depth != 1 && header.bit_depth != 2 && header.bit_depth != 4 &&
         header.bit_depth != 8 && header.bit_depth != 16) {
@@ -847,7 +853,8 @@ struct JpegState {
         const u32 kind = spec >> 4U;
         const u32 slot = spec & 0x0FU;
         if (slot >= 4 || kind > 1) {
-            return fail(ErrorCode::InvalidArgument, "a JPEG Huffman table index this build refuses");
+            return fail(ErrorCode::InvalidArgument,
+                        "a JPEG Huffman table index this build refuses");
         }
         JpegHuffman& table = kind == 0 ? state.dc[slot] : state.ac[slot];
         u32 total = 0;
@@ -939,13 +946,14 @@ struct JpegState {
         }
         const i32 value = extend(bits.read(size), size);
         const u8 position = kZigZag[index];
-        coefficients[position] = static_cast<f32>(value) *
-                                 static_cast<f32>(state.quantisation[component.quantisation][position]);
+        coefficients[position] =
+            static_cast<f32>(value) *
+            static_cast<f32>(state.quantisation[component.quantisation][position]);
         ++index;
     }
 
-    u8* destination = component.plane.data() + (static_cast<usize>(block_y) * 8U *
-                                               component.plane_width) +
+    u8* destination = component.plane.data() +
+                      (static_cast<usize>(block_y) * 8U * component.plane_width) +
                       (static_cast<usize>(block_x) * 8U);
     inverse_dct(coefficients, destination, component.plane_width);
     return bits.ok() ? ok()
@@ -988,10 +996,9 @@ struct JpegState {
                 JpegComponent& component = state.components[index];
                 for (u32 y = 0; y < component.vertical; ++y) {
                     for (u32 x = 0; x < component.horizontal; ++x) {
-                        if (Status decoded =
-                                decode_block(state, component, bits,
-                                             (mcu_x * component.horizontal) + x,
-                                             (mcu_y * component.vertical) + y);
+                        if (Status decoded = decode_block(state, component, bits,
+                                                          (mcu_x * component.horizontal) + x,
+                                                          (mcu_y * component.vertical) + y);
                             !decoded) {
                             return decoded;
                         }
@@ -1024,8 +1031,8 @@ struct JpegState {
                 const u32 source_x = (x * component.horizontal) / state.max_horizontal;
                 const u32 source_y = (y * component.vertical) / state.max_vertical;
                 samples[index] =
-                    component.plane[(static_cast<usize>(source_y) * component.plane_width) +
-                                    source_x];
+                    component
+                        .plane[(static_cast<usize>(source_y) * component.plane_width) + source_x];
             }
             u8* pixel = image.pixels.data() +
                         (((static_cast<usize>(y) * image.width) + x) * image.channels);
@@ -1036,14 +1043,13 @@ struct JpegState {
             const f32 luma = static_cast<f32>(samples[0]);
             const f32 blue = static_cast<f32>(samples[1]) - 128.0F;
             const f32 red = static_cast<f32>(samples[2]) - 128.0F;
-            const f32 channels[3] = {luma + (1.402F * red), luma - (0.344136F * blue) -
-                                                                 (0.714136F * red),
+            const f32 channels[3] = {luma + (1.402F * red),
+                                     luma - (0.344136F * blue) - (0.714136F * red),
                                      luma + (1.772F * blue)};
             for (u32 channel = 0; channel < 3; ++channel) {
-                const f32 clamped =
-                    channels[channel] < 0.0F ? 0.0F
-                                             : (channels[channel] > 255.0F ? 255.0F
-                                                                           : channels[channel]);
+                const f32 clamped = channels[channel] < 0.0F
+                                        ? 0.0F
+                                        : (channels[channel] > 255.0F ? 255.0F : channels[channel]);
                 pixel[channel] = static_cast<u8>(clamped + 0.5F);
             }
         }

@@ -98,9 +98,9 @@ CY_TEST_CASE("texture: a Targa decodes, and the origin bit is honoured") {
 CY_TEST_CASE("texture: a format this build cannot read says which formats it can") {
     // M11.C TASK 6.1B MOVED THIS CASE'S SUBJECT AND THE MOVE IS THE POINT. It used to ask `.png`
     // and assert the refusal named DEFLATE, because the importer read Targa only. PNG and baseline
-    // JPEG are now read — `unit.import`'s codec cases decode a real file of each and compare it with
-    // the formula it was generated from — so the case asks a format that is still absent, and the
-    // refusal is still required to say what IS readable rather than only that this is not.
+    // JPEG are now read — `unit.import`'s codec cases decode a real file of each and compare it
+    // with the formula it was generated from — so the case asks a format that is still absent, and
+    // the refusal is still required to say what IS readable rather than only that this is not.
     const std::vector<u8> nothing(64, 0);
     auto refused = decode_image(cy::Span<const u8>(nothing.data(), nothing.size()), ".webp");
     CY_REQUIRE(!refused.has_value());

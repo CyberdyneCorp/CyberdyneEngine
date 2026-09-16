@@ -13,10 +13,10 @@
 // a licence record and a vendoring cost.
 //
 // Both decoders below are **the read half only** and are deliberately small: DEFLATE with fixed and
-// dynamic Huffman codes, PNG's five filters over 8- and 16-bit greyscale, palette, RGB and RGBA, and
-// BASELINE sequential JPEG — huffman-coded, 8-bit, 4:4:4 through 4:2:0 chroma subsampling. What they
-// do NOT read is stated where it is refused, in the error message, so a file this build cannot open
-// says which feature it used rather than "unsupported".
+// dynamic Huffman codes, PNG's five filters over 8- and 16-bit greyscale, palette, RGB and RGBA,
+// and BASELINE sequential JPEG — huffman-coded, 8-bit, 4:4:4 through 4:2:0 chroma subsampling. What
+// they do NOT read is stated where it is refused, in the error message, so a file this build cannot
+// open says which feature it used rather than "unsupported".
 //
 // NO ENCODER. Nothing here writes PNG or JPEG. `tests/render/golden.cpp` already writes the stored
 // PNG the project's captures use, and a second writer would be a second format.

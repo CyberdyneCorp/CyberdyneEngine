@@ -91,8 +91,8 @@ public:
     }
 
     void wire(NodeKey from, NodeKey to, const char* pin) {
-        good_ = good_ &&
-                graph_.connect(from, Name::intern("out"), to, Name::intern(pin)).has_value();
+        good_ =
+            good_ && graph_.connect(from, Name::intern("out"), to, Name::intern(pin)).has_value();
     }
 
     void mute(NodeKey key) { good_ = good_ && graph_.mute(key, true).has_value(); }
@@ -109,9 +109,9 @@ private:
 ///
 /// Node for node and wart for wart the same material as
 /// `cy::rendering::material::testing::build_reference_graph` — the untouched weight ports, the
-/// pairwise closure sums, the texture dragged in twice, the reversed operand order, the tint left at
-/// one, the muted emission and the orphan. The declarations come out of the nodes themselves, which
-/// is what an editor has: a texture is declared because somebody dropped a sample node on the
+/// pairwise closure sums, the texture dragged in twice, the reversed operand order, the tint left
+/// at one, the muted emission and the orphan. The declarations come out of the nodes themselves,
+/// which is what an editor has: a texture is declared because somebody dropped a sample node on the
 /// canvas, not because a separate list was edited.
 [[nodiscard]] bool author_reference(Canvas& canvas) {
     const u8 components[] = {0, 1, 2};
@@ -246,9 +246,10 @@ private:
 
 CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for op") {
     // THE HALF THE CONTRACT GATE CANNOT CHECK. `play_contract.py` reads the string literals out of
-    // this module and compares them with the editor's; it cannot know whether they are the compiler's
-    // own ops. This does: every `GraphOp` must appear as `"material." + graph_op_name(op)`, so an op
-    // added to the compiler and not to the palette is red here, in the engine's own suite.
+    // this module and compares them with the editor's; it cannot know whether they are the
+    // compiler's own ops. This does: every `GraphOp` must appear as `"material." +
+    // graph_op_name(op)`, so an op added to the compiler and not to the palette is red here, in the
+    // engine's own suite.
     const auto types = material_node_types();
     std::vector<std::string> offered;
     for (const auto& type : types) {
@@ -265,7 +266,8 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
              offered.end());
 }
 
-CY_TEST_CASE("graph_material: an authored canvas lowers to the compiler's own graph, digest for digest") {
+CY_TEST_CASE(
+    "graph_material: an authored canvas lowers to the compiler's own graph, digest for digest") {
     Canvas canvas("worn_metal");
     CY_REQUIRE(author_reference(canvas));
 
@@ -317,8 +319,8 @@ CY_TEST_CASE("graph_material: the canvas, the compiler's graph and the text are 
     CY_REQUIRE(canvas_material.has_value());
     CY_REQUIRE(text_material.has_value());
     // THE REQUIREMENT, RUN. Two authoring paths, one cook key — which is what a cache hit is made
-    // of, so this is also the statement that a material authored in the editor and the same material
-    // written by hand do not cook twice.
+    // of, so this is also the statement that a material authored in the editor and the same
+    // material written by hand do not cook twice.
     CY_CHECK(canvas_material.value().cook_key() == text_material.value().cook_key());
 }
 

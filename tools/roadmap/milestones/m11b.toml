@@ -701,6 +701,16 @@ test "${selected:-0}" -ge 6 || { echo "the encoder cases are not in unit.import 
 '''
 ci_job = "milestone-m11b"
 
+# The mutation cannot be derived — the body runs a suite rather than searching text — so it is
+# DECLARED, and it is the defect in the shape this criterion was written to catch: the encoder stops
+# producing anything and writes the block it was handed unchanged. The cases DECODE what it produced
+# and measure the error, so the peak error goes from 1 of 255 to the whole range and they fail.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/import/src/block_encode.cpp"
+token = "out[0] = static_cast<u8>(red0);"
+note = "BC4's first endpoint is never written into the block, so the decoder reads zero where the encoder chose the maximum and every index resolves against the wrong palette. It still COMPILES and the payload is still the right size — which is the point: a criterion that only counted bytes would stay green. The cases decode what the encoder produced and measure the error against the source, so this is a red about the picture rather than about the build."
+
 # WHAT M11.c DID TO THIS CRITERION, AND WHY IT IS NOT A GAP MARKER. It was RED for a whole rung, named
 # `cy_test_unit_asset_import` — a binary that has never existed — and selected zero of thirty-four
 # cases when pointed at the real suite; M11.b closed over it with no `known_gap`, no
@@ -730,6 +740,15 @@ echo "the filter selected ${selected:-0} case(s) of the 2 it names"
 test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.import any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11b"
+
+# Declared for the same reason, and it is the defect the seven false greens were made of: the decoder
+# stops reading the format and the importer falls through to "this build reads Targa, PNG and baseline
+# JPEG; the extension names none of them". A case that only asked whether a PNG was REFUSED would
+# still pass; these compare every texel against the formula the fixture was generated from.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "tools/import/src/texture.cpp"
+token = "return decode_png(bytes);"
 
 [[criterion]]
 id = "skins-and-animations-import"

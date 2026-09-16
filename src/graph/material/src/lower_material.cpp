@@ -32,8 +32,8 @@ struct NodeSpec {
 };
 
 /// The root. `MaterialGraph` has no output NODE — it has `set_surface_output` and
-/// `set_opacity_output` — so this is the one palette entry that is not a `GraphOp`, and the lowering
-/// turns it into those two calls.
+/// `set_opacity_output` — so this is the one palette entry that is not a `GraphOp`, and the
+/// lowering turns it into those two calls.
 constexpr std::string_view kOutputType = "material.output";
 
 constexpr NodeSpec kPalette[] = {
@@ -66,10 +66,10 @@ constexpr NodeSpec kPalette[] = {
 /// The root's two pins, which are the two setters.
 constexpr std::string_view kOutputPins[] = {"surface", "opacity"};
 
-/// The pin type names. Deliberately two and not a lattice: `cybergraph.h` decision 2 keeps pin types
-/// the domain's business, and this domain has exactly one distinction that matters — a closure is
-/// not a number. The WIDTH of a number is derived by the IR from what is wired into it, so a pin
-/// that called itself `float` would be asserting something the compiler is what decides.
+/// The pin type names. Deliberately two and not a lattice: `cybergraph.h` decision 2 keeps pin
+/// types the domain's business, and this domain has exactly one distinction that matters — a
+/// closure is not a number. The WIDTH of a number is derived by the IR from what is wired into it,
+/// so a pin that called itself `float` would be asserting something the compiler is what decides.
 constexpr std::string_view kValuePin = "value";
 constexpr std::string_view kClosurePin = "closure";
 
@@ -120,10 +120,10 @@ constexpr FlagSpec kFlags[] = {
 
 /// The mapping from an author's node key to the index `MaterialGraph::add` returned.
 ///
-/// A flat array searched linearly: an authored material graph is tens of nodes, and a map would cost
-/// an allocation and an iteration order this lowering must not have — the node order the compiler
-/// sees is the order the author's graph is written in, and `graph.h` is explicit that construction
-/// order must not reach the IR's identity.
+/// A flat array searched linearly: an authored material graph is tens of nodes, and a map would
+/// cost an allocation and an iteration order this lowering must not have — the node order the
+/// compiler sees is the order the author's graph is written in, and `graph.h` is explicit that
+/// construction order must not reach the IR's identity.
 class KeyMap {
 public:
     explicit KeyMap(Allocator& allocator) noexcept : entries_(allocator) {}
@@ -266,7 +266,8 @@ private:
             return out.connect(source, destination, port);
         }
     }
-    return fail(ErrorCode::InvalidArgument, "a wire into a material node on a pin it does not have");
+    return fail(ErrorCode::InvalidArgument,
+                "a wire into a material node on a pin it does not have");
 }
 
 }  // namespace
@@ -309,8 +310,8 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
         return {};
     }
     for (u8 index = 0; index < spec->pin_count; ++index) {
-        const bool closure_input =
-            spec->closure && (spec->op == GraphOp::AddClosures || spec->op == GraphOp::LayerClosures);
+        const bool closure_input = spec->closure && (spec->op == GraphOp::AddClosures ||
+                                                     spec->op == GraphOp::LayerClosures);
         push(spec->pins[index], closure_input ? kClosurePin : kValuePin, PinDirection::Input);
     }
     push("out", spec->closure ? kClosurePin : kValuePin, PinDirection::Output);
@@ -348,8 +349,8 @@ Status lower_material(const Graph& graph, MaterialGraph& out) noexcept {
         const NodeSpec* spec = spec_for(type);
         if (spec == nullptr) {
             // A NODE WHOSE PLUGIN IS MISSING IS PRESERVED VERBATIM (`cybergraph.h` decision 5) in
-            // the AUTHORED graph — but it cannot be lowered, and lowering it as a constant would put
-            // a value into the IR that the author never wrote. The material compiler's own
+            // the AUTHORED graph — but it cannot be lowered, and lowering it as a constant would
+            // put a value into the IR that the author never wrote. The material compiler's own
             // validation reports a graph with no surface output; this refuses earlier and names the
             // type, which is the sentence an author acts on.
             return fail(ErrorCode::InvalidArgument,
