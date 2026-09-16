@@ -515,7 +515,7 @@ TEST_SUITE("render.material_binding") {
         Array<u8> flat_pixels(allocator);
         u8 average[4] = {0, 0, 0, 0};
         u8 same_average[4] = {0, 0, 0, 0};
-        REQUIRE(build_chain(pattern_pixels, mip_levels, false, average));
+        REQUIRE(build_chain(pattern_pixels, mip_levels, true, average));
         REQUIRE(build_chain(flat_pixels, mip_levels, true, same_average));
 
         // --- Upload, which is the path that did not exist under src/ -------------------------
