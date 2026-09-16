@@ -353,3 +353,140 @@ requirement = "Shader compilation service and tiered cache"
 evidence = "test:unit.shader"
 case = "every field the specification names changes the key"
 note = "the requirement enumerates what the cache key must include — the source, the material graph where applicable, the compiler version, the IR version, the target platform, the renderer profile and the feature set — 'so a compiler change invalidates derived data without invalidating authored assets'. The case varies each field in turn and requires the key to move for every one of them."
+
+# --- rendering-post-processing, temporal-rendering, rendering-lighting-and-shadows ------------------
+#
+# M11.c section 3's three rows, and THE COUNT IS ELEVEN OF THIRTY-SIX. That is the finding rather
+# than the shortfall: reading these three specifications requirement by requirement is what the
+# `image-rows-at-complete-grade` criterion exists to force, and most of what is unanswered is
+# unanswered because the thing it asks for IS NOT BUILT — not because nobody wrote the entry.
+#
+# WHAT IS DELIBERATELY ABSENT, named so the next reader does not have to re-derive it:
+#
+#   post  `Ambient occlusion` asks for GTAO computed from depth and normals on a device, a bent
+#         normal, and filtering through the shared denoiser; `unit.render_post` tests the ambient
+#         term's arithmetic and no device pass exists. `Subsurface scattering`, `Motion blur`,
+#         `Temporal upscaling` and `Variable-rate shading` have no implementation at all.
+#         `Anti-aliasing` is the one that matters most to this rung and it is the one with least
+#         behind it: `FramePassKind::Temporal` is declared by every assembled frame and NOTHING IN
+#         THIS TREE RECORDS IT — there is no temporal resolve shader under `src/rendering/` — so
+#         MSAA, TAA, FXAA and SMAA are four names with no pass between them.
+#   temporal  `History resources` asks for render-graph integration and aliasing; `Motion vectors
+#         are derived` asks for skinned, virtual-geometry, mesh-particle and world-space-UI motion
+#         and the suite covers camera and static motion; `Temporal diagnostics` asks for a
+#         VISUALISATION of motion vectors and disocclusion, which does not exist.
+#   lighting  `Light types` asks for mobility classification, `Point and spot shadow projection` for
+#         cube maps with per-face culling, `Shadow rendering optimisation` for proxy meshes and a
+#         depth-only pipeline, `Decals` for GPU-scene residency, and `Stochastic many-light` for
+#         ray-traced or shadow-map visibility on the selected samples. Each is a device path.
+#
+# AND ONE ENTRY THAT CANNOT BE WRITTEN YET. `rendering-post-processing` gains "The chain in the
+# picture is the chain in the frame" in `openspec/changes/implement-m11c-image/specs/`, and
+# `requirements.py` reads `openspec/specs/`, so an entry for it would name a requirement the
+# specification does not yet ask. It is answered by `integration.render_assembly`'s "the frame
+# passes through tone mapping, and says so itself" the moment the delta is synced.
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Chain order and colour space"
+evidence = "test:unit.render_post"
+case = "the chain runs in the order the specification fixes, and never in another"
+note = "the whole requirement is the order and the colour-space boundary, and the case asserts both against the specification's own numbering rather than against a list copied from it — `post_stage_step()` and `post_stage_colour_space()` are what it reads, so a stage that moves fails the assertion instead of being noticed by a reader."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Post-process configuration and volumes"
+evidence = "test:unit.render_post"
+case = "entering a volume interpolates, and the higher priority dominates the overlap"
+note = "the requirement has exactly two scenarios — a blend distance that interpolates rather than switches, and a priority that resolves an overlap with weights normalised across contributors — and this case is both of them."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Performance and quality scaling"
+evidence = "test:unit.render_post"
+case = "a preset's declared costs sum to a number, and fit into a budget by giving ground"
+note = "five levels per stage mapping to concrete parameters, and a DECLARED cost per level so a preset can be assembled against a frame budget. The case builds the medium preset, sums its declared costs at the stated reference resolution, and gives ground until it fits — which is the requirement's own scenario."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "One temporal framework"
+evidence = "test:unit.render_temporal"
+case = "two consumers agree about whether a pixel's history is valid"
+note = "the requirement's second scenario in full: two effects reproject the same pixel and must agree. They agree because neither derives a classification — both call `TemporalFramework::classify`, which is what 'not reimplemented per effect' reduces to in a test."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "Jitter"
+evidence = "test:unit.render_temporal"
+case = "two consumers read one jitter, and neither can apply it"
+note = "'jitter SHALL be applied once, by the framework' — the case registers two consumers, reads the same offset from both, and has nowhere to apply it because `jitter()` is read-only and `jittered_view_projection()` is the framework's. Its sibling `no consumer, no jitter` in the same suite is the requirement's other scenario."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "Reprojection and disocclusion"
+evidence = "test:unit.render_temporal"
+case = "the four history states, and the one that means a consumer may accumulate"
+note = "the requirement names four classifications — valid, disoccluded, out of frame, unrepresentable — and requires consumers to READ the classification rather than each deriving one. The case walks all four out of `classify()` and asserts which single state permits accumulation."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "Determinism and capture"
+evidence = "test:unit.render_temporal"
+case = "pinned, two frameworks driven identically produce identical temporal state"
+note = "the requirement is one sentence — a pinned mode in which jitter follows a fixed sequence from a fixed starting index and history is deterministic — and the case is its scenario: two frameworks, the same inputs, identical state. M11.c's `AssemblyDescription::pin_jitter` is what puts it in a frame, and `samples/10-world` captures pinned."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Physical light units"
+evidence = "test:unit.render_lighting"
+case = "a physically-configured scene exposes without per-light tuning"
+note = "the requirement's own scenario: lux, lumens and nits combined with the camera's aperture, shutter and ISO so a physically-configured scene is correctly exposed with no arbitrary multipliers. `a bulb's lumens become the candela the shader integrates` and `exposure is a photographer's, and the sunny 16 rule lands where it should` in the same suite are the unit conversions under it."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Area light evaluation"
+evidence = "test:integration.render_lighting_reference"
+case = "area reference: the diffuse term matches the numeric integral to within 2%"
+note = "linearly transformed cosines judged against a NUMERIC INTEGRAL rather than against themselves, which is the only form of this claim that can be wrong. The fitted specular table's error is measured beside it in the same suite, and the textured-emitter half is `area: a textured emitter is filtered by roughness and by how much sky it fills` in `unit.render_lighting`."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Shadow atlas allocation"
+evidence = "test:unit.render_lighting"
+case = "an oversubscribed atlas reports the shortfall instead of corrupting a tile"
+note = "the conventional path's tile allocation, its per-frame size selection from projected coverage with hysteresis (`a bigger light gets a bigger tile, and a hysteresis band keeps it`), its retention period and its release are the four cases around this one; the named case is the requirement's hardest sentence — an atlas that cannot fit what was asked reports rather than overlaps."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Directional shadow cascades"
+evidence = "test:unit.render_lighting"
+case = "cascade splits blend the logarithmic and uniform distributions"
+note = "splits from a blend of the two distributions with an artist factor. Stabilisation is the pair beside it — `a cascade's radius does not change when the camera rotates` and `the cascade centre is snapped to whole texels` — and the blended transition is `cascade selection blends at the boundary and fades past the last one`."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Shadow filtering"
+evidence = "test:unit.render_lighting"
+case = "PCSS finds no penumbra when nothing blocks, and widens as the blocker recedes"
+note = "contact hardening stated as the two ends it has to get right: no blocker is no penumbra, and a receding blocker widens the kernel. `the sample count is the specialization constant's, and the tiers differ` beside it is the quality-driven sample count the same requirement asks for."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Light channels"
+evidence = "test:unit.render_lighting"
+case = "channels: a character-only key light is not assigned to world geometry"
+note = "the requirement's own scenario, and it is about WHERE the test happens: the channel mask is resolved during assignment, so the light never reaches the cluster list and costs nothing at shading time. `channels: equal importance breaks on the lowest index, not on iteration order` is the determinism half."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Light culling and limits"
+evidence = "test:unit.render_lighting"
+case = "channels: the bound drops the same lights twice, and says which reason"
+note = "lights over budget dropped DETERMINISTICALLY by importance with the shortfall reported: the case runs the same frame twice and requires the same lights to go, each with the reason it went. `many-light: the limit that is reported is the one that applies` is the stochastic path's half, where the per-cluster bound is replaced by a sample count."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Tonemapping"
+evidence = "test:unit.render_post"
+case = "every operator is bounded, and an HDR display gets its own range"
+note = "the six operators the requirement enumerates, each driven to the ends of its input range and required to stay bounded, and the output transfer function taken from the display rather than assumed — `OutputTarget`'s peak luminance is what separates the SDR and HDR answers. `AgX is the default, and it desaturates a bright light instead of shifting its hue` beside it is the requirement's own scenario and its default. M11.c's `samples/10-world` is the first caller in this tree whose picture actually goes through the curve, and its published manifest names the operator."

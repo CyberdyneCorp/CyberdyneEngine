@@ -20,16 +20,19 @@ same infrastructure, the reflection probes, the offline path tracer, and the GI 
 | `resolve.h` | `combine()` by confidence, `exclusion_for()` (the double-counting rule), the far-field ramp, and `ConvergenceTracker` |
 | `budget.h` | the GI allocation, seven priced lever ladders, the declared reduction order, and importance |
 | `bake.h` | the offline path tracer, ground truth, the reference comparison, and the seeds it leaves in the caches |
+| `signals.h` | `StochasticSignals` — the FIVE stochastic signals `denoising` declares, produced from this system's own tracer and caches and each routed through `denoise::Denoiser`. M11.c task 2.5 |
 | `system.h` | the composition: the named subsystems, wired, and one frame |
 
 ## Five things worth knowing before changing anything here
 
-**The software tier is the path that runs on this machine, and that is a checkable fact rather than
-a choice.** `cy::rhi::Capability::RayTracing` is an enumerator nothing sets — grep
-`src/backends/rhi/vulkan/src/vulkan_instance.cpp` for `capabilities_.set(` and it is not there — so
-`AccelerationService` reports `Unsupported` on every device this engine can open, and layer 4 may
-not name a Vulkan header anyway. The device is not the limit: `vulkaninfo` on the RTX 5060 this was
-written on reports `VK_KHR_ray_query`, and the engine does not ask for it.
+**The software tier is the path that runs here, and that is a checkable fact rather than a choice.**
+It used to be checkable in one line — `cy::rhi::Capability::RayTracing` was an enumerator nothing
+set, so `AccelerationService` reported `Unsupported` on every device this engine could open. **M11.c
+changed that half**: the Vulkan backend asks for `VK_KHR_ray_query` now and the RTX 5060 reports it,
+so a service configured through `rt::service_config_for()` from a real device reports `Available`.
+What did not change is where the rays go: `AccelerationService` still traces `cy::Bvh` on the
+processor, and layer 4 may not name a Vulkan header anyway. A default-constructed service is still
+`Unsupported`, which is what every suite in `tests/` uses and why the numbers below did not move.
 
 The consequence is the default rather than a special case, and `tests/test_fallback.cpp` measures
 what it costs. Over eighty points in a closed room, converged identically, the two tiers differ by
@@ -68,6 +71,24 @@ system's own measured cost and there is no parameter a frame time could arrive t
 requires `permit_relaxation()` from the arbiter. Both halves come from the M7 arbiter spike
 (`design.md` §2.6): a controller that relaxes on its own authority is spending a budget it cannot
 see, and modelling that cost the spike's sweep 57 of 71 loads.
+
+**The denoiser has producers now, and before M11.c it had none.** `denoising` declares five signals
+and gives each its own configuration, and until this rung **nothing in this tree called
+`Denoiser::denoise()` outside the denoiser's own two suites** — this module named `Denoiser` and what
+it did with it was set its quality position from a budget lever. `signals.h` is the fix: one
+stochastic sample per pixel per frame for each of indirect diffuse, indirect specular, ray-traced
+shadows, ambient occlusion and stochastic direct, produced out of the tiered tracer and the surface
+cache, and handed over across the plain-span seam the denoiser declares.
+`Diagnostics::invocations` is the census that makes "which signals have a producer" an observation
+rather than a grep, and `integration.render_gi_signals` reads it.
+
+**The sky term is the atmosphere's, and this module still does not know that.** M11.c joined
+[dependency cycle 2](../../../docs/roadmap/dependencies.md) in a third module —
+`src/rendering/sky_illumination/`, which depends on `cy::rendering-gi` and `cy::rendering-sky` and is
+the only library in the tree that depends on both. What this module gained is `set_sky_term()`, which
+installs a term without paying for `configure()`, and `InvalidationCause::SkyChanged`, which is the
+one cause `service_invalidations` does NOT hand to the distance field — a sun that rotated moved no
+geometry.
 
 ## What is here at Working, and what is not
 

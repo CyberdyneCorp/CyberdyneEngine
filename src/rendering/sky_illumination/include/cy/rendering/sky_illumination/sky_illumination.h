@@ -121,6 +121,28 @@ struct SkyIlluminationSettings {
     /// The observer's altitude above the planet's surface, in metres, for the atmosphere's own
     /// planet-centred frame.
     f32 observer_altitude_metres = 0.0F;
+    /// A multiplier on the fitted term, for a project whose lights are not in physical units.
+    ///
+    /// ONE IS THE PHYSICAL ANSWER AND IT IS THE DEFAULT. This exists because the atmosphere answers
+    /// in LUX — a clear midday sky delivers some tens of thousands of them — and a scene whose lamps
+    /// were authored as "intensity 30" is not in that unit. Mixing the two does not look like a
+    /// bright day; it looks like the sky is the only light in the world.
+    ///
+    /// MEASURED, on `samples/07-fidelity`'s district during M11.c: lighting it through this seam
+    /// with an unscaled physical sky moved its mean indirect luminance from 0.54 to 1905 and its
+    /// convergence metric from 0.846 in ten frames to 0.609 after two thousand, because a probe
+    /// gathering 24 rays a frame across a four-thousand-to-one contrast never settles. Scaling the
+    /// term to the irradiance that shot's own placeholder delivered — an exposure of 0.000345 —
+    /// brought the luminance back to 0.66 and the convergence to 0.842 at the frame cap. **That last
+    /// number is the finding and it is not this setting's**: the shot's target is 0.85 and its
+    /// measured metric sits within half a per cent of it either way, so ANY change to its sky term
+    /// tips it, and re-lighting an M7 artefact is not a thing an exposure lever can make safe.
+    ///
+    /// So the exposure is an explicit, reported decision rather than a number folded into the fit.
+    /// `SkyIlluminationReport::exposure` carries it, and a picture published with an exposure that
+    /// is not one is a picture whose sky is the atmosphere's COLOUR and the project's BRIGHTNESS —
+    /// which is a true sentence and a different one from "lit by a physical sky".
+    f32 exposure = 1.0F;
 };
 
 /// What one update did, and what it cost. The frame diagnostics the requirement asks for.
@@ -134,6 +156,9 @@ struct SkyIlluminationReport {
     /// upward-facing surface. Zero on a reuse. **The number "without a visible step" is measured
     /// with**, and the reason a threshold is a quarter of a degree rather than a taste.
     f32 irradiance_step = 0.0F;
+    /// The exposure the term was scaled by. One is the physical answer; anything else says the
+    /// picture's sky is the atmosphere's colour at the project's brightness. See the settings.
+    f32 exposure = 1.0F;
     /// The fraction of direct sunlight the cloud shadow field reported at the observer. One where
     /// no field is attached, which is also what an unclouded sky reports — `cloud_field_read` is
     /// what tells the two apart.

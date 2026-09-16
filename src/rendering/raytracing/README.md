@@ -13,27 +13,39 @@ budget, and the capability gate.
 | `geometry.h` | `GeometrySource`, `MaintenancePolicy`, `ProxyPolicy`, `BuildInput`, and the six adapters — the specification's adapter table as data |
 | `query.h` | `Availability`, `QueryKind`, `Consumer`, `RayHit`, `RayQuery`. The interface every consumer sees |
 | `acceleration.h` | `AccelerationService`: declare, instance, budget, `update()`, `trace()`, and the diagnostics |
+| `capability.h` | `service_config_for()` and `ray_tracing_refusal()` — the one place an `rhi::DeviceCapabilities` becomes this service's configuration. M11.c task 2.6 |
 
 ## The one thing to read before anything else: where the rays actually go
 
-**This service executes its queries on the CPU**, over the `cy::Bvh` structures it builds. The
-interface is the deliverable and it is what the GI tiers consume as their hardware tier — but the
-device half does not exist at M7, and two checkable facts decide that:
+**This service executes its queries on the CPU**, over the `cy::Bvh` structures it builds. That was
+true at M7 for two reasons and **M11.c closed the first of them**:
 
-* `cy::rhi::Capability::RayTracing` is an enumerator that **nothing sets**. Grep
-  `src/backends/rhi/vulkan/src/vulkan_instance.cpp` for `capabilities_.set(` — every capability the
-  Vulkan backend reports is in that block and `RayTracing` is not among them. So every device this
-  engine can open reports no ray tracing, including the RTX 5060 in the machine this was written on.
+* ~~`cy::rhi::Capability::RayTracing` is an enumerator that nothing sets~~ — **it is set now.** The
+  Vulkan backend observes `VK_KHR_acceleration_structure`, `VK_KHR_ray_query` and
+  `VK_KHR_deferred_host_operations`, asks the device for the `accelerationStructure` and `rayQuery`
+  features, enables them, and records all six answers in `rhi::RayTracingObservation`;
+  `DeviceCapabilities::set_ray_tracing_observation` derives the capability from them. The RTX 5060
+  this was written on reports `RayTracing=1` — `render.ray_tracing_capability` prints the six answers
+  and requires the bit to agree with them, and `unit.rhi` drives the derivation with no device at
+  all. **This is a VULKAN-ONLY claim**: Metal and D3D12 are `rhi-and-render-graph`'s, which is
+  M11.d's row, and the ledger's criterion says so in its own words.
 * `tools/layercheck/layercheck.py`'s `gpuapi` rule allows a Vulkan header only under
-  `src/backends/`. Layer 4 cannot name `VK_KHR_acceleration_structure` even if the RHI grew the API.
+  `src/backends/`. Layer 4 cannot name `VK_KHR_acceleration_structure` even if the RHI grew the API —
+  **and this one still stands**, which is why `capability.h` takes a `rhi::DeviceCapabilities` and
+  not a device.
 
-The consequence is not hidden, it is the default: **on this tree the service is `Unsupported`, and
-every consumer runs its software fallback.** That is the same state the specification requires of a
-device without the extension, which is why `rendering-global-illumination`'s software tier is the
-path that actually runs here and the one `src/rendering/gi/tests/` measures.
+`capability.h` is the second of the "two edits and no interface change" this README has promised
+since M7: `service_config_for()` is the one expression that turns the capability into
+`ServiceConfig::device_supports_ray_tracing`, and `ray_tracing_refusal()` says which of the device's
+six answers stopped it when the capability is false.
 
-A device backend arrives as two edits and no interface change: the RHI reports the capability, and
-`ServiceConfig::device_supports_ray_tracing` is set from it.
+**WHAT HAS NOT CHANGED, AND IT IS THE HALF THAT MATTERS FOR AN IMAGE.** The queries still execute on
+the processor. What the capability decides is whether the service reports `Available` on a device
+that can trace, instead of reporting `Unsupported` on hardware that has the extension; acceleration
+structures built by the driver and ray queries issued from a shader are not in this tree. A default
+`ServiceConfig` still reports `Unsupported`, so every suite that does not ask a device still measures
+the software tier — which is what `src/rendering/gi/tests/test_fallback.cpp` does and why its numbers
+did not move.
 
 ## Four things worth knowing before changing anything here
 
@@ -62,5 +74,7 @@ for and is what is implemented.
 ## What it does not depend on
 
 No device, no render graph, no shader, and no Vulkan header — see above; that is the layer rule
-rather than a simplification. `cy::core-jobs` is linked for one function, the monotonic clock that
+rather than a simplification. It does depend on `cy::rhi` since M11.c, which is the INTERFACE and not
+a device: `capability.h` reads a capability record a backend filled in and cannot open, create or
+submit anything. `cy::core-jobs` is linked for one function, the monotonic clock that
 stamps the top-level rebuild time the diagnostics requirement asks for.

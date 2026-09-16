@@ -29,6 +29,7 @@ here. `atmosphere.h`, `celestial.h` and `sky_light.h` are M7's and their public 
 | `cloud_shadows.h` | the coarse world-scale cloud shadow field, produced into `cy::environment` under one `ProducerToken` | M10 |
 | `composition.h` | planetary scale, stars and background content, aurorae, the filtered radiance map, the composition itself, the sky as a light, and the medium weather publishes into fog | M10 |
 | `profile.h` | environment profiles, per-group transitions, the four named worlds, the quality tiers and the priced ladder | M10 |
+| `budget.h` | the sky's `SubsystemController`: what a frame's march and shadow field COUNTED, a nanoseconds-per-sample learned from a clock, and the cost it reports to `rendering::BudgetArbiter` — the engine's first MEASURED cost, against the hard-coded table in `samples/07-fidelity` | M11.c |
 | `diagnostics.h` | the table and celestial diagnostics, the per-pixel "what determined this", the cost attribution and the debug views | M10 |
 
 ## The measurements, because none of these is a claim

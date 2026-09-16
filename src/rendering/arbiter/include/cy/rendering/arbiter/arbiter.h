@@ -182,15 +182,15 @@ struct ArbiterReport {
 
     f32 allocation_ms[kBudgetSubsystemCount] = {};
     f32 measured_ms[kBudgetSubsystemCount] = {};
-    /// WHAT EACH `measured_ms` ACTUALLY IS. M11.c: "The arbiter's per-frame report SHALL distinguish
-    /// a measured cost from an estimated one, so that a subsystem with no measurement is visible as
-    /// such rather than indistinguishable from one that is cheap."
+    /// WHAT EACH `measured_ms` ACTUALLY IS. M11.c: "The arbiter's per-frame report SHALL
+    /// distinguish a measured cost from an estimated one, so that a subsystem with no measurement
+    /// is visible as such rather than indistinguishable from one that is cheap."
     ///
     /// It is the reporter's claim CONFIRMED BY THE NUMBERS, never the claim alone: a subsystem that
-    /// reports the same cost in every frame is `Estimated` here whichever entry point it used, which
-    /// is the requirement's own "a constant is not a measurement" scenario made mechanical rather
-    /// than asserted. `report_subsystem`'s default is `Estimated`, so a caller that says nothing is
-    /// reported as having said nothing.
+    /// reports the same cost in every frame is `Estimated` here whichever entry point it used,
+    /// which is the requirement's own "a constant is not a measurement" scenario made mechanical
+    /// rather than asserted. `report_subsystem`'s default is `Estimated`, so a caller that says
+    /// nothing is reported as having said nothing.
     CostSource cost_source[kBudgetSubsystemCount] = {};
     bool registered[kBudgetSubsystemCount] = {};
     bool at_minimum[kBudgetSubsystemCount] = {};

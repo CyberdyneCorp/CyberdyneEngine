@@ -140,28 +140,122 @@ stores a record with no pixels, and the RHI's own bindless table is written by
 `bind_texture_globally` and never placed in a pipeline layout or bound in a command buffer. Task 3.7
 below is that work, named rather than discovered.
 
-- [ ] 3.1 **The world and the game are rendered *through* `src/rendering/assembly/`, not beside it.**
+- [x] 3.1 **The world and the game are rendered *through* `src/rendering/assembly/`, not beside it.**
       `samples/10-world/CMakeLists.txt` links `cy::rendering-graph`, `cy::rendering-sky` and
       `cy::rhi` and does **not** link `cy::rendering-assembly`, `cy::rendering-post`,
       `cy::rendering-temporal`, `cy::rendering-forward` or `cy::rendering-shadows`: the largest
       picture this project has published is produced with no tone mapping, no anti-aliasing stage and
       no assembled frame. That is the single edit behind most of this section
-- [ ] 3.2 **The chain in the picture is the chain in the frame**, per the new requirement in
+      - [x] **Done, and it was not one edit.** `samples/10-world` links `cy::rendering-assembly` and
+        `cy::rendering-pipeline` (which brings the other seven with them), and `Stage::create_frame`
+        builds the frame: the post chain decides the feature set, the temporal framework advances a
+        PINNED jitter, the shadow cache spends the sun's budget, the sky table updates, and
+        `cy/fullscreen.slang`'s tonemapping resolve turns linear HDR scene colour into the image
+        that is written out at the exposure `frame.cypost` commits. The world's own geometry records
+        into the frame's OPAQUE stage through `FrameSinks::passes` — the seam `ForwardFrame`
+        documents — because it is not in a mesh table. **0 Vulkan validation errors**, and two runs
+        at one seed still draw the byte-identical still, so `m10:world-still` holds
+      - [x] **One assembly change was needed and it is named rather than hidden**:
+        `AssemblyDescription::depth_prepass`. A caller whose geometry is not in the frame's draw list
+        leaves the declared prepass recording nothing, and the opaque pass's `LoadOp::Clear` on a
+        depth target the graph barriered for a READER is a write-after-write the synchronisation
+        validator reported three times a frame. `ForwardFrame` already derives the right access from
+        the flag (`frame.cpp:246`); what was missing was a way for a caller to say so
+      - [x] **The game half was already true**: `samples/08-vertical-slice` links
+        `cy::rendering-assembly`, and has since M8.b
+      - [ ] **NOT anti-aliasing, and this is the honest half.** `FramePassKind::Temporal` is declared
+        by every assembled frame and **nothing in this tree records it** — there is no temporal
+        resolve shader under `src/rendering/` at all. Switching `temporal_antialiasing` on would put
+        a stage in the manifest that no pass ran, which is the exact dishonesty task 3.2's mechanism
+        exists to detect. The chain this frame runs is exposure, tone mapping and output encoding,
+        and every README, header and printed report in the sample says three
+- [x] 3.2 **The chain in the picture is the chain in the frame**, per the new requirement in
       `specs/rendering-post-processing/`: a published still is accompanied by the stage list the
       frame actually ran, emitted by the frame rather than typed into a caption. A still whose
       manifest omits tone mapping while its caption claims it is a failure of the gate, not a matter
       of taste
-- [ ] 3.3 Exposure, tone mapping and colour grading **tuned against the shot**, with the values
+      - [x] `src/rendering/assembly/include/cy/rendering/assembly/capture_manifest.h` is that
+        mechanism. `capture_manifest()` builds the list from `AssemblyReport::post_stage[]` — the
+        array `build_post_chain` wrote, in the order it wrote it — and never from the
+        `AssemblyDescription`, because the description is what the project ASKED FOR and the report
+        is what the frame DID. It REFUSES a frame that never executed, and refuses a PUBLICATION
+        capture taken while the budget arbiter was free to degrade the frame, which is the
+        requirement's third scenario turned into a mechanism rather than a rule
+      - [x] `check_caption()` is the checkable half: a caption is English, so the match is over the
+        prose a caption uses — "tone mapping", "anti-aliasing", "depth of field" — and a caption
+        naming a stage the frame did not run is REFUSED NAMING THE STAGE
+      - [x] `samples/10-world` writes `<still>.manifest.txt` beside every still it publishes and
+        prints the chain it ran in its own report. Checked by `integration.render_assembly`'s two
+        new cases, which `m11c:frame-passes-through-post` runs
+- [x] 3.3 Exposure, tone mapping and colour grading **tuned against the shot**, with the values
       committed as content rather than as constants in a sample's `main`
+      - [x] `samples/10-world/frame.cypost` is that content and `Stage::read_grade` reads it.
+        A MISSING FILE IS AN ERROR rather than a default: a shot that silently fell back to zero
+        stops would be an ungraded shot published as a graded one. Tuned by sweeping the committed
+        take at -1.0, 0.0, 0.35, 1.0 and 2.0 stops and comparing the stills
+      - [ ] **Colour grading is NOT applied, and the file says so.** `cy/fullscreen.slang`'s resolve
+        runs exposure and the tonemap curve and nothing else, so `contrast` and `saturation` are read
+        and recorded and do not reach the picture. They are kept rather than dropped so that the
+        grade a person authors and the grade the frame runs stay visibly different — and the
+        manifest, which lists three stages and no `ColourGrading`, is where that is read off
 - [ ] 3.4 Anti-aliasing in the frame: the temporal path with jitter, motion vectors derived rather
       than authored, and the invalidation events that stop a moving sun from smearing a history.
       `temporal-rendering`'s determinism-and-capture requirement is the one that makes the artefact
       reproducible, and it is the one a beauty shot is most tempted to skip
+      - [x] **Determinism and capture is done, and it is the half the task says a beauty shot skips.**
+        `AssemblyDescription::pin_jitter`/`pinned_jitter_index` put `temporal-rendering`'s pinned
+        mode in a FRAME rather than leaving it a method a caller has to remember; the assembly
+        reports the jitter, its index, whether it is pinned and the cause of the last invalidation;
+        the capture manifest publishes all of it; and `samples/10-world` captures pinned, which is
+        why two runs at one seed still draw the byte-identical still
+      - [x] **The invalidation that stops a moving sun smearing is built, and it is the SHADOW
+        cache's rather than the temporal framework's.** `temporal-rendering` enumerates six
+        invalidation causes and a moving sun is none of them — a slowly moving key light is exactly
+        what a neighbourhood clamp is for — but a moving sun DOES invalidate cached shadow pages,
+        and `invalidate_light` had no caller outside its own suite. `FrameAssembly` now compares
+        each shadow-casting light's pose against the previous frame's, past a tenth of a degree,
+        and reports `shadow_pages_invalidated` and `shadow_lights_moved`
+      - [ ] **Anti-aliasing itself is NOT in the frame, and nothing in this tree can put it there.**
+        The frame declares `FramePassKind::Temporal` and no module records it: there is no temporal
+        resolve shader under `src/rendering/`, `cy::rendering-pipeline` attaches no callback to that
+        stage, and `FrameRecorder::sinks()` names five stages and not that one. Motion vectors are
+        DERIVED (`TemporalFramework::surface_motion`) and the prepass allocates the velocity target
+        when a temporal stage is in the chain — the structure is there and the resolve is not. **A
+        rung that wants the word "anti-aliased" in a caption owes that shader**, and until then a
+        frame that enabled the stage would publish a manifest naming a pass that never ran
 - [ ] 3.5 `rendering-lighting-and-shadows` finished against the assembled frame rather than against
       its own suite: shadow modes selected per light, the fallback chain exercised, and the
       `Approximation` rung reached by the caller that knows whether a trace is available this frame
+      - [x] **The three mechanisms are built and they are in the assembled frame.**
+        `src/rendering/shadows/include/cy/rendering/shadows/mode.h` is the selection: `ShadowMode`
+        has had six enumerators, a name function and **no caller that chose one** since M7, against a
+        requirement whose second sentence is "WHEN a device cannot support virtual shadows THEN the
+        light SHALL fall back to its conventional mode with a diagnostic, NOT LOSE ITS SHADOW".
+        `FrameAssembly::request_shadow_pages` now selects a mode per light against
+        `AssemblyView::shadow_profile`, walks `resolve_shadow_lookup` for every page it asks for into
+        `AssemblyReport::shadow_substitutions`, and reaches the `Approximation` rung only when the
+        CALLER says a trace is available this frame. And `invalidate_light` — which nothing outside
+        its own suite called — is now called when a shadow-casting light MOVES, which is what stops
+        a moving sun leaving its shadows where it was. Checked by `unit.render_shadows`' six new
+        cases
+      - [ ] **The ROW is not finished.** `just quality-requirements rendering-lighting-and-shadows`
+        reads 7 of 13 answered: `Light types` wants a mobility classification, `Point and spot shadow
+        projection` cube maps with per-face culling, `Shadow rendering optimisation` proxy meshes and
+        a depth-only pipeline, `Decals` GPU-scene residency, and `Stochastic many-light` ray-traced
+        or shadow-map visibility for the selected samples. Each is a device path and none of them is
+        this section's to invent
 - [ ] 3.6 **Nothing here is judged until M11.a's budget is real.** A frame tuned at 122 ms is not a
       tuned frame — design.md §5
+      - [ ] **Measured, and the number did not move because this section does not touch that path.**
+        `m10:world-frame-budget` runs `cy_sample_world --headless`, which opens no device at all, so
+        the assembled frame this section put into the sample is not inside the number the gap is
+        declared at. Re-measured on this host at 0x5EED over the same 64-frame take with section 3's
+        changes in: 111.85 ms best, 145.14 ms mean, 291.56 ms worst — worse than the 110.2/128.3 the
+        gap declares, and the difference is three other agents' builds on this machine rather than
+        anything here. **On the DEVICE path the frame now costs about 19-24 ms of submit** at
+        960x540 against roughly 16 ms before, which is the resolve pass and the frame's own
+        declarations; `producers_ms` is ~300 ms in the same rows and is where the budget actually
+        goes. The gap stays M11.a's and stays open
 - [ ] 3.7 **A material texture reaches the frame, which today nothing does.** Three pieces the spike
       measured as absent and one it measured as possible: a material texture binding in
       `cy/frame.slang` at the set and binding `cy/material.slang` already declares (set 0, binding 1

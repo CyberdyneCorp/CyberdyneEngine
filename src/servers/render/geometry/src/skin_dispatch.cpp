@@ -269,9 +269,9 @@ struct DualBlend {
 /// Accumulate the blended DUAL QUATERNION for one vertex, and its weight sum.
 ///
 /// LINEAR BLENDING OF DUAL QUATERNIONS, followed by one normalisation — DLB, not the iterative
-/// ScLERP. It is what a shader can afford and what every engine ships; the difference from the exact
-/// screw interpolation is below the octahedral encoding's own quantum for the angles a joint bends
-/// through.
+/// ScLERP. It is what a shader can afford and what every engine ships; the difference from the
+/// exact screw interpolation is below the octahedral encoding's own quantum for the angles a joint
+/// bends through.
 ///
 /// THE SIGN FIX IS NOT OPTIONAL AND IT IS WHY THIS IS NOT A COPY OF `accumulate_blend`. `q` and
 /// `-q` are the same rotation and the blend of the two is ZERO, so a rig whose two influencing
@@ -347,13 +347,13 @@ void accumulate_dual_blend(Span<const GpuBoneDualQuaternion> bones,
 [[nodiscard]] Vec3 dual_translation(const DualBlend& blend) noexcept {
     const Vec3 real_axis{blend.real[0], blend.real[1], blend.real[2]};
     const Vec3 dual_axis{blend.dual[0], blend.dual[1], blend.dual[2]};
-    const Vec3 combined = (dual_axis * blend.real[3]) - (real_axis * blend.dual[3]) +
-                          cross(real_axis, dual_axis);
+    const Vec3 combined =
+        (dual_axis * blend.real[3]) - (real_axis * blend.dual[3]) + cross(real_axis, dual_axis);
     return combined * 2.0F;
 }
 
-/// Scale, rotate, translate — the order a `model * inverse_bind` matrix applies them in, so that the
-/// two methods agree on a rigid pose rather than differing by where the scale went.
+/// Scale, rotate, translate — the order a `model * inverse_bind` matrix applies them in, so that
+/// the two methods agree on a rigid pose rather than differing by where the scale went.
 [[nodiscard]] Vec3 dual_apply(const DualBlend& blend, Vec3 position) noexcept {
     return dual_rotate(blend, position * blend.scale) + dual_translation(blend);
 }
@@ -518,8 +518,8 @@ namespace {
 
 /// Re-encode one vertex's skinned frame from two already-rotated directions.
 ///
-/// THE BITANGENT SIGN IS THE INPUT'S. A skin rotates a frame and a blend shape moves it; neither can
-/// mirror it, and re-deriving the sign from the rotated pair would turn a numerical wobble at a
+/// THE BITANGENT SIGN IS THE INPUT'S. A skin rotates a frame and a blend shape moves it; neither
+/// can mirror it, and re-deriving the sign from the rotated pair would turn a numerical wobble at a
 /// degenerate vertex into a flipped normal map.
 void write_frame(Vec3 normal, Vec3 tangent, const PackedNormalTangent& packed,
                  PackedNormalTangent& out) noexcept {
@@ -592,8 +592,8 @@ Status cpu_reference_skin(const GpuSkinConstants& constants, const SkinInputs& i
         // apply and no weight to blend, the frame's two words are the input's two words rather than
         // a decode and a re-encode of them. Octahedral encoding is not a round trip — re-encoding a
         // decoded pair moves the last bit at a great many directions — so a dispatch that decoded
-        // and re-encoded here would differ from the input by one unit on vertices nothing moved, and
-        // `tests/test_skin_pass.cpp` compares buffers rather than tolerances.
+        // and re-encoded here would differ from the input by one unit on vertices nothing moved,
+        // and `tests/test_skin_pass.cpp` compares buffers rather than tolerances.
         if (!shapes) {
             const GpuSkinInfluence* influence =
                 inputs.influences.data() + (static_cast<usize>(in_index) * blocks);

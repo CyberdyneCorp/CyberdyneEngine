@@ -28,8 +28,7 @@ inline constexpr f32 kUnitCostAlpha = 0.25F;
     // steady_clock, never system_clock: a duration measured against a clock the user can set
     // backwards is not a duration. The same choice `src/core/jobs/src/types.cpp` records.
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
-    return static_cast<u64>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
 }
 
 }  // namespace
@@ -93,9 +92,10 @@ void SkyBudget::observe(const SkyWorkload& work, u64 elapsed_nanoseconds) noexce
 
     if (samples > 0 && elapsed_nanoseconds > 0) {
         const f32 unit = static_cast<f32>(elapsed_nanoseconds) / static_cast<f32>(samples);
-        stats_.unit_cost_ns = stats_.unit_cost_ns > 0.0F
-                                  ? stats_.unit_cost_ns + (kUnitCostAlpha * (unit - stats_.unit_cost_ns))
-                                  : unit;
+        stats_.unit_cost_ns =
+            stats_.unit_cost_ns > 0.0F
+                ? stats_.unit_cost_ns + (kUnitCostAlpha * (unit - stats_.unit_cost_ns))
+                : unit;
     }
 
     if (stats_.unit_cost_ns <= 0.0F) {

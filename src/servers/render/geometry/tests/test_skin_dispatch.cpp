@@ -365,7 +365,8 @@ CY_TEST_CASE("skin dispatch: what the dispatch still refuses, now that it refuse
     // in a second entry point.
     SkinningDescriptor dual = elbow_descriptor(1);
     dual.method = SkinningMethod::DualQuaternion;
-    const cy::Expected<GpuSkinConstants, cy::Error> accepted = make_skin_constants(dual, true, 0, 0);
+    const cy::Expected<GpuSkinConstants, cy::Error> accepted =
+        make_skin_constants(dual, true, 0, 0);
     CY_REQUIRE(accepted.has_value());
     CY_CHECK((accepted->flags & kSkinDualQuaternion) != 0U);
     CY_CHECK((make_skin_constants(elbow_descriptor(1), true, 0, 0)->flags & kSkinDualQuaternion) ==

@@ -223,8 +223,8 @@ public:
 
     /// The subsystem's own measured cost. There is no frame-time equivalent, on purpose.
     ///
-    /// "MEASURED" IS A CLAIM AND `cost_source()` IS THE VERDICT. Calling this does not make a cost a
-    /// measurement; a caller that hands the same number in every frame is reported `Estimated` by
+    /// "MEASURED" IS A CLAIM AND `cost_source()` IS THE VERDICT. Calling this does not make a cost
+    /// a measurement; a caller that hands the same number in every frame is reported `Estimated` by
     /// `cost_source()` however it arrived here.
     void report_measured_ms(f32 measured_ms) noexcept;
 

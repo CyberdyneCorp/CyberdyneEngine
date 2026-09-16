@@ -122,8 +122,8 @@ struct Diagnostics {
 class AccelerationService {
 public:
     struct ServiceConfig {
-        /// What the device reports. `cy::rhi::Capability::RayTracing` today — see query.h on why
-        /// that is false on every device this engine can open.
+        /// What the device reports. `cy::rhi::Capability::RayTracing`, and `capability.h`'s
+        /// `service_config_for()` is the one expression that sets it from a device — see query.h.
         bool device_supports_ray_tracing = false;
         /// What the renderer profile asked for. False on capable hardware is the case the
         /// specification requires to behave exactly like absent hardware.

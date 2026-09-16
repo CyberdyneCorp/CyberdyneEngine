@@ -54,11 +54,36 @@ them**, once, in an order, and hands the result to `GraphExecutor`.
 gate's complaint — they link each other, and adding them here before a consumer needs them would be
 the same mistake in the other direction.
 
+## What the frame says it did — `capture_manifest.h`, M11.c task 3.2
+
+`rendering-post-processing` fixes the chain's order and its colour space and **nothing in it
+constrains what a published picture actually ran**. The largest capture this project publishes came
+out of a target that linked neither the post chain nor this module, so a caption claiming tone
+mapping would have been wrong with nothing able to say so.
+
+`capture_manifest()` is the frame emitting its own stage list. It reads `AssemblyReport::post_stage[]`
+— the array `build_post_chain` wrote, in the order it wrote it — and never the `AssemblyDescription`,
+because the description is what the project ASKED FOR and the report is what the frame DID. It
+refuses a frame that never executed, and refuses a **publication** capture taken while the budget
+arbiter was free to degrade the frame. `check_caption()` compares a caption's English against it and
+fails NAMING the stage the caption claimed and the frame did not run.
+
+## What a light's shadow mode ended up being — M11.c task 3.5
+
+`request_shadow_pages` now selects a `ShadowMode` per light through
+`cy::rendering::select_shadow_mode`, against the profile the caller declares in
+`AssemblyView::shadow_profile`; walks `resolve_shadow_lookup` for every page it asks for into
+`AssemblyReport::shadow_substitutions`, so "the system SHALL degrade along a defined chain" is a
+number rather than a function nothing called; and reaches the `Approximation` rung only when the
+CALLER says a trace is available this frame. A shadow-casting light that MOVED since the last frame
+dirties its own pages through `invalidate_light` before any page is requested — which is what stops
+a moving sun leaving its shadows where it was.
+
 ## The suites
 
 | Suite | Kind | What it proves |
 |---|---|---|
-| `integration.render_assembly` | integration | one frame produces a number from each of the eight; every draw's material slot is checked against the material table and a draw past its end is counted; an authored `MeshRenderer` becomes a draw naming its mesh; the frame executes on the null backend |
+| `integration.render_assembly` | integration | one frame produces a number from each of the eight; every draw's material slot is checked against the material table and a draw past its end is counted; an authored `MeshRenderer` becomes a draw naming its mesh; the frame executes on the null backend; and — M11.c — the frame passes through tone mapping and through anti-aliasing, each asserted against the SAME frame assembled without it, with the caption checked against the manifest in both directions |
 | `render.assembly` | render | the same frame on Vulkan with validation and synchronisation validation on; the cull dispatch and the virtual-texture resolve run inside the frame's own graph; sixteen loaded frames and then a teardown with the device still busy |
 
 The integration suite is `integration` and not `unit` deliberately: every case builds a world, a

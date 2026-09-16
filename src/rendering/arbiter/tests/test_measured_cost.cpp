@@ -97,7 +97,8 @@ inline constexpr u64 kNanosecondsPerSample = 12;
 }  // namespace
 
 CY_TEST_CASE(
-    "the arbiter is fed measured costs by a controller outside a sample, and a constant is not one") {
+    "the arbiter is fed measured costs by a controller outside a sample, and a constant is not "
+    "one") {
     BudgetArbiter arbiter;
     CY_REQUIRE(arbiter.configure(ArbiterConfig{}));
 
@@ -126,8 +127,8 @@ CY_TEST_CASE(
     sky.observe(large, elapsed_for(large));
     const f32 dear_ms = sky.cost_ms();
     CY_TEST_MESSAGE("measured cost: ", small.samples(), " samples -> ", cheap_ms, " ms, ",
-                    large.samples(), " samples -> ", dear_ms, " ms, unit ", sky.stats().unit_cost_ns,
-                    " ns/sample");
+                    large.samples(), " samples -> ", dear_ms, " ms, unit ",
+                    sky.stats().unit_cost_ns, " ns/sample");
     CY_CHECK_GT(cheap_ms, 0.0F);
     CY_CHECK_GT(dear_ms, cheap_ms);
 
@@ -232,8 +233,8 @@ CY_TEST_CASE("the arbiter is fed measured costs and the allocation responds to t
 
     CY_TEST_MESSAGE("allocation follows the measurement: a 2 ns/sample machine measured ",
                     cheap_cost, " ms and holds ", cheap_allocation, " ms at position ",
-                    cheap_position, "; an 8 ns/sample machine measured ", dear_cost, " ms and holds ",
-                    dear_allocation, " ms at position ", dear_position);
+                    cheap_position, "; an 8 ns/sample machine measured ", dear_cost,
+                    " ms and holds ", dear_allocation, " ms at position ", dear_position);
     // The measurement differs, so the allocation differs. Neither number is asserted against a
     // constant: what is asserted is that they are not the same number, which is the only thing a
     // control loop fed a declaration could not produce.
@@ -269,7 +270,8 @@ CY_TEST_CASE("the arbiter is fed measured costs taken from a clock rather than f
     CY_CHECK_EQ(sky.stats().unpriced, unpriced_before + 1U);
 }
 
-CY_TEST_CASE("the arbiter is fed measured costs and pinning stops the arbiter and the sky together") {
+CY_TEST_CASE(
+    "the arbiter is fed measured costs and pinning stops the arbiter and the sky together") {
     // `rendering-architecture`: "A pinned mode SHALL disable the arbiter and every subsystem
     // controller together ... Partial pinning SHALL NOT be possible." The sky takes its pinned
     // state from the arbiter's report and from nowhere else, so a pinned arbiter and a moving sky

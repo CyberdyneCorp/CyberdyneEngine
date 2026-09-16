@@ -57,11 +57,11 @@
 // WHAT IT REFUSES
 // ================================================================================================
 //
-// Everything `make_skin_constants` refuses: a baked tier, an active blend shape list longer than the
-// mesh authors, and every rule `SkinningDescriptor::validate()` already carries — plus, here, a pose
-// or a shape set larger than the pass was sized for and a delta range that runs past the end of the
-// array it was given. The refusals are by name and at `upload()`, not at `declare()`, so a caller
-// learns before a command buffer exists.
+// Everything `make_skin_constants` refuses: a baked tier, an active blend shape list longer than
+// the mesh authors, and every rule `SkinningDescriptor::validate()` already carries — plus, here, a
+// pose or a shape set larger than the pass was sized for and a delta range that runs past the end
+// of the array it was given. The refusals are by name and at `upload()`, not at `declare()`, so a
+// caller learns before a command buffer exists.
 //
 // UNTIL M11.c THE LIST BEGAN WITH DUAL QUATERNION SKINNING AND BLEND SHAPES. Both are implemented —
 // `kSkinDualQuaternion` in the flags and `active_blend_shapes` in the constant block — and the

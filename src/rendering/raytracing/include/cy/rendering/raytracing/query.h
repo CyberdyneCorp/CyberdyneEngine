@@ -24,17 +24,20 @@
 // and it is what `rendering-global-illumination` consumes as its hardware tier — but it IS a
 // stand-in for the device.  Two facts decide it and both are checkable:
 //
-//   * `cy::rhi` has `Capability::RayTracing` as an enumerator and NOTHING sets it. The Vulkan
-//     backend's capability block (src/backends/rhi/vulkan/src/vulkan_instance.cpp) never mentions
-//     it, so `device_supports_ray_tracing` is false on every device this engine can open today,
-//     including the one in this machine.
+//   * `cy::rhi` HAD `Capability::RayTracing` as an enumerator NOTHING SET, from M3 until M11.c. It
+//     is set now — the Vulkan backend observes the three extensions and the two features and
+//     `DeviceCapabilities::set_ray_tracing_observation` derives the bit — so on a device that can
+//     trace, `capability.h`'s `service_config_for()` produces a config with
+//     `device_supports_ray_tracing` true and this service reports `Available`. It is a VULKAN-ONLY
+//     claim; every other backend still reports false. **What did not change is where the rays go:**
+//     they are still traced over `cy::Bvh` on the processor.
 //   * layer 4 may not name a Vulkan header (tools/layercheck/layercheck.py, the `gpuapi` rule), so
 //     `VK_KHR_acceleration_structure` cannot be reached from here even if the RHI grew the API.
 //
-// The consequence is stated rather than hidden: on this tree the ray tracing service is INACTIVE by
-// default, exactly as it would be on a device without the extension, and every consumer runs its
-// software fallback. `ServiceConfig::device_supports_ray_tracing` is what a device backend would
-// set, and setting it by hand is how the tests exercise the active path.
+// The consequence is stated rather than hidden: a DEFAULT-CONSTRUCTED service is INACTIVE, exactly
+// as it would be on a device without the extension, and every consumer of one runs its software
+// fallback. `ServiceConfig::device_supports_ray_tracing` is what `capability.h` sets from a device,
+// and setting it by hand is how the tests exercise the active path without opening one.
 
 #include <cy/core/base/types.h>
 #include <cy/core/math/shapes.h>

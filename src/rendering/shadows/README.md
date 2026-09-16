@@ -117,3 +117,29 @@ on every load, never settles over budget, reaches its minimum without disappeari
 authored quality when the load goes away. It does **not** certify that the declared relative costs
 describe a real shadow pass; that needs a device and a measured pass, and it is stated here as a
 limit rather than implied away.
+
+## Which mode a light actually gets — `mode.h`, M11.c task 3.5
+
+`virtual-shadows`' "Shadow modes" requirement is two sentences and until M11.c **neither had an
+implementation**: `ShadowMode` had six enumerators and `shadow_mode_name()` beside it, and a search
+of the tree for the type found the switch that names them and nothing else. No light declared one,
+no profile constrained one, and no frame selected one.
+
+`select_shadow_mode()` is the second sentence made into a function —
+
+> WHEN a device cannot support virtual shadows THEN the light SHALL fall back to its conventional
+> mode with a diagnostic, **not lose its shadow**
+
+— and `ShadowModeProfile` is the first. It is pure: the profile is an argument rather than a query,
+because `traced` moves frame to frame (`ray-tracing-infrastructure` answers on the processor while
+`cy::rhi::Capability::RayTracing` is unset, which on this tree is every device) and a function that
+asked a device for itself would give a different answer inside a test than in a frame.
+
+The one direction that matters is the last: a profile with nothing left reports
+`ShadowModeFallback::NothingAvailable` **by name** rather than quietly returning `None`, because a
+light that silently stopped casting is the defect and not the report. `unit.render_shadows`'
+`a profile with nothing left reports losing the shadow rather than returning None` is that case.
+
+`cy::rendering::assembly::FrameAssembly` is the caller: it selects a mode per light, spends page
+budget only on the modes that allocate pages, and walks `resolve_shadow_lookup` for each page it
+asks for so the fallback chain is exercised by a frame rather than by a suite.

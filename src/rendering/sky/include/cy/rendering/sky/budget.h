@@ -46,8 +46,8 @@
 //     `sky_quality_ladder()`'s own note that its prices "are the engine's defaults and not
 //     measurements of any particular machine".
 //
-// The unit cost is learned from the clock, so nothing here is a constant; the count is this frame's,
-// so the reported cost moves when the sky's work moves. THAT MOVEMENT IS WHAT MAKES IT A
+// The unit cost is learned from the clock, so nothing here is a constant; the count is this
+// frame's, so the reported cost moves when the sky's work moves. THAT MOVEMENT IS WHAT MAKES IT A
 // MEASUREMENT AND `rendering::CostSource` IS WHERE IT IS JUDGED: a controller that reported the
 // same number every frame would be reported `Estimated` by the arbiter however it arrived there.
 //
@@ -60,9 +60,9 @@
 // and the renderer folds it into an allocation. The engine folds it into
 // `BudgetSubsystem::PostProcessing` because the sky's expensive half is the volumetric cloud march,
 // a screen-space integration through the froxel volume `rendering-post-processing` owns and that
-// `src/rendering/sky/CMakeLists.txt` already records this module as sharing rather than duplicating.
-// A project that draws its clouds somewhere else passes a different subsystem; `declare()` takes it
-// as an argument for that reason and not as a matter of taste.
+// `src/rendering/sky/CMakeLists.txt` already records this module as sharing rather than
+// duplicating. A project that draws its clouds somewhere else passes a different subsystem;
+// `declare()` takes it as an argument for that reason and not as a matter of taste.
 
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
@@ -112,8 +112,8 @@ struct SkyBudgetStats {
 /// The sky's controller.
 ///
 /// It holds a `rendering::SubsystemController` — the engine's one control loop, not a second one —
-/// and adds the two things that loop cannot supply for itself: an observation of the sky's own work,
-/// and the map from a ladder position to a `SkyQualityTier`.
+/// and adds the two things that loop cannot supply for itself: an observation of the sky's own
+/// work, and the map from a ladder position to a `SkyQualityTier`.
 class SkyBudget {
 public:
     SkyBudget() noexcept = default;
@@ -143,8 +143,8 @@ public:
 
     /// Take the arbiter's answer: the allocation, the relax grant, and the pinned state.
     ///
-    /// PINNING COMES THROUGH HERE AND NOWHERE ELSE, which is what makes "a pinned mode SHALL disable
-    /// the arbiter and every subsystem controller together ... partial pinning SHALL NOT be
+    /// PINNING COMES THROUGH HERE AND NOWHERE ELSE, which is what makes "a pinned mode SHALL
+    /// disable the arbiter and every subsystem controller together ... partial pinning SHALL NOT be
     /// possible" true of the sky by construction rather than by a caller remembering.
     [[nodiscard]] SubsystemUpdate apply(const ArbiterReport& report) noexcept;
 

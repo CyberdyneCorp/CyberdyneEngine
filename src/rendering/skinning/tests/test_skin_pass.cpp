@@ -275,10 +275,10 @@ void compare_frame_directions(Span<const PackedNormalTangent> expected,
     for (u32 index = 0; index < count; ++index) {
         const PackedNormalTangent& want = expected[first + index];
         const PackedNormalTangent& have = got[first + index];
-        worst = std::fmax(worst, difference(cy::render::unpack_normal(want),
-                                            cy::render::unpack_normal(have)));
-        worst = std::fmax(worst, difference(cy::render::unpack_tangent(want),
-                                            cy::render::unpack_tangent(have)));
+        worst = std::fmax(
+            worst, difference(cy::render::unpack_normal(want), cy::render::unpack_normal(have)));
+        worst = std::fmax(
+            worst, difference(cy::render::unpack_tangent(want), cy::render::unpack_tangent(have)));
         CY_CHECK(cy::render::unpack_bitangent_sign(want) ==
                  cy::render::unpack_bitangent_sign(have));
     }
@@ -537,10 +537,10 @@ CY_TEST_CASE(
     // here rather than read past on the device, where the read is undefined behaviour and there is
     // no diagnostic to return.
     const cy::render::geometry::GpuActiveBlendShape overrun[1] = {{0, 4, 1.0F, 0}};
-    CY_CHECK(!pass.upload_blend_shapes(
-                      Span<const cy::render::geometry::BlendShapeDelta>(),
-                      Span<const cy::render::geometry::GpuActiveBlendShape>(overrun, 1))
-                  .has_value());
+    CY_CHECK(
+        !pass.upload_blend_shapes(Span<const cy::render::geometry::BlendShapeDelta>(),
+                                  Span<const cy::render::geometry::GpuActiveBlendShape>(overrun, 1))
+             .has_value());
 
     // A pose that does not reach the skin's slice.
     SkinningDescriptor offset = descriptor;
@@ -573,8 +573,8 @@ CY_TEST_CASE(
     const ArmMesh mesh;
 
     // One shape, moving every second vertex out along +z by a unit. Sorted by vertex index, which
-    // `BlendShapeSet::add` refuses an unsorted list for and which is what lets both the dispatch and
-    // the reference binary-search it.
+    // `BlendShapeSet::add` refuses an unsorted list for and which is what lets both the dispatch
+    // and the reference binary-search it.
     std::vector<cy::render::geometry::BlendShapeDelta> deltas;
     for (u32 vertex = 0; vertex < ArmMesh::kVertices; vertex += 2U) {
         cy::render::geometry::BlendShapeDelta delta;
@@ -602,11 +602,11 @@ CY_TEST_CASE(
                        Span<const GpuSkinInfluence>(mesh.influences.data(), mesh.influences.size()))
                    .has_value());
     // BEFORE `upload`, because the active count is part of the constant block `upload` builds.
-    CY_REQUIRE(pass.upload_blend_shapes(
-                       Span<const cy::render::geometry::BlendShapeDelta>(deltas.data(),
-                                                                         deltas.size()),
-                       Span<const cy::render::geometry::GpuActiveBlendShape>(active, kActiveCount))
-                   .has_value());
+    CY_REQUIRE(
+        pass.upload_blend_shapes(
+                Span<const cy::render::geometry::BlendShapeDelta>(deltas.data(), deltas.size()),
+                Span<const cy::render::geometry::GpuActiveBlendShape>(active, kActiveCount))
+            .has_value());
 
     SkinningDescriptor descriptor = arm_descriptor(ArmMesh::kVertices);
     descriptor.method = SkinningMethod::DualQuaternion;
@@ -632,19 +632,19 @@ CY_TEST_CASE(
     std::vector<PackedNormalTangent> expected_frames(static_cast<usize>(ArmMesh::kVertices) * 2U,
                                                      PackedNormalTangent{});
     cy::render::geometry::SkinInputs inputs;
-    inputs.bone_dual_quaternions = Span<const cy::render::geometry::GpuBoneDualQuaternion>(
-        dual_pose.data(), dual_pose.size());
+    inputs.bone_dual_quaternions =
+        Span<const cy::render::geometry::GpuBoneDualQuaternion>(dual_pose.data(), dual_pose.size());
     inputs.positions = Span<const Vec3>(mesh.positions.data(), mesh.positions.size());
     inputs.frames = Span<const PackedNormalTangent>(mesh.frames.data(), mesh.frames.size());
-    inputs.influences = Span<const GpuSkinInfluence>(mesh.influences.data(), mesh.influences.size());
+    inputs.influences =
+        Span<const GpuSkinInfluence>(mesh.influences.data(), mesh.influences.size());
     inputs.blend_shape_deltas =
         Span<const cy::render::geometry::BlendShapeDelta>(deltas.data(), deltas.size());
     inputs.active_shapes =
         Span<const cy::render::geometry::GpuActiveBlendShape>(active, kActiveCount);
     cy::render::geometry::SkinOutputs outputs;
     outputs.positions = Span<Vec3>(expected_positions.data(), expected_positions.size());
-    outputs.frames =
-        Span<PackedNormalTangent>(expected_frames.data(), expected_frames.size());
+    outputs.frames = Span<PackedNormalTangent>(expected_frames.data(), expected_frames.size());
     CY_REQUIRE(cpu_reference_skin(pass.constants(), inputs, outputs).has_value());
 
     compare(Span<const Vec3>(expected_positions.data(), expected_positions.size()),

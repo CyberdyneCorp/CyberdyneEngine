@@ -70,6 +70,11 @@ Status SkyIllumination::configure(const SkyIlluminationSettings& settings) noexc
                     "a negative refit threshold would refit the sky term on every frame, which is "
                     "the full recomputation this seam exists to avoid");
     }
+    if (settings.exposure <= 0.0F) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a sky exposure of zero or less is a sky that is switched off, which is not an "
+                    "exposure — use the analytic fallback and say so");
+    }
     if (settings.fit_samples == 0) {
         return fail(ErrorCode::InvalidArgument,
                     "a gradient fitted over no directions is the analytic placeholder wearing the "
@@ -123,7 +128,8 @@ void SkyIllumination::fit(Vec3 sun_direction) noexcept {
         sky::fit_sky_gradient(atmosphere_, view, sun_direction, settings_.fit_samples);
     // THE THREE LINES `sky_light.h` SAID A COMPOSITION POINT WRITES, and `SkyGradient`'s fields are
     // named and ordered so that this is the obvious spelling rather than a translation.
-    term_ = gi::SkyTerm{gradient.zenith, gradient.horizon, gradient.ground, gradient.intensity};
+    term_ = gi::SkyTerm{gradient.zenith, gradient.horizon, gradient.ground,
+                       gradient.intensity * settings_.exposure};
     fitted_sun_ = sun_direction;
     fitted_ = true;
     report_.fits += 1;
@@ -134,6 +140,7 @@ SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
                                               gi::IlluminationSystem& system) noexcept {
     const Vec3 sun = normalized_or(frame.sun_direction, Vec3{0.0F, 1.0F, 0.0F});
     report_.provenance = provenance_;
+    report_.exposure = settings_.exposure;
     report_.refitted = false;
     report_.invalidation_filed = false;
     report_.irradiance_step = 0.0F;

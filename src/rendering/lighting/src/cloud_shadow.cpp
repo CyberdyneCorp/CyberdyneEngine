@@ -9,9 +9,9 @@ namespace cy::rendering {
 
 f32 cloud_shadow_at(const environment::FieldStore& store, const world::WorldVec3d& at) noexcept {
     // THE FUNCTION EVERY CONSUMER CALLS. Not `FieldStore::sample_at` with a residency this module
-    // chose: a consumer that picked its own level would read a different shadow from the one terrain
-    // read at the same point whenever the regional level had not streamed in, and the two surfaces
-    // would disagree along a line nobody could find.
+    // chose: a consumer that picked its own level would read a different shadow from the one
+    // terrain read at the same point whenever the regional level had not streamed in, and the two
+    // surfaces would disagree along a line nobody could find.
     return math::saturate(sky::CloudShadowField::sample(store, at));
 }
 

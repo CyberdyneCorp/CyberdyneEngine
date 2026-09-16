@@ -71,7 +71,8 @@ enum SpatialFlagBits : u32 {
     /// The instance's vertices come from the skinning pass's output rather than from its mesh.
     /// Mirrors `render::kInstanceSkinned`.
     ///
-    /// M11.c task 5.6, AND IT IS HERE BECAUSE NOTHING DECIDED IT. `src/rendering/skinning/README.md`
+    /// M11.c task 5.6, AND IT IS HERE BECAUSE NOTHING DECIDED IT.
+    /// `src/rendering/skinning/README.md`
     /// recorded the absence at M6 and it did not move for five milestones: "there is no
     /// per-instance skinning table, no `kSpatialSkinned` bit and no route from
     /// `render::kInstanceSkinned` to a shader; `GpuDrawInstance::flags` is still never written by

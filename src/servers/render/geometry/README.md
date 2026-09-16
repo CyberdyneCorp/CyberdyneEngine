@@ -16,6 +16,7 @@ and landed at M3. What is here is the remainder of the capability.
 | File | What it holds |
 |---|---|
 | `skinning.h` | `SkinningDescriptor` and its validation, the double-buffered output's sizing, skinned bounds from bone transforms, and the sparse blend-shape set |
+| `skin_dispatch.h` | the buffer layouts the compute pass binds and `cpu_reference_skin`, the second implementation it is checked against: the matrix pose, the **dual-quaternion** pose and its uniform scale, the influence stream, and the blend-shape deltas applied to the bind pose before the skin |
 | `resources.h` | `ResourceLedger` (reference counting with deferred release, per-category budgets, eviction candidates), `MipChain`, `GeometryRing`, and `GeometryStatistics` |
 
 ## One requirement is not met, and it is reported rather than quietly satisfied

@@ -206,11 +206,13 @@ enum GpuSkinFlagBits : u32 {
     /// there, it is the difference between a dispatch that reads a stream the pass will not bind
     /// and one that does not.
     kSkinWriteFrames = 1U << 0U,
-    /// Blend the pose as DUAL QUATERNIONS rather than as matrices — `SkinningMethod::DualQuaternion`.
+    /// Blend the pose as DUAL QUATERNIONS rather than as matrices —
+    /// `SkinningMethod::DualQuaternion`.
     ///
     /// A FLAG AND NOT A SECOND ENTRY POINT, because the two methods differ in eleven lines out of a
     /// hundred and every line they share is a line that must not drift: the influence decode, the
-    /// index clamp, the unweighted-vertex rule, the blend-shape pass and the frame re-encode are one
+    /// index clamp, the unweighted-vertex rule, the blend-shape pass and the frame re-encode are
+    /// one
     /// implementation each or they are two implementations of one algorithm again.
     kSkinDualQuaternion = 1U << 1U,
 };
@@ -237,9 +239,9 @@ struct GpuSkinConstants {
     /// range is the first's plus the vertex count, which is what `SkinnedBuffers` indexes.
     u32 first_output_vertex = 0;
     /// How many entries of the active blend shape list the dispatch reads. Zero for a mesh with no
-    /// shapes AND for a mesh whose shapes are all at rest — which is `BlendShapeSet::active()`'s own
-    /// answer and the requirement's "WHEN 50 blend shapes exist and 5 have non-zero weight THEN only
-    /// the 5 active shapes' deltas SHALL be read".
+    /// shapes AND for a mesh whose shapes are all at rest — which is `BlendShapeSet::active()`'s
+    /// own answer and the requirement's "WHEN 50 blend shapes exist and 5 have non-zero weight THEN
+    /// only the 5 active shapes' deltas SHALL be read".
     u32 active_blend_shapes = 0;
 };
 
@@ -252,9 +254,10 @@ static_assert(sizeof(GpuSkinConstants) == 32, "the push block is eight words");
 /// that a caller gets one diagnostic rather than a second-order one.
 [[nodiscard]] Expected<GpuSkinConstants, Error> make_skin_constants(
     const SkinningDescriptor& descriptor, bool write_frames, u32 first_input_vertex,
-    u32 first_output_vertex, u32 active_blend_shapes = 0) noexcept;
+    u32 first_output_vertex, u32 active_blend_shape_count = 0) noexcept;
 
-// --- The blend shapes, as the dispatch reads them -------------------------------------------------
+// --- The blend shapes, as the dispatch reads them
+// -------------------------------------------------
 
 /// One ACTIVE shape: where its deltas are in the shared array, and the weight to apply them at.
 ///
@@ -277,8 +280,8 @@ static_assert(sizeof(GpuActiveBlendShape) == 16, "GpuActiveBlendShape is one sha
 /// `out` may be shorter than the set; the list is truncated at its size and the return value says
 /// how many entries the constants should name. A budget that caps active shapes is applied here,
 /// which is the one place it can be applied without the dispatch and the reference disagreeing.
-[[nodiscard]] u32 active_blend_shapes(const BlendShapeSet& shapes, f32 threshold,
-                                      Span<u32> scratch, Span<GpuActiveBlendShape> out) noexcept;
+[[nodiscard]] u32 active_blend_shapes(const BlendShapeSet& shapes, f32 threshold, Span<u32> scratch,
+                                      Span<GpuActiveBlendShape> out) noexcept;
 
 // --- The reference ---------------------------------------------------------------------------
 
@@ -295,9 +298,9 @@ struct SkinInputs {
     Span<const PackedNormalTangent> frames;
     /// One record per vertex at four influences, two at eight.
     Span<const GpuSkinInfluence> influences;
-    /// The same pose as dual quaternions. Read INSTEAD of `bones` when `kSkinDualQuaternion` is set,
-    /// and empty otherwise — a dispatch binds one representation or the other, never both, because
-    /// a pose buffer carrying two encodings of one pose is two things that can disagree.
+    /// The same pose as dual quaternions. Read INSTEAD of `bones` when `kSkinDualQuaternion` is
+    /// set, and empty otherwise — a dispatch binds one representation or the other, never both,
+    /// because a pose buffer carrying two encodings of one pose is two things that can disagree.
     Span<const GpuBoneDualQuaternion> bone_dual_quaternions;
     /// Every authored shape's deltas, sorted by vertex within each shape.
     /// `BlendShapeSet::deltas()`.

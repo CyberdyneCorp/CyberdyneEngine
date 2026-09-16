@@ -106,6 +106,19 @@ function(cy_render_declare_tests)
     # module that may not name the renderer or a device. A suite under tests/ is layer 7 and may name
     # anything, which is what keeps `just quality-layers` green with a device-side field sampler in
     # the tree — the invariant m11a.toml's `layering` criterion exists to hold.
+    # THE RAY-TRACING CAPABILITY, ON A REAL DEVICE. M11.c tasks 2.6 and 2.7. `unit.rhi` drives the
+    # DERIVATION and needs no GPU; what it cannot check is whether the Vulkan backend fills the
+    # observation truthfully, because a derivation over a struct the test wrote is a test of that
+    # struct. This suite opens a device and compares the capability against what the driver
+    # answered. KIND render because it needs one.
+    cy_add_test(
+        NAME ray_tracing_capability
+        KIND render
+        SOURCES "${cy_render_tests_dir}/test_ray_tracing_device.cpp"
+        DEPENDENCIES cy::rendering-raytracing cy::rhi cy::rhi-null cy::rhi-vulkan)
+    # For "device.h", as the conventions and environment-field suites below.
+    target_include_directories(cy_test_render_ray_tracing_capability PRIVATE "${cy_render_tests_dir}")
+
     cy_add_test(
         NAME environment_field
         KIND render

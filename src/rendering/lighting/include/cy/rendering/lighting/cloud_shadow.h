@@ -1,9 +1,9 @@
 #pragma once
 // ILLUMINATION READING THE CLOUD SHADOW FIELD. M11.c task 5.2.
 //
-// `atmosphere-sky-and-clouds` — "Cloud shadows": "Clouds SHALL cast shadows onto the world through a
-// COARSE WORLD-SCALE SHADOW REPRESENTATION — a low-frequency field or map covering a large area at
-// low resolution — CONSUMED BY TERRAIN, FOLIAGE, WATER, AND ILLUMINATION."
+// `atmosphere-sky-and-clouds` — "Cloud shadows": "Clouds SHALL cast shadows onto the world through
+// a COARSE WORLD-SCALE SHADOW REPRESENTATION — a low-frequency field or map covering a large area
+// at low resolution — CONSUMED BY TERRAIN, FOLIAGE, WATER, AND ILLUMINATION."
 //
 // ================================================================================================
 // THE FOURTH CONSUMER, AND WHY IT HAD TO BE WRITTEN RATHER THAN DECLARED

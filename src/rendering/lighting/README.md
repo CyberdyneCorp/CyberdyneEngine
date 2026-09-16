@@ -19,6 +19,7 @@ tasks 4.4.1 and 4.4.2; M7 task 10.3.
 | `decals.h` | the projected oriented box, its two fades, reoriented normal blending, and a decal budget the **arbiter** sets whose eviction is deterministic and reported |
 | `light_functions.h` | cookies for the three light types, projected in light space, scrolled without touching a shadow map |
 | `channels.h` | a bitfield test at assignment and nothing at shading time, and the bounded deterministic assignment that goes with it |
+| `cloud_shadow.h` | illumination's consumer of the sky's coarse cloud shadow field: the sun's illuminance under the deck at a world position, and the rule that a cloud shadows the **sun** and not a torch |
 | `many_light.h` | reservoir sampling with temporal and spatial reuse, the ray budget that replaces the per-cluster bound, and the rule that refuses the path without a denoiser |
 
 ## What M7 added, and the three numbers worth knowing

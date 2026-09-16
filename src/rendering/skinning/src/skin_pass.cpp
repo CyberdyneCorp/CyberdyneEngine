@@ -25,8 +25,8 @@ constexpr u32 kSkinGroupSize = 64;
 ///
 /// SIX UNTIL M11.c, and the three that joined are the dual-quaternion pose and the two blend-shape
 /// buffers. Every one of them is bound on every pass, empty or not, for the reason `at_least_one`
-/// below gives: a descriptor must name something, and the flags and the active count in the constant
-/// block are what tell the shader whether to read it.
+/// below gives: a descriptor must name something, and the flags and the active count in the
+/// constant block are what tell the shader whether to read it.
 enum Binding : u32 {
     kBindingBones = 0,
     kBindingInPositions = 1,
@@ -199,9 +199,8 @@ Status SkinPass::create_buffers() noexcept {
         // property of the DESCRIPTOR a caller passes to `upload()` and not of the pass. The two
         // records are the same 48 bytes, so a pass that never skins a dual quaternion pays exactly
         // the pose's own size for a buffer it never binds a write to.
-        {"skin bone dual quaternions",
-         at_least_one(desc_.max_bones, sizeof(GpuBoneDualQuaternion)), storage,
-         rhi::MemoryUse::Upload, &buffers_.bone_dual_quaternions},
+        {"skin bone dual quaternions", at_least_one(desc_.max_bones, sizeof(GpuBoneDualQuaternion)),
+         storage, rhi::MemoryUse::Upload, &buffers_.bone_dual_quaternions},
         {"skin blend shape deltas",
          at_least_one(desc_.max_blend_shape_deltas, sizeof(render::geometry::BlendShapeDelta)),
          storage, rhi::MemoryUse::Upload, &buffers_.blend_shape_deltas},
@@ -311,6 +310,8 @@ void SkinPass::destroy() noexcept {
         device_->destroy_buffer(handle);
     }
     buffers_ = Buffers{};
+    active_shapes_ = 0;
+    mesh_uploaded_ = false;
     device_->destroy_compute_pipeline(pipeline_);
     device_->destroy_pipeline_layout(pipeline_layout_);
     device_->destroy_descriptor_set_layout(set_layout_);
@@ -412,7 +413,8 @@ Status SkinPass::upload(const SkinningDescriptor& descriptor, Span<const Mat4> s
         auto* target = static_cast<GpuBoneDualQuaternion*>(
             device_->buffer_mapped_pointer(buffers_.bone_dual_quaternions));
         if (target == nullptr) {
-            return fail(ErrorCode::Internal, "the skinning dual-quaternion pose buffer is not mapped");
+            return fail(ErrorCode::Internal,
+                        "the skinning dual-quaternion pose buffer is not mapped");
         }
         for (usize bone = 0; bone < skinning_matrices.size(); ++bone) {
             target[bone] = render::geometry::pack_bone_dual_quaternion(skinning_matrices[bone]);
@@ -435,14 +437,16 @@ Status SkinPass::upload_blend_shapes(Span<const render::geometry::BlendShapeDelt
         return fail(ErrorCode::InvalidArgument, "the skinning pass has not been created");
     }
     if (deltas.size() > desc_.max_blend_shape_deltas) {
-        return fail(ErrorCode::OutOfRange,
-                    "the mesh carries more blend shape deltas than the skinning pass was sized for");
+        return fail(
+            ErrorCode::OutOfRange,
+            "the mesh carries more blend shape deltas than the skinning pass was sized for");
     }
     if (active.size() > desc_.max_active_blend_shapes) {
-        return fail(ErrorCode::OutOfRange,
-                    "more shapes are active than the skinning pass was sized for; the cap belongs "
-                    "in `active_blend_shapes()` so the dispatch and the reference truncate the same "
-                    "list rather than two");
+        return fail(
+            ErrorCode::OutOfRange,
+            "more shapes are active than the skinning pass was sized for; the cap belongs "
+            "in `active_blend_shapes()` so the dispatch and the reference truncate the same "
+            "list rather than two");
     }
     for (const GpuActiveBlendShape& shape : active) {
         if (static_cast<usize>(shape.first) + shape.count > deltas.size()) {

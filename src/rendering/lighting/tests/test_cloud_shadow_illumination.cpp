@@ -39,10 +39,9 @@ namespace {
 
 using cy::f32;
 using cy::i32;
-using cy::u32;
 using cy::Span;
+using cy::u32;
 using cy::Vec3;
-using cy::world::WorldVec3d;
 using cy::rendering::apply_cloud_shadows;
 using cy::rendering::cloud_shadow_at;
 using cy::rendering::CloudShadowIllumination;
@@ -52,6 +51,7 @@ using cy::rendering::kGpuLightPoint;
 using cy::rendering::sunlight_under_clouds;
 using cy::rendering::sky::CloudShadowField;
 using cy::rendering::sky::CloudShadowQuality;
+using cy::world::WorldVec3d;
 
 [[nodiscard]] cy::Allocator& allocator() {
     return cy::system_allocator(cy::MemoryDomain::Renderer);
@@ -174,10 +174,10 @@ CY_TEST_CASE("cloud shadow illumination: the sun under a cloud is dimmer than th
         apply_cloud_shadows(Span<GpuLight>(lights, 2), store, lit);
     const f32 lit_sun = lights[0].intensity;
 
-    // ONE LINE, IN A SHAPE A CRITERION CAN READ. `m11a:sky-field-consumed-outside-the-sky` runs this
-    // suite and parses this line, because what it has to establish is that the two answers DIFFER —
-    // and a suite's exit code says only that nothing asserted here was violated, which a suite with
-    // no assertions also says.
+    // ONE LINE, IN A SHAPE A CRITERION CAN READ. `m11a:sky-field-consumed-outside-the-sky` runs
+    // this suite and parses this line, because what it has to establish is that the two answers
+    // DIFFER — and a suite's exit code says only that nothing asserted here was violated, which a
+    // suite with no assertions also says.
     CY_TEST_MESSAGE("illumination through the cloud shadow field: authored ", authored_sun,
                     " lux, shaded ", shaded_sun, " lux, lit ", lit_sun,
                     " lux, transmittance shaded ", under_cloud.transmittance, " lit ",
@@ -209,18 +209,18 @@ CY_TEST_CASE("cloud shadow illumination: the sun under a cloud is dimmer than th
 }
 
 CY_TEST_CASE("cloud shadow illumination: an unstreamed world is in full sun, not in the dark") {
-    // `environment-fields`: "A sample outside resident data SHALL return the declared default rather
-    // than block." For this field the declared default is FULL SUN, and the reason is this case: a
-    // default of zero would black out every part of the world the shadow field had not reached,
-    // which is most of it most of the time.
+    // `environment-fields`: "A sample outside resident data SHALL return the declared default
+    // rather than block." For this field the declared default is FULL SUN, and the reason is this
+    // case: a default of zero would black out every part of the world the shadow field had not
+    // reached, which is most of it most of the time.
     cy::environment::FieldRegistry registry(allocator());
     CloudShadowField sky;
     CY_REQUIRE(sky.attach(registry, test_quality()));
     cy::environment::FieldStore store(allocator(), registry, partition());
 
     GpuLight lights[1] = {sun()};
-    const CloudShadowIllumination nothing_written =
-        apply_cloud_shadows(Span<GpuLight>(lights, 1), store, WorldVec3d{9000000.0, 0.0, -9000000.0});
+    const CloudShadowIllumination nothing_written = apply_cloud_shadows(
+        Span<GpuLight>(lights, 1), store, WorldVec3d{9000000.0, 0.0, -9000000.0});
     CY_CHECK_NEAR(nothing_written.transmittance, 1.0F, 1e-4F);
     CY_CHECK_NEAR(lights[0].intensity, sun().intensity, 1.0F);
 }
