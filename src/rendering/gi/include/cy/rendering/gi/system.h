@@ -134,9 +134,9 @@ public:
     /// settings and the tiered tracer's config, and this writes both and touches nothing else.
     ///
     /// It does not invalidate anything. What a sky change invalidates is a decision about a REGION,
-    /// which belongs to the caller that knows where the sky is visible — `cy::rendering-sky-illumination`
-    /// is the composition point that makes it, and `InvalidationCause::SkyChanged` is the cause it
-    /// files the record under.
+    /// which belongs to the caller that knows where the sky is visible —
+    /// `cy::rendering-sky-illumination` is the composition point that makes it, and
+    /// `InvalidationCause::SkyChanged` is the cause it files the record under.
     void set_sky_term(const SkyTerm& sky) noexcept;
     [[nodiscard]] const SkyTerm& sky_term() const noexcept { return settings_.sky; }
 

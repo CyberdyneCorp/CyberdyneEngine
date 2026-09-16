@@ -4,11 +4,11 @@
 // WHAT WAS TRUE OF THIS TREE BEFORE THIS FILE, AND WHY THAT MAKES EVERY CASE HERE A CONTROL
 // ================================================================================================
 //
-// `rendering-global-illumination` has thirteen scenarios under "Sky and atmosphere" and every one of
-// them was satisfied, on a tree where `gi::SkyTerm` was a two-colour gradient nobody built from an
-// atmosphere, by that gradient. `atmosphere-sky-and-clouds` measured `fit_sky_gradient` against the
-// atmosphere's own irradiance integral — 12.4 % mean — in its own suite, with no illumination system
-// present. Both halves were real and tested; the JOIN did not exist, and no check in fifteen
+// `rendering-global-illumination` has thirteen scenarios under "Sky and atmosphere" and every one
+// of them was satisfied, on a tree where `gi::SkyTerm` was a two-colour gradient nobody built from
+// an atmosphere, by that gradient. `atmosphere-sky-and-clouds` measured `fit_sky_gradient` against
+// the atmosphere's own irradiance integral — 12.4 % mean — in its own suite, with no illumination
+// system present. Both halves were real and tested; the JOIN did not exist, and no check in fifteen
 // ledgers could say so.
 //
 // So the cases below are written against the two ways a join can be fake rather than absent:
@@ -19,8 +19,8 @@
 //      PICTURE MOVED — `indirect_diffuse` at a ground point, which is what a surface actually sees.
 //   2. A TERM THAT IS THE ATMOSPHERE'S NAME ON A CONSTANT. Returning a plausible gradient would
 //      satisfy "built from the atmosphere" against any assertion about its shape, so the fitted
-//      term is compared against `sky::sky_irradiance` — the atmosphere's own hemispherical integral,
-//      computed independently of the fit — at two sun elevations that differ by a factor.
+//      term is compared against `sky::sky_irradiance` — the atmosphere's own hemispherical
+//      integral, computed independently of the fit — at two sun elevations that differ by a factor.
 //
 // A third fake is not available to this file and is checked one level up, in the criterion: a
 // composition point that exists as a test fixture. `m11c:gi-sky-term-constructed` requires the
@@ -85,7 +85,8 @@ constexpr Vec3 kUp{0.0F, 1.0F, 0.0F};
 
 /// A sun that climbs from the horizon. `elevation` in radians.
 [[nodiscard]] Vec3 sun_at(f32 elevation) noexcept {
-    return normalize(Vec3{std::cos(elevation) * 0.6F, std::sin(elevation), std::cos(elevation) * 0.8F});
+    return normalize(
+        Vec3{std::cos(elevation) * 0.6F, std::sin(elevation), std::cos(elevation) * 0.8F});
 }
 
 }  // namespace
@@ -109,7 +110,8 @@ CY_TEST_CASE("the sky term is built from the atmosphere, and a fallback says it 
     (void)ground.system.update(ground.context(4));
     const f32 with_placeholder = ground_indirect(ground.system);
 
-    // --- The atmosphere ---------------------------------------------------------------------------
+    // --- The atmosphere
+    // ---------------------------------------------------------------------------
     CY_REQUIRE(seam.set_atmosphere(cy::rendering::sky::earth_atmosphere()).has_value());
     report = seam.update(frame_at(sun, 5), ground.system);
     CY_CHECK_EQ(report.provenance, SkyTermProvenance::PhysicalAtmosphere);
@@ -135,7 +137,8 @@ CY_TEST_CASE("the sky term is built from the atmosphere, and a fallback says it 
     // leave these two identical, and would satisfy every assertion above it.
     CY_CHECK(std::fabs(with_atmosphere - with_placeholder) > 1e-4F);
 
-    // --- And it is the ATMOSPHERE's, not a plausible constant --------------------------------------
+    // --- And it is the ATMOSPHERE's, not a plausible constant
+    // --------------------------------------
     //
     // `sky::sky_irradiance` integrates the full atmosphere for an upward-facing surface and knows
     // nothing about the gradient fit. A term that carried the atmosphere's name on a constant would
@@ -147,7 +150,8 @@ CY_TEST_CASE("the sky term is built from the atmosphere, and a fallback says it 
         CY_REQUIRE(seam.set_atmosphere(air).has_value());
         (void)seam.update(frame_at(direction, 6), ground.system);
         const f32 fitted = magnitude(term_irradiance(seam.term(), kUp));
-        const f32 reference = magnitude(cy::rendering::sky::sky_irradiance(air, view, direction, kUp));
+        const f32 reference =
+            magnitude(cy::rendering::sky::sky_irradiance(air, view, direction, kUp));
         CY_TEST_MESSAGE("sun at ", elevation, " rad: fitted ", fitted, " lux, atmosphere ",
                         reference, " lux");
         CY_CHECK_GT(reference, 0.0F);
@@ -233,17 +237,18 @@ CY_TEST_CASE("a moving sun is incremental and bounded against a full recomputati
                     bricks_invalidated, " field bricks invalidated; worst irradiance step ",
                     worst_step);
 
-    // --- INCREMENTAL. Fewer fits than frames, and by a margin rather than by one ------------------
+    // --- INCREMENTAL. Fewer fits than frames, and by a margin rather than by one
+    // ------------------
     CY_CHECK_GT(totals.fits, 0U);
     CY_CHECK_LT(totals.fits, kFrames / 4U);
     CY_CHECK_EQ(totals.fits + totals.reuses, kFrames);
 
     // --- ONLY THE ILLUMINATION THAT DEPENDS ON IT ------------------------------------------------
     //
-    // A sun that rotated moved no geometry, so the sparse distance field — a representation of where
-    // surfaces ARE — cannot have been invalidated by it. `InvalidationCause::SkyChanged` is the one
-    // cause `IlluminationSystem::service_invalidations` skips the field for, and this is the number
-    // that says the distinction is serviced rather than declared.
+    // A sun that rotated moved no geometry, so the sparse distance field — a representation of
+    // where surfaces ARE — cannot have been invalidated by it. `InvalidationCause::SkyChanged` is
+    // the one cause `IlluminationSystem::service_invalidations` skips the field for, and this is
+    // the number that says the distinction is serviced rather than declared.
     CY_CHECK_EQ(bricks_invalidated, 0U);
     CY_CHECK_GT(invalidations, 0U);
 
@@ -261,12 +266,14 @@ CY_TEST_CASE("a moving sun is incremental and bounded against a full recomputati
     // moved it, so the continuity is a property of the threshold rather than of a short take.
     CY_CHECK_GT(travel, 10.0F * worst_step);
 
-    // --- THE NUMBER TO BEAT: A FULL RECOMPUTATION -------------------------------------------------
+    // --- THE NUMBER TO BEAT: A FULL RECOMPUTATION
+    // -------------------------------------------------
     //
     // What installing a new sky costs WITHOUT this seam is `IlluminationSystem::configure()`, which
-    // is the only other way to change `IlluminationSettings::sky`: the clipmap is rebuilt, the probe
-    // cache is discarded and the acceleration service is reconstructed. It is measured here rather
-    // than asserted — eight frames of it, so the comparison is per-frame work and not a guess.
+    // is the only other way to change `IlluminationSettings::sky`: the clipmap is rebuilt, the
+    // probe cache is discarded and the acceleration service is reconstructed. It is measured here
+    // rather than asserted — eight frames of it, so the comparison is per-frame work and not a
+    // guess.
     constexpr u32 kFullFrames = 8;
     Ground full;
     full.run(4);
@@ -394,9 +401,8 @@ CY_TEST_CASE("cloud shadow reaches illumination through the coarse field") {
     // unclouded one. This is the consumption the requirement's word "illumination" means.
     std::vector<cy::rendering::gi::GiLight> clouded_lights{under.sun};
     std::vector<cy::rendering::gi::GiLight> clear_lights{clear.sun};
-    const Vec3 shaded_under =
-        cy::rendering::gi::shaded_direct({clouded_lights.data(), clouded_lights.size()},
-                                         kQueryPoint, kUp, nullptr);
+    const Vec3 shaded_under = cy::rendering::gi::shaded_direct(
+        {clouded_lights.data(), clouded_lights.size()}, kQueryPoint, kUp, nullptr);
     const Vec3 shaded_clear = cy::rendering::gi::shaded_direct(
         {clear_lights.data(), clear_lights.size()}, kQueryPoint, kUp, nullptr);
     CY_TEST_MESSAGE("direct radiance on the ground: clear ", magnitude(shaded_clear), ", clouded ",

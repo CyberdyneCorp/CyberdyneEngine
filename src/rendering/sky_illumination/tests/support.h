@@ -118,7 +118,8 @@ struct Ground {
                        .place(1, field.asset(),
                               cy::Mat4::from_translation(Vec3{0.0F, -kGroundHalfY, 0.0F}))
                        .has_value());
-        CY_REQUIRE(system.scene().ingest_cell(1, bounds(), {surfels.data(), surfels.size()}, 0)
+        CY_REQUIRE(system.scene()
+                       .ingest_cell(1, bounds(), {surfels.data(), surfels.size()}, 0)
                        .has_value());
         CY_REQUIRE(system.surfaces().allocate_from(system.scene(), bounds()).has_value());
         system.surfaces().set_lookup_radius(1.8F);

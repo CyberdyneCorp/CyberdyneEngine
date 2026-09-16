@@ -3,9 +3,10 @@
 //
 // `ray-tracing-infrastructure` — "Capability gating and fallback". The module's own README has
 // carried the closing act since M7, in these words: *"A device backend arrives as two edits and no
-// interface change: the RHI reports the capability, and `ServiceConfig::device_supports_ray_tracing`
-// is set from it."* The first edit is in `src/backends/rhi/vulkan/`; this file is the second, and
-// its whole content is the sentence above compiled.
+// interface change: the RHI reports the capability, and
+// `ServiceConfig::device_supports_ray_tracing` is set from it."* The first edit is in
+// `src/backends/rhi/vulkan/`; this file is the second, and its whole content is the sentence above
+// compiled.
 //
 // ================================================================================================
 // WHY THIS IS A FUNCTION IN A HEADER AND NOT A LINE AT EVERY CALL SITE
@@ -38,6 +39,9 @@ namespace cy::rendering::rt {
 /// the specification requires a profile that disables ray tracing on capable hardware to behave
 /// exactly like hardware without it, so the two inputs must stay two inputs all the way down to
 /// `Availability`. A single boolean here would collapse the case the requirement is about.
+/// It reads the capability AND the observation behind it. `DeviceCapabilities::set()` is public, so
+/// `has(RayTracing)` can be true on a device the engine created without asking for the features —
+/// a capability a ray query cannot use — and this is where that stops.
 [[nodiscard]] AccelerationService::ServiceConfig service_config_for(
     const rhi::DeviceCapabilities& capabilities, bool enabled_by_profile,
     const BuildBudget& budget = BuildBudget{}) noexcept;

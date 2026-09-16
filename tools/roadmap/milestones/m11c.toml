@@ -192,52 +192,101 @@ note = "the reason is a named constant so that its assignment is one deletable s
 
 [[criterion]]
 id = "gi-sky-term-constructed"
-describe = "`gi::SkyTerm` is constructed from the atmosphere at one composition point, which is the whole of [cycle 2](docs/roadmap/dependencies.md). NOTHING IN THE TREE CONSTRUCTS ONE TODAY: `gi/lighting.h` still describes its two-colour gradient as 'the seam it will replace, not a second sky', `sky_light.h` carries a three-line adapter and says a composition point writes it, and neither module links the other. THE PLAN PROMISED THIS ROW COMPLETE AT M10 AND M10 DID NOT DELIVER IT"
-source = "tasks 2, rendering-global-illumination, dependencies.md cycle 2"
+describe = "`gi::SkyTerm` is constructed from the atmosphere at one composition point, which is the whole of [cycle 2](docs/roadmap/dependencies.md). NOTHING IN THE TREE CONSTRUCTED ONE BEFORE THIS RUNG: `gi/lighting.h` described its two-colour gradient as 'the seam it will replace, not a second sky', `sky_light.h` carried a three-line adapter in a COMMENT and said a composition point writes it, and neither module linked the other — so all thirteen scenarios under 'Sky and atmosphere' were satisfied by that gradient with nothing able to say so. THE PLAN PROMISED THIS ROW COMPLETE AT M10 AND M10 DID NOT DELIVER IT. The check is in three parts and each catches a different fake: a LINK-GRAPH fact (a library, not a test, depends on `cy::rendering-gi` and `cy::rendering-sky` at once), a BEHAVIOUR (the term reaches the resolve and the picture moves), and a MEASUREMENT (a day of a moving sun against a full recomputation)"
+source = "tasks 2.1-2.4, rendering-global-illumination, atmosphere-sky-and-clouds, dependencies.md cycle 2"
 kind = "command"
 run = '''
 set -eo pipefail
-users=$(grep -rln "SkyTerm" --include='*.cpp' --include='*.h' src/ | grep -v "^src/rendering/gi/" || true)
-count=$(printf '%s' "$users" | grep -c . || true)
-echo "$count file(s) outside src/rendering/gi/ construct or consume a gi::SkyTerm:"
-printf '%s\n' "${users:-  none — the seam cycle 2 is about has never been joined}"
+# --- the link-graph half, which is what "the seam" means when it is not a paragraph ---------------
+#
+# A LIBRARY and not a test: `cy_add_module` with `TYPE STATIC`. A composition point that existed only
+# as a test fixture would satisfy every behavioural case below and would join nothing.
+joined=""
+for cmake in $(grep -rl "cy_add_module" --include=CMakeLists.txt src/ | grep -v "/tests/"); do
+    # COMMENTS STRIPPED FIRST, and the reason is measured rather than tidy: src/rendering/sky's own
+    # CMakeLists says in capitals that it has NO DEPENDENCY on cy::rendering-gi, so a search over the
+    # raw text counts the module that refuses the edge as one that has it.
+    body=$(sed 's/#.*//' "$cmake")
+    case "$body" in
+        *cy::rendering-gi*) ;;
+        *) continue ;;
+    esac
+    case "$body" in
+        *cy::rendering-sky*) joined="$joined $cmake" ;;
+    esac
+done
+echo "libraries under src/ that depend on cy::rendering-gi and cy::rendering-sky at once:${joined:- NONE}"
+test -n "$joined" || { echo "the two modules do not reach each other: cycle 2 is still open"; exit 1; }
+# And the term is CONSTRUCTED outside gi/, in a source file that is not a test.
+builders=$(grep -rln "gi::SkyTerm{" --include='*.cpp' --include='*.h' src/ | grep -v "^src/rendering/gi/" | grep -v "/tests/" || true)
+count=$(printf '%s' "$builders" | grep -c . || true)
+echo "$count non-test file(s) outside src/rendering/gi/ CONSTRUCT a gi::SkyTerm:"
+printf '%s\n' "${builders:-  none — the term is named but never built}"
 test "$count" -ge 1
+# --- the behaviour and the measurement -------------------------------------------------------------
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
 binary="$d/cy_test_integration_rendering_gi_sky"
 test -x "$binary" || { echo "no $binary — the suite integration.rendering_gi_sky does not exist"; exit 1; }
-filter='the sky term is built from the atmosphere*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case FAILED"; exit 1; }
+filter='the sky term is built from the atmosphere*,a moving sun is incremental*,cloud shadow reaches illumination*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-test "${selected:-0}" -ge 1 || { echo "the named case is not in integration.rendering_gi_sky any more"; exit 1; }
+echo "the filter selected ${selected:-0} case(s) of the 3 it names"
+test "${selected:-0}" -ge 3 || { echo "the named cases are not in integration.rendering_gi_sky any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11c"
 
+# THE MUTATION IS THE FAKE THE WHOLE CRITERION IS AGAINST: a composition point that FITS the term from
+# the atmosphere, reports its provenance honestly, and never installs it. The tree still compiles, the
+# seam still exists in the link graph, the report still says `physical-atmosphere` — and the
+# illumination system goes on answering out of whatever it was configured with, which is a
+# two-colour gradient. That is exactly the shape a green criterion could have had, and the case that
+# compares `system.sky_term()` against the seam's own term goes red on it.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/sky_illumination/src/sky_illumination.cpp"
+token = "system.set_sky_term(term_);"
+note = "installing the term is ONE statement — `IlluminationSystem::set_sky_term` exists so that it can be, rather than the seam reaching into the settings — and deleting it leaves a tree that compiles and a sky nothing is lit by. `integration.rendering_gi_sky` then finds the system's term is not the one that was fitted, and the ground's indirect diffuse does not move between the placeholder and the atmosphere."
+
 [[criterion]]
 id = "denoiser-signals-have-producers"
-describe = "every signal the denoiser declares has a producer. `denoising` has six requirements and the ones with no producer in the tree are the reason the row is Working: a denoiser fed by a signal nothing writes denoises a constant"
-source = "tasks 2, denoising"
+describe = "every signal the denoiser declares has a producer THAT DRIVES THE FRAMEWORK, and the check names which do and which do not. `denoising` declares five — indirect diffuse, indirect specular, ray-traced shadows, ambient occlusion and stochastic direct — with a configuration each, and until this rung NOTHING IN THE TREE CALLED `Denoiser::denoise()` OUTSIDE THE DENOISER'S OWN TWO SUITES: `src/rendering/gi/` was the only module that named `Denoiser` and what it did with it was set its quality position from a budget lever. So the per-signal half of the specification was exercised by buffers written by the test asserting on them, and 'the framework handles five signals' was readable off an enumerator. The verdict here is the framework's OWN per-signal census after a frame of the real producer — a signal with no producer reports zero invocations, by name"
+source = "tasks 2.5, denoising"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-binary="$d/cy_test_unit_denoising"
-test -x "$binary" || { echo "no $binary — the suite unit.denoising does not exist"; exit 1; }
-filter='every declared signal has a producer*'
-out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+binary="$d/cy_test_integration_render_gi_signals"
+test -x "$binary" || { echo "no $binary — the suite integration.render_gi_signals does not exist"; exit 1; }
+filter='every declared signal has a producer*,a visibility term is denoised as occlusion*'
+out="$("$binary" "-tc=$filter" -s 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+# The table `denoising` asks for, printed from what the framework recorded rather than from the
+# enumerator's own range: every signal, its producer, and how many times it drove the denoiser.
+echo "$out" | grep -E "produced=|decided fraction" || true
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.denoising any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in integration.render_gi_signals any more — renamed, deleted, or the filter is stale"; exit 1; }
 '''
 ci_job = "milestone-m11c"
 
+# THE MUTATION IS THE DEFECT ITSELF, ONE SIGNAL AT A TIME. `StochasticSignals::produce` routes each of
+# the five in ONE statement — `signals.h` says that is for falsifiability rather than taste — so
+# deleting the ambient-occlusion routing leaves a tree that compiles, a producer that still fills the
+# buffer, and a framework with one declared signal nobody drives. Which is the tree as it stood before
+# this rung, with four fewer signals missing.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/gi/src/signals.cpp"
+token = "route(routed, SignalKind::AmbientOcclusion, surfaces, history, denoiser, report);"
+note = "the census then reports `AmbientOcclusion` with zero denoiser invocations and no reconstructed buffer, which is precisely the state `denoising`'s new requirement calls a finding — and the case goes red naming the signal."
+
 [[criterion]]
 id = "ray-tracing-capability-honest"
-describe = "`Capability::RayTracing` reports what the DEVICE supports rather than what the backend compiled. IT IS UNSET ON THIS HOST AND THE M11.c SPIKE CONFIRMED IT: nothing in `vulkan_instance.cpp` sets the enumerator, so every ray-traced tier in this tree runs its software fallback — on an RTX 5060 — and no spike can measure the hardware one by wanting to (design.md §1.3). An honest reading of a capability set implemented in the Vulkan backend alone is 'Vulkan only', which is a finding this rung reports rather than a cell it claims"
-source = "tasks 2, ray-tracing-infrastructure, rhi-and-render-graph"
+describe = "`Capability::RayTracing` reports what the DEVICE supports rather than what the backend compiled. IT WAS AN ENUMERATOR NOTHING SET FROM M3 UNTIL THIS RUNG and the M11.c spike confirmed it: every ray-traced tier in this tree ran its software fallback on an RTX 5060 whose driver lists `VK_KHR_ray_query` (design.md §1.3). The fix has a failure mode of its own and it is the one checked here — a capability set because the backend was COMPILED against the extension's headers, or because the extension is listed, without the device ever reporting the FEATURE. Six answers a device gives, each one withdrawn in turn: a capability derived from any five of them is a capability that can be reported for a device which cannot trace. AND THE CLAIM IS VULKAN ONLY — Metal and D3D12 are `rhi-and-render-graph`'s, which is M11.d's row, so this rung reports a one-backend capability rather than a portable one"
+source = "tasks 2.6, 2.7, ray-tracing-infrastructure, rhi-and-render-graph"
 kind = "command"
 run = '''
 set -e
@@ -249,10 +298,59 @@ filter='the ray-tracing capability reports the device*'
 out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
-echo "the filter selected ${selected:-0} case(s) of the 1 it names"
-test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+echo "the filter selected ${selected:-0} case(s) of the 3 it names"
+test "${selected:-0}" -ge 3 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+# THE ONE-BACKEND CLAIM, CHECKED RATHER THAN WRITTEN DOWN. `describe` says Vulkan only; this is what
+# makes that sentence go stale loudly rather than quietly if another backend grows the capability.
+backends=$(grep -rl "set_ray_tracing_observation" --include='*.cpp' src/backends/ | grep -v "/tests/" | sed 's|src/backends/rhi/||;s|/src/.*||' | sort -u)
+echo "backends that report a ray-tracing observation: $backends"
+test "$(printf '%s' "$backends" | grep -c .)" -ge 1
 '''
 ci_job = "milestone-m11c"
+
+# THE MUTATION IS ONE OF THE SIX ANSWERS, DELETED. `device_reports_ray_tracing` is written one line per
+# answer the device gave — the comment above it says so and says why — and each line is one deletable
+# statement. Withdraw the rayQuery feature's line and the tree still compiles, the capability is still
+# derived from the observation, and a device that LISTS the extension without REPORTING the feature is
+# now told it can trace. That is the defect this criterion exists for.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/src/types.cpp"
+token = "reported = reported && observed.ray_query_feature;"
+note = "the derivation is scalar and the mutation leaves it valid C++, so nothing fails to build. `unit.rhi`'s 'every answer is load-bearing' case withdraws each of the six in turn and prints which one stopped mattering, so the red names the deleted line rather than a boolean."
+
+[[criterion]]
+id = "ray-tracing-on-the-device"
+describe = "the DEVICE half of the same claim, which no machine without a GPU can settle. `unit.rhi` drives the derivation over a struct a test wrote; what it cannot check is whether the Vulkan backend fills that struct truthfully. This opens a real device, prints the six answers the driver gave — on the machine this was written on, an RTX 5060 reporting VK_KHR_acceleration_structure, VK_KHR_ray_query and VK_KHR_deferred_host_operations with both features — and requires the capability to be the derivation applied to them. It also runs the second of the two edits `ray-tracing-infrastructure`'s README has promised since M7: `service_config_for()` turning a device capability into `ServiceConfig::device_supports_ray_tracing`, with the renderer profile still a separate input so that 'disabled on capable hardware' stays the case the specification is about. WHAT IT DOES NOT CLAIM: that rays execute on the device. `AccelerationService` still traces `cy::Bvh` on the processor; what changed is that it no longer reports `Unsupported` on hardware that can trace"
+source = "tasks 2.6, 2.7, ray-tracing-infrastructure"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/tests/render/cy_test_render_ray_tracing_capability"
+test -x "$binary" || { echo "no $binary — the suite render.ray_tracing_capability does not exist"; exit 1; }
+filter='the ray-tracing capability agrees with what the device reported*,the ray-tracing service is configured from the device*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | grep -E "RayTracing=|availability with the profile|no Vulkan device" || true
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in render.ray_tracing_capability any more"; exit 1; }
+'''
+requires = "gpu"
+reason = "it opens a Vulkan device and reads what the driver answered about ray tracing, which a machine with no GPU cannot do; the derivation it checks against is covered device-free by `ray-tracing-capability-honest`, so a green here must mean the backend and not the arithmetic. AND THIS HOST HAS ONE GPU VENDOR AND ONE BACKEND — design.md §1.3 and §3.3 — so what it settles is one driver's answer through the Vulkan backend, and the portable claim is `rhi-and-render-graph`'s at M11.d"
+ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE SECOND EDIT, REMOVED. `service_config_for` is the one expression that turns a
+# device capability into this service's configuration — `capability.h` argues why it must be one — and
+# deleting the assignment leaves a tree that compiles, a config whose `device_supports_ray_tracing` is
+# the struct's default of false, and a service that reports `Unsupported` on a device that can trace.
+# Which is the tree as it stood for eight milestones, with the capability now set and nobody reading it.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/raytracing/src/capability.cpp"
+token = "config.device_supports_ray_tracing = capabilities.has(rhi::Capability::RayTracing);"
+note = "the assignment is one statement and the line BELOW it — the belt-and-braces `&&` against the observation — is what keeps the tree compiling without it: `device_supports_ray_tracing` is then false on a device that reports ray tracing. The case that compares the config against the capability goes red, and so does the one requiring the service to be active there, while the profile-off case stays green — which is what says the mutation hit the device input and not the profile one."
 
 [[criterion]]
 id = "frame-passes-through-post"
@@ -325,6 +423,17 @@ ctest --test-dir "$d" -R "$pattern" --output-on-failure
 '''
 timeout_s = 3600
 ci_job = "milestone-m11c"
+
+# THE MUTATION IS A SUITE THAT STOPPED BEING REGISTERED, which is the failure the `registered` guard
+# above exists for and the one a bare `ctest -R` cannot tell from "no test matched, so nothing
+# failed". Renaming the suite in its own CMakeLists leaves a tree that still CONFIGURES, still
+# BUILDS and still runs the cases — under a name this criterion does not ask for — so seven of the
+# eight rows are green and the criterion goes red naming the eighth.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/temporal/tests/CMakeLists.txt"
+token = "render_temporal"
+note = "the rename is confined to one file and is applied to every occurrence in it, so `cy_add_test(NAME ...)` and the deferred declaration function stay consistent and the build is unaffected. What changes is the registered suite's NAME: `unit.render_temporal` is no longer in the tree, `registered` counts 7 of 8, and the criterion exits naming a suite that has been renamed, deleted or never written — which is the shape of the M8 defect this project has now found seven times, where an empty selection reads as a pass."
 
 [[criterion]]
 id = "image-rows-at-complete-grade"

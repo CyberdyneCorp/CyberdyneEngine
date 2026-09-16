@@ -62,17 +62,19 @@ using cy::rhi::RayTracingObservation;
 /// The six answers, each addressable by name so a failure says WHICH one stopped mattering.
 struct Answer {
     const char* name;
-    bool RayTracingObservation::*field;
+    bool RayTracingObservation::* field;
 };
 
 constexpr Answer kAnswers[] = {
-    {"VK_KHR_acceleration_structure listed", &RayTracingObservation::acceleration_structure_extension},
+    {"VK_KHR_acceleration_structure listed",
+     &RayTracingObservation::acceleration_structure_extension},
     {"VK_KHR_ray_query listed", &RayTracingObservation::ray_query_extension},
     {"VK_KHR_deferred_host_operations listed",
      &RayTracingObservation::deferred_host_operations_extension},
     {"accelerationStructure reported", &RayTracingObservation::acceleration_structure_feature},
     {"rayQuery reported", &RayTracingObservation::ray_query_feature},
-    {"the features were asked for at device creation", &RayTracingObservation::enabled_on_the_device},
+    {"the features were asked for at device creation",
+     &RayTracingObservation::enabled_on_the_device},
 };
 
 }  // namespace

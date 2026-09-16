@@ -6,9 +6,19 @@ AccelerationService::ServiceConfig service_config_for(const rhi::DeviceCapabilit
                                                       bool enabled_by_profile,
                                                       const BuildBudget& budget) noexcept {
     AccelerationService::ServiceConfig config;
-    config.device_supports_ray_tracing = capabilities.has(rhi::Capability::RayTracing);
     config.enabled_by_profile = enabled_by_profile;
     config.budget = budget;
+    config.device_supports_ray_tracing = capabilities.has(rhi::Capability::RayTracing);
+    // AND THE OBSERVATION IS CONSULTED RATHER THAN THE BIT ALONE. `DeviceCapabilities::set()` is
+    // public — every backend calls it for its own capabilities — so `has(RayTracing)` can be true
+    // on a device the engine created WITHOUT asking for `accelerationStructure` and `rayQuery`,
+    // which is a capability a ray query cannot use: the queue would take the pipeline and the query
+    // would be undefined. `set_ray_tracing_observation` never produces that state; a backend that
+    // sets the bit by hand does, and this is where it stops rather than in a driver's undefined
+    // behaviour.
+    config.device_supports_ray_tracing =
+        config.device_supports_ray_tracing &&
+        capabilities.ray_tracing_observation().enabled_on_the_device;
     return config;
 }
 

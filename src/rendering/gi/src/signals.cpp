@@ -68,8 +68,8 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
     const f32 u3 = unit_from(hash * 0x165667B1U);
     if (light.directional) {
         // A directional light's "position" is a point far along the reverse of its travel, and its
-        // `radius` is an ANGLE rather than a length. The sun's is about a quarter of a degree, which
-        // is the whole of an outdoor penumbra.
+        // `radius` is an ANGLE rather than a length. The sun's is about a quarter of a degree,
+        // which is the whole of an outdoor penumbra.
         const Vec3 towards = normalized_or(light.direction * -1.0F, Vec3{0.0F, 1.0F, 0.0F});
         const f32 spread_scale = math::max(light.radius, 0.0F);
         const Vec3 spread = cosine_direction(towards, u1 * spread_scale * spread_scale, u2);
@@ -78,9 +78,8 @@ void basis_around(Vec3 normal, Vec3& tangent, Vec3& bitangent) noexcept {
     // A uniform point in the light's own sphere, which is what makes a penumbra a gradient of
     // partially occluded samples rather than a hard step with no noise in it.
     const f32 radius = math::max(light.radius, 0.0F);
-    return light.position +
-           Vec3{(u1 - 0.5F) * 2.0F * radius, (u2 - 0.5F) * 2.0F * radius,
-                (u3 - 0.5F) * 2.0F * radius};
+    return light.position + Vec3{(u1 - 0.5F) * 2.0F * radius, (u2 - 0.5F) * 2.0F * radius,
+                                 (u3 - 0.5F) * 2.0F * radius};
 }
 
 }  // namespace
@@ -223,15 +222,18 @@ void StochasticSignals::produce_direct(const PixelInputs& pixel, Span<const GiLi
     const u32 hash = sample_index(pixel.index, pixel.frame, 4);
     const usize chosen = hash % lights.size();
     const GiLight one[] = {lights[chosen]};
-    const Vec3 shaded = shaded_direct({one, 1}, pixel.position, pixel.normal,
-                                      &system.world_tracer());
+    const Vec3 shaded =
+        shaded_direct({one, 1}, pixel.position, pixel.normal, &system.world_tracer());
     direct.values[pixel.index] = shaded * static_cast<f32>(lights.size());
     direct.rays += 1;
 }
 
-Status StochasticSignals::route(SignalKind kind, const SignalSurfaces& surfaces,
-                                const denoise::HistoryGuidance& history,
-                                denoise::Denoiser& denoiser, SignalProduction& report) noexcept {
+void StochasticSignals::route(Status& outcome, SignalKind kind, const SignalSurfaces& surfaces,
+                              const denoise::HistoryGuidance& history, denoise::Denoiser& denoiser,
+                              SignalProduction& report) noexcept {
+    if (!outcome) {
+        return;
+    }
     denoise::GuidanceBuffers guidance;
     guidance.width = surfaces.width;
     guidance.height = surfaces.height;
@@ -248,7 +250,8 @@ Status StochasticSignals::route(SignalKind kind, const SignalSurfaces& surfaces,
 
     auto filtered = denoiser.denoise(kind, noisy, guidance, history);
     if (!filtered) {
-        return fail(filtered.error().code, filtered.error().message);
+        outcome = fail(filtered.error().code, filtered.error().message);
+        return;
     }
     buffer.reconstructed = filtered.value();
 
@@ -258,7 +261,6 @@ Status StochasticSignals::route(SignalKind kind, const SignalSurfaces& surfaces,
     report.rays[index] = buffer.rays;
     report.noisy_variance[index] = luminance_variance(noisy.values, surfaces.depth);
     report.reconstructed_variance[index] = luminance_variance(buffer.reconstructed, surfaces.depth);
-    return ok();
 }
 
 Expected<SignalProduction, Error> StochasticSignals::produce(
@@ -315,24 +317,13 @@ Expected<SignalProduction, Error> StochasticSignals::produce(
     // it was written, so deleting one of these lines has to leave a tree that compiles and a
     // framework with one signal nobody drives — which is the defect
     // `m11c:denoiser-signals-have-producers` is proven against.
-    if (Status routed = route(SignalKind::IndirectDiffuse, surfaces, history, denoiser, report);
-        !routed) {
-        return make_unexpected(routed.error());
-    }
-    if (Status routed = route(SignalKind::IndirectSpecular, surfaces, history, denoiser, report);
-        !routed) {
-        return make_unexpected(routed.error());
-    }
-    if (Status routed = route(SignalKind::RayTracedShadow, surfaces, history, denoiser, report);
-        !routed) {
-        return make_unexpected(routed.error());
-    }
-    if (Status routed = route(SignalKind::AmbientOcclusion, surfaces, history, denoiser, report);
-        !routed) {
-        return make_unexpected(routed.error());
-    }
-    if (Status routed = route(SignalKind::StochasticDirect, surfaces, history, denoiser, report);
-        !routed) {
+    Status routed = ok();
+    route(routed, SignalKind::IndirectDiffuse, surfaces, history, denoiser, report);
+    route(routed, SignalKind::IndirectSpecular, surfaces, history, denoiser, report);
+    route(routed, SignalKind::RayTracedShadow, surfaces, history, denoiser, report);
+    route(routed, SignalKind::AmbientOcclusion, surfaces, history, denoiser, report);
+    route(routed, SignalKind::StochasticDirect, surfaces, history, denoiser, report);
+    if (!routed) {
         return make_unexpected(routed.error());
     }
     return report;

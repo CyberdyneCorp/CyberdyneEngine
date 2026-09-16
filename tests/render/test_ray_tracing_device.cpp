@@ -26,9 +26,9 @@
 //   * IT IS NOT A CLAIM THAT RAYS EXECUTE ON THE DEVICE. `rt::AccelerationService` builds `cy::Bvh`
 //     and traces it on the processor; what changes with the capability set is that the service now
 //     reports `Available` on a device that can trace, instead of running the unsupported path on
-//     hardware that has the extension. The device tier itself — acceleration structures built by the
-//     driver, ray queries issued from a shader — is not in this tree and this suite does not pretend
-//     otherwise.
+//     hardware that has the extension. The device tier itself — acceleration structures built by
+//     the driver, ray queries issued from a shader — is not in this tree and this suite does not
+//     pretend otherwise.
 //   * ONE GPU VENDOR. design.md §1.3: an answer measured here is one driver's answer.
 
 #include <cy/test/test.h>
@@ -99,8 +99,8 @@ CY_TEST_CASE("the ray-tracing capability agrees with what the device reported") 
 
 CY_TEST_CASE("the ray-tracing service is configured from the device and not from a guess") {
     // `ray-tracing-infrastructure`'s README has carried the closing act since M7: *"the RHI reports
-    // the capability, and `ServiceConfig::device_supports_ray_tracing` is set from it"*. This is the
-    // second of those two edits, run against a real device.
+    // the capability, and `ServiceConfig::device_supports_ray_tracing` is set from it"*. This is
+    // the second of those two edits, run against a real device.
     cy::render_test::DeviceFixture fixture("vulkan", "cy_test_render_ray_tracing_service");
     if (!fixture.is(cy::rhi::BackendKind::Vulkan)) {
         fixture.report_skip();

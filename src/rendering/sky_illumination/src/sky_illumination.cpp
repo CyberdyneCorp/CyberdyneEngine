@@ -53,8 +53,8 @@ Vec3 term_irradiance(const gi::SkyTerm& term, Vec3 normal, u32 rings) noexcept {
         const f32 cosine = (static_cast<f32>(ring) + 0.5F) / static_cast<f32>(steps);
         const f32 sine = std::sqrt(math::max(0.0F, 1.0F - (cosine * cosine)));
         for (u32 step = 0; step < steps * 2; ++step) {
-            const f32 phi = math::kTwoPi * (static_cast<f32>(step) + 0.5F) /
-                            static_cast<f32>(steps * 2);
+            const f32 phi =
+                math::kTwoPi * (static_cast<f32>(step) + 0.5F) / static_cast<f32>(steps * 2);
             const Vec3 direction = (tangent * (sine * std::cos(phi))) +
                                    (bitangent * (sine * std::sin(phi))) + (up * cosine);
             total = total + (term.radiance(direction) * cosine);
@@ -129,11 +129,12 @@ void SkyIllumination::fit(Vec3 sun_direction) noexcept {
     // THE THREE LINES `sky_light.h` SAID A COMPOSITION POINT WRITES, and `SkyGradient`'s fields are
     // named and ordered so that this is the obvious spelling rather than a translation.
     term_ = gi::SkyTerm{gradient.zenith, gradient.horizon, gradient.ground,
-                       gradient.intensity * settings_.exposure};
+                        gradient.intensity * settings_.exposure};
     fitted_sun_ = sun_direction;
     fitted_ = true;
     report_.fits += 1;
-    report_.directions_integrated += static_cast<u64>(settings_.fit_samples) * settings_.fit_samples;
+    report_.directions_integrated +=
+        static_cast<u64>(settings_.fit_samples) * settings_.fit_samples;
 }
 
 SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
@@ -160,8 +161,8 @@ SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
         // frame that had no sky a moment earlier. Every subsequent fit is a continuity event and is
         // measured as one.
         const bool continuing = fitted_;
-        const Vec3 before = continuing ? term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F})
-                                       : Vec3{0.0F, 0.0F, 0.0F};
+        const Vec3 before =
+            continuing ? term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F}) : Vec3{0.0F, 0.0F, 0.0F};
         fit(sun);
         const Vec3 after = term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F});
         const f32 reference = math::max(magnitude_of(before), magnitude_of(after));

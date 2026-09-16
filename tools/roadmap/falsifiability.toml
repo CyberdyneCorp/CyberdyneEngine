@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 154 proven, 490 not yet shown able to fail.
+# 161 proven, 484 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -709,11 +709,51 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): (no outp
 
 [[proof]]
 ledger = "m11c"
+criterion = "denoiser-signals-have-producers"
+digest = "cf52a6e59f3bae70"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'route(routed, SignalKind::AmbientOcclusion, surfaces, history, denoiser, report);' in src/rendering/gi/src/signals.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "frame-passes-through-post"
+digest = "237973a1fcda4047"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'features.temporal = config.temporal_antialiasing || config.temporal_upscaling;' in src/rendering/assembly/src/frame_assembly.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-frame (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "gi-sky-term-constructed"
+digest = "a5320554f0a35b3a"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'system.set_sky_term(term_);' in src/rendering/sky_illumination/src/sky_illumination.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "hierarchical-depth-on-a-device"
+digest = "d358bc07ff384456"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'step.push.source_offset = hzb_level_offset(desc_.width, desc_.height, level - 1U);' in src/rendering/hzb/src/hzb_pass.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-geometry (exit 1: render.virtual_geometry_gpu: the filter selected 1 case(s) of the 1 it names), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
 criterion = "image-rows-at-complete-grade"
 digest = "53d4116af8f8920e"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  virtual-geometry virtual-shadows rendering-global-illumination denoising ray-tracing-infrastructure rendering-post-processing tempora … 0 of 123 requirement(s) across 8 row(s) map to a test, a gate or a recorded exemption"
+
+[[proof]]
+ledger = "m11c"
+criterion = "lighting-and-shadow-suites"
+digest = "fb04516190a61ea1"
+verdict = "proven against a built tree"
+mutation = "rename-token 'render_temporal' in src/rendering/temporal/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-frame (exit 1: a suite this criterion names is not registered — renamed, deleted, or never written), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -754,6 +794,22 @@ digest = "aab4e27a4ea1fc04"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): no beauty-shot project in the tree"
+
+[[proof]]
+ledger = "m11c"
+criterion = "ray-tracing-capability-honest"
+digest = "0d3d7f9f2dd4fc5a"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'reported = reported && observed.ray_query_feature;' in src/backends/rhi/src/types.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "ray-tracing-on-the-device"
+digest = "604f97d1278ccc1b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'config.device_supports_ray_tracing = capabilities.has(rhi::Capability::RayTracing);' in src/rendering/raytracing/src/capability.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -2005,14 +2061,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11c"
-criterion = "denoiser-signals-have-producers"
-digest = "5b68fa3919ed5671"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "format"
 digest = "71ba6ab76cd42f2d"
 verdict = "no mutation"
@@ -2029,14 +2077,6 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
-criterion = "frame-passes-through-post"
-digest = "bd53d9dae8b021ed"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "generated-code"
 digest = "0571f02a45293a0d"
 verdict = "not provable here"
@@ -2045,35 +2085,11 @@ detail = "it needs a built tree ('just generate'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
-criterion = "gi-sky-term-constructed"
-digest = "26a8b3a66159070b"
-verdict = "not provable here"
-mutation = "rename-token 'SkyTerm' in src/ (derived)"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "hierarchical-depth-on-a-device"
-digest = "152937886be89aa7"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "layering"
 digest = "013d16d0f90d9149"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "lighting-and-shadow-suites"
-digest = "93ffba38324cece8"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
@@ -2090,14 +2106,6 @@ digest = "222149cbbdac18cb"
 verdict = "not provable here"
 mutation = "-"
 detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "ray-tracing-capability-honest"
-digest = "8c187eff6c8be4e2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"

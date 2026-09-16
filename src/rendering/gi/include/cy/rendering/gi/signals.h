@@ -86,7 +86,8 @@ struct SignalSurfaces {
 struct SignalProduction {
     bool produced[denoise::kSignalCount] = {};
     /// Pixels that carried a surface and therefore a sample. Zero with `produced` true would be a
-    /// producer that ran over an empty frame, which is a different report from one that did not run.
+    /// producer that ran over an empty frame, which is a different report from one that did not
+    /// run.
     u32 pixels[denoise::kSignalCount] = {};
     u32 rays[denoise::kSignalCount] = {};
     /// The luminance variance of the noisy input and of what came back. The second must be lower or
@@ -112,9 +113,11 @@ public:
     ///
     /// `history` is `temporal-rendering`'s answer and is passed straight through: this module
     /// computes no reprojection either, for the same reason the denoiser does not.
-    [[nodiscard]] Expected<SignalProduction, Error> produce(
-        const SignalSurfaces& surfaces, Span<const GiLight> lights, IlluminationSystem& system,
-        const denoise::HistoryGuidance& history, u64 frame) noexcept;
+    [[nodiscard]] Expected<SignalProduction, Error> produce(const SignalSurfaces& surfaces,
+                                                            Span<const GiLight> lights,
+                                                            IlluminationSystem& system,
+                                                            const denoise::HistoryGuidance& history,
+                                                            u64 frame) noexcept;
 
     /// The noisy buffer a signal was produced into, before the framework saw it. Valid until the
     /// next `produce`.
@@ -148,9 +151,16 @@ private:
                             const IlluminationSystem& system, f32 occlusion_radius) noexcept;
     void produce_direct(const PixelInputs& pixel, Span<const GiLight> lights,
                         const IlluminationSystem& system) noexcept;
-    [[nodiscard]] Status route(denoise::SignalKind kind, const SignalSurfaces& surfaces,
-                               const denoise::HistoryGuidance& history, denoise::Denoiser& denoiser,
-                               SignalProduction& report) noexcept;
+    /// Route one signal through the framework, keeping the first failure in `outcome`.
+    ///
+    /// A VOID RETURN AND AN ACCUMULATOR, not an `Expected` checked at each call site, and the
+    /// reason is falsifiability rather than taste: each routing has to be ONE deletable statement,
+    /// so that removing a signal's producer leaves a tree which still compiles and a framework with
+    /// one signal nobody drives. That is the defect `m11c:denoiser-signals-have-producers` is
+    /// proven against, and a four-line `if` per signal could not express it.
+    void route(Status& outcome, denoise::SignalKind kind, const SignalSurfaces& surfaces,
+               const denoise::HistoryGuidance& history, denoise::Denoiser& denoiser,
+               SignalProduction& report) noexcept;
 
     u32 width_ = 0;
     u32 height_ = 0;

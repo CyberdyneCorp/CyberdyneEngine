@@ -16,10 +16,11 @@
 //
 // `dependencies.md` calls joining it *"one adapter at one composition point"*. **It is not one
 // adapter, and this file is the measured answer to that.** The three lines the adapter would be are
-// `SkyIllumination::fit()`, four of the two hundred here. The rest is the half of the requirement an
-// adapter cannot do:
+// `SkyIllumination::fit()`, four of the two hundred here. The rest is the half of the requirement
+// an adapter cannot do:
 //
-//   * *"updated incrementally where the sky changes continuously"* — a sun that moved a quarter of a
+//   * *"updated incrementally where the sky changes continuously"* — a sun that moved a quarter of
+//   a
 //     degree must not cost what `IlluminationSystem::configure()` costs, which is the clipmap
 //     rebuilt, the probe cache discarded and the acceleration service reconstructed. So the term is
 //     refitted on a THRESHOLD and installed through `set_sky_term`, which touches the two places
@@ -124,17 +125,17 @@ struct SkyIlluminationSettings {
     /// A multiplier on the fitted term, for a project whose lights are not in physical units.
     ///
     /// ONE IS THE PHYSICAL ANSWER AND IT IS THE DEFAULT. This exists because the atmosphere answers
-    /// in LUX — a clear midday sky delivers some tens of thousands of them — and a scene whose lamps
-    /// were authored as "intensity 30" is not in that unit. Mixing the two does not look like a
-    /// bright day; it looks like the sky is the only light in the world.
+    /// in LUX — a clear midday sky delivers some tens of thousands of them — and a scene whose
+    /// lamps were authored as "intensity 30" is not in that unit. Mixing the two does not look like
+    /// a bright day; it looks like the sky is the only light in the world.
     ///
     /// MEASURED, on `samples/07-fidelity`'s district during M11.c: lighting it through this seam
     /// with an unscaled physical sky moved its mean indirect luminance from 0.54 to 1905 and its
     /// convergence metric from 0.846 in ten frames to 0.609 after two thousand, because a probe
     /// gathering 24 rays a frame across a four-thousand-to-one contrast never settles. Scaling the
     /// term to the irradiance that shot's own placeholder delivered — an exposure of 0.000345 —
-    /// brought the luminance back to 0.66 and the convergence to 0.842 at the frame cap. **That last
-    /// number is the finding and it is not this setting's**: the shot's target is 0.85 and its
+    /// brought the luminance back to 0.66 and the convergence to 0.842 at the frame cap. **That
+    /// last number is the finding and it is not this setting's**: the shot's target is 0.85 and its
     /// measured metric sits within half a per cent of it either way, so ANY change to its sky term
     /// tips it, and re-lighting an M7 artefact is not a thing an exposure lever can make safe.
     ///

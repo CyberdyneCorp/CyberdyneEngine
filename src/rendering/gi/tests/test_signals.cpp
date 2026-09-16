@@ -14,9 +14,9 @@
 // `integration.render_denoise_filter` test it hard, including the bit-for-bit case that makes
 // "one filter" structural. The consequence is that **the per-signal half of the specification was
 // exercised only by buffers written by the test asserting on them**, and "the framework handles
-// five signals" was readable off an enumerator and off nothing else. `denoising`'s own scenario says
-// so in as many words: a visibility term denoised as occlusion "SHALL be exercised by the producer
-// rather than by a synthetic buffer written in the denoiser's own test".
+// five signals" was readable off an enumerator and off nothing else. `denoising`'s own scenario
+// says so in as many words: a visibility term denoised as occlusion "SHALL be exercised by the
+// producer rather than by a synthetic buffer written in the denoiser's own test".
 //
 // So this suite runs `StochasticSignals` over a real room with a real occluder, and asks the
 // framework's own per-signal census who drove it. A signal with no producer shows up as an
@@ -70,10 +70,10 @@ struct PillarRoom {
         lights[0].radius = 0.6F;
         CY_REQUIRE(system.configure(gi_support::room_settings()).has_value());
         CY_REQUIRE(system.field().place(1, room.asset(), cy::Mat4::identity()).has_value());
-        CY_REQUIRE(system.field()
-                       .place(2, pillar.asset(),
-                              cy::Mat4::from_translation(Vec3{0.0F, -0.4F, 0.0F}))
-                       .has_value());
+        CY_REQUIRE(
+            system.field()
+                .place(2, pillar.asset(), cy::Mat4::from_translation(Vec3{0.0F, -0.4F, 0.0F}))
+                .has_value());
         const cy::Aabb bounds = cy::Aabb::from_center_extents(
             Vec3{0.0F, 0.0F, 0.0F},
             Vec3{gi_support::kRoomX + 1.0F, gi_support::kRoomY + 1.0F, gi_support::kRoomZ + 1.0F});
@@ -169,13 +169,13 @@ CY_TEST_CASE("every declared signal has a producer that routes through the frame
     }
 
     const cy::rendering::denoise::HistoryGuidance history;
-    const auto production =
-        signals.produce(view.surfaces(), {room.lights.data(), room.lights.size()}, room.system,
-                        history, 1);
+    const auto production = signals.produce(
+        view.surfaces(), {room.lights.data(), room.lights.size()}, room.system, history, 1);
     CY_REQUIRE(production.has_value());
     const SignalProduction& report = production.value();
 
-    // --- THE TABLE THE REQUIREMENT ASKS FOR: which signals have a producer, BY NAME ---------------
+    // --- THE TABLE THE REQUIREMENT ASKS FOR: which signals have a producer, BY NAME
+    // ---------------
     u32 driven = 0;
     for (u32 index = 0; index < kSignalCount; ++index) {
         const auto kind = static_cast<SignalKind>(index);
@@ -202,24 +202,26 @@ CY_TEST_CASE("every declared signal has a producer that routes through the frame
     }
     CY_CHECK_EQ(driven, kSignalCount);
 
-    // --- AND THE FRAMEWORK ACTUALLY RECONSTRUCTED SOMETHING ---------------------------------------
+    // --- AND THE FRAMEWORK ACTUALLY RECONSTRUCTED SOMETHING
+    // ---------------------------------------
     //
     // Every one of the five is a one-sample-per-pixel estimate, so every one of them arrives noisy.
     // A signal whose variance did not fall went through a filter that did nothing to it, and a
     // producer feeding such a signal is a producer feeding a constant.
     for (u32 index = 0; index < kSignalCount; ++index) {
         const auto kind = static_cast<SignalKind>(index);
-        CY_TEST_MESSAGE("variance of ", std::string(signal_name(kind)), ": ", report.noisy_variance[index],
-                        " -> ", report.reconstructed_variance[index]);
+        CY_TEST_MESSAGE("variance of ", std::string(signal_name(kind)), ": ",
+                        report.noisy_variance[index], " -> ", report.reconstructed_variance[index]);
         CY_CHECK_GT(report.noisy_variance[index], 0.0F);
         CY_CHECK_LT(report.reconstructed_variance[index], report.noisy_variance[index]);
         CY_CHECK_EQ(signals.reconstructed(kind).size(), static_cast<cy::usize>(kPixels));
     }
 
-    // --- THE SAME FRAME TWICE IS THE SAME NOISE ----------------------------------------------------
+    // --- THE SAME FRAME TWICE IS THE SAME NOISE
+    // ----------------------------------------------------
     //
-    // The sample directions are a permutation of the pixel and the frame rather than a generator, so
-    // a stochastic signal is reproducible. Without this a golden image of anything downstream of
+    // The sample directions are a permutation of the pixel and the frame rather than a generator,
+    // so a stochastic signal is reproducible. Without this a golden image of anything downstream of
     // these five would be a coin toss.
     StochasticSignals again;
     CY_REQUIRE(again.resize(kWidth, kHeight).has_value());
@@ -253,18 +255,17 @@ CY_TEST_CASE("a visibility term is denoised as occlusion rather than as radiance
     CY_REQUIRE(signals.resize(kWidth, kHeight).has_value());
 
     const cy::rendering::denoise::HistoryGuidance history;
-    const auto production =
-        signals.produce(view.surfaces(), {room.lights.data(), room.lights.size()}, room.system,
-                        history, 3);
+    const auto production = signals.produce(
+        view.surfaces(), {room.lights.data(), room.lights.size()}, room.system, history, 3);
     CY_REQUIRE(production.has_value());
 
     // The pillar has to actually shadow something, or the comparison below is two filters over one
     // constant. This is the control on the fixture rather than on the filter.
     const f32 raw_decisive = decisive_fraction(signals.noisy(SignalKind::RayTracedShadow));
-    const f32 raw_variance = luminance_variance(signals.noisy(SignalKind::RayTracedShadow),
-                                                view.surfaces().depth);
-    CY_TEST_MESSAGE("the produced shadow buffer: ", raw_decisive,
-                    " of it is decided, variance ", raw_variance);
+    const f32 raw_variance =
+        luminance_variance(signals.noisy(SignalKind::RayTracedShadow), view.surfaces().depth);
+    CY_TEST_MESSAGE("the produced shadow buffer: ", raw_decisive, " of it is decided, variance ",
+                    raw_variance);
     CY_REQUIRE(raw_variance > 0.01F);
     CY_REQUIRE(raw_decisive > 0.9F);
 
@@ -279,9 +280,9 @@ CY_TEST_CASE("a visibility term is denoised as occlusion rather than as radiance
     const f32 occlusion_decisive =
         decisive_fraction(signals.reconstructed(SignalKind::RayTracedShadow));
 
-    // THE SAME BUFFER, THROUGH THE SAME FILTER, WITH THE RADIANCE CONFIGURATION. `SignalKind` carries
-    // no behaviour — `integration.render_denoise_filter` asserts that bit for bit — so this is the
-    // domain and nothing else: a second denoiser, the same kind, the diffuse configuration.
+    // THE SAME BUFFER, THROUGH THE SAME FILTER, WITH THE RADIANCE CONFIGURATION. `SignalKind`
+    // carries no behaviour — `integration.render_denoise_filter` asserts that bit for bit — so this
+    // is the domain and nothing else: a second denoiser, the same kind, the diffuse configuration.
     cy::rendering::denoise::Denoiser as_radiance;
     CY_REQUIRE(as_radiance.resize(kWidth, kHeight).has_value());
     as_radiance.configure(SignalKind::RayTracedShadow,
@@ -297,7 +298,8 @@ CY_TEST_CASE("a visibility term is denoised as occlusion rather than as radiance
     guidance.material_id = surfaces.material_id;
     cy::rendering::denoise::NoisySignal noisy;
     noisy.values = signals.noisy(SignalKind::RayTracedShadow);
-    const auto as_colour = as_radiance.denoise(SignalKind::RayTracedShadow, noisy, guidance, history);
+    const auto as_colour =
+        as_radiance.denoise(SignalKind::RayTracedShadow, noisy, guidance, history);
     CY_REQUIRE(as_colour.has_value());
     const f32 radiance_decisive = decisive_fraction(as_colour.value());
 
