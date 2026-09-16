@@ -9,6 +9,12 @@ rung arrives at its own gate with a deferral it could have declared on day one.
 Section 6 is the sweep and it is last among the work because it cannot be scoped until the four rungs
 above have closed. Sections 9 and 10 are the records and the gate, and **this gate is 1.0**.
 
+**Section 5a is lettered rather than numbered, and deliberately.** It is scope moved here from M11.c
+— the editor's material authoring front end, beside the `.cygraph` writing this rung was already
+assigned — and `m11e.toml`'s criteria cite task numbers, so inserting a numbered section would
+renumber the tasks those citations name. A letter keeps every existing number pointing where it
+pointed.
+
 ## 0. The spike — can a hosted runner produce a mobile artefact at all?
 
 - [ ] 0.1 **Measure, do not assume**, across the four axes `design.md` §1 separates, for **one empty
@@ -166,6 +172,86 @@ tier.
       merely noticed
 - [ ] 5.4 The mobile leg from 1.5 joins the matrix, or the matrix records its absence as part of the
       mobile deferral rather than being quietly one leg short
+
+## 5a. Inherited from M11.c — the editor's material authoring front end, beside the `.cygraph` writing it depends on
+
+**Lettered rather than numbered so that `m11e.toml`'s `source` fields, which cite task numbers, keep
+citing the same tasks.**
+
+**WHY THIS IS HERE AND NOT IN M11.c.** M11.c's spike ran its rung's whole authoring path and junction
+1 — AUTHOR — came back **REFUSED**: `SpecialisedEditors::open(Domain::Materials)` returned *"this
+build declares no authoring vocabulary for materials"*. Behind that refusal was not a fix but three
+pieces in two languages — a node-type vocabulary in Rust, a material document and its on-disk form,
+and a `lower_material` in `src/graph/` — which M11.c's proposal costed as one line of one task.
+**M11.c built two of the three and the third was already this rung's**:
+`editor/crates/cy-editor-interface/src/specialised/graph.rs` assigned **writing `.cygraph` from Rust
+to M11.e** before M11.c started, and gave the reason — *"a second writer of a canonical format is a
+second format the day the two disagree about a float"*. M11.c design.md §1.3c records the move.
+
+**WHAT ARRIVES ALREADY BUILT, so this section adds a front end rather than a vocabulary**:
+`src/graph/material/`'s 25 node types (one per `GraphOp` plus `material.output`, asserted equal to
+`"material." + graph_op_name(op)` by `unit.graph_material`); `Domain::Materials => MATERIAL_NODES`
+and `specialised/material.rs`'s pins, without which `GraphCanvas::connect` refuses every wire; and an
+**interchange** the editor writes and `cy_material author` canonicalises through the engine's own
+`write_graph`, so there is exactly one writer of `.cygraph` today and it is the engine's.
+
+**AND WHAT ARRIVES AS A CAPTION THIS RUNG CAN MAKE OBSOLETE.** M11.c's beauty shot was authored
+through the tooling that exists rather than through a material graph editor: its three materials are
+placed and wired on the editor's authoring MODEL by `cy-author-material`, a binary in the editor's
+own workspace — not by a person at a window and not over the control socket.
+`m11c:the-shot-does-not-overclaim-the-editor` asks `cyberdyne-editor --list-commands` for the
+registry and **goes RED the day a `material.*` command appears in it**. So task 5a.1 below breaks a
+green criterion on another rung's ledger by succeeding, and the caption in
+`docs/design/beauty-shot.md` is owed an update in the same change. That is the criterion working, not
+failing, and it is named here so that whoever lands 5a.1 is not surprised by it.
+
+- [ ] 5a.1 **`material.*` commands in `cy_editor_services`' registry**, so a material can be authored
+      over the control socket the way `samples/08a-authoring` authors a scene. There are none today —
+      measured, not assumed: `cyberdyne-editor --list-commands` prints the registry and no entry
+      begins `material.`. Until they exist a person at a window cannot place a material node, and the
+      only thing that can is a program linking `cy-editor-interface` directly
+      - [ ] **The criterion is the round trip and not the listing.** A registry entry that no canvas
+        honours is the same shape of defect as a catalogue with no pins. What has to go red is a
+        command sequence that places and wires the shot's own material and produces the committed
+        `.cygraph` — the file `m11c:materials-are-textures` already regenerates and compares
+        byte for byte, so the comparison exists and only the driver is new
+      - [ ] **Update `docs/design/beauty-shot.md` and M11.c's `the-shot-does-not-overclaim-the-editor`
+        in the same change**, because that criterion is written to fail the moment this lands. Its
+        `describe` says so in its own words. **Do not weaken it to keep it green** — the honest edit
+        is the caption, which stops being an admission and becomes a record of how the shot was
+        authored on the day it was authored
+- [ ] 5a.2 **The material graph front end, and the stage comparison that has been waiting for one.**
+      M11.c task 1.3 asked that *every lowering stage `cy_material compile` prints be reachable
+      through the editor's front end, and the two agree on the same graph*. The engine half is done —
+      `stages.h`'s five stages, `dump_graph`/`dump_module`, `cy_material compile --stages`,
+      `attach_backend_stage` — and the comparison there runs the command line against a second caller
+      of the same list, which is a stand-in and is labelled one. **The front end is the missing
+      operand.** `material-compiler`'s *"Node previews use the real compiler"* and `shader-system`'s
+      *"Visual material editor"* are the same absence read from two sides
+      - [ ] **The check compares two answers, not one answer against a fixture.** The stage list and
+        each stage's output that the front end obtains, against `cy_material compile --stages` for
+        one committed graph, red when they diverge. A fixture of expected stage names would agree
+        with a front end that had stopped asking the compiler
+      - [ ] **`src/rendering/material/src/preview.cpp`'s refusal is the negative control and it
+        already exists.** `m11c:material-node-previews` mutates it: delete the one-statement guard
+        and a preview is attempted with no compiler behind it. A front end that draws a thumbnail
+        when the compiler is gone is the defect both rows' requirements name, and the control for it
+        is written and proven red
+- [ ] 5a.3 **Writing `.cygraph` from Rust — the assignment this section is named after — is a
+      decision to make, not a feature to add.** `specialised/graph.rs` forbids a second writer of the
+      canonical format and gives the reason. The interchange M11.c built is one answer and it may be
+      the right one permanently: the editor writes a source, the engine owns what it becomes, the way
+      M8.a chose for `.cyprim`. **If that is the answer, say so and retire the comment's "M11.e"
+      rather than leaving a rung pointer that outlived its rung**; if it is not, the round trip needs
+      a digest comparison against the engine's writer before any Rust-written file is committed
+- [ ] 5a.4 **And the VFX half is the same shape and is NOT silently included here.**
+      `Domain::VfxGraph::node_types()` is still the empty slice and
+      `SpecialisedEditors::open(Domain::VfxGraph)` refuses exactly as `Domain::Materials` did. M11.c
+      fixed one of that pair and demoted `vfx-system` to Working for the other, so the row arrives at
+      section 6's sweep **with the reason that demoted it** and is settled there — Complete or
+      deferred with a re-entry point — rather than absorbed into this section. The engine-side
+      vocabulary a VFX catalogue would need does not exist either, which is what makes it a row for
+      the sweep and not a front end for 5a.2
 
 ## 6. The sweep — every remaining row Complete, or deferred with a re-entry point
 

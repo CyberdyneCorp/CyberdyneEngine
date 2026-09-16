@@ -67,8 +67,11 @@ anti-aliasing and every temporal decision are being judged on a picture nobody c
 
 - **`material-compiler` and `shader-system` to Complete first, and deliberately first.** Image
   quality is expressed through them, and global illumination cannot be Complete on a material
-  compiler that is not. The visual material editor is the panel M11.b built; this rung is what stands
-  behind it — node previews generated through the runtime compiler, every lowering stage visible.
+  compiler that is not. This rung is what stands behind a visual material editor — node previews
+  generated through the runtime compiler, every lowering stage dumpable and compared. **The editor
+  front end itself was assumed to be M11.b's and is not: M11.b closed without one, and after this
+  rung built the engine lowering and the node vocabulary, the remaining front end is M11.e's** —
+  see "What moved out of this rung" below.
 - **The eight rows that are the image, to Complete** — `virtual-geometry`, `virtual-shadows`,
   `rendering-global-illumination` (the row the plan promised Complete at M10 and M10 did not
   deliver), `denoising`, `ray-tracing-infrastructure`, `rendering-post-processing`,
@@ -83,8 +86,37 @@ anti-aliasing and every temporal decision are being judged on a picture nobody c
   quaternions and blend shapes where the specification says they belong.
 - **`vfx-system` to Complete**, because an art-directed shot with no particles in it is a shot that
   does not exercise the row.
-- **Real materials in the tree**, authored through the editor M11.b finished, encoded by the encoder
-  M11.b built, and reaching the renderer as textures rather than as constants.
+- **Real materials in the tree**, authored on the editor's authoring model, encoded by an encoder
+  this rung had to build after M11.b's did not arrive, and reaching the renderer as textures rather
+  than as constants.
+
+## What moved out of this rung
+
+**The spike (design.md §1.3b) found junction 1 — AUTHOR — refusing, and behind that refusal was not
+a fix but a rung boundary.** Making a material authorable in the editor needs three pieces in two
+languages: a node-type vocabulary for `Domain::Materials` in Rust, a material document and its
+on-disk form, and a `lower_material` in `src/graph/`. Nobody costed them here, and the second runs
+into a prohibition written before this rung started —
+`editor/crates/cy-editor-interface/src/specialised/graph.rs` assigns **writing `.cygraph` from Rust
+to M11.e**.
+
+**This rung keeps what it built**: `src/graph/material/`'s 25 node types, `Domain::Materials =>
+MATERIAL_NODES` with the pins `GraphCanvas::connect` requires, and an interchange the engine
+canonicalises with its own writer, so there is still exactly one writer of `.cygraph` and it is the
+engine's.
+
+**It moves to M11.e**: the `material.*` commands `cy_editor_services` does not register — so a
+material cannot be authored over the control socket the way `samples/08a-authoring` authors a scene,
+nor by a person at a window — and the front end that would drive them, which is what task 1.3's
+comparison of *"every lowering stage reachable through the editor's front end"* needs and cannot have
+here. Both sit beside `.cygraph` writing because a front end a person drives is a front end that
+saves, and what it saves is the canonical format Rust is not allowed to write.
+
+**And the artefact's claim is narrowed to match.** The beauty shot was authored through the tooling
+that exists rather than through a material graph editor: its materials are placed and wired on the
+editor's authoring model by a binary in the editor's own workspace.
+`m11c:the-shot-does-not-overclaim-the-editor` is that sentence made falsifiable, and it is not
+reworded — it asserts exactly what the tree does, so it stays here.
 
 ## Capabilities
 
@@ -102,9 +134,9 @@ tempted to read a specification and feel better about it.
 ## What is contingent, and what this rung predicts about itself
 
 - **This rung cannot start without M11.b's texture path.** BC7 and ASTC encoding, PNG and JPEG
-  decoding and the material graph panel are M11.b's work. If any of them demotes, **the beauty shot
-  degrades to another debug view and this rung should say so rather than photograph one and call it
-  art direction.**
+  decoding and the material graph panel were assumed to be M11.b's work. **None of the three
+  arrived**, and this rung built the encoder and the codecs (task 6.1b) and the authoring vocabulary
+  (6.1a) rather than photographing a debug view; the front end that is left is M11.e's, above.
 - **It cannot be judged without M11.a's budget.** A tuned frame at 122 ms is not a tuned frame.
 - **`rendering-global-illumination` is the row with the longest history of being promised.** Its
   Complete cell was at M7, then at M10 because of dependency cycle 2, and it is here because the
@@ -133,9 +165,9 @@ tempted to read a specification and feel better about it.
 - **New content**: the first textures in the repository's history, and the licensing and provenance
   record for every one of them — `thirdparty-dependencies`' governance applies to content the project
   ships as much as to code it links.
-- **Closing artefact**: **an art-directed beauty shot** — real materials, tone mapping,
-  anti-aliasing, tuned post — assembled through the editor rather than in C++, published beside a
-  statement of what was authored and what was rendered.
+- **Closing artefact**: **an art-directed beauty shot** — real materials, tone mapping, tuned post —
+  authored on the editor's own authoring model rather than in C++, published beside a statement of
+  what was authored and what was rendered, **including what of the editor it did not go through**.
 - **Risk**, and the rung's named spike: **one authored material, end to end, before anything is
   scoped.** Author one textured material in the editor's graph, compile it through the runtime
   compiler, encode its textures, bind it in the assembled frame, and photograph it. Everything in

@@ -80,6 +80,7 @@ close on work this rung performs.
 | MSAA and multi-view — `rendering-forward-clustered`'s **desktop** half | **M11.d** | This rung owns the row's Complete cell and the mobile third of its scope. **Two rungs, one row, and the tier is this rung's to record** |
 | `build-and-packaging` — content audit, provenance, symbols, DLC, distributed execution | **M11.d** | Distribution artefacts are assembled by the packaging capability. If M11.d demotes that row — its own proposal predicts it may — its remaining scope arrives here with the reason that demoted it |
 | `developer-workflow-and-just` | **M11.d** | Two of the three stale refusals section 4 finds are its recipes, not this rung's |
+| The engine's `lower_material`, the `Domain::Materials` vocabulary and its pins, and the interchange `cy_material author` canonicalises | **M11.c** | **Inherited scope rather than a dependency this rung waits on — tasks section 5a.** `specialised/graph.rs` assigned *writing `.cygraph` from Rust* here before M11.c started; M11.c's spike then found junction 1 REFUSING and built two of the three pieces behind that refusal. The third — a front end a person drives, which is a front end that SAVES — was always this rung's, and it arrives with everything under it already built and tested |
 
 **And one boundary inside a shared specification.** `delivery-roadmap` is this rung's row, but
 M11.a's split change also writes against it — the ladder-insertion mechanics, `record.MILESTONES`,
@@ -95,6 +96,17 @@ rung records the tier. If any of those rungs defers an adoption, the deferral la
 this rung has to say so rather than count the library as integrated because a manifest entry exists.
 **A manifest entry is not an integration** — `steam_audio` has had one since M8.c and does not
 configure.
+
+**One inherited task is finished by making another rung's green criterion go red, and it is the only
+one on the ladder with that shape.** `m11c:the-shot-does-not-overclaim-the-editor` asks
+`cyberdyne-editor --list-commands` for its registry and fails the moment a `material.*` command
+appears in it, because M11.c's beauty shot **was authored through the tooling that exists rather than
+through a material graph editor** — its materials placed and wired on the editor's authoring model by
+a binary in the editor's workspace, not by a person at a window and not over the control socket — and
+the artefact's caption says exactly that. Task 5a.1 makes the caption false by succeeding. **The
+caption is then what changes, in the same change, and the criterion is not weakened to keep it
+green**; a criterion written to fail when the tree improves is a criterion doing its job, and this is
+the ladder's first instance of one.
 
 ## 3. The sweep, and the discipline that makes it honest
 

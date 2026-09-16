@@ -66,11 +66,13 @@ that rung — and what stands behind it is this rung's.
       constants**, per the new requirement in `specs/material-compiler/`. This is what makes a
       sentence about a published picture checkable rather than rhetorical: a shot whose materials are
       all constants is a shot of the lighting, and the compile report is where that is read off
-- [ ] 1.3 **Every lowering stage `cy_material compile` prints is reachable through the editor's front
-      end, and the two agree on the same graph.** The requirement is that the panel is a front end
-      *onto the compiler* able to show every stage — so the check compares the stage list and the
-      stage output the panel obtains against the command line's for one committed graph, and goes red
-      when they diverge
+- [x] 1.3 **Every lowering stage `cy_material compile` prints is dumpable, and two callers of that
+      list agree on the same graph.** **SCOPE NARROWED BY THE MOVE, NOT BY THE RESULT — design.md
+      §1.3c.** As written this task said *"reachable through the editor's front end"*, and the front
+      end is M11.e's: there is none here to compare against, and the one that would be built saves
+      `.cygraph`, which `specialised/graph.rs` assigns to that rung. What this rung owes and has
+      delivered is the compiler half — every stage dumpable, and the command line and the library
+      compared on one committed graph, red when they diverge
       - [x] **The engine half is done and it was most of the work.** There was no readable form of a
         material IR anywhere in this tree, so `material-compiler`'s "its IR SHALL be dumpable in a
         readable form, before and after optimisation" had no implementation at all.
@@ -81,12 +83,14 @@ that rung — and what stands behind it is this rung's.
         `unit.material_compiler`'s *every lowering stage is inspectable* and by
         `integration.material_cook`'s *the command line and the library agree about the lowering
         stages*, which RUNS the binary and compares two answers
-      - [ ] **The panel half is blocked on task 6.1a and is not this task's to force.** The editor
-        REFUSES to open a material editor — `Domain::Materials::node_types()` is the empty slice, so
-        no catalogue is built and `SpecialisedEditors::open` returns "this build declares no
-        authoring vocabulary for materials". Until 6.1a lands there is no front end to compare the
-        command line against, and the stand-in comparison here is the command line against a second
-        caller of the same list
+      - **→ MOVED TO M11.e — task 5a.2 there. NOT A BOX, because a box would be a tick and this is
+        a transfer.** Nothing about it is done and nothing about it is claimed. When this item was
+        written the blocker was 6.1a and the editor refused to open a material editor at all;
+        `Domain::Materials => MATERIAL_NODES` fixed that, and what is left is the part that was never
+        this rung's — a front end a person drives, which is a front end that saves, and saving is
+        `.cygraph` writing. The stand-in that stays here is the command line against a second caller
+        of the same list, which is what `m11c:lowering-stages-inspectable` and
+        `integration.material_cook` check and all they ever checked
 - [x] 1.4 Prove both criteria can fail: rename or drop one lowering stage and watch the comparison go
       red; remove the compiler behind the preview and watch 1.1 go red. A criterion that cannot go
       red is not a criterion
@@ -545,6 +549,15 @@ authoring vocabulary for materials — `material-compiler` owes it"*. **And ther
 only. So 6.1 is split into 6.1a, 6.1b and 6.1c below. The VFX graph editor refuses identically,
 which is 6.4's blocker measured rather than predicted.
 
+**AND THE SPLIT DID NOT ALL LAND HERE — design.md §1.3c.** Junction 1 is three pieces in two
+languages, and the third of them, a front end a person drives, is a front end that SAVES: writing
+`.cygraph` from Rust is assigned to **M11.e** by `specialised/graph.rs` and was assigned there before
+this rung started. This rung built the engine's lowering, the node-type vocabulary and the pins, and
+authored the shot's materials on the editor's authoring MODEL from a program. **The `material.*`
+commands and the front end that drives them are M11.e's — section 5a of that rung's tasks.** The two
+boxes below that carried them are ticked as MOVED and say so in their own words; neither claims the
+work was done.
+
 - [x] 6.1a **The editor can author a material at all.** Three pieces in two languages: a node-type
       vocabulary for `Domain::Materials` in `cy-editor-interface` (the palette is compared against
       the engine's own lowerings by the contract gate, so the vocabulary has to be the engine's); a
@@ -580,11 +593,15 @@ which is 6.4's blocker measured rather than predicted.
         pairwise closure sums, the texture dragged in twice, the reversed operand order, the tint
         left at one, the muted emission, the orphan — lowers it, and requires the SAME IR DIGEST as
         M7's hand-built graph and the SAME COOK KEY as the text
-      - [ ] **WHAT IS NOT DONE: `material.*` COMMANDS.** `cy_editor_services`' registry has none, so
-        the materials cannot be authored over the control socket the way `samples/08a-authoring`
-        authors a scene, and a person at a window cannot place a node. The shot's provenance says
-        exactly that rather than claiming otherwise, and `m11c:the-shot-does-not-overclaim-the-editor`
-        goes RED the day a command is registered and the caption is owed an update
+      - **→ `material.*` COMMANDS MOVED TO M11.e — task 5a.1 there. NOT A BOX, because a box would
+        be a tick and this is a transfer.** `cy_editor_services`' registry has none, so the
+        materials cannot be authored over the control socket the way `samples/08a-authoring` authors
+        a scene, and a person at a window cannot place a node. That is unchanged and unfixed; what changed is who owns it, and
+        it goes with the `.cygraph` writing `specialised/graph.rs` already assigns to M11.e —
+        design.md §1.3c. The shot's provenance says exactly what it did and did not go through, and
+        `m11c:the-shot-does-not-overclaim-the-editor` goes RED the day a command is registered and
+        the caption is owed an update. **That criterion is not reworded and does not move**: it
+        asserts what the tree does rather than what this rung wished it did
 - [x] 6.1b **A block encoder, or the debt is declared.** `m11b:texture-encoders` and
       `m11b:image-codecs` both FAIL today, name a binary (`cy_test_unit_asset_import`) that has
       never existed, select 0 of 34 cases when pointed at the real suite `cy_test_unit_import`, and
@@ -682,7 +699,10 @@ which is 6.4's blocker measured rather than predicted.
         the three materials are placed and wired on `GraphCanvas` through
         `SpecialisedEditors::open(Domain::Materials)` — which M11.c's spike measured REFUSING — by a
         binary in the editor's own workspace. NOT by a person at a window and NOT over the control
-        socket; 6.1a's open box says why and the provenance says it in the artefact itself
+        socket — **the shot was authored through the tooling that exists rather than through a
+        material graph editor, because there is no material graph editor**; 6.1a's moved box and
+        design.md §1.3c say why, M11.e task 5a owns the remainder, and the provenance says it in the
+        artefact itself
       - [ ] **WHAT THE TASK ASKED FOR AND DID NOT GET: anti-aliasing and particles.** There is no
         temporal resolve in this tree for `FramePassKind::Temporal` to record, so the frame is
         SUPERSAMPLED and the manifest says three post stages, none of them temporal. There are no
@@ -752,6 +772,15 @@ which is 6.4's blocker measured rather than predicted.
 - [ ] 8.5 **Hand M11.d what this rung did not finish, in writing.** Not as a list of intentions: each
       unfinished thing is a declared gap in `m11c.toml` naming the rung that closes it, so a gap that
       starts passing fails the ledger and a gap that is quietly deleted fails it too
+      - [ ] **AND ONE THING GOES TO M11.e RATHER THAN M11.d, AND IT IS A SCOPE MOVE RATHER THAN A
+        GAP.** The editor's material authoring front end — the `material.*` commands and the panel
+        task 1.3 wanted to compare against — is scoped in `implement-m11e-ship`'s **tasks section
+        5a**, beside the `.cygraph` writing `specialised/graph.rs` already assigns to that rung.
+        design.md §1.3c is the reasoning. It is **not** a `known_gap` on a criterion here, because
+        no criterion in `m11c.toml` is red for it: `the-shot-does-not-overclaim-the-editor` is GREEN
+        and is written to go red the day M11.e lands 5a.1. Nothing in the ledger is edited for this
+        move, and that is deliberate — a criterion edited to describe a plan change is a criterion
+        whose recorded proof no longer matches it
 - [ ] 8.6 Register this rung's spike in `docs/roadmap/risks.md` beside the other milestones', with
       its outcome recorded the way M10's was. **The ladder mechanics of the split — `record.MILESTONES`,
       the matrix columns, the load table and `selftest`'s floors — are M11.a's** (its tasks 0.1), and

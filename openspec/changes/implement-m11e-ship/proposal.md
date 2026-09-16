@@ -63,6 +63,19 @@ M12: the roadmap moved it and these two recipes"*.
   leaves either Complete or deferred with a named re-entry, never silently.
 - **`xr-support` stays deferred with its prerequisites checked**, as a decision restated rather than
   a row skipped.
+- **The editor's material authoring front end, moved here from M11.c and beside the `.cygraph`
+  writing it depends on.** `editor/crates/cy-editor-interface/src/specialised/graph.rs` assigned
+  *writing `.cygraph` from Rust* to this rung before M11.c started, giving the reason — *"a second
+  writer of a canonical format is a second format the day the two disagree about a float"*. M11.c's
+  spike then found junction 1 of its authoring path REFUSING, and behind the refusal were three
+  pieces in two languages rather than one task. **M11.c built two of them** — the engine's
+  `lower_material` and its 25 node types, and `Domain::Materials`' vocabulary and pins in Rust, so
+  the material editor opens and its nodes wire — **and the third was already this rung's**: a front
+  end a person drives is a front end that saves, and what it saves is the canonical format Rust is
+  not allowed to write. What arrives here is the `material.*` command registry
+  `cy_editor_services` does not have, the front end that drives it, and the stage comparison M11.c
+  task 1.3 could not make without one. M11.c design.md §1.3c records the move; tasks section 5a
+  carries it.
 - **`delivery-roadmap` to Complete, and the 1.0 record written** — the matrix, the status record and
   the ledgers agreeing, and the statement of what 1.0 is and is not.
 
@@ -98,6 +111,12 @@ prerequisites verified.
   deferral is only honest with three things: what is unmet, why it is deferred, and the condition
   that brings it back. A row arriving here with none of those is a row that has to be finished, not
   recorded.
+- **One inherited task succeeds by turning another rung's green criterion red, and that is the
+  criterion working.** `m11c:the-shot-does-not-overclaim-the-editor` asks the editor for its command
+  registry and fails the day a `material.*` command appears in it, because M11.c's beauty shot was
+  authored through the tooling that exists rather than through a material graph editor and its
+  caption says so. Landing task 5a.1 owes `docs/design/beauty-shot.md` an updated caption in the same
+  change. **The caption is what changes; the criterion is not weakened to keep it green.**
 - **`thirdparty-dependencies` at Complete requires integrating *"about half the intended set"*** —
   a phrase this rung will have to turn into a list before it can be scoped, and the list may well be
   shorter than the intent, in which case the intent is what changes, through a change against the
@@ -111,7 +130,8 @@ prerequisites verified.
 
 - **New code**: mobile toolchain files and targets, the mobile pipeline path in the forward renderer,
   the release recipes' implementations, distribution artefact assembly, the runtime attribution API,
-  and whatever the sweep turns out to carry.
+  the editor's `material.*` commands and the material graph front end inherited from M11.c, and
+  whatever the sweep turns out to carry.
 - **Existing code**: `just/release.just`'s four stubs and their reference to a milestone that does
   not exist; `cmake/modules.cmake`'s "Planned" list becomes shorter by at least one entry.
 - **Machinery**: the full CI matrix; the final ledger, whose `expect_tiers` is the 1.0 claim itself;

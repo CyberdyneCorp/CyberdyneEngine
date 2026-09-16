@@ -141,6 +141,66 @@ if anything the controls strengthen it, because what they check is provenance an
 than bytes. And §1.4's admission stands unchanged: this spike still does not measure §4's demotion
 prediction.
 
+### 1.3c THE SCOPE MOVE — junction 1 was unpriced, and what is left of it is M11.e's
+
+**§1.3b's finding was not "one refusal to fix". It was a rung boundary.** Making a material
+authorable in the editor needs three pieces in two languages, and this design priced none of them:
+a node-type vocabulary for `Domain::Materials` in Rust, a material document and its on-disk form,
+and a `lower_material` in `src/graph/` beside `lower_script`, `lower_behaviour`, `lower_camera` and
+`lower_pose`. The third piece is an engine lowering, so the vocabulary the editor offers is the
+engine's or it is a second one — and the second piece runs straight into a prohibition that was
+already written down before this rung started: `editor/crates/cy-editor-interface/src/specialised/graph.rs`
+assigns **writing `.cygraph` from Rust to M11.e**, because *"a second writer of a canonical format is
+a second format the day the two disagree about a float"*.
+
+**So this rung contained work that belongs to another rung, and the split is drawn here rather than
+discovered at M11.e's gate.**
+
+**What M11.c built and keeps** — tasks 6.1a and 7.1, and the record stays with the rung that did it:
+
+- `src/graph/material/` — `cy::graph-material`, 25 node types, one per `GraphOp` plus
+  `material.output`, with `unit.graph_material` asserting the table equals `"material." +
+  graph_op_name(op)` for every enumerator.
+- `Domain::Materials => MATERIAL_NODES` and `specialised/material.rs`'s pins, so
+  `SpecialisedEditors::open(Domain::Materials)` succeeds and `GraphCanvas::connect` will wire a
+  material node — the junction the spike measured REFUSING.
+- The **interchange**, not a second canonical writer: the editor writes a line per node, property and
+  wire, `cy_material author` builds a `cy::graph::Graph` from it and hands it to the engine's own
+  `write_graph`. `graph.rs`'s prohibition is kept intact, which is what makes the move below a move
+  rather than a retraction.
+
+**What moves to M11.e, beside the `.cygraph` writing it depends on**:
+
+1. **`material.*` commands in `cy_editor_services`' registry.** There are none, so a material cannot
+   be authored over the control socket the way `samples/08a-authoring` authors a scene, and a person
+   at a window cannot place a node. This is the open half of task 6.1a.
+2. **The material graph front end, and the stage comparison that needs one.** Task 1.3's second half
+   — *every lowering stage `cy_material compile` prints is reachable through the editor's front end,
+   and the two agree on the same graph* — cannot be checked against a front end that does not exist.
+   The engine half is done and was most of the work (`stages.h`, `dump_graph`/`dump_module`,
+   `cy_material compile --stages`, `attach_backend_stage`); the comparison's second caller is the
+   command line against the library, and the panel's is M11.e's to add.
+
+**Both halves sit with `.cygraph` writing because both are the same decision.** A front end a person
+drives is a front end that saves, and the thing it saves is the canonical format Rust is not allowed
+to write. Scheduling them apart would put the prohibition on one rung and the pressure to break it on
+another.
+
+**AND THE SENTENCE THIS RUNG OWES ITS OWN ARTEFACT, PLAINLY.** §2 below and the proposal both
+promised a shot *"authored through the editor M11.b finished"*, and both are corrected to this
+paragraph rather than left standing. **M11.b finished no material editor** — the spike measured its
+refusal — and no material graph editor exists in this tree now either: there is no
+panel a person opens and no command a socket can send. **The beauty shot was authored through the
+tooling that exists**: its three materials are placed and wired on the editor's authoring MODEL —
+`SpecialisedEditors::open(Domain::Materials)` and the one shared `GraphCanvas` — by
+`cy-author-material`, a binary in the editor's own workspace, and the canonical `.cygraph` is written
+by the engine. That is a weaker claim than "authored in the material editor" and it is the claim the
+artefact makes: `docs/design/beauty-shot.md` says so under *"What is honestly missing from 'authored
+through the editor'"*, and `m11c:the-shot-does-not-overclaim-the-editor` goes RED the day a
+`material.*` command appears in `cyberdyne-editor --list-commands` and the caption is owed an update.
+The criterion is the one that would have to move if it asserted more than the tree does; it asserts
+exactly this, so it stays.
+
 ### 1.4 The honest asymmetry, named rather than dressed up
 
 **This spike measures the artefact's feasibility. It does not measure the row this design predicts it
@@ -162,15 +222,22 @@ not aesthetic.
 
 Both rows have exactly one open requirement and it is one absence read from two sides: *"Node
 previews use the real compiler"* has no graph to preview, and *"Visual material editor"* has no
-panel. The panel is **M11.b's**. What this rung owes is the half that makes the panel honest — the
-preview is generated by the same compiler `cy_material compile` drives, and every lowering stage the
-command line prints is reachable through the panel and agrees with it on the same graph.
+panel. **This section assumed the panel was M11.b's and that assumption did not survive the spike** —
+§1.3b measured `SpecialisedEditors::open(Domain::Materials)` refusing, and M11.b closed without a
+material editor of any kind. What this rung owes is the half that makes a panel honest, and that half
+is engine work that is now done: the preview is generated by the same compiler `cy_material compile`
+drives, and every lowering stage the command line prints is dumpable and is compared against a second
+caller of the same list. **The comparison against a FRONT END is M11.e's — §1.3c**, because there is
+no front end here to compare against and the one that would be built saves `.cygraph`, which
+`specialised/graph.rs` already assigns to that rung.
 
-**And the editor is finished before this rung deliberately.** An art-directed shot assembled by hand
-in C++ proves the renderer and nothing else. One authored *through* the editor proves the renderer
-and the editor at once, and is the only honest demonstration that this is a usable engine rather than
-a set of passing suites. That ordering is the reason M11.b sits above M11.c in the split, and it is
-also the reason §4's first contingency is about M11.b rather than about anything in this rung.
+**And the editor is finished before this rung deliberately — an ordering the spike refuted rather
+than confirmed.** An art-directed shot assembled by hand in C++ proves the renderer and nothing else,
+and one authored *through* the editor proves the renderer and the editor at once; that is why M11.b
+sits above M11.c in the split. **M11.b did not deliver the material half of it**, so this rung built
+the authoring vocabulary, the pins and the lowering itself (§1.3c) and photographed a shot authored on
+the editor's authoring MODEL from a program — not by a person at a window and not over the control
+socket. That is a real claim and a narrower one, and §7 is where it is written down as such.
 
 ## 3. Three seams, and the one that is two rows counted once
 
@@ -286,7 +353,7 @@ Stated as dependencies rather than absorbed, because each is another rung's task
 | **M11.a** | `m10:fields-sampled-on-a-device` and `cy/field.slang` | The only credible route to the budget above, and the reason the three bands are described as "work a shipping engine does in a shader" |
 | **M11.a** | `m10:sky-field-round-trip` | Task 2.4 and row `atmosphere-sky-and-clouds`. A consumer cannot be written against a field whose producer reports one thing and whose sampler returns another |
 | **M11.b** | BC7 and ASTC encoding, PNG and JPEG decoding | Task 6.1. There is no texture encoder in the tree; without one the "real materials" this rung is about cannot be cooked |
-| **M11.b** | The material graph panel | Tasks 1.1 and 1.3, and both rows of tasks section 1. The compiler behind the panel is this rung's; the panel is not |
+| **M11.b** ~~owed~~ **— NOT DELIVERED, and the remainder is M11.e's** | The material graph panel | Tasks 1.1 and 1.3, and both rows of tasks section 1. The spike measured the refusal (§1.3b) and M11.b closed without one. This rung built the engine lowering, the node-type vocabulary and the pins itself; **the `material.*` commands and the front end that drives them move to M11.e, beside the `.cygraph` writing they depend on — §1.3c** |
 | **M11.b** | `animation-and-skinning`'s pose representation | Task 5.5. `skin_dispatch.cpp:58` refuses dual quaternions because `PoseWorld` publishes matrices — the missing piece is a pose representation, not a branch in the pass |
 | **M11.b** | The VFX graph editor | Task 6.4, and the fourth of `vfx-system`'s four recorded absences |
 | **M11.b** | A real sample game, and a scene worth photographing | Task 7.1. The artefact is authored *through* what M11.b finished; `samples/11-ship` is a packaging proof and each existing demo proves one slice |
@@ -327,6 +394,15 @@ measurement, and that is exactly why it carries obligations the others do not:
    *"one colour per cluster"*, and those captions are correct today and stay correct.
 4. **It ships with its before/after**, the same frame with the post chain and with none, because that
    difference is most of tasks sections 1 and 3 and no number shows it.
+5. **It says how much of the editor it went through, in the editor's own units.** *"Authored through
+   the editor"* is the sentence this rung is most able to overclaim, so it is stated at the weakest
+   true strength: **the shot was authored through the tooling that exists rather than through a
+   material graph editor.** The materials are placed and wired on the editor's authoring MODEL —
+   `SpecialisedEditors::open(Domain::Materials)` and the shared `GraphCanvas` — by a binary in the
+   editor's workspace; there is no panel a person opens and no `material.*` command a control socket
+   can send, and both are M11.e's (§1.3c). `m11c:the-shot-does-not-overclaim-the-editor` is that
+   sentence made falsifiable: it asks the editor for its command registry and goes red the day the
+   caption becomes an understatement.
 
 **A beautiful picture with an unstated provenance is the most efficient way to make this whole record
 dishonest.** Every other artefact on this ladder could be checked by running it again; this one is
