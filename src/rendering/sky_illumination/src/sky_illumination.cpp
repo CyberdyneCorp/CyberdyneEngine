@@ -137,6 +137,48 @@ void SkyIllumination::fit(Vec3 sun_direction) noexcept {
         static_cast<u64>(settings_.fit_samples) * settings_.fit_samples;
 }
 
+void SkyIllumination::refit(Vec3 sun, const SkyIlluminationFrame& frame,
+                            gi::IlluminationSystem& system) noexcept {
+    // THE FIRST FIT IS AN INSTALLATION AND NOT A STEP. There is no previous term for it to step
+    // from, and reporting 1.0 there would make "the sky never jumped" a claim about a frame that
+    // had no sky a moment earlier. Every subsequent fit is a continuity event and is measured as
+    // one.
+    const bool continuing = fitted_;
+    const Vec3 before =
+        continuing ? term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F}) : Vec3{0.0F, 0.0F, 0.0F};
+    fit(sun);
+    const Vec3 after = term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F});
+    const f32 reference = math::max(magnitude_of(before), magnitude_of(after));
+    report_.irradiance_step =
+        continuing && reference > 0.0F ? magnitude_of(after - before) / reference : 0.0F;
+
+    system.set_sky_term(term_);
+    // THE INVALIDATION, UNDER ITS OWN CAUSE. `SkyChanged` is what stops the sparse distance field
+    // being rebuilt for a sun that moved no geometry — see system.cpp — which is the whole of
+    // "invalidating only the illumination that depends on it".
+    system.scene().invalidate(frame.lit_region, gi::InvalidationCause::SkyChanged, frame.sky_id,
+                              frame.frame);
+    report_.refitted = true;
+    report_.invalidation_filed = true;
+    report_.sun_delta_rad = 0.0F;
+}
+
+void SkyIllumination::derive_sun(Vec3 sun, u64 sky_id) noexcept {
+    const Vec3 view = sky::ground_position(atmosphere_, settings_.observer_altitude_metres);
+    const Vec3 illuminance = sky::sun_illuminance(atmosphere_, view, sun);
+    const f32 lux = magnitude_of(illuminance);
+    report_.sun.direction = sun * -1.0F;
+    report_.sun.colour = lux > 0.0F ? illuminance * (1.0F / lux) : Vec3{1.0F, 1.0F, 1.0F};
+    // THE CLOUD FIELD ATTENUATES THE SUN AND NOT THE GRADIENT. Cloud cover scatters direct sunlight
+    // into the sky rather than deleting it, so dimming both would take the same light out of the
+    // frame twice — the header argues this where a reader meets it first.
+    report_.sun.intensity = lux * report_.cloud_transmittance;
+    report_.sun.range = 0.0F;
+    report_.sun.directional = true;
+    report_.sun.id = sky_id;
+    report_.sun_from_atmosphere = true;
+}
+
 SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
                                               gi::IlluminationSystem& system) noexcept {
     const Vec3 sun = normalized_or(frame.sun_direction, Vec3{0.0F, 1.0F, 0.0F});
@@ -156,28 +198,7 @@ SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
                            (!fitted_ || report_.sun_delta_rad >= settings_.refit_threshold_rad) &&
                            settings_.max_fits_per_update > 0;
     if (wants_fit) {
-        // THE FIRST FIT IS AN INSTALLATION AND NOT A STEP. There is no previous term for it to
-        // step from, and reporting 1.0 there would make "the sky never jumped" a claim about a
-        // frame that had no sky a moment earlier. Every subsequent fit is a continuity event and is
-        // measured as one.
-        const bool continuing = fitted_;
-        const Vec3 before =
-            continuing ? term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F}) : Vec3{0.0F, 0.0F, 0.0F};
-        fit(sun);
-        const Vec3 after = term_irradiance(term_, Vec3{0.0F, 1.0F, 0.0F});
-        const f32 reference = math::max(magnitude_of(before), magnitude_of(after));
-        report_.irradiance_step =
-            continuing && reference > 0.0F ? magnitude_of(after - before) / reference : 0.0F;
-
-        system.set_sky_term(term_);
-        // THE INVALIDATION, UNDER ITS OWN CAUSE. `SkyChanged` is what stops the sparse distance
-        // field being rebuilt for a sun that moved no geometry — see system.cpp — which is the
-        // whole of "invalidating only the illumination that depends on it".
-        system.scene().invalidate(frame.lit_region, gi::InvalidationCause::SkyChanged, frame.sky_id,
-                                  frame.frame);
-        report_.refitted = true;
-        report_.invalidation_filed = true;
-        report_.sun_delta_rad = 0.0F;
+        refit(sun, frame, system);
     } else {
         report_.reuses += 1;
         if (!has_atmosphere_) {
@@ -191,19 +212,7 @@ SkyIlluminationReport SkyIllumination::update(const SkyIlluminationFrame& frame,
     report_.cloud_transmittance = sunlight_fraction(frame.observer);
 
     if (has_atmosphere_) {
-        const Vec3 view = sky::ground_position(atmosphere_, settings_.observer_altitude_metres);
-        const Vec3 illuminance = sky::sun_illuminance(atmosphere_, view, sun);
-        const f32 lux = magnitude_of(illuminance);
-        report_.sun.direction = sun * -1.0F;
-        report_.sun.colour = lux > 0.0F ? illuminance * (1.0F / lux) : Vec3{1.0F, 1.0F, 1.0F};
-        // THE CLOUD FIELD ATTENUATES THE SUN AND NOT THE GRADIENT. Cloud cover scatters direct
-        // sunlight into the sky rather than deleting it, so dimming both would take the same light
-        // out of the frame twice — the header argues this where a reader meets it first.
-        report_.sun.intensity = lux * report_.cloud_transmittance;
-        report_.sun.range = 0.0F;
-        report_.sun.directional = true;
-        report_.sun.id = frame.sky_id;
-        report_.sun_from_atmosphere = true;
+        derive_sun(sun, frame.sky_id);
     }
     return report_;
 }

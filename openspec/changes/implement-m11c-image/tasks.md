@@ -93,42 +93,86 @@ that rung — and what stands behind it is this rung's.
 
 ## 2. The seam the plan promised twice — `rendering-global-illumination`, `denoising`, `ray-tracing-infrastructure` → Complete
 
-- [ ] 2.1 **The GI/atmosphere seam.** [Dependency cycle 2](../../../docs/roadmap/dependencies.md)
-      is entirely about this: an analytic sky seeds at M7, *"the physical atmosphere, its precomputed
-      tables and volumetric clouds land at M10, and GI reaches Complete there"*. The atmosphere
-      landed and the seam was never joined — `src/rendering/gi/` links `cy::rendering-denoise` and
-      `cy::rendering-raytracing` and not `cy::rendering-sky`, and **nothing outside a test constructs
-      a `gi::SkyTerm`**. `dependencies.md` calls joining it *"one adapter at one composition point"*.
-      **Build it, and if it turns out not to be one adapter, say what it actually was** — the
-      requirement's second half is that sky-derived illumination updates *incrementally where the sky
-      changes continuously* and *under the illumination budget*, and an adapter does not do that
-- [ ] 2.2 The seam is a **link-graph fact**, not a paragraph: a module or a composition point that
-      constructs the term from the atmosphere's tables, reachable from something that is not a test,
-      checked the way M10 checked its layering
-- [ ] 2.3 **A moving sun, measured rather than asserted.** Over M10's own day/night cycle, sky
-      irradiance follows the sun and thickening cloud without a visible step, and the invalidation it
-      triggers is bounded by the GI budget. The number to beat is a full recomputation
-- [ ] 2.4 **Cloud shadows reach illumination through the coarse field.** `atmosphere-sky-and-clouds`
-      requires the field to be *"consumed by terrain, foliage, water, and illumination"* and today
-      nothing outside `src/rendering/sky/` reads it. **The producer half is M11.a's**
-      (`m10:sky-field-round-trip`); the illumination consumer is this rung's, and it cannot be
-      written against a field that returns its declared default — design.md §5
-- [ ] 2.5 **`denoising`: three of five declared signals have no producer.** `IndirectDiffuse` and
-      `IndirectSpecular` route through the denoiser; `RayTracedShadow`, `AmbientOcclusion` and
-      `StochasticDirect` do not, and `src/rendering/gi/` is the only module in the tree that names
-      `Denoiser` at all. Either each gains a producer that routes through the framework, or the
-      enumerator comes out — **both are honest and the check names which**, per the new requirement
-      in `specs/denoising/`
-- [ ] 2.6 **`ray-tracing-infrastructure`: the device half.** The service executes its queries on the
-      CPU over `cy::Bvh`; `cy::rhi::Capability::RayTracing` is an enumerator **nothing sets**, so
-      every device this engine can open reports no ray tracing — including the RTX 5060 this was
-      written on — and every consumer runs its software fallback. The module's own README says the
-      device backend is *"two edits and no interface change"*: the RHI reports the capability and
-      `ServiceConfig::device_supports_ray_tracing` is set from it. **A Vulkan-only capability is a
-      one-backend claim** and the criterion must say so — design.md §4
-- [ ] 2.7 The three rows are claimed separately or not at all. A device-free criterion may carry the
-      software tier; a device criterion carries the device tier with `requires = "gpu"` and a reason,
-      the way `m10:world-still` sits beside `m10:world-artefact`
+**WHAT THIS SECTION FOUND, before the ticks.** Three of its six statements of fact were understated
+and one was wrong, and each changed what had to be built:
+
+- *"nothing outside a test constructs a `gi::SkyTerm`"* — **nothing constructed one at all**, test
+  included. `SkyTerm{}`'s default gradient was what every scenario under "Sky and atmosphere" was
+  satisfied by.
+- *"`IndirectDiffuse` and `IndirectSpecular` route through the denoiser"* — **they did not.**
+  `Denoiser::denoise()` had no caller anywhere outside the denoiser's own two suites; `src/rendering/gi/`
+  named `Denoiser` to set its quality position from a budget lever and for nothing else. So it was
+  five signals with no producer rather than three.
+- *"one adapter at one composition point"* (`dependencies.md`) — **it is a module.** The adapter is
+  four lines; the incremental refit, the invalidation cause and the budget bound are the rest.
+- `Capability::RayTracing` is set now, and the device that was the example of its absence — the
+  RTX 5060 — is the device that reports it.
+
+- [x] 2.1 **The GI/atmosphere seam.** `src/rendering/sky_illumination/` is the composition point:
+      `SkyIllumination` fits `gi::SkyTerm` from `sky::Atmosphere` through `sky::fit_sky_gradient`,
+      installs it through the new `IlluminationSystem::set_sky_term()`, derives the sun from
+      `sky::sun_illuminance`, and reports which sky lit the frame. **It is not one adapter and here
+      is what it actually was**, which is the half `dependencies.md` did not count: `configure()` was
+      the only way to change `IlluminationSettings::sky` and it rebuilds the clipmap, discards the
+      probe cache and reconstructs the acceleration service, so a sun that moved a quarter of a
+      degree cost a full recomputation. The seam therefore needed a threshold, an installer that
+      touches only the two places the sky is read from, an invalidation cause of its own, and an
+      exposure — because the atmosphere answers in LUX and authored content is not in that unit
+- [x] 2.2 The seam is a **link-graph fact**: `cy::rendering-sky-illumination` is the only library in
+      the tree that depends on `cy::rendering-gi` and `cy::rendering-sky` at once, and
+      `m11c:gi-sky-term-constructed` checks that over `cy_add_module` declarations with comments
+      stripped — **which is not a detail**: `src/rendering/sky/CMakeLists.txt` says in capitals that
+      it has NO dependency on `cy::rendering-gi`, so a search over raw text counted the module that
+      refuses the edge as one that has it
+- [x] 2.3 **A moving sun, measured rather than asserted.** `integration.rendering_gi_sky`, over 1400
+      frames of a sunrise on a twenty-minute day: **28 gradient fits of 1400 frames**, **0 field
+      bricks invalidated**, worst irradiance step across a refit **0.30 %**, irradiance moved
+      **6.8 %** across the take — more than twenty times the worst step. The number to beat,
+      measured beside it rather than assumed: a full recomputation re-solves **64 field bricks and
+      27 probes every frame**. The zero is `InvalidationCause::SkyChanged`, a cause of its own that
+      `service_invalidations` does not hand to the distance field, because a sun that rotated moved
+      no geometry
+- [x] 2.4 **Cloud shadows reach illumination through the coarse field**, and through
+      `CloudShadowField::sample` — the static function terrain, foliage and water call — rather than
+      through `FieldStore::sample_at` with a residency of its own. That is deliberate and it is this
+      rung not repeating `m10:sky-field-round-trip`'s mistake: a consumer that picks its own sampling
+      path is a consumer the field's own declared defect cannot break. **What it attenuates is the
+      SUN and not the sky term**: the field is the fraction of direct sunlight reaching a position,
+      and cloud cover scatters the rest into the sky rather than deleting it, so dimming both would
+      take the same light out of the frame twice
+- [x] 2.5 **It was five signals with no producer, not three.** `src/rendering/gi/signals.h` is
+      `StochasticSignals`: one stochastic sample per pixel per frame for each of indirect diffuse,
+      indirect specular, ray-traced shadows, ambient occlusion and stochastic direct, produced from
+      the tiered tracer and the surface cache and each routed through `denoise::Denoiser` across the
+      span seam the denoiser already declares. `Diagnostics::invocations` is the framework's own
+      per-signal census, so "which signals have a producer" is an observation rather than a grep, and
+      `integration.render_gi_signals` prints the table. `GiLight` gained a `radius`, because a point
+      light casts a shadow with no penumbra and a producer with no noise to reconstruct is a producer
+      that exercises nothing
+- [x] 2.6 **`ray-tracing-infrastructure`: the device half, and it is Vulkan only.** The backend
+      observes `VK_KHR_acceleration_structure`, `VK_KHR_ray_query` and
+      `VK_KHR_deferred_host_operations`, asks for `accelerationStructure` and `rayQuery`, enables
+      them, and records all six answers in `rhi::RayTracingObservation`;
+      `DeviceCapabilities::set_ray_tracing_observation` derives the bit. The RTX 5060 reports
+      `RayTracing=1`. `rt::service_config_for()` is the second of the two edits the module's README
+      has promised since M7. **What did NOT change is where the rays go** — still `cy::Bvh` on the
+      processor — and a one-backend capability is a one-backend claim, which both criteria say in
+      their own words
+- [x] 2.7 The tiers are claimed separately. `ray-tracing-capability-honest` is device-free and drives
+      the derivation with six answers each withdrawn in turn; `ray-tracing-on-the-device` carries
+      `requires = "gpu"` and a reason and opens a real device. Both are proven red by mutation
+      through `just roadmap-falsify --mutate-the-tree`, and so are `gi-sky-term-constructed` and
+      `denoiser-signals-have-producers`
+- [ ] 2.8 **WHAT THIS SECTION DID NOT DO, AND IT IS THE HONEST HALF.** No shipping PROGRAM lights its
+      shot through the seam yet. `samples/07-fidelity` was wired through it and reverted, and the
+      reason is a measurement rather than a preference: with an unscaled physical sky that shot's
+      mean indirect luminance moved from 0.54 to 1905 and its convergence metric from 0.846 in ten
+      frames to 0.609 after two thousand; with the term scaled to the irradiance its own placeholder
+      delivered the luminance came back to 0.66 and the convergence to **0.842 at the frame cap,
+      against a target of 0.85**. **That last number is the finding**: M7's artefact sits within half
+      a per cent of its own convergence threshold and ANY change to its sky term tips it, so
+      re-lighting it is not something an exposure lever makes safe. The seam is a library, an
+      integration suite and a criterion; putting it in a published frame belongs with the frame
 
 ## 3. The frame the picture is actually made of — `rendering-post-processing`, `temporal-rendering`, `rendering-lighting-and-shadows` → Complete
 

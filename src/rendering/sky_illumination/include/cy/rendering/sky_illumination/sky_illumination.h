@@ -250,6 +250,15 @@ private:
     /// Fit the gradient to the atmosphere at this sun direction, and account for the work.
     void fit(Vec3 sun_direction) noexcept;
 
+    /// Refit the term, install it, and file the invalidation. The whole of what a sun crossing the
+    /// threshold costs, in one place so that `update()` reads as the decision rather than the work.
+    void refit(Vec3 sun, const SkyIlluminationFrame& frame,
+               gi::IlluminationSystem& system) noexcept;
+
+    /// The sun the atmosphere implies at this direction, attenuated by the cloud shadow already
+    /// recorded in the report.
+    void derive_sun(Vec3 sun, u64 sky_id) noexcept;
+
     SkyIlluminationSettings settings_{};
     sky::Atmosphere atmosphere_{};
     gi::SkyTerm term_{};

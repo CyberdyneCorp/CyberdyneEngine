@@ -13,6 +13,7 @@
 #include <cy/rendering/gi/surface_cache.h>
 #include <cy/rendering/gi/system.h>
 
+#include <cmath>
 #include <vector>
 
 namespace sky_illumination_support {
@@ -68,7 +69,7 @@ struct SlabField {
 [[nodiscard]] inline std::vector<cy::rendering::gi::Surfel> ground_surfels(f32 spacing = 1.5F) {
     std::vector<cy::rendering::gi::Surfel> surfels;
     const auto steps = [spacing](f32 half) {
-        return static_cast<u32>((2.0F * half / spacing) + 0.5F) + 1U;
+        return static_cast<u32>(std::lround(2.0F * half / spacing)) + 1U;
     };
     for (u32 ix = 0; ix < steps(kGroundHalfX); ++ix) {
         for (u32 iz = 0; iz < steps(kGroundHalfZ); ++iz) {
