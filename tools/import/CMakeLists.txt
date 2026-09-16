@@ -51,11 +51,13 @@ cy_add_module(
     ALIAS cy::import
     TYPE STATIC
     SOURCES
+        src/block_encode.cpp
         src/clip_record.cpp
         src/fbx.cpp
         src/fbx_clip.cpp
         src/fbx_skeleton.cpp
         src/gltf.cpp
+        src/image_codecs.cpp
         src/importer.cpp
         src/json.cpp
         src/live_import.cpp

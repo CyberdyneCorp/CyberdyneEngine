@@ -1,7 +1,11 @@
 #include <cy/import/texture.h>
 
+#include <cy/import/block_encode.h>
+#include <cy/import/image_codecs.h>
+
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 namespace cy::import {
 namespace {
@@ -75,7 +79,7 @@ constexpr OptionSpec kTextureOptions[] = {
      0.0},
 };
 
-constexpr std::string_view kExtensions[] = {".tga"};
+constexpr std::string_view kExtensions[] = {".tga", ".png", ".jpg", ".jpeg"};
 constexpr assets::AssetKind kProduces[] = {assets::AssetKind::Texture};
 
 // --- Colour --------------------------------------------------------------------------------------
@@ -431,12 +435,28 @@ bool ImageData::has_meaningful_alpha() const noexcept {
 }
 
 Expected<ImageData, Error> decode_image(Span<const u8> bytes, std::string_view extension) noexcept {
-    if (extension == ".tga" || extension == ".TGA") {
+    // Case-folded once here rather than by listing both spellings of every extension: a project
+    // whose exporter writes `.PNG` is a project whose textures would otherwise all be refused.
+    char folded[8] = {};
+    const usize length = extension.size() < sizeof(folded) - 1 ? extension.size() : 0;
+    for (usize index = 0; index < length; ++index) {
+        const char character = extension[index];
+        folded[index] = (character >= 'A' && character <= 'Z')
+                            ? static_cast<char>(character - 'A' + 'a')
+                            : character;
+    }
+    const std::string_view lowered(folded, length);
+    if (lowered == ".tga") {
         return decode_targa(bytes);
     }
+    if (lowered == ".png") {
+        return decode_png(bytes);
+    }
+    if (lowered == ".jpg" || lowered == ".jpeg") {
+        return decode_jpeg(bytes);
+    }
     return fail(ErrorCode::Unsupported,
-                "this build reads Targa only; PNG needs a DEFLATE decoder and JPEG a DCT one, "
-                "neither of which is an integrated dependency yet");
+                "this build reads Targa, PNG and baseline JPEG; the extension names none of them");
 }
 
 Expected<u32, Error> generate_mips(const ImageData& image, bool srgb, bool preserve_alpha_coverage,
@@ -657,10 +677,12 @@ Status TextureImporter::import(const ImportRequest& request, ImportResult& out) 
     header.width = image.width;
     header.height = image.height;
     header.srgb = srgb_flag;
-    // False, and recorded rather than assumed: no block encoder is linked at M5, so the payload
-    // carries the uncompressed levels and `format` names what a build with an encoder would
-    // produce. See the note at the head of texture.h.
-    header.encoded = false;
+    // WRITTEN FROM WHAT THE ENCODER CAN ACTUALLY PRODUCE, and from nothing else. M11.c task 6.1b
+    // brought BC7, BC5 and BC4 into the tree; BC6H and ASTC are still named by `select_format` and
+    // produced by nobody, and for those two this stays false and the payload stays uncompressed —
+    // which is the arrangement texture.h has described since M5 and is now true of two formats
+    // rather than of all six.
+    header.encoded = can_encode(format);
 
     Array<u8> levels;
     if (mips_option.value().as_bool()) {
@@ -677,6 +699,17 @@ Status TextureImporter::import(const ImportRequest& request, ImportResult& out) 
             return appended;
         }
         header.mip_count = 1;
+    }
+
+    if (header.encoded) {
+        Array<u8> blocks;
+        if (Status encoded =
+                encode_mip_chain(levels.span(), header.width, header.height, header.mip_count,
+                                 image.channels, format, blocks);
+            !encoded) {
+            return encoded;
+        }
+        levels = std::move(blocks);
     }
 
     // The payload's own header: sixteen bytes, then the levels. Little-endian, like every other
