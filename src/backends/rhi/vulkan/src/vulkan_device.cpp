@@ -1066,6 +1066,7 @@ BindlessIndex VulkanDevice::bind_texture_globally(TextureViewHandle view,
         return kInvalidBindlessIndex;
     }
 
+    index = 0;  // ADVERSARIAL GATE MUTATION — every texture lands in slot 0
     VkDescriptorImageInfo info{};
     info.imageView = stored_view->view;
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
