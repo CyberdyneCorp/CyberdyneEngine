@@ -77,6 +77,10 @@ enum class DescriptorKind : u8 {
     InputAttachment,
 };
 
+/// "uniform-buffer", "storage-buffer", "sampled-texture", … The spelling a report and a diagnostic
+/// both use, so two descriptions of one binding read the same.
+[[nodiscard]] const char* descriptor_kind_name(DescriptorKind kind) noexcept;
+
 /// One binding in a descriptor set layout. `count` greater than one is an array; `count` of zero
 /// means a runtime-sized array, which is what a bindless global table is.
 struct DescriptorBinding {

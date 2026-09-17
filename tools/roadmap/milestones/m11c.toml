@@ -48,6 +48,12 @@ kind = "recipe"
 run = "just quality-specs"
 ci_job = "specs"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/specs/delivery-roadmap/spec.md"
+token  = "#### Scenario:"
+note   = "`--strict` refuses a requirement with no scenario, so taking the scenarios out of one specification is the shape this gate exists to catch. M11.b proves the same gate with the same mutation; the command is identical on both rungs and so is what can break it."
+
 [[criterion]]
 id = "format"
 describe = "the formatting gate is green over a tree that gained the shader targets, the GI/atmosphere adapter, a hierarchical depth buffer and a tuned post chain"
@@ -55,6 +61,12 @@ source = "tasks 9.1"
 kind = "recipe"
 run = "just quality-format-check"
 ci_job = "format"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".clang-format"
+token  = "IndentWidth: 4"
+note   = "the gate's claim is that the tree matches `.clang-format`; the mutation changes what `.clang-format` ASKS FOR — indentation falls back to the Google default of two — so every file in the tree differs from the style and the gate has to report it. M11.b records that deleting a line of C++ was tried there first and refuted, because this project does not indent inside a namespace; the same objection holds here, so the same mutation is taken."
 
 [[criterion]]
 id = "lint"
@@ -64,6 +76,12 @@ kind = "recipe"
 run = "just quality-lint"
 ci_job = "lint"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/core/memory/src/tracking_allocator.cpp"
+token  = "NOLINTNEXTLINE"
+note   = "the gate's claim is that clang-tidy reports nothing over what the build compiles, and `WarningsAsErrors` set to everything is what turns a finding into an exit code. The mutation renames the three earned suppressions in the allocator that casts through `void*` on purpose, so three real `bugprone-casting-through-void` findings fire on real lines of shipping code. A NEW defect was rejected for the reason M11.b records: it would have to be a defect clang-tidy is configured to catch, which is a guess about the check list, while a suppression that stops suppressing is a finding the tree has already agreed is one. THIS RUNG IS WHERE THE GATE ACTUALLY CAUGHT SOMETHING — 41 findings in nine files M11.c wrote, task 9.1 — so the mutation is over the same command that found them."
+
 [[criterion]]
 id = "layering"
 describe = "the layer order holds with the GI/atmosphere seam joined. `src/rendering/sky/CMakeLists.txt` records the absent dependency on `cy::rendering-gi` as DELIBERATE, which is what made the gradient fit measurable with no GI system present; joining the seam must not turn that absence into a cycle"
@@ -72,6 +90,12 @@ kind = "recipe"
 run = "just quality-layers"
 ci_job = "layering"
 
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/layercheck/layercheck.py"
+token  = "platform/"
+note   = "the sdl rule is `no SDL header appears outside platform/`. Renaming the directory the rule exempts turns the SDL includes that legitimately live in `platform/desktop-sdl3/` into reported violations over real source files — the check FIRES rather than crashing. M11.b records that renaming the expression itself was tried and rejected because it made the checker raise a NameError, which is a red for a reason no reader of this criterion could act on."
+
 [[criterion]]
 id = "workflows"
 describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11c` is green above the newest ledger any workflow evaluates"
@@ -79,6 +103,12 @@ source = "tasks 8.4, developer-workflow-and-just"
 kind = "recipe"
 run = "just ci-check"
 ci_job = "workflows"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token  = "just quality-layers"
+note   = "this gate is the one that stops the CI copy of the gate list from drifting: a permanent gate whose commands no job runs fails it. The mutation takes the layering gate's command out of every job, which is exactly that drift — and it is the drift this rung has a live instance of, `m1:workflows`, recorded in task 8.4."
 
 [[criterion]]
 id = "generated-code"
@@ -89,6 +119,11 @@ run = "just generate-check && just generate-test && just maintenance-deps-check"
 timeout_s = 3600
 ci_job = "generated-code"
 
+[criterion.falsifies]
+mutate = "truncate"
+target = "src/core/reflect/generated/cy_reflect_generated.cpp"
+note   = "the reflection metadata is COMMITTED, so its currency check is a comparison between the committed file and what the generator produces from the annotated headers. Emptying it is the staleness this gate exists to catch — an annotated header edited without the generator being run — and `reflect_gen --check` names the file. The headers half of the recipe writes into the build tree and cannot be reached by a source mutation, so the committed half is the one that is broken here. This rung has its own instance of the same gate catching something real: task 6.2 wrote a shipped-content licence record into a GENERATED file and `just maintenance-deps-check` said so."
+
 [[criterion]]
 id = "roadmap-record"
 describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it — for fifteen rows"
@@ -97,6 +132,12 @@ kind = "recipe"
 run = "just roadmap-status"
 ci_job = "roadmap-status"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "docs/roadmap/status.yaml"
+token  = "    change:"
+note   = "the criterion's own words are `every tier claim names the change that made it`; the mutation takes those lines out of the record, so every claim in it becomes anonymous and the gate has to say so."
+
 [[criterion]]
 id = "plan-consistency"
 describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, the ladder places m11c between m11b and m11d, and a declared gap that started passing fails"
@@ -104,6 +145,17 @@ source = "tasks 8.1, 8.3, delivery-roadmap"
 kind = "recipe"
 run = "just roadmap-test"
 ci_job = "roadmap-status"
+
+# NO `[criterion.falsifies]` HERE YET, AND THE REASON IS THIS CRITERION'S OWN SHAPE RATHER THAN AN
+# OMISSION. `just roadmap-test` runs `falsify check`, so a prover cannot control it by running it
+# again — `falsify._RUNS_THE_ROADMAP_TOOLING` refuses the tree control by name — and the only route
+# left to a proof is the ordinary one: the criterion must PASS in the sandbox and go red under a
+# mutation. It does not pass today: the ladder and `falsifiability.toml` disagree in 46 places
+# (`just roadmap-falsify check`), which is what this criterion is reporting. The declaration it owes
+# is M11.b's — `delete-lines "### Requirement:"` in `openspec/specs/audio/spec.md`, which makes the
+# capability matrix over-count one row — and it goes in the moment the ladder is consistent enough
+# for the positive control to pass. Declaring it before then would only move the digest and refuse
+# the record for every other criterion in this file.
 
 [[criterion]]
 id = "four-profiles"
@@ -453,12 +505,46 @@ target = "src/backends/rhi/vulkan/src/vulkan_instance.cpp"
 token = "bindless_set_handle_ = *set_handle;"
 note = "measured: with the line gone the suite goes red on eleven assertions — the table's handle, `MaterialTextureTable::initialize`, both slot lookups and both renders — while the Vulkan objects are created and written exactly as before. Unmutated, the same suite reports 100.00% of texels differing from the declared average at mean |delta| 82.167/255 and 4096 of 4096 texels matching the uploaded byte."
 
+# THIS CRITERION WAS `just test-render virtual-geometry --shaded --compare-golden` AND IT MEASURED
+# NONE OF THOSE THREE WORDS. `just test-render` is `_ctest render`, which selects with
+# `--label-regex "^render$" --no-tests=ignore` and then appends whatever else was passed; ctest
+# SILENTLY DISCARDS a positional argument it does not recognise. Measured against
+# `build/m11c-close-gate`, `ctest … -N virtual-geometry --shaded --compare-golden`,
+# `… -N sky --times-of-day 4 --compare-golden` and `… -N zzzz-no-such-thing` each select THE SAME 17
+# render cases — so the criterion's verdict was "the whole render label is green", `--no-tests=ignore`
+# would have made an EMPTY label green too, and no state of the tree could make it say anything about
+# a shaded capture. That is instance 3 of the defect `tools/roadmap/falsify.py` enumerates, committed
+# again; `m7:virtual-geometry-gpu` above already writes the registration check that avoids it, and
+# names `--no-tests=ignore` in its own error message. The shape below is that one.
 [[criterion]]
 id = "virtual-geometry-image"
-describe = "the virtual-geometry and virtual-shadow evidence is an image of the shaded result rather than a normals debug view. The capture in the tree today is a debug visualisation, which proves the cluster selection and says nothing about what the renderer produces"
+describe = "the virtual-geometry and virtual-shadow evidence is an image of the SHADED result compared against a committed reference, rather than a normals debug view. The capture in the tree today is `docs/design/images/virtual-geometry-shaded.png`, written by `just capture-virtual-geometry` — a recipe a person runs, which nothing re-photographs and nothing compares — and the only cases in `render.virtual_geometry_gpu` are traversal, residency, occlusion and visibility-buffer cases. So the row's picture is asserted by nobody: this names the suite that would assert it and the reference it would assert against"
 source = "tasks 2, virtual-geometry, virtual-shadows"
 kind = "command"
-run = "just test-render virtual-geometry --shaded --compare-golden"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+# THE SUITE IS ASKED FOR BY NAME BEFORE IT IS RUN, which is `m7:virtual-geometry-gpu`'s own guard and
+# the whole reason this criterion was rewritten: `just test-render` passes `--no-tests=ignore`, so
+# running nothing is a pass, and ctest drops arguments it does not know.
+ctest --test-dir "$d" -N -R '^render.virtual_geometry_shaded$' 2>/dev/null | grep -q 'render.virtual_geometry_shaded' || {
+    echo "render.virtual_geometry_shaded is not registered in $d: nothing in this tree photographs the SHADED"
+    echo "virtual-geometry frame and compares it against a reference. The committed picture,"
+    echo "docs/design/images/virtual-geometry-shaded.png, is written by a recipe a person runs and is asserted by"
+    echo "nothing. Either the suite has been renamed or deleted, or this tree was configured with no rendering"
+    echo "backend; either way the image is UNMEASURED."
+    exit 1
+}
+# AND THE REFERENCE IS A COMMITTED FILE. A golden comparison whose reference the run itself writes is
+# a comparison with itself, which is what `tests/render/README.md` says a reference is not.
+test -f tests/render/references/virtual_geometry_shaded.png || {
+    echo "no tests/render/references/virtual_geometry_shaded.png — there is no committed reference for a shaded"
+    echo "virtual-geometry capture to be compared against"
+    exit 1
+}
+just test-render -R '^render.virtual_geometry_shaded$'
+'''
 requires = "gpu"
 reason = "a shaded capture needs a graphics device, AND THIS HOST HAS ONE GPU VENDOR — the M11.c spike measured every picture it took against one driver's rasterisation and one vendor's floating point, so a green here is a claim about this vendor and not about the image; `frame-passes-through-post` above carries the structural claim on every machine"
 ci_job = "milestone-m11c"
@@ -562,12 +648,36 @@ target = "src/rendering/hzb/src/hzb_pass.cpp"
 token = "step.push.source_offset = hzb_level_offset(desc_.width, desc_.height, level - 1U);"
 note = "the assignment is one statement and deleting it leaves a tree that BUILDS and a pyramid whose upper levels are reduced from the wrong source. A criterion that only asked whether the dispatches ran, or whether `rejected_by_occlusion` was non-zero, would stay green through it."
 
+# REWRITTEN FOR THE REASON SPELLED OUT OVER `virtual-geometry-image` ABOVE: `just test-render sky
+# --times-of-day 4 --compare-golden` selected the same 17 render cases as `just test-render` with no
+# arguments at all, and there is no `render.sky` case in that list — the sky's only device coverage is
+# `render.environment_field`, which samples a field rather than photographing a picture.
 [[criterion]]
 id = "sky-as-an-image"
-describe = "the sky is judged as an image rather than as a table: a capture at four times of day compared against goldens within tolerance. CONDITIONAL ON M11.a CLOSING `m10:sky-field-round-trip` — this rung owns the illumination consumer of the cloud shadow field and cannot write one against a sampler that returns its declared default at every point"
+describe = "the sky is judged as an IMAGE rather than as a table: a capture at four times of day compared against committed references within tolerance. Four references, because the claim the row makes is about the atmosphere's response to sun elevation and one still cannot carry it — the same argument `just capture-virtual-geometry` makes for three thresholds. CONDITIONAL ON M11.a CLOSING `m10:sky-field-round-trip` — this rung owns the illumination consumer of the cloud shadow field and cannot write one against a sampler that returns its declared default at every point"
 source = "tasks 3, atmosphere-sky-and-clouds"
 kind = "command"
-run = "just test-render sky --times-of-day 4 --compare-golden"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+ctest --test-dir "$d" -N -R '^render.sky_times_of_day$' 2>/dev/null | grep -q 'render.sky_times_of_day' || {
+    echo "render.sky_times_of_day is not registered in $d: nothing in this tree photographs the sky at four times"
+    echo "of day and compares the frames against references. `just test-render` selects with --no-tests=ignore, so"
+    echo "an absent suite would otherwise be reported as a pass."
+    exit 1
+}
+missing=""
+for hour in dawn noon dusk night; do
+    test -f "tests/render/references/sky_${hour}.png" || missing="${missing} sky_${hour}.png"
+done
+test -z "${missing}" || {
+    echo "missing committed reference(s) under tests/render/references/:${missing}"
+    echo "a time of day with no reference is a time of day nothing compares"
+    exit 1
+}
+just test-render -R '^render.sky_times_of_day$'
+'''
 requires = "gpu"
 reason = "a sky capture needs a device, and on this one-GPU-vendor host the picture is judged against a single driver; the field round trip it depends on is checked without one by M11.a's `sky-field-consumed-outside-the-sky`"
 ci_job = "milestone-m11c"

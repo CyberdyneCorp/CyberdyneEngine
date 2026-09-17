@@ -290,9 +290,21 @@ function(cy__configure_slang)
     # The language server and the interpreter are developer tools, not compilation.
     set(SLANG_ENABLE_SLANGD OFF CACHE BOOL "" FORCE)
     set(SLANG_ENABLE_SLANGI OFF CACHE BOOL "" FORCE)
-    # DXIL needs DXC, which is a second downstream toolchain for a backend the roadmap does not
-    # reach until M11. SPIR-V is the interchange form (`shader-system`), and D3D12 turns this on.
-    set(SLANG_ENABLE_DXIL OFF CACHE BOOL "" FORCE)
+    # DXIL needs DXC: a second downstream toolchain, fetched by Slang's own CMake as a 34 MB
+    # prebuilt release and dynamically loaded at compile time. M11.c is the rung that turns it on,
+    # because `shader-system`'s pipeline step 4 is "SPIR-V retained (Vulkan), or translated (MSL for
+    # Metal, DXIL for D3D12)" and M11.d's first task cannot start without both. CY_SHADER_DXIL is
+    # the switch (cmake/features.cmake) and it requires CY_SHADER_SLANG, so the value is read
+    # rather than decided here.
+    #
+    # MSL IS NOT BEHIND ANY OF THIS and that asymmetry is the point: Slang emits Metal Shading
+    # Language from the same session that emits SPIR-V, with no second toolchain to fetch, load or
+    # fail. The option exists for DXC's download, not for "the other two targets".
+    if(CY_SHADER_DXIL)
+        set(SLANG_ENABLE_DXIL ON CACHE BOOL "" FORCE)
+    else()
+        set(SLANG_ENABLE_DXIL OFF CACHE BOOL "" FORCE)
+    endif()
     # slang-llvm is a host-execution back end for running Slang on the CPU. Nothing here does.
     set(SLANG_SLANG_LLVM_FLAVOR DISABLE CACHE STRING "" FORCE)
     # BUT slang-glslang STAYS ON, and this is the one that cost a build to find out: Slang's SPIR-V
@@ -331,10 +343,46 @@ function(cy__slang_allow_exceptions directory)
     endforeach()
 endfunction()
 
+# DXC's shared libraries, put where the thing that dlopen()s them will look.
+#
+# Slang loads `dxcompiler` by name at compile time rather than linking it, and its own binaries
+# carry RUNPATH `$ORIGIN/../lib:$ORIGIN` — so the search path that decides whether DXIL can be
+# emitted is the directory libslang.so sits in, whatever binary is driving the compilation. Slang's
+# build leaves the prebuilt libraries in its FetchContent source tree and copies them nowhere, which
+# is why a slangc built with SLANG_ENABLE_DXIL=ON still reports "failed to load dynamic library
+# 'dxcompiler'". One copy, beside libslang.so, is the whole fix.
+#
+# IT IS A POST_BUILD COPY AND NOT A configure-time file(COPY) because $<TARGET_FILE_DIR:slang> is
+# the only spelling of that directory that stays correct across generators and configurations.
+function(cy__slang_place_dxc)
+    if(NOT CY_SHADER_DXIL OR NOT TARGET slang)
+        return()
+    endif()
+    FetchContent_GetProperties(dxc)
+    if(NOT dxc_SOURCE_DIR)
+        message(WARNING
+            "CY_SHADER_DXIL is on and Slang did not populate DXC. DXIL emission will fail at "
+            "compile time with `failed to load downstream compiler 'dxc'`.")
+        return()
+    endif()
+    file(GLOB _cy_dxc_runtime
+        "${dxc_SOURCE_DIR}/lib/*${CMAKE_SHARED_LIBRARY_SUFFIX}"
+        "${dxc_SOURCE_DIR}/bin/*.dll")
+    if(NOT _cy_dxc_runtime)
+        message(WARNING "CY_SHADER_DXIL is on and ${dxc_SOURCE_DIR} holds no DXC runtime library.")
+        return()
+    endif()
+    add_custom_command(TARGET slang POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_cy_dxc_runtime} "$<TARGET_FILE_DIR:slang>"
+        COMMENT "placing DXC beside libslang so DXIL can be emitted"
+        VERBATIM)
+endfunction()
+
 function(cy__finalise_slang target)
     if(NOT MSVC AND slang_SOURCE_DIR)
         cy__slang_allow_exceptions("${slang_SOURCE_DIR}")
     endif()
+    cy__slang_place_dxc()
 endfunction()
 
 function(cy__configure_jolt)

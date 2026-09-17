@@ -318,6 +318,23 @@ set(CY_FEATURE_OPTIONS
     # that cannot afford it configures with -DCY_SHADER_SLANG=OFF and everything except that one
     # suite still builds and passes, because the passthrough is the shipping path.
     "CY_SHADER_SLANG|DEVELOPMENT|The Slang shader front end: source to SPIR-V, for the cook step and development hot reload (M3). Default: on in Debug and Development, off in Profile and Shipping, which shader-system requires to contain no Slang compiler"
+    # M11.c task 1.7. THE SECOND AND THIRD TARGETS, and the reason this is an option of its own
+    # rather than a line inside CY_SHADER_SLANG. MSL costs nothing: Slang emits it from the same
+    # session that emits SPIR-V, with no extra download and no extra build. DXIL does not — it is
+    # produced by Microsoft's DXC, which Slang fetches as a 34 MB prebuilt release and dynamically
+    # loads at compile time — so a developer who is building a Vulkan engine on Linux can decline
+    # the fetch and still have the front end, and a machine with no network can configure at all.
+    #
+    # WHY IT DEFAULTS THE SAME WAY CY_SHADER_SLANG DOES rather than OFF. `shader-system`'s pipeline
+    # step 4 is "SPIR-V retained (Vulkan), or translated (MSL for Metal, DXIL for D3D12)", and M11.d
+    # cannot begin without both. Rule 3: a delivered capability is on by default, or nothing builds
+    # it. OFF here would mean the DXIL path is compiled by whoever remembers the flag, which is the
+    # position `m3` left the Slang front end in and the position CY_RENDERER_VULKAN was moved out of.
+    #
+    # WHAT IT DOES NOT DO: it does not put a compiler in a shipping binary. It is DEVELOPMENT for
+    # the same reason CY_SHADER_SLANG is, it requires CY_SHADER_SLANG (below), and a Profile or
+    # Shipping build has neither.
+    "CY_SHADER_DXIL|DEVELOPMENT|DXIL emission in the Slang front end, through the DXC that Slang fetches as a prebuilt release and loads at compile time (M11.c). MSL needs no option — it is the same Slang session. Default: on in Debug and Development, off in Profile and Shipping"
     # DELIVERED AT M3, AND THEREFORE ON BY DEFAULT. Every other row below is a milestone that has not
     # happened yet; this one has. Left at OFF it took the whole backend out of the default build --
     # the sample fell back to the null device and rendered black, `just test-render` ran two
@@ -352,6 +369,9 @@ set(CY_FEATURE_REQUIRES_ALL
     # there for the backend to be inside. `-D CY_ML_ONNXRUNTIME=ON -D CY_ML=OFF` would declare a
     # dependency for a module that is not built and link it to nothing.
     "CY_ML_ONNXRUNTIME|CY_ML"
+    # DXIL is emitted BY the Slang front end. With CY_SHADER_SLANG off there is no session to ask
+    # for it, and the 34 MB DXC fetch would be paid for a target nothing can reach.
+    "CY_SHADER_DXIL|CY_SHADER_SLANG"
     CACHE INTERNAL "Feature dependencies: FEATURE|every option it requires")
 
 # Each row is FEATURE|CANDIDATE... — at least one of the named options must be on. CY_VIRTUAL_GEOMETRY
