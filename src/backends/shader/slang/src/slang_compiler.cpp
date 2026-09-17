@@ -188,6 +188,147 @@ private:
     return spirv_version >= kSpirv1_6 ? "spirv_1_6" : "spirv_1_5";
 }
 
+// --- The three targets ---------------------------------------------------------------------------
+//
+// M11.c task 1.7. `shader-system`'s pipeline step 4, as three lines of mapping rather than as a
+// sentence in a comment: the SAME Slang program is compiled a second and a third time with a
+// different `TargetDesc::format`, which is what a multi-target compiler is for.
+
+[[nodiscard]] SlangCompileTarget format_of(Target target) noexcept {
+    switch (target) {
+        case Target::SpirV:
+            return SLANG_SPIRV;
+        case Target::Msl:
+            // MSL SOURCE AND NOT SLANG_METAL_LIB. A `.metallib` is produced by Apple's `metal`
+            // driver, which exists only on macOS with Xcode installed — asking for one here would
+            // make the target unavailable on every machine that is not a Mac, including every
+            // machine this engine's continuous integration runs on. Source is what the Metal
+            // backend compiles at cook time on the platform that can, and it is the form that can
+            // be read, diffed and checked anywhere.
+            return SLANG_METAL;
+        case Target::Dxil:
+            return SLANG_DXIL;
+    }
+    return SLANG_TARGET_UNKNOWN;
+}
+
+/// The profile each target is compiled at.
+///
+/// SHADER MODEL 6.5 FOR DXIL, chosen rather than defaulted: 6.5 is the first model with mesh and
+/// amplification shaders and DXR 1.1, both of which this engine's Vulkan path already uses, so a
+/// lower floor would make the D3D12 leg unable to compile shaders the Vulkan leg compiles. Metal
+/// takes no profile here — Slang picks its own language version for the target, and naming one
+/// would pin a Metal version this engine has no reason to have an opinion about yet.
+[[nodiscard]] const char* profile_for(Target target, u32 spirv_version) noexcept {
+    switch (target) {
+        case Target::SpirV:
+            return profile_name(spirv_version);
+        case Target::Msl:
+            return "";
+        case Target::Dxil:
+            return "sm_6_5";
+    }
+    return "";
+}
+
+[[nodiscard]] rhi::ShaderStage stage_of(SlangStage stage) noexcept {
+    switch (stage) {
+        case SLANG_STAGE_VERTEX:
+            return rhi::ShaderStage::Vertex;
+        case SLANG_STAGE_FRAGMENT:
+            return rhi::ShaderStage::Fragment;
+        case SLANG_STAGE_COMPUTE:
+            return rhi::ShaderStage::Compute;
+        case SLANG_STAGE_GEOMETRY:
+            return rhi::ShaderStage::Geometry;
+        case SLANG_STAGE_HULL:
+            return rhi::ShaderStage::TessellationControl;
+        case SLANG_STAGE_DOMAIN:
+            return rhi::ShaderStage::TessellationEvaluation;
+        case SLANG_STAGE_AMPLIFICATION:
+            return rhi::ShaderStage::Task;
+        case SLANG_STAGE_MESH:
+            return rhi::ShaderStage::Mesh;
+        default:
+            return rhi::ShaderStage::None;
+    }
+}
+
+/// What a parameter IS, in the engine's vocabulary — and the half of a declaration that two targets
+/// must agree about.
+///
+/// It is read from the Slang TYPE and never from the target layout: a `Texture2D` is a sampled
+/// texture whether the target put it in a descriptor set, a Metal texture slot or a `t` register,
+/// and that is exactly why this is the comparable half and the binding index is not.
+[[nodiscard]] rhi::DescriptorKind kind_of(::slang::TypeLayoutReflection* layout) noexcept {
+    if (layout == nullptr) {
+        return rhi::DescriptorKind::UniformBuffer;
+    }
+    switch (layout->getKind()) {
+        case ::slang::TypeReflection::Kind::ConstantBuffer:
+        case ::slang::TypeReflection::Kind::ParameterBlock:
+            return rhi::DescriptorKind::UniformBuffer;
+        case ::slang::TypeReflection::Kind::SamplerState:
+            return rhi::DescriptorKind::Sampler;
+        case ::slang::TypeReflection::Kind::ShaderStorageBuffer:
+            return rhi::DescriptorKind::StorageBuffer;
+        case ::slang::TypeReflection::Kind::TextureBuffer:
+            return rhi::DescriptorKind::SampledTexture;
+        case ::slang::TypeReflection::Kind::Resource:
+            break;
+        default:
+            return rhi::DescriptorKind::UniformBuffer;
+    }
+
+    const SlangResourceShape shape = static_cast<SlangResourceShape>(
+        layout->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK);
+    if (shape == SLANG_STRUCTURED_BUFFER || shape == SLANG_BYTE_ADDRESS_BUFFER) {
+        // A read-only `StructuredBuffer` is still a storage buffer where it lands: Vulkan has no
+        // read-only class for one, and the access is carried by the descriptor's usage rather than
+        // by its kind.
+        return rhi::DescriptorKind::StorageBuffer;
+    }
+    return layout->getResourceAccess() == SLANG_RESOURCE_ACCESS_READ
+               ? rhi::DescriptorKind::SampledTexture
+               : rhi::DescriptorKind::StorageTexture;
+}
+
+/// Read one target's declared parameters out of the program layout that target produced.
+[[nodiscard]] Status read_parameters(::slang::ProgramLayout* layout,
+                                     Array<TargetParameter>& out) noexcept {
+    out.clear();
+    if (layout == nullptr) {
+        return fail(ErrorCode::Internal, "the Slang program produced no layout for the target");
+    }
+    for (unsigned index = 0; index < layout->getParameterCount(); ++index) {
+        ::slang::VariableLayoutReflection* parameter = layout->getParameterByIndex(index);
+        if (parameter == nullptr) {
+            continue;
+        }
+        TargetParameter declared;
+        const char* text = parameter->getName();
+        declared.name = Name::intern(text != nullptr ? std::string_view(text) : std::string_view());
+        declared.space = static_cast<u32>(parameter->getBindingSpace());
+        declared.index = static_cast<u32>(parameter->getBindingIndex());
+
+        ::slang::TypeLayoutReflection* type = parameter->getTypeLayout();
+        if (type != nullptr && type->getKind() == ::slang::TypeReflection::Kind::Array) {
+            // `count` is `rhi::DescriptorBinding::count`'s encoding: zero is a runtime-sized array,
+            // which is what a bindless table is, and the element type is what the binding holds.
+            const size_t elements = type->getElementCount();
+            declared.count = (elements == SLANG_UNBOUNDED_SIZE || elements == SLANG_UNKNOWN_SIZE)
+                                 ? 0
+                                 : static_cast<u32>(elements);
+            type = type->getElementTypeLayout();
+        }
+        declared.kind = kind_of(type);
+        if (Status pushed = out.push_back(declared); !pushed) {
+            return pushed;
+        }
+    }
+    return ok();
+}
+
 [[nodiscard]] SlangOptimizationLevel optimization_of(OptimizationLevel level) noexcept {
     switch (level) {
         case OptimizationLevel::None:
@@ -252,8 +393,22 @@ public:
     [[nodiscard]] Expected<CompiledShader, Error> compile(
         const CompileRequest& request, DiagnosticLog& diagnostics) noexcept override;
 
+    [[nodiscard]] Expected<TargetArtefact, Error> compile_for(
+        const CompileRequest& request, Target target, DiagnosticLog& diagnostics) noexcept override;
+
+    [[nodiscard]] bool emits(Target target) noexcept override;
+
 private:
     [[nodiscard]] Status collect_defines(const CompileRequest& request) noexcept;
+
+    /// Everything both compilation paths do: the session for one target, the module, the entry
+    /// point, the composite, the link, and the code. Extracted rather than duplicated because the
+    /// ONE thing the agreement check needs to be true is that the SPIR-V and the MSL came out of
+    /// the same sequence of calls with one field changed.
+    [[nodiscard]] Status link_program(const CompileRequest& request, Target target,
+                                      DiagnosticLog& diagnostics,
+                                      Slang::ComPtr<IComponentType>& linked,
+                                      Slang::ComPtr<ISlangBlob>& code) noexcept;
 
     Allocator* allocator_;
     Slang::ComPtr<IGlobalSession> global_;
@@ -265,6 +420,10 @@ private:
     Array<char> macro_text_{*allocator_};
     Array<u32> macro_offsets_{*allocator_};
     Array<char> source_text_{*allocator_};
+    /// What `emits` found when it last asked, per target. Unknown until something asks, because the
+    /// probe is a real compilation and a front end nobody asked about should not pay for three.
+    enum class Probe : u8 { Unknown = 0, Yes = 1, No = 2 };
+    Probe probed_[kTargetCount] = {};
 };
 
 Status SlangCompiler::collect_defines(const CompileRequest& request) noexcept {
@@ -326,32 +485,35 @@ Status SlangCompiler::collect_defines(const CompileRequest& request) noexcept {
     return ok();
 }
 
-Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& request,
-                                                       DiagnosticLog& diagnostics) noexcept {
+Status SlangCompiler::link_program(const CompileRequest& request, Target target,
+                                   DiagnosticLog& diagnostics,
+                                   Slang::ComPtr<IComponentType>& linked,
+                                   Slang::ComPtr<ISlangBlob>& code) noexcept {
     if (global_ == nullptr) {
         return fail(ErrorCode::Unavailable, "the Slang front end was not initialised");
     }
-    const u64 started = monotonic_ns();
-
     if (Status collected = collect_defines(request); !collected) {
-        return make_unexpected(collected.error());
+        return collected;
     }
 
     // Slang takes the source as a NUL-terminated string; a `SourceUnit`'s text is a span and
     // carries no terminator, so it is copied once here rather than assumed.
     source_text_.clear();
     if (Status appended = source_text_.append(request.source.text); !appended) {
-        return make_unexpected(appended.error());
+        return appended;
     }
     if (Status terminated = source_text_.push_back('\0'); !terminated) {
-        return make_unexpected(terminated.error());
+        return terminated;
     }
 
     RegistryFileSystem file_system(*allocator_, request.resolver);
 
-    ::slang::TargetDesc target;
-    target.format = SLANG_SPIRV;
-    target.profile = global_->findProfile(profile_name(request.spirv_version));
+    ::slang::TargetDesc target_desc;
+    target_desc.format = format_of(target);
+    const char* profile = profile_for(target, request.spirv_version);
+    if (profile[0] != '\0') {
+        target_desc.profile = global_->findProfile(profile);
+    }
 
     const ::slang::CompilerOptionEntry options[] = {
         {::slang::CompilerOptionName::Optimization,
@@ -368,7 +530,7 @@ Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& req
     };
 
     ::slang::SessionDesc session_desc;
-    session_desc.targets = &target;
+    session_desc.targets = &target_desc;
     session_desc.targetCount = 1;
     session_desc.fileSystem = &file_system;
     session_desc.preprocessorMacros = macros_.data();
@@ -413,7 +575,6 @@ Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& req
     }
     absorb(diagnostics, blob);
 
-    Slang::ComPtr<IComponentType> linked;
     blob.setNull();
     if (SLANG_FAILED(composed->link(linked.writeRef(), blob.writeRef()))) {
         absorb(diagnostics, blob);
@@ -421,14 +582,33 @@ Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& req
     }
     absorb(diagnostics, blob);
 
-    Slang::ComPtr<ISlangBlob> code;
     blob.setNull();
     if (SLANG_FAILED(linked->getEntryPointCode(0, 0, code.writeRef(), blob.writeRef())) ||
         code == nullptr) {
         absorb(diagnostics, blob);
-        return fail(ErrorCode::Internal, "the shader entry point produced no code");
+        // The one failure a caller must be able to tell from a broken shader: DXIL is emitted by a
+        // compiler Slang loads at compile time, and when that library is not beside it the message
+        // in the diagnostics is "failed to load downstream compiler" rather than anything about
+        // this program. Named here so `emits` can report an absent toolchain as an absent toolchain.
+        char message[192] = {};
+        (void)std::snprintf(message, sizeof(message), "no %s was produced for this entry point",
+                            target_name(target));
+        (void)diagnostics.add(Severity::Error, message);
+        return fail(ErrorCode::Unavailable, "the shader entry point produced no code");
     }
     absorb(diagnostics, blob);
+    return ok();
+}
+
+Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& request,
+                                                       DiagnosticLog& diagnostics) noexcept {
+    const u64 started = monotonic_ns();
+
+    Slang::ComPtr<IComponentType> linked;
+    Slang::ComPtr<ISlangBlob> code;
+    if (Status built = link_program(request, Target::SpirV, diagnostics, linked, code); !built) {
+        return make_unexpected(built.error());
+    }
 
     const usize byte_size = code->getBufferSize();
     if (byte_size == 0 || (byte_size % sizeof(u32)) != 0) {
@@ -449,6 +629,115 @@ Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& req
     shader.stats().compile_ns = monotonic_ns() - started;
     shader.stats().backend = kSlangBackendName;
     return shader;
+}
+
+Expected<TargetArtefact, Error> SlangCompiler::compile_for(const CompileRequest& request,
+                                                           Target target,
+                                                           DiagnosticLog& diagnostics) noexcept {
+    const u64 started = monotonic_ns();
+
+    Slang::ComPtr<IComponentType> linked;
+    Slang::ComPtr<ISlangBlob> code;
+    if (Status built = link_program(request, target, diagnostics, linked, code); !built) {
+        return make_unexpected(built.error());
+    }
+
+    const usize byte_size = code->getBufferSize();
+    if (byte_size == 0) {
+        return fail(ErrorCode::Internal, "the target produced an empty artefact");
+    }
+    Array<u8> bytes(*allocator_);
+    if (Status sized = bytes.resize(byte_size); !sized) {
+        return make_unexpected(sized.error());
+    }
+    std::memcpy(bytes.data(), code->getBufferPointer(), byte_size);
+
+    // THE DECLARATION IS READ FROM THE LAYOUT THIS TARGET PRODUCED, not from the SPIR-V and not
+    // from the source. That is what makes "the two targets declare the same interface" a
+    // measurement rather than a restatement of the input.
+    Slang::ComPtr<ISlangBlob> blob;
+    ::slang::ProgramLayout* layout = linked->getLayout(0, blob.writeRef());
+    absorb(diagnostics, blob);
+    Array<TargetParameter> parameters(*allocator_);
+    if (Status read = read_parameters(layout, parameters); !read) {
+        return make_unexpected(read.error());
+    }
+
+    u32 thread_group[3] = {0, 0, 0};
+    Name entry = request.entry_point;
+    rhi::ShaderStage stage = request.stage;
+    if (layout->getEntryPointCount() > 0) {
+        ::slang::EntryPointReflection* reflected = layout->getEntryPointByIndex(0);
+        if (reflected != nullptr) {
+            SlangUInt sizes[3] = {0, 0, 0};
+            reflected->getComputeThreadGroupSize(3, sizes);
+            for (usize axis = 0; axis < 3; ++axis) {
+                thread_group[axis] = static_cast<u32>(sizes[axis]);
+            }
+            if (const char* name = reflected->getName(); name != nullptr) {
+                entry = Name::intern(name);
+            }
+            if (const rhi::ShaderStage reported = stage_of(reflected->getStage());
+                reported != rhi::ShaderStage::None) {
+                stage = reported;
+            }
+        }
+    }
+
+    TargetArtefact artefact(*allocator_);
+    if (Status adopted = artefact.adopt(target, std::move(bytes), entry, stage,
+                                        std::move(parameters), thread_group);
+        !adopted) {
+        return make_unexpected(adopted.error());
+    }
+    artefact.stats().compile_ns = monotonic_ns() - started;
+    artefact.stats().backend = kSlangBackendName;
+
+    // THE FRONT END REFUSES TO HAND BACK SOMETHING THAT IS NOT IN ITS TARGET'S FORM. A caller that
+    // checked this itself could be given a stub by a front end that did not; a caller that does not
+    // check would ship one. It costs a few bytes of comparison per compilation.
+    if (!bytes_match_target(target, artefact.bytes())) {
+        char message[192] = {};
+        (void)std::snprintf(message, sizeof(message),
+                            "what Slang returned for %s is not in that form", target_name(target));
+        (void)diagnostics.add(Severity::Error, message);
+        return fail(ErrorCode::Internal, "the artefact is not in the form its target names");
+    }
+    return artefact;
+}
+
+bool SlangCompiler::emits(Target target) noexcept {
+    const auto slot = static_cast<usize>(target);
+    if (slot >= kTargetCount) {
+        return false;
+    }
+    if (probed_[slot] != Probe::Unknown) {
+        return probed_[slot] == Probe::Yes;
+    }
+
+    // A REAL COMPILATION OF A REAL SHADER, and nothing shorter would answer the question. Whether
+    // DXIL can be emitted depends on a library Slang loads when it is first asked to emit DXIL; no
+    // flag, header, version string or file test observes that, and each of them would answer yes on
+    // a machine where the emission fails.
+    static constexpr char kProbeSource[] =
+        "[[vk::binding(0, 0)]] RWStructuredBuffer<float> cyTargetProbeOutput;\n"
+        "[shader(\"compute\")]\n"
+        "[numthreads(1, 1, 1)]\n"
+        "void cyTargetProbe(uint3 id : SV_DispatchThreadID) {\n"
+        "    cyTargetProbeOutput[id.x] = 1.0f;\n"
+        "}\n";
+
+    CompileRequest request;
+    request.source.module_name = Name::intern("cy.target.probe");
+    request.source.text = Span<const char>(kProbeSource, sizeof(kProbeSource) - 1);
+    request.entry_point = Name::intern("cyTargetProbe");
+    request.stage = rhi::ShaderStage::Compute;
+    request.optimization = OptimizationLevel::None;
+
+    DiagnosticLog diagnostics(*allocator_);
+    Expected<TargetArtefact, Error> artefact = compile_for(request, target, diagnostics);
+    probed_[slot] = artefact ? Probe::Yes : Probe::No;
+    return probed_[slot] == Probe::Yes;
 }
 
 bool slang_is_available() noexcept {
