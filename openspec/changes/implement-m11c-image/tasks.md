@@ -813,6 +813,14 @@ work was done.
       `state = "joins-on-close"` and raise `selftest.MINIMUM_CRITERIA`. Every criterion carries a
       `ci_job` and every criterion must be able to go red — `criteria.py` rejects one without a
       `ci_job`, and this rung's own history is the reason for the second half
+      - [x] **THE FIRST THREE ARE DONE.** `tools/roadmap/milestones/m11c.toml` holds 38 criteria,
+        `gates.toml` declares `milestone-m11c` at `state = "joins-on-close"`, and
+        `selftest.MINIMUM_CRITERIA` carries `"m11c": 25`. Every criterion carries a `ci_job`, which
+        `criteria.py` enforces
+      - [ ] **THE SECOND HALF IS NOT DONE AND IT IS THE HALF THIS RUNG'S OWN HISTORY IS ABOUT.**
+        Fifteen of the thirty-eight cannot be shown able to go red — 9.2 above names every one and
+        the run that would answer them. The clause "every criterion must be able to go red" is
+        unmet, by the rung that wrote the clause
 - [ ] 8.2 **An `m11d-open` criterion, and a stronger one than the ladder's usual shape.** Every
       earlier rung's `<next>-open` asked only that the next change directory exist; **all five M11
       rung directories already exist**, created in the split, so that form is green the day it is
@@ -820,12 +828,31 @@ work was done.
       This one asks instead that M11.d be *scoped*: its change carries `tasks.md` and its own ledger
       at `tools/roadmap/milestones/m11d.toml` with `milestone-m11d` declared in `gates.toml`. It
       fails the day it is written, which is the point
+      - [x] **WRITTEN, AND RED, WHICH IS WHAT IT WAS WRITTEN TO BE.** `m11c:m11d-open` asks for a
+        checked task OUTSIDE section 0 of `openspec/changes/implement-m11d-desktop/tasks.md` —
+        entry, not existence, because the split opened all five rung directories at once.
+        `grep -cE '^- \[x\] [1-9]'` over that file returns **0**: the rung is scoped and nobody has
+        entered it. The criterion is doing its job; the rung has not done the deliberate act it
+        asks for
 - [ ] 8.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them. **`dependencies.md` cycle 2 is closed or re-argued by
       this rung and by no other** — it is the cycle this rung's section 2 is about, and its text
       currently ends *"Joining it is one adapter at one composition point, and it is M11's"*
 - [ ] 8.4 Move `ci.yml`'s milestone job to `m11c` in the same commit that flips the gate green. The
       job runs on every push to `main`, so this commit must not land before the gate is green
+      - [ ] **NOT DONE, AND CORRECTLY NOT DONE: THE GATE IS NOT GREEN.** `gates.toml` is unchanged
+        at `state = "joins-on-close"` and `ci.yml`'s milestone step still reads
+        `just roadmap-milestone m10`
+      - [ ] **BUT `workflows` IS RED FOR A REASON THAT IS NOT THIS RUNG'S AND HAS A ONE-LINE FIX
+        TODAY.** `just ci-check` says it in its own words: *"2 closed milestone gate(s) —
+        'milestone-m11a', 'milestone-m11b' — are green and no workflow evaluates them. One job
+        running `just roadmap-milestone m11b` covers all of them, because a ledger is flat and
+        inherits every green milestone below it"*. `ci.yml` last changed on 2026-09-14, before
+        either gate went green, so this is pre-existing and verified so. **It is deliberately not
+        repaired here**: pointing CI at `m11b` makes every push to `main` run a multi-hour ledger,
+        which is a decision about the project's continuous integration rather than a closing gate's
+        tidy-up, and the instruction this phase runs under is to change no gate when the rung does
+        not close. It is the cheapest red on the board and it belongs to whichever rung closes next
 - [ ] 8.5 **Hand M11.d what this rung did not finish, in writing.** Not as a list of intentions: each
       unfinished thing is a declared gap in `m11c.toml` naming the rung that closes it, so a gap that
       starts passing fails the ledger and a gap that is quietly deleted fails it too
@@ -846,20 +873,127 @@ work was done.
 ## 9. The gate
 
 - [ ] 9.1 Clean build of every profile from empty; `test-all` in each; every gate by hand
+      - [x] **THE STATIC ANALYSIS GATE WAS RED ON THIS RUNG'S OWN CODE, AND NO PHASE OF THIS RUNG
+        EVER RAN IT.** `just quality-lint` failed with **41 clang-tidy errors in nine files**, every
+        one of them written or rewritten by M11.c: `samples/12-beauty/main.cpp` and `stage.cpp`,
+        `samples/10-world/stage.cpp` (both diagnostics introduced by `a4032e4`, this rung's own
+        commit), `src/graph/material/src/lower_material.cpp` and its test,
+        `tools/import/src/block_encode.cpp`, `tools/import/src/image_codecs.cpp` and its test, and
+        `tools/material/src/author.cpp`. Nothing else in the tree was red, which is what makes the
+        attribution a measurement rather than a guess. **Repaired here** — `%.*s` for every
+        `string_view::data()` handed to `printf`, `static_cast<usize>` on every multiplication used
+        as a pointer offset, `std::numbers::pi_v<f32>` for eight copies of `3.14159265F`,
+        `strtod`/`strtoull` where `sscanf` could not report a conversion error, one shared
+        `clamped_level` helper in place of three nested conditionals and their `+ 0.5F` truncations,
+        and `write_manifest` made static in both samples — and `just quality-lint` is **green in
+        290.1 s** inside the closing ledger run. **The picture did not move**: `just
+        capture-beauty-shot` was re-run end to end afterwards and
+        `docs/design/images/m11c-beauty-shot.png` is byte-identical to the committed one, the
+        manifest differing only in its wall-clock timings
+      - [ ] **`just test-all` IS RED, AND THE REPRODUCIBLE HALF IS AN IMPORTER DEFECT OLDER THAN
+        THIS RUNG.** `smoke.editor_session` fails because importing
+        `samples/05-editor-session/project/assets/lamppost.gltf` now produces a seventh sub-asset,
+        `skeleton/Lamppost`, that `samples/05-editor-session/session.py` does not expect. **The
+        glTF has zero skins and zero animations** — read from the file: `skins: 0`,
+        `animations: 0`, three nodes — so the skeleton is manufactured out of a static prop's node
+        hierarchy. The cause is in `tools/import/src/gltf.cpp`: when `mark_skin_joints` finds no
+        skin, `build_gltf_rig` marks **every node** a joint on purpose, for animation-only exports,
+        and its own comment says this "keeps step 8 honest when step 7 declines to produce a
+        skeleton" — but step 7, at `gltf.cpp:2137`, emits on `!rig.skeleton.joints.empty() &&
+        state.import_skins` and never asks `rig.from_skins`, so it does not decline. Every static
+        glTF prop imported since `5d7f2b9` (M11.a/M11.b in flight, 2026-09-14) gains a spurious
+        Animation sub-asset and renumbers the ones after it. The condition the code's own comment
+        implies is `rig.from_skins || report.animations > 0`. **Not fixed here**: it is an engine
+        repair outside this rung's sections, `smoke.editor_session` is already the regression test
+        for it, and it was found with the closing ledger mid-run
+      - [ ] **AND ONE FAILURE IN THAT SAME RUN DOES NOT REPRODUCE AND IS PROBABLY MINE.**
+        `unit.graph_material` was reported failed by `m0:test`; re-run alone and re-run as the whole
+        84-case `unit` label, it passes. **Other `just` recipes of mine were executing concurrently
+        with the ledger**, which is a method fault and is recorded rather than explained away: that
+        run is contaminated for anything build-backed, and the anomaly is not attributed to the tree
+      - [ ] **The clean build of every profile from empty is `m1:four-profiles` and it is inside the
+        closing ledger run rather than beside it.** It had not returned when this record was written
 - [ ] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
       red. For this rung that includes the ones that are easiest to fake: unbind a texture and watch
       the material criterion go red; remove a post stage and watch the stage-list comparison go red;
       delete the GI sky composition point and watch the seam criterion go red
+      - [ ] **FIFTEEN OF THIS RUNG'S THIRTY-EIGHT CRITERIA HAVE NO PROOF AT ALL, AND THE TWO RUNGS
+        BELOW IT HAVE NONE UNPROVEN.** `tools/roadmap/falsifiability.toml` carries 23 `[[proof]]`
+        and **15 `[[unproven]]`** entries for ledger `m11c`; `m11a` and `m11b` carry **zero**
+        unproven each. Nine of the fifteen are the permanent-set repeats — `format`, `lint`,
+        `specs`, `layering`, `workflows`, `roadmap-record`, `plan-consistency`, `four-profiles`,
+        `generated-code` — which m11b.toml proves by declaring a `[criterion.falsifies]` on each and
+        which m11c.toml declares on none, so every one of them reads "no mutation can be derived
+        from this criterion's text". The other six are this rung's own:
+        `shader-targets-for-the-next-rung`, `skin-pass-complete`, `sky-as-an-image`,
+        `subsystem-controllers-report-costs`, `vfx-in-the-shot` and `virtual-geometry-image`, each
+        "not provable here: it needs a built tree". **`just roadmap-falsify prove m11c --build-dir
+        <a built tree> --mutate-the-tree --record` is the run that answers all fifteen** and it was
+        not made here, because it mutates the working tree and the closing ledger was running in it
+      - [ ] **AND FOURTEEN RECORDED PROOFS LEDGER-WIDE NO LONGER MATCH THEIR CRITERIA.** Carried
+        into this phase from the one before it and unchanged by it — `git diff 4532d68..HEAD --
+        tools/roadmap/` is additive — the digests of `m3:render-null`, `m3:xr-prerequisites`,
+        `m3:conventions`, `m3:golden`, `m7:virtual-geometry-gpu`, `m7:gpu-culling`,
+        `m7:virtual-texturing-gpu`, `m8b:render-assembly-device`, `m8c:pipeline-device`,
+        `m8c:vfx-device`, `m10:sky-field-round-trip`, `m11a:sky-field-consumed-outside-the-sky`,
+        `m11c:subsystem-controllers-report-costs` and `m11c:skin-pass-complete` disagree with what
+        is recorded for them. They are what keeps `plan-consistency` (`just roadmap-test`) red, and
+        they need the same `--record` run against a GPU and a built tree
 - [ ] 9.3 **Adversarial pass on this rung's own invariants**, which are mostly claims about a picture:
       render the artefact with the arbiter unpinned and confirm the capture refuses rather than
       publishing a degraded frame; run the occlusion pass against the CPU model and confirm a
       disagreement is reported rather than tolerated; ask the compile report which inputs are
       textures and confirm the answer matches what the frame bound
-- [ ] 9.4 **Read every Complete claim against the requirement, not against the mechanism.** Fifteen
+      - [ ] **NOT ATTEMPTED.** The gate stopped at 9.4's answer, which decides the rung, and an
+        adversarial pass over the invariants of rows that are not at Complete grade would be a pass
+        over claims nobody is making
+- [x] 9.4 **Read every Complete claim against the requirement, not against the mechanism.** Fifteen
       Working rows with mechanisms already built is exactly the shape in which a gate reads a
       specification and feels better about it. Where a row is short, record it and demote it — a
       second demotion of one row is a finding about the plan rather than about the milestone, per
       M10 design.md §4
-- [ ] 9.5 Records verified against what the code supports, **including this rung's column against the
+      - [x] **READ, WITH THE TOOL THIS LADDER BUILT FOR EXACTLY THIS, AND NOT ONE OF THE FIFTEEN
+        ROWS IS AT COMPLETE GRADE.** `just quality-requirements` over all fifteen:
+        **40 of 232 requirements map to a test, a gate or a recorded exemption.**
+
+        | row | answered | row | answered |
+        |---|---|---|---|
+        | `material-compiler` | 16 / 21 | `rendering-culling-and-lod` | 0 / 9 |
+        | `shader-system` | 9 / 13 | `atmosphere-sky-and-clouds` | 0 / 13 |
+        | `rendering-lighting-and-shadows` | 7 / 13 | `rendering-architecture` | 0 / 16 |
+        | `rendering-post-processing` | 4 / 15 | `rendering-geometry-and-resources` | 0 / 11 |
+        | `temporal-rendering` | 4 / 8 | `vfx-system` | 0 / 26 |
+        | `virtual-geometry` | 0 / 26 | `virtual-shadows` | 0 / 20 |
+        | `rendering-global-illumination` | 0 / 29 | `denoising` | 0 / 6 |
+        | `ray-tracing-infrastructure` | 0 / 6 | | |
+
+        `tools/roadmap/requirements-coverage.toml` names **seven rows in the whole repository**,
+        five of them this rung's. **Ten of the fifteen rows have not one requirement mapped**, so
+        for them the question "is this row Complete" has never been asked in a form anything can
+        answer. This is not a reading a gate can argue with: it is what
+        `m11c:material-compiler-at-complete-grade` and `m11c:image-rows-at-complete-grade` — the
+        rung's OWN two Complete-grade criteria — execute, and both are RED
+      - [x] **SO NO ROW IS DEMOTED, BECAUSE NO ROW IS PROMOTED.** Demotion is what a closing rung
+        does to the one or two rows that fell short of a claim the others carried. Fifteen of
+        fifteen short is not a demotion; it is the rung not being finished, and design.md §4's own
+        prediction — that `rendering-culling-and-lod`, `ray-tracing-infrastructure` and `vfx-system`
+        were the three at risk — is refuted in the direction nobody costed: the seven rows §4 called
+        "the well-understood half" are short too
+- [x] 9.5 Records verified against what the code supports, **including this rung's column against the
       status record** — `m9:record-matches-plan` is the check M9's gate added for exactly this and it
       is not milestone-specific in shape
+      - [x] **VERIFIED, AND THE RECORD IS LEFT EXACTLY AS IT WAS.** `docs/roadmap/status.yaml` holds
+        all fifteen rows at Working; `docs/roadmap/capability-matrix.md` carries **C** for all
+        fifteen in the M11.c column. That column is a PLAN for a rung that has not closed, not a
+        claim about the tree, so `m9:record-matches-plan-history` — which compares only CLOSED
+        milestones' columns — is not contradicted by it. **No tier is advanced by this phase, in
+        either direction**, and neither `status.yaml`, `capability-matrix.md` nor `ROADMAP.md` is
+        edited: a rung that does not close records nothing
+      - [ ] **ONE PLAN DOCUMENT IS NOW STALE AND IS NOT EDITED HERE.**
+        `docs/roadmap/dependencies.md` cycle 2 still ends *"checked there by `gi-sky-term-constructed`,
+        which fails today because nothing in the tree constructs a `gi::SkyTerm`"*. That sentence is
+        false: `src/rendering/sky_illumination/` constructs one from `sky::Atmosphere` and installs
+        it through `IlluminationSystem::set_sky_term()` (task 2.1). It is left unedited because the
+        closing ledger was mid-run and `plan-consistency` reads the plan documents; **the rung that
+        closes owes cycle 2 its closing sentence**, which is task 8.3's second half and the only
+        part of 8.3 that has an answer today
