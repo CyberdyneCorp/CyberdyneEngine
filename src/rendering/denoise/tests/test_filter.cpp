@@ -12,6 +12,7 @@
 #include "support.h"
 
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace {
@@ -290,4 +291,105 @@ CY_TEST_CASE("denoiser quality is a lever the budget can pull") {
     // Out of range clamps to the coarsest rather than failing inside a frame.
     worst.set_quality_position(99);
     CY_CHECK_EQ(worst.quality_position(), 3U);
+}
+
+CY_TEST_CASE("residual noise is explained: few samples, a rejected history, and the edges") {
+    // `denoising` — "Denoising diagnostics": "WHEN noise remains visible THEN the diagnostics SHALL
+    // show whether the cause is low sample count, rejected history, or a filter constrained by
+    // edge-stopping weights." Three causes, and until M11.c's requirements pass the third one had
+    // NO FIELD: `mean_filter_radius` is the step the cascade reached, and a tap the weights throw
+    // away does not change it, so a filter hemmed in by material boundaries reported exactly what a
+    // converged one reports. `edge_rejected_tap_fraction` is the field that was missing, and this
+    // case is what says the three answers are three answers.
+    const Scene scene(32, 0.05F, 0.95F);
+    const cy::u32 pixels = scene.width * scene.height;
+
+    // --- CAUSE ONE: too few samples. The history was there and was used --------------------------
+    Denoiser fresh;
+    CY_REQUIRE(fresh.resize(scene.width, scene.height).has_value());
+    (void)converge(fresh, scene, SignalKind::IndirectDiffuse, 3);
+    const auto& early = fresh.diagnostics(SignalKind::IndirectDiffuse);
+    CY_CHECK_EQ(early.rejected_history_fraction, 0.0F);
+    CY_CHECK_LT(early.mean_sample_count, 4.0F);
+    CY_CHECK_GT(early.mean_variance, 0.0F);
+    CY_CHECK_GT(early.passes_applied, 0U);
+    CY_CHECK_GT(early.cost_ns, 0ULL);
+
+    // --- CAUSE TWO: the history was rejected. Same signal, a different explanation ---------------
+    Denoiser cut;
+    CY_REQUIRE(cut.resize(scene.width, scene.height).has_value());
+    (void)converge(cut, scene, SignalKind::IndirectDiffuse, 30, 0.0F);
+    const StillHistory rejected(pixels, 0.0F);
+    const std::vector<cy::Vec3> values = scene.sample(77);
+    NoisySignal noisy;
+    noisy.values = {values.data(), values.size()};
+    CY_REQUIRE(
+        cut.denoise(SignalKind::IndirectDiffuse, noisy, scene.guidance(), rejected.guidance())
+            .has_value());
+    const auto& after_cut = cut.diagnostics(SignalKind::IndirectDiffuse);
+    CY_CHECK_EQ(after_cut.rejected_history_fraction, 1.0F);
+    CY_CHECK_LT(after_cut.mean_sample_count, 2.0F);
+    // The two causes are told apart by the diagnostics rather than by the tester's memory.
+    CY_CHECK_NE(after_cut.rejected_history_fraction, early.rejected_history_fraction);
+
+    // --- CAUSE THREE: the filter ran at full width and the edges refused its neighbourhood -------
+    //
+    // The SAME scene twice, identical noise, identical history, one difference: the visibility
+    // buffer's identifiers. With them, every tap across the material boundary is refused outright;
+    // without them this scene has one depth and one normal everywhere, so nothing stops a tap.
+    Denoiser bounded;
+    Denoiser blind;
+    CY_REQUIRE(bounded.resize(scene.width, scene.height).has_value());
+    CY_REQUIRE(blind.resize(scene.width, scene.height).has_value());
+    cy::rendering::denoise::GuidanceBuffers without_identity = scene.guidance();
+    without_identity.instance_id = {};
+    without_identity.material_id = {};
+
+    const StillHistory still(pixels);
+    for (cy::u32 frame = 0; frame < 4; ++frame) {
+        const std::vector<cy::Vec3> frame_values = scene.sample(frame);
+        NoisySignal signal;
+        signal.values = {frame_values.data(), frame_values.size()};
+        CY_REQUIRE(bounded
+                       .denoise(SignalKind::IndirectDiffuse, signal, scene.guidance(),
+                                still.guidance())
+                       .has_value());
+        CY_REQUIRE(
+            blind.denoise(SignalKind::IndirectDiffuse, signal, without_identity, still.guidance())
+                .has_value());
+    }
+
+    const auto& hemmed = bounded.diagnostics(SignalKind::IndirectDiffuse);
+    const auto& open = blind.diagnostics(SignalKind::IndirectDiffuse);
+    CY_CHECK(hemmed.identity_available);
+    CY_CHECK_FALSE(open.identity_available);
+
+    // THE POINT OF THE FIELD: every other number the diagnostics carry is IDENTICAL between the two
+    // runs. A developer looking at the four that existed before could not have told that one of
+    // these two filters was throwing away a fifth of its neighbourhood.
+    CY_CHECK_EQ(hemmed.mean_sample_count, open.mean_sample_count);
+    CY_CHECK_EQ(hemmed.rejected_history_fraction, open.rejected_history_fraction);
+    CY_CHECK_EQ(hemmed.passes_applied, open.passes_applied);
+    CY_CHECK_EQ(hemmed.mean_filter_radius, open.mean_filter_radius);
+    CY_CHECK_GT(hemmed.edge_rejected_tap_fraction, open.edge_rejected_tap_fraction);
+    CY_CHECK_GT(hemmed.edge_rejected_tap_fraction, 0.05F);
+
+    std::printf(
+        "\n  residual noise, three causes told apart\n"
+        "    few samples      samples %.2f  rejected history %.2f  edges rejected %.3f\n"
+        "    history cut      samples %.2f  rejected history %.2f  edges rejected %.3f\n"
+        "    edges constrain  samples %.2f  rejected history %.2f  edges rejected %.3f\n"
+        "    the same, blind  samples %.2f  rejected history %.2f  edges rejected %.3f\n\n",
+        static_cast<double>(early.mean_sample_count),
+        static_cast<double>(early.rejected_history_fraction),
+        static_cast<double>(early.edge_rejected_tap_fraction),
+        static_cast<double>(after_cut.mean_sample_count),
+        static_cast<double>(after_cut.rejected_history_fraction),
+        static_cast<double>(after_cut.edge_rejected_tap_fraction),
+        static_cast<double>(hemmed.mean_sample_count),
+        static_cast<double>(hemmed.rejected_history_fraction),
+        static_cast<double>(hemmed.edge_rejected_tap_fraction),
+        static_cast<double>(open.mean_sample_count),
+        static_cast<double>(open.rejected_history_fraction),
+        static_cast<double>(open.edge_rejected_tap_fraction));
 }

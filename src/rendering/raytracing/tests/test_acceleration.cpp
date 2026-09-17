@@ -336,3 +336,83 @@ CY_TEST_CASE("a scaled instance reports distance in world metres") {
     CY_CHECK_NEAR(hit.position.y, 2.0F, 1e-3F);
     CY_CHECK_NEAR(hit.normal.y, 1.0F, 1e-3F);
 }
+
+CY_TEST_CASE("the three query kinds are three questions, and a hit names the scene's own ids") {
+    // `ray-tracing-infrastructure` — "Ray query interface". Two claims, and neither of them was
+    // observed by any case in this suite before M11.c's requirements pass: that closest hit, any
+    // hit and the shadow query are three DIFFERENT questions over one structure, and that a hit
+    // resolves to the GPU scene's instance identifier and the GPU material table's entry rather
+    // than to a slot private to this service — which is what lets a hit be shaded through the
+    // material path that rasterisation uses.
+    const Quad quad;
+    // Two triangles, two materials. The per-triangle table is the mesh-with-several-materials case
+    // and a hit must resolve to the TRIANGLE's entry where one is declared: an instance-level
+    // answer here would shade half the quad with the other half's material.
+    const std::vector<cy::u32> triangle_materials{30U, 31U};
+    cy::rendering::rt::TriangleGeometry multi = quad.geometry();
+    multi.triangle_materials = {triangle_materials.data(), triangle_materials.size()};
+
+    AccelerationService service(active_config());
+    CY_REQUIRE(service.declare_geometry(1, adapt_static_mesh(multi, 0)).has_value());
+    CY_REQUIRE(service.declare_geometry(2, adapt_static_mesh(quad.geometry(), 0)).has_value());
+
+    // The FAR surface is added first, so the service's own slot order is not the answer order and
+    // an identifier taken from a slot index would be visibly wrong below.
+    InstanceDescriptor lower;
+    lower.geometry = 2;
+    lower.instance_id = 8;
+    lower.material_id = 4;
+    CY_REQUIRE(service.add_instance(lower).has_value());
+
+    InstanceDescriptor upper;
+    upper.geometry = 1;
+    upper.instance_id = 7;
+    upper.material_id = 3;
+    upper.transform = cy::Mat4::from_translation(cy::Vec3{0.0F, 2.0F, 0.0F});
+    CY_REQUIRE(service.add_instance(upper).has_value());
+    (void)service.update();
+
+    // The ray crosses both surfaces: the upper at 3 metres, the lower at 5.
+    RayQuery closest;
+    // Off the quad's diagonal deliberately: the seam between the two triangles runs x = z, and a
+    // ray down it would resolve to whichever of the two the epsilon fell on.
+    closest.ray.origin = {0.5F, 5.0F, -0.2F};
+    closest.ray.direction = {0.0F, -1.0F, 0.0F};
+    closest.kind = QueryKind::ClosestHit;
+    const auto nearest = service.trace(closest);
+    CY_REQUIRE(nearest.hit);
+    CY_CHECK_NEAR(nearest.t, 3.0F, 1e-4F);
+    // THE IDENTITIES, and they are the caller's: the instance the GPU scene declared, and the
+    // material table entry the triangle resolves to rather than the instance's own 3.
+    CY_CHECK_EQ(nearest.instance_id, 7U);
+    CY_CHECK_NE(nearest.instance_id, cy::rendering::rt::kInvalidInstance);
+    CY_REQUIRE(nearest.primitive_index < triangle_materials.size());
+    CY_CHECK_EQ(nearest.material_id, triangle_materials[nearest.primitive_index]);
+    CY_CHECK_NE(nearest.material_id, upper.material_id);
+    // And a geometry that declares no table resolves to the instance's material, which is the
+    // ordinary single-material mesh and the other half of the same rule.
+    RayQuery below;
+    below.ray = closest.ray;
+    below.t_min = 3.5F;
+    const auto second = service.trace(below);
+    CY_REQUIRE(second.hit);
+    CY_CHECK_EQ(second.instance_id, 8U);
+    CY_CHECK_EQ(second.material_id, 4U);
+
+    // AN ANY-HIT IS A DIFFERENT QUESTION: "is there anything", answered by the first surface the
+    // traversal meets rather than by the nearest. It must answer over the same structures, and its
+    // answer must be one of the two surfaces — not an invented one and not a miss.
+    RayQuery any;
+    any.ray = closest.ray;
+    any.kind = QueryKind::AnyHit;
+    const auto anywhere = service.trace(any);
+    CY_REQUIRE(anywhere.hit);
+    CY_CHECK(anywhere.instance_id == 7U || anywhere.instance_id == 8U);
+    CY_CHECK_GE(anywhere.t, 3.0F - 1e-4F);
+    CY_CHECK_LE(anywhere.t, 5.0F + 1e-4F);
+
+    // AND THE SHADOW QUERY RETURNS OCCLUSION AND NOTHING ELSE — a bool, from an interval. A segment
+    // that stops short of the upper quad is not occluded; one that reaches it is.
+    CY_CHECK_FALSE(service.occluded(closest.ray, 2.5F, Consumer::Shadows));
+    CY_CHECK(service.occluded(closest.ray, 3.5F, Consumer::Shadows));
+}

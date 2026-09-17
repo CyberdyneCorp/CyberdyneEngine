@@ -216,3 +216,90 @@ CY_TEST_CASE(
     // The bias is clamped to the levels that exist.
     CY_CHECK_LE(static_cast<cy::u32>(apply_resolution_bias(budget, 8, 0.0F, 8)), 8U);
 }
+
+CY_TEST_CASE("two views needing one page mark it once, and the secondary view weighs less") {
+    // "Views that share a light — stereo eyes, split screen, a reflection probe and the main
+    // camera — SHALL merge their shadow page requirements into one request set, and each page SHALL
+    // be rendered once and sampled by every view that needs it. Views SHALL contribute demand
+    // weighted by their own priority, so a minimap or an editor thumbnail does not raise shadow
+    // quality to main-camera levels."
+    //
+    // There is no merge STEP to test: two views mark the same page id and compaction merges them,
+    // which is the requirement satisfied by construction. So what this case is written against is
+    // the two ways that construction can be wrong — a set that emits the shared page TWICE, which
+    // is one page rasterised once per view, and a merge that keeps the LAST view's weight instead
+    // of the largest, which is a reflection probe quietly deciding the main camera's shadow
+    // quality. The main camera therefore marks FIRST and the probe SECOND: written the other way
+    // round, a last-writer merge would pass.
+    PageRequestSet set(allocator());
+    CY_REQUIRE(set.initialize(64).has_value());
+
+    ShadowAddressSpace levels[2];
+    build_levels(levels);
+    const cy::Span<const ShadowAddressSpace> span(levels, 2);
+
+    const cy::Vec3 shared{0.0F, 0.0F, -10.0F};
+
+    ReceiverSample camera;
+    camera.world_position = shared;
+    camera.texel_world_size = 0.0F;
+    camera.importance = 1.0F;
+    set.mark(span, camera);
+
+    ReceiverSample probe;
+    probe.world_position = shared;
+    probe.texel_world_size = 0.0F;
+    probe.importance = 0.2F;
+    set.mark(span, probe);
+
+    // A page only the probe needs, so the two weights can be told apart downstream.
+    ReceiverSample probe_only = probe;
+    probe_only.world_position = cy::Vec3{4.0F, 4.0F, -10.0F};
+    set.mark(span, probe_only);
+
+    CY_REQUIRE(set.compact().has_value());
+    CY_CHECK_EQ(set.marks(), 3U);
+    CY_REQUIRE_EQ(set.pages().size(), 2U);
+
+    const PageRequest* shared_page = nullptr;
+    const PageRequest* probe_page = nullptr;
+    for (const PageRequest& request : set.pages()) {
+        if (request.marks == 2U) {
+            shared_page = &request;
+        } else {
+            probe_page = &request;
+        }
+    }
+    // Rendered ONCE and sampled by both: one entry carrying both views' marks.
+    CY_REQUIRE(shared_page != nullptr);
+    CY_REQUIRE(probe_page != nullptr);
+    CY_CHECK_EQ(probe_page->marks, 1U);
+    // The main camera's demand decides the shared page; the probe's does not dilute it.
+    CY_CHECK_NEAR(shared_page->importance, 1.0F, 1e-6F);
+    CY_CHECK_NEAR(probe_page->importance, 0.2F, 1e-6F);
+
+    // And the weight is what the rest of the system spends on. Under pressure the page only the
+    // probe asked for coarsens, and the one the main camera shares does not — "the probe's demand
+    // SHALL carry lower priority and select coarser pages".
+    cy::rendering::ShadowBudget budget;
+    budget.set_allocation_ms(0.4F);
+    for (cy::u32 frame = 0; frame < 64; ++frame) {
+        budget.report_measured_ms(2.0F);
+        (void)budget.update();
+    }
+    CY_REQUIRE(budget.at_minimum());
+    CY_CHECK_GT(static_cast<cy::u32>(apply_resolution_bias(budget, 0, probe_page->importance, 6)),
+                static_cast<cy::u32>(apply_resolution_bias(budget, 0, shared_page->importance, 6)));
+
+    // The same ordering decides which of the two is refreshed first when the frame cannot afford
+    // both: equal age, equal class, and the weight the views contributed is the only difference.
+    StalePage shared_stale;
+    shared_stale.page = shared_page->page;
+    shared_stale.importance = shared_page->importance;
+    shared_stale.age = 4;
+    StalePage probe_stale;
+    probe_stale.page = probe_page->page;
+    probe_stale.importance = probe_page->importance;
+    probe_stale.age = 4;
+    CY_CHECK_GT(staleness_priority(shared_stale), staleness_priority(probe_stale));
+}

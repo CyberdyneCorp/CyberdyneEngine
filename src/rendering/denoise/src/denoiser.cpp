@@ -414,8 +414,10 @@ Denoiser::PixelResult Denoiser::filter_pixel(const SignalState& state,
                 continue;
             }
             const auto tap = (static_cast<usize>(sy) * width_) + static_cast<usize>(sx);
+            result.taps_offered += 1;
             const f32 weight = tap_weight(context, tap, dx, dy);
             if (weight <= 0.0F) {
+                result.taps_rejected += 1;
                 continue;
             }
             sum = sum + (state.filtered[tap] * weight);
@@ -445,6 +447,8 @@ void Denoiser::filter(SignalState& state, const GuidanceBuffers& guidance) const
 
     f32 radius_total = 0.0F;
     f32 radius_count = 0.0F;
+    f32 taps_offered = 0.0F;
+    f32 taps_rejected = 0.0F;
     u32 applied = 0;
     for (u32 pass = 0; pass < passes; ++pass) {
         const u32 step = 1U << pass;
@@ -454,6 +458,8 @@ void Denoiser::filter(SignalState& state, const GuidanceBuffers& guidance) const
                 const PixelResult result =
                     filter_pixel(state, guidance, x, y, step, extent, identity);
                 state.scratch[(static_cast<usize>(y) * width_) + x] = result.value;
+                taps_offered += static_cast<f32>(result.taps_offered);
+                taps_rejected += static_cast<f32>(result.taps_rejected);
                 if (result.filtered) {
                     touched = true;
                     radius_total += static_cast<f32>(result.step);
@@ -469,6 +475,8 @@ void Denoiser::filter(SignalState& state, const GuidanceBuffers& guidance) const
 
     state.diagnostics.passes_applied = applied;
     state.diagnostics.mean_filter_radius = radius_count > 0.0F ? radius_total / radius_count : 0.0F;
+    state.diagnostics.edge_rejected_tap_fraction =
+        taps_offered > 0.0F ? taps_rejected / taps_offered : 0.0F;
 }
 
 Expected<Span<const Vec3>, Error> Denoiser::denoise(SignalKind kind, const NoisySignal& noisy,

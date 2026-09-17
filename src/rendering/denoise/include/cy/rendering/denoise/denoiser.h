@@ -218,6 +218,17 @@ struct Diagnostics {
     f32 rejected_history_fraction = 0.0F;
     u32 passes_applied = 0;
     u64 cost_ns = 0;
+    /// The fraction of taps the edge-stopping weights REJECTED OUTRIGHT, over the taps the filter
+    /// offered them.
+    ///
+    /// `denoising` asks the diagnostics to say whether residual noise is "low sample count,
+    /// rejected history, or a filter constrained by edge-stopping weights", and the third of those
+    /// had no field: `mean_filter_radius` reports the step the cascade reached, which a rejected
+    /// tap does not change. A filter running at full width over a surface whose boundaries throw
+    /// away most of its neighbourhood therefore looked identical to one that had converged. This is
+    /// the number that tells them apart, and `mean_sample_count` and `rejected_history_fraction`
+    /// beside it are the other two causes.
+    f32 edge_rejected_tap_fraction = 0.0F;
     bool identity_available = false;
     /// The denoiser was off and the raw signal was passed through unchanged.
     bool bypassed = false;
@@ -300,6 +311,10 @@ private:
         Vec3 value{0.0F, 0.0F, 0.0F};
         bool filtered = false;
         u32 step = 0;
+        /// Taps inside the image that were offered to the edge-stopping weights, and the ones those
+        /// weights refused. `Diagnostics::edge_rejected_tap_fraction` is their ratio over the frame.
+        u32 taps_offered = 0;
+        u32 taps_rejected = 0;
     };
     struct TapContext;
 
