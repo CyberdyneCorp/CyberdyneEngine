@@ -260,10 +260,9 @@ CY_TEST_CASE("graph_material: the palette is the engine's own vocabulary, op for
         const std::string expected =
             std::string("material.") +
             cy::rendering::material::graph_op_name(static_cast<GraphOp>(index));
-        CY_CHECK(std::find(offered.begin(), offered.end(), expected) != offered.end());
+        CY_CHECK(std::ranges::find(offered, expected) != offered.end());
     }
-    CY_CHECK(std::find(offered.begin(), offered.end(), std::string("material.output")) !=
-             offered.end());
+    CY_CHECK(std::ranges::find(offered, std::string("material.output")) != offered.end());
 }
 
 CY_TEST_CASE(

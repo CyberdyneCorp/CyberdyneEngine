@@ -30,7 +30,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -61,6 +63,54 @@ using namespace cy::sample::beauty;
 /// a material whose parameters arrived in a different order would be shaded with roughness read out
 /// of the metalness slot — and the picture would look plausible. That is the class of wrongness the
 /// sidecar exists to remove, and the check is four lines.
+/// The four component defaults of one `param` line, read with `strtod` so a malformed number is a
+/// refusal rather than a silent zero. `sscanf`'s `%lf` reports neither, which is why it is not
+/// used.
+[[nodiscard]] bool read_four(const char* cursor, double (&values)[4]) {
+    for (double& value : values) {
+        char* end = nullptr;
+        value = std::strtod(cursor, &end);
+        if (end == cursor) {
+            return false;
+        }
+        cursor = end;
+    }
+    return true;
+}
+
+/// One line of the sidecar, folded into `material`. Each form is recognised by its keyword and its
+/// numbers are converted by a function that reports failure.
+void read_material_line(const char* line, ShotMaterial& material) {
+    char first[128] = {};
+    char second[128] = {};
+    int consumed = 0;
+    if (std::sscanf(line, "entry %127s", first) == 1) {
+        material.entry_point = first;
+        return;
+    }
+    if (std::strncmp(line, "cook_key 0x", 11) == 0) {
+        char* end = nullptr;
+        const unsigned long long key = std::strtoull(line + 11, &end, 16);
+        if (end != line + 11) {
+            material.cook_key = static_cast<u64>(key);
+        }
+        return;
+    }
+    if (std::sscanf(line, "param %127s %127s %n", first, second, &consumed) == 2 && consumed != 0) {
+        double values[4] = {};
+        if (read_four(line + consumed, values)) {
+            material.parameters.emplace_back(first);
+            material.parameter_defaults.push_back(
+                Vec4{static_cast<f32>(values[0]), static_cast<f32>(values[1]),
+                     static_cast<f32>(values[2]), static_cast<f32>(values[3])});
+        }
+        return;
+    }
+    if (std::sscanf(line, "texture %127s", first) == 1) {
+        material.textures.emplace_back(first);
+    }
+}
+
 [[nodiscard]] bool read_material_info(const std::string& path, ShotMaterial& material) {
     std::FILE* file = std::fopen(path.c_str(), "r");
     if (file == nullptr) {
@@ -69,23 +119,7 @@ using namespace cy::sample::beauty;
     }
     char line[512];
     while (std::fgets(line, sizeof(line), file) != nullptr) {
-        char first[128] = {};
-        char second[128] = {};
-        if (std::sscanf(line, "entry %127s", first) == 1) {
-            material.entry_point = first;
-        } else if (std::sscanf(line, "cook_key 0x%llx",
-                               reinterpret_cast<unsigned long long*>(&material.cook_key)) == 1) {
-            continue;
-        } else if (double values[4] = {};
-                   std::sscanf(line, "param %127s %127s %lf %lf %lf %lf", first, second, &values[0],
-                               &values[1], &values[2], &values[3]) == 6) {
-            material.parameters.emplace_back(first);
-            material.parameter_defaults.push_back(
-                Vec4{static_cast<f32>(values[0]), static_cast<f32>(values[1]),
-                     static_cast<f32>(values[2]), static_cast<f32>(values[3])});
-        } else if (std::sscanf(line, "texture %127s", first) == 1) {
-            material.textures.emplace_back(first);
-        }
+        read_material_line(line, material);
     }
     (void)std::fclose(file);
 
@@ -185,10 +219,17 @@ int main(int argc, char** argv) {
     }
     for (ShotMaterial& material : shot.materials) {
         const std::string stem = stem_of(material.graph_path);
-        if (!read_material_info(materials + "/" + stem + ".cymatinfo", material)) {
+        std::string base = materials;
+        base += '/';
+        base += stem;
+        std::string info = base;
+        info += ".cymatinfo";
+        if (!read_material_info(info, material)) {
             return 1;
         }
-        if (!read_spirv(materials + "/" + stem + ".spv", material.spirv)) {
+        std::string spirv = base;
+        spirv += ".spv";
+        if (!read_spirv(spirv, material.spirv)) {
             return 1;
         }
         std::printf("material      %-18s cook key 0x%016llx  %llu SPIR-V words\n", stem.c_str(),
@@ -240,8 +281,8 @@ int main(int argc, char** argv) {
         const f32 radius = std::sqrt((offset.x * offset.x) + (offset.z * offset.z));
         const f32 start = std::atan2(offset.z, offset.x);
         for (u32 index = 0; index < count; ++index) {
-            const f32 turn =
-                start + ((2.0F * 3.14159265F * static_cast<f32>(index)) / static_cast<f32>(count));
+            const f32 turn = start + ((2.0F * std::numbers::pi_v<f32> * static_cast<f32>(index)) /
+                                      static_cast<f32>(count));
             Vec3 eye = shot.camera_position;
             eye.x = pivot.x + (std::cos(turn) * radius);
             eye.z = pivot.z + (std::sin(turn) * radius);

@@ -284,7 +284,7 @@ Span<const std::string_view> material_node_types() noexcept {
         return true;
     }();
     (void)built;
-    return Span<const std::string_view>(names, std::size(names));
+    return {names, std::size(names)};
 }
 
 Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kMaxPins]) noexcept {
@@ -303,7 +303,7 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
     if (type == kOutputType) {
         push(kOutputPins[0], kClosurePin, PinDirection::Input);
         push(kOutputPins[1], kValuePin, PinDirection::Input);
-        return Span<const PinDesc>(storage, count);
+        return {storage, count};
     }
     const NodeSpec* spec = spec_for(type);
     if (spec == nullptr) {
@@ -315,7 +315,7 @@ Span<const PinDesc> material_node_pins(std::string_view type, PinDesc storage[kM
         push(spec->pins[index], closure_input ? kClosurePin : kValuePin, PinDirection::Input);
     }
     push("out", spec->closure ? kClosurePin : kValuePin, PinDirection::Output);
-    return Span<const PinDesc>(storage, count);
+    return {storage, count};
 }
 
 Status register_material_nodes(NodeRegistry& registry) noexcept {

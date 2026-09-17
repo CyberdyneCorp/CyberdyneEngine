@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <numbers>
 #include <vector>
 
 #include "golden.h"
@@ -556,13 +557,12 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
     // argument samples/03-first-light's "host read" pass makes for a buffer.
     rendering::RenderGraph graph(*allocator_);
     std::vector<ResourceId> imported;
-    for (usize index = 0; index < device_->textures.size(); ++index) {
+    for (const rhi::TextureHandle& texture : device_->textures) {
         // THE REQUEST'S FORMAT IS USED, and getting it wrong is a validation error rather than a
         // silent one: the graph creates the view it barriers from this description, and Vulkan
         // refuses a view whose format differs from its image's unless the image was created
         // mutable. Asking the device what it actually made is what keeps the two in step.
-        const rhi::TextureDescription* description =
-            device.texture_description(device_->textures[index]);
+        const rhi::TextureDescription* description = device.texture_description(texture);
         if (description == nullptr) {
             return fail(ErrorCode::Internal, "a cooked texture has no description");
         }
@@ -572,8 +572,7 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
         request.width = description->extent.width;
         request.height = description->extent.height;
         request.mip_levels = description->mip_levels;
-        imported.push_back(
-            graph.import_texture(request, device_->textures[index], rhi::ImageLayout::Undefined));
+        imported.push_back(graph.import_texture(request, texture, rhi::ImageLayout::Undefined));
     }
 
     UploadState state;
@@ -680,7 +679,7 @@ Status Stage::build_geometry(const Shot& shot, ShotReport& report) noexcept {
         batch.push.normal_slot_bits = bit_cast_to_float(shot.materials[material_index].normal.slot);
         batch.push.data_slot_bits = bit_cast_to_float(shot.materials[material_index].data.slot);
 
-        const f32 radians = instance.yaw_degrees * 3.14159265F / 180.0F;
+        const f32 radians = instance.yaw_degrees * std::numbers::pi_v<f32> / 180.0F;
         const f32 cosine = std::cos(radians);
         const f32 sine = std::sin(radians);
         const auto rotate = [cosine, sine](Vec3 value) noexcept {
@@ -809,8 +808,8 @@ struct SkyBuild {
     // THE SUN IS PLACED BY THE SHOT AND ITS COLOUR IS THE ATMOSPHERE'S. A `CelestialState` carries
     // a direction; the radiance that reaches the ground from it is what `compose_sky_lighting`
     // integrates, and a colour typed into the shot file would be a second sun.
-    const f32 elevation = shot.sun_elevation_degrees * 3.14159265F / 180.0F;
-    const f32 azimuth = shot.sun_azimuth_degrees * 3.14159265F / 180.0F;
+    const f32 elevation = shot.sun_elevation_degrees * std::numbers::pi_v<f32> / 180.0F;
+    const f32 azimuth = shot.sun_azimuth_degrees * std::numbers::pi_v<f32> / 180.0F;
     rendering::sky::CelestialState celestial;
     celestial.sun.direction = Vec3{std::cos(elevation) * std::cos(azimuth), std::sin(elevation),
                                    std::cos(elevation) * std::sin(azimuth)};
@@ -1802,7 +1801,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     // --------------------------------------------------------------
     const f32 aspect = static_cast<f32>(width_) / static_cast<f32>(height_);
     const f32 fov_y =
-        2.0F * std::atan(std::tan(shot.field_of_view_degrees * 3.14159265F / 360.0F) / aspect);
+        2.0F *
+        std::atan(std::tan(shot.field_of_view_degrees * std::numbers::pi_v<f32> / 360.0F) / aspect);
     // THE GEOMETRY IS BAKED AGAINST THE SHOT'S OWN CAMERA and the rendering camera is expressed as
     // an offset from it. For the still they are the same point and `eye` is the origin; for a
     // turntable they are not, and that is what lets two hundred and forty frames share one vertex
@@ -2140,7 +2140,7 @@ Status Stage::write_png(const char* path) noexcept {
                 for (u32 sx = 0; sx < supersample_; ++sx) {
                     const u32 texel =
                         pixels_[(static_cast<usize>((y * supersample_) + sy) * width_) +
-                                (x * supersample_) + sx];
+                                static_cast<usize>(x * supersample_) + sx];
                     for (u32 channel = 0; channel < 4; ++channel) {
                         sums[channel] += (texel >> (channel * 8U)) & 0xFFU;
                     }
@@ -2220,7 +2220,7 @@ Status Stage::write_linear_png(const char* path) noexcept {
             for (u32 sy = 0; sy < supersample_; ++sy) {
                 for (u32 sx = 0; sx < supersample_; ++sx) {
                     const usize texel = ((static_cast<usize>((y * supersample_) + sy) * width_) +
-                                         (x * supersample_) + sx) *
+                                         static_cast<usize>(x * supersample_) + sx) *
                                         4U;
                     for (u32 channel = 0; channel < 3; ++channel) {
                         sums[channel] += half_to_float(halves[texel + channel]);
@@ -2229,10 +2229,9 @@ Status Stage::write_linear_png(const char* path) noexcept {
             }
             u32 packed = 0xFF000000U;
             for (u32 channel = 0; channel < 3; ++channel) {
-                const f32 linear = sums[channel] / taps;
-                const f32 clamped = linear < 0.0F ? 0.0F : (linear > 1.0F ? 1.0F : linear);
-                const f32 encoded = std::pow(clamped, 1.0F / 2.2F);
-                packed |= static_cast<u32>((encoded * 255.0F) + 0.5F) << (channel * 8U);
+                const f32 linear = std::fmin(std::fmax(sums[channel] / taps, 0.0F), 1.0F);
+                const f32 encoded = std::pow(linear, 1.0F / 2.2F);
+                packed |= static_cast<u32>(std::lround(encoded * 255.0F)) << (channel * 8U);
             }
             filtered[(static_cast<usize>(y) * out_width) + x] = packed;
         }
@@ -2246,7 +2245,7 @@ Status Stage::write_linear_png(const char* path) noexcept {
 }
 
 Status Stage::write_manifest(const Shot& shot, const ShotReport& report,
-                             const char* path) const noexcept {
+                             const char* path) noexcept {
     if (!report.manifest_valid) {
         return fail(ErrorCode::InvalidArgument,
                     "no frame executed, so there is no stage list to publish");

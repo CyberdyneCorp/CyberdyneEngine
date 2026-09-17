@@ -1275,8 +1275,16 @@ Status Stage::read_grade(const char* path) noexcept {
             continue;
         }
         char key[64] = {};
-        double value = 0.0;
-        if (std::sscanf(line, "%63[a-z_-] = %lf", key, &value) != 2) {
+        int consumed = 0;
+        if (std::sscanf(line, "%63[a-z_-] = %n", key, &consumed) != 1 || consumed == 0) {
+            continue;
+        }
+        // `strtod` RATHER THAN `%lf`: `sscanf` reports no conversion error, so a grade file with
+        // `exposure-stops = kittens` in it would be read as 0 and the shot would be published at a
+        // stop nobody chose.
+        char* end = nullptr;
+        const double value = std::strtod(line + consumed, &end);
+        if (end == line + consumed) {
             continue;
         }
         if (std::strcmp(key, "exposure-stops") == 0) {
@@ -1296,7 +1304,7 @@ Status Stage::read_grade(const char* path) noexcept {
     return ok();
 }
 
-Status Stage::write_manifest(const StageReport& report, const char* path) const noexcept {
+Status Stage::write_manifest(const StageReport& report, const char* path) noexcept {
     if (!report.manifest_valid) {
         return fail(ErrorCode::InvalidArgument,
                     "no frame executed, so there is no stage list to publish");

@@ -242,7 +242,7 @@ void decode_bc4(const u8 block[8], u8 out[16]) {
 }
 
 cy::Span<const u8> span_of(const u8* data, usize size) {
-    return cy::Span<const u8>(data, size);
+    return {data, size};
 }
 
 }  // namespace
@@ -266,7 +266,7 @@ CY_TEST_CASE("codec: a PNG decodes through the importer, pixel for pixel") {
             u8 expected[4];
             expected_texel(x, y, expected);
             const u8* actual =
-                image.value().pixels.data() + ((static_cast<usize>(y) * 16U + x) * 4U);
+                image.value().pixels.data() + (((static_cast<usize>(y) * 16U) + x) * 4U);
             for (u32 channel = 0; channel < 4; ++channel) {
                 mismatches += expected[channel] == actual[channel] ? 0U : 1U;
             }
@@ -320,7 +320,7 @@ static double mean_error(const ImageData& image) {
         for (u32 x = 0; x < 16; ++x) {
             u8 expected[4];
             expected_texel(x, y, expected);
-            const u8* actual = image.pixels.data() + ((static_cast<usize>(y) * 16U + x) * 3U);
+            const u8* actual = image.pixels.data() + (((static_cast<usize>(y) * 16U) + x) * 3U);
             for (u32 channel = 0; channel < 3; ++channel) {
                 total += std::fabs(static_cast<double>(expected[channel]) -
                                    static_cast<double>(actual[channel]));
@@ -518,7 +518,7 @@ CY_TEST_CASE(
     CY_CHECK(!can_encode(TextureFormat::RGBA8));
 
     Array<u8> levels;
-    CY_REQUIRE(levels.resize(16U * 16U * 4U));
+    CY_REQUIRE(levels.resize(static_cast<usize>(16U) * 16U * 4U));
     Array<u8> out;
     CY_CHECK(!encode_mip_chain(levels.span(), 16, 16, 1, 4, TextureFormat::ASTC_4x4, out));
 }

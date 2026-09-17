@@ -226,8 +226,8 @@ public:
                                      const char* png_path, const char* linear_path,
                                      ShotReport& report) noexcept;
 
-    [[nodiscard]] Status write_manifest(const Shot& shot, const ShotReport& report,
-                                        const char* path) const noexcept;
+    [[nodiscard]] static Status write_manifest(const Shot& shot, const ShotReport& report,
+                                               const char* path) noexcept;
 
 private:
     [[nodiscard]] Status create_pipelines(const Shot& shot) noexcept;

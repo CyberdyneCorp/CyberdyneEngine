@@ -167,9 +167,9 @@ struct Bc7Fit {
     Bc7Fit fit;
     for (u32 texel = 0; texel < 16; ++texel) {
         u32 best = 0;
-        u32 best_error = texel_error(rgba + (texel * 4U), palette[0]);
+        u32 best_error = texel_error(rgba + (static_cast<usize>(texel) * 4U), palette[0]);
         for (u32 step = 1; step < 16; ++step) {
-            const u32 error = texel_error(rgba + (texel * 4U), palette[step]);
+            const u32 error = texel_error(rgba + (static_cast<usize>(texel) * 4U), palette[step]);
             if (error < best_error) {
                 best_error = error;
                 best = step;
@@ -360,7 +360,7 @@ void gather(Span<const u8> level, u32 width, u32 height, u32 channels, u32 block
             x = x < width ? x : width - 1U;
             y = y < height ? y : height - 1U;
             const usize source = ((static_cast<usize>(y) * width) + x) * channels;
-            u8* texel = rgba + (((row * 4U) + column) * 4U);
+            u8* texel = rgba + ((static_cast<usize>((row * 4U) + column)) * 4U);
             texel[0] = level[source];
             texel[1] = channels > 1 ? level[source + 1] : level[source];
             texel[2] = channels > 2 ? level[source + 2] : level[source];
@@ -385,7 +385,7 @@ void gather(Span<const u8> level, u32 width, u32 height, u32 channels, u32 block
             } else {
                 u8 red[16];
                 for (u32 texel = 0; texel < 16; ++texel) {
-                    red[texel] = rgba[texel * 4U];
+                    red[texel] = rgba[static_cast<usize>(texel) * 4U];
                 }
                 encode_bc4_block(red, encoded);
                 produced = 8;

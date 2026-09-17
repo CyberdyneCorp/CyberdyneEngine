@@ -232,7 +232,8 @@ Status write_material_info(const rendering::material::Module& module, u64 cook_k
     };
     char line[160] = {};
     (void)std::snprintf(line, sizeof(line),
-                        "cymatinfo %u\nmaterial %s\ncook_key 0x%016llx\nentry %.*s\n", kInfoVersion,
+                        "cymatinfo %u\nmaterial %.*s\ncook_key 0x%016llx\nentry %.*s\n",
+                        kInfoVersion, static_cast<int>(module.name().text().size()),
                         module.name().text().data(), static_cast<unsigned long long>(cook_key),
                         static_cast<int>(entry_point.size()), entry_point.data());
     append(line);
@@ -240,7 +241,8 @@ Status write_material_info(const rendering::material::Module& module, u64 cook_k
     // would draw a material whose base colour is black however the graph was authored — which is
     // exactly the failure this line removes, and it was found by looking at a picture.
     for (const rendering::material::ParameterDecl& parameter : module.parameters()) {
-        (void)std::snprintf(line, sizeof(line), "param %s %s %.9g %.9g %.9g %.9g\n",
+        (void)std::snprintf(line, sizeof(line), "param %.*s %s %.9g %.9g %.9g %.9g\n",
+                            static_cast<int>(parameter.name.text().size()),
                             parameter.name.text().data(),
                             rendering::material::value_type_name(parameter.type),
                             static_cast<double>(parameter.default_value.x),
@@ -250,7 +252,9 @@ Status write_material_info(const rendering::material::Module& module, u64 cook_k
         append(line);
     }
     for (const rendering::material::TextureDecl& texture : module.textures()) {
-        (void)std::snprintf(line, sizeof(line), "texture %s\n", texture.name.text().data());
+        (void)std::snprintf(line, sizeof(line), "texture %.*s\n",
+                            static_cast<int>(texture.name.text().size()),
+                            texture.name.text().data());
         append(line);
     }
     return out.empty() ? fail(ErrorCode::OutOfMemory, "the sidecar could not be grown") : ok();

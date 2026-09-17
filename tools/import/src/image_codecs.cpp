@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <numbers>
 
 namespace cy::import {
 namespace {
@@ -570,7 +571,8 @@ Expected<ImageData, Error> decode_png(Span<const u8> bytes) noexcept {
                 return fail(ErrorCode::InvalidArgument, "a PNG palette of more than 256 entries");
             }
             for (u32 entry = 0; entry < palette.count; ++entry) {
-                std::memcpy(palette.rgb[entry], bytes.data() + body + (entry * 3U), 3);
+                std::memcpy(palette.rgb[entry],
+                            bytes.data() + body + (static_cast<usize>(entry) * 3U), 3);
                 palette.alpha[entry] = 255;
             }
         } else if (std::memcmp(type, "tRNS", 4) == 0) {
@@ -643,6 +645,14 @@ constexpr u8 kZigZag[64] = {0,  1,  8,  16, 9,  2,  3,  10, 17, 24, 32, 25, 18, 
                             12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6,  7,  14, 21, 28,
                             35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
                             58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63};
+
+/// A JPEG sample level, clamped to the byte range and rounded half away from zero. Written once
+/// because both the inverse transform and the colour conversion need exactly this, and a nested
+/// conditional written twice is the shape that drifts apart.
+[[nodiscard]] u8 clamped_level(f32 value) noexcept {
+    const f32 bounded = std::fmin(std::fmax(value, 0.0F), 255.0F);
+    return static_cast<u8>(std::lround(bounded));
+}
 
 /// One JPEG Huffman table, in the DHT form: how many codes of each length, then the values.
 struct JpegHuffman {
@@ -789,7 +799,7 @@ void inverse_dct(const f32* input, u8* out, usize stride) noexcept {
                 const f32 scale = u == 0 ? 0.70710678F : 1.0F;
                 sum += scale * input[(u * 8U) + column] *
                        std::cos(((2.0F * static_cast<f32>(row)) + 1.0F) * static_cast<f32>(u) *
-                                3.14159265F / 16.0F);
+                                std::numbers::pi_v<f32> / 16.0F);
             }
             intermediate[(row * 8U) + column] = sum * 0.5F;
         }
@@ -801,11 +811,9 @@ void inverse_dct(const f32* input, u8* out, usize stride) noexcept {
                 const f32 scale = u == 0 ? 0.70710678F : 1.0F;
                 sum += scale * intermediate[(row * 8U) + u] *
                        std::cos(((2.0F * static_cast<f32>(column)) + 1.0F) * static_cast<f32>(u) *
-                                3.14159265F / 16.0F);
+                                std::numbers::pi_v<f32> / 16.0F);
             }
-            const f32 value = (sum * 0.5F) + 128.0F;
-            const f32 clamped = value < 0.0F ? 0.0F : (value > 255.0F ? 255.0F : value);
-            out[(row * stride) + column] = static_cast<u8>(clamped + 0.5F);
+            out[(row * stride) + column] = clamped_level((sum * 0.5F) + 128.0F);
         }
     }
 }
@@ -832,7 +840,7 @@ struct JpegState {
         if (slot >= 4) {
             return fail(ErrorCode::InvalidArgument, "a JPEG quantisation table index above three");
         }
-        for (u32 index = 0; index < 64; ++index) {
+        for (const u8 zig_zag : kZigZag) {
             if (cursor >= segment.size()) {
                 return fail(ErrorCode::InvalidArgument, "a truncated JPEG quantisation table");
             }
@@ -840,7 +848,7 @@ struct JpegState {
             if (precision != 0) {
                 value = static_cast<u16>((value << 8U) | segment[cursor++]);
             }
-            state.quantisation[slot][kZigZag[index]] = value;
+            state.quantisation[slot][zig_zag] = value;
         }
     }
     return ok();
@@ -1047,10 +1055,7 @@ struct JpegState {
                                      luma - (0.344136F * blue) - (0.714136F * red),
                                      luma + (1.772F * blue)};
             for (u32 channel = 0; channel < 3; ++channel) {
-                const f32 clamped = channels[channel] < 0.0F
-                                        ? 0.0F
-                                        : (channels[channel] > 255.0F ? 255.0F : channels[channel]);
-                pixel[channel] = static_cast<u8>(clamped + 0.5F);
+                pixel[channel] = clamped_level(channels[channel]);
             }
         }
     }

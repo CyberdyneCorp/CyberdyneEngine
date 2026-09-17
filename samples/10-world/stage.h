@@ -162,7 +162,8 @@ public:
     /// capture SHALL be accompanied by that stage list, and where a caption states that a stage
     /// ran, the statement SHALL be checkable against it". Refuses a report with no manifest in it,
     /// which is a frame that never executed.
-    [[nodiscard]] Status write_manifest(const StageReport& report, const char* path) const noexcept;
+    [[nodiscard]] static Status write_manifest(const StageReport& report,
+                                               const char* path) noexcept;
 
     /// The exposure this shot is graded at, in stops, as `samples/10-world/frame.cypost` committed
     /// it. M11.c task 3.3: the grade is content, not a constant in a sample's `main`.
