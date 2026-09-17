@@ -947,12 +947,19 @@ struct ImportState {
 /// It is what an artist typed when they exported the file, and — see `fbx_clip.h` — it is the only
 /// thing in a character-library export that distinguishes one animation from another, since every
 /// one of them may carry the exporter's own name.
+///
+/// UNDER THE SAME GUARD AS ITS ONLY CALLER. `import_gltf_animations` is the only thing that names
+/// it and that function is inside `#ifdef CY_IMPORT_ANIMATION`, so under `-D CY_ANIMATION=OFF` this
+/// was a defined-but-unused function against `-Werror` — `m8b:feature-options-off` red on a helper
+/// rather than on a capability that cannot be removed.
+#ifdef CY_IMPORT_ANIMATION
 [[nodiscard]] std::string_view stem_of_path(std::string_view path) noexcept {
     const usize slash = path.find_last_of("/\\");
     std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);
     const usize dot = name.rfind('.');
     return dot == std::string_view::npos ? name : name.substr(0, dot);
 }
+#endif  // CY_IMPORT_ANIMATION
 
 /// A joint the walk emitted, and the two numberings it joins.
 struct GltfRig {

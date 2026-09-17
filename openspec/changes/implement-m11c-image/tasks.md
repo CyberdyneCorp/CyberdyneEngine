@@ -989,14 +989,17 @@ work was done.
         milestones' columns — is not contradicted by it. **No tier is advanced by this phase, in
         either direction**, and neither `status.yaml`, `capability-matrix.md` nor `ROADMAP.md` is
         edited: a rung that does not close records nothing
-      - [ ] **ONE PLAN DOCUMENT IS NOW STALE AND IS NOT EDITED HERE.**
-        `docs/roadmap/dependencies.md` cycle 2 still ends *"checked there by `gi-sky-term-constructed`,
-        which fails today because nothing in the tree constructs a `gi::SkyTerm`"*. That sentence is
-        false: `src/rendering/sky_illumination/` constructs one from `sky::Atmosphere` and installs
-        it through `IlluminationSystem::set_sky_term()` (task 2.1). It is left unedited because the
-        closing ledger was mid-run and `plan-consistency` reads the plan documents; **the rung that
-        closes owes cycle 2 its closing sentence**, which is task 8.3's second half and the only
-        part of 8.3 that has an answer today
+      - [x] **ONE PLAN DOCUMENT WAS STALE AND IS CORRECTED, WHICH IS THE ONLY PART OF 8.3 THAT HAS
+        AN ANSWER TODAY.** `docs/roadmap/dependencies.md` cycle 2 ended *"checked there by
+        `gi-sky-term-constructed`, which fails today because nothing in the tree constructs a
+        `gi::SkyTerm`"*. That sentence was false: `src/rendering/sky_illumination/` constructs one
+        from `sky::Atmosphere` and installs it through `IlluminationSystem::set_sky_term()` (task
+        2.1), and `m11c:gi-sky-term-constructed` is green in the closing run. Cycle 2 now records
+        both halves — **the mechanism is discharged and the tier claim is not**, because
+        `rendering-global-illumination` has none of its twenty-nine requirements mapped and no
+        shipping program lights its frame through the seam (task 2.8). The rung that records the row
+        at Complete is the rung that closes the cycle. `plan.py` reads only the mermaid edges out of
+        that file, so prose is free and no edge changed
 
 ### THE VERDICT, AND THE RUN IT COMES FROM
 
@@ -1119,9 +1122,16 @@ declared `known_gap_closes = "m11c"`, and a marker that outlives its gap fails t
 other direction. The markers are removed and a comment in each place records why; the criteria, their
 `describe` and their `run` are untouched.
 
-**THE RE-RUN THIS RECORD DOES NOT HAVE.** The six repairs above landed AFTER the ledger run they are
-measured against, and each was verified by running that criterion's own command rather than by a
-second full ledger, which costs hours. The counts at the head of this section are the tree as the
-closing gate received it, plus the lint repair; they are not a claim about the tree after the other
-five. **Whoever re-runs `just roadmap-milestone m11c` should expect 33 failures, not 39** — and if
-it is not 33, that difference is the finding.
+**THE RE-RUN THIS RECORD DOES NOT HAVE.** Five of the six repairs above landed AFTER the ledger run
+they are measured against — only the lint repair was in the tree the run read — and each was verified
+by executing that criterion's own command rather than by a second full ledger, which costs hours. So
+the counts at the head of this section describe the tree as the closing gate received it plus the
+lint fix, and nothing more.
+
+**What a re-run should find, stated in advance so a surprise is a finding rather than a correction.**
+Six failures should be gone — `m0:test`, `m5:editor`, `m5:artefact`, `m4:generated-code`,
+`m8b:feature-options-off`, `m8c:feature-options-off` — leaving **33**. Two more MAY go with them and
+were not verified, because each is a from-empty build of four whole configurations:
+`m1:four-profiles`, whose only observed failure was `smoke.editor_session` in the debug profile, and
+`m5:editor-profiles`, whose subject is the editor gate that is now green in dev. **A re-run that
+reports more than 33 has found something this gate did not**, and the remaining 33 are named above.

@@ -324,8 +324,24 @@ the tree constructs a `gi::SkyTerm` from the atmosphere**, and neither module li
 deliberate, which is what made the gradient fit measurable without a GI system present and is also
 why nobody was obliged to join the two. M10's closing gate moved the cell rather than let a
 completion the code does not support close silently; the evidence is in
-[where M10's tiers are thin](capability-matrix.md#where-m10s-tiers-are-thin). **Joining it is one
-adapter at one composition point**, and it is M11.c's — checked there by `gi-sky-term-constructed`, which fails today because nothing in the tree constructs a `gi::SkyTerm`.
+[where M10's tiers are thin](capability-matrix.md#where-m10s-tiers-are-thin).
+
+**THE SEAM IS JOINED, AND IT WAS NOT ONE ADAPTER.** M11.c built `src/rendering/sky_illumination/` as
+the composition point: `SkyIllumination` fits a `gi::SkyTerm` from `sky::Atmosphere` through
+`sky::fit_sky_gradient`, installs it through a new `IlluminationSystem::set_sky_term()`, derives the
+sun from `sky::sun_illuminance`, and reports which sky lit the frame.
+`m11c:gi-sky-term-constructed` runs it and is green. The four lines this document called "one adapter
+at one composition point" were the adapter; the incremental refit, the invalidation cause and the
+budget bound were the rest, which is why the module is a module.
+
+**THE CYCLE IS NOT YET CLOSED, AND THE REMAINDER IS AN IMAGE CLAIM RATHER THAN A SEAM.**
+`rendering-global-illumination` does not reach Complete at M11.c: M11.c did not close, and the row's
+twenty-nine requirements have none mapped to a test, a gate or a recorded exemption
+(`m11c:image-rows-at-complete-grade`). No shipping program lights its frame through the seam either —
+`samples/07-fidelity` was wired through it and reverted, because an unscaled physical sky moved that
+artefact's convergence from 0.846 to 0.609 and a scaled one left it at 0.842 against a 0.85
+threshold. **So the cycle's mechanism is discharged and its tier claim is not**, and the rung that
+records `rendering-global-illumination` at Complete is the rung that closes cycle 2.
 
 ### 3 — AI ↔ navigation ↔ world partition
 
