@@ -997,3 +997,131 @@ work was done.
         closing ledger was mid-run and `plan-consistency` reads the plan documents; **the rung that
         closes owes cycle 2 its closing sentence**, which is task 8.3's second half and the only
         part of 8.3 that has an answer today
+
+### THE VERDICT, AND THE RUN IT COMES FROM
+
+**`just roadmap-milestone m11c`, run by this phase against `build/m11c-close-gate`, reports:
+`M11C is not closed: 39 of 434 evaluated criteria failed.`** The buckets, from the run's own output:
+
+| bucket | count |
+|---|---|
+| declared | **439** |
+| evaluated on this host | **434** |
+| pass | **385** |
+| FAIL (not a declared gap) | **39** |
+| declared gaps, still open (do not block) | **6** |
+| declared gaps that NOW PASS (these DO block) | **4** |
+| NOT EVALUATED, legitimately | **5** |
+
+**The 39 failures by id.** Twelve are permanent gates inherited from M0–M8.c; eleven are M11.a's own
+criteria and ten are M11.b's, both of whose milestone gates are recorded GREEN; six are this rung's.
+
+    m0:test                m1:workflows            m1:four-profiles
+    m4:generated-code      m4:sanitizers           m5:editor
+    m5:editor-profiles     m5:artefact             m5:sanitizers
+    m7:plan-consistency    m8b:feature-options-off m8c:feature-options-off
+
+    m11a:world-budget-headless      m11a:world-budget-on-a-device   m11a:world-streams
+    m11a:save-inspector             m11a:save-forbidden-patterns-checked
+    m11a:save-benchmark             m11a:steam-audio-simulates
+    m11a:thirdparty-dependencies-at-working                m11a:determinism-suites
+    m11a:network-at-complete-grade  m11a:roadmap-tiers
+
+    m11b:view-modes                 m11b:editor-window        m11b:import-from-the-editor
+    m11b:gameplay-at-complete-grade m11b:editor-at-complete-grade
+    m11b:ml-inference-or-a-deferral m11b:the-game-exists      m11b:the-game-is-playable
+    m11b:the-game-drawn             m11b:roadmap-tiers
+
+    m11c:material-compiler-at-complete-grade   m11c:image-rows-at-complete-grade
+    m11c:vfx-in-the-shot                       m11c:roadmap-tiers
+    m11c:m11d-open                             m11c:shader-targets-for-the-next-rung
+
+**The 5 NOT EVALUATED are legitimate and each names its CI job**: `m0:three-platforms`,
+`m5:editor-three-platforms`, `m10:pcg-gpu-domain-agreement`,
+`m11a:lockstep-agrees-across-architectures`, `m11a:pcg-regenerates-across-architectures` — one host,
+one operating system, one architecture, one GPU vendor.
+
+**THREE OF THE SIX OPEN GAPS NAME M11.c AS THE RUNG THAT CLOSES THEM, AND M11.c CLOSED NONE OF
+THEM**: `m10:world-frame-budget` (the 16.7 ms frame), `m11a:save-has-an-engine-consumer` and
+`m11b:the-game-is-honest-about-its-content` (both presence-only checks owed a real observation).
+The other three name M11.a, M11.d and M11.e.
+
+### SO M11.c DOES NOT CLOSE, AND THE DECISION IS NOT A CLOSE READING OF A MARGIN
+
+`gates.toml` is **unchanged**: `milestone-m11c` stays at `state = "joins-on-close"`. `ci.yml` is
+**unchanged**. `status.yaml`, `capability-matrix.md` and `ROADMAP.md` are **unchanged**: no row of
+the fifteen reached Complete grade, so nothing advances and nothing is demoted — 9.4 above.
+
+**And the rung is not short by a margin.** Its own two Complete-grade criteria measure 40 of 232
+requirements mapped; `shader-system` emits neither MSL nor DXIL, which is the next rung's hard
+prerequisite this rung was written to supply; the shot has no particles; M11.d has not been entered.
+Declaring gaps over those would be declaring a gap over a row that was not built, which is the one
+ending this phase was told to refuse.
+
+### WHAT THIS GATE REPAIRED, EACH VERIFIED BY ITS OWN CRITERION'S COMMAND
+
+The ledger did not only report; six of the 39 are fixed here and the fix was watched going green.
+
+- [x] **`m0:lint` — 41 clang-tidy errors in nine files this rung wrote.** 9.1 above. Verified: `just
+      quality-lint` green in 290.1 s inside the ledger run itself. The beauty shot was re-captured
+      end to end afterwards and its PNG is byte-identical
+- [x] **`m5:editor` — rustfmt and clippy on this rung's own Rust.**
+      `editor/crates/cy-editor-interface/src/specialised/material.rs` and `src/bin/author_material.rs`
+      were unformatted, and `author()` was 134 lines against `clippy::pedantic`'s 100. Split into
+      `place`, `place_nodes` (returning a named `Nodes`) and `wire_nodes`, so the wire list — which
+      IS the authored graph's shape — reads as one thing. Verified: `just build-editor-check` green
+- [x] **`m0:test`, `m5:artefact` (and the first leg of `m1:four-profiles`) — the glTF importer
+      manufactured a skeleton for a static prop.** 9.1 above names the defect and the line. Fixed in
+      `tools/import/src/gltf.cpp` by asking `rig.from_skins || animations > 0` before step 7 emits,
+      which is what `build_gltf_rig`'s own comment already assumed. Verified: `smoke.editor_session`
+      **green**, and `unit.import`, `integration.import_gltf`, `integration.asset_import_gltf` and
+      `integration.import_pipeline` all still green — the Mixamo rig cases included, which is the
+      half a careless guard would have broken
+- [x] **`m4:generated-code` — this rung wrote its shipped-content licence record into a GENERATED
+      file.** `tools/deps/attribution.py` renders the whole of `THIRD_PARTY.md` from three manifests
+      and compares it byte for byte, so task 6.2's `## Shipped content` section made the file
+      unreproducible — and `just maintenance-deps` would have deleted the record the next time
+      anyone ran it. The section now lives in `deps/shipped-content.md` and the generator appends it:
+      the generator owns the file, the fragment owns its last section. Verified: `just generate-check
+      && just generate-test && just maintenance-deps-check` green, 37/37 deps selftests, "THIRD_PARTY.md
+      is current"
+- [x] **`m8c:feature-options-off` — this rung's own test broke the CONFIGURE of the whole tree with
+      the Vulkan backend off.** `tests/integration/CMakeLists.txt` declared `rendering_culling`
+      linking `cy::rhi-vulkan` unconditionally (commit `aa1ba25`), so `-D CY_RENDERER_VULKAN=OFF`
+      failed at CMake's generate step for every target, not just that one. Now declared inside
+      `if(CY_RENDERER_VULKAN)`, which is `tests/render/CMakeLists.txt`'s stated rule for the same
+      situation. Verified: the off-vulkan configure completes and the build proceeds
+- [x] **`m8b:feature-options-off` — a test helper outlived its callers' guard.**
+      `tools/import/tests/test_gltf_rig.cpp`'s `find_prefixed` is used only inside
+      `#ifdef CY_IMPORT_ANIMATION` and was defined outside it, so `-D CY_ANIMATION=OFF` hit
+      `-Werror=unused-function`. Moved under the same guard
+
+**WHAT IS NOT REPAIRED, AND WHY EACH IS A DECISION RATHER THAN AN OMISSION.**
+
+- `m4:sanitizers` and `m5:sanitizers` — **408 bytes leaked in one allocation inside
+  `/lib/x86_64-linux-gnu/libcuda.so.1`**, with no engine frame in the stack, reached by a render case
+  a substring filter pulls into a leak-checked run. It is the exact shape `tests/lsan-suppressions.txt`
+  was written for at M7 — and that file's first line says "adding a second one is a decision, not a
+  habit", so it is reported for a rung to take rather than taken by a closing gate
+- `m1:workflows` — 8.4 above. Pre-existing since M11.a, one line, and a decision about what runs on
+  every push to `main`
+- The M11.a and M11.b failures — **twenty-one criteria of two rungs whose milestone gates are
+  recorded GREEN**. That is a finding about the record rather than about this rung, and the rung that
+  owns each is named in its own id
+- `m7:plan-consistency` — the falsifiability debt of 9.2. It needs `just roadmap-falsify --record`
+  against a GPU and a built tree, and that run mutates the working tree, so it cannot share a tree
+  with the closing ledger
+
+**AND THE FOUR DECLARED GAPS THAT NOW PASS ARE DELETED, WHICH IS THIS RUNG'S ACT AND NO OTHER'S.**
+The run printed "THE GAP IS CLOSED, DELETE THE DECLARATION" for `m11a:field-sampler-written`,
+`m11a:field-sampler-consumed`, `m11b:play-modes-exist` and `m11b:live-edit-policy-exists` — all four
+declared `known_gap_closes = "m11c"`, and a marker that outlives its gap fails the ledger in the
+other direction. The markers are removed and a comment in each place records why; the criteria, their
+`describe` and their `run` are untouched.
+
+**THE RE-RUN THIS RECORD DOES NOT HAVE.** The six repairs above landed AFTER the ledger run they are
+measured against, and each was verified by running that criterion's own command rather than by a
+second full ledger, which costs hours. The counts at the head of this section are the tree as the
+closing gate received it, plus the lint repair; they are not a claim about the tree after the other
+five. **Whoever re-runs `just roadmap-milestone m11c` should expect 33 failures, not 39** — and if
+it is not 33, that difference is the finding.
