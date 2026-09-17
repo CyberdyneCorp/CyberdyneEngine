@@ -82,7 +82,11 @@ const MATERIAL_PINS: &[(&str, &[&str], bool)] = &[
     ("material.parameter", &[], false),
     ("material.saturate", &["value"], false),
     ("material.sheen", &["colour", "weight"], true),
-    ("material.specular", &["colour", "roughness", "weight"], true),
+    (
+        "material.specular",
+        &["colour", "roughness", "weight"],
+        true,
+    ),
     ("material.subsurface", &["colour", "weight"], true),
     ("material.subtract", &["a", "b"], false),
     ("material.swizzle", &["value"], false),
@@ -248,10 +252,9 @@ mod tests {
     /// renamed on one side and not the other is red here rather than at cook time.
     #[test]
     fn the_palette_pins_are_the_engines_own() {
-        let source = std::fs::read_to_string(
-            repository().join("src/graph/material/src/lower_material.cpp"),
-        )
-        .expect("the engine's material lowering is in the tree");
+        let source =
+            std::fs::read_to_string(repository().join("src/graph/material/src/lower_material.cpp"))
+                .expect("the engine's material lowering is in the tree");
         let start = source
             .find("constexpr NodeSpec kPalette[] = {")
             .expect("lower_material.cpp still declares kPalette");
@@ -299,25 +302,34 @@ mod tests {
     fn the_material_editor_opens_and_its_nodes_can_be_wired() {
         // The refusal M11.c's spike measured, performed in reverse: this exact call returned
         // "this build declares no authoring vocabulary for materials" before the engine declared one.
-        let mut editors = SpecialisedEditors::new().expect("the built-in catalogues are well formed");
+        let mut editors =
+            SpecialisedEditors::new().expect("the built-in catalogues are well formed");
         assert!(editors.can_open(Domain::Materials));
         let session = editors.open(Domain::Materials).expect("materials opens");
-        let canvas = session.graph.expect("the material editor is a graph editor");
+        let canvas = session
+            .graph
+            .expect("the material editor is a graph editor");
 
         let mut material = MaterialAuthoring::begin("probe", canvas).expect("a legal name");
-        let uv = material.node("material.attribute").expect("an attribute node");
+        let uv = material
+            .node("material.attribute")
+            .expect("an attribute node");
         material.set(uv, "symbol", "uv0").expect("a symbol");
         let sample = material
             .node("material.texture_sample")
             .expect("a sample node");
-        material.set(sample, "symbol", "albedo_map").expect("a name");
+        material
+            .set(sample, "symbol", "albedo_map")
+            .expect("a name");
         let diffuse = material.node("material.diffuse").expect("a diffuse node");
         let output = material.node("material.output").expect("the root");
 
         // THE EDIT THAT WAS IMPOSSIBLE BEFORE THIS MODULE: the catalogue carried no pins, so every
         // wire was refused with "the type declares no pin of that name".
         material.wire(uv, sample, "uv").expect("uv wires");
-        material.wire(sample, diffuse, "colour").expect("colour wires");
+        material
+            .wire(sample, diffuse, "colour")
+            .expect("colour wires");
         material
             .wire(diffuse, output, "surface")
             .expect("the closure reaches the root");

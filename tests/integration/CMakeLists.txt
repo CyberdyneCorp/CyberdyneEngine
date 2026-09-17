@@ -62,15 +62,24 @@ cy_add_test(
 #
 # It needs a Vulkan device and REPORTS "NOT EVALUATED" without one rather than passing on the
 # model's behalf. The ledger criterion that runs it carries `requires = "gpu"` for the same reason.
-cy_add_test(
-    NAME    rendering_culling
-    KIND    integration
-    SOURCES test_rendering_culling.cpp
-    DEPENDENCIES
-        cy::rendering-gpu-culling
-        cy::rendering-graph
-        cy::rendering-hzb
-        cy::rhi
-        cy::rhi-null
-        cy::rhi-vulkan
-        cy::servers-render-culling)
+#
+# DECLARED ONLY WITH THE VULKAN BACKEND COMPILED IN, which is `tests/render/CMakeLists.txt`'s rule
+# for the same reason and was missing here: it links `cy::rhi-vulkan`, that target does not exist
+# under `-D CY_RENDERER_VULKAN=OFF`, and CMake's GENERATE step then failed for the whole tree rather
+# than for this test — `m8c:feature-options-off` red with "Target cy_test_integration_rendering_culling
+# links to cy::rhi-vulkan but the target was not found". Not declared rather than declared-and-skipped,
+# because a suite that always skips is a suite whose failure nobody would notice.
+if(CY_RENDERER_VULKAN)
+    cy_add_test(
+        NAME    rendering_culling
+        KIND    integration
+        SOURCES test_rendering_culling.cpp
+        DEPENDENCIES
+            cy::rendering-gpu-culling
+            cy::rendering-graph
+            cy::rendering-hzb
+            cy::rhi
+            cy::rhi-null
+            cy::rhi-vulkan
+            cy::servers-render-culling)
+endif()

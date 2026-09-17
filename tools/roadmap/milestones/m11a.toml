@@ -263,8 +263,12 @@ ci_job = "milestone-m11a"
 # sandboxed copy of the tree and requires this criterion to go RED on it. It is DECLARED rather than
 # derived because the check greps nothing: it reads four files and compares sixteen numbers, and the
 # tooling derives mutations from a criterion's own searches.
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."""
-known_gap_closes = "m11c"
+# THE `known_gap` AND `known_gap_closes` MARKERS THAT STOOD HERE ARE DELETED, BY M11.c's CLOSING
+# GATE AND ON THE LEDGER'S OWN INSTRUCTION. `just roadmap-milestone m11c` reported "THE GAP IS
+# CLOSED, DELETE THE DECLARATION: m11a:field-sampler-written now passes", and a marker that outlives its gap is the
+# next thing nobody notices — `_summarise` fails the ledger for it in the other direction. The
+# gap named M11.c as the rung that closes it and this is that act; the criterion itself, its
+# `describe` and its `run` are untouched.
 
 [criterion.falsifies]
 mutate = "rename-token"
@@ -358,8 +362,12 @@ ci_job = "milestone-m11a"
 # compiling — a module that cannot resolve the sampler is not consuming it. That is the mutation the
 # tooling applies; the OTHER direction, a consumer that compiles and stops sampling, is what the
 # SPIR-V reference test above catches and what the negative control in its comment measures.
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."""
-known_gap_closes = "m11c"
+# THE `known_gap` AND `known_gap_closes` MARKERS THAT STOOD HERE ARE DELETED, BY M11.c's CLOSING
+# GATE AND ON THE LEDGER'S OWN INSTRUCTION. `just roadmap-milestone m11c` reported "THE GAP IS
+# CLOSED, DELETE THE DECLARATION: m11a:field-sampler-consumed now passes", and a marker that outlives its gap is the
+# next thing nobody notices — `_summarise` fails the ledger for it in the other direction. The
+# gap named M11.c as the rung that closes it and this is that act; the criterion itself, its
+# `describe` and its `run` are untouched.
 
 [criterion.falsifies]
 mutate = "rename-token"

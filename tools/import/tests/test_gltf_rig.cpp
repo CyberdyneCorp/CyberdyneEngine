@@ -241,6 +241,12 @@ const SubAsset* find(const ImportResult& result, std::string_view name) {
 }
 
 /// The first sub-asset whose name begins with `prefix`. Used for the clip, whose name is derived.
+///
+/// UNDER THE SAME GUARD AS ITS ONLY CALLERS. Every use is inside `#ifdef CY_IMPORT_ANIMATION`
+/// below, so with `-D CY_ANIMATION=OFF` this was a defined-but-unused function and `-Werror`
+/// stopped the build — `m8c:feature-options-off`'s sibling `m8b:feature-options-off` red on a
+/// helper rather than on a capability that cannot be removed.
+#ifdef CY_IMPORT_ANIMATION
 const SubAsset* find_prefixed(const ImportResult& result, std::string_view prefix) {
     for (const SubAsset& produced : result.assets()) {
         if (produced.view().starts_with(prefix)) {
@@ -249,6 +255,7 @@ const SubAsset* find_prefixed(const ImportResult& result, std::string_view prefi
     }
     return nullptr;
 }
+#endif  // CY_IMPORT_ANIMATION
 
 bool has_diagnostic(const ImportResult& result, std::string_view code) {
     const cy::Span<const ImportDiagnostic> diagnostics = result.diagnostics();

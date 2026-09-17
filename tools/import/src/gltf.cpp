@@ -2134,7 +2134,17 @@ Status GltfImporter::import(const ImportRequest& request, ImportResult& out) noe
     // AFTER THE MESHES because the sub-asset names come from `names`, which numbers every
     // sub-asset this import produces, and a skeleton that took its name before the meshes would
     // renumber every one of them — re-minting `AssetId`s that a project has already bound.
-    if (!rig.skeleton.joints.empty() && state.import_skins) {
+    //
+    // AND ONLY WHEN SOMETHING BINDS TO IT. `build_gltf_rig` marks EVERY node a joint when the
+    // document declares no skin — deliberately, so an animation-only export (a camera move, a prop,
+    // a door) still has a joint table its channels can address — and its comment says that keeps
+    // step 8 honest "when step 7 declines to produce a skeleton". Step 7 never declined: a static
+    // prop with no skin and no clip got a skeleton built out of its node hierarchy, which is how
+    // `samples/05-editor-session`'s lamppost gained a `skeleton/Lamppost` sub-asset and renumbered
+    // every sub-asset after it. `smoke.editor_session` is the case that says so.
+    const bool binds_to_a_skeleton =
+        rig.from_skins || json.size(json.member(root, "animations")) > 0;
+    if (!rig.skeleton.joints.empty() && state.import_skins && binds_to_a_skeleton) {
         std::string_view stem;
         for (const ImportedJoint& joint : rig.skeleton.joints) {
             if (joint.parent < 0) {

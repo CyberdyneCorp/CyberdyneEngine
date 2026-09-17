@@ -45,6 +45,17 @@ from manifest import (
 
 OUTPUT = REPO_ROOT / "THIRD_PARTY.md"
 
+# THE SHIPPED-CONTENT RECORD, WHICH IS NOT DERIVED FROM A MANIFEST AND SO LIVES IN A FILE.
+#
+# `thirdparty-dependencies`' governance applies to content the project ships as much as to code it
+# links, and M11.c is the rung that first made it ship any. That record was written straight into
+# THIS TOOL'S OUTPUT, which `render()` rebuilds from the three manifests every time — so
+# `just maintenance-deps-check` read a THIRD_PARTY.md it could not reproduce and
+# `m4:generated-code` was red, and `just maintenance-deps` would have deleted the record. The
+# section is prose about files rather than a table derived from a record, so it is kept as prose and
+# appended verbatim: the generator owns the file, this fragment owns its last section.
+SHIPPED_CONTENT = REPO_ROOT / "deps" / "shipped-content.md"
+
 HEADER = """\
 # Third-party software
 
@@ -155,6 +166,9 @@ def render(dependencies: list[Dependency], host_tools: list[HostTool],
     parts.append("\n")
     parts.append("\n".join(_host_entry(t) for t in host_tools))
     parts.append(rust_crates.attribution(crates))
+    if SHIPPED_CONTENT.exists():
+        parts.append("\n---\n\n")
+        parts.append(SHIPPED_CONTENT.read_text(encoding="utf-8"))
     return "".join(parts)
 
 

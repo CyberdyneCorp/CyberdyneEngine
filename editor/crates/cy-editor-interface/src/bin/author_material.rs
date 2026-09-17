@@ -95,6 +95,199 @@ fn triple(values: [f32; 3]) -> String {
     format!("{} {} {} 0", values[0], values[1], values[2])
 }
 
+/// Place one node and set its properties, which is every line of `place_nodes` below.
+fn place(
+    material: &mut MaterialAuthoring<'_>,
+    kind: &str,
+    properties: &[(&str, String)],
+) -> Result<NodeKey, String> {
+    let key = material.node(kind).map_err(|p| p.to_string())?;
+    for (name, value) in properties {
+        material
+            .set(key, name, value.clone())
+            .map_err(|p| p.to_string())?;
+    }
+    Ok(key)
+}
+
+/// Every node of the authored graph, named so `wire_nodes` reads as the picture it draws.
+struct Nodes {
+    uv: NodeKey,
+    albedo_sample: NodeKey,
+    data_sample: NodeKey,
+    albedo_rgb: NodeKey,
+    base_color: NodeKey,
+    base: NodeKey,
+    rough_channel: NodeKey,
+    roughness_param: NodeKey,
+    roughness: NodeKey,
+    metal_channel: NodeKey,
+    metallic_param: NodeKey,
+    metalness: NodeKey,
+    dielectric: NodeKey,
+    diffuse_colour: NodeKey,
+    diffuse: NodeKey,
+    specular_colour: NodeKey,
+    specular: NodeKey,
+    sum: NodeKey,
+    opacity: NodeKey,
+    output: NodeKey,
+}
+
+/// Drop every node on the canvas. Placement and wiring are separate because the wire list IS the
+/// graph's shape and reads as one, and because together they are one function clippy refuses.
+fn place_nodes(recipe: &Recipe, material: &mut MaterialAuthoring<'_>) -> Result<Nodes, String> {
+    // --- The two texture samples, and the attribute both read -------------------------------------
+    let uv = place(
+        material,
+        "material.attribute",
+        &[("symbol", "uv0".to_owned()), ("type", "float2".to_owned())],
+    )?;
+    let albedo_sample = place(
+        material,
+        "material.texture_sample",
+        &[
+            ("symbol", "albedo_map".to_owned()),
+            ("type", "float4".to_owned()),
+            // The far-field program substitutes this for the sample. A mid grey rather than white:
+            // a material that turned white at a kilometre is the artefact `material-compiler`'s own
+            // "derivation changes albedo" diagnostic exists to catch.
+            ("average", "0.5 0.48 0.44 1".to_owned()),
+        ],
+    )?;
+    let data_sample = place(
+        material,
+        "material.texture_sample",
+        &[
+            ("symbol", "data_map".to_owned()),
+            ("type", "float4".to_owned()),
+            ("average", "0.7 1 0 1".to_owned()),
+        ],
+    )?;
+
+    // --- The base colour ---------------------------------------------------------------------------
+    let albedo_rgb = place(
+        material,
+        "material.swizzle",
+        &[("swizzle", "xyz".to_owned())],
+    )?;
+    let base_color = place(
+        material,
+        "material.parameter",
+        &[
+            ("symbol", "base_color".to_owned()),
+            ("type", "float3".to_owned()),
+            ("default", triple(recipe.base_color)),
+        ],
+    )?;
+    let base = place(material, "material.multiply", &[])?;
+
+    // --- Roughness and metalness, out of the packed data map ---------------------------------------
+    let rough_channel = place(material, "material.swizzle", &[("swizzle", "x".to_owned())])?;
+    let roughness_param = place(
+        material,
+        "material.parameter",
+        &[
+            ("symbol", "roughness".to_owned()),
+            ("type", "float".to_owned()),
+            ("default", format!("{} 0 0 0", recipe.roughness)),
+        ],
+    )?;
+    let roughness = place(material, "material.multiply", &[])?;
+
+    let metal_channel = place(material, "material.swizzle", &[("swizzle", "z".to_owned())])?;
+    let metallic_param = place(
+        material,
+        "material.parameter",
+        &[
+            ("symbol", "metallic".to_owned()),
+            ("type", "float".to_owned()),
+            ("default", format!("{} 0 0 0", recipe.metallic)),
+        ],
+    )?;
+    let metalness = place(material, "material.multiply", &[])?;
+
+    // --- The two closures --------------------------------------------------------------------------
+    //
+    // `cyResolveSurface` reconstructs the engine's `Surface` from the closure sums: the albedo is
+    // diffuse + specular and the METALNESS is the specular term's luminance. So the split below is
+    // not an aesthetic choice — it is the only way a compiled material can say "metal" at all, and
+    // `docs/design/beauty-shot.md` publishes what it costs.
+    let dielectric = place(material, "material.one_minus", &[])?;
+    let diffuse_colour = place(material, "material.multiply", &[])?;
+    let diffuse = place(material, "material.diffuse", &[])?;
+    let specular_colour = place(material, "material.multiply", &[])?;
+    let specular = place(material, "material.specular", &[])?;
+    let sum = place(material, "material.add_closures", &[])?;
+
+    let opacity = place(
+        material,
+        "material.constant",
+        &[
+            ("type", "float".to_owned()),
+            ("value", "1 0 0 0".to_owned()),
+        ],
+    )?;
+    let output = place(material, "material.output", &[])?;
+    Ok(Nodes {
+        uv,
+        albedo_sample,
+        data_sample,
+        albedo_rgb,
+        base_color,
+        base,
+        rough_channel,
+        roughness_param,
+        roughness,
+        metal_channel,
+        metallic_param,
+        metalness,
+        dielectric,
+        diffuse_colour,
+        diffuse,
+        specular_colour,
+        specular,
+        sum,
+        opacity,
+        output,
+    })
+}
+
+/// The wires, which are the authored graph's shape written out once.
+fn wire_nodes(material: &mut MaterialAuthoring<'_>, n: &Nodes) -> Result<(), String> {
+    let wires: &[(NodeKey, NodeKey, &str)] = &[
+        (n.uv, n.albedo_sample, "uv"),
+        (n.uv, n.data_sample, "uv"),
+        (n.albedo_sample, n.albedo_rgb, "value"),
+        (n.albedo_rgb, n.base, "a"),
+        (n.base_color, n.base, "b"),
+        (n.data_sample, n.rough_channel, "value"),
+        (n.rough_channel, n.roughness, "a"),
+        (n.roughness_param, n.roughness, "b"),
+        (n.data_sample, n.metal_channel, "value"),
+        (n.metal_channel, n.metalness, "a"),
+        (n.metallic_param, n.metalness, "b"),
+        (n.metalness, n.dielectric, "value"),
+        (n.base, n.diffuse_colour, "a"),
+        (n.dielectric, n.diffuse_colour, "b"),
+        (n.diffuse_colour, n.diffuse, "colour"),
+        (n.base, n.specular_colour, "a"),
+        (n.metalness, n.specular_colour, "b"),
+        (n.specular_colour, n.specular, "colour"),
+        (n.roughness, n.specular, "roughness"),
+        (n.diffuse, n.sum, "a"),
+        (n.specular, n.sum, "b"),
+        (n.sum, n.output, "surface"),
+        (n.opacity, n.output, "opacity"),
+    ];
+    for (from, to, pin) in wires {
+        material
+            .wire(*from, *to, pin)
+            .map_err(|problem| problem.to_string())?;
+    }
+    Ok(())
+}
+
 /// Author one material on the canvas and return its interchange.
 ///
 /// THE GRAPH IS SHAPED LIKE AN AUTHORED ONE and not like the IR it lowers to. Every closure node
@@ -112,151 +305,8 @@ fn author(recipe: &Recipe, editors: &mut SpecialisedEditors) -> Result<String, S
     let mut material =
         MaterialAuthoring::begin(recipe.name, canvas).map_err(|problem| problem.to_string())?;
 
-    let place = |material: &mut MaterialAuthoring<'_>,
-                     kind: &str,
-                     properties: &[(&str, String)]|
-     -> Result<NodeKey, String> {
-        let key = material.node(kind).map_err(|p| p.to_string())?;
-        for (name, value) in properties {
-            material
-                .set(key, name, value.clone())
-                .map_err(|p| p.to_string())?;
-        }
-        Ok(key)
-    };
-
-    // --- The two texture samples, and the attribute both read -------------------------------------
-    let uv = place(
-        &mut material,
-        "material.attribute",
-        &[
-            ("symbol", "uv0".to_owned()),
-            ("type", "float2".to_owned()),
-        ],
-    )?;
-    let albedo_sample = place(
-        &mut material,
-        "material.texture_sample",
-        &[
-            ("symbol", "albedo_map".to_owned()),
-            ("type", "float4".to_owned()),
-            // The far-field program substitutes this for the sample. A mid grey rather than white:
-            // a material that turned white at a kilometre is the artefact `material-compiler`'s own
-            // "derivation changes albedo" diagnostic exists to catch.
-            ("average", "0.5 0.48 0.44 1".to_owned()),
-        ],
-    )?;
-    let data_sample = place(
-        &mut material,
-        "material.texture_sample",
-        &[
-            ("symbol", "data_map".to_owned()),
-            ("type", "float4".to_owned()),
-            ("average", "0.7 1 0 1".to_owned()),
-        ],
-    )?;
-
-    // --- The base colour ---------------------------------------------------------------------------
-    let albedo_rgb = place(
-        &mut material,
-        "material.swizzle",
-        &[("swizzle", "xyz".to_owned())],
-    )?;
-    let base_color = place(
-        &mut material,
-        "material.parameter",
-        &[
-            ("symbol", "base_color".to_owned()),
-            ("type", "float3".to_owned()),
-            ("default", triple(recipe.base_color)),
-        ],
-    )?;
-    let base = place(&mut material, "material.multiply", &[])?;
-
-    // --- Roughness and metalness, out of the packed data map ---------------------------------------
-    let rough_channel = place(
-        &mut material,
-        "material.swizzle",
-        &[("swizzle", "x".to_owned())],
-    )?;
-    let roughness_param = place(
-        &mut material,
-        "material.parameter",
-        &[
-            ("symbol", "roughness".to_owned()),
-            ("type", "float".to_owned()),
-            ("default", format!("{} 0 0 0", recipe.roughness)),
-        ],
-    )?;
-    let roughness = place(&mut material, "material.multiply", &[])?;
-
-    let metal_channel = place(
-        &mut material,
-        "material.swizzle",
-        &[("swizzle", "z".to_owned())],
-    )?;
-    let metallic_param = place(
-        &mut material,
-        "material.parameter",
-        &[
-            ("symbol", "metallic".to_owned()),
-            ("type", "float".to_owned()),
-            ("default", format!("{} 0 0 0", recipe.metallic)),
-        ],
-    )?;
-    let metalness = place(&mut material, "material.multiply", &[])?;
-
-    // --- The two closures --------------------------------------------------------------------------
-    //
-    // `cyResolveSurface` reconstructs the engine's `Surface` from the closure sums: the albedo is
-    // diffuse + specular and the METALNESS is the specular term's luminance. So the split below is
-    // not an aesthetic choice — it is the only way a compiled material can say "metal" at all, and
-    // `docs/design/beauty-shot.md` publishes what it costs.
-    let dielectric = place(&mut material, "material.one_minus", &[])?;
-    let diffuse_colour = place(&mut material, "material.multiply", &[])?;
-    let diffuse = place(&mut material, "material.diffuse", &[])?;
-    let specular_colour = place(&mut material, "material.multiply", &[])?;
-    let specular = place(&mut material, "material.specular", &[])?;
-    let sum = place(&mut material, "material.add_closures", &[])?;
-
-    let opacity = place(
-        &mut material,
-        "material.constant",
-        &[("type", "float".to_owned()), ("value", "1 0 0 0".to_owned())],
-    )?;
-    let output = place(&mut material, "material.output", &[])?;
-
-    // --- The wires ---------------------------------------------------------------------------------
-    let wires: &[(NodeKey, NodeKey, &str)] = &[
-        (uv, albedo_sample, "uv"),
-        (uv, data_sample, "uv"),
-        (albedo_sample, albedo_rgb, "value"),
-        (albedo_rgb, base, "a"),
-        (base_color, base, "b"),
-        (data_sample, rough_channel, "value"),
-        (rough_channel, roughness, "a"),
-        (roughness_param, roughness, "b"),
-        (data_sample, metal_channel, "value"),
-        (metal_channel, metalness, "a"),
-        (metallic_param, metalness, "b"),
-        (metalness, dielectric, "value"),
-        (base, diffuse_colour, "a"),
-        (dielectric, diffuse_colour, "b"),
-        (diffuse_colour, diffuse, "colour"),
-        (base, specular_colour, "a"),
-        (metalness, specular_colour, "b"),
-        (specular_colour, specular, "colour"),
-        (roughness, specular, "roughness"),
-        (diffuse, sum, "a"),
-        (specular, sum, "b"),
-        (sum, output, "surface"),
-        (opacity, output, "opacity"),
-    ];
-    for (from, to, pin) in wires {
-        material
-            .wire(*from, *to, pin)
-            .map_err(|problem| problem.to_string())?;
-    }
+    let nodes = place_nodes(recipe, &mut material)?;
+    wire_nodes(&mut material, &nodes)?;
     Ok(material.interchange())
 }
 
@@ -297,8 +347,14 @@ fn main() -> std::process::ExitCode {
                     eprintln!("cy-author-material: {}: {error}", path.display());
                     return std::process::ExitCode::from(2);
                 }
-                let nodes = text.lines().filter(|line| line.starts_with("node ")).count();
-                let links = text.lines().filter(|line| line.starts_with("link ")).count();
+                let nodes = text
+                    .lines()
+                    .filter(|line| line.starts_with("node "))
+                    .count();
+                let links = text
+                    .lines()
+                    .filter(|line| line.starts_with("link "))
+                    .count();
                 println!("{}  {nodes} nodes, {links} wires", path.display());
             }
             Err(problem) => {

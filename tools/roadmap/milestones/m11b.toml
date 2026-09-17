@@ -202,8 +202,12 @@ ci_job = "milestone-m11b"
 # DECLARED, as a verb and a target `falsify.py` executes rather than as a sentence. Renaming the
 # engine's own spelling of a mode is the break this criterion exists to catch: the editor and the
 # two specifications still say `separate-process` and the engine no longer does.
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."""
-known_gap_closes = "m11c"
+# THE `known_gap` AND `known_gap_closes` MARKERS THAT STOOD HERE ARE DELETED, BY M11.c's CLOSING
+# GATE AND ON THE LEDGER'S OWN INSTRUCTION. `just roadmap-milestone m11c` reported "THE GAP IS
+# CLOSED, DELETE THE DECLARATION: m11b:play-modes-exist now passes", and a marker that outlives its gap is the
+# next thing nobody notices — `_summarise` fails the ledger for it in the other direction. The
+# gap named M11.c as the rung that closes it and this is that act; the criterion itself, its
+# `describe` and its `run` are untouched.
 
 [criterion.falsifies]
 mutate = "rename-token"
@@ -232,8 +236,12 @@ ci_job = "milestone-m11b"
 
 # Declared for the reason the one above is. Renaming the engine's spelling of a policy breaks the
 # kebab-case derivation the table and the enumeration are pinned to each other by.
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."""
-known_gap_closes = "m11c"
+# THE `known_gap` AND `known_gap_closes` MARKERS THAT STOOD HERE ARE DELETED, BY M11.c's CLOSING
+# GATE AND ON THE LEDGER'S OWN INSTRUCTION. `just roadmap-milestone m11c` reported "THE GAP IS
+# CLOSED, DELETE THE DECLARATION: m11b:live-edit-policy-exists now passes", and a marker that outlives its gap is the
+# next thing nobody notices — `_summarise` fails the ledger for it in the other direction. The
+# gap named M11.c as the rung that closes it and this is that act; the criterion itself, its
+# `describe` and its `run` are untouched.
 
 [criterion.falsifies]
 mutate = "rename-token"
