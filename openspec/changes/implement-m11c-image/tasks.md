@@ -821,7 +821,7 @@ work was done.
         Fifteen of the thirty-eight cannot be shown able to go red — 9.2 above names every one and
         the run that would answer them. The clause "every criterion must be able to go red" is
         unmet, by the rung that wrote the clause
-- [ ] 8.2 **An `m11d-open` criterion, and a stronger one than the ladder's usual shape.** Every
+- [x] 8.2 **An `m11d-open` criterion, and a stronger one than the ladder's usual shape.** Every
       earlier rung's `<next>-open` asked only that the next change directory exist; **all five M11
       rung directories already exist**, created in the split, so that form is green the day it is
       written and would go red only if somebody deleted a directory.
