@@ -101,7 +101,8 @@ struct CompileStats {
 
 // --- Pipeline step 4: the backend-native targets -------------------------------------------------
 //
-// M11.c task 1.7, and the rung that owns `shader-system` supplying its successor's prerequisite.
+// M11.c tasks 1.5-1.7, and the rung that owns `shader-system` supplying its successor's
+// prerequisite.
 //
 // Step 4 of the pipeline this header opens with is "per backend: SPIR-V retained (Vulkan), or
 // translated (MSL for Metal, DXIL for D3D12)". Until M11.c the front end hard-coded SLANG_SPIRV and
@@ -134,7 +135,9 @@ inline constexpr usize kTargetCount = 3;
 [[nodiscard]] const char* target_extension(Target target) noexcept;
 /// MSL is source text; SPIR-V and DXIL are binaries. A report that prints an artefact, and a check
 /// that asks whether one is in the form its target names, both need to know which.
-[[nodiscard]] constexpr bool target_is_text(Target target) noexcept { return target == Target::Msl; }
+[[nodiscard]] constexpr bool target_is_text(Target target) noexcept {
+    return target == Target::Msl;
+}
 
 /// One parameter an artefact declares, in the engine's own vocabulary rather than the compiler's.
 ///
@@ -225,7 +228,6 @@ private:
 /// targets, because "the two disagree" without saying where is a report nobody can act on.
 [[nodiscard]] bool interfaces_agree(const TargetArtefact& a, const TargetArtefact& b,
                                     DiagnosticLog& diagnostics) noexcept;
-
 
 /// A compiled entry point: the module, what it declares, and what it cost.
 ///

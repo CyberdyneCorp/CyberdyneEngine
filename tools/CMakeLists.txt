@@ -28,7 +28,7 @@ add_subdirectory(build)
 # nothing links it into a runtime.
 add_subdirectory(material)
 
-# shaders/ is M11.c task 1.7: `shader-system`'s pipeline step 4, which until this rung was a
+# shaders/ is M11.c tasks 1.5-1.7: `shader-system`'s pipeline step 4, which until this rung was a
 # sentence in a comment. It compiles the shader set for every target the build emits — SPIR-V, MSL
 # and DXIL — and measures the one thing that makes a second target worth having: that the same graph
 # compiled twice declares the same interface both times. It is built only where a Slang front end

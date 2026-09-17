@@ -1,6 +1,6 @@
 #pragma once
 // The shader set, compiled for every target this build emits, and the agreement between them.
-// M11.c task 1.7 — what `just build-shaders` runs.
+// M11.c tasks 1.5-1.7 — what `just build-shaders` runs.
 //
 // WHAT THIS IS FOR, AND WHAT WOULD MAKE IT WORTHLESS. `shader-system`'s pipeline step 4 is "SPIR-V
 // retained (Vulkan), or translated (MSL for Metal, DXIL for D3D12)", and M11.d cannot start until

@@ -112,8 +112,13 @@ private:
 /// hide that.
 class RegistryFileSystem final : public ISlangFileSystem {
 public:
-    RegistryFileSystem(Allocator& allocator, const SourceResolver& resolver) noexcept
-        : allocator_(&allocator), resolver_(resolver) {}
+    explicit RegistryFileSystem(Allocator& allocator) noexcept : allocator_(&allocator) {}
+
+    /// Point it at this compilation's registry. IT OUTLIVES THE CALL, and that is why it is set
+    /// rather than constructed: a Slang session releases its file system in its own destructor, so
+    /// a file system on the stack of the call that made the session is read after that frame is
+    /// gone the moment anything asks the session a question afterwards — which reflection does.
+    void set_resolver(const SourceResolver& resolver) noexcept { resolver_ = resolver; }
 
     SLANG_NO_THROW SlangResult SLANG_MCALL queryInterface(const SlangUUID& uuid,
                                                           void** out) noexcept override {
@@ -190,8 +195,8 @@ private:
 
 // --- The three targets ---------------------------------------------------------------------------
 //
-// M11.c task 1.7. `shader-system`'s pipeline step 4, as three lines of mapping rather than as a
-// sentence in a comment: the SAME Slang program is compiled a second and a third time with a
+// M11.c tasks 1.5-1.7. `shader-system`'s pipeline step 4, as three lines of mapping rather than as
+// a sentence in a comment: the SAME Slang program is compiled a second and a third time with a
 // different `TargetDesc::format`, which is what a multi-target compiler is for.
 
 [[nodiscard]] SlangCompileTarget format_of(Target target) noexcept {
@@ -405,8 +410,14 @@ private:
     /// point, the composite, the link, and the code. Extracted rather than duplicated because the
     /// ONE thing the agreement check needs to be true is that the SPIR-V and the MSL came out of
     /// the same sequence of calls with one field changed.
+    ///
+    /// `session` IS AN OUTPUT AND NOT A LOCAL, and it cost a segmentation fault to find out why: a
+    /// linked program's layout is owned by the session's linkage, so asking a program for its
+    /// layout after the session has been released reads freed memory. `compile` never noticed
+    /// because it asks for the code and nothing else, inside the call.
     [[nodiscard]] Status link_program(const CompileRequest& request, Target target,
                                       DiagnosticLog& diagnostics,
+                                      Slang::ComPtr<ISession>& session,
                                       Slang::ComPtr<IComponentType>& linked,
                                       Slang::ComPtr<ISlangBlob>& code) noexcept;
 
@@ -420,6 +431,9 @@ private:
     Array<char> macro_text_{*allocator_};
     Array<u32> macro_offsets_{*allocator_};
     Array<char> source_text_{*allocator_};
+    /// The file system every session resolves an `import` through. A member because a session
+    /// outlives the call that created it — see `set_resolver`.
+    RegistryFileSystem file_system_{*allocator_};
     /// What `emits` found when it last asked, per target. Unknown until something asks, because the
     /// probe is a real compilation and a front end nobody asked about should not pay for three.
     enum class Probe : u8 { Unknown = 0, Yes = 1, No = 2 };
@@ -486,7 +500,7 @@ Status SlangCompiler::collect_defines(const CompileRequest& request) noexcept {
 }
 
 Status SlangCompiler::link_program(const CompileRequest& request, Target target,
-                                   DiagnosticLog& diagnostics,
+                                   DiagnosticLog& diagnostics, Slang::ComPtr<ISession>& session,
                                    Slang::ComPtr<IComponentType>& linked,
                                    Slang::ComPtr<ISlangBlob>& code) noexcept {
     if (global_ == nullptr) {
@@ -506,7 +520,7 @@ Status SlangCompiler::link_program(const CompileRequest& request, Target target,
         return terminated;
     }
 
-    RegistryFileSystem file_system(*allocator_, request.resolver);
+    file_system_.set_resolver(request.resolver);
 
     ::slang::TargetDesc target_desc;
     target_desc.format = format_of(target);
@@ -532,14 +546,13 @@ Status SlangCompiler::link_program(const CompileRequest& request, Target target,
     ::slang::SessionDesc session_desc;
     session_desc.targets = &target_desc;
     session_desc.targetCount = 1;
-    session_desc.fileSystem = &file_system;
+    session_desc.fileSystem = &file_system_;
     session_desc.preprocessorMacros = macros_.data();
     session_desc.preprocessorMacroCount = static_cast<SlangInt>(macros_.size());
     session_desc.compilerOptionEntries = options;
     session_desc.compilerOptionEntryCount =
         static_cast<uint32_t>(sizeof(options) / sizeof(options[0]));
 
-    Slang::ComPtr<ISession> session;
     if (SLANG_FAILED(global_->createSession(session_desc, session.writeRef()))) {
         return fail(ErrorCode::Internal, "the Slang session could not be created");
     }
@@ -589,7 +602,8 @@ Status SlangCompiler::link_program(const CompileRequest& request, Target target,
         // The one failure a caller must be able to tell from a broken shader: DXIL is emitted by a
         // compiler Slang loads at compile time, and when that library is not beside it the message
         // in the diagnostics is "failed to load downstream compiler" rather than anything about
-        // this program. Named here so `emits` can report an absent toolchain as an absent toolchain.
+        // this program. Named here so `emits` can report an absent toolchain as an absent
+        // toolchain.
         char message[192] = {};
         (void)std::snprintf(message, sizeof(message), "no %s was produced for this entry point",
                             target_name(target));
@@ -604,9 +618,11 @@ Expected<CompiledShader, Error> SlangCompiler::compile(const CompileRequest& req
                                                        DiagnosticLog& diagnostics) noexcept {
     const u64 started = monotonic_ns();
 
+    Slang::ComPtr<ISession> session;
     Slang::ComPtr<IComponentType> linked;
     Slang::ComPtr<ISlangBlob> code;
-    if (Status built = link_program(request, Target::SpirV, diagnostics, linked, code); !built) {
+    if (Status built = link_program(request, Target::SpirV, diagnostics, session, linked, code);
+        !built) {
         return make_unexpected(built.error());
     }
 
@@ -636,9 +652,11 @@ Expected<TargetArtefact, Error> SlangCompiler::compile_for(const CompileRequest&
                                                            DiagnosticLog& diagnostics) noexcept {
     const u64 started = monotonic_ns();
 
+    // The session outlives the reflection below; see `link_program`'s declaration for why.
+    Slang::ComPtr<ISession> session;
     Slang::ComPtr<IComponentType> linked;
     Slang::ComPtr<ISlangBlob> code;
-    if (Status built = link_program(request, target, diagnostics, linked, code); !built) {
+    if (Status built = link_program(request, target, diagnostics, session, linked, code); !built) {
         return make_unexpected(built.error());
     }
 

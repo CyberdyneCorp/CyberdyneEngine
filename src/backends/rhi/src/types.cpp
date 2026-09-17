@@ -200,13 +200,20 @@ const char* backend_kind_name(BackendKind kind) noexcept {
 
 const char* descriptor_kind_name(DescriptorKind kind) noexcept {
     switch (kind) {
-        case DescriptorKind::UniformBuffer: return "uniform-buffer";
-        case DescriptorKind::StorageBuffer: return "storage-buffer";
-        case DescriptorKind::SampledTexture: return "sampled-texture";
-        case DescriptorKind::StorageTexture: return "storage-texture";
-        case DescriptorKind::Sampler: return "sampler";
-        case DescriptorKind::CombinedTextureSampler: return "combined-texture-sampler";
-        case DescriptorKind::InputAttachment: return "input-attachment";
+        case DescriptorKind::UniformBuffer:
+            return "uniform-buffer";
+        case DescriptorKind::StorageBuffer:
+            return "storage-buffer";
+        case DescriptorKind::SampledTexture:
+            return "sampled-texture";
+        case DescriptorKind::StorageTexture:
+            return "storage-texture";
+        case DescriptorKind::Sampler:
+            return "sampler";
+        case DescriptorKind::CombinedTextureSampler:
+            return "combined-texture-sampler";
+        case DescriptorKind::InputAttachment:
+            return "input-attachment";
     }
     return "unknown";
 }

@@ -1213,7 +1213,7 @@ its target names, that the artefacts of one entry point differ from each other, 
 declare the same entry point, stage, workgroup and parameters. Where each target PUTS those \
 parameters is deliberately not compared — Metal and D3D12 give them different index spaces, and \
 requiring them to match would be requiring a falsehood"""
-source = "tasks 1.7, shader-system, M11.d design.md §6"
+source = "tasks 1.5-1.7, shader-system, M11.d design.md §6"
 kind = "command"
 run = '''
 set -eo pipefail
@@ -1252,4 +1252,4 @@ ci_job = "milestone-m11c"
 mutate = "delete-lines"
 target = "cmake/features.cmake"
 token  = "CY_SHADER_DXIL|DEVELOPMENT|"
-note   = "the criterion's claim is that this build emits MSL and DXIL and that two targets of one graph agree; taking the DXIL option out of the feature table removes the second target at its source. Three reds were watched by hand at M11.c task 1.7 and are recorded in tasks.md section 1.7: the DXC runtime moved out from beside libslang (the probe reports it unavailable — which is what proves the probe is a probe), the Slang front end made to return the SPIR-V bytes when asked for MSL (`bytes_match_target` refuses the artefact), and one parameter dropped from one target's declaration (`interfaces_agree` reports the difference naming both targets). The first of those is this mutation's effect reached by a cheaper route; this one is spelled as the option because that is the source of the capability rather than a file beside it."
+note   = "the criterion's claim is that this build emits MSL and DXIL and that two targets of one graph agree; taking the DXIL option out of the feature table removes the second target at its source. Three reds were watched by hand at M11.c tasks 1.5-1.7 and are recorded in tasks.md section 1.7: the DXC runtime moved out from beside libslang (the probe reports it unavailable — which is what proves the probe is a probe), the Slang front end made to return the SPIR-V bytes when asked for MSL (`bytes_match_target` refuses the artefact), and one parameter dropped from one target's declaration (`interfaces_agree` reports the difference naming both targets). The first of those is this mutation's effect reached by a cheaper route; this one is spelled as the option because that is the source of the capability rather than a file beside it."

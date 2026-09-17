@@ -1,4 +1,4 @@
-# tools/shaders/ — layer 7: the shader toolchain's front end. M11.c task 1.7.
+# tools/shaders/ — layer 7: the shader toolchain's front end. M11.c tasks 1.5-1.7.
 #
 # ONLY BUILT WITH CY_SHADER_SLANG, and the reason is the same one that keeps src/backends/shader/
 # split in two: `shader-system` requires a shipping build to contain no Slang compiler, so the front

@@ -1,4 +1,4 @@
-// The shader set, compiled for every target this build emits. M11.c task 1.7.
+// The shader set, compiled for every target this build emits. M11.c tasks 1.5-1.7.
 //
 // See include/cy/shaders/targets.h for what is being claimed and why a file-exists check would not
 // claim it.
@@ -20,8 +20,8 @@
 namespace cy::shadertool {
 namespace {
 
-using shader::Target;
 using shader::kTargetCount;
+using shader::Target;
 
 constexpr std::string_view kExtension = ".slang";
 
@@ -84,7 +84,8 @@ private:
             return;
         }
         if (existing->second != index) {
-            std::fprintf(out, "  note: '%s' names both %s and %s; the first is what imports reach\n",
+            std::fprintf(out,
+                         "  note: '%s' names both %s and %s; the first is what imports reach\n",
                          name.c_str(), modules_[existing->second]->path.c_str(),
                          modules_[index]->path.c_str());
         }
@@ -145,8 +146,7 @@ Status ModuleSet::load(assets::VirtualFileSystem& files, std::string_view root,
         const usize index = modules_.size() - 1;
         std::string_view suffix(name);
         alias(std::string(suffix), index, out);
-        for (usize dot = suffix.find('.'); dot != std::string_view::npos;
-             dot = suffix.find('.')) {
+        for (usize dot = suffix.find('.'); dot != std::string_view::npos; dot = suffix.find('.')) {
             suffix.remove_prefix(dot + 1);
             alias(std::string(suffix), index, out);
         }
@@ -306,8 +306,7 @@ struct CompilerHandle {
     if (Status registered = shader::slang::register_slang_backend(); !registered) {
         return registered;
     }
-    auto created =
-        shader::create_compiler(allocator, shader::kSlangBackendName, out.selection);
+    auto created = shader::create_compiler(allocator, shader::kSlangBackendName, out.selection);
     if (!created) {
         return make_unexpected(created.error());
     }
@@ -320,8 +319,12 @@ void write_artefact(std::string_view out_dir, const EntryPoint& entry, const Mod
     std::string stem(module.module_name.text());
     std::string path;
     path.reserve(out_dir.size() + stem.size() + entry.name.size() + 16);
-    path.append(out_dir).append("/").append(stem).append(".").append(entry.name).append(
-        shader::target_extension(artefact.target()));
+    path.append(out_dir)
+        .append("/")
+        .append(stem)
+        .append(".")
+        .append(entry.name)
+        .append(shader::target_extension(artefact.target()));
     std::FILE* file = std::fopen(path.c_str(), "wb");
     if (file == nullptr) {
         std::fprintf(out, "  note: %s could not be written\n", path.c_str());
@@ -363,12 +366,14 @@ Status print_targets(Allocator& allocator, std::FILE* out) noexcept {
         const auto target = static_cast<Target>(index);
         const bool yes = compiler.handle->emits(target);
         emitted += yes ? 1 : 0;
-        std::fprintf(out, "  %-13s %-6s %s\n", shader::target_name(target),
-                     shader::target_short_name(target),
-                     yes ? "emitted"
-                         : "unavailable — the compiler for it did not answer on this machine");
-        summary.append(" ").append(shader::target_name(target)).append("=").append(
-            yes ? "emitted" : "unavailable");
+        std::fprintf(
+            out, "  %-13s %-6s %s\n", shader::target_name(target),
+            shader::target_short_name(target),
+            yes ? "emitted" : "unavailable — the compiler for it did not answer on this machine");
+        summary.append(" ")
+            .append(shader::target_name(target))
+            .append("=")
+            .append(yes ? "emitted" : "unavailable");
     }
     // ONE PARSEABLE LINE, so a ledger criterion greps for a target being emitted rather than for
     // the word "msl" appearing somewhere in a table — which a stub could print.

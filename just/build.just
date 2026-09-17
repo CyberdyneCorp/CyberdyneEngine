@@ -256,7 +256,7 @@ _editor-rust-files:
     find editor -type d \( -name target -o -name generated \) -prune -o \
         -type f -name '*.rs' -print | sort
 
-# M11.c task 1.7. `shader-system`'s pipeline step 4 is "SPIR-V retained (Vulkan), or translated (MSL
+# M11.c tasks 1.5-1.7. `shader-system`'s pipeline step 4 is "SPIR-V retained (Vulkan), or translated (MSL
 # for Metal, DXIL for D3D12)"; until this rung the front end emitted only the first and this recipe
 # refused with a milestone label. M11.d's first task is a Metal and a D3D12 backend and cannot start
 # without the other two, which is why both rungs' ledgers carry the same claim from opposite sides.

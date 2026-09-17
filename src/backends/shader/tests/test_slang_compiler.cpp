@@ -223,7 +223,7 @@ CY_TEST_CASE("an entry point that is not there is reported, not guessed at") {
 
 // --- Pipeline step 4: the three targets ---------------------------------------------------------
 //
-// M11.c task 1.7. These are the cases behind `m11c:shader-targets-for-the-next-rung` and
+// M11.c tasks 1.5-1.7. These are the cases behind `m11c:shader-targets-for-the-next-rung` and
 // `m11d:shader-targets-emitted`, and they are written so that the cheap ways of appearing to
 // deliver a second target all fail them:
 //

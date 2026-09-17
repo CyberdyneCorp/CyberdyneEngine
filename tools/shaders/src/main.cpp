@@ -1,5 +1,5 @@
-// `cy_shaderc` — the shader toolchain's front end. M11.c task 1.7, and what `just build-shaders`
-// runs.
+// `cy_shaderc` — the shader toolchain's front end. M11.c tasks 1.5-1.7, and what `just
+// build-shaders` runs.
 //
 //   cy_shaderc targets
 //       Print the targets this build emits. Probed: each one is answered by compiling a shader

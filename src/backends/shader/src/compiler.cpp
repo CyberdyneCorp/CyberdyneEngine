@@ -241,8 +241,8 @@ Status note_difference(DiagnosticLog& diagnostics, Target a, Target b, const cha
                        std::string_view left, std::string_view right) noexcept {
     char message[512] = {};
     (void)std::snprintf(message, sizeof(message),
-                        "%s differs between %s and %s: '%.*s' against '%.*s'", what,
-                        target_name(a), target_name(b), static_cast<int>(left.size()), left.data(),
+                        "%s differs between %s and %s: '%.*s' against '%.*s'", what, target_name(a),
+                        target_name(b), static_cast<int>(left.size()), left.data(),
                         static_cast<int>(right.size()), right.data());
     return diagnostics.add(Severity::Error, message);
 }
@@ -300,8 +300,7 @@ bool interfaces_agree(const TargetArtefact& a, const TargetArtefact& b,
             continue;
         }
         if (left[index].kind != right[index].kind) {
-            (void)note_difference(diagnostics, a.target(), b.target(),
-                                  left[index].name.c_str(),
+            (void)note_difference(diagnostics, a.target(), b.target(), left[index].name.c_str(),
                                   rhi::descriptor_kind_name(left[index].kind),
                                   rhi::descriptor_kind_name(right[index].kind));
             agree = false;
@@ -310,7 +309,8 @@ bool interfaces_agree(const TargetArtefact& a, const TargetArtefact& b,
             char left_count[32] = {};
             char right_count[32] = {};
             (void)std::snprintf(left_count, sizeof(left_count), "%u elements", left[index].count);
-            (void)std::snprintf(right_count, sizeof(right_count), "%u elements", right[index].count);
+            (void)std::snprintf(right_count, sizeof(right_count), "%u elements",
+                                right[index].count);
             (void)note_difference(diagnostics, a.target(), b.target(), left[index].name.c_str(),
                                   left_count, right_count);
             agree = false;
@@ -319,7 +319,8 @@ bool interfaces_agree(const TargetArtefact& a, const TargetArtefact& b,
     return agree;
 }
 
-// --- ShaderCompiler's two target methods ----------------------------------------------------------
+// --- ShaderCompiler's two target methods
+// ----------------------------------------------------------
 //
 // Defaults rather than pure virtuals: a front end that emits one interchange form and nothing else
 // is a legitimate front end — the passthrough is one — and making every implementation restate that
