@@ -381,3 +381,77 @@ CY_TEST_CASE("the memory report counts what the server knows the size of") {
     fixture.server.refresh_statistics(fixture.scene);
     CY_CHECK_EQ(stats.memory_bytes[static_cast<u32>(MemoryCategory::Textures)], 0ULL);
 }
+
+// `rendering-architecture`, "Frame structure", scenario "Views share prepared data":
+//
+//   "WHEN several views render the same scene in one frame
+//    THEN instance and material buffers SHALL be prepared once and shared across views"
+//
+// WHAT WOULD BREAK THIS AND WHAT THE CASE WATCHES. The failure is not that a second view renders
+// nothing; it is that a second view PREPARES AGAIN — reserving its own slots, writing its own copy
+// of the records, and marking them dirty — so a split screen costs twice the upload and a scene
+// capture beside a main view costs three times. That is invisible in a picture and invisible in a
+// draw list; it is visible in the GPU scene's own allocator, which is what this case reads. Three
+// instances stay three records across two views' collections, every slot both views draw is a slot
+// the OTHER view draws, and the upload the frame owes is still nothing — `clear_dirty()` is called
+// before the collections precisely so a single re-marked range fails the case.
+CY_TEST_CASE("two views of one scene draw from one prepared instance set, not one each") {
+    Fixture fixture;
+    CY_REQUIRE(fixture.start());
+
+    for (u64 which = 1; which <= 3; ++which) {
+        const f32 z = -5.0F * static_cast<f32>(which);
+        CY_REQUIRE(fixture.server.create_instance(fixture.scene, fixture.instance_at(z, which))
+                       .has_value());
+    }
+
+    // A second view of the same scene: the specification's split screen, two rects of one target.
+    ViewDescription second_desc;
+    second_desc.name = cy::Name::intern("capture");
+    second_desc.scene = fixture.scene;
+    second_desc.purpose = ViewPurpose::SceneCapture;
+    second_desc.viewport = ViewportRect{960, 0, 960, 1080};
+    second_desc.camera = cy::Transform::identity();
+    const auto second_view = fixture.server.create_view(second_desc);
+    CY_REQUIRE(second_view.has_value());
+
+    Scene* scene = fixture.server.scene(fixture.scene);
+    CY_REQUIRE(scene != nullptr);
+    // The state the frame's prepare stage would have uploaded, taken before either view collects.
+    scene->gpu.clear_dirty();
+    const GpuSceneStatistics prepared = scene->gpu.statistics();
+    CY_REQUIRE_EQ(prepared.reserved_slots, 3U);
+
+    const View* first = fixture.server.view(fixture.view);
+    const View* second = fixture.server.view(*second_view);
+    CY_REQUIRE(first != nullptr);
+    CY_REQUIRE(second != nullptr);
+
+    cy::Array<DrawItem> second_draws(allocator());
+    ViewStatistics second_stats;
+    CY_REQUIRE(fixture.server.collect_draws(fixture.scene, *first, fixture.draws, fixture.stats)
+                   .has_value());
+    CY_REQUIRE(
+        fixture.server.collect_draws(fixture.scene, *second, second_draws, second_stats).has_value());
+
+    CY_REQUIRE_EQ(fixture.draws.size(), 3U);
+    CY_REQUIRE_EQ(second_draws.size(), 3U);
+
+    // ONE prepared set. Six records would be two, and `reserved_slots` is where that shows.
+    const GpuSceneStatistics after = scene->gpu.statistics();
+    CY_CHECK_EQ(after.reserved_slots, prepared.reserved_slots);
+    CY_CHECK_EQ(after.high_water, prepared.high_water);
+    CY_CHECK_EQ(after.producers, prepared.producers);
+    // And nothing to upload: collecting a view's draws is a read of prepared data, not a preparation.
+    CY_CHECK_EQ(after.dirty_slots, 0U);
+    CY_CHECK(scene->gpu.dirty_ranges().empty());
+
+    // SHARED, not merely un-duplicated: every slot the second view draws is one the first draws,
+    // and the material each draw indexes is the same table entry for both.
+    for (cy::usize index = 0; index < second_draws.size(); ++index) {
+        CY_CHECK_EQ(second_draws[index].instance_slot, fixture.draws[index].instance_slot);
+        CY_CHECK_EQ(second_draws[index].stable_id, fixture.draws[index].stable_id);
+        const GpuInstance& record = scene->gpu.at(second_draws[index].instance_slot);
+        CY_CHECK_EQ(record.material, scene->gpu.at(fixture.draws[index].instance_slot).material);
+    }
+}

@@ -313,17 +313,16 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
     CY_REQUIRE(index.insert(ranged).has_value());
 
     // Two survivors at different distances, so the histogram has to hold more than one bucket.
-    constexpr cy::render::MeshLod kChain[2] = {{0, 1, 0.3F, 1000}, {1, 1, 0.0F, 100}};
-    SpatialEntry near_entry = make_entry({0, 0, -2}, 4);
-    SpatialEntry far_entry = make_entry({0, 0, -30}, 5);
-    CY_REQUIRE(index.insert(near_entry).has_value());
-    CY_REQUIRE(index.insert(far_entry).has_value());
+    CY_REQUIRE(index.insert(make_entry({0, 0, -2}, 4)).has_value());
+    CY_REQUIRE(index.insert(make_entry({0, 0, -30}, 5)).has_value());
 
-    CullOptions options;
-    options.lod_chains = cy::Span<const cy::render::MeshLod>{kChain, 2};
     CullWorkspace workspace(allocator());
     CullResults results(allocator());
-    CY_REQUIRE(cull_view(index, make_view(), options, workspace, results).has_value());
+    const CullView view = make_view();
+    CY_REQUIRE(cull_view(index, view, CullOptions{}, workspace, results).has_value());
+    CY_REQUIRE(cy::rendering::select_lods(index, view, &two_level_chain, nullptr, cy::Span<cy::u32>{},
+                                          results)
+                   .has_value());
 
     CY_CHECK_EQ(results.stats.tested, 5U);
     CY_CHECK_EQ(results.stats.rejected_by_layer, 1U);

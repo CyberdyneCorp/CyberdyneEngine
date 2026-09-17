@@ -104,6 +104,60 @@ CY_TEST_CASE("an effect plays, spawns, ages and dies, and the step report says s
     CY_CHECK_EQ(report.spawned, 0U);
 }
 
+CY_TEST_CASE("an exposed parameter is set on one instance and the other instance does not move") {
+    // `vfx-system`'s asset model, second scenario, in as many words: "WHEN a system declares an
+    // `Intensity` float parameter THEN it SHALL be settable per effect instance from gameplay and
+    // from the editor, and readable by every stage graph in the system."
+    //
+    // BOTH HALVES ARE THE CASE, and the second is the one a shared parameter block would fail:
+    // `EffectInstance::parameter_base` exists so that one effect's Intensity is not every effect's,
+    // and until this case nothing in this tree called `SimulationWorld::set_parameter` at all — a
+    // `set_parameter` that wrote nothing, or that wrote into every instance's words, was green.
+    //
+    // The plume's `intensity` is exposed and scales the spawn stage's rate (sixteen a step), so the
+    // parameter is READ BY A STAGE GRAPH rather than merely stored: the population is the readout.
+    Cooked cooked;
+    CY_REQUIRE(cooked.ok);
+    SimulationWorld world(allocator());
+    CY_REQUIRE(world.initialize(small_world()).has_value());
+
+    EffectSpawn spawn;
+    auto loud = world.play(*cooked, spawn);
+    auto quiet = world.play(*cooked, spawn);
+    CY_REQUIRE(loud.has_value());
+    CY_REQUIRE(quiet.has_value());
+
+    const f32 quarter[] = {0.25F};
+    CY_REQUIRE(world.set_parameter(*quiet, Name::intern("intensity"), Span<const f32>(quarter, 1U))
+                   .has_value());
+
+    StepReport report;
+    for (u32 frame = 0; frame < 4U; ++frame) {
+        CY_REQUIRE(world.step(1.0F / 60.0F, report).has_value());
+    }
+
+    const EffectInstance* loud_instance = world.find(*loud);
+    const EffectInstance* quiet_instance = world.find(*quiet);
+    CY_REQUIRE(loud_instance != nullptr);
+    CY_REQUIRE(quiet_instance != nullptr);
+    std::fprintf(stderr, "intensity 1.0 -> %u live, intensity 0.25 -> %u live\n",
+                 loud_instance->live_particles, quiet_instance->live_particles);
+    // THE SET ONE MOVED: a quarter of the spawn rate is fewer particles.
+    CY_CHECK_LT(quiet_instance->live_particles, loud_instance->live_particles);
+    // AND IT IS A SCALE RATHER THAN A SWITCH — a `set_parameter` that zeroed the words instead of
+    // writing them would also make this instance smaller than the other one.
+    CY_CHECK_GT(quiet_instance->live_particles, 0U);
+    // THE OTHER ONE DID NOT: the instance nobody set still spawns at the authored rate, which is
+    // what "per effect instance" means and what one shared block would break. Expressed as the
+    // ratio the parameter names — a quarter — so the assertion is the arithmetic rather than a
+    // spawn rate copied out of `effects.cpp`.
+    CY_CHECK_EQ(loud_instance->live_particles, quiet_instance->live_particles * 4U);
+
+    // A name this system does not declare is refused rather than written at some other offset.
+    CY_CHECK_FALSE(
+        world.set_parameter(*quiet, Name::intern("nonesuch"), Span<const f32>(quarter, 1U)));
+}
+
 CY_TEST_CASE("particles move: the update kernel's arithmetic is visible in the stored attributes") {
     Cooked cooked;
     CY_REQUIRE(cooked.ok);

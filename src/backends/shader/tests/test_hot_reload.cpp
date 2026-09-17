@@ -326,3 +326,84 @@ CY_TEST_CASE("a generated module joins the same rebuild path by hand") {
     CY_CHECK_EQ(result->variants_replaced, 1U);
     CY_CHECK_EQ(library.generation(id), 1U);
 }
+
+// `shader-system` — "Compute and utility shaders": compute shaders SHALL be first-class artefacts
+// "with the same authoring, reflection, caching, and hot-reload path", and the requirement's own
+// first scenario is a compute shader used by a post-process pass being edited and reloading "with
+// the same guarantees as a graphics shader".
+//
+// EVERY OTHER CASE IN THIS FILE RELOADS A VERTEX MODULE. A reload path that special-cased the
+// graphics stages — or a library that keyed on a stage it assumed — would pass all of them, and the
+// dispatch would go on using the old workgroup size, which is the failure this scenario names.
+//
+// THE EDIT IS THE WORKGROUP SIZE, because it is the one property of a compute artefact that the
+// pipeline cannot guess and a dispatch reads every frame: the case requires the REFLECTION behind
+// the consumer's unchanged variant id to follow the edit, not merely the bytes to change.
+CY_TEST_CASE("a compute module reloads on the graphics path, and the workgroup size follows") {
+    // `[numthreads(8, 4, 2)]` — the probe's own declaration, patched to 16 in x. A valid module
+    // differing from the original in exactly the quantity this case reads back.
+    std::vector<u32> edited(std::begin(test::kProbeComputeSpirv),
+                            std::end(test::kProbeComputeSpirv));
+    usize local_size = 0;
+    for (usize word = 5; word + 5 < edited.size();) {
+        const u32 count = edited[word] >> 16U;
+        const u32 opcode = edited[word] & 0xFFFFU;
+        if (count == 0) {
+            break;
+        }
+        // OpExecutionMode (16) with mode LocalSize (17): entry point, mode, x, y, z.
+        if (opcode == 16U && count == 6U && edited[word + 2] == 17U) {
+            local_size = word + 3;
+            break;
+        }
+        word += count;
+    }
+    CY_REQUIRE(local_size != 0);
+    CY_REQUIRE_EQ(edited[local_size], 8U);
+    edited[local_size] = 16U;
+
+    Fixture fixture;
+    fixture.write_module("shaders/probe.slang",
+                         cy::Span<const u32>(test::kProbeComputeSpirv,
+                                             std::size(test::kProbeComputeSpirv)));
+
+    SourceRegistry registry(cy::current_allocator());
+    CY_REQUIRE(registry.start(fixture.files, path_of("shaders")).has_value());
+
+    Compiler compiler;
+    ShaderLibrary library(cy::current_allocator());
+    const ShaderVariantId id =
+        seed(*compiler.handle, registry, library, "probe", cy::rhi::ShaderStage::Compute);
+    CY_REQUIRE(library.shader_at(id) != nullptr);
+    CY_REQUIRE_EQ(library.shader_at(id)->reflection().entry_points().size(), usize{1});
+    CY_CHECK(library.shader_at(id)->stage() == cy::rhi::ShaderStage::Compute);
+    CY_CHECK_EQ(library.shader_at(id)->reflection().entry_points()[0].workgroup_size[0], 8U);
+
+    ShaderHotReload reload(cy::current_allocator());
+    CY_REQUIRE(reload.start(registry, fixture.files, HotReloadConfig{}).has_value());
+    CY_REQUIRE(reload.prime(0).has_value());
+
+    fixture.write_module("shaders/probe.slang", cy::Span<const u32>(edited.data(), edited.size()));
+
+    CY_REQUIRE(reload.poll(kSettleNs).has_value());
+    auto settled = reload.poll(kSettleNs * 3);
+    CY_REQUIRE(settled.has_value());
+    CY_CHECK_EQ(*settled, 1U);
+
+    DiagnosticLog diagnostics(cy::current_allocator());
+    auto result = reload.rebuild(*compiler.handle, library, RebuildOptions{}, diagnostics);
+    CY_REQUIRE(result.has_value());
+    CY_CHECK_EQ(result->modules_rebuilt, 1U);
+    CY_CHECK_EQ(result->variants_replaced, 1U);
+    CY_CHECK_EQ(result->failures, 0U);
+
+    // The consumer's id is the one it had; what it resolves to is the edited kernel, and the
+    // reflection a dispatch reads is the edited kernel's.
+    CY_CHECK_EQ(library.generation(id), 1U);
+    const Reflection& after = library.shader_at(id)->reflection();
+    CY_REQUIRE_EQ(after.entry_points().size(), usize{1});
+    CY_CHECK(after.entry_points()[0].stage == cy::rhi::ShaderStage::Compute);
+    CY_CHECK_EQ(after.entry_points()[0].workgroup_size[0], 16U);
+    CY_CHECK_EQ(after.entry_points()[0].workgroup_size[1], 4U);
+    CY_CHECK_EQ(after.entry_points()[0].workgroup_size[2], 2U);
+}

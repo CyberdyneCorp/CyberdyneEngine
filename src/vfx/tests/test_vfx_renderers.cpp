@@ -57,6 +57,12 @@ Allocator& allocator() noexcept {
 
 constexpr u32 kCapacity = 16;
 
+/// What a `Mesh` fixture's initialise stage writes into the two attributes `publish_mesh_instances`
+/// reads by name. Two DIFFERENT values, because a publication that copied the mesh reference into
+/// both fields would satisfy one of them and be wrong about the other.
+constexpr f32 kMeshReference = 3.0F;
+constexpr f32 kMeshMaterial = 11.0F;
+
 /// A minimal emitter: sixteen slots, a spawn that fills them all at once, an initialise that gives
 /// each particle a position along +X and a colour, and NO update — so nothing dies except when a
 /// case kills it, and the population is exactly what the case set up.
@@ -91,6 +97,21 @@ struct Fixture {
             decl.maximum = 1000.0F;
             CY_REQUIRE(emitter.declare_attribute(decl).has_value());
         }
+        // A MESH EMITTER IS DECIDED BY ITS LAYOUT — `publish_mesh_instances` asks whether the
+        // cooked layout has a `mesh` attribute rather than reading a flag beside it — so a mesh
+        // fixture has to declare the two attributes that publication reads by name. Only this kind
+        // declares them: `renderer_inputs` keeps an attribute alive for the DECLARED kind, so
+        // declaring them for a ribbon would be declaring two attributes liveness then elides.
+        if (kind == RendererKind::Mesh) {
+            for (const char* name : {"mesh", "material"}) {
+                AttributeDecl decl;
+                decl.name = Name::intern(name);
+                decl.type = Name::intern("float");
+                decl.minimum = 0.0F;
+                decl.maximum = 1000.0F;
+                CY_REQUIRE(emitter.declare_attribute(decl).has_value());
+            }
+        }
 
         StageBuilder spawn(allocator(), "spawn");
         spawn.spawn_count(spawn.constant(static_cast<f32>(kCapacity)));
@@ -109,6 +130,10 @@ struct Fixture {
         init.write("emission", init.constant(4.0F));
         init.write("color", init.make4(init.constant(1.0F), init.constant(0.5F),
                                        init.constant(0.25F), init.constant(1.0F)));
+        if (kind == RendererKind::Mesh) {
+            init.write("mesh", init.constant(kMeshReference));
+            init.write("material", init.constant(kMeshMaterial));
+        }
         CY_REQUIRE(init.ok());
         CY_REQUIRE(emitter.set_stage(Stage::Initialise, init.take()).has_value());
         CY_REQUIRE(asset.add_emitter(std::move(emitter)).has_value());
@@ -178,6 +203,60 @@ CY_TEST_CASE("a renderer kind is declared by the emitter and survives the cook")
     std::fprintf(stderr, "ribbon cook key 0x%llx, trail cook key 0x%llx\n",
                  static_cast<unsigned long long>(fixture.system->cook_key()),
                  static_cast<unsigned long long>(other.system->cook_key()));
+}
+
+CY_TEST_CASE("a mesh emitter publishes one instance row a particle, and no entity anywhere") {
+    // `vfx-system`: mesh particles "SHALL publish instances directly into the renderer's GPU scene
+    // ... producing per particle at minimum: a transform, a mesh reference, a material reference,
+    // and instance flags", and "SHALL NOT require ECS entities, per-particle CPU submission, or
+    // CPU readback".
+    //
+    // WHAT WAS MISSING UNTIL THIS CASE. `test_vfx_runtime.cpp`'s "mesh particles are published as
+    // instance rows with no entity anywhere" runs the NEGATIVE direction and is honest about it:
+    // the plume declares no `mesh` attribute, so it publishes nothing, and both of that case's
+    // assertions are zeroes. `publish_mesh_instances` could have returned without writing a row at
+    // all — or written the mesh reference into the material field — and every suite in this tree
+    // would have stayed green. This is the positive direction: an emitter that IS a mesh emitter,
+    // and the rows it produces.
+    Fixture fixture(RendererKind::Mesh);
+    fixture.step();
+    CY_REQUIRE_EQ(fixture.live(), kCapacity);
+
+    Array<MeshParticleInstance> rows(allocator());
+    PublishReport report;
+    CY_REQUIRE(publish_mesh_instances(fixture.world, Vec3{0.0F, 0.0F, 0.0F}, 256, rows, report)
+                   .has_value());
+    CY_CHECK_EQ(report.emitters, 1U);
+    CY_CHECK_EQ(report.particles, kCapacity);
+    CY_CHECK_EQ(report.dropped, 0U);
+    CY_REQUIRE_EQ(rows.size(), kCapacity);
+
+    for (u32 slot = 0; slot < kCapacity; ++slot) {
+        // THE MESH AND THE MATERIAL ARE THE EMITTER'S OWN, and they are two different numbers.
+        CY_CHECK_EQ(rows[slot].mesh, static_cast<u32>(kMeshReference));
+        CY_CHECK_EQ(rows[slot].material, static_cast<u32>(kMeshMaterial));
+        // A TRANSFORM, CAMERA-RELATIVE. The initialise stage put slot `i` at x = i and the camera
+        // is at the origin, so the row's translation column is the particle's own position rather
+        // than the instance's or a zero.
+        CY_CHECK_NEAR(rows[slot].rows[3], static_cast<f32>(slot), 1.0e-4F);
+        CY_CHECK_NEAR(rows[slot].rows[7], 0.0F, 1.0e-4F);
+        CY_CHECK_NEAR(rows[slot].rows[11], 0.0F, 1.0e-4F);
+        // The projected radius the GPU scene's LOD selection reads. Zero would make every mesh
+        // particle the smallest LOD there is.
+        CY_CHECK_GT(rows[slot].radius, 0.0F);
+    }
+
+    // AND THE CAPACITY BOUND IS COUNTED, not silently dropped — the same claim `publish_sprites`
+    // makes about its ring, on the path that feeds the GPU scene.
+    Array<MeshParticleInstance> bounded_rows(allocator());
+    PublishReport bounded;
+    CY_REQUIRE(
+        publish_mesh_instances(fixture.world, Vec3{0.0F, 0.0F, 0.0F}, 4, bounded_rows, bounded)
+            .has_value());
+    CY_CHECK_EQ(bounded.particles, 4U);
+    CY_CHECK_EQ(bounded.dropped, kCapacity - 4U);
+    std::fprintf(stderr, "published %u mesh rows (mesh %u, material %u); a 4-row cap dropped %u\n",
+                 report.particles, rows[0].mesh, rows[0].material, bounded.dropped);
 }
 
 CY_TEST_CASE("a publication refuses a declaration whose kind is not its own") {

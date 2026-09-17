@@ -311,3 +311,53 @@ CY_TEST_CASE("the diagnostics report refuses to record one pass twice") {
     CY_CHECK_EQ(statistics.draw_calls, 15U);
     CY_CHECK_EQ(statistics.passes, 2U);
 }
+
+// `rendering-architecture`, "Render targets and formats": "The renderer SHALL render HDR scene
+// colour in a floating-point format (`RGBA16F` by default, `R11G11B10F` where alpha is unneeded and
+// precision permits), with tonemapping to the output format at the end of the chain."
+//
+// WHY THE ASSERTION IS OVER THE GRAPH AND NOT OVER THE DEFAULT. `FrameDescription::color_format`
+// being `Rgba16Sfloat` is one line of a header; what the requirement asks is that the frame's colour
+// CHAIN is that format, and the way that claim breaks is not by somebody editing the default — it is
+// by one intermediate target in the middle of the chain being declared in something cheaper, which
+// is invisible until a bloom or a reflection clips. So every colour-carrying target the frame
+// creates is read back out of the graph and required to be the scene colour's format, and the two
+// targets that are deliberately NOT colour — depth and the single-channel ambient-occlusion buffer —
+// are required to differ, so the case cannot be satisfied by a frame that declares one format for
+// everything.
+CY_TEST_CASE("the scene colour chain is floating point, and the two targets that are not say so") {
+    // The specification names the default by name, so the default is checked by name.
+    CY_CHECK_EQ(FrameDescription{}.color_format, cy::rhi::Format::Rgba16Sfloat);
+
+    RenderGraph graph(allocator());
+    ForwardFrame frame(allocator());
+    FrameDescription description = make_description();
+    // Every optional colour target at once: the ones a frame only has when a feature asks for them
+    // are exactly the ones a later change is most likely to declare in a narrower format.
+    description.features.ambient_occlusion = true;
+    description.features.screen_space_gi = true;
+    description.features.screen_space_reflections = true;
+    description.features.transparent_refraction = true;
+    description.features.temporal = true;
+    CY_REQUIRE(frame.build(graph, description).has_value());
+
+    const cy::rendering::FrameResources& resources = frame.resources();
+    const cy::rhi::Format colour = description.color_format;
+    const cy::rendering::ResourceId colour_targets[] = {
+        resources.color,      resources.screen_space_gi, resources.reflections,
+        resources.opaque_color_copy, resources.temporal_history, resources.output,
+    };
+    for (const cy::rendering::ResourceId id : colour_targets) {
+        CY_REQUIRE_NE(id, kInvalidResource);
+        const cy::rendering::ResourceInfo& info = graph.resource(id);
+        CY_REQUIRE(info.is_texture);
+        CY_CHECK_EQ(info.texture.format, colour);
+    }
+
+    // The control. Depth is a depth format and ambient occlusion is one 8-bit channel, so "every
+    // target is the colour format" is a claim this frame could have failed.
+    CY_CHECK_EQ(graph.resource(resources.depth).texture.format, cy::rhi::Format::D32Sfloat);
+    CY_CHECK_EQ(graph.resource(resources.ambient_occlusion).texture.format,
+                cy::rhi::Format::R8Unorm);
+    CY_CHECK_NE(graph.resource(resources.ambient_occlusion).texture.format, colour);
+}

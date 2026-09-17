@@ -170,3 +170,84 @@ CY_TEST_CASE("the page geometry reports itself, because the size is a measured d
     CY_CHECK_FALSE((ShadowPageGeometry{0, 16384}).valid());
     CY_CHECK_FALSE((ShadowPageGeometry{100, 16384}).valid());
 }
+
+// `rendering-lighting-and-shadows` — "Point and spot shadow projection": point light shadows SHALL
+// be cube shadow maps "with per-face frustum culling so faces with no casters are skipped", and a
+// spot's SHALL be "a single perspective projection matching the cone".
+//
+// WHERE THE FACE CULLING ACTUALLY HAPPENS IN THIS ENGINE, and why this is the case that observes
+// it: nothing renders a cube face here — a face is rendered because a caster asked for pages on it,
+// and `pages_covering()` is what a caster asks with. So "a face with no casters is skipped" is the
+// statement that a caster on one side of the light produces pages on ITS face and on no other, and
+// the scenario is false the moment the projection stops carrying the face — which is exactly what a
+// page identity that dropped `face` would do, silently, with every other case in this file passing.
+CY_TEST_CASE("a point light's caster lands on its own cube face, and no other face is asked for") {
+    ShadowAddressSpace space;
+    space.projection = ShadowProjection::Point;
+    space.point_mapping = PointMapping::CubeFaces;
+    space.light_slot = 11;
+    space.level = 0;
+    space.basis = cy::rendering::shadow_basis(cy::Vec3{0.0F, -1.0F, 0.0F});
+    space.position = cy::Vec3{0.0F, 0.0F, 0.0F};
+    space.extent = 40.0F;
+    space.geometry = ShadowPageGeometry{128, 4096};
+
+    VirtualPage pages[256];
+
+    // One caster to the light's +X, one to its -X. A point light's space covers the sphere, so both
+    // are in front of it and both produce pages: this is a question about WHICH face, not about
+    // whether anything is drawn.
+    const cy::Aabb east =
+        cy::Aabb::from_center_extents(cy::Vec3{8.0F, 0.0F, 0.0F}, cy::Vec3{0.5F, 0.5F, 0.5F});
+    const cy::Aabb west =
+        cy::Aabb::from_center_extents(cy::Vec3{-8.0F, 0.0F, 0.0F}, cy::Vec3{0.5F, 0.5F, 0.5F});
+
+    const cy::u32 east_count = pages_covering(space, east, pages, 256);
+    CY_REQUIRE(east_count > 0U);
+    const cy::u8 east_face = pages[0].face;
+    cy::u32 east_mask = 0;
+    for (cy::u32 index = 0; index < east_count; ++index) {
+        east_mask |= 1U << pages[index].face;
+        CY_CHECK_EQ(pages[index].light_slot, 11U);
+    }
+
+    const cy::u32 west_count = pages_covering(space, west, pages, 256);
+    CY_REQUIRE(west_count > 0U);
+    const cy::u8 west_face = pages[0].face;
+    cy::u32 west_mask = 0;
+    for (cy::u32 index = 0; index < west_count; ++index) {
+        west_mask |= 1U << pages[index].face;
+    }
+
+    // The two casters are on opposite faces, and neither asked for anything on the other's. A
+    // frame holding only the eastern caster therefore renders one face and skips five.
+    CY_CHECK_NE(static_cast<cy::u32>(east_face), static_cast<cy::u32>(west_face));
+    CY_CHECK_EQ(east_mask & west_mask, 0U);
+    CY_CHECK_EQ(east_mask, 1U << east_face);
+    CY_CHECK_EQ(west_mask, 1U << west_face);
+
+    // And the six faces are SIX: a caster on each principal axis reaches a face of its own, so the
+    // mapping is a cube rather than a pair of hemispheres with a name.
+    const cy::Vec3 directions[6] = {{8.0F, 0.0F, 0.0F},  {-8.0F, 0.0F, 0.0F}, {0.0F, 8.0F, 0.0F},
+                                    {0.0F, -8.0F, 0.0F}, {0.0F, 0.0F, 8.0F},  {0.0F, 0.0F, -8.0F}};
+    cy::u32 all_faces = 0;
+    for (const cy::Vec3& direction : directions) {
+        const cy::Aabb caster =
+            cy::Aabb::from_center_extents(direction, cy::Vec3{0.5F, 0.5F, 0.5F});
+        const cy::u32 count = pages_covering(space, caster, pages, 256);
+        CY_REQUIRE(count > 0U);
+        all_faces |= 1U << pages[0].face;
+    }
+    CY_CHECK_EQ(all_faces, 0x3FU);
+
+    // THE SPOT IS THE OTHER HALF OF THE REQUIREMENT: one perspective matching the cone, so its
+    // pages carry no face at all and a caster behind it asks for nothing.
+    const ShadowAddressSpace spot = spot_space();
+    const cy::Aabb lit =
+        cy::Aabb::from_center_extents(cy::Vec3{0.0F, 0.0F, -10.0F}, cy::Vec3{0.3F, 0.3F, 0.3F});
+    const cy::u32 spot_count = pages_covering(spot, lit, pages, 256);
+    CY_REQUIRE(spot_count > 0U);
+    for (cy::u32 index = 0; index < spot_count; ++index) {
+        CY_CHECK_EQ(static_cast<cy::u32>(pages[index].face), 0U);
+    }
+}

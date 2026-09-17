@@ -490,3 +490,530 @@ requirement = "Tonemapping"
 evidence = "test:unit.render_post"
 case = "every operator is bounded, and an HDR display gets its own range"
 note = "the six operators the requirement enumerates, each driven to the ends of its input range and required to stay bounded, and the output transfer function taken from the display rather than assumed — `OutputTarget`'s peak luminance is what separates the SDR and HDR answers. `AgX is the default, and it desaturates a bright light instead of shifting its hue` beside it is the requirement's own scenario and its default. M11.c's `samples/10-world` is the first caller in this tree whose picture actually goes through the curve, and its published manifest names the operator."
+
+# --- rendering-global-illumination ------------------------------------------------------------------
+#
+# TWENTY-NINE REQUIREMENTS, READ ONE AT A TIME AGAINST `src/rendering/gi/`, `src/rendering/denoise/`
+# and `src/rendering/sky_illumination/`. Twenty of them are answered by a named case, one by a
+# criterion the falsifiability record proves can fail, and EIGHT ARE DEFERRED WITH A REASON — they
+# are the subsystems this row does not have at Working, and each entry below names what is missing
+# and what would observe it rather than saying `not tested`. `src/rendering/gi/README.md`'s "What is
+# here at Working, and what is not" is the same list from the code's side.
+#
+# Where a requirement carries several scenarios and the suite carries a case for each, the entry
+# names the case whose failure would be the requirement's failure and NAMES ITS SIBLINGS in the
+# note — the shape `material-compiler`'s entries above use. A sibling named in prose is not a
+# second answer; it is where to look next.
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Engine-owned illumination architecture"
+evidence = "test:integration.render_gi_pipeline"
+case = "a frame runs every subsystem and the software tier answers on this machine"
+note = "the requirement's content is a DECOMPOSITION — named subsystems with separate ownership, and hardware ray tracing as one tracing tier inside one renderer rather than a second renderer. The case runs one frame and requires each named subsystem to report its own work in its own record (field bricks solved, probes placed, surface pages updated, probes updated), and requires the world tier that answered to be the software one WITH the acceleration service inactive — which is the `no parallel renderer` half as an observation rather than as an intention. The separability half is the link graph `gi/lighting.h` declares: the caches name abstract seams and never each other."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "GI strategy layers"
+evidence = "test:unit.render_gi"
+case = "a lightmapped surface takes one bounce and not two"
+note = "`Sources SHALL be combined without double counting` is this requirement's load-bearing sentence and `exclusion_for()` is where it is decided. The case takes one lightmapped surface and one without, in the same dynamic region, and requires the first to resolve from the lightmap alone and the second from the dynamic sources; then it walks the modes, requiring None to exclude every bounce and Dynamic to exclude the baked ones. `the GI mode decides what runs, and None is a mode rather than a failure` in integration.render_gi_pipeline carries the per-mode behaviour of a whole frame, and `sources are combined by confidence, not selected between` carries the blend the specular fallback chain is made of."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "The GI scene"
+evidence = "test:integration.render_gi_pipeline"
+case = "a cell streams in and out and touches only its own surfels"
+note = "cell-scoped ingestion and eviction, and the word that matters is INCREMENTAL: the case ingests two cells and requires the second ingest to touch only the second cell's surfels — a global rebuild would report all of them, which is the whole difference the requirement asks for — then evicts one and requires the query into the evicted region to lose coverage so the resolve falls to the far field rather than to black. The coarser-representation half is `the GI scene asks one hierarchy for a coarser level, never a second mesh` in unit.render_gi, which drives `select_detail_level` against the near- and far-field error targets."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Surface cache"
+evidence = "test:integration.render_gi_pipeline"
+case = "a traced hit is a cache lookup and the red wall bleeds"
+note = "both halves of the requirement in one case: a traced hit resolves through the cache rather than through a material evaluation — structurally, because a tracer holds a `RadianceLookup` and has no path to a material graph — and a saturated red wall recorded in the cache tints the surfaces near it, which is the colour-bleeding scenario. `bounces accumulate over frames` beside it is the multi-bounce approximation, and `the surface cache is budgeted, prioritised and does not starve` is the update budget."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Distance field representation"
+evidence = "test:integration.render_gi_pipeline"
+case = "the camera translates and only the newly exposed region is re-solved"
+note = "the clipmap scroll, which is the requirement's second scenario and the one that decides whether a kilometre of world costs a rebuild or a band. `empty space costs no storage` is the sparsity claim, `a box composites into the world field and the field agrees with the box` is the per-asset field composited by transform, and `tracing the field toward the sky reports occlusion indoors` is the sky-visibility scenario; all four are in the same suite over one real field."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Radiance cache"
+evidence = "test:integration.render_gi_pipeline"
+case = "a probe on the far side of a wall does not leak into a query"
+note = "the visibility term, which is the requirement's sharpest claim and the one a probe grid without it fails visibly. The case puts a wall between a probe and a query point and requires the probe's contribution to be suppressed. `probes are placed near surfaces, not inside them, and not wasted on emptiness` is the adaptive geometry-aware placement, `the camera moves and valid probes are reused` is the clipmap scroll, and `the three probe encodings are real alternatives with a stated trade-off` plus `every encoding round-trips a directional signal and keeps its direction` are the selectable encoding."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Probe update scheduling"
+evidence = "test:integration.render_gi_pipeline"
+case = "probe updates are budgeted, prioritised and bounded in age"
+note = "the budget, the queue depth, the oldest unserviced probe, and the guarantee the requirement asks for by name: no valid probe starved indefinitely. The case updates eight probes of three hundred a frame, checks the report carries the queue depth and the oldest age, and then requires EVERY probe to be valid within the bound the scheduler can actually promise — the cache size over the budget — rather than within a number chosen to pass. Converged mode ignoring the budget is checked in the same case because that is the scheduler's other rate."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Incremental invalidation"
+evidence = "test:integration.render_gi_pipeline"
+case = "a door that opens invalidates what it touched and nothing else"
+note = "a moving occluder re-solves the bricks it touched and leaves the rest of the field alone, which is `a global rebuild SHALL NOT be required for a local change` as a count rather than as a promise. `an invalidation is attributable to what caused it` records the cause and the source id behind each invalidation, which is the reportability half, and `a light that changes invalidates its region and nothing else` runs the same claim through a whole frame and requires fewer than half the surface cache's pages to move."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Screen-space tracing"
+evidence = "test:integration.render_gi_pipeline"
+case = "a ray that leaves the viewport reports no confidence at all"
+note = "the tier's own limit, stated as a confidence rather than as a fallback: a ray that exits the viewport carries zero, and a ray that stays on screen and meets nothing carries a low confidence rather than a confident miss, because a screen tracer cannot prove a miss. `a hidden surface is not invented` is the thickness scenario — a ray diving behind the visible wall reports zero rather than a plausible wrong answer — and `a screen trace that hits in the middle of the frame is trusted` is the other end, capped below one because the tier reads last frame's colour."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Tracing tiers and selection"
+evidence = "test:integration.render_gi_pipeline"
+case = "the cheapest tier that can answer is the one that runs"
+note = "escalation by confidence and not by capability: a confident screen answer issues no world ray, an unconfident one escalates, and the ray counters are what makes that visible from outside the tracer. `with no hardware tier the software tier is selected, and nothing above knows` is the requirement's third scenario — consumers branch on neither tier nor device — and integration.render_gi_fallback measures what the two tiers cost each other over a whole room."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Sample confidence"
+evidence = "test:unit.render_gi"
+case = "sources are combined by confidence, not selected between"
+note = "`Resolve SHALL combine sources weighted by confidence rather than selecting one` — the case requires `combine()` to be a confidence-weighted mean rather than a maximum (0.25 of a bright quarter-confidence sample survives beside a dark three-quarter one), requires a zero-confidence sample to be weighted to nothing rather than to be an error, and requires the dominant source and the contributing-source mask to be reported, which is the diagnostic half of the requirement. A maximum would pass a test that only checked the blend was plausible and would pop every time the ranking changed."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Dynamic diffuse global illumination"
+evidence = "test:integration.render_gi_pipeline"
+case = "indirect diffuse is answered, and each wall tints the floor beside it"
+note = "the resolve over the radiance cache, the surface cache and the tiers, converged over frames rather than solved in one: the floor beside the red wall is redder than the floor beside the blue one and vice versa, which fails if the gather is not actually accumulating world radiance. `bounces accumulate over frames` is the multi-bounce-over-frames claim and `with ray tracing disabled the software tier takes over, and it is the default here` in integration.render_gi_fallback is the without-hardware scenario — it is the path that runs on this machine."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Reflections share the illumination infrastructure"
+evidence = "test:integration.render_gi_pipeline"
+case = "reflections take the same tiers and the roughness rule decides the cost"
+note = "`There SHALL NOT be a separate reflection scene representation, reflection cache, or reflection denoiser` is the requirement's prohibition, and the case checks it where it is decided: one mirror and one rough surface resolved through THE SAME system, with the tracer's own ray counters showing dedicated rays for the mirror and none for the rough surface, whose answer still arrives — from the radiance cache the diffuse gather already paid for. `reflection strategy is a roughness table and rough surfaces cost no rays` in unit.render_gi is the threshold table itself."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Reflection probes"
+evidence = "test:integration.render_gi_pipeline"
+case = "a reflection probe is captured amortised and re-aimed by box projection"
+note = "realtime capture spread across frames under a texel budget — the probe is not valid until the last texel lands, so a half-captured probe shows its previous contents rather than half a room — plus influence assignment, the blend weight, and a query outside the volume answering with no confidence so the resolve weights it away rather than switching to it. `box projection re-aims the reflection at the wall rather than at infinity` is the parallax correction against a control with projection off, and `an interior probe does not reflect a sky it cannot see` is the interior flag."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Ray-traced effects"
+evidence = "test:integration.render_gi_fallback"
+case = "the two tiers agree within tolerance over the whole room"
+note = "hardware ray tracing AS A TIER: the same room converged twice, once through `cy::rendering-raytracing`'s service and once through the software tier, over eighty points, agreeing to a mean relative difference of 0.0751 against a 0.10 tolerance. The case first proves the hardware side really traced — the service's GI ray counter is above zero on one side and exactly zero on the other — so the agreement cannot be two runs of the same tier. GI builds no structure in either run: it holds an `AccelerationService` and the service owns the structures, which is `They SHALL NOT build, refit, or own acceleration structures themselves`."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Emissive surfaces as illumination"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED, and nothing in the tree claims it is. The requirement asks emissive materials to light their surroundings through the surface cache and to be CLASSIFIED by radiant power and area, with bright small emitters promoted to sampled lights rather than left to stochastic sampling. `Surfel` carries no emission channel, `GiLight` is the only emitter the gather knows, and there is no classifier and no promotion anywhere under src/rendering/gi/. What would observe it: an emissive surfel in a dark room raising the irradiance of the wall opposite with no `GiLight` placed, and a small high-power emitter arriving in the direct lighting path's light list instead — both cheap to write once the classification exists, and neither writable against a cache that has no emission to record."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Sky and atmosphere"
+evidence = "criterion:m11c:gi-sky-term-constructed"
+note = "what illumination CONSUMES from the atmosphere, and until M11.c nothing in this tree constructed it: `gi/lighting.h` held a two-colour gradient and called itself the seam, `sky_light.h` carried the adapter in a comment, and neither module linked the other, so all thirteen scenarios under this requirement were satisfied by a gradient with nothing able to say so. The criterion requires the join to be a LIBRARY rather than a test fixture, and integration.rendering_gi_sky drives it: `the sky term is built from the atmosphere, and a fallback says it is one`, `a moving sun is incremental and bounded against a full recomputation` (the time-of-day scenario, measured against a full reconfigure) and `cloud shadow reaches illumination through the coarse field`. falsifiability.toml records the proof: deleting the one statement that installs the term leaves a tree that compiles and a sky nothing is lit by, and the suite goes red naming it."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Illumination classification of dynamic objects"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED. The requirement's four classes — Static, SlowDynamic, FastDynamic, TransientIgnored — do not exist as an enumeration, a derivation from mobility and size, or an override, and nothing in the GI scene rate-limits or excludes a renderable by class: `GiScene` ingests surfels per cell and knows nothing about the mobility of what produced them. What would observe it: a projectile crossing the room causing zero invalidations while a vehicle causes amortised ones, counted through `GiScene::invalidation_count`, which is the mechanism that would carry it and which already records causes. It needs the classification first, and that is a scene-side decision this row cannot make alone."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Far-field illumination"
+evidence = "test:unit.render_gi"
+case = "the far field transitions over a ramp rather than at a boundary"
+note = "`SHALL blend with the near field without a visible boundary` is the half that is checkable as arithmetic, and the case checks it as arithmetic: the far-field weight is zero where the far field begins, one at ten kilometres, monotone in between, and the largest step between two consecutive metres along the ramp is below 0.2 — a boundary rather than a ramp would show up as a single step of 1.0. The coarse representation the far field uses is the same detail-level selection `the GI scene asks one hierarchy for a coarser level, never a second mesh` drives at the far-field error target."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Transparency and participating media"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED, and the requirement is itself a staging table — thin transmission supported, volumetric media taking low-frequency indirect from the radiance cache, true refraction and caustics DEFERRED WITH THE INTERFACE RESERVED. Nothing in src/rendering/gi/ distinguishes an opaque surface from a thin-transmission one, and the volumetric fog that would consume the cache lives in `rendering-post-processing` and does not call into this module. What would observe it: a backlit thin-transmission surfel transmitting indirect light to the surface behind it, and a fog volume reading `RadianceCache::gather` rather than computing an indirect term of its own — the second is a join between two rows and belongs with the row that owns the fog."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "GI budget and importance"
+evidence = "test:unit.render_gi"
+case = "every declared lever prices its ladder and reduces in a declared order"
+note = "the requirement asks the system to hold an allocation and distribute it over named levers in a DECLARED ORDER, reporting each lever applied — the case requires every lever to price its own ladder (a lever whose positions cost the same is a lever that does nothing) and requires the reduction to follow the declared order. Beside it: `the GI budget cannot be handed a frame time` (it measures its own cost and there is no parameter a frame time could arrive through), `the budget tightens on its own and relaxes only when the arbiter permits`, `a settled load does not pump the levers` (the hysteresis scenario), `pinned mode stops the loop and reports the overrun`, `quality follows what matters in the game, not distance alone` (the importance scenario), and `the budget's decisions reach the subsystems that spend the frame` in integration.render_gi_pipeline, which is the one that proves the levers are not a display."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "GI volumes"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED. There is no `GiVolume` type, no per-region override of quality, probe density, update rate, intensity, tier preference or far-field distance, and no priority or blend-distance resolution between overlapping ones; `IlluminationSettings` is global and the budget's importance region is an AABB with a weight, not an authored volume with a priority. The requirement's own second scenario — a scene with no volumes is correctly lit — is the state the tree is in, which is exactly why a green here would be indistinguishable from the feature existing. What would observe it: two identical rooms, one inside a volume asking for higher probe density, resolving to different probe counts within one allocation."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Convergence and capture"
+evidence = "test:integration.render_gi_pipeline"
+case = "converged mode reaches a stable state and reports how far it is from one"
+note = "the metric and the mode, and the property that makes the mode worth having: two independent systems advanced to convergence from the same start take the SAME number of frames and resolve to the same radiance BIT FOR BIT, which is what a golden image depends on and what a tolerance-based check would have hidden. The case also requires the convergence metric to exist per region and to be queryable, which is the `this lighting change has not finished converging` state the requirement asks to be reportable rather than suspected."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Lightmap baking"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED, and said so in the code rather than here: `src/rendering/gi/bake.h` names lightmap atlases as NOT HERE AND NOT CLAIMED, and the module README repeats it. What exists is the path tracer, the ground truth and the cache seeding — the parts of this requirement's sentence about seeds — and what does not is the bake itself: no UV2 gather, no atlas, no dilation, no irradiance/directional/SH output selection, no shadow mask and no incremental rebake. A `Lightmap` radiance source enumerator exists so a lightmap that arrives later slots into `exclusion_for()` without changing the resolve, and that is the only thing in the tree that mentions one. What would observe it: a bake of a small room producing an atlas whose texels a case reads back, and a directional bake still showing normal-map response. It needs the cook-side pipeline `asset-import-pipeline` owns."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "UV2 and chart packing"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED, and it is import-time work rather than runtime work: automatic unwrapping at a configurable texel density, chart padding, distortion limits, atlas packing and a cached unwrap reused on reimport are `asset-import-pipeline`'s surface, and no mesh in this tree carries a UV2 channel. Deferred alongside `Lightmap baking`, which is its only consumer — packing charts for a bake that does not exist would be a green tick with nothing behind it. What would observe it: importing a mesh without UV2, reimporting it unchanged and requiring the cached unwrap to be reused, then requiring border texels to be dilated so a seam is not visible at the bake resolution."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Irradiance volumes and light probes"
+evidence = "exempt:m11e"
+note = "PARTLY PRESENT AND DELIBERATELY NOT CLAIMED. The requirement asks for a BAKED 3D grid of SH probes with placement modes (regular, adaptively subdivided, hand-placed) sampled trilinearly with a visibility term. The visibility term and the SH-L1 encoding exist and are tested in the radiance cache, and `exclusion_for()` already treats an irradiance volume as a source that excludes the dynamic ones — but the volume itself does not: there is no baked-grid asset, no placement mode, and no trilinear sample across eight surrounding probes of such a grid. Recording the radiance cache's probe visibility as an answer here would be exactly the green tick that outlives its subject. What would observe it: a character walked through a baked room and lit by interpolated volume irradiance rather than by the lightmap, with a probe inside geometry zeroed by the visibility term."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Offline path tracer and ground truth"
+evidence = "test:integration.render_gi_pipeline"
+case = "a bake seeds the caches so the first frame is not black"
+note = "the tracer's three purposes are one object: the case path-traces the same scene the real-time path holds — it takes the system's own `WorldTracer`, so a divergence would be a real difference rather than a second representation — seeds the surface cache, the radiance cache and the reflection probes from it, and then requires the seeded system to answer a query with confidence on its FIRST frame against an unseeded control whose probes are all invalid. The comparison mode is `compare_against_reference`, and integration.render_gi_fallback measures a real error with it: mean relative difference 0.0751 over eighty points."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "Illumination diagnostics"
+evidence = "exempt:m11e"
+note = "PARTLY PRESENT, AND THE HALF THAT IS MISSING IS THE HALF THE REQUIREMENT IS ABOUT. What exists: `ResolveResult` names the dominant source, the mask of contributing sources and the confidence, and `IlluminationFrameReport` carries the world tier, invalidations serviced and by kind, probe and surface counts and the convergence. What does not: no per-pixel record of WHICH PROBES contributed and their age, no attribution of cost to geometry or lights, and no per-stage measured cost at all — the profiler view this requirement asks for (screen trace, world trace, probe update, surface cache, denoise, reflection resolve, each with a time) does not exist, because this module measures no time: `GiBudget` is HANDED its cost from outside, which is the deliberate design `budget.h` argues for. Recording the frame report as an answer would record a census as a profile. What would observe it: a pixel query returning the probes and ages behind it, and a per-stage cost breakdown wired to `diagnostics-profiling-and-crash`'s profiler, which layer 4 does not reach today."
+
+[[coverage]]
+row = "rendering-global-illumination"
+requirement = "GI debug visualisation"
+evidence = "exempt:m11e"
+note = "NOT IMPLEMENTED, and it is the requirement most visibly waiting on something else: nineteen named debug views (lightmap charts and texel density, probe positions, irradiance, age, error and visibility, clipmap bounds and residency, surface cache contents, distance field slices, cards, probe influence volumes, screen-trace hit and confidence, tier selection per pixel, ray counts, denoiser confidence, disocclusion, and the three contributions in isolation) and none of them exists — there is no view-mode registry in this module and no renderer-side surface for one. Several of the underlying numbers exist and are tested (tier selection, confidence, probe validity and age, field residency), so what is missing is the VIEW rather than the datum. What would observe it: the engine's view-mode enumeration listing them and a headless capture of one whose pixels differ from the lit image, which is how `view-modes` observes the same thing for the renderer's own debug views."
+
+# --- denoising --------------------------------------------------------------------------------------
+#
+# ALL SIX ANSWERED, and none by an exemption: `src/rendering/denoise/` has three suites and every
+# requirement of this row has a case or a proven criterion that observes it. The sixth cost a field:
+# see the note on `Denoising diagnostics`.
+
+[[coverage]]
+row = "denoising"
+requirement = "One denoising framework"
+evidence = "criterion:m11c:denoiser-signals-have-producers"
+note = "the requirement is that EVERY stochastic signal is denoised by this one subsystem, and the way that claim rots is the way it had already rotted here: until M11.c nothing in this tree called `Denoiser::denoise()` outside the denoiser's own two suites, so `the framework handles five signals` was readable off an enumerator and off nothing else. The criterion reads the per-signal invocation census after a frame of the REAL producer and prints which signals have a producer and which do not; `every declared signal has a producer that routes through the framework` in integration.render_gi_signals is the case it runs, and it checks the census is zero before anybody produces anything so the assertion cannot pass on a counter initialised to one. falsifiability.toml records the proof: deleting the ambient-occlusion routing line leaves a tree that compiles and the case goes red naming the signal."
+
+[[coverage]]
+row = "denoising"
+requirement = "Denoising pipeline"
+evidence = "test:integration.render_denoise_filter"
+case = "accumulation and filtering reconstruct a stable image from a noisy one"
+note = "the four stages in order, measured as error against the converged answer: one frame of spatial filtering already beats the raw signal, twenty-four frames of accumulation on top of it beat that, and the settled result is within a fifth of the raw error. The requirement's two scenarios are the two cases beside it — `a converged signal is not blurred` (many samples and low variance: zero passes applied and zero filter radius, not merely fewer) and `a disoccluded region widens the filter to compensate`. The `SHALL NOT implement its own history handling` half is structural: the reprojection arrives as `HistoryGuidance`, and this module computes no motion vector and decides no disocclusion."
+
+[[coverage]]
+row = "denoising"
+requirement = "Denoising is material and geometry aware"
+evidence = "test:integration.render_denoise_filter"
+case = "identity beats inference: no bleeding across an object edge"
+note = "the scene is built so that ONLY identity can answer: both halves of the image sit at the same depth with the same normals and very different values, so a filter stopping on depth and normals alone bleeds across the boundary and one stopping on the visibility buffer's instance and material identifiers does not. The case runs the same scene twice, with the identifiers and without, and requires the blind run to bleed and the identity run not to — which is `Identity beats inference` as a difference rather than as an assertion about one run."
+
+[[coverage]]
+row = "denoising"
+requirement = "Signal-specific configuration"
+evidence = "test:unit.render_denoise"
+case = "every signal declares what kind of signal it is"
+note = "the table this requirement asks each signal to supply — domain (radiance or visibility), lobe shape, roughness modulation, history length — read back per signal and required to differ where the signals differ. The two behavioural halves are the cases beside it: `a smooth reflection stays sharp and a rough one tolerates a wide filter` in integration.render_denoise_filter measures the filter radius for a lobe-shaped signal at two roughnesses and requires a hemispherical one to be unaffected by roughness, and `a visibility term is denoised as occlusion rather than as radiance` in integration.render_gi_signals runs the shadow-contact claim through the real producer rather than through a buffer written in the denoiser's own test."
+
+[[coverage]]
+row = "denoising"
+requirement = "Denoising quality and budget"
+evidence = "test:integration.render_denoise_filter"
+case = "denoiser quality is a lever the budget can pull"
+note = "a LEVER means the positions must actually differ in cost and in result, and the case walks the declared ladder and requires the coarsest position to apply fewer passes and to cost less than position 0 — a ladder whose positions cost the same would be a budget lever that buys nothing, which is the defect `design.md` 2.10 asks every lever to rule out. The reference half is `the raw signal is inspectable and the bypass says so` in unit.render_denoise: disabled returns the input unchanged and `Diagnostics::bypassed` says which happened, so a bypass cannot be mistaken for a very good filter."
+
+[[coverage]]
+row = "denoising"
+requirement = "Denoising diagnostics"
+evidence = "test:integration.render_denoise_filter"
+case = "residual noise is explained: few samples, a rejected history, and the edges"
+note = "WRITTEN FOR THIS MAP, AND IT COST A FIELD. The requirement's scenario asks the diagnostics to say whether residual noise is low sample count, rejected history, or A FILTER CONSTRAINED BY EDGE-STOPPING WEIGHTS, and the third had no field: `mean_filter_radius` reports the step the a-trous cascade reached, which a rejected tap does not change, so a filter hemmed in by material boundaries reported exactly what a converged one reports. `Diagnostics::edge_rejected_tap_fraction` is the field that was missing. The case produces the three causes in turn and requires the diagnostics to tell them apart — and for the third it runs the SAME scene twice, with the visibility buffer's identifiers and without, requiring mean sample count, rejected-history fraction, passes applied and mean filter radius to be IDENTICAL between the two while the rejection fraction differs, which is what says the new field is the only one that expresses it."
+
+# --- ray-tracing-infrastructure ---------------------------------------------------------------------
+#
+# ALL SIX ANSWERED BY A CASE. `src/rendering/raytracing/` traces `cy::Bvh` on the processor — the
+# interface is the deliverable and the device is what is stood in for, which `query.h` says at the
+# top of the file — so every case here builds a real structure and traces a real ray, and none of
+# them needs a GPU. The device half of the capability claim is `m11c:ray-tracing-on-the-device`, a
+# gpu-gated criterion of the M11.c ledger, and it is not what any entry below leans on.
+
+[[coverage]]
+row = "ray-tracing-infrastructure"
+requirement = "Ray tracing infrastructure is a renderer service"
+evidence = "test:unit.render_raytracing"
+case = "ray counts are attributed to the consumer that issued them"
+note = "`One structure serves many consumers`: reflections, shadows and global illumination issue queries against ONE service holding one top-level structure, and the per-consumer counters show three different consumers and one shared structure rather than three structures. The other half — consumers build, refit and own nothing — is a property of the link graph, and integration.render_gi_fallback exercises it from the consumer's side: the illumination system holds an `AccelerationService`, traces through it, and the builds and refits in its frame report are the service's."
+
+[[coverage]]
+row = "ray-tracing-infrastructure"
+requirement = "Geometry adapters"
+evidence = "test:unit.render_raytracing"
+case = "the adapter table names a maintenance policy for every geometry source"
+note = "the requirement's six-row table, row for row, as data: static is Static, skinned is Refit with a quality floor above zero, virtual geometry and terrain use a proxy, mesh particles are InstanceOnly and procedural is Rebuild. The two rows that carry consequences have their own cases beside it — `the virtual geometry proxy carries its declared error onto every hit` requires the declared error to reach the hit record so a consumer cannot present an approximate hit as exact, and `a skinned mesh refits and rebuilds only when the pose leaves its bounds` drives the refit-then-rebuild threshold with a real pose."
+
+[[coverage]]
+row = "ray-tracing-infrastructure"
+requirement = "Structure lifecycle and budget"
+evidence = "test:unit.render_raytracing"
+case = "a residency spike is spread across frames and nothing stalls"
+note = "twenty instances arriving in one frame against a budget of four builds: four built, sixteen deferred, and — the sentence that matters — the sixteen EXCLUDED FROM TRACING rather than waited for, which is the difference between a budget and a stall. The case then runs to completion and requires exactly five frames and no instance left excluded. `an unreferenced structure is evicted and its memory goes back` is the eviction half, including the rule that a declaration alone keeps a structure alive, and `a thousand instances of one mesh share one bottom-level structure` in integration.render_raytracing_scale is the sharing scenario at the size the requirement names."
+
+[[coverage]]
+row = "ray-tracing-infrastructure"
+requirement = "Ray query interface"
+evidence = "test:unit.render_raytracing"
+case = "the three query kinds are three questions, and a hit names the scene's own ids"
+note = "WRITTEN FOR THIS MAP: `QueryKind::AnyHit` appeared in no case in this suite before it, and neither did the per-triangle material table. The case stacks two instances on one ray and requires closest hit to answer with the nearer surface, any hit to answer with one of the two, and the shadow query to answer occlusion alone from an interval — false for a segment stopping short, true for one that reaches. Then the identities: the hit carries the instance id the GPU scene declared (the instances are added in an order where the service's own slot is not the identifier, so a slot index would be visibly wrong) and the material id the TRIANGLE resolves to where a table is declared, falling back to the instance's where none is — which is what lets a hit be shaded through the same material path as rasterisation. The inline-versus-pipeline distinction the requirement also draws has no device behind it here: this service traces on the processor, `trace()` IS the inline form, and a ray tracing pipeline object exists nowhere in the tree — it would be observed by a backend that dispatches hit and miss shaders, which is `rhi-and-render-graph`'s at M11.d."
+
+[[coverage]]
+row = "ray-tracing-infrastructure"
+requirement = "Capability gating and fallback"
+evidence = "test:unit.render_raytracing"
+case = "disabled by profile behaves exactly like a device without ray tracing"
+note = "the requirement's second scenario is the load-bearing one — a profile that disables ray tracing on capable hardware must behave EXACTLY like absent hardware, so the fallback path stays exercised — and a bool cannot express it, because two causes must produce one indistinguishable behaviour. The case drives both causes and requires byte-identical observable results, and `is_active is the only predicate a consumer may branch on` beside it keeps the cause out of the behaviour. `an inactive service builds nothing and holds no structure memory` and `a consumer that asks an inactive service is counted, not hidden` are the other two halves. The DEVICE side of the same claim — that the Vulkan backend fills the capability truthfully — is `m11c:ray-tracing-capability-honest` and the gpu-gated `m11c:ray-tracing-on-the-device`."
+
+[[coverage]]
+row = "ray-tracing-infrastructure"
+requirement = "Ray tracing diagnostics"
+evidence = "test:unit.render_raytracing"
+case = "structure memory is attributable to the geometry source that asked for it"
+note = "`WHEN acceleration structure memory is high THEN the report SHALL attribute it to geometry sources and assets` — the case builds one static mesh and one virtual-geometry proxy, requires both per-source figures to be above zero, and requires them to SUM to the reported total, which is what stops attribution from being a second number that drifts from the first. The rest of the required report is read by the cases beside it: builds, rebuilds, refits and deferred builds against budget and instances excluded for lack of a structure in `a residency spike is spread across frames and nothing stalls`, and traced ray counts per consumer in `ray counts are attributed to the consumer that issued them`."
+
+# --- rendering-architecture --------------------------------------------------------------------
+#
+# FOURTEEN OF SIXTEEN ANSWERED BY A CASE AND TWO EXEMPT, written by reading the specification
+# requirement by requirement. THE RULE THIS BLOCK FOLLOWS, stated once so the next reader can check
+# it rather than infer it: a requirement is answered when a named case evaluates the sentence whose
+# violation would make the requirement FALSE, and the note says what the case does not reach. Where
+# the thing a requirement asks for is not built at all, the entry is an exemption naming what is
+# absent and what would observe it — not a case over a neighbouring claim.
+#
+# TWO CASES WERE WRITTEN FOR THIS BLOCK because the requirement was testable and untested, which is
+# the honest outcome when neither (a) nor (c) is true:
+#
+#   Frame structure            `two views of one scene draw from one prepared instance set, not one
+#                              each` in src/servers/render/tests/test_server.cpp. Nothing in this
+#                              tree had ever collected draws for a SECOND view.
+#   Render targets and formats `the scene colour chain is floating point, and the two targets that
+#                              are not say so` in src/rendering/forward/tests/test_frame.cpp. No
+#                              case in the tree read a format back out of the graph.
+#
+# AND ONE THING THE NEXT READER SHOULD NOT TRIP OVER. src/rendering/scene/tests/ holds
+# test_snapshot.cpp, test_sort_key.cpp and test_gpu_scene.cpp, and `unit.render_extract` — the only
+# suite declared in that directory — names NONE of them in its SOURCES. They are compiled by
+# nothing. `requirements.py` searches a suite's whole directory for a `case`, so an entry could name
+# a case out of one of those files and resolve green over a file no build reads. No entry below
+# does; every `unit.render_extract` case named here is in test_extract.cpp.
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Handle-based render server"
+evidence = "test:unit.render_server"
+case = "a server produces a sorted draw list with no world and no device"
+note = "the requirement's first scenario verbatim — a test drives `RenderServer` through handles and gets a frame's draw list with no ECS world and no scene tree — and it is a property of the BUILD rather than of the case: `cy::servers-render` is layer 2 and the suite includes no world, node, device or window header, so the case could not construct one. `destroying a shader invalidates the materials that depend on it` beside it is the dependency-invalidation scenario, and `a stale handle is answered no rather than aliasing what replaced it` is the generational half of \"expose it through generational handles\"."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Scene, view, and instance model"
+evidence = "test:unit.render_server"
+case = "views are creation-ordered and there is no main view"
+note = "the sentence the rest of the requirement hangs off — \"Views SHALL be first class and plural. The main camera is one view among many\" — asserted where it can be false: the server's view list is creation-ordered, a shadow view is an ordinary member of it, and destroying the first leaves no successor promoted. `a layer mask excludes an instance from a view without touching the instance` and `a view derives its matrices and its camera-relative origin from one pose` carry the instance model and the camera-supplies-the-view scenario. NOT CLAIMED HERE: view FAMILIES. `ViewDescription::family` is a declared field, `kNoViewFamily` its default, and nothing in this tree reads it — so \"the GPU scene, shadow maps, and acceleration structures SHALL be prepared once and consumed by both\" has no consumer to observe."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Simulation-to-render snapshot"
+evidence = "test:unit.render_extract"
+case = "a static crowd is skipped whole and only the chunks that changed are re-read"
+note = "the requirement's hardest sentence is \"Extraction SHALL be incremental: only instances whose relevant components changed since the last extraction SHALL be re-extracted, using ECS change detection\", and the case asserts it at the granularity the ECS actually offers — a chunk nothing wrote is not READ, with `examined` at zero and `chunks_skipped` above it on an unchanged tick. `both placements cross the boundary, so the frame can blend between them` is the interpolation scenario and `the buffer being written is never the buffer being read` is the coherent-snapshot one, both in test_extract.cpp."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Frame structure"
+evidence = "test:unit.render_server"
+case = "two views of one scene draw from one prepared instance set, not one each"
+note = "WRITTEN FOR THIS MAP. The requirement's only scenario is \"WHEN several views render the same scene in one frame THEN instance and material buffers SHALL be prepared once and shared across views\", and nothing in this tree had ever collected draws for a second view. The failure this observes is not a blank second view, it is a second PREPARATION: the case clears the GPU scene's dirty list, collects both views, and requires the reserved slots, the high water and the producer count unchanged and the dirty list still empty, then requires both views' draws to name the same slots and the same material table entries. Six records where there are three is what a per-view prepare would look like. The stage LIST itself — `FrameStage`, seven values in the specification's order — is the report's, and no case walks a frame through all seven."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Pipelines are pluggable"
+evidence = "exempt:m11e"
+note = "THERE IS NO `RenderPipeline` INTERFACE IN THIS TREE. The requirement's load-bearing sentence is \"The concrete rendering pipeline SHALL be a replaceable component implementing a `RenderPipeline` interface that receives the snapshot and view list and populates the render graph\", and what exists instead is `RenderPipelineKind` — an enumeration of four names in `cy/rendering/arbiter/profiles.h` that a profile selects — with exactly one implementation behind it, `cy::rendering-forward`. Nothing can be registered, nothing can be replaced, and `Null` and `Mobile` name no code. The one sentence that IS observed is \"the documentation SHALL state their strengths rather than presenting one as strictly better\", by `profiles: every pipeline states its strengths rather than a ranking` in `unit.render_arbiter` — and recording that as the answer to this requirement would be answering \"is the pipeline replaceable?\" with \"the four names are documented\". WHAT WOULD OBSERVE IT: a second pipeline registered by a caller, receiving the same snapshot and graph builder, rendering the same scene — which is the visibility-buffer pipeline `rendering-materials-and-shading` and `virtual-geometry` both wait on."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Render passes are extensible"
+evidence = "test:unit.render_forward"
+case = "the prepass mode is derived from what later passes need"
+note = "the requirement's sharp half is the OPTIONAL RESOURCE contract — \"SHALL be able to request optional resources (depth, normals, motion vectors), which the pipeline then guarantees to produce\" — and this case is that contract in both directions: a consumer asking for ambient occlusion moves the prepass to `DepthNormal`, one asking for anything temporal moves it to `DepthNormalVelocity`, and motion blur alone still allocates velocity. `a disabled feature has no pass and no target` beside it is the second scenario, where a pass nothing asked for is not declared and its target is never created. The extension POINTS are `FramePassKind`'s stages with a caller's `FramePassCallback` attached to each, which is a narrower seam than the requirement's eight named points: a caller records INTO a declared stage, and cannot insert a pass of its own between two of them."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Environment and post-process configuration"
+evidence = "exempt:m11e"
+note = "DECLARED PER VIEW AND CONSUMED BY NOTHING. `PostProcessSettings` and `EnvironmentSettings` are on both `ViewDescription` and `SceneDescription`, with `override_environment` beside them, and a grep over src/ finds no reader: no function resolves a view's settings against its scene's default, and `FrameAssembly` takes ONE view and builds its post chain from an `AssemblyDescription`, not from a view's settings. So the requirement's only scenario — \"WHEN a security-camera view sets its own post-process configuration THEN it SHALL render with that configuration while the main view is unaffected\" — has nothing that could render with it, and a case over the two structs would assert that a copy is a copy. WHAT WOULD OBSERVE IT: one frame, two views of one scene with different chains, each view's output showing its own. That needs the multi-view frame this row's `Frame structure` entry says does not exist yet."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Render targets and formats"
+evidence = "test:unit.render_forward"
+case = "the scene colour chain is floating point, and the two targets that are not say so"
+note = "WRITTEN FOR THIS MAP. No case in this tree read a resource's format back out of the graph, so \"HDR scene colour in a floating-point format (`RGBA16F` by default)\" was a line in a header that nothing checked. The case checks the default by name and then reads every colour-carrying target the frame creates — scene colour, screen-space GI, reflections, the opaque copy, the temporal history and the output — out of `RenderGraph::resource()` and requires each to be that format, because the way this breaks is one intermediate declared in something cheaper rather than the default being edited. Depth and the single-channel ambient-occlusion buffer are the control. NOT CLAIMED: the precision-fallback scenario. Nothing in this tree asks a device whether a format is supported, so \"the renderer SHALL select the best supported alternative and record the choice in diagnostics\" has no implementation, and the SDR/HDR output half is `OutputColorSpace` on a view nothing reads."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Debug visualisation"
+evidence = "test:unit.render_server"
+case = "every shape the specification names reaches the list"
+note = "the debug-draw API's whole surface — line, sphere, box, capsule, frustum and text — submitted and required to reach the list, with the primitive count checked against `kDebugVisualisationEnabled` so the SAME case is the shipping-build assertion on a shipping build. `a primitive submitted this frame is drawn in the next one` is the double-buffering scenario, `submission past the capacity is dropped and counted rather than growing` is \"no allocation per primitive\", and `a debug view mode round-trips through its name` covers the eighteen modes the requirement enumerates as a selectable set. The modes are a per-view selection and a name table; no shader in this tree renders one, which is why the mode case is named as a sibling rather than as this entry."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Render statistics"
+evidence = "test:unit.render_server"
+case = "a pass timing is attributable by name, and an unmeasured one says so"
+note = "the requirement's only scenario — \"each render graph pass SHALL report its GPU duration, attributable by pass name\" — and the case is about the distinction a report of this kind loses first: zero nanoseconds and \"not measured\" are different answers, and a report that could not tell them apart would print a pass that ran as free. The counters the requirement lists are produced rather than declared: `collect_draws` fills `ViewStatistics` on the path `a server produces a sorted draw list with no world and no device` drives, `a frame's totals are the sum of its views` folds them up, and `accumulate_into` in `unit.render_forward` carries a real frame's per-pass diagnostics into `FrameStatistics`."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Deterministic submission order"
+evidence = "test:render.null_frame"
+case = "render.null_frame: the same frame twice records the same stream"
+note = "the requirement's scenario asserted on the RECORDED COMMAND STREAM rather than on a draw list — the same scene rendered twice through the artefact's own renderer, with the null backend's command log hashed both times and required to match, alongside the plan hash and the pass count. It is the second and third frames that are compared, not the first and second, because the first carries the one-off texture upload and that difference is itself checked. The suite is declared unconditionally and needs no GPU. `the sorted order does not depend on the order the draws were published in` and `sort key: the process hash seed does not reach the ordering` in `unit.render_server` are the sort key's own half, which is where the order is decided."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "GPU scene"
+evidence = "test:unit.render_server"
+case = "a consumer reads one flat array and cannot tell what produced a record"
+note = "the requirement's first scenario is that every producer occupies ONE representation, and the property that makes it true is negative: a consumer walking `[0, high_water())` has no producer table to consult and nothing in a `GpuInstance` says where it came from. The case reserves ranges from a CPU producer and a GPU-site producer and reads them back as one array. `a device-side producer cannot be written from the CPU` is the GPU-side-publication scenario, `releasing a producer's range removes its instances without a rebuild` the producer-removed one, and `bounds are published with the previous frame's alongside them` the previous/current bounds sentence that shadow invalidation and motion vectors share."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Renderer profiles"
+evidence = "test:unit.render_arbiter"
+case = "profiles: a device missing a capability falls back, and the diagnostic names it"
+note = "the requirement's second scenario, and the case is exact about what the diagnostic has to carry: the missing capability AND the feature that asked for it, checked against a capability mask this engine really lacks today rather than an invented one. It then requires the profile it fell back to to be one the device can actually run, which is the half that would rot into a fallback nobody validated. `profiles: all four are internally consistent and the arbiter accepts each` is the four-shipped-profiles claim and `profiles: a project's own profile needs no engine change` is \"a profile SHALL NOT be a separate renderer implementation\" observed from the project's side."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Renderer budget arbiter"
+evidence = "test:integration.render_arbiter_sweep"
+case = "arbiter sweep: the operating point is swept too, and the envelope holds inside it"
+note = "the requirement writes its own verification method into a scenario — \"the verification SHALL sweep the NOMINAL COST as well as the step magnitude, and SHALL assert the envelope — because one nominal cost can make any control law look settled, for the same reason one step magnitude can\" — and this case is that sweep. `arbiter sweep: 71 step loads settle, none oscillates, none settles over budget` is the convergence claim and `arbiter sweep: authored quality returns on every load when the spike ends` the restoration one; `arbiter: pinned mode is total, and the overrun is reported rather than corrected` is the total-pinning sentence and `arbiter: every controller running its own copy of the decision oscillates` is the control that shows the single-arbiter rule is load-bearing."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Render features"
+evidence = "test:unit.render_forward"
+case = "a disabled feature has no pass and no target"
+note = "\"a disabled feature SHALL contribute no passes and allocate no resources\" is the requirement's operative sentence and the one an implementation answers most often with a branch that runs and does nothing. The case requires ABSENCE: no declared pass for ambient occlusion, screen-space GI, reflections or the temporal stage, and `kInvalidResource` for each of their targets — the pass was never declared, so the graph never allocated. Turning one on is the control, adding one pass, its target and the normal buffer it reads. `a screen-space feature without a prepass is refused, not silently wrong` beside it is the dependency scenario: a feature whose producer is missing is refused rather than executed against absent data."
+
+[[coverage]]
+row = "rendering-architecture"
+requirement = "Render pipeline configuration"
+evidence = "test:unit.render_arbiter"
+case = "configuration: an over-subscribed budget is caught at configuration time"
+note = "the requirement's second scenario verbatim, and the case takes the finding apart rather than checking that validation failed: the issue carries the declared sum AND the budget it exceeded, so a diagnostic can say by how much. `configuration: the layers apply base, then the asset, then the platform` is the platform-override scenario and `configuration: a rendering change appears as a diff of the asset` is the reviewable-diff one — which is the sentence that makes the configuration an asset rather than scattered settings."
+
+# --- rendering-geometry-and-resources -----------------------------------------------------------
+#
+# TEN OF ELEVEN ANSWERED BY A CASE AND ONE EXEMPT. Read requirement by requirement under the same
+# rule the block above states. Two of the row's suites deserve a word, because a reader looking for
+# them will look in the wrong place: the mesh, vertex-compression and texture-format cases are in
+# `unit.render_server` (src/servers/render/tests/test_mesh.cpp and test_texture.cpp) rather than in
+# `unit.render_geometry`, which is src/servers/render/GEOMETRY/tests and holds skinning, blend
+# shapes, the resource ledger, mip streaming and the ring; and the cooker's own texture policy is
+# `unit.import`'s, in tools/import/tests/test_texture.cpp, which is where the format table, the mip
+# chain and the alpha-coverage rescale actually live.
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Mesh representation"
+evidence = "test:unit.render_server"
+case = "a depth pass binds the position stream and an alpha-tested one adds UVs"
+note = "the stream split exists so a pass binds only what it needs, and the requirement's first scenario is the one that proves the split is real rather than a table in a header: a shadow or depth pass takes the position stream alone, and an alpha-tested material adds UV and nothing else. `the index width follows from the vertex count and nothing else` is the 16/32-bit index sentence, and `mesh surfaces and LODs are copied into the server's own storage` is the surface model — a vertex buffer set, an index buffer, a material slot and bounds per surface."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Vertex compression"
+evidence = "test:unit.render_server"
+case = "a very large mesh is not quantised, and the number says why"
+note = "\"the engine SHALL detect when quantisation would produce visible error and warn\" is the sentence that makes this requirement more than a list of encodings, and it is the requirement's second scenario. The case takes a mesh whose bounding box is large relative to its detail, requires the quantiser to decline it, and requires the error figure that decided to be reported rather than the decision alone. `octahedral encoding round-trips a direction in both hemispheres`, `the tangent sign survives the encoding it is packed into`, `UVs quantise relative to the surface's own rectangle`, `positions quantise relative to the bounding box, and the error is reported` and `colours pack into one word and come back` are the four encodings the requirement enumerates."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Mesh LOD"
+evidence = "test:integration.import_mesh"
+case = "mesh: a texture seam is not collapsed across"
+note = "\"Simplification SHALL preserve UV seams, normals within a tolerance, and material boundaries\" is the sentence a simplification library silently violates, and the case builds the only geometry in which the violation is detectable — a grid split into two charts whose seam vertices share a position and differ in UV — and requires the collapse to happen along the seam rather than across it. `mesh: simplification reaches its target and is deterministic` is the reduction-target half and `gltf: a level-of-detail chain is generated to the configured depth` in `integration.import_gltf` is the chain at import; `LOD selection follows screen coverage, and the bias moves it` in `unit.render_server` is the per-level screen-coverage threshold the chain is selected by."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Instancing"
+evidence = "test:unit.render_server"
+case = "adjacent draws sharing pipeline, material and mesh merge into one instanced batch"
+note = "the requirement's first scenario is that the merge happens \"without the content author doing anything\", so the claim is about the SUBMISSION path rather than about an authored component: the case sorts a draw list and requires the batcher to fold the runs the sort brought together, with `an empty draw list produces no batches and no error` as the degenerate case beside it. `the key's fields read back, which is what automatic instancing merges on` is the same claim from the sort key's side. The explicit instanced-mesh half — a transform buffer, a visible-count cap and GPU culling producing indirect arguments — is `gpu cull: coverage selects the level, and the draw carries that level's arguments` in `unit.render_gpu_culling`, and is not claimed here."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Skinning"
+evidence = "test:unit.render_geometry"
+case = "skin dispatch: the pose offset addresses this skin's slice of the shared world"
+note = "\"Bone matrices SHALL be read from the GPU pose world, the shared GPU-side pose representation, rather than from a buffer uploaded independently per consumer\" is the requirement's structural sentence, and the offset into that shared world is where it is observable: the case puts one skin's two matrices behind two identities, so a dispatch ignoring the offset reports the rest position and one applying it twice runs off the end, and a pose too short to reach the slice is refused rather than read past. Its expected values are worked out on paper rather than captured from the reference. `skinning: the output buffer is double buffered, for motion vectors`, `skinning: bounds come from the bone transforms, not from the bind pose` and `skinning: a baked instance does not skin, and costs no output buffer` carry the double buffering, the skinned bounds and the animation-LOD tier."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Blend shapes"
+evidence = "test:unit.render_geometry"
+case = "blend shapes: only the active shapes' deltas are read"
+note = "the requirement's only scenario verbatim — fifty shapes, five with non-zero weight, five delta lists read — and the case goes past it to the two things that make the threshold worth having: a rig left at 1e-7 by a curve is not active, and a negative weight is a shape applied backwards and IS. `blend shapes: storage is sparse, and an unsorted or duplicated list is refused` is the sparse-storage sentence, and `blend shapes: a delta moves the normal and tangent frame, not only the position` in test_skin_dispatch.cpp is the position/normal/tangent triple applied in the same pass as skinning."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Texture formats and compression"
+evidence = "test:unit.import"
+case = "texture: usage and platform decide the format, and nothing else does"
+note = "\"Textures SHALL declare their usage (colour, normal, data, HDR) so the cooker selects an appropriate format and colour space automatically\" is the requirement's operative sentence, and the case is the whole policy as a table: BC7, BC5, BC4, BC6H and the two ASTC modes chosen from usage and platform family alone, with interface art deliberately uncompressed. Every wrong choice in it is invisible until it is expensive. `texture: a mip chain reaches one by one and averages in the right space` is the correct-colour-space mip chain and `texture: alpha coverage is preserved when asked for` is the masked-foliage scenario; `texture: a normal map marked sRGB is reported with the setting that would fix it` is the diagnostic that keeps the declaration honest."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Texture streaming"
+evidence = "test:unit.render_geometry"
+case = "mip streaming: a non-resident mip falls back to the highest resident one"
+note = "\"never block the frame — a non-resident mip SHALL fall back to the highest resident one\" is the sentence that makes mip streaming first class rather than a stall, and the case is written so that it CANNOT fail by blocking: the lookup answers a level, never an error. It walks the requirement's own scenario — request a finer mip, keep sampling the coarse one while it is pending, swap when it commits — and then requires eviction to stop at the tail, which is \"the lowest few mips SHALL always be resident so no texture is ever entirely missing\" restated as behaviour. `mip streaming: the tail is a guarantee, and a tail of zero is refused` is the configuration half; the shared residency policy the eviction is required to follow is `residency`'s row and is not claimed here."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Procedural and dynamic geometry"
+evidence = "test:unit.render_geometry"
+case = "geometry ring: each frame writes its own slice, and the peak is remembered"
+note = "the requirement's only scenario is the dynamic mesh — \"it SHALL write into a dynamic mesh whose buffers are ring-buffered across frames in flight\" — and the case walks the ring past its own depth so that the frame which REUSES a slice is the one asserted, not merely the frames that fill it, with the peak that sizes the ring next time and the overflow count beside it. `geometry ring: an allocation that does not fit is refused rather than wrapped` is the refusal that keeps a frame from overwriting a slice the device is still reading. The mesh builder's half — welding, normal and tangent generation, LOD-friendly output — is `mesh: welding merges coincident vertices and keeps hard edges split` and `mesh: tangents need normals and texture coordinates, and say so` in `integration.import_mesh`; the immediate-mode builder is the debug-draw list this map answers `rendering-architecture`'s \"Debug visualisation\" with."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Resource residency and lifetime"
+evidence = "test:unit.render_geometry"
+case = "ledger: a resource is released only after the frames in flight complete"
+note = "the requirement's scenario is a level unload, and the defect it is written against is the version of the rule that is correct on a processor and works in testing on a device: free when the count reaches zero. The case drops the last reference and requires the bytes to STILL be charged, requires the retire at the next frame index to release nothing, and requires the frame after the frames in flight to be the one that reclaims them and reports it. `ledger: memory is reported by category, and a budget reports rather than refuses` is the by-category report the requirement enumerates and `ledger: eviction candidates are streamable, in the right category, largest first` is the budget's eviction of streamable content."
+
+[[coverage]]
+row = "rendering-geometry-and-resources"
+requirement = "Mesh and texture diagnostics"
+evidence = "exempt:m11e"
+note = "THE REPORT TYPE EXISTS AND NOTHING PRODUCES ONE. `GeometryStatistics` matches this requirement field for field — triangles, vertices, draws, an LOD histogram, a mip histogram that is the heat map, vertex bytes per pass, and overdraw as a fixed-point ratio — and a grep for the type over src/, samples/ and tools/ finds its own `clear()` and `merge()`, the two lines of the test that fills one by hand, and NOTHING ELSE. No pass, no draw path and no streaming system writes a single one of its fields, so `statistics: merging two views weights overdraw by draws rather than adding it` is arithmetic over a struct the case wrote: recording it as the answer would be answering \"does the engine provide these diagnostics?\" with \"the shape of the answer is declared\". The debug-view half is `DebugViewMode::MipLevel` and `::LodLevel`, two enumerators with a name table and no shader. WHAT WOULD OBSERVE IT: a frame that renders and comes back with non-zero triangles, a populated mip histogram and a vertex-bytes figure a stream split would move."

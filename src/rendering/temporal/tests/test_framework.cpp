@@ -10,6 +10,8 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/temporal/framework.h>
 
+#include <cstring>
+
 namespace {
 
 using cy::rendering::ConsumerId;
@@ -20,6 +22,7 @@ using cy::rendering::HistoryState;
 using cy::rendering::TemporalConfig;
 using cy::rendering::TemporalFramework;
 using cy::rendering::TemporalInvalidation;
+using cy::rendering::temporal_invalidation_name;
 using cy::rendering::TemporalView;
 
 cy::Allocator& allocator() noexcept {
@@ -285,4 +288,85 @@ CY_TEST_CASE(
         }
         // Destroyed here, holding 24 consumers and 96 history declarations.
     }
+}
+
+// `temporal-rendering` — "Invalidation events": the framework SHALL define and broadcast camera
+// cut, teleport, projection change, resolution change, SCENE LOAD OR RELOAD, and an EXPLICIT
+// application-triggered cut. Four of the six are observed by the two cases above; the two this case
+// adds are the two that only arrive through `signal_cut()`, and the second of them is the
+// requirement's own "Gameplay teleport" scenario — "it SHALL be able to signal a cut explicitly,
+// and all consumers SHALL respond".
+//
+// EVERY CAUSE IS WALKED HERE RATHER THAN THE TWO NEW ONES, because the diagnostic the requirement
+// asks for is "invalidation events AND THEIR CAUSES": a framework that invalidated on all six and
+// reported one name for all six would satisfy every other case in this file.
+CY_TEST_CASE("every invalidation cause the specification names invalidates, and says which it was") {
+    TemporalFramework framework(allocator());
+    CY_REQUIRE(framework.initialize(TemporalConfig{}).has_value());
+    const ConsumerId taa = framework.register_consumer("taa", true).value();
+    const ConsumerId fog = framework.register_consumer("volumetrics", false).value();
+
+    framework.begin_frame(view_at(cy::Vec3{0.0F, 0.0F, 0.0F}));
+    const HistoryId colour = framework.declare_history(taa, HistoryDeclaration{}).value();
+    const HistoryId scattering = framework.declare_history(fog, HistoryDeclaration{}).value();
+
+    // A cut a consumer signals, and a scene load: neither is derivable from the view, so neither
+    // reaches a consumer unless the framework carries it. `signal_cut` is the only door.
+    const TemporalInvalidation signalled[2] = {TemporalInvalidation::Explicit,
+                                               TemporalInvalidation::SceneLoad};
+    cy::Vec3 eye{0.0F, 0.0F, 0.0F};
+    for (const TemporalInvalidation cause : signalled) {
+        framework.mark_history_written(colour);
+        framework.mark_history_written(scattering);
+        CY_REQUIRE(framework.history(colour)->valid);
+        CY_REQUIRE(framework.history(scattering)->valid);
+
+        framework.signal_cut(cause);
+        eye.z -= 0.1F;  // a step, not a teleport: the cause under test must be the one reported
+        framework.begin_frame(view_at(eye));
+
+        CY_CHECK(framework.invalidated_this_frame());
+        // BOTH consumers, in the frame the cut lands, and neither of them detected anything.
+        CY_CHECK_FALSE(framework.history(colour)->valid);
+        CY_CHECK_FALSE(framework.history(scattering)->valid);
+        CY_CHECK_EQ(framework.statistics().last_cause, cause);
+        CY_CHECK_EQ(framework.statistics().invalidations[static_cast<cy::usize>(cause)], 1U);
+    }
+
+    // A signalled cause does not fire twice off one call, or a consumer that reconstructed
+    // spatially for one frame would go on doing it.
+    framework.mark_history_written(colour);
+    eye.z -= 0.1F;
+    framework.begin_frame(view_at(eye));
+    CY_CHECK_FALSE(framework.invalidated_this_frame());
+    CY_CHECK(framework.history(colour)->valid);
+
+    // And the remaining four causes, each reached the way it actually arrives, so that the tally
+    // the diagnostic reports is the six the specification enumerates and not one name six times.
+    framework.signal_cut(TemporalInvalidation::CameraCut);
+    eye.z -= 0.1F;
+    framework.begin_frame(view_at(eye));
+    CY_CHECK_EQ(framework.statistics().last_cause, TemporalInvalidation::CameraCut);
+
+    eye.z -= 900.0F;
+    framework.begin_frame(view_at(eye));
+    CY_CHECK_EQ(framework.statistics().last_cause, TemporalInvalidation::Teleport);
+
+    eye.z -= 0.1F;
+    framework.begin_frame(view_at(eye, 1920, 1080, 35.0F));
+    CY_CHECK_EQ(framework.statistics().last_cause, TemporalInvalidation::ProjectionChange);
+
+    eye.z -= 0.1F;
+    framework.begin_frame(view_at(eye, 1280, 720, 35.0F));
+    CY_CHECK_EQ(framework.statistics().last_cause, TemporalInvalidation::ResolutionChange);
+
+    const auto& counts = framework.statistics().invalidations;
+    for (const TemporalInvalidation cause :
+         {TemporalInvalidation::CameraCut, TemporalInvalidation::Teleport,
+          TemporalInvalidation::ProjectionChange, TemporalInvalidation::ResolutionChange,
+          TemporalInvalidation::SceneLoad, TemporalInvalidation::Explicit}) {
+        CY_CHECK_EQ(counts[static_cast<cy::usize>(cause)], 1U);
+        CY_CHECK(std::strcmp(temporal_invalidation_name(cause), "Unknown") != 0);
+    }
+    CY_CHECK_EQ(counts[static_cast<cy::usize>(TemporalInvalidation::None)], 0U);
 }

@@ -407,7 +407,8 @@ CY_TEST_CASE("the three query kinds are three questions, and a hit names the sce
     any.kind = QueryKind::AnyHit;
     const auto anywhere = service.trace(any);
     CY_REQUIRE(anywhere.hit);
-    CY_CHECK(anywhere.instance_id == 7U || anywhere.instance_id == 8U);
+    const bool one_of_the_two = anywhere.instance_id == 7U || anywhere.instance_id == 8U;
+    CY_CHECK(one_of_the_two);
     CY_CHECK_GE(anywhere.t, 3.0F - 1e-4F);
     CY_CHECK_LE(anywhere.t, 5.0F + 1e-4F);
 
