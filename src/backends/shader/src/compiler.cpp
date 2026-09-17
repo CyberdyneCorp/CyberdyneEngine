@@ -9,8 +9,10 @@
 #include <cy/core/base/assert.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <string_view>
 
 namespace cy::shader {
 namespace {
@@ -125,6 +127,223 @@ void destroy_spirv_compiler(Allocator& allocator, ShaderCompiler* compiler) noex
 [[maybe_unused]] const Status kSpirvBackendRegistered = register_spirv_backend();
 
 }  // namespace
+
+// --- The targets, and what two of them have to agree about ---------------------------------------
+
+const char* target_name(Target target) noexcept {
+    switch (target) {
+        case Target::SpirV:
+            return "vulkan-spirv";
+        case Target::Msl:
+            return "metal-msl";
+        case Target::Dxil:
+            return "d3d12-dxil";
+    }
+    return "unknown";
+}
+
+const char* target_short_name(Target target) noexcept {
+    switch (target) {
+        case Target::SpirV:
+            return "spirv";
+        case Target::Msl:
+            return "msl";
+        case Target::Dxil:
+            return "dxil";
+    }
+    return "unknown";
+}
+
+const char* target_extension(Target target) noexcept {
+    switch (target) {
+        case Target::SpirV:
+            return ".spv";
+        case Target::Msl:
+            return ".metal";
+        case Target::Dxil:
+            return ".dxil";
+    }
+    return ".bin";
+}
+
+bool parse_target(const char* text, Target& target) noexcept {
+    if (text == nullptr) {
+        return false;
+    }
+    for (usize index = 0; index < kTargetCount; ++index) {
+        const auto candidate = static_cast<Target>(index);
+        // Both spellings are accepted: a command line says "msl" and a cache key says "metal-msl",
+        // and a reader of either should not have to know which one this argument wanted.
+        if (same_name(text, target_short_name(candidate)) ||
+            same_name(text, target_name(candidate))) {
+            target = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+// --- TargetArtefact ------------------------------------------------------------------------------
+
+TargetArtefact::TargetArtefact(Allocator& allocator) noexcept
+    : bytes_(allocator), parameters_(allocator) {}
+
+Status TargetArtefact::adopt(Target target, Array<u8>&& bytes, Name entry_point,
+                             rhi::ShaderStage stage, Array<TargetParameter>&& parameters,
+                             const u32 (&thread_group)[3]) noexcept {
+    target_ = target;
+    bytes_ = std::move(bytes);
+    parameters_ = std::move(parameters);
+    entry_point_ = entry_point;
+    stage_ = stage;
+    thread_group_ = {thread_group[0], thread_group[1], thread_group[2]};
+    hash_ = assets::content_hash(bytes_.data(), bytes_.size());
+    stats_.spirv_words =
+        target == Target::SpirV ? static_cast<u32>(bytes_.size() / sizeof(u32)) : 0;
+    return ok();
+}
+
+bool bytes_match_target(Target target, Span<const u8> bytes) noexcept {
+    switch (target) {
+        case Target::SpirV: {
+            // The magic word, little-endian, as SPIR-V 1.x has spelled it since 2015.
+            constexpr u8 kMagic[4] = {0x03, 0x02, 0x23, 0x07};
+            return bytes.size() >= sizeof(kMagic) && (bytes.size() % sizeof(u32)) == 0 &&
+                   std::memcmp(bytes.data(), kMagic, sizeof(kMagic)) == 0;
+        }
+        case Target::Dxil: {
+            // A DXC container: the four-character code "DXBC" — kept from DXBC for compatibility,
+            // which is why a DXIL blob does not start with "DXIL" — and a "DXIL" chunk inside it.
+            // Both, because the header alone is also what a D3D11 bytecode blob starts with.
+            if (bytes.size() < 4 || std::memcmp(bytes.data(), "DXBC", 4) != 0) {
+                return false;
+            }
+            const std::string_view whole(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+            return whole.find("DXIL") != std::string_view::npos;
+        }
+        case Target::Msl: {
+            // Metal Shading Language is C++14 source: every module Slang emits opens by including
+            // the standard library and declaring the namespace, and a shader cannot use a single
+            // Metal type without them.
+            const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+            return text.find("metal_stdlib") != std::string_view::npos &&
+                   text.find("using namespace metal") != std::string_view::npos;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+/// One difference, written where both targets are named. Kept as a helper because a report that
+/// says "they disagree" and stops is a report that costs its reader a bisect.
+Status note_difference(DiagnosticLog& diagnostics, Target a, Target b, const char* what,
+                       std::string_view left, std::string_view right) noexcept {
+    char message[512] = {};
+    (void)std::snprintf(message, sizeof(message),
+                        "%s differs between %s and %s: '%.*s' against '%.*s'", what,
+                        target_name(a), target_name(b), static_cast<int>(left.size()), left.data(),
+                        static_cast<int>(right.size()), right.data());
+    return diagnostics.add(Severity::Error, message);
+}
+
+}  // namespace
+
+bool interfaces_agree(const TargetArtefact& a, const TargetArtefact& b,
+                      DiagnosticLog& diagnostics) noexcept {
+    bool agree = true;
+    if (a.entry_point() != b.entry_point()) {
+        (void)note_difference(diagnostics, a.target(), b.target(), "the entry point name",
+                              a.entry_point().text(), b.entry_point().text());
+        agree = false;
+    }
+    if (a.stage() != b.stage()) {
+        char left_stage[32] = {};
+        char right_stage[32] = {};
+        (void)std::snprintf(left_stage, sizeof(left_stage), "stage mask %u",
+                            static_cast<u32>(a.stage()));
+        (void)std::snprintf(right_stage, sizeof(right_stage), "stage mask %u",
+                            static_cast<u32>(b.stage()));
+        (void)note_difference(diagnostics, a.target(), b.target(), "the stage", left_stage,
+                              right_stage);
+        agree = false;
+    }
+    for (usize axis = 0; axis < 3; ++axis) {
+        if (a.thread_group()[axis] == b.thread_group()[axis]) {
+            continue;
+        }
+        char left[32] = {};
+        char right[32] = {};
+        (void)std::snprintf(left, sizeof(left), "%u", a.thread_group()[axis]);
+        (void)std::snprintf(right, sizeof(right), "%u", b.thread_group()[axis]);
+        (void)note_difference(diagnostics, a.target(), b.target(), "the workgroup size", left,
+                              right);
+        agree = false;
+    }
+
+    const Span<const TargetParameter> left = a.parameters();
+    const Span<const TargetParameter> right = b.parameters();
+    if (left.size() != right.size()) {
+        char left_count[32] = {};
+        char right_count[32] = {};
+        (void)std::snprintf(left_count, sizeof(left_count), "%zu parameters", left.size());
+        (void)std::snprintf(right_count, sizeof(right_count), "%zu parameters", right.size());
+        (void)note_difference(diagnostics, a.target(), b.target(), "the parameter count",
+                              left_count, right_count);
+        return false;
+    }
+    for (usize index = 0; index < left.size(); ++index) {
+        if (left[index].name != right[index].name) {
+            (void)note_difference(diagnostics, a.target(), b.target(), "a parameter name",
+                                  left[index].name.text(), right[index].name.text());
+            agree = false;
+            continue;
+        }
+        if (left[index].kind != right[index].kind) {
+            (void)note_difference(diagnostics, a.target(), b.target(),
+                                  left[index].name.c_str(),
+                                  rhi::descriptor_kind_name(left[index].kind),
+                                  rhi::descriptor_kind_name(right[index].kind));
+            agree = false;
+        }
+        if (left[index].count != right[index].count) {
+            char left_count[32] = {};
+            char right_count[32] = {};
+            (void)std::snprintf(left_count, sizeof(left_count), "%u elements", left[index].count);
+            (void)std::snprintf(right_count, sizeof(right_count), "%u elements", right[index].count);
+            (void)note_difference(diagnostics, a.target(), b.target(), left[index].name.c_str(),
+                                  left_count, right_count);
+            agree = false;
+        }
+    }
+    return agree;
+}
+
+// --- ShaderCompiler's two target methods ----------------------------------------------------------
+//
+// Defaults rather than pure virtuals: a front end that emits one interchange form and nothing else
+// is a legitimate front end — the passthrough is one — and making every implementation restate that
+// would be making the interface's second-largest question a copy-and-paste.
+
+Expected<TargetArtefact, Error> ShaderCompiler::compile_for(const CompileRequest& /*request*/,
+                                                            Target target,
+                                                            DiagnosticLog& diagnostics) noexcept {
+    char message[256] = {};
+    (void)std::snprintf(message, sizeof(message),
+                        "the '%s' front end emits no %s: it does not compile source", name(),
+                        target_name(target));
+    (void)diagnostics.add(Severity::Error, message);
+    return fail(ErrorCode::Unsupported, "this front end emits only the form it was handed");
+}
+
+bool ShaderCompiler::emits(Target /*target*/) noexcept {
+    // FALSE FOR SPIR-V TOO, WHICH READS WRONG UNTIL THE QUESTION IS READ EXACTLY. `emits` asks
+    // whether this front end can produce a target artefact from source — pipeline step 4 — not
+    // whether SPIR-V can reach a device through it. The passthrough consumes an already-compiled
+    // module and can neither retarget it nor produce a second one, so every answer it gives here is
+    // no, and `compile_for` above says the same thing in a sentence.
+    return false;
+}
 
 // --- CompiledShader --------------------------------------------------------------------------
 

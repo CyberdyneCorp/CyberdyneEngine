@@ -352,8 +352,11 @@ endfunction()
 # is why a slangc built with SLANG_ENABLE_DXIL=ON still reports "failed to load dynamic library
 # 'dxcompiler'". One copy, beside libslang.so, is the whole fix.
 #
-# IT IS A POST_BUILD COPY AND NOT A configure-time file(COPY) because $<TARGET_FILE_DIR:slang> is
-# the only spelling of that directory that stays correct across generators and configurations.
+# IT IS A BUILD-TIME COPY AND NOT A configure-time file(COPY) because $<TARGET_FILE_DIR:slang> is
+# the only spelling of that directory that stays correct across generators and configurations, and
+# it is its OWN TARGET rather than a POST_BUILD command on `slang` because add_custom_command(TARGET)
+# may only be called in the directory that created the target — and slang's is a FetchContent
+# subdirectory this file does not own.
 function(cy__slang_place_dxc)
     if(NOT CY_SHADER_DXIL OR NOT TARGET slang)
         return()
@@ -372,10 +375,11 @@ function(cy__slang_place_dxc)
         message(WARNING "CY_SHADER_DXIL is on and ${dxc_SOURCE_DIR} holds no DXC runtime library.")
         return()
     endif()
-    add_custom_command(TARGET slang POST_BUILD
+    add_custom_target(cy_place_dxc ALL
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_cy_dxc_runtime} "$<TARGET_FILE_DIR:slang>"
         COMMENT "placing DXC beside libslang so DXIL can be emitted"
         VERBATIM)
+    add_dependencies(cy_place_dxc slang)
 endfunction()
 
 function(cy__finalise_slang target)
