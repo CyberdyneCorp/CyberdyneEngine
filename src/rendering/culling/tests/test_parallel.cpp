@@ -94,7 +94,7 @@ void populate(SpatialIndex& index, cy::u32 count) noexcept {
         const auto step = static_cast<cy::f32>(instance);
         const cy::f32 z = (instance % 4U == 0U) ? 10.0F : -5.0F - (step * 0.05F);
         entry.bounds = cy::Aabb::from_center_extents(
-            cy::Vec3{(step - static_cast<cy::f32>(count) * 0.5F) * 0.05F, 0.0F, z},
+            cy::Vec3{(step - (static_cast<cy::f32>(count) * 0.5F)) * 0.05F, 0.0F, z},
             cy::Vec3{0.2F, 0.2F, 0.2F});
         entry.stable_id = instance + 1U;
         entry.gpu_slot = instance;
