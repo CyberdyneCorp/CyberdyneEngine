@@ -69,22 +69,32 @@ def milestone_label(identifier: str) -> str:
 
 
 def declared_gaps() -> list[dict[str, str]]:
-    """Every criterion that runs, fails, and names the rung that closes it."""
+    """Every criterion that runs, fails, and names the rung that closes it.
+
+    `from` IS THE RUNG THAT WROTE THE DECLARATION, WHICH IS NOT ALWAYS THE FILE IT LIVES IN. A gap
+    a later rung adds over a gate that is already green carries `known_gap_declared_by`, and reading
+    "declared at" off the ledger file instead would credit the declaration to the rung whose gate it
+    is a finding ABOUT — printing "declared at M11.a" for a row whose whole content is that M11.a
+    closed without declaring it. `owner` keeps the file, because the criterion is still that rung's.
+    """
     gaps: list[dict[str, str]] = []
     for identifier in criteria_module.available():
         for criterion in criteria_module.load(identifier).criteria:
             if not getattr(criterion, "known_gap", None):
                 continue
+            author = getattr(criterion, "known_gap_declared_by", "") or identifier
             gaps.append(
                 {
-                    "from": identifier,
+                    "from": author,
+                    "owner": identifier,
+                    "retroactive": "yes" if author != identifier else "",
                     "id": criterion.id,
                     "closes": getattr(criterion, "known_gap_closes", "") or "unstated",
                     "why": " ".join(str(criterion.known_gap).split()),
                     "describe": " ".join(str(criterion.describe).split()),
                 }
             )
-    gaps.sort(key=lambda g: (criteria_module.rung(g["closes"]), g["from"], g["id"]))
+    gaps.sort(key=lambda g: (criteria_module.rung(g["closes"]), g["owner"], g["id"]))
     return gaps
 
 
@@ -164,6 +174,15 @@ def never_seen_green() -> list[dict[str, str]]:
     A DECLARED GAP IS EXCLUDED and is section 1's, which is the whole difference between the two
     sections: a gap is a failure the rung declared, dated and pointed at a later rung, and the
     ledger keeps running it. What is listed here is a failure nobody declared at all.
+
+    A RETROACTIVE DECLARATION IS NOT AN EXCLUSION, and this is the half the field
+    `known_gap_declared_by` exists for. A gap a LATER rung writes over a gate that is already green
+    does not un-flip that gate: the fact the row records is that the gate went green over a failing
+    check, and that fact is exactly as true after somebody writes the declaration as before. So a
+    criterion carrying `known_gap_declared_by` STAYS HERE as well as appearing in section 1 — with
+    the rung that wrote it named, so the two readings cannot be confused. Excluding it would have
+    turned M11.c's finding that twenty-one criteria of two closed rungs were red into twenty-one
+    tidy rows in the table of debts somebody planned, which is the opposite of what was found.
     """
     if not FALSIFIABILITY.is_file():
         return []
@@ -174,6 +193,13 @@ def never_seen_green() -> list[dict[str, str]]:
         for identifier in criteria_module.available()
         for criterion in criteria_module.load(identifier).criteria
         if getattr(criterion, "known_gap", None)
+        and not getattr(criterion, "known_gap_declared_by", "")
+    }
+    declared_later = {
+        (identifier, criterion.id): getattr(criterion, "known_gap_declared_by", "")
+        for identifier in criteria_module.available()
+        for criterion in criteria_module.load(identifier).criteria
+        if getattr(criterion, "known_gap_declared_by", "")
     }
     described = {
         (identifier, criterion.id): " ".join(str(criterion.describe).split())
@@ -195,6 +221,7 @@ def never_seen_green() -> list[dict[str, str]]:
                 "verdict": entry.get("verdict", ""),
                 "detail": " ".join(str(entry.get("detail", "")).split()),
                 "describe": described.get(key, ""),
+                "declared_later_by": declared_later.get(key, ""),
             }
         )
     found.sort(key=lambda row: (criteria_module.rung(row["from"]), row["id"]))
@@ -252,13 +279,23 @@ def render() -> str:
     add("")
     add("The mechanism arrived at M8.c. Anything earlier is in section 4, unchecked.")
     add("")
+    add("**A row marked *retroactive* was written by a LATER rung over a gate that was already")
+    add("green.** It is a declaration and a finding at once: the work is owed, and the rung whose")
+    add("ledger carries the criterion closed without declaring it. A retroactive row therefore")
+    add("appears in section 2 as well, because writing the declaration does not change what the")
+    add("gate did.")
+    add("")
     if gaps:
         add("| Declared at | Gap | Closes at | Why it is open |")
         add("|---|---|---|---|")
         for gap in gaps:
             why = gap["why"]
             why = why if len(why) <= 200 else why[:197] + "…"
-            add(f"| {milestone_label(gap['from'])} | `{gap['id']}` | "
+            where = milestone_label(gap["from"])
+            if gap["retroactive"]:
+                where = (f"{where} <br> *retroactive, over "
+                         f"{milestone_label(gap['owner'])}'s green gate*")
+            add(f"| {where} | `{gap['id']}` | "
                 f"**{milestone_label(gap['closes'])}** | {why} |")
     else:
         add("None declared.")
@@ -285,16 +322,36 @@ def render() -> str:
     add("a row that has since gone green is a row whose recorded verdict `just roadmap-falsify check`")
     add("will report as stale.")
     add("")
+    add("**A row whose *Declared later by* cell is filled is a row a LATER rung declared as a gap.**")
+    add("It stays here. The declaration says the work is owed and names the rung that owes it; it")
+    add("does not reach back and make the closing flip honest, and the two statements are separate.")
+    add("")
+    later = [row for row in red if row["declared_later_by"]]
+    if later:
+        gates = sorted({milestone_label(row["from"]) for row in later})
+        add(f"**THE GATES OF {' AND '.join(gates)} SHOULD NOT STAND AS THEY ARE READ TODAY.**")
+        add(f"{len(later)} criteria below were red when those gates were flipped to")
+        add("`state = \"green\"` in `tools/roadmap/gates.toml`, and by the ledger's own arithmetic —")
+        add("\"an ordinary failure beside a declared gap still fails the milestone\" — a rung with a")
+        add("red criterion nobody declared is not closed. The declarations written over them since")
+        add("record the debt; they do not re-run the gate. Either those gates return to")
+        add("`joins-on-close` until their ledgers pass, or `gates.toml` states in writing that they")
+        add("were closed over named failures and which ones. **Only a Close phase may move a gate**,")
+        add("so this document states the finding and moves nothing.")
+        add("")
     if red:
-        add("| Rung | Criterion | Prover's verdict | What it said |")
-        add("|---|---|---|---|")
+        add("| Rung | Criterion | Declared later by | Prover's verdict | What it said |")
+        add("|---|---|---|---|---|")
         for row in red:
             detail = row["detail"]
             detail = detail if len(detail) <= 200 else detail[:197] + "…"
             # A recorded detail can quote the criterion's own command, and `determinism-suites`
             # quotes a ctest alternation — so a raw `|` would end the table cell it is describing.
             detail = detail.replace("|", "\\|")
-            add(f"| {milestone_label(row['from'])} | `{row['id']}` | {row['verdict']} | {detail} |")
+            later_by = (milestone_label(row["declared_later_by"])
+                        if row["declared_later_by"] else "— nobody")
+            add(f"| {milestone_label(row['from'])} | `{row['id']}` | {later_by} | "
+                f"{row['verdict']} | {detail} |")
     else:
         add("None: no closed milestone carries a criterion the prover recorded red and nobody "
             "declared.")
