@@ -80,6 +80,11 @@ will report as stale.
 **A row whose *Declared later by* cell is filled is a row a LATER rung declared as a gap.**
 It stays here. The declaration says the work is owed and names the rung that owes it; it
 does not reach back and make the closing flip honest, and the two statements are separate.
+Such a row keeps its place whatever the *prover's verdict* column later reads: `falsify`
+judges a declared gap the other way round — it owes a mutation that makes it GREEN — so a
+gap with no `[criterion.falsifies]` is re-recorded as `no mutation` the next time anything
+runs `just roadmap-falsify prove --record`. Nineteen of the twenty-one below are in exactly
+that state, and reading this section off the verdict alone would have deleted them.
 
 **THE GATES OF M11.a AND M11.b SHOULD NOT STAND AS THEY ARE READ TODAY.**
 21 criteria below were red when those gates were flipped to

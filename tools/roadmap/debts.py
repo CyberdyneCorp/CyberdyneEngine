@@ -208,12 +208,23 @@ def never_seen_green() -> list[dict[str, str]]:
     }
 
     found: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
     for entry in inventory.get("proof", ()):
         key = (entry.get("ledger", ""), entry.get("criterion", ""))
         if key[0] not in closed or key in gaps:
             continue
-        if entry.get("verdict", "") not in RED_UNMUTATED:
+        # A RETROACTIVE DECLARATION KEEPS ITS ROW WHATEVER THE PROVER LAST SAID, and the exception
+        # is not a courtesy. `falsify.prove` judges a declared gap the other way round — it owes a
+        # mutation that makes it GREEN — so the first `prove --record` after a declaration is
+        # written replaces that criterion's `red in the tree` with `no mutation`, which is not in
+        # RED_UNMUTATED. Reading this section off the verdict alone therefore DELETES the finding
+        # the declaration was written about, one recorded prove run later, with nothing repaired.
+        # The row's claim does not depend on the verdict: `known_gap_declared_by` is a committed
+        # statement that a LATER rung found this criterion red under a gate already green, and that
+        # stays true however the prover now classifies it.
+        if entry.get("verdict", "") not in RED_UNMUTATED and key not in declared_later:
             continue
+        seen.add(key)
         found.append(
             {
                 "from": key[0],
@@ -222,6 +233,22 @@ def never_seen_green() -> list[dict[str, str]]:
                 "detail": " ".join(str(entry.get("detail", "")).split()),
                 "describe": described.get(key, ""),
                 "declared_later_by": declared_later.get(key, ""),
+            }
+        )
+    # AND ONE THE INVENTORY NEVER RECORDED AT ALL still belongs here, for the same reason: the
+    # declaration is the evidence, not the proof file.
+    for key, author in declared_later.items():
+        if key[0] not in closed or key in seen:
+            continue
+        found.append(
+            {
+                "from": key[0],
+                "id": key[1],
+                "verdict": "not recorded",
+                "detail": "the prover has no entry for this criterion; the row stands on the "
+                          "declaration a later rung wrote over a gate that was already green",
+                "describe": described.get(key, ""),
+                "declared_later_by": author,
             }
         )
     found.sort(key=lambda row: (criteria_module.rung(row["from"]), row["id"]))
@@ -325,6 +352,11 @@ def render() -> str:
     add("**A row whose *Declared later by* cell is filled is a row a LATER rung declared as a gap.**")
     add("It stays here. The declaration says the work is owed and names the rung that owes it; it")
     add("does not reach back and make the closing flip honest, and the two statements are separate.")
+    add("Such a row keeps its place whatever the *prover's verdict* column later reads: `falsify`")
+    add("judges a declared gap the other way round — it owes a mutation that makes it GREEN — so a")
+    add("gap with no `[criterion.falsifies]` is re-recorded as `no mutation` the next time anything")
+    add("runs `just roadmap-falsify prove --record`. Nineteen of the twenty-one below are in exactly")
+    add("that state, and reading this section off the verdict alone would have deleted them.")
     add("")
     later = [row for row in red if row["declared_later_by"]]
     if later:
