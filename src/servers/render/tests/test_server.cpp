@@ -431,8 +431,8 @@ CY_TEST_CASE("two views of one scene draw from one prepared instance set, not on
     ViewStatistics second_stats;
     CY_REQUIRE(fixture.server.collect_draws(fixture.scene, *first, fixture.draws, fixture.stats)
                    .has_value());
-    CY_REQUIRE(
-        fixture.server.collect_draws(fixture.scene, *second, second_draws, second_stats).has_value());
+    CY_REQUIRE(fixture.server.collect_draws(fixture.scene, *second, second_draws, second_stats)
+                   .has_value());
 
     CY_REQUIRE_EQ(fixture.draws.size(), 3U);
     CY_REQUIRE_EQ(second_draws.size(), 3U);
@@ -442,7 +442,8 @@ CY_TEST_CASE("two views of one scene draw from one prepared instance set, not on
     CY_CHECK_EQ(after.reserved_slots, prepared.reserved_slots);
     CY_CHECK_EQ(after.high_water, prepared.high_water);
     CY_CHECK_EQ(after.producers, prepared.producers);
-    // And nothing to upload: collecting a view's draws is a read of prepared data, not a preparation.
+    // And nothing to upload: collecting a view's draws is a read of prepared data, not a
+    // preparation.
     CY_CHECK_EQ(after.dirty_slots, 0U);
     CY_CHECK(scene->gpu.dirty_ranges().empty());
 

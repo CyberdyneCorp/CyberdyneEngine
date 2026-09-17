@@ -317,14 +317,14 @@ CY_TEST_CASE("the diagnostics report refuses to record one pass twice") {
 // precision permits), with tonemapping to the output format at the end of the chain."
 //
 // WHY THE ASSERTION IS OVER THE GRAPH AND NOT OVER THE DEFAULT. `FrameDescription::color_format`
-// being `Rgba16Sfloat` is one line of a header; what the requirement asks is that the frame's colour
-// CHAIN is that format, and the way that claim breaks is not by somebody editing the default — it is
-// by one intermediate target in the middle of the chain being declared in something cheaper, which
-// is invisible until a bloom or a reflection clips. So every colour-carrying target the frame
-// creates is read back out of the graph and required to be the scene colour's format, and the two
-// targets that are deliberately NOT colour — depth and the single-channel ambient-occlusion buffer —
-// are required to differ, so the case cannot be satisfied by a frame that declares one format for
-// everything.
+// being `Rgba16Sfloat` is one line of a header; what the requirement asks is that the frame's
+// colour CHAIN is that format, and the way that claim breaks is not by somebody editing the default
+// — it is by one intermediate target in the middle of the chain being declared in something
+// cheaper, which is invisible until a bloom or a reflection clips. So every colour-carrying target
+// the frame creates is read back out of the graph and required to be the scene colour's format, and
+// the two targets that are deliberately NOT colour — depth and the single-channel ambient-occlusion
+// buffer — are required to differ, so the case cannot be satisfied by a frame that declares one
+// format for everything.
 CY_TEST_CASE("the scene colour chain is floating point, and the two targets that are not say so") {
     // The specification names the default by name, so the default is checked by name.
     CY_CHECK_EQ(FrameDescription{}.color_format, cy::rhi::Format::Rgba16Sfloat);
@@ -344,8 +344,12 @@ CY_TEST_CASE("the scene colour chain is floating point, and the two targets that
     const cy::rendering::FrameResources& resources = frame.resources();
     const cy::rhi::Format colour = description.color_format;
     const cy::rendering::ResourceId colour_targets[] = {
-        resources.color,      resources.screen_space_gi, resources.reflections,
-        resources.opaque_color_copy, resources.temporal_history, resources.output,
+        resources.color,
+        resources.screen_space_gi,
+        resources.reflections,
+        resources.opaque_color_copy,
+        resources.temporal_history,
+        resources.output,
     };
     for (const cy::rendering::ResourceId id : colour_targets) {
         CY_REQUIRE_NE(id, kInvalidResource);
