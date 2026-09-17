@@ -1094,10 +1094,14 @@ The ledger did not only report; six of the 39 are fixed here and the fix was wat
       failed at CMake's generate step for every target, not just that one. Now declared inside
       `if(CY_RENDERER_VULKAN)`, which is `tests/render/CMakeLists.txt`'s stated rule for the same
       situation. Verified: the off-vulkan configure completes and the build proceeds
-- [x] **`m8b:feature-options-off` — a test helper outlived its callers' guard.**
-      `tools/import/tests/test_gltf_rig.cpp`'s `find_prefixed` is used only inside
-      `#ifdef CY_IMPORT_ANIMATION` and was defined outside it, so `-D CY_ANIMATION=OFF` hit
-      `-Werror=unused-function`. Moved under the same guard
+- [x] **`m8b:feature-options-off` — TWO helpers outlived their callers' guard, and the second was
+      only reachable once the first was fixed.** `tools/import/tests/test_gltf_rig.cpp`'s
+      `find_prefixed` and `tools/import/src/gltf.cpp`'s `stem_of_path` are each named only inside
+      `#ifdef CY_IMPORT_ANIMATION` and were each defined outside it, so `-D CY_ANIMATION=OFF` hit
+      `-Werror=unused-function` — twice, because `-Werror` stops at the first and the second was
+      invisible until it did not. Both moved under the guard their callers already carry, which is
+      what `CY_IMPORT_ANIMATION` is for. Verified: `CY_ANIMATION=OFF` now configures and builds
+      369/369 clean, where it previously stopped at 943/1332
 
 **WHAT IS NOT REPAIRED, AND WHY EACH IS A DECISION RATHER THAN AN OMISSION.**
 
