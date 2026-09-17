@@ -256,9 +256,57 @@ _editor-rust-files:
     find editor -type d \( -name target -o -name generated \) -prune -o \
         -type f -name '*.rs' -print | sort
 
-# Compile the Slang shader set for a profile. No shader toolchain exists before M3.
+# M11.c task 1.7. `shader-system`'s pipeline step 4 is "SPIR-V retained (Vulkan), or translated (MSL
+# for Metal, DXIL for D3D12)"; until this rung the front end emitted only the first and this recipe
+# refused with a milestone label. M11.d's first task is a Metal and a D3D12 backend and cannot start
+# without the other two, which is why both rungs' ledgers carry the same claim from opposite sides.
+#
+# EMITTING A FILE IS NOT THE CLAIM, and this recipe is written so that it cannot become one. What it
+# runs compiles the SAME graph for each target and compares what the artefacts DECLARE — the entry
+# point, the stage, the workgroup, and the parameters with their kinds. A stub that wrote the SPIR-V
+# out twice under two names passes a file-exists check and fails every one of those. See
+# tools/shaders/README.md.
+#
+# `--targets` prints the table and compiles nothing, which is what a caller asking "what can this
+# machine do" wants; the table is PROBED — each target is answered by compiling a shader for it.
+
+# Compile the Slang shader set for every target this build emits and compare what they declare.
 build-shaders *args:
-    @just _not-implemented build-shaders 'M3 — the renderer and its shader toolchain'
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-overrides
+
+    list_only=""
+    tool_args=()
+    for argument in ${rest}; do
+        case "${argument}" in
+            --targets) list_only=yes ;;
+            *) tool_args+=("${argument}") ;;
+        esac
+    done
+
+    # The tool is part of the engine's build, so this recipe builds it the way every other recipe
+    # builds what it runs rather than asking the developer to have done it first.
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    just build-engine --profile "${profile}" > /dev/null
+    tool="${build_dir}/tools/shaders/cy_shader"
+    if [ ! -x "${tool}" ]; then
+        echo "build-shaders: ${tool} was not built." >&2
+        echo "  The shader front end is behind CY_SHADER_SLANG, which is off in the Profile and" >&2
+        echo "  Shipping profiles because \`shader-system\` requires a shipping build to contain no" >&2
+        echo "  Slang compiler. Use --profile dev, or configure with -D CY_SHADER_SLANG=ON." >&2
+        exit 1
+    fi
+
+    if [ -n "${list_only}" ]; then
+        echo "==> targets     ${tool}"
+        exec "${tool}" targets
+    fi
+
+    echo "==> shaders     profile=${profile}  ${tool}"
+    exec "${tool}" build ${tool_args[@]+"${tool_args[@]}"}
 
 # Remove build output. Names exactly what it removes and confirms; --yes for CI. Scoped by target.
 build-clean *args:

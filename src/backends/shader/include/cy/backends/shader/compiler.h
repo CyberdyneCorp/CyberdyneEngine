@@ -66,6 +66,39 @@ enum class DebugInfoLevel : u8 { None = 0, LineTables = 1, Full = 2 };
 inline constexpr u32 kSpirv1_5 = (1U << 16) | (5U << 8);
 inline constexpr u32 kSpirv1_6 = (1U << 16) | (6U << 8);
 
+/// One compilation: one entry point, one permutation, one set of options.
+struct CompileRequest {
+    /// The module to compile. Authored or generated — nothing below this line can tell.
+    SourceUnit source;
+    /// The entry point within it. Slang names its own entry points, so this is not always "main".
+    Name entry_point;
+    rhi::ShaderStage stage = rhi::ShaderStage::None;
+
+    /// The declared axes, and which variant this is. Null means the shader does not vary, which is
+    /// the same thing as a set with no axes and is spelled as null so the common case allocates
+    /// nothing.
+    const PermutationSet* permutations = nullptr;
+    PermutationKey permutation;
+
+    OptimizationLevel optimization = OptimizationLevel::Performance;
+    DebugInfoLevel debug_info = DebugInfoLevel::None;
+    u32 spirv_version = kSpirv1_5;
+
+    /// How the front end resolves an `import`. Usually `SourceRegistry::resolver()`.
+    SourceResolver resolver;
+};
+
+/// What one compilation cost. `shader-system`'s "Shader diagnostics" requirement asks the build to
+/// report per-shader compile time, permutation counts, and SPIR-V instruction counts; these are the
+/// first two of the three, and `Reflection::instruction_count()` is the third.
+struct CompileStats {
+    u64 compile_ns = 0;
+    u32 spirv_words = 0;
+    u32 instruction_count = 0;
+    /// Which front end produced it, for a report that mixes cache hits and fresh compilations.
+    const char* backend = "";
+};
+
 // --- Pipeline step 4: the backend-native targets -------------------------------------------------
 //
 // M11.c task 1.7, and the rung that owns `shader-system` supplying its successor's prerequisite.
@@ -193,39 +226,6 @@ private:
 [[nodiscard]] bool interfaces_agree(const TargetArtefact& a, const TargetArtefact& b,
                                     DiagnosticLog& diagnostics) noexcept;
 
-
-/// One compilation: one entry point, one permutation, one set of options.
-struct CompileRequest {
-    /// The module to compile. Authored or generated — nothing below this line can tell.
-    SourceUnit source;
-    /// The entry point within it. Slang names its own entry points, so this is not always "main".
-    Name entry_point;
-    rhi::ShaderStage stage = rhi::ShaderStage::None;
-
-    /// The declared axes, and which variant this is. Null means the shader does not vary, which is
-    /// the same thing as a set with no axes and is spelled as null so the common case allocates
-    /// nothing.
-    const PermutationSet* permutations = nullptr;
-    PermutationKey permutation;
-
-    OptimizationLevel optimization = OptimizationLevel::Performance;
-    DebugInfoLevel debug_info = DebugInfoLevel::None;
-    u32 spirv_version = kSpirv1_5;
-
-    /// How the front end resolves an `import`. Usually `SourceRegistry::resolver()`.
-    SourceResolver resolver;
-};
-
-/// What one compilation cost. `shader-system`'s "Shader diagnostics" requirement asks the build to
-/// report per-shader compile time, permutation counts, and SPIR-V instruction counts; these are the
-/// first two of the three, and `Reflection::instruction_count()` is the third.
-struct CompileStats {
-    u64 compile_ns = 0;
-    u32 spirv_words = 0;
-    u32 instruction_count = 0;
-    /// Which front end produced it, for a report that mixes cache hits and fresh compilations.
-    const char* backend = "";
-};
 
 /// A compiled entry point: the module, what it declares, and what it cost.
 ///
