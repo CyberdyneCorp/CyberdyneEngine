@@ -61,8 +61,8 @@ DEFAULT_TIMEOUT_S = 1800
 
 CRITERION_KEYS = frozenset(
     {"id", "describe", "source", "kind", "run", "path", "expect_tiers", "where", "ci_job",
-     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "falsifies", "evaluates",
-     "ci_proof"}
+     "requires", "reason", "timeout_s", "known_gap", "known_gap_closes", "known_gap_declared_by",
+     "falsifies", "evaluates", "ci_proof"}
 )
 MILESTONE_KEYS = frozenset({"schema", "id", "name", "artefact", "notes", "criterion"})
 
@@ -94,6 +94,22 @@ class Criterion:
     #: The milestone that must close it. Required with `known_gap`, must be a rung ABOVE the one
     #: declaring it, and it is what makes a gap a deadline rather than a shrug.
     known_gap_closes: str = ""
+    #: WHICH RUNG WROTE THE DECLARATION, when it was not the rung that owns the criterion.
+    #:
+    #: A gap is normally declared by the rung shipping it: M8.c wrote `steam-audio-configures` into
+    #: `m8c.toml` at M8.c's own gate, and "declared at M8.c" is then read off the file the criterion
+    #: lives in. That reading is WRONG for a gap somebody adds later, over a gate that is already
+    #: green — and adding one is the only mechanism a later rung has for a red criterion it cannot
+    #: un-close, because gates are flipped by hand and a closed milestone's gate is not this phase's
+    #: to move.
+    #:
+    #: WITHOUT THIS FIELD THE ADDITION LAUNDERS THE RECORD. `debts.never_seen_green` lists a red
+    #: criterion of a CLOSED milestone that nobody declared, and it excludes declared gaps because a
+    #: gap is section 1's. Declaring one retroactively would therefore delete the row that says the
+    #: gate was flipped green over a failing check — the exact fact the row exists to keep. So a
+    #: retroactive declaration NAMES ITS AUTHOR, it stays in that section, and the document reads
+    #: "declared at M11.c, over M11.a's green gate" rather than "declared at M11.a".
+    known_gap_declared_by: str = ""
     #: The mutation that must turn this criterion RED, as data `falsify.py` applies itself. Declared
     #: only where the tooling cannot derive one from the criterion's own text; `falsify.py` derives
     #: the mutation for a `path` criterion, a `tiers` criterion and a text search without being told.
@@ -276,6 +292,9 @@ def _check_known_gap(table: dict, where: str) -> None:
     gap = str(table.get("known_gap", "")).strip()
     closes = str(table.get("known_gap_closes", "")).strip().lower()
     if not gap and not closes:
+        if str(table.get("known_gap_declared_by", "")).strip():
+            raise CriteriaError(f"{where}: 'known_gap_declared_by' without 'known_gap' names the "
+                                "author of a declaration that is not there")
         return
     if not gap:
         raise CriteriaError(f"{where}: 'known_gap_closes' without 'known_gap' says a deadline with "
@@ -286,6 +305,16 @@ def _check_known_gap(table: dict, where: str) -> None:
     if closes not in MILESTONES:
         raise CriteriaError(f"{where}: 'known_gap_closes' is {closes!r}, which is not a milestone; "
                             f"they are {', '.join(MILESTONES)}")
+    declared_by = str(table.get("known_gap_declared_by", "")).strip().lower()
+    if not declared_by:
+        return
+    if declared_by not in MILESTONES:
+        raise CriteriaError(f"{where}: 'known_gap_declared_by' is {declared_by!r}, which is not a "
+                            f"milestone; they are {', '.join(MILESTONES)}")
+    if declared_by == closes:
+        raise CriteriaError(f"{where}: 'known_gap_declared_by' and 'known_gap_closes' are both "
+                            f"{closes!r} — a rung that declares a gap AND closes it declared "
+                            "nothing; drop the field or name the rung that will close it")
 
 
 def _check_falsifies(table: dict, where: str) -> None:

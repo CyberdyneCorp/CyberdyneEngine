@@ -1150,6 +1150,38 @@ def test_declared_gaps(root: Path) -> None:
     plain = criteria_module.load("m0", milestone_file(root, "gap-none", head + body))
     check("an ordinary criterion is not a declared gap", not plain.criteria[0].is_declared_gap)
 
+    # --- A gap somebody adds LATER, over a gate that is already green, names its author.
+    #
+    # M11.c's gate-findings phase declared twenty of them across `m11a.toml` and `m11b.toml`, and
+    # without this field `debts.never_seen_green` would have dropped every one of those criteria out
+    # of "Red criteria under a green gate" — turning the discovery that two gates were flipped over
+    # failing checks into a tidy row in the table of debts somebody planned. The field is what keeps
+    # the two readings apart, so the rules around it are checked in both directions.
+    expect_error(
+        "an author with no declaration behind it is rejected", criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "gap-author-alone", head + body + 'known_gap_declared_by = "m11c"\n')))
+    expect_error(
+        "a known_gap_declared_by that is not a milestone is rejected",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "gap-author-bad", head + body
+            + 'known_gap = "g"\nknown_gap_closes = "m9"\nknown_gap_declared_by = "m99"\n')))
+    expect_error(
+        "a rung that declares a gap and also closes it is rejected as a declaration of nothing",
+        criteria_module.CriteriaError,
+        lambda: criteria_module.load("m0", milestone_file(
+            root, "gap-author-is-closer", head + body
+            + 'known_gap = "g"\nknown_gap_closes = "m9"\nknown_gap_declared_by = "m9"\n')))
+    retro = criteria_module.load("m0", milestone_file(
+        root, "gap-retro", head + body
+        + 'known_gap = "g"\nknown_gap_closes = "m11e"\nknown_gap_declared_by = "m11c"\n'))
+    check("a retroactive gap declaration carries the rung that wrote it",
+          retro.criteria[0].is_declared_gap
+          and retro.criteria[0].known_gap_declared_by == "m11c")
+    check("a gap declared by its own rung leaves the author field empty",
+          declared.criteria[0].known_gap_declared_by == "")
+
     # --- The verdict, which is where the mechanism earns its place.
     gap = criteria_module.Criterion(
         id="gap", describe="the gap", source="s", kind="recipe", run="just quality-layers",

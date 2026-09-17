@@ -447,6 +447,10 @@ test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in unit.editor_
 '''
 ci_job = "milestone-m11b"
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: there is no `cy_test_unit_editor_views` in a fully built tree, because no CMakeLists.txt in the repository declares the suite `unit.editor_views` at all. `PLANNED_VIEWS` still has eight entries against `ViewMode`'s nineteen, and the gap between those two numbers is the requirement. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "plugins"
 describe = "plugins load, resolve, lock and carry a trust tier. Four of `project-and-plugins`' eleven requirements — Plugins, Plugin lifecycle, Plugin resolution and lockfile, Trust tiers for extensions — have had no implementation since M5: `find src tools -iname '*plugin*'` returns one layercheck fixture"
@@ -689,6 +693,10 @@ ci_job = "milestone-m11b"
 # entire tree outside docs/ — four editor identity marks and two golden references — so every
 # material in every published picture is a constant, and no encoder exists to change that.
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just run-editor --smoke` exits 1 at argument parsing with `cyberdyne-editor: the option \"--smoke\": it is not one this editor knows`. THIS CRITERION HAS NEVER BEEN ABLE TO PASS: `--smoke` is not among the ten options `--help` lists, and `git log -S'--smoke' -- editor/` is empty, so the flag has never existed. The host running this has DISPLAY set and the criterion was evaluated rather than skipped, so it is not failing for want of the display its `requires` declares — it never opens a window to judge. THIS IS THE TENTH INSTANCE OF THIS PROJECT'S ONE DEFECT AND THE FIRST ONE `falsify` CANNOT SEE. M11.a's repair 2 added `falsify._inspect_samples` after finding `--cycle`, `--stream-report` and the sample name `10-world` filed as proofs; that rule reads `run-sample` names against `samples/*/CMakeLists.txt` and knows nothing about `run-editor`. The prover duly recorded this one `red against a built tree` quoting the cargo build line and not the refusal. Closing it means either a smoke mode the editor actually has, or judging the window by something that exists — and `falsify` owes the same name check for `run-editor` that it has for `run-sample`. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "texture-encoders"
 describe = "the engine ENCODES block-compressed textures rather than naming a format and writing pixels. `CookedTexture::encoded` was an unconditional `false` for six milestones and `select_format` named BC7, BC5, BC4, BC6H and two ASTC block sizes that nobody produced. The cases below encode a block, DECODE IT BACK with a decoder written from the format's own tables, and measure the error against the source — an encoder that wrote zeroes would pass a size check and fails this one"
@@ -812,6 +820,10 @@ ci_job = "milestone-m11b"
 
 # --- Section 4: the gameplay rows a game exercises by being played ---------------------------------
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: there is no `cy_test_integration_editor_import` in a fully built tree, because no CMakeLists.txt declares the suite `integration.editor_import`. Nothing compares the set of formats `tools/import` supports against the set `asset.import` reaches from inside the editor, so the claim that they are the same set is still a sentence. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "gameplay-suites"
 describe = "the gameplay suites are green at Complete grade: abilities and effects, AI, animation and skinning, camera, navigation, physics, sequences, the interface, text and 2D"
@@ -855,6 +867,10 @@ kind = "command"
 run = "just quality-requirements gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-and-cinematics input-and-actions"
 ci_job = "milestone-m11b"
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just quality-requirements` over the eight gameplay rows reports 0 of 183 requirements mapped to a test, a gate or a recorded exemption. `sequencing-and-cinematics` (31), `animation-and-skinning` (30) and `camera-system` (28) carry no named blocker, which was M11.b's own stated risk: nothing has refused them because nothing has read them. M11.e's `every-requirement-maps` is the criterion that sweeps this."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "editor-at-complete-grade"
 describe = "and the same mapping over the editor rows, which is where this rung's claim actually lives: eight editor capabilities, 13 to 22 requirements each, two of them at Seed since M5"
@@ -862,6 +878,10 @@ source = "tasks, testing-and-quality"
 kind = "command"
 run = "just quality-requirements editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-and-gizmos editor-documents-and-transactions editor-agent-interface project-and-plugins"
 ci_job = "milestone-m11b"
+
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just quality-requirements` over the nine editor rows reports 9 of 133 requirements mapped, and all nine of those are `live-editing` and `editor-documents-and-transactions` entries written into `tools/roadmap/requirements-coverage.toml` when that file was created. Seven of the nine rows have not one requirement mapped. This is the rung's own claim — eight editor capabilities of 13 to 22 requirements each, two of them at Seed since M5 — and it was never made in a form anything can answer. M11.e's `every-requirement-maps` is the criterion that sweeps it."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
 
 [[criterion]]
 id = "ml-inference-or-a-deferral"
@@ -885,6 +905,10 @@ ci_job = "milestone-m11b"
 
 # --- Section 5: the artefact -----------------------------------------------------------------------
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: there is no `cy_test_integration_ai` in a fully built tree and no CMakeLists.txt declares the suite `integration.ai`; `ml-inference` is still recorded at `seed` with nine requirements, where it has been since M8.c. THE CRITERION'S OWN SECOND HALF IS WHAT IS OWED: it reads `ml-inference` is exercised by the game's AI, OR it is recorded as a deferral with its re-entry point at M11.e. M11.b produced neither, and M11.e is the only rung allowed to record a deferral, so the criterion names its own closing rung."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "the-game-exists"
 describe = "the game is in the tree as a project, with its content in the project rather than in C++. `samples/` holds sixteen entries and not one of them is a game with authored content: 08-vertical-slice is a slice and 11-ship is a packaging proof"
@@ -902,6 +926,10 @@ test "$assets" -gt "$sources"
 '''
 ci_job = "milestone-m11b"
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `ls -d samples/*game*` matches nothing. `samples/` holds sixteen entries — 00-empty, 01-headless-host, 02-headless-sim, 03-first-light, 04-character, 05-editor-session, 05b-agent-authoring, 05b-editor-window, 06-open-world, 07-fidelity, 08-vertical-slice, 08a-authoring, 09-multiplayer, 09b-animated-character, 10-world and 12-beauty — and not one of them is a game with authored content. THIS IS M11.b's CLOSING ARTEFACT AND IT DOES NOT EXIST. The rung's gate is green over the absence of the single thing the rung was for, and the twenty-four rows it was meant to judge were judged by nothing. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "the-game-is-playable"
 describe = "the game runs from its start state to an end state without a C++ fixture standing in for content — a win and a loss, both reached, headless. This is the half every machine can judge, and it is the half that matters: a game that only proves itself on a machine with a screen proves the screen"
@@ -918,6 +946,10 @@ just run-sample "$name" --headless --script loss
 timeout_s = 3600
 ci_job = "milestone-m11b"
 
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red against a built tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: the same absence, one level up: with no `samples/*game*` there is no start state, no win and no loss to reach headless. Downstream of `the-game-exists` above and closes with it. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
+
 [[criterion]]
 id = "the-game-drawn"
 describe = "and a still of it, captured on a device, committed under docs/design/images/. The rule since M8.c: anything with a visible result gets an image, and a picture is the only evidence that distinguishes a game from a test harness that reports it won"
@@ -925,6 +957,10 @@ source = "tasks, ROADMAP M11.b closing artefact"
 kind = "path"
 path = "docs/design/images/m11b-game*.png"
 ci_job = "milestone-m11b"
+
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `docs/design/images/m11b-game*.png` matches nothing. The rule since M8.c is that anything with a visible result gets an image, and a picture is the only evidence that distinguishes a game from a test harness reporting that it won. Downstream of `the-game-exists` above and closes with it. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
 
 [[criterion]]
 id = "the-game-is-honest-about-its-content"
@@ -943,8 +979,8 @@ ci_job = "milestone-m11b"
 
 # --- Section 6: the record, the tiers, and the next rung -------------------------------------------
 
-known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."""
-known_gap_closes = "m11c"
+known_gap = """THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so it goes red for a word and not for a defect. `just roadmap-falsify` classifies it so, and M11.a/b's gate called this class "word-greps a dummy job satisfies" — for the CI digest job it went further and produced a job that compares nothing, is green in CI, and turns its criteria green. The implementation these criteria point at is real and committed; what is missing is a check that could detect its absence. Closing this means replacing the search with an observation — run the thing, compare two answers, and prove the check red by mutation."" RE-POINTED AT M11.e BY M11.c's GATE-FINDINGS PHASE. M11.c closed none of the three gaps that named it and this is one of them. AND THE SUBJECT IS NOT THE GREP: re-run on 2026-09-17, this criterion does not reach its two greps at all, because ls samples/*game*/README.md matches nothing — there is no game, so there is no README to be honest or dishonest in. It is downstream of m11b:the-game-exists, which is declared a gap in the same act, and it closes with it or not at all."
+known_gap_closes = "m11e"
 
 [[criterion]]
 id = "roadmap-tiers"
@@ -952,6 +988,10 @@ describe = "the status record is at this rung's exit tiers: twenty-four rows to 
 source = "tasks 12.4, ROADMAP M11.b, delivery-roadmap"
 kind = "tiers"
 ci_job = "milestone-m11b"
+
+known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: all twenty-four rows this rung's exit names are recorded below it and three are still at `seed` — editor-architecture, live-editing and ml-inference, exactly the three the rung was written to lift. Not one of the twenty-four advanced. THIS CRITERION IS THE RUNG'S OWN FORCING FUNCTION and its `describe` says so — it fails until the closing change writes the tiers, and a row the rung cannot finish is DEMOTED with its reason rather than left. The closing change wrote no tier and demoted no row, and the gate went green anyway. NO RUNG OF THIS LADDER HAS THIS WORK IN ITS SCOPE, which is why it closes at M11.e rather than at M11.d: M11.d is Metal, D3D12, a native platform backend and the desktop package, and M11.e is the sweep — its own proposal says it is where every remaining capability reaches Complete or gets an explicitly recorded deferral, and it is the only rung allowed to record one. So M11.e either takes this work into its scope or its outcome here is a deferral with a named re-entry point, and BOTH of those are decisions rather than silence."
+known_gap_closes = "m11e"
+known_gap_declared_by = "m11c"
 
 [criterion.expect_tiers]
 editor-architecture = "complete"
