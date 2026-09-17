@@ -1,12 +1,12 @@
-// `cy_shader` — the shader toolchain's front end. M11.c task 1.7, and what `just build-shaders`
+// `cy_shaderc` — the shader toolchain's front end. M11.c task 1.7, and what `just build-shaders`
 // runs.
 //
-//   cy_shader targets
+//   cy_shaderc targets
 //       Print the targets this build emits. Probed: each one is answered by compiling a shader
 //       for it, so a target the machine cannot actually produce is reported as one it cannot
 //       produce rather than as an option somebody turned on.
 //
-//   cy_shader build [root...] [--target <t>]... [--out-dir <dir>] [--verbose]
+//   cy_shaderc build [root...] [--target <t>]... [--out-dir <dir>] [--verbose]
 //       Compile every entry point of every `.slang` file under the roots, for every target, and
 //       compare what the artefacts of one entry point declare. Exits non-zero when two targets of
 //       one graph disagree or when a target refuses a shader. Roots default to `src` and `samples`.
@@ -30,8 +30,8 @@ using namespace cy;
 int usage() {
     std::fprintf(stderr,
                  "usage:\n"
-                 "  cy_shader targets\n"
-                 "  cy_shader build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>]\n"
+                 "  cy_shaderc targets\n"
+                 "  cy_shaderc build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>]\n"
                  "                  [--verbose]\n");
     return 2;
 }
@@ -64,14 +64,14 @@ int main(int argc, char** argv) {
         } else if (argument == "--target" && index + 1 < argc) {
             shader::Target target = shader::Target::SpirV;
             if (!shader::parse_target(argv[++index], target)) {
-                std::fprintf(stderr, "cy_shader: '%s' names no target\n", argv[index]);
+                std::fprintf(stderr, "cy_shaderc: '%s' names no target\n", argv[index]);
                 return usage();
             }
             targets.push_back(target);
         } else if (argument == "--out-dir" && index + 1 < argc) {
             out_dir = argv[++index];
         } else if (!argument.empty() && argument[0] == '-') {
-            std::fprintf(stderr, "cy_shader: unknown option '%.*s'\n",
+            std::fprintf(stderr, "cy_shaderc: unknown option '%.*s'\n",
                          static_cast<int>(argument.size()), argument.data());
             return usage();
         } else {
@@ -91,12 +91,12 @@ int main(int argc, char** argv) {
 
     auto report = shadertool::build_shader_set(allocator, options, stdout);
     if (!report) {
-        std::fprintf(stderr, "cy_shader: %s\n", report.error().message);
+        std::fprintf(stderr, "cy_shaderc: %s\n", report.error().message);
         return 1;
     }
     // A run that compared nothing is not a run that agreed about everything.
     if (report->comparisons == 0) {
-        std::fprintf(stderr, "cy_shader: nothing was compared\n");
+        std::fprintf(stderr, "cy_shaderc: nothing was compared\n");
         return 1;
     }
     return report->ok() ? 0 : 1;

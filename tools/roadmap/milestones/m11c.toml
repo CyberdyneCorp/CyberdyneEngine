@@ -1203,13 +1203,53 @@ ci_job = "milestone-m11c"
 
 [[criterion]]
 id = "shader-targets-for-the-next-rung"
-describe = "the shader system emits MSL and DXIL, which M11.d cannot start without. `cache.h` names 'metal-msl' and 'd3d12-dxil' as interchange forms, `compiler.h` describes the translation in a comment, `SLANG_ENABLE_DXIL` is OFF, and NEITHER IS EMITTED ANYWHERE IN THE TREE. It is this rung's row and the next rung's largest unpriced scope risk, so it is checked here rather than discovered there"
-source = "tasks 1, shader-system, M11.d design.md §6"
+describe = """the shader system emits MSL and DXIL, which M11.d cannot start without — AND THE SAME \
+GRAPH COMPILED FOR TWO TARGETS DECLARES THE SAME INTERFACE. Before M11.c the front end hard-coded \
+SLANG_SPIRV, `SLANG_ENABLE_DXIL` was OFF, `just build-shaders` refused with a milestone label, and \
+`cache.h`'s 'metal-msl' and 'd3d12-dxil' named forms nothing produced. THE SECOND HALF OF THIS \
+CLAIM IS THE HALF THAT MATTERS: a check that three files exist and are not empty passes on a stub \
+that writes the SPIR-V out three times, so what is measured is that each artefact is in the form \
+its target names, that the artefacts of one entry point differ from each other, and that they \
+declare the same entry point, stage, workgroup and parameters. Where each target PUTS those \
+parameters is deliberately not compared — Metal and D3D12 give them different index spaces, and \
+requiring them to match would be requiring a falsehood"""
+source = "tasks 1.7, shader-system, M11.d design.md §6"
 kind = "command"
 run = '''
 set -eo pipefail
+# THE TABLE IS PROBED, NOT DECLARED: `cy_shaderc targets` answers each row by compiling a shader for
+# that target, so a machine where DXC did not load reports d3d12-dxil as unavailable rather than
+# reporting the CMake option somebody set.
 just build-shaders --targets | tee /tmp/cy-m11c-targets.txt
-grep -qi "msl" /tmp/cy-m11c-targets.txt
-grep -qi "dxil" /tmp/cy-m11c-targets.txt
+grep -q "metal-msl=emitted" /tmp/cy-m11c-targets.txt
+grep -q "d3d12-dxil=emitted" /tmp/cy-m11c-targets.txt
+
+# AND THE MEASUREMENT. Every `[shader(...)]` entry point under src/ and samples/ is compiled for
+# every emitted target and the artefacts of one entry point are compared against each other. The
+# recipe exits non-zero on a disagreement or a refusal; the floor below is what stops a run that
+# compiled nothing from passing, which is the failure mode a summary line cannot otherwise have.
+just build-shaders src samples | tee /tmp/cy-m11c-shader-set.txt
+summary=$(grep -o "shader-set: .*" /tmp/cy-m11c-shader-set.txt | tail -1)
+test -n "$summary" || { echo "no shader-set summary line: the run did not finish"; exit 1; }
+echo "$summary"
+comparisons=$(echo "$summary" | sed -n "s/.*comparisons=\([0-9]*\).*/\1/p")
+entry_points=$(echo "$summary" | sed -n "s/.*entry_points=\([0-9]*\).*/\1/p")
+test "${entry_points:-0}" -ge 30 || { echo "only ${entry_points} entry point(s) found: the set is not the engine's"; exit 1; }
+test "${comparisons:-0}" -ge 60 || { echo "only ${comparisons} comparison(s): nothing was cross-checked"; exit 1; }
+echo "$summary" | grep -q "disagreements=0 failures=0"
 '''
+timeout_s = 3600
 ci_job = "milestone-m11c"
+
+# THE MUTATION IS THE CAPABILITY'S OWN SWITCH AND NOT A STRING IN THE OUTPUT. The previous entry in
+# falsifiability.toml was a derived `rename-token 'dxil\x1fmsl'` in /tmp/cy-m11c-targets.txt — a
+# mutation of the criterion's own scratch file, which proves nothing about the tree. Deleting the
+# option row takes DXIL out of the build: `SLANG_ENABLE_DXIL` goes off, Slang is built without the
+# downstream compiler, the probe answers `d3d12-dxil=unavailable`, and the first grep fails. It is a
+# mutation that still CONFIGURES and still BUILDS, which is what distinguishes a criterion going red
+# for the defect it names from one going red because the tree stopped compiling.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "cmake/features.cmake"
+token  = "CY_SHADER_DXIL|DEVELOPMENT|"
+note   = "the criterion's claim is that this build emits MSL and DXIL and that two targets of one graph agree; taking the DXIL option out of the feature table removes the second target at its source. Three reds were watched by hand at M11.c task 1.7 and are recorded in tasks.md section 1.7: the DXC runtime moved out from beside libslang (the probe reports it unavailable — which is what proves the probe is a probe), the Slang front end made to return the SPIR-V bytes when asked for MSL (`bytes_match_target` refuses the artefact), and one parameter dropped from one target's declaration (`interfaces_agree` reports the difference naming both targets). The first of those is this mutation's effect reached by a cheaper route; this one is spelled as the option because that is the source of the capability rather than a file beside it."

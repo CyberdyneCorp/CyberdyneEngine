@@ -1,10 +1,10 @@
 # tools/shaders — the shader toolchain's front end
 
-`cy_shader` compiles the engine's Slang shader set for every target this build can emit, and
+`cy_shaderc` compiles the engine's Slang shader set for every target this build can emit, and
 measures the agreement between them. `just build-shaders` is this tool.
 
-    cy_shader targets
-    cy_shader build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>] [--verbose]
+    cy_shaderc targets
+    cy_shaderc build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>] [--verbose]
 
 ## What it is for
 
@@ -51,6 +51,6 @@ module set, because that is what an include-only module is.
 
 DXIL is produced by Microsoft's DXC, which Slang fetches as a prebuilt release (`CY_SHADER_DXIL`,
 on by default in Debug and Development) and loads dynamically when it is first asked to emit DXIL.
-`cy_shader targets` answers by **compiling a shader for each target**, so a machine where that
+`cy_shaderc targets` answers by **compiling a shader for each target**, so a machine where that
 library is missing is reported as a machine that does not emit DXIL — not as one where an option
 was set.

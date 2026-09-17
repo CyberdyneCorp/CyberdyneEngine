@@ -298,6 +298,14 @@ struct CompilerHandle {
 
 [[nodiscard]] Status open_compiler(Allocator& allocator, CompilerHandle& out) noexcept {
     out.allocator = &allocator;
+    // A STATEMENT RATHER THAN A LINK-ORDER PROPERTY, which is what the front end's header says this
+    // function is for. The Slang back end registers itself from a static initialiser, and a static
+    // initialiser in a static library is dropped by the linker when nothing in that object file is
+    // referenced — so a tool that relied on it would report "no shader front end" on a build that
+    // has one. That is not hypothetical: it is what this tool did before this line.
+    if (Status registered = shader::slang::register_slang_backend(); !registered) {
+        return registered;
+    }
     auto created =
         shader::create_compiler(allocator, shader::kSlangBackendName, out.selection);
     if (!created) {
@@ -350,14 +358,21 @@ Status print_targets(Allocator& allocator, std::FILE* out) noexcept {
     std::fprintf(out, ", version %s\n", compiler.handle->version());
 
     usize emitted = 0;
+    std::string summary = "targets:";
     for (usize index = 0; index < kTargetCount; ++index) {
         const auto target = static_cast<Target>(index);
         const bool yes = compiler.handle->emits(target);
         emitted += yes ? 1 : 0;
         std::fprintf(out, "  %-13s %-6s %s\n", shader::target_name(target),
                      shader::target_short_name(target),
-                     yes ? "emitted" : "NOT emitted by this build");
+                     yes ? "emitted"
+                         : "unavailable — the compiler for it did not answer on this machine");
+        summary.append(" ").append(shader::target_name(target)).append("=").append(
+            yes ? "emitted" : "unavailable");
     }
+    // ONE PARSEABLE LINE, so a ledger criterion greps for a target being emitted rather than for
+    // the word "msl" appearing somewhere in a table — which a stub could print.
+    std::fprintf(out, "%s\n", summary.c_str());
     std::fprintf(out, "%zu of %zu targets emitted\n", emitted, kTargetCount);
     return emitted == 0 ? fail(ErrorCode::Unavailable, "this build emits no shader target") : ok();
 }
@@ -398,11 +413,7 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
     if (!mount) {
         return make_unexpected(mount.error());
     }
-    auto owned = make_unique<assets::DirectoryMount>(allocator, std::move(*mount.value()));
-    if (!owned) {
-        return make_unexpected(owned.error());
-    }
-    if (auto mounted = files.mount_owned(std::move(owned.value()), 0); !mounted) {
+    if (auto mounted = files.mount_owned(std::move(mount.value()), 0); !mounted) {
         return make_unexpected(mounted.error());
     }
 
@@ -490,9 +501,11 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
         }
     }
 
+    // ONE PARSEABLE LINE, for the reason `print_targets` writes one: a criterion that asserts a
+    // floor on the comparisons cannot be satisfied by a run that compared nothing.
     std::fprintf(out,
-                 "\n%zu module(s), %zu entry point(s), %zu artefact(s), %zu comparison(s), "
-                 "%zu disagreement(s), %zu failure(s), %zu module(s) with no entry point\n",
+                 "\nshader-set: modules=%zu entry_points=%zu artefacts=%zu comparisons=%zu "
+                 "disagreements=%zu failures=%zu modules_without_entry_points=%zu\n",
                  report.modules, report.entry_points, report.artefacts, report.comparisons,
                  report.disagreements, report.failures, report.modules_without_entry_points);
     return report;

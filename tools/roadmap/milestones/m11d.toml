@@ -219,9 +219,15 @@ source = "tasks 2, 3, shader-system, design.md §6"
 kind = "command"
 run = '''
 set -eo pipefail
+# THE TARGET NAME APPEARING IN THE OUTPUT IS NOT THE CLAIM, and was until M11.c delivered the
+# recipe: `grep -i msl` matches the row of a table that reports metal-msl as UNAVAILABLE. The table
+# is probed — each row is answered by compiling a shader for that target — and this reads the
+# parseable line rather than the human one. M11.c's `shader-targets-for-the-next-rung` is the same
+# claim from the other side and runs the full cross-target comparison; this rung checks the
+# prerequisite it cannot start without.
 just build-shaders --targets | tee /tmp/cy-m11d-targets.txt
-grep -qi "msl" /tmp/cy-m11d-targets.txt
-grep -qi "dxil" /tmp/cy-m11d-targets.txt
+grep -q "metal-msl=emitted" /tmp/cy-m11d-targets.txt
+grep -q "d3d12-dxil=emitted" /tmp/cy-m11d-targets.txt
 '''
 ci_job = "milestone-m11d"
 

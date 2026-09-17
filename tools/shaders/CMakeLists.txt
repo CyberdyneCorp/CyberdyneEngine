@@ -24,7 +24,7 @@ cy_add_module(
     PUBLIC_DEPENDENCIES cy::shader cy::shader-slang cy::core-assets)
 
 cy_add_module(
-    NAME cy_shader
+    NAME cy_shaderc
     LAYER tools
     TYPE EXECUTABLE
     SOURCES

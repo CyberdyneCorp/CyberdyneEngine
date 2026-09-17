@@ -291,7 +291,7 @@ build-shaders *args:
     # builds what it runs rather than asking the developer to have done it first.
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     just build-engine --profile "${profile}" > /dev/null
-    tool="${build_dir}/tools/shaders/cy_shader"
+    tool="${build_dir}/tools/shaders/cy_shaderc"
     if [ ! -x "${tool}" ]; then
         echo "build-shaders: ${tool} was not built." >&2
         echo "  The shader front end is behind CY_SHADER_SLANG, which is off in the Profile and" >&2
