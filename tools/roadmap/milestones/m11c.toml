@@ -1232,8 +1232,11 @@ just build-shaders src samples | tee /tmp/cy-m11c-shader-set.txt
 summary=$(grep -o "shader-set: .*" /tmp/cy-m11c-shader-set.txt | tail -1)
 test -n "$summary" || { echo "no shader-set summary line: the run did not finish"; exit 1; }
 echo "$summary"
-comparisons=$(echo "$summary" | sed -n "s/.*comparisons=\([0-9]*\).*/\1/p")
-entry_points=$(echo "$summary" | sed -n "s/.*entry_points=\([0-9]*\).*/\1/p")
+# `grep -o` on the field with its leading space, because `modules_without_entry_points` ends in the
+# same twelve characters as `entry_points` and a greedy sed matched that one instead — which read as
+# the set having shrunk to seventeen entry points, and is the kind of wrong number a threshold hides.
+comparisons=$(echo "$summary" | grep -o " comparisons=[0-9]*" | cut -d= -f2)
+entry_points=$(echo "$summary" | grep -o " entry_points=[0-9]*" | cut -d= -f2)
 test "${entry_points:-0}" -ge 30 || { echo "only ${entry_points} entry point(s) found: the set is not the engine's"; exit 1; }
 test "${comparisons:-0}" -ge 60 || { echo "only ${comparisons} comparison(s): nothing was cross-checked"; exit 1; }
 echo "$summary" | grep -q "disagreements=0 failures=0"
@@ -1253,3 +1256,36 @@ mutate = "delete-lines"
 target = "cmake/features.cmake"
 token  = "CY_SHADER_DXIL|DEVELOPMENT|"
 note   = "the criterion's claim is that this build emits MSL and DXIL and that two targets of one graph agree; taking the DXIL option out of the feature table removes the second target at its source. Three reds were watched by hand at M11.c tasks 1.5-1.7 and are recorded in tasks.md section 1.7: the DXC runtime moved out from beside libslang (the probe reports it unavailable — which is what proves the probe is a probe), the Slang front end made to return the SPIR-V bytes when asked for MSL (`bytes_match_target` refuses the artefact), and one parameter dropped from one target's declaration (`interfaces_agree` reports the difference naming both targets). The first of those is this mutation's effect reached by a cheaper route; this one is spelled as the option because that is the source of the capability rather than a file beside it."
+
+# --- The completeness half of the same subject, asked separately and answered red ------------------
+#
+# WHY THIS IS A SECOND CRITERION AND NOT A STRICTER FIRST ONE. The one above asks whether the shader
+# system EMITS the three targets and whether two of them agree about a graph. This one asks whether
+# every shader the engine has reaches every target. They are different questions with different
+# owners: the first is `shader-system`'s and this rung's, the second is about two shaders' choice of
+# a Vulkan-only semantic and belongs to the rung that adds a D3D12 backend and can compare the
+# resulting images. Folding the second into the first would have made a measured capability
+# indistinguishable from an unmeasured one, which is how "MSL and DXIL are emitted" became a
+# sentence in a comment in the first place.
+
+[[criterion]]
+id = "every-shader-reaches-every-target"
+describe = """every entry point the engine declares compiles for every target this build emits. \\
+It does not: `fullscreenVertex` and `cyParticleVertex` take `SV_VulkanVertexID`, which HLSL has no \\
+equivalent of, and DXC refuses them with `invalid semantic 'SV_VulkanVertexID' for vs 6.5`. \\
+37 of 39 entry points reach all three targets and these two reach two of them; nothing else in the \\
+tree is short"""
+source = "tasks 1.5-1.7, shader-system, M11.d design.md §6"
+kind = "command"
+run = '''
+set -eo pipefail
+# --strict is the whole difference from the criterion above: it ends red when ONE target refused an
+# entry point another compiled, rather than only when no target could compile one.
+just build-shaders --strict src samples | tee /tmp/cy-m11c-shader-strict.txt
+grep -o "shader-set: .*" /tmp/cy-m11c-shader-strict.txt | tail -1 | grep -q "target_refusals=0"
+'''
+timeout_s = 3600
+ci_job = "milestone-m11c"
+
+known_gap = "DECLARED BY THE RUNG THAT FOUND IT, WITH THE MEASUREMENT THAT SIZES IT, AND CLOSED BY THE RUNG THAT OWNS THE DECISION. `SV_VulkanVertexID` is the raw Vulkan vertex index; `SV_VertexID` is the portable spelling and is NOT the same value — measured here rather than assumed: recompiling `fullscreenVertex` with `SV_VertexID` changes the SPIR-V from 832 to 948 bytes, adds the `DrawParameters` capability, and subtracts a `BaseVertex` builtin the current module never loads. So this is a rendering change behind two golden images and a device capability, not a rename. It was found by compiling the engine's whole shader set for all three targets, which nothing in this tree had ever done. THE COST, so the next rung prices it rather than discovers it: two entry points, in `src/rendering/shaders/cy/fullscreen.slang` and `src/rendering/shaders/cy/particle.slang`, both drawing a procedural triangle strip from the vertex index with no vertex buffer; the fix is either to pass the base vertex explicitly or to prove `SV_VertexID` equivalent for the draws these two are issued by, and either way the evidence is the golden images compared across backends — which is `m11d:golden-images-across-three-backends`, a criterion M11.d already carries. M11.c fixed the two refusals it could fix without touching a pixel: `cyForwardFragment` gained the `: SV_Target` that HLSL requires for a fragment return, verified SPIR-V-byte-identical before and after so no checked-in module and no golden image moved, and the DXIL floor rose from shader model 6.5 to 6.6 because `vgVisRaster`'s 64-bit atomic minimum is how `virtual-geometry` rasterises and is not negotiable."
+known_gap_closes = "m11d"

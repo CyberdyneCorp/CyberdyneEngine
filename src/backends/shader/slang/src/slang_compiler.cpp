@@ -219,10 +219,17 @@ private:
 
 /// The profile each target is compiled at.
 ///
-/// SHADER MODEL 6.5 FOR DXIL, chosen rather than defaulted: 6.5 is the first model with mesh and
-/// amplification shaders and DXR 1.1, both of which this engine's Vulkan path already uses, so a
-/// lower floor would make the D3D12 leg unable to compile shaders the Vulkan leg compiles. Metal
-/// takes no profile here — Slang picks its own language version for the target, and naming one
+/// SHADER MODEL 6.6 FOR DXIL, AND THE SIXTH DIGIT WAS MEASURED RATHER THAN CHOSEN. 6.5 is the first
+/// model with mesh and amplification shaders and DXR 1.1, which the Vulkan path already uses, and
+/// it was the first floor written here. Compiling the engine's own shader set against it produced
+/// one refusal — `vgVisRaster`, the virtual-geometry visibility raster, with "opcode '64-bit atomic
+/// operations' should only be used in 'Shader Model 6.6+'" — because the visibility buffer packs
+/// depth and a cluster identifier into one 64-bit value and resolves it with an atomic minimum.
+/// That is not a target the engine can decline: it is how `virtual-geometry` rasterises. So the
+/// floor is what the engine actually needs, and the shader that set it is named here so the next
+/// reader does not have to rediscover which one it was.
+///
+/// Metal takes no profile — Slang picks its own language version for the target, and naming one
 /// would pin a Metal version this engine has no reason to have an opinion about yet.
 [[nodiscard]] const char* profile_for(Target target, u32 spirv_version) noexcept {
     switch (target) {
@@ -231,7 +238,7 @@ private:
         case Target::Msl:
             return "";
         case Target::Dxil:
-            return "sm_6_5";
+            return "sm_6_6";
     }
     return "";
 }
@@ -285,8 +292,8 @@ private:
             return rhi::DescriptorKind::UniformBuffer;
     }
 
-    const SlangResourceShape shape = static_cast<SlangResourceShape>(
-        layout->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK);
+    const auto shape = static_cast<SlangResourceShape>(layout->getResourceShape() &
+                                                       SLANG_RESOURCE_BASE_SHAPE_MASK);
     if (shape == SLANG_STRUCTURED_BUFFER || shape == SLANG_BYTE_ADDRESS_BUFFER) {
         // A read-only `StructuredBuffer` is still a storage buffer where it lands: Vulkan has no
         // read-only class for one, and the access is carried by the descriptor's usage rather than
@@ -416,8 +423,7 @@ private:
     /// layout after the session has been released reads freed memory. `compile` never noticed
     /// because it asks for the code and nothing else, inside the call.
     [[nodiscard]] Status link_program(const CompileRequest& request, Target target,
-                                      DiagnosticLog& diagnostics,
-                                      Slang::ComPtr<ISession>& session,
+                                      DiagnosticLog& diagnostics, Slang::ComPtr<ISession>& session,
                                       Slang::ComPtr<IComponentType>& linked,
                                       Slang::ComPtr<ISlangBlob>& code) noexcept;
 

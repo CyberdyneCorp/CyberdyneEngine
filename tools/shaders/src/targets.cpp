@@ -11,6 +11,7 @@
 #include <cy/core/memory/scope.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -35,7 +36,7 @@ struct Module {
 /// `src/rendering/shaders/cy/view.slang` -> `src.rendering.shaders.cy.view`.
 std::string dotted(std::string_view path) {
     std::string name(path.substr(0, path.size() - kExtension.size()));
-    std::replace(name.begin(), name.end(), '/', '.');
+    std::ranges::replace(name, '/', '.');
     return name;
 }
 
@@ -60,18 +61,32 @@ public:
     [[nodiscard]] const Module& at(usize index) const noexcept { return *modules_[index]; }
 
 private:
+    /// LEADING SEGMENTS ARE DROPPED UNTIL SOMETHING MATCHES, and this is not the same laxity as the
+    /// aliases below — it is the fix for a specific behaviour that cost a debugging session. Slang
+    /// resolves a nested `import` against the DIRECTORY OF THE IMPORTING MODULE, so `cy.tonemap`,
+    /// which this file system handed over under the path `cy/tonemap.slang`, asks for its own
+    /// `import cy.color` as `cy/cy/color.slang` — and reports the failure under the name the source
+    /// wrote, which is why the message says the file it could not open is one that plainly exists.
+    /// Dropping segments from the front until a module answers resolves that without the resolver
+    /// having to model Slang's path combining.
     static bool resolve(void* user, std::string_view module_name,
                         shader::SourceUnit& out) noexcept {
         auto* self = static_cast<ModuleSet*>(user);
-        const auto found = self->by_name_.find(std::string(module_name));
-        if (found == self->by_name_.end()) {
-            return false;
+        for (std::string_view name = module_name;;) {
+            const auto found = self->by_name_.find(std::string(name));
+            if (found != self->by_name_.end()) {
+                const Module& module = *self->modules_[found->second];
+                out = shader::SourceUnit{};
+                out.module_name = module.module_name;
+                out.text = Span<const char>(module.text.data(), module.text.size());
+                return true;
+            }
+            const usize dot = name.find('.');
+            if (dot == std::string_view::npos) {
+                return false;
+            }
+            name.remove_prefix(dot + 1);
         }
-        const Module& module = *self->modules_[found->second];
-        out = shader::SourceUnit{};
-        out.module_name = module.module_name;
-        out.text = Span<const char>(module.text.data(), module.text.size());
-        return true;
     }
 
     /// First wins, and a collision is reported rather than resolved silently: two files with one
@@ -123,7 +138,7 @@ Status ModuleSet::load(assets::VirtualFileSystem& files, std::string_view root,
     }
     // The enumeration is sorted per mount; sorting again makes the order independent of how many
     // roots were walked, so two runs produce the same report.
-    std::sort(walk.paths.begin(), walk.paths.end());
+    std::ranges::sort(walk.paths);
 
     for (const std::string& path : walk.paths) {
         auto file = assets::VirtualPath::normalise(path);
@@ -251,6 +266,40 @@ std::string declared_name(std::string_view text, usize at) noexcept {
         --begin;
     }
     return begin == end ? std::string() : std::string(text.substr(begin, end - begin));
+}
+
+/// The macro an `#include` names when it names one rather than a path.
+///
+/// `samples/12-beauty/shaders/beauty.slang` opens with `#include CY_MATERIAL_MODULE`: the module it
+/// includes is GENERATED, by `cy_material author`, and the define that names it is supplied by the
+/// cook. Such a module cannot be compiled by walking a directory — not because the toolchain is
+/// missing anything, but because half of its source does not exist until a generator has run — and
+/// reporting it as a compilation failure would be reporting the absence of a build step as a defect
+/// in the shader. It is named and counted instead.
+///
+/// The rule is syntactic and narrow: an `#include` whose argument is neither quoted nor angled is
+/// an identifier, and an identifier there is a macro the compilation was expected to be given.
+std::string included_macro(std::string_view text) {
+    constexpr std::string_view kDirective = "#include";
+    for (usize at = text.find(kDirective); at != std::string_view::npos;
+         at = text.find(kDirective, at + 1)) {
+        usize cursor = at + kDirective.size();
+        while (cursor < text.size() && (text[cursor] == ' ' || text[cursor] == '\t')) {
+            ++cursor;
+        }
+        if (cursor >= text.size() || text[cursor] == '"' || text[cursor] == '<') {
+            continue;
+        }
+        usize end = cursor;
+        while (end < text.size() &&
+               (std::isalnum(static_cast<unsigned char>(text[end])) != 0 || text[end] == '_')) {
+            ++end;
+        }
+        if (end > cursor) {
+            return std::string(text.substr(cursor, end - cursor));
+        }
+    }
+    return {};
 }
 
 /// Every `[shader("stage")] … name(` in one module. This is how Slang itself finds an entry point,
@@ -395,10 +444,7 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
         return fail(ErrorCode::Unavailable, "no shader front end in this build");
     }
 
-    std::vector<Target> targets;
-    for (usize index = 0; index < options.targets.size(); ++index) {
-        targets.push_back(options.targets[index]);
-    }
+    std::vector<Target> targets(options.targets.begin(), options.targets.end());
     if (targets.empty()) {
         for (usize index = 0; index < kTargetCount; ++index) {
             const auto target = static_cast<Target>(index);
@@ -423,11 +469,10 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
     }
 
     ModuleSet modules;
-    for (usize index = 0; index < options.roots.size(); ++index) {
-        if (Status loaded = modules.load(files, options.roots[index], out); !loaded) {
+    for (const std::string_view root : options.roots) {
+        if (Status loaded = modules.load(files, root, out); !loaded) {
             std::fprintf(out, "  note: root '%.*s' could not be walked\n",
-                         static_cast<int>(options.roots[index].size()),
-                         options.roots[index].data());
+                         static_cast<int>(root.size()), root.data());
         }
     }
 
@@ -446,6 +491,13 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
             ++report.modules_without_entry_points;
             continue;
         }
+        if (const std::string macro = included_macro(module.text); !macro.empty()) {
+            ++report.modules_needing_a_generator;
+            std::fprintf(out,
+                         "%s  includes %s: generated, and no generator has run — not compiled\n",
+                         module.path.c_str(), macro.c_str());
+            continue;
+        }
         for (const EntryPoint& entry : entries) {
             ++report.entry_points;
             std::fprintf(out, "%s  %s (%s)\n", module.path.c_str(), entry.name.c_str(),
@@ -459,12 +511,13 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
             request.resolver = modules.resolver();
 
             std::vector<shader::TargetArtefact> artefacts;
+            usize refused = 0;
             for (const Target target : targets) {
                 shader::DiagnosticLog diagnostics(allocator);
                 auto artefact = compiler.handle->compile_for(request, target, diagnostics);
                 if (!artefact) {
-                    ++report.failures;
-                    std::fprintf(out, "    %-13s FAILED: %s\n", shader::target_name(target),
+                    ++refused;
+                    std::fprintf(out, "    %-13s REFUSED: %s\n", shader::target_name(target),
                                  artefact.error().message);
                     print_diagnostics(diagnostics, out);
                     continue;
@@ -479,6 +532,16 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
                     write_artefact(options.out_dir, entry, module, *artefact, out);
                 }
                 artefacts.push_back(std::move(artefact.value()));
+            }
+
+            // A REFUSAL BY ONE TARGET AND A REFUSAL BY ALL OF THEM ARE DIFFERENT FACTS. No target
+            // compiled it: the shader is broken, and no rung can want that. One target refused it
+            // and another did not: that is a portability finding about this shader on that API, it
+            // names the shader and the reason, and it is what M11.d inherits.
+            if (artefacts.empty()) {
+                ++report.failures;
+            } else {
+                report.target_refusals += refused;
             }
 
             // EVERY PAIR, not every artefact against the first: a disagreement between the second
@@ -510,9 +573,15 @@ Expected<Report, Error> build_shader_set(Allocator& allocator, const Options& op
     // floor on the comparisons cannot be satisfied by a run that compared nothing.
     std::fprintf(out,
                  "\nshader-set: modules=%zu entry_points=%zu artefacts=%zu comparisons=%zu "
-                 "disagreements=%zu failures=%zu modules_without_entry_points=%zu\n",
+                 "disagreements=%zu failures=%zu target_refusals=%zu "
+                 "modules_without_entry_points=%zu modules_needing_a_generator=%zu\n",
                  report.modules, report.entry_points, report.artefacts, report.comparisons,
-                 report.disagreements, report.failures, report.modules_without_entry_points);
+                 report.disagreements, report.failures, report.target_refusals,
+                 report.modules_without_entry_points, report.modules_needing_a_generator);
+    if (options.strict && report.target_refusals != 0) {
+        std::fprintf(out, "%zu target refusal(s), and --strict was asked for\n",
+                     report.target_refusals);
+    }
     return report;
 }
 

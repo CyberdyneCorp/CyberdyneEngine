@@ -343,7 +343,7 @@ float3 accumulateLights(Surface surface, float3 relativePosition, float3 normal,
 }
 
 [shader("fragment")]
-public float4 cyForwardFragment(CyForwardVertex input)
+public float4 cyForwardFragment(CyForwardVertex input) : SV_Target
 {
     let pixel = uint2(input.position.xy);
     let draw = cyDrawInstances[input.drawIndex];

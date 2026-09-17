@@ -95,6 +95,69 @@ that rung — and what stands behind it is this rung's.
       red; remove the compiler behind the preview and watch 1.1 go red. A criterion that cannot go
       red is not a criterion
 
+### `shader-system` pipeline step 4 — the second and third targets, added after the gate
+
+**WHAT WAS TRUE WHEN THIS RUNG'S GATE RAN.** `m11c:shader-targets-for-the-next-rung` was one of the
+39 reds and it was red for the plainest possible reason: `just build-shaders` was a
+`_not-implemented` stub naming M3, the Slang front end hard-coded `SLANG_SPIRV`,
+`SLANG_ENABLE_DXIL` was `OFF`, and `cache.h`'s `"metal-msl"` and `"d3d12-dxil"` named interchange
+forms nothing in the tree produced. M11.d's first task is a Metal and a D3D12 backend; its own
+ledger carries `shader-targets-emitted` as the same claim from the other side so the handover cannot
+be lost between rungs.
+
+- [x] 1.5 **The front end emits all three targets, and the recipe that drives it is not a stub.**
+      `cy::shader::Target` (SpirV, Msl, Dxil) with `target_name` spelling `cache.h`'s own
+      `target_platform` strings, `ShaderCompiler::compile_for` and `ShaderCompiler::emits` on the
+      interface, `SlangCompiler` implementing both over one shared `link_program` so the three
+      compilations differ in one field, `CY_SHADER_DXIL` turning on `SLANG_ENABLE_DXIL`, and
+      `cmake/dependencies.cmake` copying DXC's shared libraries beside `libslang` — which is the
+      search path Slang's own loader uses and the reason a `SLANG_ENABLE_DXIL=ON` build still
+      reported `failed to load dynamic library 'dxcompiler'`. `just build-shaders` now builds and
+      runs `cy_shaderc`. **Measured:** `targets: vulkan-spirv=emitted metal-msl=emitted
+      d3d12-dxil=emitted`
+- [x] 1.6 **And the claim is the AGREEMENT, not the file.** `cy_shaderc build` reads every `.slang`
+      under the roots into one module set, finds every entry point by its `[shader(...)]` attribute,
+      compiles each for every emitted target and compares the artefacts of one entry point against
+      each other: same entry name, same stage, same workgroup, same parameters in the same order
+      with the same kinds and counts. Where each target PUT a parameter is printed and deliberately
+      not compared — Metal and D3D12 give them different index spaces, and requiring a match would
+      be requiring a falsehood. The front end additionally refuses to return an artefact that is not
+      in its target's form, so a caller cannot be handed the SPIR-V under another target's name.
+      **Measured over `src` and `samples`:** `modules=31 entry_points=39 artefacts=115
+      comparisons=113 disagreements=0 failures=0 target_refusals=2 modules_without_entry_points=17
+      modules_needing_a_generator=1`
+- [x] 1.6a **Two shaders the set found, fixed without touching a pixel.** `cyForwardFragment`
+      returned `float4` with no `: SV_Target`, which SPIR-V defaults and HLSL refuses; the semantic
+      was added and the SPIR-V **verified byte-identical before and after** (20 204 bytes both
+      times, `cmp` clean), so no checked-in module and no golden image moved. `vgVisRaster` needs
+      64-bit atomics, so the DXIL floor is shader model **6.6** rather than the 6.5 first written —
+      the number is what `virtual-geometry`'s visibility raster actually requires, and the shader
+      that set it is named at the line that sets it
+- [x] 1.7 **Prove it can go red — three ways, each watched.** A criterion that cannot go red is not
+      a criterion, and the entry this replaces in `falsifiability.toml` was a derived `rename-token
+      'dxil\x1fmsl'` **in the criterion's own scratch file**, which proves nothing about the tree.
+      - **the toolchain removed**: `libdxcompiler.so` moved out from beside `libslang` →
+        `d3d12-dxil=unavailable — the compiler for it did not answer on this machine`, and the
+        criterion's `grep -q "d3d12-dxil=emitted"` fails. This is the one that proves the table is a
+        PROBE: nothing about the build configuration changed, only what the loader could find
+      - **the stub**: `format_of(Target::Msl)` made to return `SLANG_SPIRV` → `metal-msl=unavailable`,
+        because `bytes_match_target` refuses bytes that are not Metal Shading Language. This is the
+        cheapest way to fake a second target and it does not survive the check
+      - **a dropped binding**: one parameter removed from the MSL declaration only → **14
+        disagreements**, each naming both targets and the difference (`the parameter count differs
+        between vulkan-spirv and metal-msl: '12 parameters' against '11 parameters'`), and
+        `disagreements=0` fails
+      All three were reverted and the green re-measured afterwards
+- [x] 1.8 **What is left is declared, not hidden.** `m11c:every-shader-reaches-every-target` is a
+      SECOND criterion, red, carrying `known_gap` and `known_gap_closes = "m11d"`:
+      `fullscreenVertex` and `cyParticleVertex` take `SV_VulkanVertexID`, which HLSL has no
+      equivalent of. **The cost was measured rather than guessed**: recompiling `fullscreenVertex`
+      with the portable `SV_VertexID` changes the SPIR-V from 832 to 948 bytes, adds the
+      `DrawParameters` capability and subtracts a `BaseVertex` builtin — a rendering change behind
+      two golden images and a device capability, not a rename. It closes at M11.d because that rung
+      adds the D3D12 backend and already carries `golden-images-across-three-backends`, which is the
+      evidence the change needs. 37 of 39 entry points reach all three targets
+
 ## 2. The seam the plan promised twice — `rendering-global-illumination`, `denoising`, `ray-tracing-infrastructure` → Complete
 
 **WHAT THIS SECTION FOUND, before the ticks.** Three of its six statements of fact were understated

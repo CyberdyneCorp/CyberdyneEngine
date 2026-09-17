@@ -283,8 +283,16 @@ CY_TEST_CASE("the same graph compiled for two targets declares the same interfac
     CY_REQUIRE(spirv.has_value());
     CY_CHECK(bytes_match_target(Target::SpirV, spirv->bytes()));
     CY_CHECK_EQ(spirv->entry_point(), cy::Name::intern("kernelMain"));
-    CY_REQUIRE_EQ(spirv->parameters().size(), usize{1});
-    CY_CHECK(spirv->parameters()[0].kind == cy::rhi::DescriptorKind::StorageBuffer);
+    // The module declares one binding and one specialization constant, and the layout reports both
+    // — which is why this looks for the binding by name rather than asserting a count.
+    bool found_output = false;
+    for (const TargetParameter& parameter : spirv->parameters()) {
+        if (parameter.name == cy::Name::intern("output")) {
+            found_output = true;
+            CY_CHECK(parameter.kind == cy::rhi::DescriptorKind::StorageBuffer);
+        }
+    }
+    CY_CHECK(found_output);
     // [numthreads(16, 2, 1)] on the entry point above, read back out of the program layout.
     CY_CHECK_EQ(spirv->thread_group()[0], 16U);
     CY_CHECK_EQ(spirv->thread_group()[1], 2U);

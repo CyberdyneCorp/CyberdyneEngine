@@ -41,14 +41,26 @@ struct Report {
     usize entry_points = 0;
     /// Files with no entry-point attribute. Importable, not compiled on their own.
     usize modules_without_entry_points = 0;
+    /// Files whose source is completed by a generator — an `#include` naming a macro rather than a
+    /// path. Named and counted rather than compiled: half their source does not exist until a
+    /// generator has run, and reporting a missing build step as a broken shader would be a lie in
+    /// the direction that costs the most to chase.
+    usize modules_needing_a_generator = 0;
     /// Artefacts produced: one per entry point per emitted target.
     usize artefacts = 0;
     /// Pairs of artefacts of one entry point compared against each other.
     usize comparisons = 0;
     /// Comparisons where the two declared different interfaces. A run with one of these fails.
     usize disagreements = 0;
-    /// Entry points a target refused to compile. A run with one of these fails.
+    /// Entry points NO target could compile. A run with one of these fails, always: a shader that
+    /// no toolchain accepts is a broken shader.
     usize failures = 0;
+    /// Entry points one target refused and another compiled. A DIFFERENT THING FROM A FAILURE and
+    /// counted separately for that reason: it is a portability finding about that shader on that
+    /// API, not a broken shader, and the two would be indistinguishable in one number. `strict`
+    /// decides whether a run ends red over them; `m11c:shader-targets-for-the-next-rung` asks the
+    /// first question and `m11c:every-shader-reaches-every-target` asks the second.
+    usize target_refusals = 0;
 
     [[nodiscard]] bool ok() const noexcept { return disagreements == 0 && failures == 0; }
 };
@@ -66,6 +78,9 @@ struct Options {
     std::string_view out_dir;
     /// Print one line per artefact rather than one per entry point.
     bool verbose = false;
+    /// Fail the run when any target refused any entry point, not only when no target could compile
+    /// one. The completeness question, asked separately from the capability question.
+    bool strict = false;
 };
 
 /// Print the target table: every target, whether this build emits it, and when it does not, why.

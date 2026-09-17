@@ -6,10 +6,16 @@
 //       for it, so a target the machine cannot actually produce is reported as one it cannot
 //       produce rather than as an option somebody turned on.
 //
-//   cy_shaderc build [root...] [--target <t>]... [--out-dir <dir>] [--verbose]
+//   cy_shaderc build [root...] [--target <t>]... [--out-dir <dir>] [--verbose] [--strict]
 //       Compile every entry point of every `.slang` file under the roots, for every target, and
 //       compare what the artefacts of one entry point declare. Exits non-zero when two targets of
-//       one graph disagree or when a target refuses a shader. Roots default to `src` and `samples`.
+//       one graph disagree, or when NO target could compile an entry point. Roots default to `src`
+//       and `samples`.
+//
+//       `--strict` also ends red when ONE target refused an entry point another compiled. That is a
+//       different claim and it has its own criterion: a shader that Vulkan and Metal accept and
+//       D3D12 does not is a portability finding naming a shader and an API, not a broken shader,
+//       and collapsing the two into one exit code would make the second invisible behind the first.
 //
 // WHY THERE IS NO `--check` AND NO `--no-check`. The comparison is not a mode: compiling for two
 // targets and not comparing them produces two files and no evidence, which is precisely the thing
@@ -32,7 +38,7 @@ int usage() {
                  "usage:\n"
                  "  cy_shaderc targets\n"
                  "  cy_shaderc build [root...] [--target spirv|msl|dxil]... [--out-dir <dir>]\n"
-                 "                  [--verbose]\n");
+                 "                   [--verbose] [--strict]\n");
     return 2;
 }
 
@@ -56,11 +62,14 @@ int main(int argc, char** argv) {
     std::vector<shader::Target> targets;
     std::string_view out_dir;
     bool verbose = false;
+    bool strict = false;
 
     for (int index = 2; index < argc; ++index) {
         const std::string_view argument(argv[index]);
         if (argument == "--verbose") {
             verbose = true;
+        } else if (argument == "--strict") {
+            strict = true;
         } else if (argument == "--target" && index + 1 < argc) {
             shader::Target target = shader::Target::SpirV;
             if (!shader::parse_target(argv[++index], target)) {
@@ -88,6 +97,7 @@ int main(int argc, char** argv) {
     options.targets = Span<const shader::Target>(targets.data(), targets.size());
     options.out_dir = out_dir;
     options.verbose = verbose;
+    options.strict = strict;
 
     auto report = shadertool::build_shader_set(allocator, options, stdout);
     if (!report) {
@@ -99,5 +109,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cy_shaderc: nothing was compared\n");
         return 1;
     }
-    return report->ok() ? 0 : 1;
+    if (!report->ok()) {
+        return 1;
+    }
+    return (strict && report->target_refusals != 0) ? 1 : 0;
 }
