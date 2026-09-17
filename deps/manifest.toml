@@ -237,6 +237,30 @@ interface = "the RHI's memory report and transient pool in src/backends/rhi/vulk
 scope = "runtime"
 justification = "Suballocation, memory-type selection, defragmentation and VK_EXT_memory_budget tracking against a device's own heaps. An allocator is not differentiating and getting memory types wrong is a class of bug that only appears on the vendor nobody tested."
 
+# --- M11.c: DXC, AND WHY IT IS NOT A TABLE -------------------------------------------------------
+#
+# `CY_SHADER_DXIL` turns on `SLANG_ENABLE_DXIL`, and Slang's own CMake then downloads Microsoft's
+# DirectX Shader Compiler as a prebuilt release (about 34 MB) and dynamically loads it when it is
+# first asked to emit DXIL. cmake/dependencies.cmake copies its two shared libraries beside
+# libslang, because that is the search path the loader uses. So the engine's build acquires a
+# third-party binary that no table below describes, and this note is the record rather than the
+# omission.
+#
+# WHY NOT AN ENTRY. cmake/dependencies.cmake parses this file directly and turns every table into a
+# `FetchContent_Declare` needing a git repository and a 40-character commit. DXC arrives as a
+# release tarball fetched by a subproject, so an entry for it would carry fabricated fields and
+# would then be fetched a second time, by the wrong protocol, from the wrong place. The same
+# argument the header makes for deps/host-tools.toml applies, with a different answer: this is not a
+# host tool either — it is a transitive dependency of a dependency, like glslang and SPIRV-Tools,
+# which arrive inside Slang's own submodules and are likewise not tables here.
+#
+# WHAT A LICENCE REPORT NEEDS TO KNOW. DXC is **MIT** (`LICENSE-MS.txt`) over an **NCSA/Apache-2.0
+# WITH LLVM-exception** LLVM base (`LICENSE-LLVM.txt`), both permissive and both within
+# `thirdparty-dependencies`' policy. It is TOOL-TIME and nothing links it: it is a compiler the
+# shader toolchain calls, `shader-system` requires a shipping build to contain no shader compiler,
+# and `CY_SHADER_DXIL` is off in the Profile and Shipping profiles for that reason. No packaged game
+# contains it.
+
 [[dependency]]
 name = "slang"
 version = "2026.9.2"
