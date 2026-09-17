@@ -83,7 +83,7 @@ Expected<GeometryCookReport, Error> cook_virtual_geometry(const GeometryCookRequ
     report.cooked_bytes = build->cooked_bytes;
     report.resident_bytes = build->resident_bytes;
     report.resident_pages = build->resident_pages;
-    report.cluster_metadata_bytes = build->cluster_metadata_bytes;
+    report.cluster_metadata_bytes = 0;
     report.tangent_bytes_saved = build->tangent_bytes_saved;
     report.bytes_per_triangle = build->bytes_per_triangle;
     report.quantisation_error = build->quantisation_error;

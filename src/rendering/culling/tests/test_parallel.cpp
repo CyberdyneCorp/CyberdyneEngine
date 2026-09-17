@@ -136,8 +136,8 @@ CY_TEST_CASE("eight workers produce the serial visible list, in the serial order
     CullResults serial(allocator());
     CY_REQUIRE(cull_view(index, view, CullOptions{}, serial_workspace, serial).has_value());
     CY_REQUIRE_EQ(serial.stats.partitions, 1U);
-    CY_REQUIRE_GT(serial.opaque.size(), 0U);
-    CY_REQUIRE_GT(serial.transparent.size(), 0U);
+    CY_REQUIRE(serial.opaque.size() > 0U);
+    CY_REQUIRE(serial.transparent.size() > 0U);
 
     ScopedJobSystem jobs(8);
     CY_REQUIRE(jobs.started());

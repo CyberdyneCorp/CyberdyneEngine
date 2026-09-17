@@ -124,14 +124,12 @@ note = "the editors the requirement enumerates against the ones registered, and 
 # requirement. THE FIVE THAT ARE NOT HERE ARE NOT HERE ON PURPOSE, and each is named with what is
 # missing rather than left silent — the run prints their titles:
 #
-#   Surface closures                       the closure SET and its composition are exercised by
-#                                          `material_lowering: generality is priced, not hidden`
-#                                          (a coat layered over diffuse + specular + sheen), but the
-#                                          requirement's load-bearing sentence is "a layer SHALL
-#                                          attenuate the layers beneath it" and that arithmetic is
-#                                          `cy/brdf.slang`'s. NO C++ CASE EVALUATES IT, and a
-#                                          composition case recorded as an energy case is the green
-#                                          tick this map's header warns about.
+#   Surface closures                       ANSWERED BELOW, as an exemption, and the file this bullet
+#                                          named was the wrong one: the layer attenuation is
+#                                          `cy/material.slang`'s `cy_closure_layer` rather than
+#                                          `cy/brdf.slang`'s, and it attenuates by the top closure's
+#                                          WEIGHT where the requirement asks for its FRESNEL term.
+#                                          Nothing evaluates it: it is compiled and never run.
 #   Geometry attribute interface           one of three scenarios has a case (`the vertex-stage
 #                                          variant count is reported rather than hidden`). The other
 #                                          two are the per-source ATTRIBUTE DECODERS — static mesh,
@@ -277,14 +275,11 @@ note = "'WHEN a material samples a field that the project does not declare THEN 
 #                                 are about the VFX graph compiler's generated kernels and about
 #                                 mesh, task and ray-tracing shaders as capability-gated additions.
 #                                 `Capability::RayTracing` is an enumerator nothing sets.
-#   Visual material editor        the engine half is answered — every lowering stage is inspectable
-#                                 and `unit.material_compiler` proves it — and THE PANEL IS NOT
-#                                 THERE. `SpecialisedEditors::open(Domain::Materials)` refuses with
-#                                 "this build declares no authoring vocabulary for materials", which
-#                                 the M11.c spike measured by running the editor's own host. M11.c
-#                                 task 6.1a owns it; recording this requirement as answered by the
-#                                 stage list would be answering "is there an editor?" with "there is
-#                                 something for an editor to show".
+#   Visual material editor        ANSWERED BELOW, as an exemption, and this bullet is out of date:
+#                                 M11.c task 6.1a LANDED and the panel now opens and wires
+#                                 (`the_material_editor_opens_and_its_nodes_can_be_wired`). What is
+#                                 still missing is the stage VIEWING the requirement is about — the
+#                                 engine produces all five stages and no editor crate reads one.
 #   Hot reload                    `integration.shader_pipeline` has the artefact half — an edit
 #                                 replaces a library entry, a broken edit keeps the previous one —
 #                                 and the requirement is about a VIEWPORT: "the change SHALL appear
@@ -1830,7 +1825,7 @@ note = "the requirement's middle paragraph, five answers at once: coverage, type
 
 # --- virtual-shadows --------------------------------------------------------------------------------
 #
-# FOURTEEN CASES, ONE TEST WRITTEN FOR THIS MAP, AND FIVE RECORDED DEFERRALS. The split is not a
+# FOURTEEN CASES — ONE OF THEM WRITTEN FOR THIS MAP — AND SIX RECORDED DEFERRALS. The split is not a
 # judgement about which requirements matter; it is `src/rendering/shadows/README.md`'s own line
 # drawn requirement by requirement. That module holds every decision about WHICH pages exist, WHEN
 # they are re-rendered and WHAT they cost, and each of those is arithmetic over positions, bounds
@@ -1839,7 +1834,7 @@ note = "the requirement's middle paragraph, five answers at once: coverage, type
 # GPU-driven caster selection against page frusta, page-batched indirect rasterisation, and the
 # filtering kernels.
 #
-# THE FIVE DEFERRALS ARE PARKED AT M11.e AND THAT IS A CLAIM, NOT A SHRUG. No rung between here and
+# THE SIX DEFERRALS ARE PARKED AT M11.e AND THAT IS A CLAIM, NOT A SHRUG. No rung between here and
 # 1.0 owns the device half of this row — M11.c task 4.4 says in as many words that `virtual-shadows`
 # does not reach Complete on this rung, M11.d is a second and third desktop and M11.e is mobile,
 # distribution and the 1.0 record. M11.e is therefore the LAST rung at which an absence of this row
