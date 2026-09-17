@@ -417,6 +417,7 @@ Denoiser::PixelResult Denoiser::filter_pixel(const SignalState& state,
             result.taps_offered += 1;
             const f32 weight = tap_weight(context, tap, dx, dy);
             if (weight <= 0.0F) {
+                result.taps_rejected += 1;
                 continue;
             }
             sum = sum + (state.filtered[tap] * weight);

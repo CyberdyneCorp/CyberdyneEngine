@@ -363,9 +363,9 @@ CY_TEST_CASE("a compute module reloads on the graphics path, and the workgroup s
     edited[local_size] = 16U;
 
     Fixture fixture;
-    fixture.write_module("shaders/probe.slang",
-                         cy::Span<const u32>(test::kProbeComputeSpirv,
-                                             std::size(test::kProbeComputeSpirv)));
+    fixture.write_module(
+        "shaders/probe.slang",
+        cy::Span<const u32>(test::kProbeComputeSpirv, std::size(test::kProbeComputeSpirv)));
 
     SourceRegistry registry(cy::current_allocator());
     CY_REQUIRE(registry.start(fixture.files, path_of("shaders")).has_value());

@@ -133,7 +133,7 @@ void TemporalFramework::begin_frame(const TemporalView& view) noexcept {
 
     TemporalInvalidation cause = TemporalInvalidation::None;
     if (pending_ != TemporalInvalidation::None) {
-        cause = TemporalInvalidation::CameraCut;  // MUTATION
+        cause = pending_;
     } else if (resized) {
         cause = TemporalInvalidation::ResolutionChange;
     } else if (teleported) {

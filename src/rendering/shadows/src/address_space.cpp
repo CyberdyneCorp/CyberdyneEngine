@@ -274,7 +274,7 @@ u32 pages_covering(const ShadowAddressSpace& space, const Aabb& bounds, VirtualP
                 VirtualPage page;
                 page.light_slot = space.light_slot;
                 page.level = space.level;
-                page.face = 0;  // MUTATION
+                page.face = first_face;
                 page.x = static_cast<u16>(x);
                 page.y = static_cast<u16>(y);
                 out[wanted] = page;

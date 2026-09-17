@@ -866,7 +866,7 @@ note = "the requirement's sharp half is the OPTIONAL RESOURCE contract — \"SHA
 row = "rendering-architecture"
 requirement = "Environment and post-process configuration"
 evidence = "exempt:m11e"
-note = "DECLARED PER VIEW AND CONSUMED BY NOTHING. `PostProcessSettings` and `EnvironmentSettings` are on both `ViewDescription` and `SceneDescription`, with `override_environment` beside them, and a grep over src/ finds no reader: no function resolves a view's settings against its scene's default, and `FrameAssembly` takes ONE view and builds its post chain from an `AssemblyDescription`, not from a view's settings. So the requirement's only scenario — \"WHEN a security-camera view sets its own post-process configuration THEN it SHALL render with that configuration while the main view is unaffected\" — has nothing that could render with it, and a case over the two structs would assert that a copy is a copy. WHAT WOULD OBSERVE IT: one frame, two views of one scene with different chains, each view's output showing its own. That needs the multi-view frame this row's `Frame structure` entry says does not exist yet."
+note = "DECLARED PER VIEW AND CONSUMED BY NOTHING. `PostProcessSettings` and `EnvironmentSettings` are on both `ViewDescription` and `SceneDescription`, with `override_environment` beside them, and a grep over src/ finds no reader: no function resolves a view's settings against its scene's default, and `FrameAssembly` takes ONE view and builds its post chain from an `AssemblyDescription`, not from a view's settings. The SCENE-level half of the environment does travel — `the environment rides the snapshot` in `unit.render_extract` carries ambient intensity and fog across the commit boundary into `SceneDescription::environment` — and stops there: nothing reads it back to shade with. So the requirement's only scenario — \"WHEN a security-camera view sets its own post-process configuration THEN it SHALL render with that configuration while the main view is unaffected\" — has nothing that could render with it, and a case over the two structs would assert that a copy is a copy. WHAT WOULD OBSERVE IT: one frame, two views of one scene with different chains, each view's output showing its own. That needs the multi-view frame this row's `Frame structure` entry says does not exist yet."
 
 [[coverage]]
 row = "rendering-architecture"
@@ -1224,3 +1224,498 @@ requirement = "The firewall's test is a negative control"
 evidence = "test:integration.gameplay_firewall"
 case = "with the enforcement point disabled the same writes land and the digest diverges"
 note = "this requirement asks for a DEMONSTRATION rather than an assertion — `the test that proves the firewall SHALL fail when the firewall is removed, and that SHALL be demonstrated rather than assumed` — so the case IS the demonstration, inside one process: it disarms the enforcement point, runs the same simulation, and requires exactly the inversion of the armed case — zero refusals, the VFX and inference writes LANDING, and the state digest DIVERGING from the control run. Every one of those would have to be false for the armed case to pass with the firewall removed. The disarm carries a reason string and the case requires it to be non-empty, so a capture taken with the firewall down cannot be mistaken for a clean one. The subject is not deferred this time: M8.b carried this criterion with neither VFX nor inference in the tree, and both are here."
+
+# --- rendering-culling-and-lod -----------------------------------------------------------------------
+#
+# NINE OF NINE, written by reading the specification requirement by requirement against
+# src/rendering/culling/ (the CPU cull, the spatial index and the LOD chain),
+# src/servers/render/culling/ (the GPU cull's records, its CPU reference and the hierarchical depth
+# buffer) and src/rendering/gpu_culling/ (the dispatch on a device).
+#
+# FOUR CASES WERE WRITTEN FOR THIS MAP BECAUSE THE REQUIREMENTS THEY ANSWER HAD NONE. The parallel
+# paragraph of "Frustum culling" had no case at all — `CullOptions::jobs` was never passed a job
+# system by any test in the tree — and neither had the layout claim of "Spatial indexing", the
+# frame-arena scenario of "Culling results", or the whole of "Culling diagnostics". Each was proved
+# red before it was believed: see the entries below for what each one breaks.
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Spatial indexing"
+evidence = "test:unit.render_culling"
+case = "the broad phase reads three dense arrays, and the payload is a fourth"
+note = "this requirement is a LAYOUT claim — a `DynamicBvh` over renderables, a second over volumes, a flat array for always-visible instances, and bounds stored densely PARALLEL to a 32-bit flags word and a 32-bit layer mask — and no counter can see it: a cull that loaded the whole payload per instance would produce exactly the same visible set. So the case asserts the shape rather than the result: one element per slot in each of the three broad-phase arrays, the payload in a fourth array at a different address, the two trees as distinct objects, and the always-visible instance in neither of them. The second scenario is observed rather than asserted of the caller — an instance marked `kSpatialStatic` is inserted once and, two culls later, `updates` and `tree_restructures` are both still zero."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Frustum culling"
+evidence = "test:unit.render_culling"
+case = "the layer test rejects before any geometry is touched"
+note = "\"reject instances by, IN ORDER: layer mask against the view's mask, then conservative frustum-versus-AABB, then optional per-instance distance limits\" — the order is the requirement, and this case proves the first hop the only way it can be proved: the instance is INSIDE the frustum and its mask shares no bit with the view's, so a non-zero frustum counter would mean the tests ran the other way round. The two hops after it are `the frustum keeps what is in front and rejects what is behind` and `a per-instance distance limit is applied after the frustum` beside it. The requirement's second paragraph — parallelised above a configurable threshold, each worker producing a local list — is `integration.render_culling_parallel`'s `eight workers produce the serial visible list, in the serial order`, which compares the eight-worker run against the serial one ELEMENT FOR ELEMENT rather than as a set, because partition order is what the merge promises."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Occlusion culling"
+evidence = "test:unit.render_gpu_culling"
+case = "hzb: an object behind the depth buffer is occluded and one in front is not"
+note = "the pyramid is built from the previous frame's depth and an instance is tested by projecting its bounds against the appropriate mip; the case puts one instance behind the recorded depth and one in front of it and requires exactly one to survive. The requirement's other clauses each have their own case in the same suite: `hzb: the reduction keeps the FURTHEST depth of each footprint` and `hzb: a sphere the camera is inside, or behind it, is never occluded` are the conservatism that makes false occlusion impossible, `hzb: an invalid pyramid occludes nothing, which is what a camera cut leaves` is the camera cut, `hzb: visibility hysteresis keeps a recently seen instance for the configured frames` is the hysteresis, and `hzb: the two-pass scheme draws last frame's visible set first` is the two-pass scheme. The cluster-granular clause is `render.virtual_geometry_gpu`'s `cluster occlusion reads the shared hierarchical depth buffer`, over the SAME pyramid and the same `hzb_sample.slang` — one piece of device work, and it is recorded as one."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "GPU-driven culling"
+evidence = "test:render.gpu_culling"
+case = "gpu cull dispatch: a mixed scene produces the reference's buffers exactly"
+note = "the compute dispatch on a real device against `cpu_reference_cull`, compared buffer for buffer rather than by looking at a frame — which is what `gpu_cull.h` exists for and how M7 found `bind_descriptor_sets` deriving its bind point from the queue. `renderer: a GPU cull and a CPU cull fill the same CullResults` in the same suite is the requirement's other half, \"a CPU path SHALL remain for devices lacking the capability and for cases needing CPU visibility results\", asserted as the two paths filling one result structure identically. The third scenario — culling continuing below the instance — is `unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw`, which requires such an instance to leave the cull as a traversal candidate rather than as an indexed draw."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Level of detail"
+evidence = "test:unit.render_culling"
+case = "selection walks the chain, and a mesh below every threshold gets the coarsest level"
+note = "discrete LOD selected from projected screen coverage, including the clause that decides what happens at the bottom of the chain: a mesh too small for every threshold is drawn at its cheapest level rather than dropped. The three adjustments the requirement names each have their own case beside it — `hysteresis stops an instance oscillating on a threshold`, `bias scales coverage, so a shadow view selects coarser levels` (the view-specific bias, which is the shadow and reflection scenario), and `the cross-fade band names both levels`, which requires both levels and a fade weight so the dither pair TAA resolves is a decision this function made rather than a renderer's guess. `coverage falls with distance and is independent of resolution` is underneath all of them. The mixed-strategy scenario is the other strategy's: virtual geometry selects per cluster from the same view settings, and `unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw` is where one scene carries both without either being disabled."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Visibility ranges and HLOD"
+evidence = "test:unit.render_culling"
+case = "an HLOD proxy replaces its children, and nesting resolves to one level per branch"
+note = "the load-bearing sentence is \"a parent's visibility replaces its children's\", and the case drives it through a NESTED hierarchy, requiring exactly one visible level per branch — a resolution that let both a proxy and its children draw would double the geometry at exactly the distance HLOD exists to cheapen. `a visibility range fades in and out over its margin` is the range and its fade margins, `a dependents fade draws parent and child together during the swap` is the third fade mode and the swap scenario, and `a cycle in the parent links is refused rather than hanging the frame` is what keeps the resolution total."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Shadow caster culling"
+evidence = "test:unit.render_culling"
+case = "a shadow caster that cannot reach the camera frustum is rejected"
+note = "both scenarios in one case, and the second is what makes the first safe. A caster inside the light's volume that cannot project into the camera frustum is rejected by the swept-volume test — the sweep is the union of the caster's box and the same box pushed along the light, so the only mistake it can make is keeping a caster it could have dropped. Then the case clears `tight` and requires the same caster back: that is the shared-shadow-map clause, one shadow map valid for several camera views. The per-cascade and per-face lists the requirement asks for are one `cull_shadow_casters` call per `ShadowCullView`, which is the caller's loop; the device side of the same claim is `gpu cull dispatch: a shadow view's two frustums agree with the reference`."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Culling results"
+evidence = "test:unit.render_culling"
+case = "survivors are routed into their typed lists"
+note = "one cull over one scene holding an opaque instance, a transparent one, a mover, a light and a decal, with each landing in its own list — and the case asserts the property the typing would otherwise lose: a moving opaque instance is in BOTH the opaque and the motion list, because motion is a subset rather than a partition. The frame-scoped scenario is `the result lists are the frame arena's, and resetting it releases them` beside it, which culls into the engine's own `cy::frame_arena()` rather than a stand-in and requires `used()` to be zero again after `reset_frame_arena()` — destructors are explicitly not what releases it. Sorting before submission is `rendering-forward-clustered`'s."
+
+[[coverage]]
+row = "rendering-culling-and-lod"
+requirement = "Culling diagnostics"
+evidence = "test:unit.render_culling"
+case = "every stage the diagnostics name is counted, with the histogram and the clock"
+note = "this requirement is a LIST, so the case checks every entry of it rather than one: a scene built to lose exactly one instance at each stage this path decides, then tested, rejected-by-layer, rejected-by-frustum, rejected-by-range and visible read back, required to SUM to the number tested — an accounting identity a dropped stage breaks — plus the LOD histogram accounting for exactly the survivors and a non-zero wall clock. `rejected_by_occlusion` is the one counter this module leaves at zero and says so in cull.h: occlusion is the GPU cull's stage, and its own `GpuCullCounters::rejected_by_occlusion` is asserted by `gpu cull: occlusion runs last and only when the flag and the tester are both there` in `unit.render_gpu_culling`."
+
+# --- virtual-geometry ---------------------------------------------------------------------------------
+#
+# TWENTY-SIX OF TWENTY-SIX, and EIGHT OF THEM ARE EXEMPTIONS rather than tests. Each exemption names
+# a verified absence in this tree and what would observe it; none of them says "not tested". The
+# eight are not evenly distributed and that is the finding: the cook, the hierarchy, the page format,
+# the residency manager, the GPU traversal and the visibility buffer are built and device-tested,
+# and what is missing is everything that would connect them to a frame — the build-time option that
+# removes nothing, the hardware rasterisation path, the budget controller, assemblies, the
+# capability-driven path selection, the visualisation modes, tangent storage, and the
+# class-appropriate cooker policies. src/rendering/virtual_geometry/README.md's "What is absent"
+# section names four of the eight from the module's own side; this map found the other four by
+# reading the specification against the tree.
+#
+# THREE CASES WERE WRITTEN FOR THIS MAP. The classes an asset declares had no round-trip case, the
+# import report's figures were printed rather than asserted, and nothing anywhere asserted that the
+# renderable component exposes no cluster, page or hierarchy concept — which is the whole of the
+# "Gameplay API" requirement and the one a future field would break silently.
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Engine-owned virtual geometry"
+evidence = "exempt:m11e"
+note = "THE OPTION REMOVES NOTHING IN THIS TREE. `CY_VIRTUAL_GEOMETRY` appears in cmake/features.cmake (its declaration and the cross-check that it needs a renderer), in this module's CMakeLists.txt comment and in src/ui's — and in NO `#if`, no `target_compile_definitions`, and no `if()` around a target or a source. The module compiles and links in every configuration, so `-D CY_VIRTUAL_GEOMETRY=OFF` produces a build that behaves identically to one with it on. That is precisely the defect cmake/features.cmake itself writes down for CY_NETWORKING at M9 — \"an option that removes nothing is not an option; it is a line in a table\" — and m8c's `feature-options-off` criterion does not catch it, because it asks whether the tree still BUILDS with the option off, which it does. The ownership half of this requirement is true and visible: the format, the hierarchy, the error metric, the page layout, the residency manager and the traversal are all in src/rendering/virtual_geometry/, with only the simplifier integrable behind an engine-owned interface. WHAT WOULD OBSERVE IT: a `#if defined(CY_VIRTUAL_GEOMETRY)` around the frame's use of `GpuTraversal` and `GeometryCache`, plus a case requiring an asset to render through its coarse resident representation with the option off — the shape `feature-options-off` already has for CY_VFX, one assertion deeper."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Virtual geometry asset"
+evidence = "test:integration.virtual_geometry_build"
+case = "a cooked asset decodes back to what it was cooked from"
+note = "the enumerated contents of a cooked asset, round-tripped: bounds, the cluster table and its hierarchy links, the page table, the cluster policy, the vertex encoding, the resident root and the classes. `the first page is always resident, whatever the budget says` is the \"most geometry data SHALL NOT be permanently resident\" half, and `instances of one asset share its hierarchy and differ only in transform` in the same suite is the cook-once-use-many scenario. The fallback representation this requirement asks each asset to \"carry or reference\" is the always-resident root itself, decoded through `decode_cluster` — `a decoded cluster's geometry is the cooked geometry within the quantisation bound` is that path — and the format carries no separate fallback-mesh handle; the per-device SELECTION of that path is its own requirement below, and it is exempt."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Clusters"
+evidence = "test:integration.virtual_geometry_build"
+case = "a policy that cannot be honoured is refused rather than clamped"
+note = "\"Cluster size SHALL be a **cooker policy** with configurable minimum, target, and maximum triangle counts and a maximum vertex count — not a constant baked into the format\" is the requirement's own emphasis, and this is the case that makes the word POLICY mean something: a policy the cook cannot honour is refused by name rather than silently clamped, which is what would turn a setting back into a constant nobody could see. Every other case in the suite cooks at a non-default policy (32-triangle clusters in groups of four), which is the recookability scenario. The six things each cluster must carry are `Cluster`'s fields and are read by the selection test and the cone test in `unit.virtual_geometry`; `clustering never mixes materials` is the material range; and the metadata cost the requirement asks to be REPORTED is asserted non-zero and bounded by `the import report carries every figure the requirement enumerates` in `integration.cook_path`."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Cluster hierarchy and grouping"
+evidence = "test:integration.virtual_geometry_build"
+case = "the cut is watertight at every threshold and every distance"
+note = "the crack-free rule is the whole requirement and it is checked as a SWEEP rather than at one threshold: every cut the selection test can produce, over a range of distances, with the shared boundaries of adjacent clusters required to match. `a parent's error is strictly above its children's and its sphere contains theirs` asserts the two invariants the cut rests on directly, `group membership is re-partitioned between levels` is the requirement's second paragraph (boundaries must not accumulate), `a closed mesh cooks into a hierarchy with several levels` is the iterative simplification itself, and `an open mesh reports not-applicable rather than a pass` is what stops the sweep from passing vacuously. The third scenario says the check runs WHEN AN ASSET IS COOKED, not when it is tested: `the cook runs the watertightness check and reports it` in `integration.cook_path` is that, and `fail_on_cracks` defaults on."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Geometric error and detail selection"
+evidence = "test:integration.virtual_geometry_build"
+case = "detail follows distance without a discrete switch"
+note = "\"progressively finer clusters SHALL be selected without a discrete LOD switch or a visible pop\" is asserted as a monotone walk: as the camera approaches, the selected set refines step by step rather than jumping between authored levels. `one mesh renders at several levels in one frame` is the per-cluster, view-dependent scenario; `a shadow view's threshold scaling selects coarser geometry` is the secondary-view scaling; and the unit of quality is the requirement's own — `TraversalView::threshold_pixels` is a maximum acceptable error IN PIXELS applied to every asset, which is what makes a project-wide target meaningful without per-asset tuning. The arithmetic underneath is `unit.virtual_geometry`'s: `a world error projects to the pixels the projection says it does`, `selection brackets the threshold, and the bracket is half-open`, and `equal errors would leave a hole, which is why the builder refuses them`."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Geometry pages"
+evidence = "test:integration.virtual_geometry_build"
+case = "a page's content hash is over its own bytes and nothing else"
+note = "content addressing is the requirement's load-bearing property — it is what lets two assets share a page and a patch transfer only what changed — and a hash that covered anything outside the page would break both while looking correct. The case pins the hash to the page's own bytes. `editing one corner of a mesh leaves most clusters' bytes untouched` is the patch scenario measured rather than claimed (a majority of clusters must survive a one-vertex edit), and the page size is a cooker policy every case in this suite sets explicitly — the suite cooks at 4 KiB because the 128 KiB default would put a test mesh in one page and make every page-level claim vacuous."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Always-resident root"
+evidence = "test:integration.virtual_geometry_residency"
+case = "the always-resident root is resident before anything is serviced"
+note = "\"An object SHALL never fail to render because streaming has not completed\" is unconditional, so the case asserts residency BEFORE any request is serviced rather than after. `the pinned root is never evicted, however hard the budget is pushed` is the other direction, under a budget small enough to force eviction; `the first page is always resident, whatever the budget says` is the cook-side half; and the nearest-resident-ancestor rule is `a missing page falls back to the nearest resident ancestor and asks for the page` in `integration.virtual_geometry_build`, which requires the object to still render, at a coarser level, with the request recorded. The resident cost is reported at cook time and asserted by `the import report carries every figure the requirement enumerates`."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "GPU page table and residency"
+evidence = "test:integration.virtual_geometry_residency"
+case = "an evicted page's generation makes a stale reference miss"
+note = "the generation counter is the requirement's own scenario and the reason the page table carries one: the case evicts a page, reuses its slot, and requires the old reference to MISS rather than read the new page's bytes. The single shared allocation is the cache's shape — a page's location is a byte offset into one allocation, never a per-asset buffer — and eviction is scored rather than least-recently-used, which `a prefetch never outbids the frame that needs the page now` and `a page that arrived this frame cannot leave this frame` assert from the two directions that a pure LRU would get wrong. A suballocator inside that allocation is named as absent in the module's README; the requirement asks for scored eviction within a budget, which is what is here."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "GPU-driven streaming feedback"
+evidence = "test:render.virtual_geometry_gpu"
+case = "the GPU traversal falls back and asks when a page is not resident"
+note = "the request originates ON THE DEVICE, which is the requirement's first sentence and the reason this case is a device case rather than a reference one: the traversal meets a non-resident page, appends a request to the GPU buffer, and the frame still draws — at the nearest resident ancestor — with the request read back afterwards rather than through a synchronising readback mid-frame. Requests carry a priority (the projected screen error scaled by the instance's importance) and a repeat count, which is the deduplication and the prioritisation the third scenario asks for; `a prefetch never outbids the frame that needs the page now` in `integration.virtual_geometry_residency` is the predictive half meeting the reactive one, and the shared deadline bus records prefetch accuracy per prediction source."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Instance culling"
+evidence = "test:integration.virtual_geometry_build"
+case = "instances that cannot matter are removed before any cluster work"
+note = "the case requires the instance cull to happen FIRST — frustum, projected screen size and layer mask, with occlusion joining them when a `TraversalView::occlusion` tester is attached — and asserts it where it is visible: sixty-four instances are accounted for exactly once across the three rejection reasons and the survivors, and then every one of them is masked out and `visible_clusters` is required to read ZERO. An implementation that traversed the hierarchy first and filtered afterwards would produce the same picture and fail that. The device runs the same four tests and is compared against this reference over twenty-four views by `the GPU traversal selects the same clusters as the reference, over a sweep`. WHAT THIS ENTRY DOES NOT CLAIM: the second scenario's bridge. The traversal consumes a flat `GpuInstance` buffer uploaded once per asset set and never an ECS entity, which is the shape the requirement asks for, but nothing in this tree fills it from `render::GpuScene` — the producer end exists (`unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw` routes such an instance into its own list) and the consumer end exists, and the link between them is the one the module's README names as unbuilt."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "GPU hierarchy traversal and cluster culling"
+evidence = "test:render.virtual_geometry_gpu"
+case = "the GPU traversal selects the same clusters as the reference, over a sweep"
+note = "the traversal is a compute dispatch, so the only honest check is against an independent answer: `traverse_reference()` is a CPU implementation that no frame calls, and the suite compares the device's selected cluster set against it over twenty-four views sweeping camera distance and threshold, with validation and synchronisation validation on. A sweep rather than one view because a single view is a fixture in which one test can mask another. `traversal prunes rather than testing every cluster` is the pruning scenario measured as nodes not visited, `the normal cone rejects the far side of a closed object` is the cone, and the CPU-does-not-draw clause is structural: the dispatch is indirect from GPU-generated arguments and the host submits a bounded number of passes whatever the cluster count."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Occlusion culling for clusters"
+evidence = "test:render.virtual_geometry_gpu"
+case = "cluster occlusion reads the shared hierarchical depth buffer"
+note = "the same pyramid `rendering-culling-and-lod`'s occlusion cull reads, built by the same `HzbPass` and sampled by the same `hzb_sample.slang` — two rows waiting on one piece of device work, recorded once rather than twice. The case sweeps twenty-four views over occluder depth and selection threshold and requires BOTH counters non-zero across the sweep: node prunes and per-cluster rejections. That pairing is the point — for a leaf cluster the node test answers first, so a fixture in which only one of the two ever fires cannot detect the deletion of the other. Conservatism is the HZB's own (`hzb: the reduction keeps the FURTHEST depth of each footprint`), and the two-pass scheme is `hzb: the two-pass scheme draws last frame's visible set first` in `unit.render_gpu_culling`."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Rasterisation paths"
+evidence = "exempt:m11e"
+note = "THE DEFAULT PATH IS THE ONE THAT IS ABSENT. \"Visible clusters SHALL be rasterised through a **hardware** path by default\" — what ships is the compute rasteriser behind the visibility buffer, which the requirement accommodates explicitly but does not make the default. The module's README states it as a named absence with its re-entry point, and the link graph is the evidence: nothing in this tree links `cy::rendering-virtual-geometry` from `cy::rendering-forward`, so there is no frame in which a cluster reaches a vertex and fragment shader. The two scenarios are in a better state than the paragraph — mesh shaders are not required anywhere (the compute-plus-indirect path is what the device suite runs, on a device that has them), and the per-cluster routing the second scenario describes is a MAY. WHAT WOULD OBSERVE IT: the visibility buffer written by a vertex and fragment shader over the same records, selected per cluster by projected triangle size, with `render.virtual_geometry_gpu` comparing the two paths' buffers on one scene — which is task 4.3, unfinished at M11.c."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Visibility buffer and material resolve"
+evidence = "test:render.virtual_geometry_gpu"
+case = "the visibility buffer identifies surfaces, bins them, and resolves their attributes"
+note = "all three of the requirement's demands on one device pass and one resolve pass: every covered pixel identifies an instance and a primitive, the pixels are binned BY MATERIAL and each bin evaluated once, and the attributes are reconstructed from the identified triangle by `reconstruct_surface()` rather than interpolated through the geometry pass. `the visibility buffer resolves identically across runs` and `an exact depth tie is broken the same way on every run` are what make the identification a function of the scene rather than of scheduling, and `a scene too large for the surface identity is refused at initialise` is the packed identity refusing to overflow silently. The Forward+ scenario is not claimed here: virtual geometry is not wired into the forward frame in this tree, which is the same unbuilt link the exemption on `Rasterisation paths` names."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Tangent policy"
+evidence = "exempt:m11e"
+note = "THE POLICY IS DECLARED AND HALF OF IT CANNOT BE HONOURED. `TangentPolicy` is carried in `BuildOptions`, written into the cooked header, read back by `decode_asset`, contributes to the derivation key, and the cooker reports `tangent_bytes_saved` — so \"tangents are not stored unnecessarily, and the saving reported\" is real and is asserted in `integration.cook_path`. But there is NO TANGENT CHANNEL ANYWHERE IN THE FORMAT: `VertexEncoding` has bits for positions, normals and UVs and none for tangents, `DecodedCluster` has positions, normals, UVs and indices and no tangent array, and `tangent_bytes_saved` is computed as `policy == Stored ? 0 : 16 bytes per vertex` — which means an asset that declares `Stored` gets no tangents stored and a reported saving of zero. So the second scenario, \"WHEN an asset requires stored tangents for correctness THEN it SHALL declare so, and the cooker SHALL store them\", has nothing behind it, and a case asserting the policy round-trip would be a green tick over that. WHAT WOULD OBSERVE IT: a tangent lane in `VertexEncoding` and `DecodedCluster`, and a case cooking one mesh under both policies that requires the `Stored` asset to decode tangents and to be larger by the saving the `Derived` one reports."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Geometry compression"
+evidence = "test:integration.virtual_geometry_build"
+case = "a decoded cluster's geometry is the cooked geometry within the quantisation bound"
+note = "the encoding is only correct if what comes back is the source within the bound the encoding declares, and that is one assertion over every channel the requirement enumerates: positions quantised against cluster bounds, octahedral normals at a declared bit depth, UVs against a per-cluster range, and indices compact against the bounded vertex count. `a finer encoding costs more bytes and less error` is the requirement's \"Encoding precision SHALL be a cooker policy with reported error\" in both directions at once — eight-bit positions must cost fewer bytes AND report more error than sixteen — which is what stops the reported error from being a constant. Bytes per triangle and the quantisation error are reported per asset and asserted by `the import report carries every figure the requirement enumerates`. Tangents are the one channel with nothing behind it; see this row's `Tangent policy` entry."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Geometry budget and importance"
+evidence = "exempt:m11e"
+note = "THE IMPORTANCE HALF IS BUILT AND TESTED; THE CONTROLLER IS NOT THERE AT ALL. `Importance` is declared with the requirement's own four values, scales the effective threshold in the direction the requirement gives (`importance scales the threshold in the direction the requirement gives`, `unit.virtual_geometry`), and is observed on a scene under load by `importance keeps detail where it is asked for` in `integration.virtual_geometry_build`; the threshold is settable per view and each view is traversed from its own settings. What does not exist is the first four paragraphs: src/rendering/virtual_geometry/ contains no reference to `cy::rendering::arbiter` of any kind — no `SubsystemController`, no `BudgetSubsystem::Geometry` registration, no measurement of its own GPU cost reported to the arbiter, no declared reserved minimum and no report of having reached it, and no pinned mode. `BudgetSubsystem::Geometry` exists in the arbiter and is registered by src/foliage/, not by this system. So \"SHALL adjust the screen-error threshold to hold the geometry allocation\" has no implementation to observe. WHAT WOULD OBSERVE IT: a `SubsystemController` over `threshold_pixels` registered against `BudgetSubsystem::Geometry`, and the sweep `render_shadow_control` already has for shadows — a load sweep asserting the allocation is held, that detail does not pump, and that the minimum is reported rather than passed through."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Instancing and assemblies"
+evidence = "exempt:m11e"
+note = "ASSEMBLIES ARE SPECIFIED AND NOT BUILT, and the module's README names this as its own re-entry point in those words: an asset referencing other assets with transforms does not exist, there is no `add_assembly` beside `GpuScene::add_asset`, and the word appears nowhere in the module outside a comment. The instancing half of the requirement IS built and tested — `instances of one asset share its hierarchy and differ only in transform` in `integration.virtual_geometry_build` requires two instances of one asset to traverse one hierarchy and one page set, and `GeometryInstance` carries a transform, a material offset, a quality bias and an importance and nothing else — but both of this requirement's scenarios are about assemblies, so mapping it to the instancing case would answer neither of them. WHAT WOULD OBSERVE IT: a cook-side expansion of a referenced part into instances of an already-registered asset, plus a case requiring a model with two hundred instances of one bolt to store the bolt's geometry once and to stream only the parts that are visible."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Fallback and platform paths"
+evidence = "exempt:m11e"
+note = "THERE IS NO PATH SELECTION IN THIS TREE. The requirement asks the renderer to \"select a **geometry path** per device: virtual geometry, mesh-shader-accelerated, or traditional indexed rendering, based on capability queries rather than device identity\" — there is no such enumeration, no selector, and no capability query that chooses one: `RenderCapability::MeshShaders` exists in the arbiter's profile table and nothing in src/rendering/virtual_geometry/ reads it. The fallback REPRESENTATION does exist — the always-resident root decoded through `decode_cluster`, which `asset.h` names as the fallback path's and which `a decoded cluster's geometry is the cooked geometry within the quantisation bound` exercises — but a representation nothing selects is not a path. The third scenario is in the same state from the other side: nothing under src/rendering/gi/ names the cluster hierarchy, so the GI scene does not draw its representation from it. WHAT WOULD OBSERVE IT: a `GeometryPath` chosen from `rhi::Capabilities` with a case per branch, and a GI case requesting a level of the existing hierarchy for a world-space error target rather than a separately cooked mesh."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Collision and navigation are separate representations"
+evidence = "test:integration.import_unwrap"
+case = "decomposition: a concave shape is split, and the budget is respected"
+note = "the requirement's load-bearing sentence is that collision is derived AT COOK TIME FROM THE SOURCE MESH with its own complexity budget, independently of the virtual geometry representation — so the evidence is the importer's own decomposition, which takes the source mesh and a `ConvexDecompositionOptions` part budget and is asserted to respect it, with `decomposition: a convex shape comes back as one part` and `decomposition: an empty mesh and a zero budget are refused` beside it and `convex_hull` in `integration.import_mesh` for the single-hull case. Nothing hands render geometry to physics: the two producers share only the source mesh. The reporting clause is the geometry cook's, and it is honest in the way the requirement asks — `GeometryCookReport::collision_triangles` is a SEPARATE figure and reads zero because this cook generates no proxy, which is asserted by `cooking a mesh twice produces the same bytes and the same key` in `integration.cook_path`; zero rather than the render count is what makes the mismatch visible."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Deformation classes and growth path"
+evidence = "test:integration.virtual_geometry_build"
+case = "the classes an asset declares are what a reader gets back"
+note = "\"Assets SHALL declare a deformation class ... so the runtime knows which paths apply\" is a declaration the RUNTIME has to be able to read, so the case is a round trip through the cooked header at a class that is not the zero of the enumeration, and it asserts the default is `Static` rather than the accident of a zeroed struct. `Static` and `RigidInstanced` — the two the table marks required — are what every other cook in the suite produces and what the traversal consumes. `Terrain` is the one class with a second producer and it is tested where that producer is: `a terrain tile becomes virtual geometry through the engine's own builder` in `integration.terrain_cook` requires terrain's tiles to go through `rendering::vg::build_geometry` rather than a parallel path, which is this requirement's first scenario. `Destructible` and `Skinned` are deferred BY THIS REQUIREMENT, and their seams are reserved as its last clause asks: both are values of `DeformationClass` and cluster.h records which are deferred, so a change that made the format unable to carry them would have to edit the enumeration."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Aggregate and thin geometry classification"
+evidence = "exempt:m11e"
+note = "THE CLASS IS DECLARED AND NOTHING BRANCHES ON IT. `SurfaceClass` is carried through the cook, written into the header and read back, and the second scenario is genuinely covered — `an unsuitable surface class is reported rather than cooked silently` in `integration.virtual_geometry_build` requires a foliage asset to come back with `suitability_warning` set and a non-empty reason, and a solid one without. But the requirement's load-bearing sentence is that \"the cooker SHALL apply class-appropriate clustering and simplification policies rather than treating every triangle identically\", and build.cpp reads `options.surface` in exactly one place — the three-way comparison that sets that warning flag. No clustering parameter, no simplification constraint and no boundary rule differs between `Solid`, `Foliage`, `Hair` and `Thin`; the warning's own text says \"a class-appropriate policy\" while nothing selects one. WHAT WOULD OBSERVE IT: a policy per surface class, and a case cooking one foliage mesh under the foliage and solid policies and requiring the resulting clusters or achieved error to DIFFER — a case that would fail today against the tree as it stands."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Authoring experience"
+evidence = "test:integration.cook_path"
+case = "the import report carries every figure the requirement enumerates"
+note = "two claims, and the case answers both from one cook. The first — \"Enabling virtual geometry SHALL require no manual LOD authoring\" — is observed rather than asserted: `GeometryCookRequest` has no field for an LOD chain, the input is one mesh at one detail, and the report comes back naming a hierarchy of several levels. The second is a LIST, so every entry of it is checked rather than printed: source triangle count, cluster count, hierarchy depth, cooked size (against the bytes actually written), resident size and pages, bytes per triangle, and the per-cluster metadata cost — plus the suitability lane in its quiet state, with `an unsuitable surface class is reported rather than cooked silently` as the other half so the lane cannot be a constant. A figure that is only printed is a figure nothing notices going to zero, which is what this case is for."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Visualisation and diagnostics"
+evidence = "exempt:m11e"
+note = "ONE OF THE FOUR PARAGRAPHS IS BUILT. The profiler half is real and is read by the suites: `TraversalStatistics` carries instances tested and visible, the three instance rejection reasons, nodes visited and pruned (by frustum and by occlusion), candidates, the four cluster rejection reasons, visible clusters and triangles, fallback clusters and missing pages; `CacheStatistics` carries occupancy against budget, and the device path reports the same counters through its readback. What does not exist: not one VISUALISATION MODE — `render::DebugViewMode` enumerates eighteen beside `Off` and not one of them is this system's: `ClusterOccupancy` is the forward-clustered light grid's and `LodLevel` is the discrete chain's, and there is no clusters, hierarchy-level, triangle-density, screen-space-error, page-residency, streaming-activity, material-bin, rasterisation-path or fallback-usage view anywhere in the tree; no GPU TIME PER STAGE anywhere in the traversal or the resolve; no CAUSAL query answering why a page was streamed or why the cache is thrashing; and no PER-OBJECT INSPECTOR — `VisibleCluster::screen_error` is the one ingredient of one of its seven figures. Recording the profiler paragraph as the answer would be a green tick over three absent ones. WHAT WOULD OBSERVE IT: the modes as entries in `DebugViewMode` with a golden pair per mode in `render.virtual_geometry_gpu`, per-stage timestamps through the render graph's existing query mechanism, and an inspector keyed by instance with a case asserting its seven figures against a known scene."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Streaming integration seams"
+evidence = "test:integration.virtual_geometry_residency"
+case = "two subsystems share one policy, and geometry declares its lever"
+note = "the requirement's demand is that geometry streaming is NOT an independent system: it must be scored and budgeted through the shared residency policy, with that layer supplying policy, priority and budget while the page table and the request path stay this system's. The case requires more than one subsystem registered against the one policy and requires geometry to declare its own quality lever there, which is what makes the joint budgeting of the fourth scenario possible — a system that kept its own budget would pass every other case in this suite. The three levels are distinguished by construction: content streaming is `world`'s cells, geometry detail is this page table, texture detail is `virtual-texturing`'s, and the two paged systems register against the same policy. The cell-prefetch scenario — a world cell's activation requesting its geometry's ROOT PAGES specifically — is not wired: src/world/ streams a cell's geometry CHANNEL and nothing translates that into `PageRequest`s, so that scenario's \"already been requested\" is not observable here."
+
+[[coverage]]
+row = "virtual-geometry"
+requirement = "Gameplay API"
+evidence = "test:unit.render_extract"
+case = "the renderable component names an asset and a material, and nothing below them"
+note = "this requirement is mostly a claim about what is ABSENT — \"Gameplay SHALL see no cluster, page, or hierarchy concepts\" — and nothing in this tree asserted it: every other case over this component asks whether a particular field is PRESENT, so a field named `cluster_budget` or `resident_pages` could be added tomorrow and no test would notice. The case walks the whole reflected schema of `cy::rendering::MeshRenderer` and requires no field name to contain cluster, page, hierarchy, traversal, residen or tessell, then requires the three the requirement allows: the geometry asset reference, the material reference, and the quality bias. Importance is the fourth lever and is deliberately not in the schema — it is a `Presentation<f32>` an authoritative system cannot read — and the case asserts both halves of that, the value through its witness and its absence from the schema. The same component is what an asset on either path is drawn from: nothing on it names a representation."
+
+# ====================================================================================================
+# M11.c's FIVE MAPPED IMAGE ROWS, CARRIED TO COMPLETE GRADE — the thirty requirements the nine
+# entries above did not answer. Written by reading each requirement against the tree, one at a time.
+#
+# THE RULE THESE THIRTY WERE DECIDED BY, stated because a reader must be able to check the decision
+# rather than take it: an entry NAMES A CASE only when (i) every scenario the requirement states is
+# observed by a case over the real implementation, and (ii) the mechanism the requirement names
+# exists in this tree. Where either fails, the entry is an EXEMPTION that says which sentence has no
+# subject here and what would observe it — because a case that would pass with the missing half
+# still missing is the green tick this file's header warns about, and it is indistinguishable from a
+# real one afterwards.
+#
+# THE SHAPE OF THE ANSWER, AND IT IS THE FINDING. Eight of the thirty are cases; twenty-two are
+# recorded deferrals. That ratio is not a shortage of reading: these five rows carry deep CPU-side
+# coverage — parameter derivations, policies, keys, refusals — and what is missing from them is
+# almost always A DEVICE PASS. There is no ambient occlusion, fog, depth of field, motion blur,
+# bloom, temporal resolve or upscaling shader under `src/rendering/` at all; `git ls-files
+# 'src/rendering/**/*.slang'` answers twenty-five files and not one of them is a post-process
+# effect. Every one of those deferrals names that, rather than saying "not tested".
+#
+# THREE CASES WERE WRITTEN FOR THIS MAP AND EACH WAS PROVED RED FIRST, by breaking the thing it
+# names and watching it fail: the compute reload case (`shader-system`), the point-light cube-face
+# case (`rendering-lighting-and-shadows`) and the invalidation-cause case (`temporal-rendering`).
+# ====================================================================================================
+
+# --- material-compiler, the remaining five ----------------------------------------------------------
+
+[[coverage]]
+row = "material-compiler"
+requirement = "GPU material table"
+evidence = "test:render.material_binding"
+case = "a material program samples a texture through the device's global table"
+note = "the requirement's first scenario is about a FRAME — 'the material SHALL be reached through the instance's material identifier and the material table, with no descriptor set bound per object' — and M11.c's spike measured that nothing in this tree bound a material texture at all. This is the device case junction 4 closed it with: the same surface drawn twice, once sampling the pattern and once sampling its declared average, compared texel for texel against the bytes uploaded. A table whose descriptors the driver never sees, a slot that always resolved to zero, or a set bound at the wrong index each produce two frames that AGREE, and agreement is what the case fails on. The batched-upload half is `changing one parameter dirties one range, and the upload is one transfer` in `unit.material`, and the block layout is `material_lowering: the compiled layout is the GPU material table's`."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Surface closures"
+evidence = "exempt:m11e"
+note = "THE CLOSURE SET AND ITS COMPOSITION ARE OBSERVED and the requirement's load-bearing sentence is not. `material_lowering: generality is priced, not hidden` layers a coat over diffuse, specular and sheen, so the second scenario — composable without a new shading model — holds. The first scenario is 'the base contribution SHALL be attenuated by the coat's Fresnel term', which is `cy/brdf.slang`'s arithmetic: `brdf.h` says in as many words that clearcoat arrives 'if the frame reaches them', and NO C++ CASE AND NO DEVICE CASE EVALUATES A LAYERED CLOSURE. What would observe it: a device case shading one coated and one uncoated material under the same light and requiring the base's contribution to fall by the coat's Fresnel term — a C++ mirror of the shader's arithmetic would pass with the shader wrong, which is why one is not written here."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Geometry attribute interface"
+evidence = "exempt:m11e"
+note = "ONE OF THREE SCENARIOS HAS A CASE — `material_lowering: the vertex-stage variant count is reported rather than hidden` is the Forward+ cost report. The other two rest on the PER-SOURCE ATTRIBUTE DECODERS the requirement enumerates (static mesh, skinned reading the GPU pose world, virtual geometry decoding cluster attributes, terrain, mesh particle, procedural), and there is no decoder anywhere in this tree: `grep -rn decoder src/rendering src/servers/render` finds nothing attribute-shaped. What would observe it: one case per geometry source resolving `normal` through its decoder with the material unchanged, and one requiring a single program to serve four sources under the visibility buffer. Both are `rendering-geometry-and-resources`' and M11.c §5's, and neither can be written before the decoders exist."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Material API"
+evidence = "exempt:m11e"
+note = "THE FIRST SCENARIO IS ANSWERED AND THE SECOND HAS NO SUBJECT. 'No strings per frame' is `a parameter identifier is a hash of its name, computed at compile time` in `unit.material`, beside `a write of the wrong kind is refused rather than overwriting the next parameter`. 'Gameplay never sees a pipeline' asks for a Swift behaviour tinting a material instance, and THE C ABI EXPOSES NO MATERIAL AT ALL: `bindings/swift/Sources/CyberdyneABI/include/cy/abi/cy_abi.h` has no material entry point, so loading a material, creating an instance, setting a typed parameter and assigning one to an entity are four calls that do not exist. What would observe it: a case in the Swift binding suite doing exactly those four things. The surface is `scripting-and-abi`'s."
+
+[[coverage]]
+row = "material-compiler"
+requirement = "Materials are portable across pipelines and profiles"
+evidence = "exempt:m11e"
+note = "'A material SHALL render under every shipped pipeline' needs two pipelines to render it, and this tree ships one frame. The visibility-buffer path is M11.c section 3's and its own rows record it as unbuilt. The cook-time half — 'the limitation SHALL be documented and reported at cook time, and a defined degradation SHALL apply' — has the machinery beside it (`unit.material`'s validation cases report and refuse) but nothing declares a per-pipeline degradation for them to report. What would observe it: one scene cooked and rendered under both pipelines with the documented differences asserted, plus a cook report naming a declared degradation for a feature the target profile lacks."
+
+# --- shader-system, the remaining four ---------------------------------------------------------------
+
+[[coverage]]
+row = "shader-system"
+requirement = "Compute and utility shaders"
+evidence = "test:integration.shader_pipeline"
+case = "a compute module reloads on the graphics path, and the workgroup size follows"
+note = "'compute shaders as first-class artefacts with the SAME authoring, reflection, caching, and hot-reload path' — and every other case in `test_hot_reload.cpp` reloads a VERTEX module, so a reload path that special-cased the graphics stages would have passed all of them while a dispatch went on using the old workgroup size. The case edits the probe kernel's `[numthreads(8, 4, 2)]` to 16 in x, drives the whole reload (poll, settle, rebuild), and requires the REFLECTION behind the consumer's unchanged variant id to report 16 — written for this map and proved red by pinning the reflected x to 8. The generated-kernel scenario is `integration.vfx_compiler`'s `the generated unit is self-contained` and `the generated units are structurally well formed`; the inspectability scenario is `generated source is published, attributed, and indistinguishable downstream`. NOT CLAIMED: mesh, task and ray-tracing shaders. `rhi::ShaderStage` declares Task and Mesh and `Capability::RayTracing` is now observed from the device, but no entry point of any of those stages is compiled anywhere in this tree."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Compilation pipeline"
+evidence = "exempt:m11e"
+note = "STEP 4 HAS TWO THIRDS MISSING. Steps 1, 2, 3 and 5 are observed — `a generated module importing an authored one compiles to reflectable SPIR-V`, the reflection suite, `a library round-trips through its own encoding` — and the second scenario is `Slang's own diagnostic format parses into a file, a line and a column`. Step 4 is 'SPIR-V retained (Vulkan), or SPIRV-Cross to MSL to a Metal library, or SPIR-V to DXIL': NEITHER MSL NOR DXIL IS EMITTED ANYWHERE, `cy::shader`'s `Target` carries the two values and the Slang front end hard-codes `SLANG_SPIRV`. `m11c:shader-targets-for-the-next-rung` is the criterion that says so and M11.d holds it as a hard prerequisite. What would observe it: a cooked library for a Metal and a D3D12 target, and the shipping-build scenario re-asked on a machine with neither Slang nor a Vulkan driver."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Hot reload"
+evidence = "exempt:m11e"
+note = "THE ARTEFACT HALF IS OBSERVED AND THE REQUIREMENT IS ABOUT A VIEWPORT. `an edit becomes a replaced library entry, with the id unchanged`, `a broken edit keeps the previous artefact and reports the error` and `a rebuild invalidates the pipelines that named the old program` carry replacement, the failure path and pipeline invalidation. The first scenario is 'the change SHALL appear in the viewport within a frame or two, with no restart and NO VISIBLE STALL', and nothing in this tree renders a viewport that could show it — the compilation-on-job-workers claim has no timing observation either. What would observe it: a device case editing a shader while a frame loop runs, requiring the new artefact within N frames and no frame over budget while it compiles."
+
+[[coverage]]
+row = "shader-system"
+requirement = "Visual material editor"
+evidence = "exempt:m11e"
+note = "THE ENGINE HALF IS ANSWERED AND THE PANEL IS NOT THERE. Every lowering stage is inspectable (`every lowering stage is inspectable, and the fifth names who owes it`), the custom Slang snippet takes part in optimisation (`material_passes: a custom node takes part in elimination like any other`), and the generated source is what is compiled (`the assembled unit compiles to SPIR-V against the engine's standard library`). But `SpecialisedEditors::open(Domain::Materials)` refuses with 'this build declares no authoring vocabulary for materials', which M11.c's spike measured by running the editor's own host, and the material authoring front end MOVED TO M11.e during this rung. Recording this requirement as answered by the stage list would be answering 'is there an editor?' with 'there is something for an editor to show'. What would observe it: a case in the editor's Rust suites opening a material document and reading back the four stages."
+
+# --- rendering-lighting-and-shadows, the remaining six -----------------------------------------------
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Point and spot shadow projection"
+evidence = "test:unit.render_shadows"
+case = "a point light's caster lands on its own cube face, and no other face is asked for"
+note = "'cube shadow maps (six faces), with per-face frustum culling so faces with no casters are skipped'. WHERE THAT CULLING ACTUALLY HAPPENS HERE: nothing renders a face directly — a face is rendered because a caster asked for pages on it, and `pages_covering()` is the asking. So the case puts one caster east of the light and one west, requires their page sets to carry DIFFERENT faces and to be disjoint, walks all six principal directions and requires six distinct faces, and then requires a spot's pages to carry face zero throughout — the single perspective matching the cone, which is the requirement's other sentence. Written for this map and proved red by pinning `page.face` to 0, which made the two casters share a face and no other case in the suite noticed."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Light functions and cookies"
+evidence = "test:integration.render_lighting_reference"
+case = "cookies: a directional cloud cookie is the same at any altitude and costs no shadow"
+note = "the requirement's own scenario is the directional one — 'WHEN a cloud-shadow cookie scrolls THEN the directional light's contribution SHALL be modulated by it WITHOUT ADDITIONAL SHADOW MAP COST' — and the case scrolls one over twenty thousand frames, requires the projection to be light-space (so altitude does not change it) and requires the path to touch no shadow allocation. The punctual half is three cases in `unit.render_lighting`: `cookies: a spot's cookie lands on the cone, and nothing behind the apex is lit`, `cookies: a point light's cookie covers the whole sphere`, and `cookies: intensity and the outside value are what a fade and a gobo are`."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Light types"
+evidence = "exempt:m11e"
+note = "TWO OF THE REQUIREMENT'S OWN LISTS HAVE NO SUBJECT IN THIS TREE. The colour-temperature scenario is answered (`a colour temperature is a tint, not a second intensity`, and the spot cone terms beside it), but MOBILITY DOES NOT EXIST: `grep -rn 'Mobility' --include=*.h --include=*.cpp src` finds nothing, so 'WHEN a light is marked Static THEN its contribution MAY be fully baked and it SHALL contribute no runtime cost' cannot be asked at all. And the six light types are three: `lights.h` declares `kGpuLightDirectional`, `kGpuLightPoint` and `kGpuLightSpot`, and `Rect`, `Disc` and `Tube` exist only as LTC evaluation shapes in `area.h`, never as a light a frame can carry. What would observe it: a mobility classification on the scene light with a case per class over the baked and dynamic paths, and the three area kinds reaching `GpuLight`."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Shadow rendering optimisation"
+evidence = "exempt:m11e"
+note = "NONE OF THE FOUR THINGS THIS REQUIREMENT ASKS FOR IS IN THE TREE. There is no shadow proxy mesh (`grep -rn 'ShadowProxy\\|shadow_proxy' src` is empty), no per-light caster distance limit, no coarser-LOD selection for the shadow pass, and no depth-only pipeline declaration that an alpha-tested material could be the exception to — the shadow module owns page residency, caching, bias and budget, and the pass that would consume them does not exist. Both scenarios are therefore unasked rather than unanswered. What would observe them: a shadow pass that builds pipelines, with a case requiring no fragment stage for an opaque caster and one requiring a declared proxy to be drawn where the full mesh is not."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Decals"
+evidence = "exempt:m11e"
+note = "THREE OF FOUR SCENARIOS HAVE CASES AND THE THIRD IS THE ONE THAT MATTERS. `decals: a steep receiver fades out rather than stretching`, `decals: application order is total, so a later decal covers an earlier one` and `decals: the budget evicts the least important, deterministically and reportably` answer angle fade, ordering and eviction; the distance fade, the normal blend and the arbiter's capacity are three more cases beside them. 'WHEN tens of thousands of impact decals are present THEN they SHALL be culled and applied as GPU scene instances' IS NOT OBSERVED: `DecalInstance` is shaped like an instance and carries a material index, but nothing publishes one into the GPU scene, nothing culls one on the device, and `Decals SHALL participate in cluster assignment as a distinct element type` has no implementation — the word `cluster` appears in `decals.h` only in the quoted requirement. What would observe it: a decal stream in the GPU scene with a device case reading a decal-modified G-buffer, and a cluster assignment counting decals as their own element."
+
+[[coverage]]
+row = "rendering-lighting-and-shadows"
+requirement = "Stochastic many-light direct lighting"
+evidence = "exempt:m11e"
+note = "THE ESTIMATOR IS OBSERVED, THE PATH IS NOT RUN. `many-light: the reservoir estimator is unbiased against a sum over every light` measures the estimator against the exact sum, `many-light: the path is off by default and refused without a denoiser` is the requirement's second scenario verbatim (configuration validation, not a visual discovery), and `two runs of one frame select the same lights` and `a reservoir's sample count is capped` carry reuse and the bound. What is missing is the middle of the requirement's own four-step path: 'RAY-TRACED OR SHADOW-MAP VISIBILITY FOR THE SELECTED SAMPLES'. `many_light.h` says outright that it does not depend on a tracer — visibility is a ray budget the caller spends — so no case here evaluates a shadowed sample, and the third scenario (the same content under both paths) needs two rendered frames. What would observe it: a device case rendering one many-lit scene clustered and stochastically and comparing them."
+
+# --- rendering-post-processing, the remaining eleven -------------------------------------------------
+#
+# THE ROW'S GAP IN ONE SENTENCE: `src/rendering/post/` is 2,103 lines of parameter derivations and
+# policies with a test each, and THERE IS NO POST-PROCESS SHADER IN THIS REPOSITORY. Nine of the
+# eleven deferrals below are that one fact, read from nine directions.
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Exposure"
+evidence = "test:unit.render_post"
+case = "a small bright window does not blow out the room"
+note = "the requirement's first scenario verbatim: a small bright region in view, and PERCENTILE-BASED metering rejecting the outlier rather than exposing for it — the case builds a histogram whose top bins hold the window and requires the metered EV to be the room's. The second scenario is `the camera's three controls agree with EV, and adaptation has two speeds`, which drives brightening and darkening at different rates and checks aperture, shutter and ISO against the EV they imply; `metering is clamped, compensated, and honest about an empty histogram` carries the min/max clamps, the compensation curve and the empty-frame answer, and `the exposure state does what its mode says and nothing else` separates manual from automatic. NOT CLAIMED: the histogram is built by the caller — no compute shader measures scene luminance in this tree — and 'published to shaders so emissive values can be expressed in physical units' is `shader-system`'s global block."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Colour grading"
+evidence = "test:integration.render_post_bake"
+case = "the baked lookup table reproduces the reference grade"
+note = "the requirement's load-bearing claim is that the whole grade — white balance, lift/gamma/gain, the three range-bounded wheels, saturation, contrast, hue shift, channel mixer — is BAKEABLE into one 33³ lookup so the runtime cost is a single lookup. The case bakes it at the shipping size (35,937 evaluations, which is why it is an integration case rather than a unit one) and compares the sampled table against the reference grade evaluated directly; a bake that dropped a control, or a table sampled with the wrong interpolation, differs. The log-space scenario is `the log encoding is invertible and spends its resolution on the shadows` and the control list is `each control moves the image in the direction its name promises`, both in `unit.render_post`. NOT CLAIMED: the runtime's own texture lookup, which is a shader."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Ambient occlusion"
+evidence = "exempt:m11e"
+note = "TWO OF THREE SCENARIOS HAVE A CASE AND THERE IS NO GTAO. `ambient occlusion darkens the ambient contribution and leaves direct light alone` is the first scenario and the bent-normal specular occlusion is checked in the same case, so the second holds too. But the requirement is 'ground-truth ambient occlusion — HORIZON-BASED VISIBILITY INTEGRATION with a cosine-weighted term — computed from depth and normals', and no such integration exists in C++ or in any shader: `AmbientOcclusionSettings` carries a radius, a power and a resolution scale that nothing reads. The third scenario needs the shared denoiser to filter the term as a visibility signal, and nothing hands it one. What would observe it: a device case computing the term from a depth and normal buffer and comparing it against a reference integration, and an AO signal actually registered with `cy::rendering::Denoiser`."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Subsurface scattering"
+evidence = "exempt:m11e"
+note = "NO IMPLEMENTATION AT ALL, in either direction. There is no separable Burley profile, no thickness estimate, no transmittance term and no screen-space resolve anywhere under `src/rendering/`; the only subsurface in the tree is the CLOSURE NAME the material compiler refuses to combine with an additive blend (`subsurface scattering with an additive blend mode does not cook`). Both scenarios — red bleeding at a shadow boundary, and specular preserved sharp through the diffuse blur — are questions about a pass that is not there. What would observe them: the resolve itself, with a device case measuring the diffuse response's red channel across a shadow edge and the specular's sharpness before and after."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Volumetric fog"
+evidence = "exempt:m11e"
+note = "THE FROXEL ARITHMETIC IS OBSERVED AND THE VOLUME IS NEVER FILLED. `the froxel depth distribution and its inverse agree, and slices thicken with distance` and `forward scattering brightens fog toward a light, and the integral conserves energy` cover the distribution, the Henyey-Greenstein phase and the front-to-back integration, which is the second scenario. The other two cannot be asked: there is no density injection and no per-froxel shadow sampling, so 'a shadowed spot light SHALL produce visible shafts' has no subject; there are no authorable fog volumes (box, sphere, cone, cylinder, density function); and the indirect term is required to come from the radiance cache, which nothing here reads. What would observe it: the injection and lighting passes, with a device case measuring a shaft behind an occluder and an interior's fog matching the surfaces around it."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Depth of field"
+evidence = "exempt:m11e"
+note = "THE CIRCLE OF CONFUSION IS PHYSICAL AND SIGNED, AND NOTHING GATHERS. `the circle of confusion is physical, signed, and tracks focus` derives the CoC from focal length, aperture, focus distance and sensor height, keeps the sign that tells near from far, honours the artistic override and tracks autofocus — which is the second scenario. The first scenario is about an IMAGE: 'its blur SHALL extend over the focused object, not be clipped to its silhouette', and the gather it asks for does not exist — no near and far fields, no bokeh shape, no aperture texture, no occlusion handling. Recording the CoC as the answer would be recording a necessary condition as a sufficient one. What would observe it: the gather pass, with a device case measuring blur crossing a silhouette."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Motion blur"
+evidence = "exempt:m11e"
+note = "BOTH SCENARIOS ARE ARITHMETIC HERE AND NEITHER IS AN IMAGE. `blur length follows the shutter, and the background stays sharp behind a fast object` checks that 180 degrees is half a frame of motion and that the depth-aware weight rejects a background sample, which is as far as `motion_blur_length` and `motion_blur_weight` can be taken. THE TILE PASS IS ABSENT: 'compute per-tile maximum velocity, then gather along the dominant direction' is the requirement's method and there is no tile reduction and no gather in this tree, so no pixel is ever blurred. What would observe it: the two passes, with a device case over a moving object on a static background measuring smear on the object and none on the background."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Bloom"
+evidence = "exempt:m11e"
+note = "THE THRESHOLD, THE KARIS WEIGHT AND THE ENERGY REDISTRIBUTION ARE OBSERVED — `bloom has a soft knee, suppresses fireflies, and redistributes rather than adds` drives all three, including that the composite scales the scene down by exactly what the bloom adds. What is missing is the requirement's first sentence: 'a PROGRESSIVE DOWNSAMPLE AND UPSAMPLE CHAIN', with the Karis average on the first downsample and a tent filter on upsample. There is no mip chain and no filter; `BloomSettings::mip_count` and `anamorphic` are read by nothing, and lens dirt does not exist. The weight function is where a firefly is suppressed only if something applies it. What would observe it: the chain, with a device case requiring a single bright texel to produce a stable halo across frames."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Anti-aliasing"
+evidence = "exempt:m11e"
+note = "FOUR NAMES WITH NO PASS BETWEEN THEM. The prerequisite scenario is answered — `a temporal stage without motion vectors is enabled or refused, never ignored` is 'the temporal framework SHALL enable their production, or TAA SHALL be refused' exactly — and `the temporal stage's history belongs to the framework, and the chain never owns one` is the prohibition on a second temporal implementation. The rest has no subject: there is no temporal resolve shader under `src/rendering/`, so neighbourhood clamping, the variance or YCoCg clip, the disocclusion reconstruction and the sharpening pass are undefined; MSAA, FXAA, SMAA and alpha-to-coverage are declared nowhere. `FramePassKind::Temporal` is declared by every assembled frame and NOTHING RECORDS IT. What would observe it: the resolve, with a device case measuring a trail behind a moving object against a clamped reference."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Temporal upscaling"
+evidence = "exempt:m11e"
+note = "ONE OF FOUR SCENARIOS IS ANSWERED AND THERE IS NO UPSCALER. `an upscaler's depth history follows the internal resolution and its colour does not` is the resolution seam the chain owns, and the arbiter's own suites carry 'resolution does not fight other controllers' as a budget question. But no reconstruction exists — no built-in upscaler, no pluggable interface taking colour, depth, motion vectors, exposure and jitter, and no vendor seam — so 'WHEN internal resolution is 50% THEN the 3D scene SHALL be reconstructed at full resolution while UI is composited at native' cannot be asked, and neither can the vendor-absent fallback. What would observe it: the upscaler behind that interface, with a device case comparing a half-resolution reconstruction against a native render."
+
+[[coverage]]
+row = "rendering-post-processing"
+requirement = "Variable-rate shading"
+evidence = "exempt:m11e"
+note = "NOTHING IN THIS TREE SHADES AT A COARSER RATE. There is no content-adaptive mask derived from luminance variance and motion, no external mask seam for XR foveation, and no VRS attachment or per-draw rate in the RHI, so the single scenario — a low-variance high-motion region shaded coarsely with the saving reported in statistics — has no subject. This is the one requirement of the row whose absence is also a HARDWARE question: the rate must be supported by the device and the specification says 'where supported', so the honest first step is the capability observation rather than the pass. What would observe it: a device capability for VRS, a mask produced from the frame's own luminance and velocity, and a statistic naming the texels saved."
+
+# --- temporal-rendering, the remaining four ----------------------------------------------------------
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "Invalidation events"
+evidence = "test:unit.render_temporal"
+case = "every invalidation cause the specification names invalidates, and says which it was"
+note = "the requirement enumerates SIX causes — camera cut, teleport, projection change, resolution change, scene load or reload, and an explicit application-triggered cut — and requires the framework to broadcast them, 'because a missed cut is the most common and most visible temporal artefact'. Two of the six reach a framework only through `signal_cut()`, and before this case nothing drove either: the case walks all six, requires every consumer's history invalid in the frame the cause lands, requires the reported cause to be THAT cause (a framework reporting one name six times would satisfy every other case in the file), requires each to be counted exactly once, and requires a signalled cut not to fire twice off one call. Written for this map and proved red by making the framework report `CameraCut` for a signalled cause. The gameplay-teleport scenario is the `Explicit` half of it."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "History resources"
+evidence = "test:unit.render_temporal"
+case = "a resolution change reallocates and invalidates every history, and no consumer notices"
+note = "both scenarios, and the first one is the whole of the requirement's ownership claim: two consumers declare histories at different resolution scales, the output resolution changes, and the FRAMEWORK reallocates both, marks both invalid and reports the cause — neither consumer has any code that could have detected the change, which is what 'no consumer SHALL need to detect the change itself' reduces to in a test. Per-consumer memory, the other required diagnostic, is asserted in the same case. The provenance scenario is `a history carries the view it was produced with, and cannot be declared anonymously` beside it, which also refuses a history declared by an unregistered consumer. NOT CLAIMED: 'SHALL integrate them with the render graph so they participate in aliasing' — no history resource reaches `cy::rendering::graph` anywhere in this tree."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "Motion vectors are derived, not authored"
+evidence = "exempt:m11e"
+note = "THE DERIVATION IS OBSERVED AND NOTHING FEEDS IT. `camera motion alone produces motion vectors, with no per-system work anywhere`, `a motion vector points at the past, and reprojection lands where the surface was` and `a surface behind the camera is marked unrepresentable rather than smeared` carry camera motion, the convention and the second scenario. The first scenario is skinned motion 'from the current and previous poses ALREADY STORED', and `derive_surface_motion()` HAS NO CALLER: `grep -rn surface_motion src samples` outside the module and its tests is empty, so no motion vector in this engine is derived from the GPU scene's transforms or the pose world's poses, and the requirement's list — static, skinned, virtual geometry, mesh particles, world-space UI — is unasked for four of its five entries. What would observe it: a motion vector buffer produced from the GPU scene, with a case per source comparing it against the transforms it was derived from."
+
+[[coverage]]
+row = "temporal-rendering"
+requirement = "Temporal diagnostics"
+evidence = "exempt:m11e"
+note = "THREE OF THE FOUR REQUIRED DIAGNOSTICS EXIST AND THE SCENARIO NEEDS THE FOURTH. `TemporalStatistics` reports history memory per consumer (asserted in `a resolution change reallocates and invalidates every history`), invalidation events by cause (asserted in `every invalidation cause the specification names invalidates`), and the fraction of pixels in each history state (`ClassificationCounts::fraction`). The fourth is 'A VISUALISATION of motion vectors and disocclusion', and the scenario is entirely about it — the developer looks at the picture to decide whether the cause is reprojection, invalidation or accumulation. There is no debug view, no visualisation mode and no consumer of `ClassificationCounts` that draws anything. What would observe it: a debug render mode for both, reachable from the frame the developer is looking at."

@@ -270,14 +270,14 @@ CY_TEST_CASE("the import report carries every figure the requirement enumerates"
         cook::cook_virtual_geometry(request, bytes, allocator);
     CY_REQUIRE(report.has_value());
 
-    CY_CHECK_EQ(report->source_triangles, 1280U);            // source triangle count
-    CY_CHECK_GT(report->clusters, 40U);                      // cluster count
-    CY_CHECK_GT(report->levels, 2U);                         // hierarchy depth
+    CY_CHECK_EQ(report->source_triangles, 1280U);                       // source triangle count
+    CY_CHECK_GT(report->clusters, 40U);                                 // cluster count
+    CY_CHECK_GT(report->levels, 2U);                                    // hierarchy depth
     CY_CHECK_EQ(report->cooked_bytes, static_cast<u32>(bytes.size()));  // cooked size
-    CY_CHECK_GT(report->resident_bytes, 0U);                 // resident size
+    CY_CHECK_GT(report->resident_bytes, 0U);                            // resident size
     CY_CHECK_LT(report->resident_bytes, report->cooked_bytes);
     CY_CHECK_GT(report->resident_pages, 0U);
-    CY_CHECK_GT(report->bytes_per_triangle, 0.0F);           // bytes per triangle
+    CY_CHECK_GT(report->bytes_per_triangle, 0.0F);  // bytes per triangle
     // "Metadata cost is visible": the per-cluster metadata size and its total, "since it is paid
     // for every cluster in every asset".
     CY_CHECK_GT(report->cluster_metadata_bytes, 0U);

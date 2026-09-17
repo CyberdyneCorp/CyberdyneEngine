@@ -19,10 +19,10 @@ using cy::rendering::HistoryDeclaration;
 using cy::rendering::HistoryFormat;
 using cy::rendering::HistoryId;
 using cy::rendering::HistoryState;
+using cy::rendering::temporal_invalidation_name;
 using cy::rendering::TemporalConfig;
 using cy::rendering::TemporalFramework;
 using cy::rendering::TemporalInvalidation;
-using cy::rendering::temporal_invalidation_name;
 using cy::rendering::TemporalView;
 
 cy::Allocator& allocator() noexcept {
@@ -300,7 +300,8 @@ CY_TEST_CASE(
 // EVERY CAUSE IS WALKED HERE RATHER THAN THE TWO NEW ONES, because the diagnostic the requirement
 // asks for is "invalidation events AND THEIR CAUSES": a framework that invalidated on all six and
 // reported one name for all six would satisfy every other case in this file.
-CY_TEST_CASE("every invalidation cause the specification names invalidates, and says which it was") {
+CY_TEST_CASE(
+    "every invalidation cause the specification names invalidates, and says which it was") {
     TemporalFramework framework(allocator());
     CY_REQUIRE(framework.initialize(TemporalConfig{}).has_value());
     const ConsumerId taa = framework.register_consumer("taa", true).value();

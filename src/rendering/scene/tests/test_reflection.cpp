@@ -244,7 +244,7 @@ CY_TEST_CASE("the renderable component names an asset and a material, and nothin
         cy::reflect::default_registry().find(kMeshRendererComponentName);
     CY_REQUIRE(mesh != nullptr);
 
-    static constexpr std::string_view kForbidden[] = {"cluster", "page",      "hierarchy",
+    static constexpr std::string_view kForbidden[] = {"cluster",   "page",    "hierarchy",
                                                       "traversal", "residen", "tessell"};
     u32 below_the_component = 0;
     bool has_mesh_reference = false;
@@ -257,8 +257,8 @@ CY_TEST_CASE("the renderable component names an asset and a material, and nothin
         has_quality_bias = has_quality_bias || name == "lod_bias";
         for (const std::string_view forbidden : kForbidden) {
             if (name.find(forbidden) != std::string_view::npos) {
-                CY_TEST_MESSAGE("the renderable component exposes " << name
-                                                                    << ", which names " << forbidden
+                CY_TEST_MESSAGE("the renderable component exposes " << name << ", which names "
+                                                                    << forbidden
                                                                     << " — a concept below it");
                 ++below_the_component;
             }

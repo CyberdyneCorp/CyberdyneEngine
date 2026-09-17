@@ -20,11 +20,12 @@
 //
 // "Merged by pointer transfer" is a statement about what the merge does NOT do — copy per-instance
 // payloads across a thread boundary — and cull.h's own header says so plainly: each partition fills
-// an `Array<VisibleInstance>` of 40-byte visibility records, and the merge appends those arrays into
-// the typed lists in PARTITION ORDER. What is observable from outside, and what this case asserts,
-// is the property that order buys: the parallel run and the serial run produce the same lists in the
-// same order, element for element. An implementation that merged in completion order would pass the
-// set comparison and fail this one, which is the regression the ordering rule exists to prevent.
+// an `Array<VisibleInstance>` of 40-byte visibility records, and the merge appends those arrays
+// into the typed lists in PARTITION ORDER. What is observable from outside, and what this case
+// asserts, is the property that order buys: the parallel run and the serial run produce the same
+// lists in the same order, element for element. An implementation that merged in completion order
+// would pass the set comparison and fail this one, which is the regression the ordering rule exists
+// to prevent.
 
 #include <cy/test/test.h>
 

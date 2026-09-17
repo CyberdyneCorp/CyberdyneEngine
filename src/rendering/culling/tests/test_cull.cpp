@@ -250,8 +250,8 @@ CY_TEST_CASE("the broad phase reads three dense arrays, and the payload is a fou
     CY_CHECK_EQ(index.statistics().renderables, 1U);
     CY_CHECK_EQ(index.statistics().volumes, 1U);
     CY_CHECK_EQ(index.statistics().always_visible, 1U);
-    CY_CHECK_NE(&index.tree(cy::rendering::SpatialDomain::Renderable),
-                &index.tree(cy::rendering::SpatialDomain::Volume));
+    CY_CHECK(static_cast<const void*>(&index.tree(cy::rendering::SpatialDomain::Renderable)) !=
+             static_cast<const void*>(&index.tree(cy::rendering::SpatialDomain::Volume)));
     CY_REQUIRE_EQ(index.always_visible().size(), 1U);
 
     // Dense and parallel: one element per slot in each of the three broad-phase arrays, indexed by
@@ -319,10 +319,11 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
 
     CullWorkspace workspace(allocator());
     CullResults results(allocator());
-    const CullView view = make_view();
+    CullView view = make_view();
+    view.layer_mask = cy::render::kDefaultLayer;  // the masked instance is in another layer
     CY_REQUIRE(cull_view(index, view, CullOptions{}, workspace, results).has_value());
-    CY_REQUIRE(cy::rendering::select_lods(index, view, &two_level_chain, nullptr, cy::Span<cy::u32>{},
-                                          results)
+    CY_REQUIRE(cy::rendering::select_lods(index, view, &two_level_chain, nullptr,
+                                          cy::Span<cy::u32>{}, results)
                    .has_value());
 
     CY_CHECK_EQ(results.stats.tested, 5U);
@@ -330,11 +331,10 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
     CY_CHECK_EQ(results.stats.rejected_by_frustum, 1U);
     CY_CHECK_EQ(results.stats.rejected_by_range, 1U);
     CY_CHECK_EQ(results.stats.visible, 2U);
-    CY_CHECK_EQ(results.stats.tested, results.stats.rejected_by_layer +
-                                          results.stats.rejected_by_frustum +
-                                          results.stats.rejected_by_range +
-                                          results.stats.rejected_by_occlusion +
-                                          results.stats.visible);
+    CY_CHECK_EQ(results.stats.tested,
+                results.stats.rejected_by_layer + results.stats.rejected_by_frustum +
+                    results.stats.rejected_by_range + results.stats.rejected_by_occlusion +
+                    results.stats.visible);
     // The histogram accounts for every survivor and for nothing else.
     cy::u32 histogram_total = 0;
     for (const cy::u32 bucket : results.stats.lod_histogram) {
@@ -342,12 +342,11 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
     }
     CY_CHECK_EQ(histogram_total, results.stats.visible);
     CY_CHECK_GT(results.stats.wall_nanoseconds, 0U);
-    CY_TEST_MESSAGE("tested " << results.stats.tested << ", layer "
-                              << results.stats.rejected_by_layer << ", frustum "
-                              << results.stats.rejected_by_frustum << ", range "
-                              << results.stats.rejected_by_range << ", visible "
-                              << results.stats.visible << " in " << results.stats.wall_nanoseconds
-                              << " ns");
+    CY_TEST_MESSAGE(
+        "tested " << results.stats.tested << ", layer " << results.stats.rejected_by_layer
+                  << ", frustum " << results.stats.rejected_by_frustum << ", range "
+                  << results.stats.rejected_by_range << ", visible " << results.stats.visible
+                  << " in " << results.stats.wall_nanoseconds << " ns");
 }
 
 CY_TEST_CASE("the result lists are the frame arena's, and resetting it releases them") {

@@ -405,5 +405,6 @@ CY_TEST_CASE("the classes an asset declares are what a reader gets back") {
     CY_REQUIRE(plain_decoded.has_value());
     CY_CHECK_EQ(static_cast<u32>(plain_decoded->deformation),
                 static_cast<u32>(vg::DeformationClass::Static));
-    CY_CHECK_EQ(static_cast<u32>(plain_decoded->surface), static_cast<u32>(vg::SurfaceClass::Solid));
+    CY_CHECK_EQ(static_cast<u32>(plain_decoded->surface),
+                static_cast<u32>(vg::SurfaceClass::Solid));
 }
