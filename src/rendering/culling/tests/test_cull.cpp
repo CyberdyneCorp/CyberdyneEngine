@@ -326,6 +326,10 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
                                           cy::Span<cy::u32>{}, results)
                    .has_value());
 
+    CY_TEST_MESSAGE("view mask " << view.layer_mask << " entry masks "
+                                 << index.layer_masks()[0] << "," << index.layer_masks()[1] << ","
+                                 << index.layer_masks()[2] << "," << index.layer_masks()[3] << ","
+                                 << index.layer_masks()[4]);
     CY_CHECK_EQ(results.stats.tested, 5U);
     CY_CHECK_EQ(results.stats.rejected_by_layer, 1U);
     CY_CHECK_EQ(results.stats.rejected_by_frustum, 1U);

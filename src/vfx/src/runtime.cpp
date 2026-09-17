@@ -661,7 +661,7 @@ Status publish_mesh_instances(const SimulationWorld& world, const Vec3& camera_p
             // AN EMITTER PUBLISHES MESH INSTANCES ONLY IF ITS GRAPHS PRODUCED A MESH REFERENCE.
             // The layout is the compiler's answer to "what does this emitter have", so asking it is
             // asking the graphs rather than a flag somebody set beside them.
-            if (true) {  // MUTATION: publish nothing at all
+            if (emitters[emitter].layout().find(kMesh) == nullptr) {
                 continue;
             }
             ++report.emitters;

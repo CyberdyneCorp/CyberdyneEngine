@@ -273,6 +273,12 @@ CY_TEST_CASE("two views needing one page mark it once, and the secondary view we
     // Rendered ONCE and sampled by both: one entry carrying both views' marks.
     CY_REQUIRE(shared_page != nullptr);
     CY_REQUIRE(probe_page != nullptr);
+    if (shared_page == nullptr || probe_page == nullptr) {
+        // `CY_REQUIRE` reports and continues under -fno-exceptions, so the failure above has to
+        // stop this case by hand or the dereferences below turn a red assertion into a SIGSEGV —
+        // which is what the compaction mutation this case was proved against actually produced.
+        return;
+    }
     CY_CHECK_EQ(probe_page->marks, 1U);
     // The main camera's demand decides the shared page; the probe's does not dilute it.
     CY_CHECK_NEAR(shared_page->importance, 1.0F, 1e-6F);

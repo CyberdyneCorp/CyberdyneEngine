@@ -1531,7 +1531,7 @@ note = "the requirement's first scenario is about a FRAME — 'the material SHAL
 row = "material-compiler"
 requirement = "Surface closures"
 evidence = "exempt:m11e"
-note = "THE CLOSURE SET AND ITS COMPOSITION ARE OBSERVED and the requirement's load-bearing sentence is not. `material_lowering: generality is priced, not hidden` layers a coat over diffuse, specular and sheen, so the second scenario — composable without a new shading model — holds. The first scenario is 'the base contribution SHALL be attenuated by the coat's Fresnel term', which is `cy/brdf.slang`'s arithmetic: `brdf.h` says in as many words that clearcoat arrives 'if the frame reaches them', and NO C++ CASE AND NO DEVICE CASE EVALUATES A LAYERED CLOSURE. What would observe it: a device case shading one coated and one uncoated material under the same light and requiring the base's contribution to fall by the coat's Fresnel term — a C++ mirror of the shader's arithmetic would pass with the shader wrong, which is why one is not written here."
+note = "THE CLOSURE SET AND ITS COMPOSITION ARE OBSERVED; THE ENERGY SENTENCE IS NOT, AND WHAT STANDS IN FOR IT IS WEAKER THAN THE REQUIREMENT ASKS. `material_lowering: generality is priced, not hidden` layers a coat over diffuse, specular and sheen, so the second scenario — composable without a new shading model — holds, and `ClosureLayer` is a distinct non-commutative IR op rather than an add. The attenuation itself is `cy_closure_layer` in `src/rendering/shaders/cy/material.slang`, and it is `saturate(1 - top.weight)`: THE COAT'S WEIGHT, NOT ITS FRESNEL TERM, which is what the first scenario names — 'the base contribution SHALL be attenuated by the coat's FRESNEL term, and total reflectance SHALL remain physical'. Nothing evaluates that function in this tree: it is compiled by `smoke.material_slang` and never run, and `coat` appears nowhere in `cy/brdf.slang` or in `unit.material`'s BRDF cases. What would observe it: a device case shading a coated and an uncoated material under one light and requiring the base's loss to match the coat's Fresnel — a C++ mirror of the shader arithmetic would pass with the shader wrong, which is why one is not written here."
 
 [[coverage]]
 row = "material-compiler"
@@ -1576,7 +1576,7 @@ note = "THE ARTEFACT HALF IS OBSERVED AND THE REQUIREMENT IS ABOUT A VIEWPORT. `
 row = "shader-system"
 requirement = "Visual material editor"
 evidence = "exempt:m11e"
-note = "THE ENGINE HALF IS ANSWERED AND THE PANEL IS NOT THERE. Every lowering stage is inspectable (`every lowering stage is inspectable, and the fifth names who owes it`), the custom Slang snippet takes part in optimisation (`material_passes: a custom node takes part in elimination like any other`), and the generated source is what is compiled (`the assembled unit compiles to SPIR-V against the engine's standard library`). But `SpecialisedEditors::open(Domain::Materials)` refuses with 'this build declares no authoring vocabulary for materials', which M11.c's spike measured by running the editor's own host, and the material authoring front end MOVED TO M11.e during this rung. Recording this requirement as answered by the stage list would be answering 'is there an editor?' with 'there is something for an editor to show'. What would observe it: a case in the editor's Rust suites opening a material document and reading back the four stages."
+note = "THE PANEL OPENED DURING THIS RUNG AND IT STILL SHOWS NOTHING. M11.c task 6.1a landed the front end: `SpecialisedEditors::open(Domain::Materials)` used to answer `this build declares no authoring vocabulary for materials`, and `cy-editor-interface::specialised::material::tests::the_material_editor_opens_and_its_nodes_can_be_wired` now opens it, wires an attribute into a texture sample into a diffuse closure, and the palette carries `material.custom` — so the front-end half of the requirement, including the embedded Slang snippet node, has a subject. What has none is the requirement's own reason for existing: `the editor SHALL be able to SHOW, for any material, EACH STAGE of its lowering: the graph, the IR before and after optimisation, the generated Slang, and the compiled backend output`. The engine produces all five (`every lowering stage is inspectable, and the fifth names who owes it`) and NOTHING IN THE EDITOR READS THEM — there is no stage view in any editor crate, so neither scenario can be asked. What would observe it: an editor case opening an authored material and reading back the five stages, with the cost report attributed to the graph nodes it came from."
 
 # --- rendering-lighting-and-shadows, the remaining six -----------------------------------------------
 
@@ -1690,7 +1690,7 @@ note = "ONE OF FOUR SCENARIOS IS ANSWERED AND THERE IS NO UPSCALER. `an upscaler
 row = "rendering-post-processing"
 requirement = "Variable-rate shading"
 evidence = "exempt:m11e"
-note = "NOTHING IN THIS TREE SHADES AT A COARSER RATE. There is no content-adaptive mask derived from luminance variance and motion, no external mask seam for XR foveation, and no VRS attachment or per-draw rate in the RHI, so the single scenario — a low-variance high-motion region shaded coarsely with the saving reported in statistics — has no subject. This is the one requirement of the row whose absence is also a HARDWARE question: the rate must be supported by the device and the specification says 'where supported', so the honest first step is the capability observation rather than the pass. What would observe it: a device capability for VRS, a mask produced from the frame's own luminance and velocity, and a statistic naming the texels saved."
+note = "NOTHING IN THIS TREE SHADES AT A COARSER RATE. There is no content-adaptive mask derived from luminance variance and motion, no external mask seam for XR foveation, and and no VRS attachment or per-draw shading rate in the RHI — `Capability::VariableRateShading` is an enumerator with a name in `types.cpp` and NOTHING SETS IT and nothing asks — so the single scenario — a low-variance high-motion region shaded coarsely with the saving reported in statistics — has no subject. This is the one requirement of the row whose absence is also a HARDWARE question: the rate must be supported by the device and the specification says 'where supported', so the honest first step is the capability observation rather than the pass. What would observe it: a device capability for VRS, a mask produced from the frame's own luminance and velocity, and a statistic naming the texels saved."
 
 # --- temporal-rendering, the remaining four ----------------------------------------------------------
 
@@ -1719,3 +1719,269 @@ row = "temporal-rendering"
 requirement = "Temporal diagnostics"
 evidence = "exempt:m11e"
 note = "THREE OF THE FOUR REQUIRED DIAGNOSTICS EXIST AND THE SCENARIO NEEDS THE FOURTH. `TemporalStatistics` reports history memory per consumer (asserted in `a resolution change reallocates and invalidates every history`), invalidation events by cause (asserted in `every invalidation cause the specification names invalidates`), and the fraction of pixels in each history state (`ClassificationCounts::fraction`). The fourth is 'A VISUALISATION of motion vectors and disocclusion', and the scenario is entirely about it — the developer looks at the picture to decide whether the cause is reprojection, invalidation or accumulation. There is no debug view, no visualisation mode and no consumer of `ClassificationCounts` that draws anything. What would observe it: a debug render mode for both, reachable from the frame the developer is looking at."
+
+# --- atmosphere-sky-and-clouds ----------------------------------------------------------------------
+#
+# THIRTEEN OF THIRTEEN, and every one of them is a CASE rather than a deferral. That is not a
+# statement about this row being easy; it is what four suites written from the requirement texts
+# themselves buy. Read requirement by requirement against
+# `openspec/specs/atmosphere-sky-and-clouds/spec.md`, and each note says which sentence of the
+# requirement the named case decides and where the neighbouring sentences are checked — because a
+# case chosen for its title rather than for its assertions is how this map rots.
+#
+# THE ONE ENTRY THAT WAS RE-VERIFIED RATHER THAN INHERITED IS `Cloud shadows`.
+# `m10:sky-field-round-trip` once stayed GREEN with the sampler's body replaced by `return 1.0F`,
+# so the case named there was re-read: it walks the cell centres the producer wrote back through
+# `FieldStore::sample_at()` AND a second time through `CloudShadowField::sample()`, compares the two
+# answers, and asserts three numbers — darkest, brightest and a mean strictly between them — over
+# BROKEN cloud rather than overcast, because a field that is uniformly black satisfies "the darkest
+# cell is dark" while containing no shadow at all.
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Physically based atmosphere"
+evidence = "test:unit.render_sky"
+case = "atmosphere: a different planet gets a different sky, from its coefficients alone"
+note = "the requirement's own first scenario, and it is decided by a RATIO rather than by a difference: Earth's zenith carries several times as much short-wavelength radiance as long, the dusty planet's is nearly grey and not merely dimmer, and the only thing that differs between the two runs is the scattering coefficients. `atmosphere: a composition change is a parameter transition, not a preset switch` beside it is the runtime-change half — `blend_atmospheres` at 0.5 is halfway in every coefficient and at the endpoints is the endpoints."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Precomputed atmospheric tables"
+evidence = "test:integration.render_sky_tables"
+case = "sky tables: the sky is a lookup — drawing it integrates no atmosphere"
+note = "the requirement's opening sentence, COUNTED rather than described: four thousand sky directions are sampled and `stats().directions_integrated` is required not to have moved, so a table that silently fell back to marching fails. `sky tables: the sky view regenerates incrementally as the sun moves` is the incremental half — 96 sun positions over a quarter-day against a full `SkyViewTable` rebuild as the oracle, at three update budgets — and `sky tables: transmittance is tabulated, reused, and agrees with the march` is `regenerated only when the parameters they depend on change` — a second build of the same atmosphere counts a reuse and a changed one counts a rebuild, so the reuse cannot be a table that never rebuilds — with `SkyTableQuality` as the resolution setting and `stats()` as the reported generation cost."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Aerial perspective"
+evidence = "test:unit.render_sky"
+case = "atmosphere: aerial perspective comes from the same model as the sky"
+note = "the prohibition is what this requirement turns on — `ad-hoc distance fog with independently tuned parameters SHALL NOT be the engine's model of distance` — and the case decides it on the SIGNATURE: `aerial_perspective()` takes the same `Atmosphere` the sky does and there is no second parameter set, so the distance haze is blue for the same reason the sky is. `atmosphere: a stylised distance override is declared and reaches the physical model` is the declared-override half, and `sky tables: aerial perspective is the atmosphere's, in the engine's froxel volume` is the same answer delivered into the engine's own volume rather than a second one."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Celestial bodies and time of day"
+evidence = "test:unit.render_sky"
+case = "celestial: the time domain is declared, and a short day follows it"
+note = "the requirement's own first scenario — a twenty-minute day is `seconds_per_day = 1200`, half of it advances the fraction to 0.5 and the rest rolls the day over — plus the two things that make 'declared domain' mean something: paused stops the sky without a call site remembering to, and `Custom` advances only by assignment, which is what a scripted sky needs. `celestial: the model is bypassable, and bypassing it costs nothing` is the authored-sun scenario, and `celestial: the sun rises, crosses and sets on the declared clock` is the direction and illuminance it drives."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Sky composition"
+evidence = "test:integration.render_sky_composition"
+case = "sky composition: when cloud cover thickens, the light the scene gets changes"
+note = "the requirement's three OUTPUTS checked at once, which is the claim a single-output case cannot make: thickening the cover moves the cloud transmittance, the sun illuminance the directional light becomes, the irradiance the ambient term integrates, and the gradient `rendering-global-illumination` consumes. `sky composition: stars are one path, whatever the source` is the procedural-or-catalogue half and `sky composition: the filtered radiance map is a specular sky, not a second one` is the specular IBL output."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Cloud representation"
+evidence = "test:unit.render_sky_clouds"
+case = "clouds: a hundred-kilometre world's clouds are kilobytes, not gigabytes"
+note = "`a world-scale volumetric cloud field SHALL NOT be stored, streamed, or replicated` is an arithmetic claim and the case computes both sides of it: the map is coverage, type, moisture and a version per kilometre cell, against what a stored volume at the resolution a march actually resolves would have been — a ratio over ten thousand. `clouds: a weather map fine enough to be a volume is refused` is the same sentence enforced rather than measured, and `clouds: weather drives the layers, and the profile keeps its authoring` is the layer set and its weather drive."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Cloud rendering"
+evidence = "test:integration.render_sky_composition"
+case = "sky composition: a cloud march is lit, bounded, and attributes its cost"
+note = "the requirement's first paragraph — the march over reconstructed density, lit by direct sun, ambient sky and self-shadowing — held to an ENERGY bound, because a transmittance above one and a negative radiance both look plausible in a picture; and the step, light-sample and layer counters the tier levers act on. `clouds: a still camera and drifting clouds reproject to where the cloud was` is the cloud-specific history semantics (30 m of drift at 3 km is 0.00866 of the screen, where a camera-only motion vector gives exactly zero) and `clouds: history is rejected where the weather changed, and the reason is separable` is the rejection half."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Cloud shadows"
+evidence = "test:integration.render_sky_fields"
+case = "cloud shadows: an update writes the field, and a storm darkens the ground"
+note = "THE ENTRY THAT WAS RE-VERIFIED RATHER THAN INHERITED, because `m10:sky-field-round-trip` once stayed green with the sampler replaced by `return 1.0F`. The case writes the field through a real `environment::FieldRegistry` and `FieldStore`, reads every cell centre back THROUGH the store and a second time through `CloudShadowField::sample`, and compares the two — and it judges three numbers over BROKEN cloud rather than overcast, since a uniformly black field satisfies `the darkest cell is dark` and contains no shadow. `clouds: a cloud shadow declaration that asks for a shadow map is refused` is the prohibition on virtual shadow pages, and `cloud shadows: the update rate is a budget lever that can be seen working` is the lever."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Volumetric integration"
+evidence = "test:unit.render_sky_clouds"
+case = "clouds: weather reaches fog through state, and the round trip is exact"
+note = "the requirement's arrow, which is the part that is easy to get backwards: humidity is the input, visibility is the published STATE, and the fog parameters are derived from it rather than written by weather. The case closes the loop — the visibility implied by the derived extinction is required back within one per cent, a RELATIVE tolerance adopted after an absolute one accepted a mutation of the Beer-Lambert constant — and injects VFX density and emission into the same `AtmosphericMedium` rather than a second one."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Planetary scale"
+evidence = "test:integration.render_sky_tables"
+case = "sky tables: the ground-to-orbit transition is one model, not a band per altitude"
+note = "eighty altitudes from two metres to four hundred kilometres, geometric rather than linear so the walk does not spend seventy-nine samples in space, with the horizon dip required monotone and matching one arccosine at every one of them — which is `the transition SHALL follow from the model rather than from separate implementations per altitude band`. The camera-relative half is asserted in the same loop: the position handed to the atmosphere carries the planet's radius and nothing of the world's large coordinates, checked to one part in a million because at Earth's radius an f32 resolves about half a metre."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Environment profiles"
+evidence = "test:integration.render_sky_composition"
+case = "sky composition: a world is terraformed, and its sky follows"
+note = "`profiles SHALL be transitionable ... rather than switching instantly` decided as a PATH rather than a table: the terraforming stages are points on one curve, so a project shipping five and a project shipping fifty get the same world at the same fraction, and the endpoints are the toxic and the earthlike profiles to within 1e-9. The sky that comes out of it is then a different sky from the coefficients alone. `sky composition: a profile composes with a weather preset rather than duplicating it` is the composition half — the profile is the world's atmosphere, the preset is today's weather."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Atmosphere quality tiers"
+evidence = "test:integration.render_sky_composition"
+case = "sky composition: the same state drives every tier"
+note = "the capability's own leading sentence, and the case asserts it the strong way: the weather map's bytes, its epoch, every layer's coverage and density and the map's own sampled answer are required identical across EVERY tier — not merely unchanged by one call. The step and octave levers are what could have moved them, so they are the levers the case sweeps. `clouds: the tier ladder is priced, monotone, and maps back to the tiers` is the arbiter's half of the same requirement."
+
+[[coverage]]
+row = "atmosphere-sky-and-clouds"
+requirement = "Atmosphere and cloud diagnostics"
+evidence = "test:integration.render_sky_composition"
+case = "sky composition: a pixel can be asked what determined it"
+note = "the requirement's middle paragraph, five answers at once: coverage, type, the dominant layer as a NAME rather than an index, the weather source cell, and the tables actually sampled — and the sky-view bit is asserted ABSENT for a composition given no sky view and present for one that was, which is what separates `the table is built` from `the table is read`. `clouds: cost is attributable to steps, resolution and layers` is the cost-attribution scenario and `clouds: every debug view draws something, and a weather rejection is its own colour` is the visualisation list."
+
+# --- virtual-shadows --------------------------------------------------------------------------------
+#
+# FOURTEEN CASES, ONE TEST WRITTEN FOR THIS MAP, AND FIVE RECORDED DEFERRALS. The split is not a
+# judgement about which requirements matter; it is `src/rendering/shadows/README.md`'s own line
+# drawn requirement by requirement. That module holds every decision about WHICH pages exist, WHEN
+# they are re-rendered and WHAT they cost, and each of those is arithmetic over positions, bounds
+# and frame counts that `tests/` finds headless. What it does not hold, and says so in its own
+# section heading, is the DEVICE half: the compute dispatch that marks pages from the depth buffer,
+# GPU-driven caster selection against page frusta, page-batched indirect rasterisation, and the
+# filtering kernels.
+#
+# THE FIVE DEFERRALS ARE PARKED AT M11.e AND THAT IS A CLAIM, NOT A SHRUG. No rung between here and
+# 1.0 owns the device half of this row — M11.c task 4.4 says in as many words that `virtual-shadows`
+# does not reach Complete on this rung, M11.d is a second and third desktop and M11.e is mobile,
+# distribution and the 1.0 record. M11.e is therefore the LAST rung at which an absence of this row
+# can still be recorded rather than shipped, which is what `exempt:m11e` says. Each note names the
+# mechanism that is missing and what would observe it, so the deferral can be closed by building
+# that rather than by deleting the entry.
+#
+# `Multi-view page sharing` was the one requirement that was untested AND testable: the mechanism is
+# in `pages.h` — two views mark the same page id and compaction merges them, weighted by the view's
+# own priority — and nothing exercised it. The case was written for this map and proved red before
+# it was recorded.
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow modes"
+evidence = "test:unit.render_shadows"
+case = "a device without virtual pages keeps its shadow, conventionally"
+note = "the requirement's second scenario, which is the one with a failure mode: a light declaring `Virtual` on a profile without it comes back `Conventional`, degraded, naming `NoVirtualPages` — it does not lose its shadow. `a profile with nothing left reports losing the shadow rather than returning None` is the case that makes that checkable in the only direction that matters, since a light that silently stopped casting is indistinguishable from `ShadowMode::None` without the report. `a light gets the mode it declared when the profile has it` walks every enumerator of the requirement's own table."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Virtual shadow address spaces"
+evidence = "test:unit.render_shadows"
+case = "changing the point light mapping does not change what a consumer sees"
+note = "the requirement's own second scenario, and the one sentence of this requirement that is a DESIGN CONSTRAINT rather than an arithmetic fact: the point mapping is an internal decision, so the case addresses one world position under `CubeFaces` and under `Octahedral` and requires the consumer's answer to have the same light, the same level and a page-relative uv inside a real page under both — the face lives inside the packed id and no assertion spells one. `the page geometry reports itself, because the size is a measured decision` is the reported-page-size sentence and `a virtual page round-trips through its packed identity` is the page table's identity, where two marks of one page must collide and two pages must not."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Receiver-driven page marking"
+evidence = "test:unit.render_shadows"
+case = "a wall's worth of receiver samples compacts to a handful of pages"
+note = "nine hundred receiver samples across a small patch compact to fewer than thirty pages with all nine hundred marks accounted for, which is `allocated because a visible receiver needs them, not because a caster exists` as a ratio. `a distant receiver marks a coarser level than a near one` is the density sentence — the level comes from the sample's own `texel_world_size` and nothing else is consulted. WHAT THIS DOES NOT DECIDE is the sentence `marking SHALL be computed on the GPU`: there is no shadow compute pass on the device. What stands in its place is structural and is checkable by reading the interface — `PageRequestSet::mark()` takes ONE receiver sample and no scene, light list or object, so the prohibited CPU loop over objects and lights has nowhere to live in this module."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Directional clipmaps and snapping"
+evidence = "test:unit.render_shadows"
+case = "a camera that moves two centimetres moves no clip level at all"
+note = "the requirement says snapping is a requirement and not an optimisation, and the case is that sentence as an INTEGER property: two centimetres of camera movement across all six levels leaves every origin page index identical and `clipmap_pages_entering` at exactly zero. `crossing a page boundary exposes a band, not a level` is the other scenario — a one-page shift exposes 32 pages of 1024 and a teleport past the level's extent honestly reports the whole level — and `levels double their extent and halve their density, and share one lattice` holds that the snap is to a whole PAGE, since a texel-snapped origin looks almost identical in a debug view and shares no lattice with the level above it."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow page cache"
+evidence = "test:unit.render_shadows"
+case = "a static scene renders its shadow pages once and then reports nothing"
+note = "the requirement's first scenario over nineteen further frames, and it also decides the requirement's last sentence — `re-rendering a page that has not been invalidated SHALL be treated as a defect` — because the case then re-renders the clean page on purpose and requires `redundant_renders` to count it rather than tolerate it. `between two pages of equal recency, the cheap one is evicted` is the cost-weighted eviction scenario, decided with recency held equal so the re-render cost is the only thing left to choose on, and `PageEntry` carries the state list the requirement enumerates."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Precise invalidation"
+evidence = "test:unit.render_shadows"
+case = "a caster that moves dirties the pages it left and the pages it entered, and no more"
+note = "a strip of the light's space is made clean first, so `and no more` has something to be measured against: the report dirties more than zero and fewer than the strip, and every dirty entry names `InvalidationSource::Instance` with the instance id 4242 — which is the requirement's own `SHALL be reported` half, kept as the FIRST reason a page was dirtied rather than the last, since the first is the thing that caused the render. The moving-light and streaming paths are in the same file (`a tree swaying inside its declared envelope dirties nothing; a moving light dirties itself`), and `invalidate_light` on a light the cache does not hold dirties nothing."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Deformation and cache validity"
+evidence = "test:unit.render_shadows"
+case = "a tree swaying inside its declared envelope dirties nothing; a moving light dirties itself"
+note = "the requirement's first scenario decided against a cache that actually holds the pages the tree casts into — they are brought in and made clean first, because a page the cache does not hold has no contents to invalidate and a report counting projected pages would pass while dirtying nothing real. `Bounded` with an envelope dirties zero; the same caster switched to `AlwaysDirty` dirties pages AND is counted in `always_dirty_casters`, which is the requirement's `SHALL be reportable per asset, since it is the mode that silently removes the benefit of caching`."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow geometry detail"
+evidence = "test:integration.virtual_geometry_build"
+case = "a shadow view's threshold scaling selects coarser geometry"
+note = "the requirement's first scenario, and it is answered in `virtual-geometry` rather than in the shadow module on purpose: the requirement says the coarser geometry comes `from the same continuous hierarchy rather than from a separate simplified asset`, so the case must be one traversal of one cooked hierarchy run twice — the same asset, the same view, `secondary_scale` raised — and it asserts strictly fewer triangles AND a non-zero cluster count, because a selection that collapsed to nothing would also be fewer triangles. The budget-lever scenario is `ShadowLever::GeometryError`, declared in `budget.h` ahead of page resolution in the reduction order and exercised by the sweep in `integration.render_shadow_control`."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "GPU-driven caster selection and rasterisation"
+evidence = "exempt:m11e"
+note = "NOT BUILT, and the absence is the whole requirement rather than a corner of it: nothing in this tree derives page frusta from a dirty page set, culls GPU scene instances against them, or dispatches page-batched indirect rasterisation. `src/rendering/shadows/README.md` names exactly this as the device half it does not hold. The shared pieces that would carry it do exist — `cy::rendering-hzb`, `GpuCullPass` and virtual geometry's GPU traversal, all landed at M11.c task 4.1 — so what would observe this requirement is a case shaped like `render.virtual_geometry_gpu`: dirty pages in, one indirect dispatch, and the surviving caster set compared against `cpu_reference_cull` over the same page frusta, with the draw count required to be far below the page count so `page-batched` is measured rather than asserted."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow material programs"
+evidence = "test:integration.material_lowering"
+case = "material_lowering: an alpha-tested material's shadow program carries only opacity"
+note = "the requirement's first scenario, decided on the compiled program rather than on the material: the foliage shadow program has zero closures, exactly one texture sample, no surface node and a live opacity node — so `not the primary program's full input set` is a count and not a description. Membership of the program family is the same case's `find(ProgramKind::Shadow, QualityTier::High)` over a family of four programs times three tiers, and `material_lowering: an opaque material has no shadow program at all` is the second scenario: the opaque material's shadow program is `absent` with zero statements, which is depth-only rasterisation expressed where it is decided."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow rasterisation never waits on texture residency"
+evidence = "exempt:m11e"
+note = "HALF-BUILT, and the built half is the half that cannot stall. Every texture a shadow program can sample is marked `shadow_critical` by `material/src/lowering.cpp` and asserted so by `integration.material_lowering`, and `shadow_critical_level()` derives the guaranteed coarse level from the page geometry so a project cannot pin something so fine that the guarantee stops being one. WHAT IS MISSING IS THE CONSUMER: nothing in `src/servers/render/virtual_texturing/` reads the flag — its `make_mip_tail_resident` guarantee is per texture and the word `shadow` does not appear in the module — so no coarse representation is actually pinned on account of a shadow program. What would observe it is a case that asks the virtual texturing system for a fine page it does not have while a shadow program samples that texture, and requires the coarse level to answer, the frame not to block, and the page to be queued for refresh."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Update classes and staleness"
+evidence = "test:integration.render_shadow_control"
+case = "a camera cut is spread over frames by priority, and critical pages never wait"
+note = "the requirement forbids a fixed cap on pages per frame — `a hard cap turns a camera cut into a stall` — so the case is a real cut: two thousand dirty pages against an allocation that affords about a hundred. It requires the selection to be a proper subset with a non-zero deferral and a spend inside the allocation, and all four `Critical` pages present wherever they sat in the input, which is `content whose shadow must be exact SHALL NOT be allowed to go stale`. The ordering itself is `a critical page outranks everything, and staleness ordering follows what would show` in `unit.render_shadows`, where age, importance and motion are varied one at a time."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow budget"
+evidence = "test:integration.render_shadow_control"
+case = "the shadow controller settles on every load in the sweep, and none settles over budget"
+note = "41 load magnitudes from x1.00 to x2.40, each held 800 frames with lever changes counted over the last 450 — the certification is the SWEEP because the levers are a discrete ladder and one step magnitude can make any control law look stable (the arbiter spike's own first draft passed a single load and oscillated on 27 of 71). The companion cases carry the rest of the requirement: `the reserved minimum is declared and reported rather than silently crossed`, `pinned mode stops everything and reports the overrun instead of correcting it`, and `released from pressure, authored quality comes back on every load`. The declared reduction ORDER is `ShadowLever`'s enumerator order. What the sweep does not certify, and says so in the module README, is that the declared relative costs describe a real shadow pass; that needs a measured device pass."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Filtering and softness"
+evidence = "exempt:m11e"
+note = "NOT BUILT FOR PAGED LOOKUPS. `rendering-lighting-and-shadows`' filtering exists and is tested — `filtering.h` carries the PCF radius, the PCSS penumbra from a blocker search and the specialization sample counts, and `cy/shadow.slang` holds the taps — but every one of them is written against an ATLAS TILE (`filter_radius_uv` takes an atlas size and a tile size). The sentence this requirement turns on is `filter kernels SHALL account for page boundaries so that filtering never samples across into unrelated pages`, and nothing in the tree resolves a tap that crosses a page edge: two adjacent virtual pages can sit anywhere in the physical cache, so an atlas-relative kernel samples an unrelated light's page. The stochastic path is likewise absent — no shadow visibility signal reaches `src/rendering/denoising/`. What would observe it is a case that places two virtual pages of one light in non-adjacent physical slots and requires a kernel straddling their shared edge to read the neighbour through the page table rather than through physical adjacency. `ShadowLever::FilterQuality` is the budget-lever sentence and is already declared and swept."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Bias derived, not tuned"
+evidence = "test:unit.render_shadows"
+case = "shadow bias is derived from three measurements, and overrides are counted"
+note = "the requirement names three inputs and the case varies each one alone: a coarser texel footprint raises the constant and the normal offset, a grazing surface raises the slope term, and a caster with half a metre of geometric error raises the normal offset by at least that — the term a conventional shadow map has no reason to have. Receiver-plane information shrinks the constant without detaching contact, which is the requirement's last sentence. The `SHALL be reportable` half is the same case's ledger: two overrides in twenty is not suspect, eight in twenty-six is, and the worst ratio is reported — `a scene requiring many overrides indicates a defect in the derivation`."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Contact and traced refinement"
+evidence = "exempt:m11e"
+note = "NOT BUILT. `ShadowLever::Refinement` exists and is first in the reduction order, which is the requirement's second scenario (`refinement SHALL be reduced before paged shadow quality is`) and is swept by `integration.render_shadow_control` — but there is nothing behind the lever: no screen-space contact trace, and no traced path, because `cy::rhi::Capability::RayTracing` is an enumerator nothing in this tree sets (M11.c task 4.4 records the same blockage for this row's `RayTraced` and `Hybrid` modes and says they are downstream of task 2.6). What would observe it is a case in which a receiver resting on a surface, at a page footprint deliberately too coarse for the contact, gains contact detail from refinement while the paged result underneath is unchanged — an ADDITION to the paged result, per pixel by importance, which is the half a global toggle would fail."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Fallback chain"
+evidence = "test:unit.render_shadows"
+case = "the fallback chain always answers, and says which rung it took"
+note = "every rung of the declared chain walked in one case, in order, against one cache: nothing resident answers `Unshadowed`; with an approximation available, `Approximation`; with a coarser page of the same light on the shared lattice, `CoarserPage` naming that page; with the page itself rendered, `Requested`; with both dirtied, `StalePage` returning the page's own physical slot, because stale contents are a rung and not a black square; and past `max_stale_frames` it moves on rather than showing last minute's shadow. `The substitution used SHALL be recorded per page and reportable` is the `SubstitutionLedger` in the same case, and `the frame SHALL never wait` is the `starved` path in `a page that has only just arrived is not evicted underneath its own light`."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Content-specific caster policy"
+evidence = "exempt:m11e"
+note = "NOT DECLARED ANYWHERE. This requirement asks five content classes to declare a shadow caster policy selected FROM THE SHADOW TEXEL FOOTPRINT, and no such declaration exists: `src/foliage/` states in `cook.h` that there is no foliage shadow path at all (it publishes `rendering::vg::GeometryInstance` and is shadowed by the same passes as anything else), its aggregate and canopy tiers are the general geometry hierarchy selected on SCREEN error rather than on shadow texels, `src/terrain/` has no separate shadow renderer to forbid and therefore nothing to check, and neither water's `SHALL NOT cast opaque shadows by default` nor the translucent staging is expressed as a policy a test could read. What would observe it is a policy table keyed by content class and resolved against `shadow_texel_world_size()`, with a case requiring a forest past a measured footprint to cast from one aggregate rather than from its leaves, and water to answer `no opaque shadow` without an authored distance anywhere in the decision."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Multi-view page sharing"
+evidence = "test:unit.render_shadows"
+case = "two views needing one page mark it once, and the secondary view weighs less"
+note = "WRITTEN FOR THIS MAP, because the mechanism was in `pages.h` and nothing exercised it. There is no merge STEP to test — two views mark the same page id and compaction merges them — so the case is written against the two ways that construction can be wrong. A set that emitted the shared page twice is one page rasterised once per view; a merge that kept the LAST view's weight is a reflection probe deciding the main camera's shadow quality, so the main camera marks FIRST and the probe SECOND and the case would pass on a last-writer merge if written the other way round. It then follows the weight downstream: under pressure the probe-only page coarsens through `apply_resolution_bias` and the shared page does not, and at equal age and class the shared page outranks the probe's in `staleness_priority`. Proved red before it was recorded, twice: compaction's `math::max` replaced by `math::min` takes the shared page's weight to the probe's 0.2, and deleting the merge branch altogether emits three pages where two views need two."
+
+[[coverage]]
+row = "virtual-shadows"
+requirement = "Shadow diagnostics"
+evidence = "exempt:m11e"
+note = "HALF-BUILT, and the built half is real: `PageEntry` carries the light, the clip level, the virtual and physical page, the state, the age, the update class, the pin and — the one this requirement is most specific about — `dirty_reason` and `dirty_source_id`, kept as the FIRST reason rather than the last, which `a caster that moves dirties the pages it left and the pages it entered, and no more` asserts by name and id. `ShadowCacheStatistics` answers the profiler's pages resident, requested, dirty, rendered, evicted and starved, and `entries()` is deterministic so an overlay cannot flicker. WHAT IS MISSING is everything downstream of a device pass: the caster count per page and the last render cost of a real rasterisation, the cost of page marking, caster culling, rasterisation and filtering as separate numbers, and every visualisation the requirement enumerates — no shadow debug view exists in this tree. What would observe it is a debug-view registry entry per visualisation, checked the way `clouds: every debug view draws something, and a weather rejection is its own colour` checks the sky's, plus per-pass timings from the passes deferred above."
