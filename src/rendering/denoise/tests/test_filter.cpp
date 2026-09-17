@@ -350,10 +350,9 @@ CY_TEST_CASE("residual noise is explained: few samples, a rejected history, and 
         const std::vector<cy::Vec3> frame_values = scene.sample(frame);
         NoisySignal signal;
         signal.values = {frame_values.data(), frame_values.size()};
-        CY_REQUIRE(bounded
-                       .denoise(SignalKind::IndirectDiffuse, signal, scene.guidance(),
-                                still.guidance())
-                       .has_value());
+        CY_REQUIRE(
+            bounded.denoise(SignalKind::IndirectDiffuse, signal, scene.guidance(), still.guidance())
+                .has_value());
         CY_REQUIRE(
             blind.denoise(SignalKind::IndirectDiffuse, signal, without_identity, still.guidance())
                 .has_value());

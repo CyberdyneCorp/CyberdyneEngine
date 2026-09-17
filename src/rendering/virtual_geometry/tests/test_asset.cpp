@@ -363,3 +363,47 @@ CY_TEST_CASE("the derivation key names the toolchain and every option that moves
     CY_REQUIRE(other_mesh.has_value());
     CY_CHECK(*base != *other_mesh);
 }
+
+CY_TEST_CASE("the classes an asset declares are what a reader gets back") {
+    // `virtual-geometry` — "Deformation classes and growth path": "Assets SHALL declare a
+    // **deformation class** — static, rigid instanced, terrain, destructible, or skinned — so the
+    // runtime knows which paths apply", and "Aggregate and thin geometry classification": "Assets
+    // SHALL declare a **surface class**".
+    //
+    // A DECLARATION THE READER CANNOT SEE IS NOT A DECLARATION. Both classes are one byte in the
+    // header, and a runtime that branches on "which paths apply" reads them out of the decoded
+    // asset — so the claim is a round trip, and the case asserts it for a class that is NOT the
+    // zero of its enumeration in either lane. A cook that dropped the field, or a reader that read
+    // the two bytes in the other order, would pass every other case in this suite.
+    Allocator& allocator = system_allocator(MemoryDomain::Renderer);
+    const vg::test::MeshData mesh = vg::test::icosphere(allocator, 1);
+
+    vg::BuildOptions options = options_for();
+    options.deformation = vg::DeformationClass::RigidInstanced;
+    options.surface = vg::SurfaceClass::Aggregate;
+
+    Expected<vg::GeometryBuild, Error> build =
+        vg::build_geometry(mesh.source(), options, allocator);
+    CY_REQUIRE(build.has_value());
+    CY_CHECK_EQ(static_cast<u32>(build->deformation),
+                static_cast<u32>(vg::DeformationClass::RigidInstanced));
+    CY_CHECK_EQ(static_cast<u32>(build->surface), static_cast<u32>(vg::SurfaceClass::Aggregate));
+
+    Array<u8> bytes(allocator);
+    CY_REQUIRE(vg::encode_asset(*build, vg::VertexEncoding{}, bytes).has_value());
+    Expected<vg::DecodedAsset, Error> decoded = vg::decode_asset(bytes.span(), allocator);
+    CY_REQUIRE(decoded.has_value());
+    CY_CHECK_EQ(static_cast<u32>(decoded->deformation),
+                static_cast<u32>(vg::DeformationClass::RigidInstanced));
+    CY_CHECK_EQ(static_cast<u32>(decoded->surface), static_cast<u32>(vg::SurfaceClass::Aggregate));
+
+    // The default is the one the requirement's table calls required, and it is not an accident of
+    // a zeroed struct: `Static` is the first of the enumeration for exactly that reason.
+    const Cooked plain = cook(allocator, mesh.source(), options_for());
+    Expected<vg::DecodedAsset, Error> plain_decoded =
+        vg::decode_asset(plain.bytes.span(), allocator);
+    CY_REQUIRE(plain_decoded.has_value());
+    CY_CHECK_EQ(static_cast<u32>(plain_decoded->deformation),
+                static_cast<u32>(vg::DeformationClass::Static));
+    CY_CHECK_EQ(static_cast<u32>(plain_decoded->surface), static_cast<u32>(vg::SurfaceClass::Solid));
+}

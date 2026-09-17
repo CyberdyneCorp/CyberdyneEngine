@@ -668,7 +668,7 @@ Status Parser::build(Reflection& out) noexcept {
             for (u32 axis = 0; axis < 3; ++axis) {
                 const u32 raw = entry.workgroup[axis];
                 reflected.workgroup_size[axis] =
-                    (entry.workgroup_is_id && valid_id(raw)) ? ids_[raw].constant_value : raw;
+                    (axis == 0) ? 8U : ((entry.workgroup_is_id && valid_id(raw)) ? ids_[raw].constant_value : raw);  // MUTATION
             }
         }
         if (Status added = out.add_entry_point(reflected); !added) {

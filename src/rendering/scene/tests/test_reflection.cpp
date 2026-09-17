@@ -13,6 +13,7 @@
 //   4. the node templates that name those components are INSTANTIABLE in a world that registered
 //      them — five of them named a component that never existed.
 
+#include <cy/core/determinism/classification.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/core/reflect/registry.h>
 #include <cy/rendering/scene/components.h>
@@ -225,4 +226,62 @@ CY_TEST_CASE("the four light templates are four defaults over one component") {
         CY_CHECK(light->enabled);
         CY_CHECK_GT(light->intensity, 0.0F);
     }
+}
+
+CY_TEST_CASE("the renderable component names an asset and a material, and nothing below them") {
+    // `virtual-geometry` — "Gameplay API": "Gameplay SHALL see no cluster, page, or hierarchy
+    // concepts. A renderable entity SHALL declare a geometry asset handle, a material handle, and
+    // optional virtual geometry settings — enable, quality bias, and importance", and "The same
+    // component SHALL work whether the asset uses the virtual or traditional path."
+    //
+    // THIS IS A CLAIM ABOUT WHAT IS ABSENT, so it is asserted over the whole schema rather than by
+    // looking up the fields the requirement allows. A future field called `cluster_budget` or
+    // `resident_pages` would be the requirement breaking, and nothing else in this suite would
+    // notice: every other case here asks whether a particular field is present.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok);
+    const cy::reflect::TypeInfo* mesh =
+        cy::reflect::default_registry().find(kMeshRendererComponentName);
+    CY_REQUIRE(mesh != nullptr);
+
+    static constexpr std::string_view kForbidden[] = {"cluster", "page",      "hierarchy",
+                                                      "traversal", "residen", "tessell"};
+    u32 below_the_component = 0;
+    bool has_mesh_reference = false;
+    bool has_material_reference = false;
+    bool has_quality_bias = false;
+    for (u32 index = 0; index < mesh->field_count; ++index) {
+        const std::string_view name = mesh->fields[index].name;
+        has_mesh_reference = has_mesh_reference || name == "mesh.high";
+        has_material_reference = has_material_reference || name == "material.high";
+        has_quality_bias = has_quality_bias || name == "lod_bias";
+        for (const std::string_view forbidden : kForbidden) {
+            if (name.find(forbidden) != std::string_view::npos) {
+                CY_TEST_MESSAGE("the renderable component exposes " << name
+                                                                    << ", which names " << forbidden
+                                                                    << " — a concept below it");
+                ++below_the_component;
+            }
+        }
+    }
+    CY_CHECK_EQ(below_the_component, 0U);
+
+    // What it does name: the asset, the material, and the one quality lever the requirement allows.
+    CY_CHECK(has_mesh_reference);
+    CY_CHECK(has_material_reference);
+    CY_CHECK(has_quality_bias);
+
+    // Importance is the other allowed lever, and it is deliberately NOT in the schema: it is a
+    // `Presentation<f32>` the renderer writes and an authoritative system may not read. So the
+    // field exists on the component and the schema does not carry it — both halves asserted here,
+    // because a reflected lane would be the door the wrapper exists to shut.
+    MeshRenderer component;
+    component.importance.write(cy::determinism::PresentationContext{}, 2.0F);
+    CY_CHECK_NEAR(component.importance.read(cy::determinism::PresentationContext{}), 2.0F, 1e-6F);
+    bool has_importance_field = false;
+    for (u32 index = 0; index < mesh->field_count; ++index) {
+        has_importance_field =
+            has_importance_field || std::string_view(mesh->fields[index].name) == "importance";
+    }
+    CY_CHECK_FALSE(has_importance_field);
 }

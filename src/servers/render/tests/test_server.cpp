@@ -447,11 +447,12 @@ CY_TEST_CASE("two views of one scene draw from one prepared instance set, not on
     CY_CHECK(scene->gpu.dirty_ranges().empty());
 
     // SHARED, not merely un-duplicated: every slot the second view draws is one the first draws,
-    // and the material each draw indexes is the same table entry for both.
+    // and both views index the one material table entry the shared material was given.
+    const u32 shared_material = scene->gpu.at(fixture.draws[0].instance_slot).material;
     for (cy::usize index = 0; index < second_draws.size(); ++index) {
         CY_CHECK_EQ(second_draws[index].instance_slot, fixture.draws[index].instance_slot);
         CY_CHECK_EQ(second_draws[index].stable_id, fixture.draws[index].stable_id);
-        const GpuInstance& record = scene->gpu.at(second_draws[index].instance_slot);
-        CY_CHECK_EQ(record.material, scene->gpu.at(fixture.draws[index].instance_slot).material);
+        CY_CHECK_EQ(scene->gpu.at(second_draws[index].instance_slot).material, shared_material);
+        CY_CHECK_EQ(scene->gpu.at(fixture.draws[index].instance_slot).material, shared_material);
     }
 }

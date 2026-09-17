@@ -1017,3 +1017,210 @@ row = "rendering-geometry-and-resources"
 requirement = "Mesh and texture diagnostics"
 evidence = "exempt:m11e"
 note = "THE REPORT TYPE EXISTS AND NOTHING PRODUCES ONE. `GeometryStatistics` matches this requirement field for field — triangles, vertices, draws, an LOD histogram, a mip histogram that is the heat map, vertex bytes per pass, and overdraw as a fixed-point ratio — and a grep for the type over src/, samples/ and tools/ finds its own `clear()` and `merge()`, the two lines of the test that fills one by hand, and NOTHING ELSE. No pass, no draw path and no streaming system writes a single one of its fields, so `statistics: merging two views weights overdraw by draws rather than adding it` is arithmetic over a struct the case wrote: recording it as the answer would be answering \"does the engine provide these diagnostics?\" with \"the shape of the answer is declared\". The debug-view half is `DebugViewMode::MipLevel` and `::LodLevel`, two enumerators with a name table and no shader. WHAT WOULD OBSERVE IT: a frame that renders and comes back with non-zero triangles, a populated mip histogram and a vertex-bytes figure a stream split would move."
+
+# --- vfx-system ------------------------------------------------------------------------------------
+#
+# TWENTY-SIX OF TWENTY-SIX, and the shape of the row is: twenty-one answered by a case, five by a
+# recorded deferral. M8.c built this capability and M10 finished its GPU dispatch and its renderer
+# kinds, so most of what `vfx-system` asks is observed by `unit.vfx_values`,
+# `integration.vfx_compiler`, `integration.vfx`, `render.vfx_gpu` and — for the determinism firewall,
+# which VFX declares and the ECS enforces — `integration.gameplay_firewall`.
+#
+# THE RULE APPLIED, BECAUSE A ROW THIS SIZE NEEDS ONE. An entry is a `test:` when a case observes the
+# requirement's operative claim; it is an `exempt:` when NOTHING IN THIS TREE OBSERVES THE
+# REQUIREMENT'S SUBJECT AT ALL. The five exemptions are not "partly done" — each names a subject that
+# is absent, and four of the five are absences `src/vfx/README.md` already records under "Deliberate
+# limits, recorded rather than hidden". Where a case reaches the requirement's normative sentences
+# but not one of its scenarios, the note says which scenario and where the shortfall is recorded,
+# rather than the entry being silently downgraded to a deferral it does not need.
+#
+# TWO CASES WERE WRITTEN FOR THIS MAP, because two requirements were testable and untested:
+#
+#   `a mesh emitter publishes one instance row a particle, and no entity anywhere` — the tree had
+#   only the NEGATIVE direction of `publish_mesh_instances` (the plume declares no `mesh` attribute,
+#   so both of that case's assertions are zeroes). The publication could have written no row at all,
+#   or the mesh reference into the material field, and stayed green.
+#
+#   `an exposed parameter is set on one instance and the other instance does not move` —
+#   `SimulationWorld::set_parameter` was called by NO test in this tree. A `set_parameter` that wrote
+#   nothing, or that wrote into every instance's words, was green; `EffectInstance::parameter_base`
+#   exists precisely so that one effect's Intensity is not every effect's.
+#
+# Both were proved red before they were proved green — see the change's tasks for the mutations.
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Engine-owned VFX runtime"
+evidence = "exempt:m11e"
+note = "BOTH OF THIS REQUIREMENT'S CLAIMS ARE CONFIGURE-TIME AND NEITHER IS OBSERVABLE FROM A COMPILED SUITE. `-D CY_VFX=OFF` SHALL remove the subsystem `without affecting the rest of the renderer` — a suite cannot observe a configuration it is not compiled in, and the suites this claim is about are exactly the ones `CY_VFX=OFF` deletes. `No third-party VFX runtime SHALL be integrated` is a statement about `deps/manifest.toml`, which no suite reads either. `tools/gen/tests/run_tests.py::test_disabled_feature_excludes_its_sources` proves the MECHANISM over a CY_UI fixture tree and never names CY_VFX or src/vfx, so citing it here would be answering `is CyberVFX removable` with `features are removable`. WHAT WOULD OBSERVE IT: a configure-only leg — `cmake -D CY_VFX=OFF` over this tree, asserting that no cy_vfx target is declared, that src/rendering/particles/ still is, and that the dependency manifest names no VFX runtime. That is a gate step rather than a test case, and gates.toml is where it belongs; M11.e is the rung at which build-system-and-platforms reaches Complete and the release matrix is built."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "VFX asset model"
+evidence = "test:integration.vfx"
+case = "an exposed parameter is set on one instance and the other instance does not move"
+note = "WRITTEN FOR THIS MAP. The requirement's second scenario is the one with a runtime consequence — an `Intensity` parameter `settable per effect instance from gameplay and from the editor, and readable by every stage graph` — and nothing in this tree had ever called `SimulationWorld::set_parameter`. The case plays two instances of one cooked system, sets `intensity` on one of them, and reads the POPULATION back: the plume's spawn stage multiplies its rate by that parameter, so the parameter is read by a stage graph rather than merely stored, and the instance nobody set still spawns at four times the rate, which is what one shared parameter block would break. The asset model's other parts are structural and are carried by the cook the whole suite runs on — `Emitter::set_stage` over the six-stage enumeration, `declare_parameter`, `declare_channel`, `set_importance`, `set_scalability` — and the one clause no case reaches is emitters referencing EACH OTHER's attributes, which `src/vfx/README.md` records as one link short: a graph cannot yet consume an event and raise another."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "GPU-first simulation"
+evidence = "test:render.vfx_gpu"
+case = "population and dispatch size come from the device, not from this process"
+note = "the requirement's third sentence is the one that can be got wrong invisibly: `simulation SHALL use indirect dispatch driven by live particle counts maintained on the GPU, so dispatch size tracks actual population without CPU knowledge of it`. `VfxGpuPass::step` takes no population and there is nowhere to put one, and the case reads `GpuStepReport::indirect_dispatches` and compares the device's population against the CPU executor's over 96 sub-steps. src/vfx/README.md records the control: write `cyVfxArgs[0]` as a constant and the value comparison goes to 8.2e-01 against a 1e-05 tolerance. `particle state SHALL live in GPU buffers and remain there` is the same suite's arrangement rather than an assertion — every buffer is DeviceLocal and `read_back_particles()` is off unless a case asks."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "CPU simulation path"
+evidence = "test:integration.vfx_compiler"
+case = "the CPU path is DECLARED: every fall back to it carries its reason"
+note = "the requirement's whole point is the DISTINCTION between its two purposes — `the CPU path SHALL NOT be presented as merely a degraded GPU path, because its use cases differ` — and that distinction is only checkable where the two are told apart. The case requires every fall back to carry a `FallbackReason`, and `an effect that DECLARED the CPU path is not a fallback and is not counted as one` beside it requires `SimulationPath::CpuRequired` to be counted as neither. The cook-time half of the first scenario — features the CPU path does not support reported at cook time rather than failing at runtime — is `a CPU-path effect using a GPU-only interface fails to cook, naming the interface`, in the same suite."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Graph compilation to an intermediate representation"
+evidence = "test:integration.vfx_compiler"
+case = "kernel fusion: initialise and update share one dispatch over the newly spawned"
+note = "of the four optimisations the requirement names as a MINIMUM, fusion is the one that cannot be faked by a report: it substitutes an attribute's initial value into the update's expression so the value never round-trips through memory, and `dispatches_before_fusion` and `after` are two different numbers from two cooks of one asset with one switch changed. Constant folding is `constant folding of a parameter known at cook time`, dead-code elimination and liveness are the `Compiler-derived attribute layout` row above, and the Slang half — `the compiler SHALL emit Slang, not backend-specific source` — is `the generated unit is self-contained: it imports nothing and declares what it uses`, all three in this suite. `The runtime SHALL contain no graph interpreter` is structural: `cy::vfx` may not name a `cy::graph::Graph`, which is the target split src/vfx/README.md opens with."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Compiler-derived attribute layout"
+evidence = "test:integration.vfx_compiler"
+case = "attribute liveness: written and never read is not allocated, and its store is gone"
+note = "`attributes never referenced by any stage of an emitter SHALL NOT be allocated` is the requirement's hard sentence, and the case cooks the plume twice with `attribute_liveness` on and off: `scratch` is written and read by nothing, so the allocated count, `bytes_per_particle` and the GENERATED SLANG all move — the store is absent from the source, not merely absent from a report. Precision selection from declared ranges with an authoring override is `unit.vfx_values`'s four precision cases and `a quantised attribute comes back quantised out of the simulation` in `integration.vfx`; the reported layout, per-particle size and resulting maximum population are `EmitterReport`'s and are read by `the plume cooks, and the cook report answers what vfx-system asks it to`."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Unified simulation world and global scheduler"
+evidence = "test:integration.vfx"
+case = "many instances of one effect are merged into few dispatches"
+note = "the requirement's own scenario at its own number — 400 instances of one effect simulated by `a small number of merged dispatches, not 400 separate ones` — read out of `StepReport::dispatches_unmerged` and `dispatches_merged`, which are the scheduler's two counts rather than a claim about it. The reservation half has its own cases in this suite: `the reservation protects Critical from a decorative effect that wants everything` and `pool exhaustion reduces a request rather than failing the frame`, and src/vfx/README.md records that removing the pool's reservation subtraction turns four checks red."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Data interfaces"
+evidence = "test:integration.vfx_compiler"
+case = "a project registers its own data interface and a graph reads it"
+note = "`data interfaces SHALL be extensible: modules and projects SHALL be able to register their own WITHOUT MODIFYING THE COMPILER` is the sentence that decides whether this is a registry or a list of special cases, and the case registers an interface the compiler has never heard of, authors a graph that samples it, and requires the cook to bind it and emit the sampling code. The requirement's other three scenarios have their own cases in this suite: `a CPU-path effect using a GPU-only interface fails to cook, naming the interface` is the cost-class and CPU-availability declaration enforced at cook time, and `wind is the shared field and there is no VFX-owned wind model` is the one-wind rule checked where it is decided rather than by a word search."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "GPU scene integration for mesh particles"
+evidence = "test:integration.vfx"
+case = "a mesh emitter publishes one instance row a particle, and no entity anywhere"
+note = "WRITTEN FOR THIS MAP. The tree had only the NEGATIVE direction — `mesh particles are published as instance rows with no entity anywhere` runs the plume, which declares no `mesh` attribute, so both of its assertions are zeroes — and `publish_mesh_instances` could have produced no row at all, or copied the mesh reference into the material field, with every suite green. The new case cooks an emitter that IS a mesh emitter and requires one row a live particle, each carrying the transform (camera-relative, the particle's own position rather than the instance's), the mesh reference and the material reference as two DIFFERENT numbers, and a projected radius above zero, which is what the GPU scene's LOD selection reads. No ECS entity exists anywhere in the case, which is the requirement's `SHALL NOT require ECS entities`. Culling and LOD themselves are the GPU scene's rules and not VFX's — the rows are published into the same instance representation, which is the whole of what this requirement asks VFX to do."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "GPU-to-GPU events"
+evidence = "test:integration.vfx"
+case = "an authored graph raises events, and the channel's declared bound holds"
+note = "the requirement's two enforceable numbers are `a maximum events per frame` and `a maximum depth`, with overflow DROPPED BY DETERMINISTIC RANK and reported rather than compounded. The case compiles a graph that raises on a declared channel, plays it, and requires `raised`, `delivered`, `dropped` and `truncated` to balance with no more than the declared maximum surviving — a bound nothing ever reaches is a bound nobody has tested. The router's own two properties are `unit.vfx_values`: `a full channel keeps the highest-ranked events and reports the overflow`, `the surviving set does not depend on arrival order` and `a chain terminates at its declared depth and the truncation is reported`. The scenario this does not reach is the two-link chain — src/vfx/README.md records it as a deliberate limit: a raise carries depth 0 because nothing yet feeds a channel's contents back in as a dispatch."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Bounded CPU event and readback path"
+evidence = "test:integration.vfx"
+case = "readback has at least one frame of latency and never waits for one"
+note = "the requirement's three SHALLs are a documented latency of at least one frame, a maximum bytes per frame, and never stalling — and the first and third are one case because they are one property: the case requires the queue to deliver the PREVIOUS frame's events and to return immediately when the current frame's are not there, rather than blocking. `readback over its byte budget is deferred and reported, never truncated` is the budget half in the same suite, and `the readback delivery runs inside a VFX write scope` is what makes the `presentation rather than gameplay` sentence enforceable rather than documented — see the determinism firewall rows."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "VFX does not influence gameplay state"
+evidence = "test:integration.gameplay_firewall"
+case = "the firewall refuses a VFX readback and a non-pinned inference write"
+note = "VFX DOES NOT ENFORCE THIS AND MUST NOT — `ReadbackQueue::deliver` opens a `WriteScope(WriteOrigin::Vfx)` around the caller's sink so that any ECS write the sink reaches, however deep in gameplay code, arrives at the firewall labelled as VFX's, and the ECS refuses it. So the case that answers this requirement is the ECS's: it drives a VFX readback at a replicated component, requires the write refused, and then requires the RE-SIMULATION TO REACH THE IDENTICAL DIGEST, which is the requirement's own first scenario — `the result SHALL be identical regardless of what VFX did, because VFX contributed no gameplay state`. The permitted direction is in the same case: a component nothing derives stays writable by presentation code."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Importance classes and frame-budget scalability"
+evidence = "test:unit.vfx_values"
+case = "over budget, the least important class is reduced first and Critical last"
+note = "`adjustment SHALL proceed from least to most important: Decorative first, Critical last` is the requirement's ordering sentence and the case walks it class by class against a synthetic excess. The rest of the controller's contract is the same suite, case for case: `VFX does not pay for another subsystem's cost` is the sentence that forbids it measuring frame time, `Critical survives at its floor, and the reserved minimum is reported when reached` is the reserved minimum the arbiter reallocates on, `hysteresis: a measurement between the two thresholds moves nothing` is the no-oscillation scenario, `pinned mode reports the excess and corrects nothing` is pinned mode, and `an effect's own scalability floors override the controller's levers` is the per-effect override. That the levers then REACH the simulation is `integration.vfx`'s `the controller's levers reach the simulation, and the population is what moves`, and `the controller holds a target under overload and Critical survives` is the overload scenario at size."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Decoupled simulation frequency"
+evidence = "test:integration.vfx"
+case = "decoupled simulation frequency: a low-rate effect steps less often than the frame"
+note = "`effects SHALL simulate at a frequency selected independently of the render frame rate` as a number: the case plays a low-rate effect against a 60 Hz frame and reads `StepReport::substeps`, so the claim is the count of simulation steps rather than a field that was set. The interpolation half is `EffectInstance::interpolation_alpha`, and the requirement's third scenario — interpolation SUPPRESSED across a discontinuity rather than smearing — is `a motion vector is suppressed on the frame a particle spawns and after a kill` in the same suite, which requires `motion_valid` false on the spawn frame and on a re-used slot."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Async compute"
+evidence = "test:render.vfx_gpu"
+case = "async compute is used where the device has a queue, and turning it off changes nothing"
+note = "the requirement is capability-gated in both directions — schedulable on the async queue WHERE THE DEVICE EXPOSES ONE, and DISABLEABLE — and the case is both halves on one device: `VfxGpuPass::queue()` is the async queue where `Device::has_queue` answers yes, and with async turned off the pass runs on the graphics queue and the POPULATION IS THE SAME either way — a queue is a scheduling decision and must not be a semantic one, so a cross-queue hazard the graph failed to order would show up here as a population that moved. src/vfx/README.md records the control: force the queue to Graphics and the async case goes red on a machine that has the queue. The suite SKIPS LOUDLY on a host without a device rather than passing."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Renderers"
+evidence = "test:integration.vfx"
+case = "a renderer kind is declared by the emitter and survives the cook"
+note = "the eight kinds are a TABLE, and what makes the table real is that the kind is a declaration the cook carries rather than something a host infers: the case requires `Emitter::set_renderer` to reach the cooked artefact and to be part of the cook key, so a ribbon and a trail over one graph cannot share an artefact. Each kind's own derivation has its own case in this suite — the ribbon's chain break, the beam's two endpoints, the trail's history length, the decal's projection axis, the light budget and its degradation, the volume's thinning — plus `a mesh emitter publishes one instance row a particle, and no entity anywhere` and the sprite publication. WHAT IS NOT HERE, and src/vfx/README.md records it: nothing COMPOSITES the six kinds beyond Sprite and Mesh — no pass draws a ribbon strip or feeds a LightInstance to clustered assignment — so the geometry and instances are checked and the drawing is the renderer layer's."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Transparency and sorting"
+evidence = "test:render.vfx_gpu"
+case = "the GPU sort orders the live list back to front, and the lever removes it"
+note = "`distance sorting SHALL be performed ON THE GPU over the particle population, with the sort cost budgeted and REDUCIBLE BY THE BUDGET CONTROLLER` — both halves in one case, because a sort that could not be turned off would not be budgeted. The case reads the sorted list back off the device and requires it monotone in distance, then sets `BudgetLevers::sorted` false and requires `GpuStepReport::sort_passes` to be zero. src/vfx/README.md records the control — dropping the sort's write-back put 181 of 368 pairs out of order — and the refusal above `kGpuSortCapacity` is reported in `sort_refused` rather than being a partial sort."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Collision"
+evidence = "exempt:m11e"
+note = "COLLISION RESPONSE IS NOT IMPLEMENTED and src/vfx/README.md records it under its own deliberate limits. What exists is the READ side: `scene_sdf`, `scene_depth` and `physics_query` are declared, versioned, cost-classed and cook-gated data interfaces a graph can sample, and `kill` and `raise an event` are two of the four responses the requirement lists, expressible against a graph's own predicate. What does not exist is contact itself — bounce with restitution, friction and sliding against analytic primitives, the SDF or the depth buffer — so there is nothing in this tree to observe, and a case over the sampling would be answering `can a graph read the SDF` with `does a particle bounce`. The `collision quality SHALL be adjustable by the budget controller` lever exists (`BudgetLevers::collision_quality`) with nothing behind it to adjust. WHAT WOULD OBSERVE IT: a statistical simulation case of the kind the Validation requirement names — fixed seed, fixed rate — asserting a collision count and a post-contact velocity against a plane and against the scene SDF, plus the event-raising response feeding a second emitter. M11.e is the rung that owes every remaining capability Complete or an explicitly recorded deferral."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Authoring"
+evidence = "exempt:m11e"
+note = "THE EDITOR'S VFX GRAPH EDITOR IS NOT BUILT, and src/vfx/README.md records it under its own deliberate limits. What exists in the editor is the NAME: `Domain::VfxGraph` is one of the sixteen entries `cy-editor-interface`'s specialised-editor table carries, mapped to the one graph canvas, because `editor-architecture` requires that enumeration to agree with its own — and `m11b:specialised-editors` checks exactly that agreement. This requirement asks for something else entirely and none of it is there: node-graph authoring PER STAGE, a library of built-in modules, user-defined reusable modules, curve and gradient editors, live preview with play, pause, step, scrub, loop and restart, per-node inspection of a sampled particle's attribute values, and the compiler's output — derived layout, per-particle size, estimated cost, IR and generated Slang — surfaced to the author. What this module owes that surface is already public and is exactly why: `CompileReport`, `AttributeLayout` and `GeneratedSource` are public API so an editor can show all five without reaching into the compiler. WHAT WOULD OBSERVE IT: Rust cases in the editor crates over a VFX graph editor that exists — the shape the `rust:` entries take for the editor's other surfaces — plus the live-update half, which is `live-editing`'s recompile-and-update path subject to this row's layout-change restart rule. At M11.e, which is the rung that owes every remaining capability Complete or an explicitly recorded deferral."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Cooking and asset pipeline"
+evidence = "test:integration.vfx_compiler"
+case = "the plume cooks, and the cook report answers what vfx-system asks it to"
+note = "the requirement's second paragraph is a list of what cooking SHALL REPORT per effect — kernel count, per-particle size, estimated GPU cost at a reference population, and features unsupported on target platforms — and the case reads every one of them off `EmitterReport` rather than checking that a cook succeeded. The content-addressed half is `two cooks of one asset produce the identical cook key, and one edit moves it` in the same suite, which also requires a changed capacity to MOVE the key, so the cache cannot serve one cook's artefact for another's layout. `The runtime SHALL contain no graph compiler` is the `cy::vfx` / `cy::vfx-compiler` target split: nothing reachable from the runtime target can name a graph."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Gameplay API"
+evidence = "test:integration.vfx"
+case = "an effect plays, spawns, ages and dies, and the step report says so"
+note = "the requirement's instance lifecycle, driven end to end: play, the population rising and ageing, then `stop(handle, allow_completion = true)` and the requirement's own Graceful stop scenario as two numbers — spawning ceases and the existing particles live out their lifetimes rather than being cut. `a fire-and-forget effect releases itself and its pool block comes back` is the handle-free spawn, including the pool block returning, and `set_transform` following an entity is exercised by the motion-vector and trail cases in this suite; parameter set is the asset-model row's new case. The two members of the enumeration with nothing behind them are PAUSE and completion NOTIFICATION — `SimulationWorld` has no `pause` and completion is polled through `find(handle)` returning null rather than announced — and the fire-and-forget case reads it that way."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Fluids are deferred with reserved seams"
+evidence = "test:integration.vfx_compiler"
+case = "the fluid seam is reserved: the grid data interface contract is registered"
+note = "a deferral with reserved seams is only worth anything if something notices when a seam closes, and this requirement names three: the grid data interface contract, the `Volume` renderer, and the scheduler's ability to host non-particle stages. The case requires the grid contract to be REGISTERED in the data-interface registry — a contract nothing registers is a paragraph — so a change that removed it turns this red rather than being noticed at review. The `Volume` renderer is `a volume thins rather than shrinking as its particle fades` in `integration.vfx`, and the `Compute` stage is one of the six the asset model enumerates."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "VFX diagnostics"
+evidence = "exempt:m11e"
+note = "TWO OF THIS REQUIREMENT'S THREE PARAGRAPHS HAVE NOTHING BEHIND THEM. The first — per-frame reporting — is largely built and read by the suites: `StepReport` carries live particles by effect and by importance class, spawn and kill counts, dispatch count before and after merging, sub-steps and the CPU/GPU split; `ChannelReport` carries event counts and overflows; `PoolReport` carries occupancy and shortfall; the readback queue carries its bytes. What is absent from that paragraph is GPU TIME BY STAGE — there is no per-stage timing anywhere in `GpuStepReport` or `StepReport`, so `per-stage timing SHALL identify which stages are responsible` has no producer. The second paragraph, DEBUG VISUALISATION, does not exist at all: no per-effect bounds or importance overlay, no attribute visualisation, no particle overdraw view, no simulation-rate heat map, no sorted-versus-unsorted indication — the words appear nowhere under src/vfx/. The third, inspecting ONE instance in isolation with its resolved kernels, layout, population and per-stage timing, has no entry point. Recording the first paragraph as an answer would be a green tick over two absent paragraphs. WHAT WOULD OBSERVE IT: per-stage GPU timestamps through the render graph's existing query mechanism, read by a case in `render.vfx_gpu`, plus the debug views as a `render.vfx` golden pair — at M11.e."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "Validation"
+evidence = "exempt:m11d"
+note = "FOUR OF THE FIVE VALIDATION KINDS THIS REQUIREMENT NAMES EXIST AND ARE THE EVIDENCE OF THE ROWS ABOVE: compiler tests asserting liveness, dead-code elimination, folding and fusion produce the expected IR (`integration.vfx_compiler`), statistical simulation tests at a fixed seed and fixed rate (`integration.vfx`), budget tests holding a target under synthetic overload with Critical surviving (`unit.vfx_values` and `integration.vfx`), and event bound tests (both). The fifth CANNOT BE OBSERVED ON THIS HOST, and it is the one this requirement writes a scenario for: golden images `compared perceptually ACROSS EVERY BACKEND`, failing and IDENTIFYING BOTH BACKENDS when Vulkan and Metal diverge. This tree has one compiled backend — `src/backends/rhi-metal/README.md` records that `src/device.mm` has never been compiled anywhere, and there is no D3D12 backend at all — so a cross-backend comparison here would have one side. `render.vfx` writes its pictures on the one device this host has. WHAT WOULD OBSERVE IT: the same golden effect run on a second and a third backend and compared, which is M11.d's whole subject — the same project on a second and a third desktop."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "The determinism firewall names where it is enforced"
+evidence = "test:integration.gameplay_firewall"
+case = "a refused write is reported with the writer, the component and the path"
+note = "the requirement's demand is a SINGLE ENFORCEMENT POINT `every authoritative write passes through — not a review, not a naming convention, and not a diagnostic that a caller may choose to read`, plus a development-build report naming the writing system, the component and the path. The case is the report half at exactly that granularity, and it is the ECS's rather than VFX's because that is where the point is: VFX declares its origin through `WriteScope(WriteOrigin::Vfx)` and does not decide what it is allowed to do. The arming half — which components are guarded, derived from reflection with the underived ones declared by hand WITH A REASON — is `gameplay: arming derives what reflection says and counts what it could not` and `gameplay: a by-hand declaration with no reason or no component is refused` in the same suite, and the cook-time half of the inference clause is `a non-pinned model feeding an authoritative node is refused at cook time`."
+
+[[coverage]]
+row = "vfx-system"
+requirement = "The firewall's test is a negative control"
+evidence = "test:integration.gameplay_firewall"
+case = "with the enforcement point disabled the same writes land and the digest diverges"
+note = "this requirement asks for a DEMONSTRATION rather than an assertion — `the test that proves the firewall SHALL fail when the firewall is removed, and that SHALL be demonstrated rather than assumed` — so the case IS the demonstration, inside one process: it disarms the enforcement point, runs the same simulation, and requires exactly the inversion of the armed case — zero refusals, the VFX and inference writes LANDING, and the state digest DIVERGING from the control run. Every one of those would have to be false for the armed case to pass with the firewall removed. The disarm carries a reason string and the case requires it to be non-empty, so a capture taken with the firewall down cannot be mistaken for a clean one. The subject is not deferred this time: M8.b carried this criterion with neither VFX nor inference in the tree, and both are here."

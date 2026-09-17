@@ -243,3 +243,56 @@ CY_TEST_CASE("a cook of an empty mesh fails rather than producing an addressable
     CY_CHECK_FALSE(cook::cook_virtual_geometry(request, bytes, allocator).has_value());
     CY_CHECK(bytes.empty());
 }
+
+CY_TEST_CASE("the import report carries every figure the requirement enumerates") {
+    // `virtual-geometry` — "Authoring experience": "Enabling virtual geometry SHALL require no
+    // manual LOD authoring", and "Import SHALL report: source triangle count, cluster count,
+    // hierarchy depth, cooked size, resident size, bytes per triangle, and any warnings about
+    // content suitability."
+    //
+    // THE INPUT IS THE WHOLE ARGUMENT FOR THE FIRST HALF: one mesh, at one detail, with no LOD
+    // chain anywhere in the request — `GeometryCookRequest` has no field for one — and the report
+    // comes back naming a hierarchy of several levels. That is "no LOD chain needed to be
+    // authored", observed rather than asserted.
+    //
+    // The second half is a LIST, and a list is answered by checking every entry of it. A figure
+    // that is only printed is a figure nothing notices going to zero, which is how a report ends up
+    // reporting a number the cook stopped computing.
+    Allocator& allocator = system_allocator(MemoryDomain::Assets);
+    const CookSphere sphere = icosphere(allocator, 3);
+
+    cook::GeometryCookRequest request;
+    request.mesh = sphere.source();
+    request.options = cook_options();
+
+    Array<u8> bytes(allocator);
+    Expected<cook::GeometryCookReport, Error> report =
+        cook::cook_virtual_geometry(request, bytes, allocator);
+    CY_REQUIRE(report.has_value());
+
+    CY_CHECK_EQ(report->source_triangles, 1280U);            // source triangle count
+    CY_CHECK_GT(report->clusters, 40U);                      // cluster count
+    CY_CHECK_GT(report->levels, 2U);                         // hierarchy depth
+    CY_CHECK_EQ(report->cooked_bytes, static_cast<u32>(bytes.size()));  // cooked size
+    CY_CHECK_GT(report->resident_bytes, 0U);                 // resident size
+    CY_CHECK_LT(report->resident_bytes, report->cooked_bytes);
+    CY_CHECK_GT(report->resident_pages, 0U);
+    CY_CHECK_GT(report->bytes_per_triangle, 0.0F);           // bytes per triangle
+    // "Metadata cost is visible": the per-cluster metadata size and its total, "since it is paid
+    // for every cluster in every asset".
+    CY_CHECK_GT(report->cluster_metadata_bytes, 0U);
+    CY_CHECK_LT(report->cluster_metadata_bytes, report->cooked_bytes);
+    // The warning lane: a solid sphere raises none, and the case that raises one is
+    // `an unsuitable surface class is reported rather than cooked silently` in
+    // integration.virtual_geometry_build. Both halves have to be observable or the lane is a
+    // constant.
+    CY_CHECK_FALSE(report->suitability_warning);
+    CY_CHECK(report->suitability_reason != nullptr);
+
+    CY_TEST_MESSAGE("import report: " << report->source_triangles << " source triangles -> "
+                                      << report->clusters << " clusters over " << report->levels
+                                      << " levels, " << report->cooked_bytes << " bytes cooked, "
+                                      << report->resident_bytes << " resident, "
+                                      << report->bytes_per_triangle << " bytes per triangle, "
+                                      << report->cluster_metadata_bytes << " bytes of metadata");
+}

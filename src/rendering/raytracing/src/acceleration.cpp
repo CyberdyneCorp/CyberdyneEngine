@@ -598,9 +598,7 @@ RayHit AccelerationService::trace_instance(const Instance& instance, const RayQu
     hit.bary_u = nearest_hit.u;
     hit.bary_v = nearest_hit.v;
     hit.instance_id = instance.descriptor.instance_id;
-    hit.material_id = bottom.triangle_materials.empty()
-                          ? instance.descriptor.material_id
-                          : bottom.triangle_materials[nearest_triangle];
+    hit.material_id = instance.descriptor.material_id;
     hit.declared_error_metres = bottom.input.declared_error_metres;
     hit.position = query.ray.at(hit.t);
 

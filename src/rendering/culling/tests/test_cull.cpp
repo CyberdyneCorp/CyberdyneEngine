@@ -7,6 +7,7 @@
 #include <cy/test/test.h>
 
 #include <cy/core/math/projection.h>
+#include <cy/core/memory/frame_memory.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/rendering/culling/cull.h>
 
@@ -313,17 +314,16 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
     CY_REQUIRE(index.insert(ranged).has_value());
 
     // Two survivors at different distances, so the histogram has to hold more than one bucket.
-    constexpr cy::render::MeshLod kChain[2] = {{0, 1, 0.3F, 1000}, {1, 1, 0.0F, 100}};
-    SpatialEntry near_entry = make_entry({0, 0, -2}, 4);
-    SpatialEntry far_entry = make_entry({0, 0, -30}, 5);
-    CY_REQUIRE(index.insert(near_entry).has_value());
-    CY_REQUIRE(index.insert(far_entry).has_value());
+    CY_REQUIRE(index.insert(make_entry({0, 0, -2}, 4)).has_value());
+    CY_REQUIRE(index.insert(make_entry({0, 0, -30}, 5)).has_value());
 
-    CullOptions options;
-    options.lod_chains = cy::Span<const cy::render::MeshLod>{kChain, 2};
     CullWorkspace workspace(allocator());
     CullResults results(allocator());
-    CY_REQUIRE(cull_view(index, make_view(), options, workspace, results).has_value());
+    const CullView view = make_view();
+    CY_REQUIRE(cull_view(index, view, CullOptions{}, workspace, results).has_value());
+    CY_REQUIRE(cy::rendering::select_lods(index, view, &two_level_chain, nullptr, cy::Span<cy::u32>{},
+                                          results)
+                   .has_value());
 
     CY_CHECK_EQ(results.stats.tested, 5U);
     CY_CHECK_EQ(results.stats.rejected_by_layer, 1U);
@@ -348,4 +348,34 @@ CY_TEST_CASE("every stage the diagnostics name is counted, with the histogram an
                               << results.stats.rejected_by_range << ", visible "
                               << results.stats.visible << " in " << results.stats.wall_nanoseconds
                               << " ns");
+}
+
+CY_TEST_CASE("the result lists are the frame arena's, and resetting it releases them") {
+    // `rendering-culling-and-lod` — "Culling results": "Lists SHALL be allocated from the frame
+    // arena", and the scenario "WHEN the frame ends THEN all culling result memory SHALL be
+    // released by resetting the frame arena".
+    //
+    // The lists take an allocator, so the claim is only real if a frame arena is an allocator they
+    // accept and if what they take comes back on reset. Both halves are here: the arena is the
+    // engine's own `frame_arena()`, not a stand-in.
+    SpatialIndex index(allocator());  // the index outlives the frame; the results do not
+    for (cy::u32 instance = 0; instance < 32U; ++instance) {
+        CY_REQUIRE(index
+                       .insert(make_entry({static_cast<cy::f32>(instance) * 0.25F, 0.0F, -5.0F},
+                                          instance + 1U))
+                       .has_value());
+    }
+
+    cy::reset_frame_arena();
+    CY_REQUIRE_EQ(cy::frame_arena().used(), 0U);
+    {
+        CullWorkspace workspace(cy::frame_arena());
+        CullResults results(cy::frame_arena());
+        CY_REQUIRE(cull_view(index, make_view(), CullOptions{}, workspace, results).has_value());
+        CY_CHECK_EQ(results.opaque.size(), 32U);
+        CY_CHECK_GT(cy::frame_arena().used(), 0U);
+    }
+    // The frame ends. Not one destructor is what releases this — the reset is.
+    cy::reset_frame_arena();
+    CY_CHECK_EQ(cy::frame_arena().used(), 0U);
 }

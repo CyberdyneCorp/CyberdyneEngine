@@ -311,8 +311,8 @@ private:
         Vec3 value{0.0F, 0.0F, 0.0F};
         bool filtered = false;
         u32 step = 0;
-        /// Taps inside the image that were offered to the edge-stopping weights, and the ones those
-        /// weights refused. `Diagnostics::edge_rejected_tap_fraction` is their ratio over the frame.
+        /// Taps inside the image that were offered to the edge-stopping weights, and the ones
+        /// those weights refused. `Diagnostics::edge_rejected_tap_fraction` is their ratio.
         u32 taps_offered = 0;
         u32 taps_rejected = 0;
     };
