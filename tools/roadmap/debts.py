@@ -16,6 +16,11 @@ place to update:
   * the PROSE in each archived change's "What this milestone did NOT close" section. Weakest, because
     nothing checks it, and the only place M0 to M8.b's unfinished work is recorded at all — the
     declared-gap mechanism did not exist until M8.c.
+  * the FALSIFIABILITY RECORD in `tools/roadmap/falsifiability.toml` read against the gate states in
+    `tools/roadmap/gates.toml` — which is where a criterion that was FAILING when its rung's gate was
+    flipped green shows up. Added by M11.c's gate-findings phase, because the other three sources
+    cannot see that shape: section 1 only sees a failure somebody DECLARED, section 2 only sees the
+    tier, and section 3 only sees what a closing commit chose to write down. See section 4.
 
 Run by `just roadmap-debts`. `--check` regenerates and fails if the committed file differs, which is
 what keeps it honest when a milestone closes.
@@ -27,6 +32,7 @@ import argparse
 import pathlib
 import re
 import sys
+import tomllib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -37,6 +43,7 @@ import record as record_module  # noqa: E402
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 OUTPUT = REPO_ROOT / "docs" / "roadmap" / "open-debts.md"
 ARCHIVE = REPO_ROOT / "openspec" / "changes" / "archive"
+FALSIFIABILITY = REPO_ROOT / "tools" / "roadmap" / "falsifiability.toml"
 
 #: The heading each closing commit writes into its change's task list. Matched as a prefix because
 #: the wording drifted — M6's reads "…did NOT close, and why" — and a prefix match keeps an older
@@ -131,6 +138,69 @@ def closed_milestones() -> set[str]:
     }
 
 
+#: The two proof verdicts `falsify.py` writes when a criterion did not need breaking to be red,
+#: because it was already failing. `falsify.py`'s own header: "red in the tree — it FAILS as
+#: written, in the sandbox AND in the repository", and "red against a built tree — the same, for a
+#: criterion a source-only sandbox cannot run at all". Neither verdict has ever been recorded for a
+#: criterion the prover watched PASS, which is what makes the pair readable as "never seen green".
+RED_UNMUTATED = ("red in the tree", "red against a built tree")
+
+
+def never_seen_green() -> list[dict[str, str]]:
+    """Criteria of CLOSED milestones that the prover has only ever watched FAIL.
+
+    THE SHAPE THIS SECTION EXISTS FOR, and it is not the one sections 1 to 3 can see. A rung closes
+    by flipping `state = "green"` on its gate in `gates.toml`. Nothing in the tooling compares that
+    flip against the rung's own ledger verdict, and `roadmap.py`'s arithmetic is explicit that it
+    should: `selftest.test_declared_gaps` asserts that "an ordinary failure beside a declared gap
+    still fails the milestone". So a criterion that is red and is NOT a declared gap is a criterion
+    whose milestone is, by the ledger's own rule, not closed — however green the gate reads.
+
+    `falsifiability.toml` is where that becomes computable without running anything for an hour.
+    `falsify.py` records the verdict it observed: a criterion it had to MUTATE to make fail is
+    `proven`, and one that was already failing is recorded with one of `RED_UNMUTATED`. For a rung
+    that has closed, the second is a statement that the check was failing when the gate was flipped.
+
+    A DECLARED GAP IS EXCLUDED and is section 1's, which is the whole difference between the two
+    sections: a gap is a failure the rung declared, dated and pointed at a later rung, and the
+    ledger keeps running it. What is listed here is a failure nobody declared at all.
+    """
+    if not FALSIFIABILITY.is_file():
+        return []
+    inventory = tomllib.loads(FALSIFIABILITY.read_text(encoding="utf-8"))
+    closed = closed_milestones()
+    gaps = {
+        (identifier, criterion.id)
+        for identifier in criteria_module.available()
+        for criterion in criteria_module.load(identifier).criteria
+        if getattr(criterion, "known_gap", None)
+    }
+    described = {
+        (identifier, criterion.id): " ".join(str(criterion.describe).split())
+        for identifier in criteria_module.available()
+        for criterion in criteria_module.load(identifier).criteria
+    }
+
+    found: list[dict[str, str]] = []
+    for entry in inventory.get("proof", ()):
+        key = (entry.get("ledger", ""), entry.get("criterion", ""))
+        if key[0] not in closed or key in gaps:
+            continue
+        if entry.get("verdict", "") not in RED_UNMUTATED:
+            continue
+        found.append(
+            {
+                "from": key[0],
+                "id": key[1],
+                "verdict": entry.get("verdict", ""),
+                "detail": " ".join(str(entry.get("detail", "")).split()),
+                "describe": described.get(key, ""),
+            }
+        )
+    found.sort(key=lambda row: (criteria_module.rung(row["from"]), row["id"]))
+    return found
+
+
 def prose_sections() -> list[tuple[str, str]]:
     """Each archived change's own account of what it did not finish."""
     found: list[tuple[str, str]] = []
@@ -154,6 +224,7 @@ def render() -> str:
     gaps = declared_gaps()
     behind = behind_plan()
     prose = prose_sections()
+    red = never_seen_green()
     closed = sorted(closed_milestones(), key=criteria_module.rung)
 
     lines: list[str] = []
@@ -164,8 +235,8 @@ def render() -> str:
     add("**Generated by `just roadmap-debts`. Do not edit by hand — your edit will be overwritten,")
     add("and `just roadmap-debts --check` fails when this file and its sources disagree.**")
     add("")
-    add("Everything this engine has not finished, from three sources of decreasing strength. It is")
-    add("a view over records that are already maintained for their own reasons rather than a fourth")
+    add("Everything this engine has not finished, from four sources of decreasing strength. It is")
+    add("a view over records that are already maintained for their own reasons rather than a fifth")
     add("place to keep up to date, because a hand-written list of unfinished work goes stale exactly")
     add("when it matters most — at the moment a milestone closes and somebody adds to it.")
     add("")
@@ -179,7 +250,7 @@ def render() -> str:
     add("*passing* fails the ledger with \"THE GAP IS CLOSED, DELETE THE DECLARATION\" — so it cannot")
     add("rot into something quietly fixed that nobody noticed.")
     add("")
-    add("The mechanism arrived at M8.c. Anything earlier is in section 3, unchecked.")
+    add("The mechanism arrived at M8.c. Anything earlier is in section 4, unchecked.")
     add("")
     if gaps:
         add("| Declared at | Gap | Closes at | Why it is open |")
@@ -193,7 +264,43 @@ def render() -> str:
         add("None declared.")
     add("")
 
-    add("## 2. Behind the plan")
+    add("## 2. Red criteria under a green gate")
+    add("")
+    add("**A criterion of a milestone that has CLOSED, which the falsifiability record says was")
+    add("FAILING — and which nobody declared as a gap.** The ledger's own arithmetic is that such a")
+    add("criterion blocks: `selftest.test_declared_gaps` asserts in as many words that \"an ordinary")
+    add("failure beside a declared gap still fails the milestone\". So every row below is a milestone")
+    add("whose gate reads green over a check its own ledger fails, and it is not a margin — a rung")
+    add("closes by a person flipping `state = \"green\"` in `gates.toml`, and **nothing in the tooling")
+    add("compares that flip against the rung's own verdict.**")
+    add("")
+    add("How it is read without an hour of running: `falsify.py` records `proven` for a criterion it")
+    add("had to BREAK to make fail, and `red in the tree` / `red against a built tree` for one that")
+    add("was already failing when it looked. For a rung that has closed, the second pair means the")
+    add("check was red when the gate was flipped. A declared gap is excluded — that is section 1,")
+    add("and the difference is the whole point: a gap is a failure somebody declared, dated and")
+    add("pointed at a later rung, and what is here is a failure nobody declared at all.")
+    add("")
+    add("**The ledger is the authority on what is red TODAY**; this is what the prover recorded, and")
+    add("a row that has since gone green is a row whose recorded verdict `just roadmap-falsify check`")
+    add("will report as stale.")
+    add("")
+    if red:
+        add("| Rung | Criterion | Prover's verdict | What it said |")
+        add("|---|---|---|---|")
+        for row in red:
+            detail = row["detail"]
+            detail = detail if len(detail) <= 200 else detail[:197] + "…"
+            # A recorded detail can quote the criterion's own command, and `determinism-suites`
+            # quotes a ctest alternation — so a raw `|` would end the table cell it is describing.
+            detail = detail.replace("|", "\\|")
+            add(f"| {milestone_label(row['from'])} | `{row['id']}` | {row['verdict']} | {detail} |")
+    else:
+        add("None: no closed milestone carries a criterion the prover recorded red and nobody "
+            "declared.")
+    add("")
+
+    add("## 3. Behind the plan")
     add("")
     add("A capability the plan promised by a milestone that has **closed**, which the status record")
     add("holds lower. This is where a demotion shows up: seven consecutive gates have demoted a row")
@@ -209,7 +316,7 @@ def render() -> str:
         add("Nothing behind plan: every closed milestone's promised tiers are met.")
     add("")
 
-    add("## 3. What each milestone said it did not close")
+    add("## 4. What each milestone said it did not close")
     add("")
     add("Written prose in each archived change, and **nothing checks it**. This is the only record of")
     add("unfinished work before M8.c, because the declared-gap mechanism did not exist yet. Follow the")
