@@ -1227,11 +1227,21 @@ note = "this requirement asks for a DEMONSTRATION rather than an assertion — `
 # src/servers/render/culling/ (the GPU cull's records, its CPU reference and the hierarchical depth
 # buffer) and src/rendering/gpu_culling/ (the dispatch on a device).
 #
-# FOUR CASES WERE WRITTEN FOR THIS MAP BECAUSE THE REQUIREMENTS THEY ANSWER HAD NONE. The parallel
+# FIVE CASES WERE WRITTEN FOR THIS MAP BECAUSE THE REQUIREMENTS THEY ANSWER HAD NONE. The parallel
 # paragraph of "Frustum culling" had no case at all — `CullOptions::jobs` was never passed a job
 # system by any test in the tree — and neither had the layout claim of "Spatial indexing", the
-# frame-arena scenario of "Culling results", or the whole of "Culling diagnostics". Each was proved
-# red before it was believed: see the entries below for what each one breaks.
+# frame-arena scenario of "Culling results", or the whole of "Culling diagnostics". EACH WAS WATCHED
+# GOING RED BEFORE IT WAS BELIEVED, against build/m11c-cov-geom, by breaking the thing it names:
+#
+#   the broad phase reads three dense arrays      spatial.cpp: an always-visible instance also
+#                                                 enters the renderable tree -> renderables 2, not 1
+#   every stage the diagnostics name is counted   cull.cpp: `wall_nanoseconds = 0` -> the clock check
+#   the result lists are the frame arena's        frame_memory.cpp: `reset_frame_arena()` stops
+#                                                 resetting -> 4,512 bytes still held after the frame
+#   eight workers produce the serial visible list cull.cpp: the merge runs in REVERSE partition
+#                                                 order -> same 2,129 survivors, different order
+#   below the threshold the same call runs        cull.cpp: `parallel_threshold` ignored -> 4
+#   serially                                      partitions where the configuration asked for 1
 
 [[coverage]]
 row = "rendering-culling-and-lod"
@@ -1312,7 +1322,14 @@ note = "this requirement is a LIST, so the case checks every entry of it rather 
 # THREE CASES WERE WRITTEN FOR THIS MAP. The classes an asset declares had no round-trip case, the
 # import report's figures were printed rather than asserted, and nothing anywhere asserted that the
 # renderable component exposes no cluster, page or hierarchy concept — which is the whole of the
-# "Gameplay API" requirement and the one a future field would break silently.
+# "Gameplay API" requirement and the one a future field would break silently. Each was watched going
+# red against build/m11c-cov-geom before it was believed:
+#
+#   the classes an asset declares are what a      asset.cpp: the header always writes
+#   reader gets back                              `DeformationClass::Static` -> the reader gets 0
+#   the import report carries every figure        cook/geometry.cpp: `cluster_metadata_bytes = 0`
+#   the renderable component names an asset and   components.h: a reflected `resident_page_budget`
+#   a material, and nothing below them            field -> the schema walk names it twice
 
 [[coverage]]
 row = "virtual-geometry"
