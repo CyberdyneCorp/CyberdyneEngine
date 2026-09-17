@@ -21,12 +21,33 @@ The mechanism arrived at M8.c. Anything earlier is in section 4, unchecked.
 
 | Declared at | Gap | Closes at | Why it is open |
 |---|---|---|---|
-| M8.c | `steam-audio-configures` | **M11.a** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
-| M10 | `world-frame-budget` | **M11.c** | the environment demo costs 115.7 ms a frame mean and 127.6 ms worst against a 16.7 ms budget, and 126.8/137.8 with this machine busy — re-measured headless at 0x5EED over the same 64-frame take, WO… |
-| M11.a | `save-has-an-engine-consumer` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
-| M11.b | `the-game-is-honest-about-its-content` | **M11.c** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
 | M11.a | `developer-workflow-at-working` | **M11.d** | THE RELEASE CATEGORY REFUSES IN FULL, AND IT HAS SINCE M0. All four of `release-version`, `release-changelog`, `release-artefacts` and `release-publish` are `_not-implemented` stubs, so one of the … |
 | M10 | `pcg-gpu-domain-agreement` | **M11.e** | there is no GPU execution domain in this tree to compare. `cy::pcg::ExecutionDomain` is Editor, Cook, Runtime, Streaming and Dynamic — `procedural-content-generation`'s "CPU and GPU execution" requ… |
+| M10 | `world-frame-budget` | **M11.e** | the environment demo costs 115.7 ms a frame mean and 127.6 ms worst against a 16.7 ms budget, and 126.8/137.8 with this machine busy — re-measured headless at 0x5EED over the same 64-frame take, WO… |
+| M11.a | `determinism-suites` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `network-at-complete-grade` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `roadmap-tiers` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `save-benchmark` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `save-forbidden-patterns-checked` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `save-has-an-engine-consumer` | **M11.e** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.a | `save-inspector` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `steam-audio-simulates` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `thirdparty-dependencies-at-working` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `world-budget-headless` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `world-budget-on-a-device` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.a | `world-streams` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11a` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `editor-at-complete-grade` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `editor-window` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `gameplay-at-complete-grade` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `import-from-the-editor` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `ml-inference-or-a-deferral` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `roadmap-tiers` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `the-game-drawn` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `the-game-exists` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `the-game-is-honest-about-its-content` | **M11.e** | THIS CRITERION IS PRESENCE-ONLY AND ITS RUNG WAS CLOSED KNOWING IT. The whole verdict is that some text exists: nothing built is run, no suite is executed and no two observations are compared, so i… |
+| M11.b | `the-game-is-playable` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M11.b | `view-modes` | **M11.e** | DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = "green"` in gates.toml, and nobody declared it; `tools… |
+| M8.c | `steam-audio-configures` | **M11.e** | Steam Audio does not configure and SteamAudioBackend::simulate returns NotImplemented. M8.c measured the cost in full — four upstream dependencies, a -fabi-version=6 line that blocks both pinned co… |
 | M9 | `record-matches-plan-history` | **M11.e** | FOUR CELLS OVER FOUR CLOSED MILESTONES: M3 `testing-and-quality`, M4 `build-system-and-platforms`, M6 `developer-workflow-and-just`, M8.b `thirdparty-dependencies` — each column claims Working and … |
 
 ## 2. Red criteria under a green gate
@@ -52,31 +73,10 @@ will report as stale.
 
 | Rung | Criterion | Prover's verdict | What it said |
 |---|---|---|---|
-| M11.a | `determinism-suites` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3 suite(s) match ^(determinism.simulation\|integration.replay\|integration.network)$ |
 | M11.a | `four-profiles` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
-| M11.a | `network-at-complete-grade` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 r… |
-| M11.a | `roadmap-tiers` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): audio: recorded 'working', below this milestone's exit of 'complete' |
-| M11.a | `save-benchmark` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
-| M11.a | `save-forbidden-patterns-checked` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no tools/save/check_forbidden.py — not one of the ten forbidden save patterns is checked by anything |
-| M11.a | `save-inspector` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 45 skipped |
 | M11.a | `sky-field-consumed-outside-the-sky` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): 0 file(s) outside src/rendering/sky/ read the cloud shadow field: |
-| M11.a | `steam-audio-simulates` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 31 skipped |
-| M11.a | `thirdparty-dependencies-at-working` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree |
-| M11.a | `world-budget-headless` | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … the three largest bands: terrain_shade_ms 66.5 ms, sky_ms 24.4 ms, water_ms 12.9 ms |
-| M11.a | `world-budget-on-a-device` | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … 64 frames written to /tmp/tmp.aTIedgqP86/frames, vulkan validation errors: 0 |
-| M11.a | `world-streams` | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49 tiles_resident: 49 evicted: 0 stitched_vertices: 0 |
-| M11.b | `editor-at-complete-grade` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-… |
-| M11.b | `editor-window` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> cargo build profile=dev cargo-profile=development target=/home/leonardo/work/CyberdyneEngine/build/repair-1-4/editor |
 | M11.b | `four-profiles` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
-| M11.b | `gameplay-at-complete-grade` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage gameplay-abilities-and-effects ai-system animation-and-skinning camera-system navigation physics sequencing-a… |
-| M11.b | `import-from-the-editor` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_editor_import — the suite integration.editor_import does not exist |
 | M11.b | `m11c-open` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11c-image/proposal.md |
-| M11.b | `ml-inference-or-a-deferral` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_ai — the suite integration.ai does not exist |
-| M11.b | `roadmap-tiers` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ai-system: recorded 'working', below this milestone's exit of 'complete' |
-| M11.b | `the-game-drawn` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
-| M11.b | `the-game-exists` | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/ |
-| M11.b | `the-game-is-playable` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/ |
-| M11.b | `view-modes` | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_editor_views — the suite unit.editor_views does not exist |
 
 ## 3. Behind the plan
 
