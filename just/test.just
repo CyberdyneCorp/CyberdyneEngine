@@ -427,7 +427,8 @@ test-sanitize *args:
 
     ASAN_OPTIONS="${ASAN_OPTIONS:-}${ASAN_OPTIONS:+:}detect_leaks=0" \
         "${build_launcher[@]}" env CY_BUILD_DIR="${build_dir}" just build-engine \
-        --profile "${profile}" -D "CY_SANITIZE=${sanitizer}" -D CY_SHADER_SLANG=OFF
+        --profile "${profile}" -D "CY_SANITIZE=${sanitizer}" -D CY_SHADER_SLANG=OFF \
+        -D CY_SHADER_DXIL=OFF
 
     # A sanitized binary is five to twenty times slower, which is the tool working rather than the
     # test regressing. The harness scales its per-test budget under a sanitizer already; this makes

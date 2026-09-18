@@ -168,6 +168,56 @@ def a_recipe_that_parses_flags_binds_them(root: pathlib.Path) -> list[str]:
     ]
 
 
+
+def a_recipe_that_disables_a_feature_disables_what_needs_it(root: pathlib.Path) -> list[str]:
+    """Turning an option OFF must turn off every option that REQUIRES it, or configure refuses.
+
+    `cmake/features.cmake` declares dependencies as FEATURE|EVERY_OPTION_IT_REQUIRES and refuses at
+    configure time when a feature is on and its dependency is off. That refusal is the design working.
+    What breaks is a RECIPE that turns a dependency off and leaves a dependent at its default ON.
+
+    The case that put this here, found closing M11.c: `just test-sanitize` has configured with
+    `-D CY_SHADER_SLANG=OFF` since M4 — a sanitized build has no use for a shader front end. M11.c then
+    added CY_SHADER_DXIL, defaulting ON, declaring `CY_SHADER_DXIL|CY_SHADER_SLANG`. Every sanitized
+    configure died in seconds with "CY_SHADER_DXIL is ON but requires CY_SHADER_SLANG, which is OFF",
+    and SEVEN criteria across five already-closed milestones — m1:asan-jobs, m1:tsan-jobs, m2:asan-world,
+    m2:tsan-world, m3:sanitizers-render, m4:sanitizers, m5:sanitizers — went red at once. None of them
+    failed on its subject; there had been no ASan, UBSan or TSan run at all since that commit.
+
+    This checks the invariant rather than the instance, so the next option to depend on a disabled one
+    is caught when it is added and not five milestones later.
+    """
+    features = (root / "cmake" / "features.cmake").read_text(encoding="utf-8")
+    block = re.search(
+        r"set\(CY_FEATURE_REQUIRES_ALL(.*?)CACHE INTERNAL", features, re.S
+    )
+    requires: dict[str, list[str]] = {}
+    if block:
+        for row in re.findall(r'"([A-Z0-9_]+)\|([^"]+)"', block.group(1)):
+            requires[row[0]] = row[1].split()
+
+    failures = []
+    for just_file in sorted((root / "just").glob("*.just")):
+        text = just_file.read_text(encoding="utf-8")
+        # A recipe may span lines with a trailing backslash; join them before reading the flags.
+        joined = re.sub(r"\\\n\s*", " ", text)
+        for line in joined.splitlines():
+            off = set(re.findall(r"-D\s+\"?([A-Z0-9_]+)=OFF", line))
+            if not off:
+                continue
+            on = set(re.findall(r"-D\s+\"?([A-Z0-9_]+)=ON", line))
+            for feature, needs in requires.items():
+                if feature in off or feature in on:
+                    continue
+                missing = [n for n in needs if n in off]
+                if missing:
+                    failures.append(
+                        f"{just_file.name}: a configure turns {', '.join(missing)} OFF while "
+                        f"{feature} keeps its default; {feature} requires {' '.join(needs)}, so this "
+                        f"configure is refused before it compiles anything"
+                    )
+    return failures
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -185,6 +235,9 @@ def main() -> int:
         ),
         "a sanitized build tree's path survives -Wl,": sanitized_tree_survives_wl,
         "a recipe that parses flags binds them to $@": a_recipe_that_parses_flags_binds_them,
+        "a recipe that disables an option disables what requires it": (
+            a_recipe_that_disables_a_feature_disables_what_needs_it
+        ),
         "the editor is built into the build tree the override names": (
             editor_target_dir_honours_the_override
         ),
