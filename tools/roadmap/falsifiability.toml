@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 207 proven, 446 not yet shown able to fail.
+# 209 proven, 444 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1461,6 +1461,14 @@ detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8b"
+criterion = "render-assembly-device"
+digest = "a27c7866e9d17796"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'out.cull.visible = readback->counters.visible;' in src/rendering/assembly/src/frame_assembly.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m8b"
 criterion = "roadmap-tiers"
 digest = "1c48430f39a03aa8"
 verdict = "proven"
@@ -1490,6 +1498,14 @@ digest = "85c0f6b07a2bc442"
 verdict = "proven"
 mutation = "delete-path in openspec/changes/**/*m9*/proposal.md (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8c"
+criterion = "pipeline-device"
+digest = "c581d0fd03da6e48"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());' in src/rendering/pipeline/src/frame_recorder.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m8c"
@@ -4565,14 +4581,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m8b"
-criterion = "render-assembly-device"
-digest = "5e47b2e9a104d63d"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
-
-[[unproven]]
-ledger = "m8b"
 criterion = "rendering-2d"
 digest = "273cd4f20600cd46"
 verdict = "no mutation"
@@ -4770,14 +4778,6 @@ digest = "0156c83a7e274ce8"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8c"
-criterion = "pipeline-device"
-digest = "68469ebe11ac38cb"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m8c"

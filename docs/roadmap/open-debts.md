@@ -119,7 +119,6 @@ so this document states the finding and moves nothing.
 | M11.a | `save-benchmark` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): (no output) |
 | M11.a | `save-forbidden-patterns-checked` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no tools/save/check_forbidden.py — not one of the ten forbidden save patterns is checked by anything |
 | M11.a | `save-inspector` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 45 skipped |
-| M11.a | `sky-field-consumed-outside-the-sky` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): 0 file(s) outside src/rendering/sky/ read the cloud shadow field: |
 | M11.a | `steam-audio-simulates` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 31 skipped |
 | M11.a | `thirdparty-dependencies-at-working` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree |
 | M11.a | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
