@@ -30,7 +30,6 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/graph/material/lower_material.h>
 #include <cy/rendering/material/compiler.h>
-#include <cy/rendering/material/text.h>
 #include <cy/test/test.h>
 
 #include <algorithm>
@@ -45,15 +44,12 @@ using cy::u32;
 using cy::u64;
 using cy::u8;
 using cy::usize;
-using cy::graph::Graph;
-using cy::graph::Literal;
 using cy::graph::NodeKey;
 using cy::graph::material::lower_material;
 using cy::graph::material::material_node_types;
 using cy::graph_material_test::allocator;
 using cy::graph_material_test::author_reference;
 using cy::graph_material_test::Canvas;
-using cy::rendering::material::CompileOptions;
 using cy::rendering::material::GraphOp;
 using cy::rendering::material::MaterialGraph;
 using cy::rendering::material::ValueType;
