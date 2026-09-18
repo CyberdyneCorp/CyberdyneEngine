@@ -1800,6 +1800,13 @@ note = "THREE OF THE FOUR REQUIRED DIAGNOSTICS EXIST AND THE SCENARIO NEEDS THE 
 # answers, and asserts three numbers — darkest, brightest and a mean strictly between them — over
 # BROKEN cloud rather than overcast, because a field that is uniformly black satisfies "the darkest
 # cell is dark" while containing no shadow at all.
+#
+# EVERY ENTRY IN THIS ROW HAS BEEN MUTATION-PROVED. Thirteen mapped requirements, thirteen
+# experiments: the source line the requirement's own sentence is about was deleted or inverted, the
+# affected target rebuilt in `build/m11c-final`, and the mapped case run BY NAME. Thirteen of
+# thirteen go red. TWELVE went red on the first attempt; the thirteenth — `Precomputed atmospheric
+# tables` — survived, and its note says what was strengthened rather than what was re-pointed.
+#
 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
@@ -1813,7 +1820,7 @@ row = "atmosphere-sky-and-clouds"
 requirement = "Precomputed atmospheric tables"
 evidence = "test:integration.render_sky_tables"
 case = "sky tables: the sky is a lookup — drawing it integrates no atmosphere"
-note = "the requirement's opening sentence, COUNTED rather than described: four thousand sky directions are sampled and `stats().directions_integrated` is required not to have moved, so a table that silently fell back to marching fails. `sky tables: the sky view regenerates incrementally as the sun moves` is the incremental half — 96 sun positions over a quarter-day against a full `SkyViewTable` rebuild as the oracle, at three update budgets — and `sky tables: transmittance is tabulated, reused, and agrees with the march` is `regenerated only when the parameters they depend on change` — a second build of the same atmosphere counts a reuse and a changed one counts a rebuild, so the reuse cannot be a table that never rebuilds — with `SkyTableQuality` as the resolution setting and `stats()` as the reported generation cost."
+note = "the requirement's opening sentence, COUNTED rather than described: four thousand sky directions are sampled and `stats().directions_integrated` is required not to have moved, so a table that silently fell back to marching fails. `sky tables: the sky view regenerates incrementally as the sun moves` is the incremental half — 96 sun positions over a quarter-day against a full `SkyViewTable` rebuild as the oracle, at three update budgets — and `sky tables: transmittance is tabulated, reused, and agrees with the march` is `regenerated only when the parameters they depend on change` — a second build of the same atmosphere counts a reuse and a changed one counts a rebuild, so the reuse cannot be a table that never rebuilds — with `SkyTableQuality` as the resolution setting and `stats()` as the reported generation cost. MUTATION-PROVED, AND THE FIRST ATTEMPT SURVIVED. `IncrementalSkyView::sample`'s body was replaced with a per-call `sky_radiance()` march, rebuilt, and this case stayed GREEN: `directions_integrated` is a counter only `update()` can move and `sample()` is `const`, so what the count decides is `update() was not re-run` rather than `the sky was not integrated per pixel`. The case was STRENGTHENED rather than re-pointed — inside one table column a lookup is a LINEAR blend of stored texels, so the midpoint of two azimuths in one column is exactly the mean of the two, and the marching mutant departs from that by 1.04% against the table's 1.7e-5%."
 
 [[coverage]]
 row = "atmosphere-sky-and-clouds"
@@ -1915,6 +1922,14 @@ note = "the requirement's middle paragraph, five answers at once: coverage, type
 # in `pages.h` — two views mark the same page id and compaction merges them, weighted by the view's
 # own priority — and nothing exercised it. The case was written for this map and proved red before
 # it was recorded.
+#
+# EVERY TEST-BACKED ENTRY IN THIS ROW HAS BEEN MUTATION-PROVED. Fourteen mapped requirements,
+# fourteen experiments against `build/m11c-final`, each running the mapped case BY NAME after the
+# behaviour the requirement names was deleted or inverted: fourteen of fourteen go red. ONE case —
+# `Deformation and cache validity` — survived its first mutation and was strengthened; THREE more
+# needed BOTH of the mechanisms that implement the sentence deleted before they moved, and each of
+# those notes says which two. The six `exempt:m11e` entries are read, not mutated.
+#
 
 [[coverage]]
 row = "virtual-shadows"
@@ -1963,7 +1978,7 @@ row = "virtual-shadows"
 requirement = "Deformation and cache validity"
 evidence = "test:unit.render_shadows"
 case = "a tree swaying inside its declared envelope dirties nothing; a moving light dirties itself"
-note = "the requirement's first scenario decided against a cache that actually holds the pages the tree casts into — they are brought in and made clean first, because a page the cache does not hold has no contents to invalidate and a report counting projected pages would pass while dirtying nothing real. `Bounded` with an envelope dirties zero; the same caster switched to `AlwaysDirty` dirties pages AND is counted in `always_dirty_casters`, which is the requirement's `SHALL be reportable per asset, since it is the mode that silently removes the benefit of caching`."
+note = "the requirement's first scenario decided against a cache that actually holds the pages the tree casts into — they are brought in and made clean first, because a page the cache does not hold has no contents to invalidate and a report counting projected pages would pass while dirtying nothing real. `Bounded` with an envelope dirties zero; the same caster switched to `AlwaysDirty` dirties pages AND is counted in `always_dirty_casters`, which is the requirement's `SHALL be reportable per asset, since it is the mode that silently removes the benefit of caching`. MUTATION-PROVED, AND THE FIRST ATTEMPT SURVIVED. `Bounded`'s envelope — `margin = motion.mode == Bounded ? motion.envelope : 0` — was forced to zero, rebuilt, and this case stayed GREEN: a swaying tree's TRANSFORM does not move, so `previous == current` and `invalidate_caster_motion` returns on `same_box` before the envelope is ever read. The case was STRENGTHENED rather than re-pointed: the same 2.5 m motion declared `Bounded` must now dirty strictly more pages than declared `Static`, which is the requirement's own `bounds expanded to cover the deformation envelope` and is the only difference between the two runs."
 
 [[coverage]]
 row = "virtual-shadows"
@@ -1983,7 +1998,7 @@ row = "virtual-shadows"
 requirement = "Shadow material programs"
 evidence = "test:integration.material_lowering"
 case = "material_lowering: an alpha-tested material's shadow program carries only opacity"
-note = "the requirement's first scenario, decided on the compiled program rather than on the material: the foliage shadow program has zero closures, exactly one texture sample, no surface node and a live opacity node — so `not the primary program's full input set` is a count and not a description. Membership of the program family is the same case's `find(ProgramKind::Shadow, QualityTier::High)` over a family of four programs times three tiers, and `material_lowering: an opaque material has no shadow program at all` is the second scenario: the opaque material's shadow program is `absent` with zero statements, which is depth-only rasterisation expressed where it is decided."
+note = "the requirement's first scenario, decided on the compiled program rather than on the material: the foliage shadow program has zero closures, exactly one texture sample, no surface node and a live opacity node — so `not the primary program's full input set` is a count and not a description. Membership of the program family is the same case's `find(ProgramKind::Shadow, QualityTier::High)` over a family of four programs times three tiers, and `material_lowering: an opaque material has no shadow program at all` is the second scenario: the opaque material's shadow program is `absent` with zero statements, which is depth-only rasterisation expressed where it is decided. MUTATION-PROVED, AND IT TAKES BOTH BELTS TO BREAK IT. Pointing the rebuild's root array at `primary.surface()` alone leaves the case GREEN, because `set_surface` is separately guarded by `!shadow` and the compiled module's roots are what `cost` is counted over. The proof therefore deletes both — the root array AND the guard — and the case goes red on `closures == 0` and `texture_samples == 1`. The redundancy is the module's, not the case's."
 
 [[coverage]]
 row = "virtual-shadows"
@@ -1996,14 +2011,14 @@ row = "virtual-shadows"
 requirement = "Update classes and staleness"
 evidence = "test:integration.render_shadow_control"
 case = "a camera cut is spread over frames by priority, and critical pages never wait"
-note = "the requirement forbids a fixed cap on pages per frame — `a hard cap turns a camera cut into a stall` — so the case is a real cut: two thousand dirty pages against an allocation that affords about a hundred. It requires the selection to be a proper subset with a non-zero deferral and a spend inside the allocation, and all four `Critical` pages present wherever they sat in the input, which is `content whose shadow must be exact SHALL NOT be allowed to go stale`. The ordering itself is `a critical page outranks everything, and staleness ordering follows what would show` in `unit.render_shadows`, where age, importance and motion are varied one at a time."
+note = "the requirement forbids a fixed cap on pages per frame — `a hard cap turns a camera cut into a stall` — so the case is a real cut: two thousand dirty pages against an allocation that affords about a hundred. It requires the selection to be a proper subset with a non-zero deferral and a spend inside the allocation, and all four `Critical` pages present wherever they sat in the input, which is `content whose shadow must be exact SHALL NOT be allowed to go stale`. The ordering itself is `a critical page outranks everything, and staleness ordering follows what would show` in `unit.render_shadows`, where age, importance and motion are varied one at a time. MUTATION-PROVED, AND IT TAKES BOTH BELTS TO BREAK IT. Deleting `staleness_priority`'s Critical branch alone leaves the case GREEN, because `select_pages_to_render` never defers a Critical page for cost whatever its rank; deleting that exemption alone leaves it green too, because a Critical page sorts first and is therefore affordable. The proof deletes both, and `critical_selected == 4` goes red."
 
 [[coverage]]
 row = "virtual-shadows"
 requirement = "Shadow budget"
 evidence = "test:integration.render_shadow_control"
 case = "the shadow controller settles on every load in the sweep, and none settles over budget"
-note = "41 load magnitudes from x1.00 to x2.40, each held 800 frames with lever changes counted over the last 450 — the certification is the SWEEP because the levers are a discrete ladder and one step magnitude can make any control law look stable (the arbiter spike's own first draft passed a single load and oscillated on 27 of 71). The companion cases carry the rest of the requirement: `the reserved minimum is declared and reported rather than silently crossed`, `pinned mode stops everything and reports the overrun instead of correcting it`, and `released from pressure, authored quality comes back on every load`. The declared reduction ORDER is `ShadowLever`'s enumerator order. What the sweep does not certify, and says so in the module README, is that the declared relative costs describe a real shadow pass; that needs a measured device pass."
+note = "41 load magnitudes from x1.00 to x2.40, each held 800 frames with lever changes counted over the last 450 — the certification is the SWEEP because the levers are a discrete ladder and one step magnitude can make any control law look stable (the arbiter spike's own first draft passed a single load and oscillated on 27 of 71). The companion cases carry the rest of the requirement: `the reserved minimum is declared and reported rather than silently crossed`, `pinned mode stops everything and reports the overrun instead of correcting it`, and `released from pressure, authored quality comes back on every load`. The declared reduction ORDER is `ShadowLever`'s enumerator order. What the sweep does not certify, and says so in the module README, is that the declared relative costs describe a real shadow pass; that needs a measured device pass. MUTATION-PROVED ON THE SENTENCE THE SWEEP DECIDES, WHICH IS NOT THE HYSTERESIS ONE. Disabling the tighten path — a subsystem over its allocation that never moves a lever — turns `over_budget` red, which is the requirement's own `WHEN shadow cost exceeds its allocation THEN ... SHALL be adjusted`. Removing the tighten MARGIN does NOT move this case, because the sweep's arbiter half gates its own grant at `relax_margin` and supplies the band the subsystem's margins would: the hysteresis clause is decided by `without the margin the controller ratchets quality away and never gives it back` in the same suite, which that mutation does turn red."
 
 [[coverage]]
 row = "virtual-shadows"
