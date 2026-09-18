@@ -1095,7 +1095,7 @@ note = "the requirement's own scenario at its own number — 400 instances of on
 row = "vfx-system"
 requirement = "Data interfaces"
 evidence = "test:integration.vfx_compiler"
-case = "a project registers its own data interface and a graph reads it"
+case = "a project registers its own data interface and a graph reads it, with no compiler change"
 note = "`data interfaces SHALL be extensible: modules and projects SHALL be able to register their own WITHOUT MODIFYING THE COMPILER` is the sentence that decides whether this is a registry or a list of special cases, and the case registers an interface the compiler has never heard of, authors a graph that samples it, and requires the cook to bind it and emit the sampling code. The requirement's other three scenarios have their own cases in this suite: `a CPU-path effect using a GPU-only interface fails to cook, naming the interface` is the cost-class and CPU-availability declaration enforced at cook time, and `wind is the shared field and there is no VFX-owned wind model` is the one-wind rule checked where it is decided rather than by a word search."
 
 [[coverage]]
@@ -1123,7 +1123,7 @@ note = "the requirement's three SHALLs are a documented latency of at least one 
 row = "vfx-system"
 requirement = "VFX does not influence gameplay state"
 evidence = "test:integration.gameplay_firewall"
-case = "the firewall refuses a VFX readback and a non-pinned inference write"
+case = "the firewall refuses a VFX readback and a non-pinned inference write, and the re-simulation reaches the identical digest"
 note = "VFX DOES NOT ENFORCE THIS AND MUST NOT — `ReadbackQueue::deliver` opens a `WriteScope(WriteOrigin::Vfx)` around the caller's sink so that any ECS write the sink reaches, however deep in gameplay code, arrives at the firewall labelled as VFX's, and the ECS refuses it. So the case that answers this requirement is the ECS's: it drives a VFX readback at a replicated component, requires the write refused, and then requires the RE-SIMULATION TO REACH THE IDENTICAL DIGEST, which is the requirement's own first scenario — `the result SHALL be identical regardless of what VFX did, because VFX contributed no gameplay state`. The permitted direction is in the same case: a component nothing derives stays writable by presentation code."
 
 [[coverage]]

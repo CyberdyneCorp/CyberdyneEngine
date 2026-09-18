@@ -89,10 +89,18 @@ CY_TEST_CASE("a small movement does not restructure the tree") {
 }
 
 CY_TEST_CASE("the layer test rejects before any geometry is touched") {
+    // TWO instances, and the second is what makes this an ORDER test rather than a layer test. The
+    // first is inside the frustum, so it says nothing about order: whichever test runs first, the
+    // layer is the one that rejects it. The second is masked out AND behind the camera, so it is
+    // rejected by whichever test runs FIRST and the counter it lands in names the order. Running
+    // the frustum before the layer moves it from `rejected_by_layer` to `rejected_by_frustum`.
     SpatialIndex index(allocator());
     SpatialEntry inside = make_entry({0, 0, -5}, 1);
     inside.layer_mask = 1U << 3U;
     CY_REQUIRE(index.insert(inside).has_value());
+    SpatialEntry behind = make_entry({0, 0, 5}, 2);  // behind the camera, so the frustum would take it
+    behind.layer_mask = 1U << 3U;
+    CY_REQUIRE(index.insert(behind).has_value());
 
     CullView view = make_view();
     view.layer_mask = 1U << 4U;  // a mask that shares no bit
@@ -101,10 +109,11 @@ CY_TEST_CASE("the layer test rejects before any geometry is touched") {
     CullResults results(allocator());
     CY_REQUIRE(cull_view(index, view, CullOptions{}, workspace, results).has_value());
 
-    CY_CHECK_EQ(results.stats.tested, 1U);
-    CY_CHECK_EQ(results.stats.rejected_by_layer, 1U);
-    // The instance is inside the frustum, so a frustum rejection here would mean the tests ran in
-    // the wrong order.
+    CY_CHECK_EQ(results.stats.tested, 2U);
+    // BOTH land in the layer counter, including the one the frustum would also have rejected.
+    CY_CHECK_EQ(results.stats.rejected_by_layer, 2U);
+    // No geometry was touched: a non-zero frustum counter here means the tests ran the other way
+    // round.
     CY_CHECK_EQ(results.stats.rejected_by_frustum, 0U);
     CY_CHECK_EQ(results.stats.visible, 0U);
 }
