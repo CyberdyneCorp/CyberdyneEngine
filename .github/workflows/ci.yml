@@ -1227,12 +1227,77 @@ jobs:
           path: cross-leg-digests
           if-no-files-found: ignore
 
+  # --- The closed milestones' exit criteria, nightly and on demand --------------------------------
+  #
+  # WHAT THIS JOB IS FOR. `delivery-roadmap` puts a milestone's exit criteria into the permanent set
+  # the moment its gate closes, and requires them to stay green from then on. tools/roadmap/gates.toml
+  # is that set as data; `just ci-check` compares it with THIS FILE and names, by gate id, any closed
+  # gate no job evaluates. That comparison is the `m1:workflows` criterion — "every permanent gate M1
+  # declared is run by a job in .github/workflows/, and no job reimplements a recipe" — and a gate
+  # nobody runs is not a gate, because it cannot regress visibly.
+  #
+  # WHY ONE JOB, AND ONE MILESTONE ID RATHER THAN ONE JOB PER MILESTONE. The ledger has been FLAT
+  # since M5: `criteria.build_plan` merges the criteria of every green milestone gate below the
+  # target with the target's own and runs each distinct check ONCE. So the single command below
+  # evaluates M0 through M11.b — `just roadmap-milestone m11b --list` says 410 criteria, 383 of them
+  # inherited from the rungs beneath — and a job per milestone would re-run `four-profiles` once per
+  # ledger, which is exactly the multiplication the flattening removed (tools/roadmap/milestones/
+  # m1.toml records that history). The id moves up ONE RUNG each time a milestone gate reaches
+  # `state = "green"` in gates.toml, and `just ci-check` is what notices when it has not: it prints
+  # the uncovered gates and the one command that covers all of them.
+  #
+  # WHY NIGHTLY AND ON DEMAND, AND NOT ON EVERY PUSH TO main — THE DECISION, AND ITS MEASUREMENT.
+  # This job used to run `just roadmap-milestone m10` on every push to `main` as well, and pointing
+  # it at the newest closed rung is what makes the cadence a question rather than a detail. MEASURED
+  # ON THIS PROJECT'S OWN WORKSTATION: one run of `just roadmap-milestone m11c` over 440 criteria
+  # took 6372 s — 1 h 46 m — at commit 2ca9e15 on 2026-09-18, recorded in section 9 of
+  # openspec/changes/implement-m11c-image/tasks.md. M11.b's ledger is 410 of those same criteria and
+  # is the same order of cost. This repository pushes to `main` MANY TIMES A DAY, because milestone
+  # workflows commit their agents' work mid-flight on purpose, and `cancel-in-progress` is
+  # deliberately FALSE on the trunk (the concurrency block above says why, and it was measured too).
+  # Per-push would therefore leave a dozen two-hour ledgers alive at once, each answering a question
+  # about a commit that the next one re-answers — an honest gate and an unusable repository.
+  #
+  # The criterion asks that a gate be RUN BY A JOB. It does not ask that it be run per commit, and
+  # nothing in `delivery-roadmap` or gates.toml does either. So: `schedule` is the cadence, and
+  # `workflow_dispatch` is how a branch gets this answer BEFORE it is merged rather than the morning
+  # after. The cheap permanent gates are unaffected and keep their own per-push jobs above — format,
+  # lint, layering, specs, generated-code, the suites, the status record — so a push to `main` still
+  # gets every gate that can answer in minutes. What moves to the night is only the set that cannot.
+  #
+  # HOW THIS JOB GOES RED, because a job that exists, is green, and compares nothing is worse than no
+  # job at all — this repository has shipped that defect before, and `tools/ci/cross_leg_audit.py`
+  # exists because of it. The step below runs ONE command and nothing forgives it:
+  #
+  #   * `tools/roadmap/roadmap.py` returns a non-zero exit when any criterion FAILED and is not a
+  #     declared gap, and ALSO when a declared gap has started PASSING — a marker that outlived its
+  #     gap blocks in the other direction.
+  #   * `just roadmap-milestone` runs under `set -euo pipefail` with that process last, so the exit
+  #     code is the recipe's exit code, and the step's.
+  #   * there is NO `continue-on-error` on this step or on this job, and adding one would turn this
+  #     into a nightly nobody reads — the same sentence the `sanitize-nightly` job above carries.
+  #
+  # Concretely, this job is red the night any of these is true: a suite in `just test-all` fails; the
+  # formatting, lint, layering or specification gate fails; `tools/roadmap/status.yaml` stops
+  # agreeing with openspec/specs/; a row's exit tier drops below the floor a closed milestone
+  # declared; a criterion's recipe stops existing; or a `known_gap` in any ledger from m0 to m11b
+  # starts passing and its declaration has not been deleted.
+  #
+  # AND WHAT IT WILL SAY ON ITS FIRST NIGHT IS NOT KNOWN HERE, WHICH IS SAID RATHER THAN GUESSED. No
+  # runner has ever executed this ledger — 65 of this repository's first 66 runs were cancelled
+  # before reaching a verdict. On the workstation the run cited above was red for `m4:sanitizers` and
+  # `m5:sanitizers` (408 and 1632 bytes leaked inside `libcuda.so.1`, no engine frame in either
+  # stack), and those two are in the permanent set this command evaluates — but a GitHub runner has
+  # no NVIDIA device, so the render cases that reach that driver may not be evaluated there at all,
+  # and criteria that pass on a workstation with a GPU may fail on a runner without one for the
+  # opposite reason. The first scheduled run is the measurement. docs/roadmap/open-debts.md is the
+  # list of what is known to be open when it happens.
   milestone:
-    name: milestone — the closed milestones' exit criteria
+    name: milestone — the closed milestones' exit criteria (nightly)
     needs: build
-    if: >-
-      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Nightly and on demand only. The reasoning is the block above; the short form is that this is a
+    # multi-hour ledger and `main` is pushed to many times a day.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 480
     steps:
@@ -1249,8 +1314,13 @@ jobs:
         run: |
           pip install clang-format==22.1.8 clang-tidy==22.1.8
           npm install -g @fission-ai/openspec@latest
+      # m11b, not m10: `milestone-m11a` and `milestone-m11b` reached `state = "green"` in
+      # gates.toml after this file was last touched, and `just ci-check` reported both as closed
+      # gates no workflow evaluates. One command covers them and everything below them, because the
+      # ledger is flat. `--ci` additionally runs the criteria marked `where = "ci"`, which are the
+      # ones a single workstation cannot answer and a runner matrix can.
       - name: The exit criteria of every closed milestone, evaluated once each
-        run: just roadmap-milestone m10 --ci
+        run: just roadmap-milestone m11b --ci
 
   # --- The capability status record ---------------------------------------------------------------
   roadmap:

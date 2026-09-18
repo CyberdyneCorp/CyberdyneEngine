@@ -233,15 +233,24 @@ Expected<SurfaceAttributes, Error> reconstruct_surface(const DecodedAsset& asset
     if (!geometry) {
         return make_unexpected(geometry.error());
     }
-    if ((triangle * 3U) + 2U >= geometry->indices.size()) {
+    return reconstruct_surface(*geometry, instance, visible, triangle, world_to_clip, pixel, width,
+                               height);
+}
+
+Expected<SurfaceAttributes, Error> reconstruct_surface(const DecodedCluster& geometry,
+                                                       const GeometryInstance& instance,
+                                                       const VisibleCluster& visible, u32 triangle,
+                                                       const Mat4& world_to_clip, Vec2 pixel,
+                                                       u32 width, u32 height) noexcept {
+    if ((triangle * 3U) + 2U >= geometry.indices.size()) {
         return fail(ErrorCode::OutOfRange, "reconstruct_surface: no such triangle");
     }
 
     Vec3 world[3];
     Vec2 screen[3];
     for (u32 corner = 0; corner < 3; ++corner) {
-        const u32 slot = geometry->indices[(triangle * 3U) + corner];
-        world[corner] = (rotate(instance.rotation, geometry->positions[slot]) * instance.scale) +
+        const u32 slot = geometry.indices[(triangle * 3U) + corner];
+        world[corner] = (rotate(instance.rotation, geometry.positions[slot]) * instance.scale) +
                         instance.translation;
         const Vec4 clip =
             world_to_clip * Vec4{world[corner].x, world[corner].y, world[corner].z, 1.0F};
@@ -266,23 +275,23 @@ Expected<SurfaceAttributes, Error> reconstruct_surface(const DecodedAsset& asset
     out.barycentric = Vec3{w0, w1, w2};
     out.material = visible.material;
     out.position = (world[0] * w0) + (world[1] * w1) + (world[2] * w2);
-    if (!geometry->normals.empty()) {
+    if (!geometry.normals.empty()) {
         Vec3 blended{0.0F, 0.0F, 0.0F};
         for (u32 corner = 0; corner < 3; ++corner) {
-            const u32 slot = geometry->indices[(triangle * 3U) + corner];
+            const u32 slot = geometry.indices[(triangle * 3U) + corner];
             const f32 weight = weights[corner];
-            blended = blended + (geometry->normals[slot] * weight);
+            blended = blended + (geometry.normals[slot] * weight);
         }
         const Vec3 rotated = rotate(instance.rotation, blended);
         const f32 magnitude = length(rotated);
         out.normal = magnitude > 1.0e-9F ? rotated * (1.0F / magnitude) : Vec3{0.0F, 0.0F, 1.0F};
     }
-    if (!geometry->uvs.empty()) {
+    if (!geometry.uvs.empty()) {
         Vec2 blended{0.0F, 0.0F};
         for (u32 corner = 0; corner < 3; ++corner) {
-            const u32 slot = geometry->indices[(triangle * 3U) + corner];
+            const u32 slot = geometry.indices[(triangle * 3U) + corner];
             const f32 weight = weights[corner];
-            blended = blended + (geometry->uvs[slot] * weight);
+            blended = blended + (geometry.uvs[slot] * weight);
         }
         out.uv = blended;
     }

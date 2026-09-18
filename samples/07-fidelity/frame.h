@@ -33,6 +33,7 @@
 // The sample is stratified rather than random and its size is a parameter, so the figures it
 // reports reproduce.
 
+#include <cy/core/math/matrix.h>
 #include <cy/core/memory/array.h>
 #include <cy/rendering/virtual_geometry/visbuffer.h>
 
@@ -110,6 +111,14 @@ struct Capture {
     /// `instance * cluster_stride + cluster` identity, which is what makes a picture coloured by a
     /// pixel's cluster reproducible. This list's ORDER is still atomic-append order.
     Array<rendering::vg::VisibleCluster> visible;
+    /// The view the retained frame was rendered with, so a caller can reconstruct a pixel's surface
+    /// without re-deriving the camera path. Re-deriving it is what `capture.cpp` used to do, and it
+    /// meant the shot's field of view and near plane were spelled twice.
+    Mat4 world_to_clip;
+    Vec3 camera{0.0F, 0.0F, 0.0F};
+    /// The viewport the retained frame was rendered at — `reconstruct_surface` needs both.
+    u32 width = 0;
+    u32 height = 0;
 };
 
 [[nodiscard]] Status render_frames(const Scene& scene, const FrameOptions& options,

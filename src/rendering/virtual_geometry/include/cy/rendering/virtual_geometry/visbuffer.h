@@ -114,6 +114,19 @@ struct SurfaceAttributes {
     u32 triangle, const Mat4& world_to_clip, Vec2 pixel, u32 width, u32 height,
     Allocator& allocator = current_allocator()) noexcept;
 
+/// The same reconstruction over a cluster that has ALREADY been decoded.
+///
+/// The overload above decodes the cluster on every call, which is the right shape for a test that
+/// checks one pixel and the wrong one for a caller that shades a frame: a 320x180 view of
+/// `samples/07-fidelity` covers tens of thousands of pixels over a couple of thousand clusters, so
+/// decoding per pixel is the same work done twenty times over. A caller that keeps its own cache of
+/// `DecodedCluster` passes it here; the overload above is this function with a decode in front of
+/// it, so there is one copy of the arithmetic.
+[[nodiscard]] Expected<SurfaceAttributes, Error> reconstruct_surface(
+    const DecodedCluster& geometry, const GeometryInstance& instance,
+    const VisibleCluster& visible, u32 triangle, const Mat4& world_to_clip, Vec2 pixel, u32 width,
+    u32 height) noexcept;
+
 /// Pixels grouped by material. `virtual-geometry` — "Many materials, few passes": "WHEN a view
 /// contains thousands of distinct materials THEN material resolve SHALL evaluate them in bins
 /// rather than issuing per-material draws."

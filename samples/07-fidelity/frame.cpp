@@ -332,6 +332,10 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
                     return added;
                 }
             }
+            capture->world_to_clip = world_to_clip;
+            capture->camera = camera;
+            capture->width = options.width;
+            capture->height = options.height;
         }
     }
 
