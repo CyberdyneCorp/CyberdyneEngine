@@ -99,6 +99,48 @@ inline constexpr u32 kEmberCapacity = 512;
 inline constexpr f32 kEmberWarmup = 6.0F;
 inline constexpr f32 kEmberStep = 1.0F / 60.0F;
 
+/// WHAT A MOTE EMITS AND HOW OPAQUE IT IS — the two numbers that decide whether a field of sprites
+/// reads as embers or as soot, and the first pair had both wrong.
+///
+/// THE BLEND IS `One, OneMinusSourceAlpha` OVER A PREMULTIPLIED FRAGMENT, so a texel under a mote
+/// comes back as `radiance * a + background * (1 - a)` where `a` is the mote's opacity times the
+/// sprite's own falloff. Two things follow, and they are the whole of this paragraph: a mote whose
+/// RADIANCE is below what it is drawn over SUBTRACTS, and the opacity decides how much of the
+/// background it takes away while it does.
+///
+/// MEASURED ON THE PUBLISHED CAPTURE rather than reasoned about, in three renders:
+///
+///   * **2 600 of radiance at 0.55-0.95 of opacity — the first version — photographed as SOOT.**
+///     72 297 texels of the frame moved and only 2 118 of them got brighter, every one of those
+///     over a shadow that was already black. A sky texel went from sRGB (95, 137, 179) to
+///     (54, 81, 113): the motes read as dirt on the lens.
+///   * **A PROBE SETTLED WHAT THE SKY ACTUALLY IS.** The same field rendered at a flat 20 000 of
+///     radiance and an opacity of exactly 1 puts a known number in a texel: its core displays at
+///     sRGB (255, 251, 197) where the sky beside it displays (98, 140, 179). Inverting that
+///     against the chroma below puts this sky at roughly (1 800, 3 200, 5 000) of linear radiance
+///     — which is why 2 600, and even 16 000 at that opacity, lost to it.
+///   * **36 000 at 0.18-0.40 clears it in the channel that matters.** A fresh mote's core
+///     contributes 6 480 to 14 400 of red against a sky of about 1 800, and 2 000 to 4 500 of blue
+///     against a sky of about 5 000 — a warm core with an orange skirt over a blue sky, which is
+///     what an ember is — while taking at most two fifths of the background away at the one texel
+///     in the middle of a sprite that is three pixels across. Measured against the published still
+///     at this pair: 15 590 texels brighter by more than ten and 10 763 darker by more than ten,
+///     the brightest gain (+246, +202, +145) and the deepest loss (-40, -43, -53). At 0.30-0.60
+///     the same field was brighter still and the losses ran to -84, which is a skirt a reader can
+///     see; this is the pair where the subtractive half stops being visible.
+///
+/// The ratio between birth and death stays at twenty, which is what makes the far end of a field
+/// dimmer than its near end without a per-particle branch. `declare_attributes` caps `emission` at
+/// 40 000, which is the quantisation range the derived layout is built from rather than a ceiling
+/// on taste; 36 000 leaves it a tenth of headroom.
+inline constexpr f32 kEmberBirthRadiance = 36000.0F;
+inline constexpr f32 kEmberDeathRadiance = 1800.0F;
+
+/// The opacity a mote is drawn with: a floor, and the span a random draw adds to it — 0.18 to 0.40,
+/// which is a spark rather than a puff.
+inline constexpr f32 kEmberOpacityFloor = 0.18F;
+inline constexpr f32 kEmberOpacitySpan = 0.22F;
+
 /// The ring the renderer draws from. Larger than the settled population, so
 /// `PublishReport::dropped` is zero and a non-zero one is a finding.
 inline constexpr u32 kEmberRing = 4096;

@@ -143,10 +143,14 @@ CY_TEST_CASE("particles are in the assembled frame: the shot's air simulates and
     // A MOTE WITH NO SIZE IS DRAWN AND COVERS NOTHING, which is what `ParticleInstance` says a dead
     // slot should cost. Every published record here is a live one, so every one of them has both.
     CY_CHECK_EQ(drawable, published);
-    // A RADIANCE. `emission` is folded into the colour at publication, so a record whose red
-    // channel is order-one is a record the tone curve will photograph as black — which is how an
-    // effect can be in the frame and invisible.
-    CY_CHECK_GT(brightest, 100.0F);
+    // A RADIANCE, AND THE FLOOR IS THE ONE THIS EFFECT ALREADY FAILED. `emission` is folded into
+    // the colour at publication, so the brightest record is `kEmberBirthRadiance`: measured
+    // 35 811.6. The first version of this effect emitted 2 600, which is BELOW this shot's own sky
+    // (about 1 800, 3 200, 5 000 of linear radiance — `embers.h` records the probe that measured
+    // it), and the premultiplied blend therefore SUBTRACTED: the motes photographed as dirt on the
+    // lens. A floor of "order one" would not have caught that and a floor of 10 000 does, because
+    // it is above the sky in every channel.
+    CY_CHECK_GT(brightest, 10'000.0F);
     // AND THE CLAIM ITSELF: the air is in front of the camera, not behind it and not past the far
     // pillar. Measured: 901 of 996, which is 90%. The floor is three fifths, because the emitters
     // are volumes and the motes at the edges of the slab legitimately fall outside a 42-degree

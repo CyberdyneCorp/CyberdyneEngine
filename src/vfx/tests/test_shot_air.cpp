@@ -58,12 +58,13 @@
 // renders the identical frame with the ring uploaded EMPTY — same passes, same clear, same resolve,
 // same exposure, same extension attached — and asserts the measured difference.
 //
-// MEASURED, on an RTX 5060 at 480x270: 4 035 of 129 600 texels differ, which is 3.11% of the
-// frame; mean |delta| is 0.182 of 255 over the whole frame and 5.84 over the texels that differ;
-// the worst channel moves by 112. Every one of those is printed each run and three of them are
-// floored, at roughly half the measurement — because the repeat-render difference above is exactly
-// zero, so there is no noise to clear and the floors exist to catch an effect that got WEAKER
-// rather than one that moved.
+// MEASURED, on an RTX 5060 at 480x270: 4 713 of 129 600 texels differ, which is 3.64% of the
+// frame; mean |delta| is 0.753 of 255 over the whole frame and 20.7 over the texels that differ;
+// the worst channel moves by 255 — a fresh mote's core clips, which is what `embers.h` picked its
+// radiance to do. Every one of those is printed each run and three of them are floored, at roughly
+// half the measurement — because the repeat-render difference above is exactly zero, so there is
+// no noise to clear and the floors exist to catch an effect that got WEAKER rather than one that
+// moved.
 
 #include "embers.h"
 #include "vfx_scene.h"
@@ -244,14 +245,14 @@ CY_TEST_CASE("particles are in the assembled frame") {
                  control.differing, static_cast<u32>(with_air.size()),
                  100.0 * static_cast<f64>(control.differing) / static_cast<f64>(with_air.size()),
                  control.mean_delta, control.mean_delta_where_differing, control.max_delta);
-    // HOW MUCH, NAMED. Measured: 4 035 texels of 129 600 (3.11%), mean |delta| 5.84/255 where they
-    // differ, worst channel 112. The floors are about half of each. Three of them rather than one,
+    // HOW MUCH, NAMED. Measured: 4 713 texels of 129 600 (3.64%), mean |delta| 20.7/255 where they
+    // differ, worst channel 255. The floors are about half of each. Three of them rather than one,
     // because each fails on a different way for the air to stop being in the picture: a field that
     // shrank to a handful of motes drops the count, a field drawn at the wrong exposure or with the
     // blend inverted drops the mean, and a field whose sprites lost their cores drops the maximum.
     CY_CHECK_GT(control.differing, with_air.size() / 64U);
-    CY_CHECK_GT(control.mean_delta_where_differing, 2.5);
-    CY_CHECK_GT(control.max_delta, 56U);
+    CY_CHECK_GT(control.mean_delta_where_differing, 10.0);
+    CY_CHECK_GT(control.max_delta, 127U);
     scene.set_draw_particles(true);
 
     // --- THE COMMITTED REFERENCE --------------------------------------------------------------

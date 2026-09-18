@@ -168,8 +168,8 @@ the one thing in that shot that is not content, and the shot's provenance says s
 shot's air is not.** `render.vfx`'s `particles are in the assembled frame` renders the same cooked
 system through the same camera at 480x270 and compares it against
 `tests/render/references/beauty_shot_air.png`; the case also renders the identical frame with the
-ring uploaded EMPTY and asserts how far apart the two are — 4 035 of 129 600 texels, 3.11% of the
-frame, mean |delta| 5.8/255 where they differ, worst channel 112 — so a field that got weaker fails
+ring uploaded EMPTY and asserts how far apart the two are — 4 713 of 129 600 texels, 3.64% of the
+frame, mean |delta| 20.7/255 where they differ, worst channel 255 — so a field that got weaker fails
 as loudly as one that vanished. `integration.vfx`'s case of the same name projects every published
 record through the artefact's camera on a machine with no GPU at all, and counts the ones inside the
 frustum: 901 of 996.

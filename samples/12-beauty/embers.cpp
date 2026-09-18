@@ -218,13 +218,14 @@ private:
                 stage.binary("vfx.add", stage.constant(0.018F),
                              stage.binary("vfx.mul", stage.random(), stage.constant(0.022F))));
     // A RADIANCE, not a colour: `emission` carries the magnitude and these four are the chroma and
-    // the opacity the sprite's falloff premultiplies. Warm, because the sun at 15.5 degrees is.
-    stage.write(
-        "color",
-        stage.make4(stage.constant(1.0F), stage.constant(0.62F), stage.constant(0.31F),
-                    stage.binary("vfx.add", stage.constant(0.55F),
-                                 stage.binary("vfx.mul", stage.random(), stage.constant(0.40F)))));
-    stage.write("emission", stage.constant(2600.0F));
+    // the opacity the sprite's falloff premultiplies. Warm, because the sun at 15.5 degrees is, and
+    // barely opaque at all, because `embers.h` measured what happens to a sky when it is not.
+    stage.write("color",
+                stage.make4(stage.constant(1.0F), stage.constant(0.62F), stage.constant(0.31F),
+                            stage.binary("vfx.add", stage.constant(kEmberOpacityFloor),
+                                         stage.binary("vfx.mul", stage.random(),
+                                                      stage.constant(kEmberOpacitySpan)))));
+    stage.write("emission", stage.constant(kEmberBirthRadiance));
     if (!stage.ok()) {
         return fail(ErrorCode::Internal, "beauty embers: the initialise graph did not author");
     }
@@ -253,10 +254,11 @@ private:
     stage.write("age", next_age);
     const NodeKey fraction =
         stage.unary("vfx.saturate", stage.binary("vfx.div", next_age, lifetime));
-    // A MOTE COOLS. The chroma stays where the initialise put it and the magnitude falls by a
-    // factor of twenty over the life, which is what makes the far end of the field dimmer than the
-    // near end without a single per-particle branch.
-    stage.write("emission", stage.lerp(stage.constant(2600.0F), stage.constant(130.0F), fraction));
+    // A MOTE COOLS. The chroma stays where the initialise put it and the magnitude falls by the
+    // factor of twenty `embers.h` fixes, which is what makes the far end of the field dimmer than
+    // the near end without a single per-particle branch.
+    stage.write("emission", stage.lerp(stage.constant(kEmberBirthRadiance),
+                                       stage.constant(kEmberDeathRadiance), fraction));
     stage.kill_if(stage.binary("vfx.greater", next_age, lifetime));
     if (!stage.ok()) {
         return fail(ErrorCode::Internal, "beauty embers: the update graph did not author");

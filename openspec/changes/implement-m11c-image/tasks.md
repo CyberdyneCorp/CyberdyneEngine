@@ -528,6 +528,35 @@ below is that work, named rather than discovered.
         the entry for assemblies. A named absence is not closed by a row's tier moving — which is
         this task's whole sentence
 
+- [x] 4.6 **The two rows' picture is asserted by a case rather than published by a recipe.**
+      `m11c:virtual-geometry-image` was red for the plainest reason: `docs/design/images/virtual-
+      geometry-shaded.png` was written by `just capture-virtual-geometry`, a recipe a person runs,
+      and the only cases in `render.virtual_geometry_gpu` compare buffers. What closes it is
+      `render.virtual_geometry_shaded` — `tests/render/test_virtual_geometry_shaded.cpp`, declared
+      in `tests/render/CMakeLists.txt`, photographing `samples/07-fidelity`'s OWN frame through
+      `cy::sample-fidelity-frame` and shading it through the same `shade_frame()` the capture tool
+      calls, so the compared picture and the published one cannot drift
+      - [x] **The reference is committed**: `tests/render/references/virtual_geometry_shaded.png`,
+        320x180, 169 KiB. It is written only under `CY_RENDER_UPDATE_GOLDEN`, and THAT MODE FAILS
+        ON PURPOSE — a golden suite that writes its own reference on first run and passes forever
+        afterwards is the defect this project has shipped nine times, and this one cannot
+      - [x] **The tolerance is a measurement, not a round number.** `golden.h`'s derived metric,
+        unchanged: two 8-bit steps a channel, and a texel may differ at all only where the
+        REFERENCE has a high-contrast four-neighbour. Re-rendered in three separate processes the
+        frame is BIT-IDENTICAL — 0 of 57,600 texels differ, maximum channel delta 0 — of a derived
+        edge budget of 8,521 that was never drawn on, so the case asserts `differing == 0` as well
+      - [x] **Proved red by breaking the subject, once per row, each restored and re-run green.**
+        Deleting `out.clusters[index].child_count = out.groups[from].member_count;` from
+        `Finaliser::emit_hierarchy()` stops the cluster hierarchy descending: 3,324 clusters
+        decoded become 246 and **46,257 of 57,600 texels move — 80.31%**, 38,878 off-edge, worst
+        channel delta 188. Deleting `entry.state = PageState::Resident;` from
+        `ShadowPageCache::record_render` leaves every rasterised shadow page non-resident: shadowed
+        pixels 24,649 -> 0 and **24,578 texels move — 42.67%**. The first is declared as the
+        criterion's `[criterion.falsifies]` so the prover re-runs it rather than trusting a comment
+      - [x] **The published picture is now the shaded one too**, regenerated through the same
+        function, and `docs/design/virtual-geometry.md`'s caption no longer says "Resolved world
+        normals under one light" — it says what the frame is and which case asserts it
+
 ## 5. The sky as an image, and the two rows underneath it — `atmosphere-sky-and-clouds`, `rendering-architecture`, `rendering-geometry-and-resources` → Complete
 
 - [ ] 5.1 `atmosphere-sky-and-clouds` → Complete. Twelve of its thirteen requirements are built and

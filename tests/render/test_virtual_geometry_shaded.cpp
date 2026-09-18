@@ -119,8 +119,9 @@ using cy::sample::fidelity::ShadeReport;
 
 /// The golden viewport. Small on purpose, for the reason `test_golden_frame.cpp` gives: the
 /// reference is a committed binary and this encoder stores rather than deflates, so 320x180 costs
-/// about 173 KiB. It is still eight times the M3 reference's area, which is what the hall, the
-/// forty columns, the twenty-four statues and the shadow they cast need to be separable in it.
+/// 173,058 bytes — 169 KiB. It is still eight times the M3 reference's area, which is what the
+/// hall, the forty columns, the twenty-four statues and the shadow they cast need to be separable
+/// in it.
 constexpr cy::u32 kWidth = 320;
 constexpr cy::u32 kHeight = 180;
 

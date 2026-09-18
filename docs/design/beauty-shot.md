@@ -107,8 +107,8 @@ this whole record dishonest."* So:
   **This is the half of `vfx-system` a picture can show, and something asserts it.**
   `render.vfx`'s `particles are in the assembled frame` renders the same field through the same
   camera at 480x270, compares it against `tests/render/references/beauty_shot_air.png`, and asserts
-  the difference between that frame and the identical frame with the ring uploaded empty — 4 035 of
-  129 600 texels, 3.11% of the frame, worst channel 112. `integration.vfx`'s case of the same name
+  the difference between that frame and the identical frame with the ring uploaded empty — 4 713 of
+  129 600 texels, 3.64% of the frame, worst channel 255. `integration.vfx`'s case of the same name
   projects every published record through the artefact's camera on a machine with no GPU at all.
 - **`draws 0` in the manifest is correct and is worth reading carefully.** The frame's own draw list
   is empty: this program draws its geometry inside the frame through `FrameSinks::passes`, which is
