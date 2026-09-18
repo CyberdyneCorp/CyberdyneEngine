@@ -132,10 +132,51 @@ def requirements(row: str) -> list[str]:
     return _REQUIREMENT.findall(spec.read_text(encoding="utf-8"))
 
 
+#: A directory a walk must not descend into when there is no git to ask. `_deps` and any directory
+#: holding a `CMakeCache.txt` is a build tree, which carries thousands of generated CMakeLists.txt;
+#: the rest are checkouts of other things.
+_NOT_SOURCE = frozenset({".git", "_deps", "node_modules", "target", ".venv"})
+
+
+def _walked_cmake() -> list[Path]:
+    """Every CMake file in a tree that is not a git checkout. See `_committed_cmake`.
+
+    THE ONLY CALLER IS THE SANDBOX, and that is what makes a walk equivalent to `git ls-files` here
+    rather than a weaker substitute: `falsify.Sandbox.materialise` writes a tar of exactly the files
+    git lists, so everything present IS tracked and nothing else is. What the walk still has to
+    refuse is a build tree, which a sandbox does not have and a developer running this by hand in an
+    exported copy might.
+    """
+    found: list[Path] = []
+    for path in REPO_ROOT.rglob("*"):
+        if path.is_dir():
+            continue
+        if path.name != "CMakeLists.txt" and path.suffix != ".cmake":
+            continue
+        parts = set(path.relative_to(REPO_ROOT).parts)
+        if parts & _NOT_SOURCE or (path.parent / "CMakeCache.txt").is_file():
+            continue
+        found.append(path)
+    return sorted(found)
+
+
 def _committed_cmake() -> list[Path]:
     """Every CMake file git TRACKS. Asked of git rather than of the filesystem, for two reasons: a
     build directory carries thousands of generated CMakeLists.txt that a walk would read, and an
-    untracked one is not evidence anybody else's checkout has."""
+    untracked one is not evidence anybody else's checkout has.
+
+    AND ASKED OF THE FILESYSTEM WHERE THERE IS NO GIT TO ASK, which is not a softening of that rule
+    but the only place it does not apply. `falsify.Sandbox` materialises a tar of the tracked tree
+    and is deliberately NOT a checkout, so this raised `git could not list this tree's CMake files`
+    there — and five criteria across four ledgers run this module, every one of them reported "red
+    in the sandbox and GREEN in the repository", which is `not provable here`: the prover could not
+    judge the checks that ask whether a capability row is at Complete grade. The fallback is taken
+    ONLY when there is no repository at all; a git that is present and fails still raises, because
+    that is a broken checkout rather than a copy of one, and silently walking it would read a build
+    tree's generated CMake as though somebody had committed it.
+    """
+    if not (REPO_ROOT / ".git").exists():
+        return _walked_cmake()
     listed = subprocess.run(["git", "ls-files", "-z", "*CMakeLists.txt", "*.cmake"], cwd=REPO_ROOT,
                             capture_output=True, text=True, check=False)
     if listed.returncode != 0:
@@ -206,7 +247,15 @@ def proven_criteria() -> set[str]:
 
 
 def _tracked_sources(directory: Path, suffixes: tuple[str, ...]) -> list[Path]:
-    """Every file git tracks under `directory` with one of these suffixes."""
+    """Every file git tracks under `directory` with one of these suffixes.
+
+    Walked instead where there is no repository to ask, for the reason `_committed_cmake` gives:
+    the prover's sandbox is a tar of the tracked tree rather than a checkout of it.
+    """
+    if not (REPO_ROOT / ".git").exists():
+        return sorted(path for path in directory.rglob("*")
+                      if path.is_file() and path.name.endswith(suffixes)
+                      and not set(path.relative_to(REPO_ROOT).parts) & _NOT_SOURCE)
     listed = subprocess.run(["git", "ls-files", "-z", "--", str(directory)], cwd=REPO_ROOT,
                             capture_output=True, text=True, check=False)
     if listed.returncode != 0:

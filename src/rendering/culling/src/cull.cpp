@@ -80,7 +80,7 @@ struct CullContext {
     const bool over_instance_limit = instance_limit > 0.0F && depth > instance_limit;
     const bool over_view_limit = view_limit > 0.0F && depth > view_limit;
     if (over_instance_limit || over_view_limit) {
-        ++stats.rejected_by_range;
+        // MUTANT: the rejected-by-range stage is no longer counted
         return false;
     }
 
@@ -355,7 +355,11 @@ Status cull_shadow_casters(const SpatialIndex& index, const ShadowCullView& view
             ++stats.rejected_by_frustum;
             continue;
         }
-        // MUTANT: the swept-volume rejection deleted
+        if (view.tight && !casts_into_view(bounds, view.camera_frustum, view.light_direction,
+                                           view.sweep_distance)) {
+            ++stats.rejected_by_sweep;
+            continue;
+        }
         VisibleInstance caster;
         caster.slot = slot;
         caster.gpu_slot = entry.gpu_slot;

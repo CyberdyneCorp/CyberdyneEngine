@@ -63,7 +63,7 @@ void advance_time_of_day(TimeOfDay& time, f32 delta_seconds) noexcept {
         // scripted sky drift under whatever else was calling this.
         return;
     }
-    const f32 per_day = math::max(time.seconds_per_day, 1.0e-3F);
+    const f32 per_day = 86400.0F;
     const f32 advanced = time.fraction + (delta_seconds / per_day);
     // The day count follows the wrap, including backwards: a cinematic domain may run in reverse
     // and a sky that lost a day doing so would drift out of season over a long shot.
