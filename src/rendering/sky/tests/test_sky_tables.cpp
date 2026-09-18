@@ -321,6 +321,41 @@ CY_TEST_CASE("sky tables: the sky is a lookup — drawing it integrates no atmos
     // counted rather than described.
     CY_CHECK_EQ(table.stats().directions_integrated, before);
     CY_CHECK_GT(total.y, 0.0F);
+
+    // AND THE COUNTER ABOVE IS NOT ENOUGH, WHICH IS SAID HERE BECAUSE IT WAS MEASURED.
+    //
+    // `directions_integrated` is a counter only `update()` can move: `sample()` is `const`, so a
+    // `sample()` whose body was replaced with a per-call `sky_radiance()` march leaves the counter
+    // exactly where it was and every assertion above still passes. That mutation was made against
+    // a built tree and this case stayed GREEN — so what the counter decides is "`update()` was not
+    // re-run", which is a weaker claim than "the sky was not integrated per pixel".
+    //
+    // What separates the two is a STRUCTURAL property of a lookup rather than a count of work: the
+    // answer inside one table column is a LINEAR blend of the stored texels, so along a row of
+    // constant elevation the value at the midpoint of two azimuths lying in the same column is
+    // exactly the mean of the two. The atmosphere is curved there — eleven degrees of azimuth at
+    // this table's resolution — so an integration is not, and it cannot be made to be by choosing
+    // a step count. The bound is a float's, not a tuned tolerance: the interpolation is linear in
+    // exact arithmetic.
+    const u32 column_count = sky_table_width(SkyTableQuality::Low);
+    CY_REQUIRE(column_count > 1U);
+    const f32 column_degrees = 360.0F / static_cast<f32>(column_count);
+    const f32 first_centre = 0.5F * column_degrees;  // the first column's own centre
+    f32 worst_departure = 0.0F;
+    for (u32 step = 0; step < 9; ++step) {
+        const f32 elevation = -60.0F + (static_cast<f32>(step) * 15.0F);
+        // Both azimuths inside ONE column, so no boundary is crossed between them.
+        const f32 low = first_centre;
+        const f32 high = first_centre + (0.8F * column_degrees);
+        const Vec3 a = table.sample(direction_at(elevation, low));
+        const Vec3 b = table.sample(direction_at(elevation, high));
+        const Vec3 middle = table.sample(direction_at(elevation, (low + high) * 0.5F));
+        worst_departure =
+            cy::math::max(worst_departure, relative_difference(middle, (a + b) * 0.5F));
+    }
+    CY_TEST_MESSAGE("worst departure from a linear blend inside one column: ",
+                    worst_departure * 100.0F, "%");
+    CY_CHECK_LT(worst_departure, 1.0e-3F);
 }
 
 CY_TEST_CASE("sky tables: aerial perspective is the atmosphere's, in the engine's froxel volume") {
