@@ -192,10 +192,23 @@ CY_TEST_CASE("kernel fusion: initialise and update share one dispatch over the n
     CY_REQUIRE(unfused != nullptr);
     CY_CHECK_FALSE(unfused->covers(Stage::Update));
 
-    // THE INTERMEDIATE TRAFFIC. The fused kernel reads `velocity` out of a register rather than out
-    // of memory, so the fused program contains no load of it while the unfused update does.
-    std::fprintf(stderr, "fusion: fused initialise is %u slots, unfused is %u\n",
-                 initialise->slot_count(), unfused->slot_count());
+    // THE INTERMEDIATE TRAFFIC, AND IT IS ASSERTED RATHER THAN PRINTED. `vfx-system`'s fusion
+    // scenario asks for two things — "reducing dispatch count AND INTERMEDIATE TRAFFIC" — and until
+    // this line only the first was checked: the two numbers below were formatted to stderr and
+    // nothing compared them, so setting `state.substitute_pending = false` in `compile_kernel`,
+    // which makes the fused update reload every value the initialise had just written, left this
+    // case GREEN. Substitution is what removes the round trip, and the slot count is the only
+    // currency the compiler exposes for it: fused, the update's reads of `velocity` and `position`
+    // are the initialise's own registers, so the one program is SMALLER than the two it replaces.
+    const VfxKernel* unfused_update = without->emitters()[0].kernel_for(Stage::Update);
+    CY_REQUIRE(unfused_update != nullptr);
+    const u32 separate = unfused->slot_count() + unfused_update->slot_count();
+    std::fprintf(stderr,
+                 "fusion: fused initialise is %u slots; unfused initialise %u + unfused update %u = "
+                 "%u\n",
+                 initialise->slot_count(), unfused->slot_count(), unfused_update->slot_count(),
+                 separate);
+    CY_CHECK_LT(initialise->slot_count(), separate);
 }
 
 CY_TEST_CASE("precision selection reaches the generated code, not only the report") {

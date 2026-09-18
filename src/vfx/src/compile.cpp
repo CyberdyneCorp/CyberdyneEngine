@@ -1095,7 +1095,9 @@ struct KernelPlan {
     emitter_report.max_population = layout.max_population(options.memory_budget_bytes);
     emitter_report.attributes_allocated = layout.allocated_attributes();
     emitter_report.attributes_elided = layout.elided_attributes();
-    emitter_report.estimated_cost_units = 0;  // MUTATION: the cook reports no estimated cost
+    emitter_report.estimated_cost_units =
+        static_cast<u64>(emitter_report.sample_cost_weight + emitter_report.kernels) *
+        static_cast<u64>(options.reference_population);
     emitter_report.generated_source_bytes = static_cast<u32>(compiled.source_bytes());
 
     u64 digest = hash_u64(kHashSeed, layout.digest());

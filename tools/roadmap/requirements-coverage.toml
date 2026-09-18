@@ -809,6 +809,23 @@ note = "`WHEN acceleration structure memory is high THEN the report SHALL attrib
 #                              are not say so` in src/rendering/forward/tests/test_frame.cpp. No
 #                              case in the tree read a format back out of the graph.
 #
+# MUTATION-TESTED, ONE EXPERIMENT PER MAPPING, AND THE RESULT IS A NUMBER RATHER THAN A READING.
+# Every entry below that names a TEST was proved the only way a mapping can be proved: the source
+# line the requirement's own sentence is about was DELETED OR INVERTED, the one affected target was
+# rebuilt, and the named case was run BY NAME and required to FAIL. FOURTEEN MAPPINGS MUTATED,
+# TWELVE WENT RED AS THEY SHOULD, TWO SURVIVED AND WERE REPAIRED:
+#
+#   `Debug visualisation`           counted primitives instead of reading them back, so a capsule
+#                                   recorded as a `DebugShape::Line` kept it green. The case is
+#                                   strengthened; the mutation is now red.
+#   `Deterministic submission order` was answered by a case comparing two frames of ONE process,
+#                                   which no deletion in the renderer can make disagree. RE-POINTED
+#                                   at the case that evaluates the requirement's own sentence; the
+#                                   entry says what the old case can and cannot see.
+#
+# A mapping that survives the deletion of the behaviour it names is worse than an empty cell,
+# because the empty cell does not lie.
+#
 # AND ONE THING THE NEXT READER SHOULD NOT TRIP OVER. src/rendering/scene/tests/ holds
 # test_snapshot.cpp, test_sort_key.cpp and test_gpu_scene.cpp, and `unit.render_extract` — the only
 # suite declared in that directory — names NONE of them in its SOURCES. They are compiled by
@@ -875,7 +892,7 @@ row = "rendering-architecture"
 requirement = "Debug visualisation"
 evidence = "test:unit.render_server"
 case = "every shape the specification names reaches the list"
-note = "the debug-draw API's whole surface — line, sphere, box, capsule, frustum and text — submitted and required to reach the list, with the primitive count checked against `kDebugVisualisationEnabled` so the SAME case is the shipping-build assertion on a shipping build. `a primitive submitted this frame is drawn in the next one` is the double-buffering scenario, `submission past the capacity is dropped and counted rather than growing` is \"no allocation per primitive\", and `a debug view mode round-trips through its name` covers the eighteen modes the requirement enumerates as a selectable set. The modes are a per-view selection and a name table; no shader in this tree renders one, which is why the mode case is named as a sibling rather than as this entry."
+note = "the debug-draw API's whole surface — line, sphere, box, capsule, frustum and text — submitted and required to reach the list, with the primitive count checked against `kDebugVisualisationEnabled` so the SAME case is the shipping-build assertion on a shipping build. `a primitive submitted this frame is drawn in the next one` is the double-buffering scenario, `submission past the capacity is dropped and counted rather than growing` is \"no allocation per primitive\", and `a debug view mode round-trips through its name` covers the eighteen modes the requirement enumerates as a selectable set. The modes are a per-view selection and a name table; no shader in this tree renders one, which is why the mode case is named as a sibling rather than as this entry. MUTATION-TESTED AND REPAIRED: recording a capsule as a `DebugShape::Line` inside `DebugDrawList::capsule()` left this case GREEN, because it counted primitives rather than reading them back — five arrived, one of the six the requirement enumerates was gone, and nothing said so. The case now reads every shape out of the list in submission order, checks the capsule's far end and radius and the sphere's radius, and reads the label's text, and that mutation is red."
 
 [[coverage]]
 row = "rendering-architecture"
@@ -887,9 +904,9 @@ note = "the requirement's only scenario — \"each render graph pass SHALL repor
 [[coverage]]
 row = "rendering-architecture"
 requirement = "Deterministic submission order"
-evidence = "test:render.null_frame"
-case = "render.null_frame: the same frame twice records the same stream"
-note = "the requirement's scenario asserted on the RECORDED COMMAND STREAM rather than on a draw list — the same scene rendered twice through the artefact's own renderer, with the null backend's command log hashed both times and required to match, alongside the plan hash and the pass count. It is the second and third frames that are compared, not the first and second, because the first carries the one-off texture upload and that difference is itself checked. The suite is declared unconditionally and needs no GPU. `the sorted order does not depend on the order the draws were published in` and `sort key: the process hash seed does not reach the ordering` in `unit.render_server` are the sort key's own half, which is where the order is decided."
+evidence = "test:unit.render_server"
+case = "the sorted order does not depend on the order the draws were published in"
+note = "RE-POINTED BY MUTATION TESTING, AND THE ENTRY IT REPLACES IS DESCRIBED HERE RATHER THAN DELETED QUIETLY. The requirement's sentence is `Draw submission order SHALL be determined by explicit sort keys, not by ECS iteration order or thread timing`, and this case is that sentence: sixteen draws with DELIBERATELY COLLIDING keys are published in two opposite orders, sorted, and required to come out as one sequence — key for key and stable id for stable id — with `submission_fingerprint` agreeing on both. Deleting the stable-id tie-break from `draw_precedes` in `src/servers/render/src/sort.cpp` — the one line that makes the order total — turns it red. WHY IT IS NOT `render.null_frame: the same frame twice records the same stream`, which this entry named before: that case compares the second and third frames of one process, and NO DELETION IN THE RENDERER CAN MAKE THEM DISAGREE — two runs of the same code over the same data are equal by construction, so the case is green against every mutation rather than against a correct renderer. It is also blunter than it looks: `NullDevice::hash_commands` folds a command's kind, its four operands and its label and NOT its `handle_bits`, and a transient's handle legitimately MOVES between frames (measured: the same texture is handle 1 generation 1 in one frame and handle 0 generation 3 in the next), so the hash could not compare resources even if it wanted to. It stays a sibling worth running — it is the only case that drives the artefact's own renderer end to end with no GPU — and it is not the answer to this requirement. AND ONE CORRECTION THE OLD NOTE OWED: `sort key: the process hash seed does not reach the ordering` is NOT in `unit.render_server`. It is in src/rendering/scene/tests/test_sort_key.cpp, which is one of the three files this block's header warns are COMPILED BY NOTHING, so it is not a sibling that runs."
 
 [[coverage]]
 row = "rendering-architecture"
@@ -928,6 +945,14 @@ note = "the requirement's second scenario verbatim, and the case takes the findi
 
 # --- rendering-geometry-and-resources -----------------------------------------------------------
 #
+# MUTATION-TESTED, ONE EXPERIMENT PER MAPPING. Each of the ten entries below that names a test was
+# proved by deleting or inverting the source line its requirement's sentence is about, rebuilding
+# that one target, and running the named case BY NAME: TEN MUTATED, NINE WENT RED AS THEY SHOULD,
+# ONE SURVIVED AND WAS REPAIRED — `Mesh LOD`, whose seam case held with the seam LOCK ITSELF
+# deleted, because a collapse across the seam lands on an endpoint rather than a midpoint and moves
+# no position the case was reading. That case now also requires that no triangle crosses the seam,
+# and the mutation is red. The exemption is read rather than mutated.
+#
 # TEN OF ELEVEN ANSWERED BY A CASE AND ONE EXEMPT. Read requirement by requirement under the same
 # rule the block above states. Two of the row's suites deserve a word, because a reader looking for
 # them will look in the wrong place: the mesh, vertex-compression and texture-format cases are in
@@ -956,7 +981,7 @@ row = "rendering-geometry-and-resources"
 requirement = "Mesh LOD"
 evidence = "test:integration.import_mesh"
 case = "mesh: a texture seam is not collapsed across"
-note = "\"Simplification SHALL preserve UV seams, normals within a tolerance, and material boundaries\" is the sentence a simplification library silently violates, and the case builds the only geometry in which the violation is detectable — a grid split into two charts whose seam vertices share a position and differ in UV — and requires the collapse to happen along the seam rather than across it. `mesh: simplification reaches its target and is deterministic` is the reduction-target half and `gltf: a level-of-detail chain is generated to the configured depth` in `integration.import_gltf` is the chain at import; `LOD selection follows screen coverage, and the bias moves it` in `unit.render_server` is the per-level screen-coverage threshold the chain is selected by."
+note = "\"Simplification SHALL preserve UV seams, normals within a tolerance, and material boundaries\" is the sentence a simplification library silently violates, and the case builds the only geometry in which the violation is detectable — a grid split into two charts whose seam vertices share a position and differ in UV — and requires the collapse to happen along the seam rather than across it. `mesh: simplification reaches its target and is deterministic` is the reduction-target half and `gltf: a level-of-detail chain is generated to the configured depth` in `integration.import_gltf` is the chain at import; `LOD selection follows screen coverage, and the bias moves it` in `unit.render_server` is the per-level screen-coverage threshold the chain is selected by. MUTATION-TESTED AND REPAIRED: deleting the seam LOCK itself — `locked[group] = group_members[group].size() > 1` in `simplify()`, the one line `preserve_seams` buys — left this case GREEN, because the quadric places a collapse on an ENDPOINT of the edge rather than at the midpoint, so every surviving position was still x <= 2, x == 3 or x >= 4 and both charts still had a representative. The case now also requires that NO TRIANGLE CROSSES THE SEAM, which is what a collapse merging the seam column into a neighbouring one actually produces, and that mutation is red."
 
 [[coverage]]
 row = "rendering-geometry-and-resources"
@@ -1222,6 +1247,19 @@ note = "this requirement asks for a DEMONSTRATION rather than an assertion — `
 
 # --- rendering-culling-and-lod -----------------------------------------------------------------------
 #
+# ALL NINE WERE MUTATION-TESTED AGAINST build/m11c-final, ONE AT A TIME, AND THREE SURVIVED.
+# The experiment is the same each time: find the source line that implements the sentence the
+# requirement makes, delete or invert it, rebuild the one target, run the mapped case BY NAME, and
+# restore — every restore verified by md5 against the pre-phase blob. 9 mutated, 6 red as they
+# should be, 3 SURVIVED THE DELETION OF THE BEHAVIOUR THEY NAME and were repaired by strengthening
+# the case, never by re-pointing the mapping or softening the requirement. The three and their
+# mutations are recorded in their own notes: "Frustum culling" (the layer/frustum order swapped),
+# "Level of detail" (the coarsest-level fallback deleted) and "Visibility ranges and HLOD" (the
+# parent-replaces-child step deleted). Each now goes red under the same mutation. The six that went
+# red first time: `spatial.cpp`'s always-visible flat array removed; `Hzb::occludes` made to occlude
+# nothing; the instance records never uploaded to the device; the swept-volume shadow rejection
+# deleted; the motion list never filled; `rejected_by_range` no longer counted.
+#
 # NINE OF NINE, written by reading the specification requirement by requirement against
 # src/rendering/culling/ (the CPU cull, the spatial index and the LOD chain),
 # src/servers/render/culling/ (the GPU cull's records, its CPU reference and the hierarchical depth
@@ -1255,7 +1293,7 @@ row = "rendering-culling-and-lod"
 requirement = "Frustum culling"
 evidence = "test:unit.render_culling"
 case = "the layer test rejects before any geometry is touched"
-note = "\"reject instances by, IN ORDER: layer mask against the view's mask, then conservative frustum-versus-AABB, then optional per-instance distance limits\" — the order is the requirement, and this case proves the first hop the only way it can be proved: the instance is INSIDE the frustum and its mask shares no bit with the view's, so a non-zero frustum counter would mean the tests ran the other way round. The two hops after it are `the frustum keeps what is in front and rejects what is behind` and `a per-instance distance limit is applied after the frustum` beside it. The requirement's second paragraph — parallelised above a configurable threshold, each worker producing a local list — is `integration.render_culling_parallel`'s `eight workers produce the serial visible list, in the serial order`, which compares the eight-worker run against the serial one ELEMENT FOR ELEMENT rather than as a set, because partition order is what the merge promises."
+note = "\"reject instances by, IN ORDER: layer mask against the view's mask, then conservative frustum-versus-AABB, then optional per-instance distance limits\" — the order is the requirement, and this case proves the first hop the only way it can be proved: the instance is INSIDE the frustum and its mask shares no bit with the view's, so a non-zero frustum counter would mean the tests ran the other way round. The two hops after it are `the frustum keeps what is in front and rejects what is behind` and `a per-instance distance limit is applied after the frustum` beside it. The requirement's second paragraph — parallelised above a configurable threshold, each worker producing a local list — is `integration.render_culling_parallel`'s `eight workers produce the serial visible list, in the serial order`, which compares the eight-worker run against the serial one ELEMENT FOR ELEMENT rather than as a set, because partition order is what the merge promises. MUTATION-TESTED, AND THE CASE HAD TO BE STRENGTHENED BEFORE THIS NOTE WAS TRUE. Moving the layer test AFTER the frustum test in `cull.cpp::test_slot` — the exact inversion the sentence forbids — left the case GREEN, because its one instance was INSIDE the frustum and the layer counter took it whichever order ran. A second instance is now masked out AND behind the camera, so it lands in the counter of whichever test runs first; the reorder then moves it and the case goes red."
 
 [[coverage]]
 row = "rendering-culling-and-lod"
@@ -1276,14 +1314,14 @@ row = "rendering-culling-and-lod"
 requirement = "Level of detail"
 evidence = "test:unit.render_culling"
 case = "selection walks the chain, and a mesh below every threshold gets the coarsest level"
-note = "discrete LOD selected from projected screen coverage, including the clause that decides what happens at the bottom of the chain: a mesh too small for every threshold is drawn at its cheapest level rather than dropped. The three adjustments the requirement names each have their own case beside it — `hysteresis stops an instance oscillating on a threshold`, `bias scales coverage, so a shadow view selects coarser levels` (the view-specific bias, which is the shadow and reflection scenario), and `the cross-fade band names both levels`, which requires both levels and a fade weight so the dither pair TAA resolves is a decision this function made rather than a renderer's guess. `coverage falls with distance and is independent of resolution` is underneath all of them. The mixed-strategy scenario is the other strategy's: virtual geometry selects per cluster from the same view settings, and `unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw` is where one scene carries both without either being disabled."
+note = "discrete LOD selected from projected screen coverage, including the clause that decides what happens at the bottom of the chain: a mesh too small for every threshold is drawn at its cheapest level rather than dropped. The three adjustments the requirement names each have their own case beside it — `hysteresis stops an instance oscillating on a threshold`, `bias scales coverage, so a shadow view selects coarser levels` (the view-specific bias, which is the shadow and reflection scenario), and `the cross-fade band names both levels`, which requires both levels and a fade weight so the dither pair TAA resolves is a decision this function made rather than a renderer's guess. `coverage falls with distance and is independent of resolution` is underneath all of them. The mixed-strategy scenario is the other strategy's: virtual geometry selects per cluster from the same view settings, and `unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw` is where one scene carries both without either being disabled. MUTATION-TESTED, AND THE CASE HAD TO BE STRENGTHENED. Deleting the coarsest-level fallback (`chosen = level_count - 1` in `lod.cpp::select_lod`) left the case GREEN: the suite's chain ends at a threshold of ZERO, so every coverage satisfies the last level and the walk always terminates inside the loop — 'below every threshold' never happened. A second chain with a non-zero floor is now selected against, and the mutation goes red."
 
 [[coverage]]
 row = "rendering-culling-and-lod"
 requirement = "Visibility ranges and HLOD"
 evidence = "test:unit.render_culling"
 case = "an HLOD proxy replaces its children, and nesting resolves to one level per branch"
-note = "the load-bearing sentence is \"a parent's visibility replaces its children's\", and the case drives it through a NESTED hierarchy, requiring exactly one visible level per branch — a resolution that let both a proxy and its children draw would double the geometry at exactly the distance HLOD exists to cheapen. `a visibility range fades in and out over its margin` is the range and its fade margins, `a dependents fade draws parent and child together during the swap` is the third fade mode and the swap scenario, and `a cycle in the parent links is refused rather than hanging the frame` is what keeps the resolution total."
+note = "the load-bearing sentence is \"a parent's visibility replaces its children's\", and the case drives it through a NESTED hierarchy, requiring exactly one visible level per branch — a resolution that let both a proxy and its children draw would double the geometry at exactly the distance HLOD exists to cheapen. `a visibility range fades in and out over its margin` is the range and its fade margins, `a dependents fade draws parent and child together during the swap` is the third fade mode and the swap scenario, and `a cycle in the parent links is refused rather than hanging the frame` is what keeps the resolution total. MUTATION-TESTED, AND THE CASE HAD TO BE STRENGTHENED. Deleting the replacement itself — the branch in `resolve_hlod` that clears a child under a visible parent — left the case GREEN, because its three ranges were DISJOINT and at every distance at most one of them was visible on its own. An overlapping set is now resolved too: an always-visible leaf under a mid proxy under a coarse proxy, where only an ancestor taking over can hide the leaf, and the walk to the ROOT is what hides it at the far distance."
 
 [[coverage]]
 row = "rendering-culling-and-lod"
@@ -1307,6 +1345,20 @@ case = "every stage the diagnostics name is counted, with the histogram and the 
 note = "this requirement is a LIST, so the case checks every entry of it rather than one: a scene built to lose exactly one instance at each stage this path decides, then tested, rejected-by-layer, rejected-by-frustum, rejected-by-range and visible read back, required to SUM to the number tested — an accounting identity a dropped stage breaks — plus the LOD histogram accounting for exactly the survivors and a non-zero wall clock. `rejected_by_occlusion` is the one counter this module leaves at zero and says so in cull.h: occlusion is the GPU cull's stage, and its own `GpuCullCounters::rejected_by_occlusion` is asserted by `gpu cull: occlusion runs last and only when the flag and the tester are both there` in `unit.render_gpu_culling`."
 
 # --- virtual-geometry ---------------------------------------------------------------------------------
+#
+# THE EIGHTEEN TEST-BACKED MAPPINGS WERE MUTATION-TESTED AGAINST build/m11c-final, ONE AT A TIME,
+# AND TWO SURVIVED. Same experiment as the row above — break what the mapping names, rebuild one
+# target, run the case by name, restore and verify by md5. 18 mutated, 16 red as they should be, 2
+# SURVIVED and were repaired by strengthening the case: "Instance culling" (the projected-screen-size
+# instance cull deleted — `minimum_instance_pixels` is zero throughout that suite, so the counter was
+# always zero and the accounting identity could not see it) and "GPU page table and residency" (the
+# generation frozen at eviction — the slot was never reused, so `redeem` refused for absence rather
+# than for the generation). Both now go red under the same mutation. The eight EXEMPTIONS were read
+# rather than mutated, which is what an exemption is for. What went red first time includes the four
+# device cases, each broken on the DEVICE side rather than in the reference they are compared
+# against: the GPU view packed with a wrong pixels-per-unit scale, the page table uploaded with every
+# page marked resident, the attached pyramid never enabled in `HzbParams`, and the visibility
+# buffer's material bin count forced to one.
 #
 # TWENTY-SIX OF TWENTY-SIX, and EIGHT OF THEM ARE EXEMPTIONS rather than tests. Each exemption names
 # a verified absence in this tree and what would observe it; none of them says "not tested". The
@@ -1384,7 +1436,7 @@ row = "virtual-geometry"
 requirement = "GPU page table and residency"
 evidence = "test:integration.virtual_geometry_residency"
 case = "an evicted page's generation makes a stale reference miss"
-note = "the generation counter is the requirement's own scenario and the reason the page table carries one: the case evicts a page, reuses its slot, and requires the old reference to MISS rather than read the new page's bytes. The single shared allocation is the cache's shape — a page's location is a byte offset into one allocation, never a per-asset buffer — and eviction is scored rather than least-recently-used, which `a prefetch never outbids the frame that needs the page now` and `a page that arrived this frame cannot leave this frame` assert from the two directions that a pure LRU would get wrong. A suballocator inside that allocation is named as absent in the module's README; the requirement asks for scored eviction within a budget, which is what is here."
+note = "the generation counter is the requirement's own scenario and the reason the page table carries one: the case evicts a page, reuses its slot, and requires the old reference to MISS rather than read the new page's bytes. The single shared allocation is the cache's shape — a page's location is a byte offset into one allocation, never a per-asset buffer — and eviction is scored rather than least-recently-used, which `a prefetch never outbids the frame that needs the page now` and `a page that arrived this frame cannot leave this frame` assert from the two directions that a pure LRU would get wrong. A suballocator inside that allocation is named as absent in the module's README; the requirement asks for scored eviction within a budget, which is what is here. MUTATION-TESTED, AND THE CASE HAD TO BE STRENGTHENED. Freezing the generation at eviction left the case GREEN: the slot was never REUSED, so `redeem` refused the reference for being non-resident and the counter was never consulted. The page is now brought back after the eviction and the OLD generation is presented against the NEW entry at its new location — which only the counter can tell apart — with a reference taken fresh required to redeem."
 
 [[coverage]]
 row = "virtual-geometry"
@@ -1398,7 +1450,7 @@ row = "virtual-geometry"
 requirement = "Instance culling"
 evidence = "test:integration.virtual_geometry_build"
 case = "instances that cannot matter are removed before any cluster work"
-note = "the case requires the instance cull to happen FIRST — frustum, projected screen size and layer mask, with occlusion joining them when a `TraversalView::occlusion` tester is attached — and asserts it where it is visible: sixty-four instances are accounted for exactly once across the three rejection reasons and the survivors, and then every one of them is masked out and `visible_clusters` is required to read ZERO. An implementation that traversed the hierarchy first and filtered afterwards would produce the same picture and fail that. The device runs the same four tests and is compared against this reference over twenty-four views by `the GPU traversal selects the same clusters as the reference, over a sweep`. WHAT THIS ENTRY DOES NOT CLAIM: the second scenario's bridge. The traversal consumes a flat `GpuInstance` buffer uploaded once per asset set and never an ECS entity, which is the shape the requirement asks for, but nothing in this tree fills it from `render::GpuScene` — the producer end exists (`unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw` routes such an instance into its own list) and the consumer end exists, and the link between them is the one the module's README names as unbuilt."
+note = "the case requires the instance cull to happen FIRST — frustum, projected screen size and layer mask, with occlusion joining them when a `TraversalView::occlusion` tester is attached — and asserts it where it is visible: sixty-four instances are accounted for exactly once across the three rejection reasons and the survivors, and then every one of them is masked out and `visible_clusters` is required to read ZERO. An implementation that traversed the hierarchy first and filtered afterwards would produce the same picture and fail that. The device runs the same four tests and is compared against this reference over twenty-four views by `the GPU traversal selects the same clusters as the reference, over a sweep`. WHAT THIS ENTRY DOES NOT CLAIM: the second scenario's bridge. The traversal consumes a flat `GpuInstance` buffer uploaded once per asset set and never an ECS entity, which is the shape the requirement asks for, but nothing in this tree fills it from `render::GpuScene` — the producer end exists (`unit.render_gpu_culling`'s `gpu cull: a virtual geometry instance goes to cluster traversal, not to a draw` routes such an instance into its own list) and the consumer end exists, and the link between them is the one the module's README names as unbuilt. MUTATION-TESTED, AND THE CASE HAD TO BE STRENGTHENED. Deleting the projected-screen-size instance cull left the case GREEN: `view_at` sets `minimum_instance_pixels` to ZERO throughout this suite, so `instances_rejected_by_size` was always zero and the accounting identity held whether that test existed or not. A third block now culls the same line of instances under a 20-pixel floor with a frustum that clips nothing, and requires that counter non-zero."
 
 [[coverage]]
 row = "virtual-geometry"

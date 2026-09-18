@@ -442,12 +442,22 @@ TEST_CASE("population and dispatch size come from the device, not from this proc
     if (!create_pass(gpu, system, pass, /*async=*/true)) {
         return;
     }
+    // THE CPU EXECUTOR, STEPPED BESIDE THE DEVICE. `indirect_dispatches` alone is a COUNT OF FLAGS
+    // `declare` set, and a count of flags cannot see what `record` did with them: a mutation that
+    // left `dispatch.indirect` true and replaced the `dispatch_indirect` call with a constant
+    // `dispatch(4, 1, 1)` — half this block's eight groups — passed every assertion this case used
+    // to make. What a CPU-chosen group count cannot survive is the POPULATION: an update that
+    // covers fewer threads than the live list leaves the tail of that list unadvanced for ever, so
+    // those particles never age, never reach their lifetimes and never die, while the CPU executor
+    // advances all of them. The two populations are compared below for that reason.
+    CpuReference cpu(system);
 
     // TWO INDIRECT DISPATCHES A SUB-STEP — the initialise and the update — plus the key pass when
     // the sort is on. Their group counts are three words of device memory `vfx_compact` wrote; this
     // process never read them, and `VfxGpuPass::step` takes no population to have read one from.
     CY_REQUIRE(gpu_step(pass, system, 0.0F, levers, {parameters.data(), parameters.size()}));
     CY_REQUIRE(run_frame(gpu, allocator(), pass, false));
+    cpu.step();
     CHECK_GE(pass.report().indirect_dispatches, 2U);
     CY_REQUIRE(pass.read_back_counts().has_value());
 
@@ -468,12 +478,21 @@ TEST_CASE("population and dispatch size come from the device, not from this proc
         CY_REQUIRE(gpu_step(pass, system, static_cast<f32>(step) * kSubstep, levers,
                             {parameters.data(), parameters.size()}));
         CY_REQUIRE(run_frame(gpu, allocator(), pass, false));
+        cpu.step();
         CY_REQUIRE(pass.read_back_counts().has_value());
         CHECK_LE(pass.report().reported_live, kCapacity);
         CHECK_LE(pass.report().spawn_granted, pass.report().spawn_request);
     }
-    std::fprintf(stderr, "after 64 steps: live %u of %u, killed %u this step\n",
-                 pass.report().reported_live, kCapacity, pass.report().killed);
+    std::fprintf(stderr, "after 64 steps: live %u of %u, killed %u this step (cpu: %u live)\n",
+                 pass.report().reported_live, kCapacity, pass.report().killed, cpu.live());
+    // THE GROUP COUNT WAS THE DEVICE'S OWN. Sixty-four sub-steps is past the plume's longest
+    // lifetime, so the block has turned over and both paths have had to kill: a device that
+    // advanced only part of its live list would be holding particles the CPU executor has already
+    // retired, and the two counts would differ. `killed` is asserted beside it because a run in
+    // which nothing died would make the population comparison a comparison of two full blocks.
+    CHECK_EQ(pass.report().reported_live, cpu.live());
+    CHECK_GT(cpu.live(), 0U);
+    CHECK_GT(pass.report().killed, 0U);
     CHECK_EQ(gpu.validation_errors(), 0U);
 }
 
