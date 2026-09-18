@@ -51,6 +51,31 @@ inline constexpr u32 kSceneHeight = 270;
 /// the ordinary case and a non-zero one is a real finding rather than the ring being small.
 inline constexpr u32 kRingCapacity = 4096;
 
+/// WHAT A SCENE PHOTOGRAPHS, and every default is what the three original cases have always used —
+/// so a caller that passes nothing gets the pictures committed in `docs/design/images/` and this
+/// struct changes no image that existed before it.
+///
+/// It exists because `m11c:vfx-in-the-shot` needs the SHOT'S air photographed from the SHOT'S
+/// camera: a second harness beside this one would be a second answer to "what does the frame do
+/// with a publication", and tests/render/README.md's rule about golden images drifting applies to
+/// harnesses as much as to pictures.
+struct SceneOptions {
+    /// A cooked system to play instead of the spark plume, with one instance at each position in
+    /// `spawns`. Null cooks the plume and places the row of six the device suite draws.
+    const vfx::CompiledSystem* system = nullptr;
+    /// Where the instances go, in the same space `eye` is in.
+    Span<const Vec3> spawns;
+    /// The camera. Positions reach the device RELATIVE TO `eye` — `publish_sprites` rebases against
+    /// it and the view matrix is built at the origin — which is design.md section 3's rule and the
+    /// arrangement `samples/12-beauty` makes for the same reason.
+    Vec3 eye{0.0F, 0.0F, 0.0F};
+    Vec3 target{0.0F, 0.0F, -1.0F};
+    f32 fov_y_radians = 0.9F;
+    /// Read by the resolve. A particle's colour is a RADIANCE, so a frame graded at zero stops
+    /// photographs an effect as a white rectangle.
+    f32 exposure_stops = -11.4F;
+};
+
 /// The world, the frame, and one render of the two together.
 class VfxScene {
 public:
@@ -63,6 +88,16 @@ public:
     /// Cook the plume, create the frame's pipelines and bindings, and play `instances` copies of
     /// it.
     [[nodiscard]] Status build(rhi::Device& device, u32 instances = 6) noexcept;
+
+    /// The same, for a caller that brings its own effect and its own camera.
+    [[nodiscard]] Status build(rhi::Device& device, const SceneOptions& options) noexcept;
+
+    /// Draw NOTHING into the transparent stage while keeping every other part of the frame — the
+    /// same passes, the same clear, the same resolve, the same exposure. That is the negative
+    /// control `m11c:vfx-in-the-shot` is about: "a frame with an effect and the same frame without
+    /// it must differ measurably", and the difference is only a measurement if the two frames
+    /// differ in the effect and in nothing else.
+    void set_draw_particles(bool on) noexcept { draw_particles_ = on; }
     void release() noexcept;
 
     /// Advance the simulation by one frame at 60 Hz.
@@ -123,6 +158,12 @@ private:
     u32 material_offsets_[4] = {0, 0, 0, 0};
     Mat4 view_ = Mat4::identity();
     Mat4 projection_ = Mat4::identity();
+    /// The point publication rebases against, and the point the view matrix is built at.
+    Vec3 camera_position_{0.0F, 0.0F, 0.0F};
+    Vec3 camera_forward_{0.0F, 0.0F, -1.0F};
+    f32 fov_y_radians_ = 0.9F;
+    f32 exposure_stops_ = -11.4F;
+    bool draw_particles_ = true;
     bool read_back_ = false;
     bool built_ = false;
 };

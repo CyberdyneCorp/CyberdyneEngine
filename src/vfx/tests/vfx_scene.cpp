@@ -67,8 +67,20 @@ VfxScene::~VfxScene() {
 }
 
 Status VfxScene::build(rhi::Device& device, u32 instances) noexcept {
-    device_ = &device;
-
+    // THE ROW OF PLUMES, unchanged: this overload is what the three original cases call and the
+    // three committed pictures are of. It is written in terms of the options form below so there is
+    // one build path rather than two that can drift.
+    Array<Vec3> spawns(*allocator_);
+    for (u32 which = 0; which < instances; ++which) {
+        // Camera-relative: the camera sits at the origin looking down -Z, which is the arrangement
+        // the frame's own conventions want and the reason nothing here builds a world matrix.
+        const f32 across = static_cast<f32>(which) - ((static_cast<f32>(instances) - 1.0F) * 0.5F);
+        if (Status pushed = spawns.push_back(
+                Vec3{across * 1.45F, -2.1F, -5.6F - (static_cast<f32>(which % 3U) * 1.1F)});
+            !pushed) {
+            return pushed;
+        }
+    }
     vfx::CompileOptions options;
     auto compiled = cook_plume(*allocator_, sink_, cook_, options, 1, 384);
     if (!compiled) {
@@ -76,21 +88,32 @@ Status VfxScene::build(rhi::Device& device, u32 instances) noexcept {
     }
     system_ = Expected<vfx::CompiledSystem, Error>(std::move(compiled.value()));
 
+    SceneOptions scene;
+    scene.system = &system_.value();
+    scene.spawns = spawns.span();
+    return build(device, scene);
+}
+
+Status VfxScene::build(rhi::Device& device, const SceneOptions& options) noexcept {
+    device_ = &device;
+    if (options.system == nullptr) {
+        return fail(ErrorCode::InvalidArgument, "vfx scene: no cooked system to play");
+    }
+    camera_position_ = options.eye;
+    fov_y_radians_ = options.fov_y_radians;
+    exposure_stops_ = options.exposure_stops;
+
     vfx::WorldDescription world;
     world.pool_bytes = 8ULL * 1024ULL * 1024ULL;
     world.max_instances = 64;
     if (Status made = world_.initialize(world); !made) {
         return made;
     }
-    for (u32 which = 0; which < instances; ++which) {
+    for (const Vec3& position : options.spawns) {
         vfx::EffectSpawn spawn;
-        // A row of plumes across the view, in front of the camera. Camera-relative from here on:
-        // the camera sits at the origin looking down -Z, which is the arrangement the frame's own
-        // conventions want and the reason nothing here builds a world matrix.
-        const f32 across = static_cast<f32>(which) - ((static_cast<f32>(instances) - 1.0F) * 0.5F);
-        spawn.position = Vec3{across * 1.45F, -2.1F, -5.6F - (static_cast<f32>(which % 3U) * 1.1F)};
+        spawn.position = position;
         spawn.scale = 1.0F;
-        if (Expected<vfx::EffectHandle, Error> played = world_.play(system_.value(), spawn);
+        if (Expected<vfx::EffectHandle, Error> played = world_.play(*options.system, spawn);
             !played.has_value()) {
             return make_unexpected(played.error());
         }
@@ -149,10 +172,16 @@ Status VfxScene::build(rhi::Device& device, u32 instances) noexcept {
     geometry.user = this;
     recorder_.set_geometry(geometry);
 
-    projection_ =
-        perspective_reversed_z(0.9F, static_cast<f32>(kSceneWidth) / static_cast<f32>(kSceneHeight),
-                               description.near_plane, description.far_plane);
-    view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, -1.0F}, Vec3{0.0F, 1.0F, 0.0F});
+    projection_ = perspective_reversed_z(
+        fov_y_radians_, static_cast<f32>(kSceneWidth) / static_cast<f32>(kSceneHeight),
+        description.near_plane, description.far_plane);
+    // AT THE ORIGIN, looking at the target expressed as an offset from the eye — because everything
+    // the device sees is relative to `camera_position_`, which is what `publish_sprites` rebases
+    // against. A view matrix built at a world eye would translate the scene twice.
+    const Vec3 forward{options.target.x - options.eye.x, options.target.y - options.eye.y,
+                       options.target.z - options.eye.z};
+    camera_forward_ = normalize(forward);
+    view_ = look_at(Vec3{0.0F, 0.0F, 0.0F}, forward, Vec3{0.0F, 1.0F, 0.0F});
 
     Expected<rhi::BufferHandle, Error> readback =
         make_upload(device, "vfx readback", kReadbackBytes, rhi::BufferUsage::TransferDestination);
@@ -202,7 +231,7 @@ Status VfxScene::simulate(f32 dt) noexcept {
     if (Status stepped = world_.step(dt, steps_); !stepped) {
         return stepped;
     }
-    return publish_sprites(world_, Vec3{0.0F, 0.0F, 0.0F}, kRingCapacity, records_, published_);
+    return publish_sprites(world_, camera_position_, kRingCapacity, records_, published_);
 }
 
 Status VfxScene::render(assembly::AssemblyReport& out) noexcept {
@@ -218,7 +247,12 @@ Status VfxScene::render(assembly::AssemblyReport& out) noexcept {
 
     recorder_.clear_extensions();
     effect_.reset_report();
-    if (Status uploaded = effect_.upload(slot, records_.span()); !uploaded) {
+    // THE CONTROL IS AN EMPTY UPLOAD, not a skipped one: the ring is still written, the descriptor
+    // set is still allocated and the extension is still attached, so the two frames differ in the
+    // PARTICLES and not in how much of the frame ran.
+    const Span<const particles::ParticleInstance> drawn =
+        draw_particles_ ? records_.span() : Span<const particles::ParticleInstance>();
+    if (Status uploaded = effect_.upload(slot, drawn); !uploaded) {
         return uploaded;
     }
     if (Status added = recorder_.add_extension(effect_.extension()); !added) {
@@ -227,12 +261,12 @@ Status VfxScene::render(assembly::AssemblyReport& out) noexcept {
 
     graph_.reset();
     assembly::AssemblyView view;
-    view.fov_y_radians = 0.9F;
+    view.fov_y_radians = fov_y_radians_;
     view.view = view_;
     view.projection = projection_;
     view.cull.frustum = Frustum::from_view_projection(projection_ * view_);
     view.cull.camera_position = Vec3{0.0F, 0.0F, 0.0F};
-    view.cull.camera_forward = Vec3{0.0F, 0.0F, -1.0F};
+    view.cull.camera_forward = camera_forward_;
     view.cull.fov_y_radians = view.fov_y_radians;
     view.lights = lights_.span();
     view.sun_direction = Vec3{0.35F, 0.86F, 0.37F};
@@ -257,7 +291,7 @@ Status VfxScene::render(assembly::AssemblyReport& out) noexcept {
     // The exposure the pipeline suite measured for a physically-lit frame. A particle's colour is a
     // RADIANCE — see src/rendering/particles/README.md — so the same number applies here, and zero
     // stops would photograph the effect as a white rectangle.
-    globals.exposure_stops = -11.4F;
+    globals.exposure_stops = exposure_stops_;
     const FrameUpload upload = upload_for(assembly_, out, projection_ * view_, view_,
                                           instances_.span(), globals, material_offsets_);
     if (Status uploaded = bindings_.upload(slot, upload); !uploaded) {

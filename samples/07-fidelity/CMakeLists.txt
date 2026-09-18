@@ -19,22 +19,29 @@
 # a milestone about the renderer's composition has to do: layer 7 may link any layer, and the point
 # of the artefact is that these modules meet somewhere other than in their own suites.
 
+# THREE TARGETS NOW, AND THE NEW SPLIT IS THE SAME ONE samples/03-first-light MADE AT M3.
+# `cy::sample-fidelity-frame` is the set, the frame and the shading with no `main` around them, so
+# that `render.virtual_geometry_shaded` under tests/render/ photographs THIS PROGRAM'S FRAME rather
+# than a copy of it. A golden suite with a scene of its own drifts from the sample inside a
+# milestone and its reference is then a photograph of something nobody ships — which is exactly the
+# state `docs/design/images/virtual-geometry-shaded.png` was in before M11.c: written by a recipe,
+# compared by nothing.
 cy_add_module(
-    NAME cy_sample_fidelity
+    NAME cy_sample_fidelity_frame
     LAYER tools
-    TYPE EXECUTABLE
-    ALIAS cy::sample-fidelity
+    ALIAS cy::sample-fidelity-frame
     SOURCES
-        main.cpp
         scene.cpp
         frame.cpp
-        spike.cpp
-    PRIVATE_DEPENDENCIES
+        shade.cpp
+    PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}"
+    PUBLIC_DEPENDENCIES
         cy::rendering-virtual-geometry
         cy::rendering-gi
-        cy::rendering-arbiter
+        cy::rendering-shadows
         cy::rendering-graph
         cy::rhi
+    PRIVATE_DEPENDENCIES
         cy::rhi-null)
 
 # cy::rhi-null is linked unconditionally and cy::rhi-vulkan only when the feature is on, which is
@@ -42,10 +49,27 @@ cy_add_module(
 # not build on a machine without it, and one that linked none could not be run anywhere. The frame
 # act asks for "vulkan" first and reports itself NOT EVALUATED when the device that answers is the
 # null one — which is the honest report on a hosted runner and the reason the smoke entry exists.
+#
+# The define is PUBLIC because `frame.cpp` is the only translation unit that reads it and consumers
+# do not — but a consumer that linked the library and not the backend would not link, so the
+# dependency is public too.
 if(CY_RENDERER_VULKAN)
-    target_link_libraries(cy_sample_fidelity PRIVATE cy::rhi-vulkan)
-    target_compile_definitions(cy_sample_fidelity PRIVATE CY_SAMPLE_FIDELITY_VULKAN=1)
+    target_link_libraries(cy_sample_fidelity_frame PUBLIC cy::rhi-vulkan)
+    target_compile_definitions(cy_sample_fidelity_frame PRIVATE CY_SAMPLE_FIDELITY_VULKAN=1)
 endif()
+
+cy_add_module(
+    NAME cy_sample_fidelity
+    LAYER tools
+    TYPE EXECUTABLE
+    ALIAS cy::sample-fidelity
+    SOURCES
+        main.cpp
+        spike.cpp
+    PRIVATE_DEPENDENCIES
+        cy::sample-fidelity-frame
+        cy::rendering-arbiter
+        cy::rhi-null)
 
 if(NOT CY_BUILD_TESTS)
     return()
@@ -95,18 +119,8 @@ cy_add_module(
     ALIAS cy::fidelity-capture
     SOURCES
         capture.cpp
-        scene.cpp
-        frame.cpp
         "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
     PRIVATE_DEPENDENCIES
-        cy::rendering-virtual-geometry
-        cy::rendering-gi
-        cy::rendering-arbiter
-        cy::rendering-graph
-        cy::rhi
+        cy::sample-fidelity-frame
         cy::rhi-null)
 target_include_directories(cy_fidelity_capture PRIVATE "${CMAKE_SOURCE_DIR}/tests/render")
-if(CY_RENDERER_VULKAN)
-    target_link_libraries(cy_fidelity_capture PRIVATE cy::rhi-vulkan)
-    target_compile_definitions(cy_fidelity_capture PRIVATE CY_SAMPLE_FIDELITY_VULKAN=1)
-endif()

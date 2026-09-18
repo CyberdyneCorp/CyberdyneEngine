@@ -41,6 +41,11 @@
 
 namespace cy::sample::fidelity {
 
+/// The shot's vertical field of view. Named here rather than kept private to frame.cpp because the
+/// shading needs it to turn a pixel into a projected footprint, and two spellings of a camera
+/// parameter is how a reconstruction stops matching the frame it reconstructs.
+inline constexpr f32 kShotFovY = 1.0471975512F;
+
 struct FrameOptions {
     u32 width = 1280;
     u32 height = 720;

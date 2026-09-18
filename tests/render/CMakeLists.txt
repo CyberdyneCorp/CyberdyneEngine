@@ -134,6 +134,29 @@ function(cy_render_declare_tests)
     # For "device.h" and "shaders/material_probe_spirv.h", as the suites above.
     target_include_directories(cy_test_render_material_binding PRIVATE "${cy_render_tests_dir}")
 
+    # THE SKY, AS AN IMAGE. M11.c task 5.2, `m11c:sky-as-an-image`. The row has been measured by
+    # five criteria over four suites and every one of them reads a NUMBER; the requirement is about
+    # what the sky LOOKS like, which a table cannot carry. Four times of day, each compared against
+    # a committed reference and against the other three — see test_sky_times_of_day.cpp for why one
+    # would not do and for what is on the processor and what is on the device.
+    #
+    # It compiles golden.cpp for the same comparison, the same PNG encoder and the same derived
+    # tolerance `render.golden` uses. A second image comparison would be a second tolerance to keep
+    # honest.
+    cy_add_test(
+        NAME sky_times_of_day
+        KIND render
+        SOURCES
+            "${cy_render_tests_dir}/golden.cpp"
+            "${cy_render_tests_dir}/test_sky_times_of_day.cpp"
+        DEPENDENCIES cy::rendering-graph cy::rendering-sky cy::rhi cy::rhi-null cy::rhi-vulkan
+                     cy::world
+        # The references live beside their test, as `render.golden`'s do, and CTest runs a suite
+        # from its BINARY directory.
+        DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
+    # For "device.h", "golden.h" and "shaders/sky_frame_spirv.h", as the suites above.
+    target_include_directories(cy_test_render_sky_times_of_day PRIVATE "${cy_render_tests_dir}")
+
     cy_add_test(
         NAME environment_field
         KIND render

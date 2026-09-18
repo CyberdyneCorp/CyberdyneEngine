@@ -56,9 +56,11 @@
 # The gate set is declared once, as data, in tools/roadmap/gates.toml — `just roadmap-gates` prints
 # it. The jobs below are that list arranged into jobs: build, test, sanitizers and throughput,
 # quality, spec validation, generated-code currency, identity and reflection, the non-default
-# profiles, and the roadmap status record. `just ci-check` fails when a permanent gate declared
-# there is run by no job here, so the two cannot drift apart in the direction that matters;
-# `just ci-jobs` prints what this file actually invokes.
+# profiles, the roadmap status record, and — nightly, because it is hours long — the `milestone`
+# ledger that evaluates every CLOSED milestone's exit criteria. `just ci-check` fails when a
+# permanent gate declared there is run by no job here, and when a closed milestone gate is evaluated
+# by none, so the two cannot drift apart in the direction that matters; `just ci-jobs` prints what
+# this file actually invokes.
 
 name: ci
 
@@ -75,10 +77,17 @@ on:
   # 03:41 UTC, and deliberately not on the hour: GitHub queues scheduled workflows and the round
   # hours are where every repository's cron lands, so an off-hour start is the difference between a
   # run that begins on time and one that begins twenty minutes late.
+  #
+  # TWO JOBS ANSWER TO THIS CRON, AND BOTH FOR THE SAME REASON — they take hours and `main` is pushed
+  # to many times a day. `sanitize-nightly` is the first. The second is `milestone`, the ledger of
+  # every closed milestone's exit criteria: it is 410 criteria and the last measured run of its
+  # successor took 1 h 46 m, so it is run nightly rather than per commit. The full argument is in the
+  # comment above that job, including what makes it go red.
   schedule:
     - cron: '41 3 * * *'
   # So that the nightly set can be run against a branch before it is merged, rather than being
-  # discovered the morning after. `sanitize-nightly` accepts this trigger as well as the schedule.
+  # discovered the morning after. `sanitize-nightly` and `milestone` both accept this trigger as well
+  # as the schedule, and it is the only way to get either answer about a branch.
   workflow_dispatch:
 
 permissions:

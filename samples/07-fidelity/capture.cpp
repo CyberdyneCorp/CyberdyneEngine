@@ -14,10 +14,28 @@
 // same camera, same coverage, visibly coarser clusters. That is the "no manual level-of-detail
 // authoring" claim rendered rather than asserted, and a still frame cannot make it alone.
 //
+// THE SHADED VIEW IS NO LONGER A NORMALS DEBUG VIEW, AND IT IS NO LONGER ASSERTED BY NOBODY.
+// It was `abs()` of a fixed dot product over the resolve's normal, published under the caption
+// "Resolved world normals under one light"; `m11c:virtual-geometry-image` is the criterion that
+// says the row's evidence has to be a SHADING result compared against a committed reference. The
+// shading now lives in `shade.cpp` and is called from here AND from
+// `render.virtual_geometry_shaded`, so the published picture and the asserted one are made by one
+// function. This tool still writes nothing that anything compares — the test does the comparing —
+// and it exists because the documentation's frame is 1280x720 and a committed reference at that
+// size is 3.5 MB of uncompressed PNG.
+//
+// THE SHADED VIEW IS THE EXTERIOR HALF OF THE SHOT and the two debug views are the interior half.
+// That is not an inconsistency, it is what the shot is: `camera_at` runs from inside the hall to
+// outside it, the sun is the light the virtual shadow map is built for, and the hall is a closed
+// shell — so the interior is a picture of ambient light and the exterior is a picture of the sun
+// and what blocks it. The cluster and triangle views stay at the interior phase because the
+// level-of-detail figures `docs/design/virtual-geometry.md` publishes are that phase's.
+//
 // It is not a test. Nothing here asserts; the golden-image suite under tests/render owns that, and
 // this borrows only its PNG writer so there is one encoder in the tree rather than two.
 #include "frame.h"
 #include "scene.h"
+#include "shade.h"
 
 #include <cy/core/memory/system_allocator.h>
 #include "golden.h"
@@ -120,10 +138,9 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(report.visible_clusters), report.materials_seen,
                 static_cast<double>(threshold));
 
-    render_test::Image shaded(allocator);
     render_test::Image clusters(allocator);
     render_test::Image triangles(allocator);
-    for (render_test::Image* image : {&shaded, &clusters, &triangles}) {
+    for (render_test::Image* image : {&clusters, &triangles}) {
         image->width = options.width;
         image->height = options.height;
         if (Status sized = image->texels.resize(static_cast<usize>(options.width) * options.height);
@@ -140,18 +157,6 @@ int main(int argc, char** argv) {
         if (!capture.samples[i].covered()) {
             continue;
         }
-        // Shaded: the resolved world normal under one direction. This is what the M7 resolve
-        // evaluates, so the picture is the resolve's own answer rather than a re-derivation.
-        const Vec4 n =
-            i < capture.resolved.size() ? capture.resolved[i] : Vec4{0.5F, 0.5F, 1.0F, 0.0F};
-        const f32 lambert =
-            std::abs((((n.x * 2.0F) - 1.0F) * 0.35F) + (((n.y * 2.0F) - 1.0F) * 0.72F) +
-                     (((n.z * 2.0F) - 1.0F) * 0.60F));
-        const f32 lit = 0.16F + (0.84F * lambert);
-        const auto grey = [lit](f32 tint) { return static_cast<u32>(lit * tint) & 0xFFU; };
-        shaded.texels[i] =
-            0xFF000000U | (grey(206.0F) << 16U) | (grey(222.0F) << 8U) | grey(232.0F);
-
         // THE PIXEL'S OWN IDENTITY. This used to look the (instance, cluster) pair up through the
         // visible list, because `samples[i].visible` was that list's atomic-append index and
         // colouring by it repainted the whole image on every run. The visibility buffer now carries
@@ -170,8 +175,41 @@ int main(int argc, char** argv) {
         }
         std::printf("wrote %s\n", path.c_str());
     };
-    save("-shaded.png", shaded);
     save("-clusters.png", clusters);
     save("-triangles.png", triangles);
+
+    // THE SHADED VIEW, from a second run of the same frame at the exterior phase. `render_frames`
+    // hands back the LAST timed frame, and the shot parameter runs 0..1 over the timed frames, so
+    // two timed frames is the recipe for "the end of the shot" and one is "the start of it".
+    FrameOptions shaded_options = options;
+    shaded_options.frames = 2;
+    FrameReport shaded_report(allocator);
+    Capture shaded_capture(allocator);
+    if (Status ran = render_frames(scene, shaded_options, shaded_report, &shaded_capture); !ran) {
+        std::printf("shaded frame: %s\n", ran.error().message);
+        return 1;
+    }
+    ShadedFrame shaded(allocator);
+    ShadeReport shade_report;
+    if (Status lit = shade_frame(scene, shaded_capture, ShadeOptions{}, shaded, shade_report);
+        !lit) {
+        std::printf("shade: %s\n", lit.error().message);
+        return 1;
+    }
+    std::printf(
+        "shaded %u px  sunlit %u  shadowed %u  away %u  pages %u rendered / %u requested / %u "
+        "starved  texels %u  substituted %u of %u\n",
+        shade_report.covered, shade_report.lit_by_sun, shade_report.shadowed,
+        shade_report.facing_away, shade_report.pages_rendered, shade_report.pages_requested,
+        shade_report.pages_starved, shade_report.shadow_texels_written,
+        shade_report.substitutions.substituted(), shade_report.substitutions.total());
+    render_test::Image shaded_image(allocator);
+    if (Status adopted =
+            render_test::adopt(shaded_image, shaded.texels.span(), shaded.width, shaded.height);
+        !adopted) {
+        std::printf("adopt: %s\n", adopted.error().message);
+        return 1;
+    }
+    save("-shaded.png", shaded_image);
     return 0;
 }

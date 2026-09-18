@@ -70,8 +70,11 @@ function(cy_vfx_declare_tests)
             "${tests_dir}/effects.cpp"
             "${tests_dir}/test_vfx_runtime.cpp"
             "${tests_dir}/test_vfx_renderers.cpp"
+            "${tests_dir}/test_vfx_in_shot.cpp"
+            "${CMAKE_SOURCE_DIR}/samples/12-beauty/embers.cpp"
         DEPENDENCIES cy::vfx)
-    target_include_directories(cy_test_integration_vfx PRIVATE "${tests_dir}")
+    target_include_directories(cy_test_integration_vfx
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/samples/12-beauty")
 
     if(NOT CY_RENDERER_VULKAN)
         return()

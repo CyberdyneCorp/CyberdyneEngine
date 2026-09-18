@@ -29,8 +29,6 @@ using rendering::ExecutionResult;
 using rendering::GraphExecutor;
 using rendering::RenderGraph;
 
-constexpr f32 kFovY = 1.0471975512F;
-
 void count_validation(rhi::ValidationSeverity severity, const char* message, void* user) noexcept {
     if (severity == rhi::ValidationSeverity::Error && user != nullptr) {
         ++*static_cast<u32*>(user);
@@ -246,7 +244,7 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         const f32 t = static_cast<f32>(timed ? frame - options.warmup_frames : 0U) / span;
         const Vec3 camera = camera_at(scene, t);
         const Mat4 view = look_at(camera, camera_target(scene, t), Vec3{0.0F, 1.0F, 0.0F});
-        const Mat4 projection = perspective_reversed_z_infinite(kFovY, aspect, 0.05F);
+        const Mat4 projection = perspective_reversed_z_infinite(kShotFovY, aspect, 0.05F);
         const Mat4 world_to_clip = projection * view;
 
         rendering::vg::TraversalView traversal_view;
@@ -254,7 +252,7 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         traversal_view.frustum.refresh_corner_masks();
         traversal_view.projection.camera_position = camera;
         traversal_view.projection.viewport_height = static_cast<f32>(options.height);
-        traversal_view.projection.fov_y_radians = kFovY;
+        traversal_view.projection.fov_y_radians = kShotFovY;
         traversal_view.threshold_pixels = options.threshold_pixels;
         traversal_view.minimum_instance_pixels = 1.0F;
         traversal_view.cone_culling = true;
