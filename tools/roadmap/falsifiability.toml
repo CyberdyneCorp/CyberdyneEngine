@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 200 proven, 453 not yet shown able to fail.
+# 207 proven, 446 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1181,11 +1181,35 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rule
 
 [[proof]]
 ledger = "m3"
+criterion = "conventions"
+digest = "09310d399ab46ab2"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'm.at(2, 3) = far_plane * near_plane / span;' in src/core/math/src/projection.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m3"
+criterion = "golden"
+digest = "7de91f3744e3f79b"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'sun_.ambient = 0.10F;' in samples/03-first-light/scene.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m3"
 criterion = "m4-open"
 digest = "fdc62442b34292cf"
 verdict = "proven"
 mutation = "delete-path in openspec/changes/**/*m4*/proposal.md (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m3"
+criterion = "render-null"
+digest = "4fd8b29d96e06d5f"
+verdict = "proven against a built tree"
+mutation = "delete-lines '.side_effect();' in samples/03-first-light/renderer.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: error: Recipe `build-engine` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m3"
@@ -1202,6 +1226,14 @@ digest = "c5f5226698060a32"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
+ledger = "m3"
+criterion = "xr-prerequisites"
+digest = "2dbbcf49cd8271c7"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'command.d = info.view_mask;' in src/backends/rhi/null/src/null_command_buffer.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m4"
@@ -1325,6 +1357,14 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rule
 
 [[proof]]
 ledger = "m7"
+criterion = "gpu-culling"
+digest = "ab24a0c4b2479f9d"
+verdict = "proven against a built tree"
+mutation = "delete-lines '++counters.tested;' in src/servers/render/culling/src/gpu_cull.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m7"
 criterion = "m8-open"
 digest = "9a88a503f68198a1"
 verdict = "proven"
@@ -1361,6 +1401,14 @@ criterion = "virtual-geometry-gpu"
 digest = "64e7d46d888c74d3"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'walk.threshold = view.threshold_pixels * view.secondary_scale * instance.threshold_scale();' in src/rendering/virtual_geometry/src/traversal.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
+
+[[proof]]
+ledger = "m7"
+criterion = "virtual-texturing-gpu"
+digest = "074b36080d1196cb"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'address.tile_y = static_cast<u16>((y * desc_.tiles_y(level)) / settings_.grid_height);' in src/rendering/virtual_texturing/src/frame.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
 
 [[proof]]
@@ -1506,6 +1554,14 @@ digest = "1167d17707af1880"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/vfx-budget-degraded.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8c"
+criterion = "vfx-device"
+digest = "ca05aa38ffa329fd"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'record.size = presentation.size * instance.scale;' in src/vfx/src/runtime.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m8c"
@@ -2901,14 +2957,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m3"
-criterion = "conventions"
-digest = "282c9beadb4ed69d"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
-
-[[unproven]]
-ledger = "m3"
 criterion = "culling"
 digest = "9b9bd1eff85d41d8"
 verdict = "no mutation"
@@ -2930,14 +2978,6 @@ digest = "021dbef044895d07"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m3"
-criterion = "golden"
-digest = "8ec2b6835c315003"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m3"
@@ -3002,14 +3042,6 @@ digest = "017bb2f6b14208ff"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m3"
-criterion = "render-null"
-digest = "b6b7250206299521"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m3"
@@ -3082,14 +3114,6 @@ digest = "c2b092af700593fe"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m3"
-criterion = "xr-prerequisites"
-digest = "cde10e6e93fbef98"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m4"
@@ -3893,14 +3917,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m7"
-criterion = "gpu-culling"
-digest = "6e10c463421a8b31"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
-
-[[unproven]]
-ledger = "m7"
 criterion = "layering"
 digest = "013d16d0f90d9149"
 verdict = "no mutation"
@@ -4074,14 +4090,6 @@ digest = "a4b1185213a31023"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m7"
-criterion = "virtual-texturing-gpu"
-digest = "295676ce3aeb5101"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m8a"
@@ -4898,14 +4906,6 @@ digest = "b17f6db706a0e5fa"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8c"
-criterion = "vfx-device"
-digest = "7894aea159f517d5"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m8c"

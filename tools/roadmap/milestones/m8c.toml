@@ -208,6 +208,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.pipeline$' 2>/dev/null | grep -q 'render.pipeline' || {
     echo "render.pipeline is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -219,6 +226,20 @@ just test-render -R '^render.pipeline$'
 requires = "gpu"
 reason = "it records the frame on a graphics device and reads the image back; on a machine without one it is reported NOT EVALUATED rather than passed, and `m8c:pipeline-layer` above covers the same code path with no device"
 ci_job = "milestone-m8c"
+
+# THE MUTATION IS THE SECOND OF THE FIVE DEFECTS THIS CRITERION'S OWN `describe` LISTS.
+# "A descriptor set left unbound by an empty transparent layer" is the defect the suite found and
+# the one no structural test could see; `bind_frame_sets` is the call that binds them, and deleting
+# it from the three recording callbacks leaves the pipelines bound and the sets not. The frame still
+# records five passes and still submits the same draws — so the counters the suite checks are
+# untouched — and the picture that comes back off the device is wrong, with validation errors the
+# case counts separately. It compiles: the function is still defined and still called from the
+# fourth site.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/pipeline/src/frame_recorder.cpp"
+token  = "bind_frame_sets(*context.commands, *recorder.pipelines(), *recorder.bindings());"
+note   = "the criterion reads the output image back off the device and compares it against the same frame recorded through an empty `FrameSinks`; unbinding the frame's descriptor sets changes what the shaders read without changing what the graph declares, which is a difference only a photograph can report. `fixture.validation_errors() == 0` is the second assertion it fails."
 
 [[criterion]]
 id = "material-slang"

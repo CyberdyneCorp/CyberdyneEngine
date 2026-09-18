@@ -434,6 +434,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.assembly$' 2>/dev/null | grep -q 'render.assembly' || {
     echo "render.assembly is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -445,6 +452,20 @@ just test-render -R '^render.assembly$'
 requires = "gpu"
 reason = "it puts an assembled frame on a graphics device; on a machine without one it is reported NOT EVALUATED rather than passed, which is what delivery-roadmap requires"
 ci_job = "milestone-m8b"
+
+# THE MUTATION BREAKS THE DEVICE HALF ONLY, WHICH IS THE HALF THIS CRITERION EXISTS FOR.
+# `render.assembly`'s two cases assemble the same ten instances twice: once culled on the CPU and
+# once culled on the device, and both assert the same eight visible. The device case gets its
+# numbers from the dispatch's readback, and this is the line that copies one of them across; with it
+# gone the report keeps its zero and the device case fails on `report.cull.visible == 8` while the
+# CPU case — the half a hosted runner CAN judge — stays green. That asymmetry is the point: the
+# criterion's own `describe` says it is the device half, and this is a mutation only the device half
+# can see.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/assembly/src/frame_assembly.cpp"
+token  = "out.cull.visible = readback->counters.visible;"
+note   = "a mutation that reddened both cases would have proved that the criterion notices the assembly being broken, which `m8b`'s device-free criteria already establish. This one is invisible without a GPU, so it is the control for the claim that this criterion judges a real device."
 
 [[criterion]]
 id = "mesh-renderer-reflected"

@@ -533,15 +533,23 @@ reason = "the cull is a compute dispatch compared against a CPU reference; a hos
 ci_job = "render-device"
 
 # THE MUTATION IS ONE COUNTER ON THE CPU SIDE, AND THE SUITE COMPARES SIXTEEN WORD FOR WORD.
-# `render.gpu_culling` reads back the dispatch's counters and checks each field against the M6 CPU
-# reference's; `rejected_by_range` is one of them. Deleting the increment leaves the dispatch's
-# answer untouched and the reference's short by every instance the range test rejected, so the two
-# disagree on a field the case names. It compiles: the statement stands alone.
+# `render.gpu_culling` reads back the dispatch's counters and checks each field against
+# `cpu_reference_cull`'s. `tested` is the first of them and it counts every slot the dispatch looked
+# at, so the mutation bites whatever scene a case builds.
+#
+# TWO EARLIER CHOICES WERE TRIED AND ONE WAS MEASURED WRONG, and both are written down so the next
+# reader does not repeat them. `++stats.rejected_by_range;` in `src/rendering/culling/src/cull.cpp`
+# was declared first and the prover REFUTED it — "the criterion still PASSES with 1 file(s) mutated".
+# TWO reasons, either of them sufficient: that file is `cy::rendering-culling`'s scene culler and
+# this suite compares against `cy::servers-render-culling`'s `cpu_reference_cull`, a different
+# function in a different module; and the range test is only reached by a scene that sets a draw
+# distance, which these cases do not. A counter that a case may leave at zero is a mutation that
+# changes nothing, which is the shape this whole module exists to refuse.
 [criterion.falsifies]
 mutate = "delete-lines"
-target = "src/rendering/culling/src/cull.cpp"
-token  = "++stats.rejected_by_range;"
-note   = "test_gpu_cull_pass.cpp compares `got.rejected_by_range == want.rejected_by_range` among the sixteen counter words, and `want` is the CPU reference this line feeds. The GPU shader is untouched, so what goes red is the agreement rather than either side on its own."
+target = "src/servers/render/culling/src/gpu_cull.cpp"
+token  = "++counters.tested;"
+note   = "test_gpu_cull_pass.cpp compares `got.tested == want.tested` first of the sixteen counter words, and `want` is `cpu_reference_cull`'s output, which this line fills. The GPU shader is untouched, so what goes red is the agreement between the two rather than either side on its own — and unlike a rejection counter, `tested` is non-zero in every case the suite builds."
 
 [[criterion]]
 id = "virtual-texturing-gpu"
@@ -579,15 +587,22 @@ ci_job = "render-device"
 # about it is the claim, not the command.
 # THE MUTATION IS IN THE CPU MIRROR, WHICH IS THE HALF THIS CRITERION NAMES. `address_of_pixel`
 # is written line for line against `record_feedback`'s shader — its own comment says so and says why
-# every integer type matches — and the mip bias is applied on both sides in the same order. Take the
-# bias off the CPU side and the two answer different mips for every pixel wherever the bias is not
-# zero, which is the comparison this suite makes. `mip` is still assigned and still used, so it
-# compiles.
+# every integer type matches — and the suite builds the same feedback map twice, once from the
+# shader's readback and once from this function, and compares them entry for entry. With the tile
+# row gone the CPU mirror answers `tile_y = 0` for every pixel and the two maps differ everywhere
+# outside the first row of tiles. It compiles, and `level` is still used by the `tile_x` line beside
+# it, so nothing becomes an unused variable.
+#
+# `mip += settings_.mip_bias;` WAS DECLARED FIRST AND THE PROVER REFUTED IT — "the criterion still
+# PASSES with 1 file(s) mutated". The argument was right and the reach was not: no case in
+# `render.virtual_texturing_gpu` sets a mip bias, so the line adds zero and deleting it changes
+# nothing. A mutation whose effect depends on a setting the suite leaves at its default is not a
+# mutation, and this one is written down rather than quietly replaced.
 [criterion.falsifies]
 mutate = "delete-lines"
 target = "src/rendering/virtual_texturing/src/frame.cpp"
-token  = "mip += settings_.mip_bias;"
-note   = "the claim is that the CPU mirror of `record_feedback` matches the shader's line for line; this deletes one of those lines from the mirror only. A mutation of the shader instead would have broken the subject rather than the agreement, and the agreement is what the criterion checks."
+token  = "address.tile_y = static_cast<u16>((y * desc_.tiles_y(level)) / settings_.grid_height);"
+note   = "the claim is that the CPU mirror of `record_feedback` matches the shader's line for line; this deletes one of those lines from the mirror only. A mutation of the shader instead would have broken the subject rather than the agreement, and the agreement is what the criterion checks. `VirtualAddress::tile_y` defaults to 0, so the mirror still produces a well-formed address — it produces the WRONG one, which is the failure a comparison can report and a crash cannot."
 
 [[criterion]]
 id = "residency-cost"

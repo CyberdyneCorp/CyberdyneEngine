@@ -270,18 +270,25 @@ just test-render -R '^render.null_frame$'
 """
 ci_job = "render-device"
 
-# THE MUTATION TAKES A DEPENDENCY OUT OF THE FRAME, WHICH IS WHAT THIS CRITERION COUNTS.
-# `samples/03-first-light`'s forward pass declares that it READS the shadow map; that declaration is
-# the only thing keeping the "sun shadow" pass alive, because a render graph culls a pass whose
-# output nothing consumes. Delete it and the frame records FOUR passes rather than five and culls
-# one rather than none — which is exactly the pair of numbers this criterion's first case asserts —
-# while the tree still compiles and still renders. A mutation that stopped the sample compiling
-# would have proved that the criterion notices a broken build, which is a different claim.
+# THE MUTATION TAKES THE HOST BOUNDARY OUT OF THE FRAME, WHICH IS WHAT THIS CRITERION COUNTS.
+# The sample's last pass reads the readback buffer and writes nothing, so `.side_effect()` is the
+# only thing that keeps a render graph from culling it — the sample's own comment beside it says
+# exactly that, and says the declaration is what makes the graph emit the transfer-to-host barrier.
+# Delete it and the "host read" pass is culled, and the "colour readback" pass that feeds it goes
+# with it, so `passes_recorded` falls off 5 and `passes_culled` rises off 0. It compiles: the
+# builder's return value is discarded at every other call site in this file too.
+#
+# `.read(shadow, Access::FragmentSampledRead)` WAS DECLARED FIRST AND THE PROVER REFUTED IT — "the
+# criterion still PASSES with 1 file(s) mutated". Written down rather than quietly replaced: the
+# reasoning was that the shadow pass would be culled once nothing consumed its output, and it was
+# wrong, because the forward pass still WRITES the colour target the readback consumes and the
+# shadow attachment is still written by a pass the compiler keeps. The lesson generalises — a
+# mutation aimed at a pass the graph might cull has to be aimed at the pass the graph culls FIRST.
 [criterion.falsifies]
 mutate = "delete-lines"
 target = "samples/03-first-light/renderer.cpp"
-token  = ".read(shadow, Access::FragmentSampledRead)"
-note   = "the mechanism: the declared read is the only consumer of the shadow pass's output, so with it gone the graph culls that pass and `passes_recorded` and `passes_culled` both move off the numbers `render.null_frame`'s first case asserts. The verdict recorded in falsifiability.toml is the prover's own observation of that, taken against a built tree; this note is the argument for the target and not a substitute for the measurement. The suite needs no device, so the red reproduces on every machine."
+token  = ".side_effect();"
+note   = "the mechanism: `side_effect()` is the only reason a pass that reads and does not write survives compilation, so with it gone the graph culls the host-read pass and the readback pass behind it, and `render.null_frame`'s first case fails on the pass counts it asserts. The verdict recorded in falsifiability.toml is the prover's own observation of that against a built tree; this note is the argument for the target and not a substitute for the measurement. The suite needs no device, so the red reproduces on every machine."
 
 [[criterion]]
 id = "xr-prerequisites"
@@ -291,6 +298,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.xr_prerequisites$' 2>/dev/null | grep -q 'render.xr_prerequisites' || {
     echo "render.xr_prerequisites is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -305,6 +319,19 @@ ci_job = "render-device"
 # — cmake/features.cmake, and M3 did not change that — so a criterion that needs a device has to
 # configure a tree that has one. `${CY_BUILD_DIR:+...}` keeps a developer who redirects the build
 # tree from configuring two profiles into one directory, which is m2.toml's finding E.
+# THE MUTATION STOPS THE MULTIVIEW MASK REACHING THE RECORDED COMMAND, WHICH IS THE CLAIM.
+# "Two views are ONE submission of the geometry" is observable only in what the submission carries:
+# one rendering scope, one draw, two layers and a mask with two bits in it. The null backend is the
+# production code that carries `RenderingInfo::view_mask` into that stream, and with the assignment
+# gone the recorded mask keeps its zero default — one scope and one draw still, but no second view.
+# The case then fails on `popcount_of(mask) == 2` and on nothing else, which is the half of the
+# claim this mutation is aimed at. It compiles: the field is default-initialised.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/rhi/null/src/null_command_buffer.cpp"
+token  = "command.d = info.view_mask;"
+note   = "a renderer that looped over the eyes would record two scopes and two draws and fail this case already; what nothing else catches is a single submission that reaches the device naming ONE view. This deletes the line that carries the second one, and leaves the scope and draw counts the case also asserts untouched, so the red names the multiview mask rather than the frame."
+
 [[criterion]]
 id = "conventions"
 describe = "the conventions asserted FROM THE DEVICE: the depth buffer clears to 0, near maps to 1 and far to 0 as sampled back, the nearer surface wins whichever order the two are drawn in, a scene a million units out renders bit-identically to the same scene at the origin, and the axis conventions hold against rendered output rather than only against the arithmetic"
@@ -327,6 +354,19 @@ requires = "gpu"
 reason = "this host has no graphics device, and a convention sampled back off a device cannot be sampled back off nothing"
 ci_job = "render-device"
 
+# THE MUTATION IS ONE ENTRY OF THE REVERSED-Z PROJECTION, WHICH IS THIS CRITERION'S SUBJECT.
+# `perspective_reversed_z` builds its matrix from `Mat4::zero()`, so deleting the m(2,3) assignment
+# leaves that entry at zero and the depth mapping stops sending the near plane to 1 and the far
+# plane to 0 — the exact sentence `core-math`'s header states and this suite samples back out of a
+# real depth buffer. It compiles, and it is deliberately NOT the m(3,2) = -1 line, which would make
+# every point fail the perspective divide and turn the suite red for a reason no reader could tell
+# from a broken camera.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/core/math/src/projection.cpp"
+token  = "m.at(2, 3) = far_plane * near_plane / span;"
+note   = "the reversed-Z cases render a triangle at the near plane and one at the far plane and read the depth buffer back; with this entry zero the projection no longer separates them the way the convention says. The camera-relative and axis-convention cases in the same suite are left alone by it, so the red is attributable to the convention this mutation breaks."
+
 [[criterion]]
 id = "golden"
 describe = "the golden images pass on Vulkan: the artefact's frame against its committed reference with zero validation errors, the same frame a million units out against THE SAME reference file, the shadow-off control against a different one, and the null backend deriving the same frame structure the device did"
@@ -348,6 +388,18 @@ timeout_s = 3600
 requires = "gpu"
 reason = "this host has no graphics device, and a golden image cannot be photographed without one"
 ci_job = "render-device"
+
+# THE MUTATION CHANGES THE PICTURE WITHOUT CHANGING ANYTHING ELSE, which is what a golden-image
+# criterion has to be able to notice. `Sun::ambient` defaults to 0.03 and this scene sets 0.10;
+# deleting the assignment leaves the default, every shadowed texel darkens, and the committed
+# reference no longer matches within `kChannelTolerance`. Nothing else moves: the same passes, the
+# same draws, the same command stream, the same resolution. Truncating the reference PNG was the
+# other candidate and is weaker — it would prove only that the criterion opens the file.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "samples/03-first-light/scene.cpp"
+token  = "sun_.ambient = 0.10F;"
+note   = "the claim is that the artefact's frame is compared against a committed reference rather than against itself; a shading change the reference does not have is the mutation that separates those two. `golden.h`'s tolerance is two 8-bit steps and the ambient term moves the shadowed texels by far more than that, so the difference is a shading result rather than a rounding."
 
 [[criterion]]
 id = "vulkan-frame"
