@@ -895,7 +895,11 @@ work was done.
         which is `m7:virtual-geometry-gpu`'s guard, because `just test-render` passes
         `--no-tests=ignore` and running nothing would be a pass) and that
         `tests/render/references/beauty_shot_air.png` is a **committed file**, then runs it; and
-        that the published manifest reports a non-zero drawn count
+        that the published manifest reports a non-zero drawn count. It carries
+        `requires = "gpu"` for `m11c:virtual-geometry-image`'s reason — a criterion that goes red
+        on a tree configured with no rendering backend is red for something that is not a defect —
+        and **the cost of that is named in the criterion rather than hidden**: step 1 needs no
+        device, and gating the whole of it stops a GPU-less machine evaluating that half too
       - [x] **AND IT IS PROVED RED BY BREAKING WHAT THE PICTURE IS OF.** `[criterion.falsifies]`
         declares `delete-lines` of
         `record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;`

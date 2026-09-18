@@ -110,7 +110,8 @@ this whole record dishonest."* So:
   the difference between that frame and the identical frame with the ring uploaded empty — 4 713 of
   129 600 texels, 3.64% of the frame, worst channel 255. `integration.vfx`'s case of the same name
   projects every published record through the artefact's camera on a machine with no GPU at all.
-- **`draws 0` in the manifest is correct and is worth reading carefully.** The frame's own draw list
+- **`draws 0` in the manifest is correct and is worth reading carefully, and `particles 996 in 1
+  draw(s)` is a different number for the same reason.** The frame's own draw list
   is empty: this program draws its geometry inside the frame through `FrameSinks::passes`, which is
   the seam `ForwardFrame` documents — *"ForwardFrame knows the frame STRUCTURE and the caller knows
   how to draw"* — and not through the pipeline layer's draw path. The thirty-one draws are the
