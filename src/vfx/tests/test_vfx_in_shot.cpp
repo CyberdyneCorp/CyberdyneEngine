@@ -68,17 +68,17 @@ inline constexpr f32 kShotAspect = 1920.0F / 1080.0F;
     const Mat4 view = look_at(Vec3{0.0F, 0.0F, 0.0F}, forward, Vec3{0.0F, 1.0F, 0.0F});
     // The far plane `samples/12-beauty/stage.cpp` uses. Reversed-Z, so `w` is the view depth and a
     // point in front of the camera has a positive one.
-    const Mat4 projection = perspective_reversed_z(shot_fov_y(), kShotAspect, kShotNearPlane,
-                                                   600.0F);
+    const Mat4 projection =
+        perspective_reversed_z(shot_fov_y(), kShotAspect, kShotNearPlane, 600.0F);
     return projection * view;
 }
 
 /// Is this record inside the frame the artefact photographs? Clip-space, before the divide, which
 /// is the only test that is correct for a point behind the camera.
 [[nodiscard]] bool inside_frame(const Mat4& view_projection,
-                               const rendering::particles::ParticleInstance& record) noexcept {
-    const Vec4 clip = view_projection * Vec4{record.position[0], record.position[1],
-                                             record.position[2], 1.0F};
+                                const rendering::particles::ParticleInstance& record) noexcept {
+    const Vec4 clip =
+        view_projection * Vec4{record.position[0], record.position[1], record.position[2], 1.0F};
     if (clip.w <= 0.0F) {
         return false;
     }

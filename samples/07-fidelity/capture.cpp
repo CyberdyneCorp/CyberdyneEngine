@@ -187,8 +187,7 @@ int main(int argc, char** argv) {
     // they identify looks like lit.
     ShadedFrame shaded(allocator);
     ShadeReport shade_report;
-    if (Status lit = shade_frame(scene, capture, ShadeOptions{}, shaded, shade_report);
-        !lit) {
+    if (Status lit = shade_frame(scene, capture, ShadeOptions{}, shaded, shade_report); !lit) {
         std::printf("shade: %s\n", lit.error().message);
         return 1;
     }

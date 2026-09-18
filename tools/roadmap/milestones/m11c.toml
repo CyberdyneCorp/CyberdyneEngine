@@ -736,6 +736,12 @@ requires = "gpu"
 reason = "a sky capture needs a device, and on this one-GPU-vendor host the picture is judged against a single driver; the field round trip it depends on is checked without one by M11.a's `sky-field-consumed-outside-the-sky`"
 ci_job = "milestone-m11c"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/sky/src/celestial.cpp"
+token  = "state.sun.direction = horizon_direction(latitude, declination, hour_angle);"
+note   = "THE MUTATION BREAKS THE THING THE PICTURE IS OF AND NOT THE COMPARISON. The line is one statement, the tree still builds without it, and `CelestialState` keeps its default +Y — so `solve_celestial()` answers a sun at the zenith at every hour and all four times of day become photographs of one sky. That is precisely the renderer this criterion's FOUR references exist to refute: 'a renderer that had quietly stopped responding to the sun would produce four frames that agree'. Measured on this host against build/m11c-final: all 20 736 texels of dawn, dusk and night differ from their references and 19 313 of noon, worst channel delta 209, 144, 251 and 255, and four of the suite's five cases go red. A mutation of the reference PATH or of `compare()` was rejected for the reason nine shipped checks in this project record: it would prove the file reader, not the sky. Two further mutations were run by hand and are recorded in tests/render/test_sky_times_of_day.cpp — deleting the cloud composite (11 323 to 16 303 texels move) and making Mie isotropic (523 at dawn, 114 at noon, and nothing at dusk or night, because the sun is down)."
+
 [[criterion]]
 id = "subsystem-controllers-report-costs"
 describe = "subsystem controllers under `src/` report MEASURED costs to the arbiter rather than declared ones. `rendering-architecture`'s budget arbitration is the requirement, and an arbiter fed by declarations arbitrates between opinions"

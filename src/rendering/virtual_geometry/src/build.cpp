@@ -980,7 +980,6 @@ Status Finaliser::emit_hierarchy() noexcept {
             continue;
         }
         out.clusters[index].first_child = group_child_range_first[from];
-        out.clusters[index].child_count = out.groups[from].member_count;
     }
     return ok();
 }

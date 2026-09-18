@@ -553,8 +553,10 @@ below is that work, named rather than discovered.
         darkest and the brightest cell through the consumer and compares the sun it gets back: 10 980
         lux under the cloud against 100 000 beside it. The grep survives as a precondition and is no
         longer the verdict
-      - [ ] **The row does not reach Complete in this section.** `m11c:sky-as-an-image` is
-        undelivered — see 5.2
+      - [x] **The last criterion standing between this row and Complete is delivered** —
+        `m11c:sky-as-an-image`, see 5.2. The TIER ITSELF is not moved here: `status.yaml` and
+        `ROADMAP.md` are the Close phase's to write, and they write it off the ledger's verdict
+        rather than off this line
 - [ ] 5.2 The sky judged **as an image** in the artefact — aerial perspective on distant geometry
       consistent with the sky rather than a separately tuned fog, which is the requirement's own
       scenario and the one a table cannot answer
@@ -565,12 +567,52 @@ below is that work, named rather than discovered.
         `src/rendering/lighting/include/cy/rendering/lighting/cloud_shadow.h`, and it attenuates a
         directional light and refuses to attenuate a punctual one — a cloud shadows the sun, not a
         torch
-      - [ ] **NOT DELIVERED: the capture.** `m11c:sky-as-an-image` runs
-        `just test-render sky --times-of-day 4 --compare-golden`, and neither the recipe's arguments
-        nor the golden references exist. It is left RED rather than weakened. Building it means a
-        sky capture harness and four committed references drawn on ONE GPU vendor, which is the shape
-        design.md §6 refuses for the beauty shot and which needs its own argument before it is
-        committed to a golden
+      - [x] **DELIVERED: the capture is a suite, not a recipe.** The weak form the criterion
+        refused — `just test-render sky --times-of-day 4 --compare-golden` — selected the same
+        seventeen render cases as `just test-render` with no arguments at all, because ctest
+        discards a positional it does not recognise: nothing photographed the sky and nothing
+        compared a photograph. What replaces it is `render.sky_times_of_day`
+        (`tests/render/test_sky_times_of_day.cpp`), five cases on a device: four times of day
+        composed through `compose_sky()` — the engine's own sky path, not a second sky written for
+        a test — rasterised as an equirectangular panorama at 192x108, and compared against
+        `tests/render/references/sky_{dawn,noon,dusk,night}.png`, which are committed. The
+        criterion's `run` asserts the suite is REGISTERED before it runs it, because
+        `just test-render` selects with `--no-tests=ignore` and an absent suite would otherwise
+        report as a pass; it asserts all four references exist, because a time of day with no
+        reference is a time of day nothing compares
+      - [x] **Four, and each frame is asserted against the other three.** The sun stands at
+        +0.62, +61.44, -5.64 and -14.56 degrees at 03:50, 12:00, 21:07 and 00:00 at 52 degrees
+        north on the June solstice — `solve_celestial()`'s own answers, asserted per case so a
+        reference cannot silently become a reference of a different sky. Each case also requires a
+        mean absolute difference above 8/255 against the OTHER THREE references (measured: 25.4 to
+        52.4), which is the row's "response to sun elevation" made falsifiable: a sky that stopped
+        responding would render four frames that agree
+      - [x] **The tolerance is measured rather than rounded, and the measurement is a case.**
+        `golden.h`'s `kChannelTolerance` is 2 eight-bit steps. The fifth case renders each time of
+        day twice and then again with the exposure scale perturbed by one unit in the last place of
+        an f32: two runs move 0, and one ULP moves no texel past the tolerance and at most 1 step in
+        one channel at dawn. One step is therefore the physical difference and two is one step of
+        headroom, so the number is earned rather than chosen. Exposure is a committed constant per
+        time of day and NOT an auto-exposure, because an auto-exposure divides out any change to the
+        atmosphere's absolute brightness
+      - [x] **Three ways to pass while measuring nothing are refused before any comparison**: the
+        readback is prefilled with a magenta sentinel and a surviving one is counted (the draw ran),
+        every frame must hold more than 200 distinct colours over a luminance range above 40 (the
+        picture is not flat), and the cross-time comparison above (the four are not one picture).
+        `CY_RENDER_UPDATE_GOLDEN=1` writes the references and then FAILS, so a regenerating run can
+        never be a passing one
+      - [x] **Proved red by mutation of the SUBJECT.** Declared in m11c.toml's
+        `[criterion.falsifies]`: deleting `state.sun.direction = horizon_direction(...)` from
+        `celestial.cpp` builds fine and freezes the sun at the zenith at every hour — all 20 736
+        texels of dawn, dusk and night move and 19 313 of noon, worst channel delta up to 255, four
+        of five cases red. Two more were run by hand and restored: deleting the cloud composite in
+        `composition.cpp` moves 11 323 to 16 303 texels, and making Mie isotropic in `tables.cpp`
+        moves 523 at dawn and 114 at noon and NOTHING at dusk or night — because the sun is below
+        the horizon and there is no forward lobe left to lose
+      - [x] **The condition the criterion is written under was re-run, not inherited.**
+        `m10:sky-field-round-trip` is closed and holds today: `integration.render_sky_fields`
+        prints `through CloudShadowField::sample: 5120 samples, lowest 0.00392157, highest 1,
+        disagreeing 0`, so the sampler answers the substrate rather than its declared 1.0
 - [x] 5.3 **`rendering-architecture`: a subsystem controller under `src/` reports a *measured* cost
       to the arbiter.** The arbiter is built and certified over 71 step magnitudes; the seven
       `SubsystemController`s in the tree live in `samples/07-fidelity` over a hard-coded cost table.

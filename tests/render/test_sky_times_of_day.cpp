@@ -24,8 +24,9 @@
 // The claim the row makes is about the atmosphere's RESPONSE TO SUN ELEVATION: Rayleigh scattering
 // reddening a long path at dawn, the ozone layer holding the zenith blue after the sun has gone,
 // multiple scattering carrying a third of the horizon at noon and none of it at midnight. One
-// still frame is consistent with a painted gradient. Four at +2, +61, -3 and -61 degrees of sun
-// elevation are not, and each case here asserts that its frame matches ITS OWN reference and
+// still frame is consistent with a painted gradient. Four at +0.62, +61.44, -5.64 and -14.56
+// degrees of sun elevation are not — the numbers `solve_celestial()` answered and every run prints
+// — and each case here asserts that its frame matches ITS OWN reference and
 // matches NONE OF THE OTHER THREE — so a renderer that had quietly stopped responding to the sun
 // would produce four frames that agree, and agreement is what these cases fail on.
 //
@@ -52,8 +53,8 @@
 //
 // The grid is the dome tessellated IN THE PROJECTION rather than in latitude and longitude: every
 // part of the picture then resolves the sky equally, and the tessellation is a property of the
-// image the reference is of rather than of a radius nobody can see in it. `kVertexStride` is 4
-// pixels, which at 192x108 is 49x28 = 1372 directions composed per frame.
+// image the reference is of rather than of a radius nobody can see in it. `kVertexStride` is 2
+// pixels, which at 192x108 is 97x55 = 5 335 directions composed per frame.
 //
 // ================================================================================================
 // THE EXPOSURE IS A COMMITTED CONSTANT PER TIME OF DAY, AND NOT AN AUTO-EXPOSURE
@@ -92,7 +93,8 @@
 //                   f32 (a relative 1.19e-7) and rendered again. That is the smallest difference an
 //                   implementation of `pow` or of the interpolation can have, and what it moves is
 //                   what a conformant second implementation could move. Measured on this host:
-//                   at most 1 texel over the four times of day moves, and it moves by 1 step.
+//                   NO texel of the four frames moves past the tolerance, and the largest single
+//                   channel it moves at all is 1 step — at dawn; noon, dusk and night do not move.
 //
 // One step is therefore the physical difference and two is one step of headroom over it, which is
 // what `kChannelTolerance` already is — so the number is not changed, it is EARNED. The case that
@@ -120,10 +122,32 @@
 // THE MUTATIONS THIS SUITE WAS PROVED RED BY
 // ================================================================================================
 //
-// Recorded in tools/roadmap/falsifiability.toml; the declared one is the mean of Mie's phase
-// asymmetry — `atmosphere.mie_asymmetry` — because a golden image whose subject can be disabled
-// while it stays green is the defect this project has shipped nine times. See the entry for
-// `sky-as-an-image` there for the measured pixel movement.
+// A golden image whose subject can be disabled while it stays green is the defect this project has
+// shipped nine times, so the subject was disabled three ways and the pixels were counted. The
+// DECLARED one is m11c.toml's `[criterion.falsifies]` and it is the first below; the other two were
+// run by hand on this host, on build/m11c-final, and restored.
+//
+//   THE SUN STOPS MOVING. `delete-lines` of `state.sun.direction = horizon_direction(latitude,
+//   declination, hour_angle);` in src/rendering/sky/src/celestial.cpp. The tree still builds and
+//   `CelestialState` keeps its default +Y, so all four times of day are photographs of a sun at the
+//   zenith — exactly the "renderer that had quietly stopped responding to the sun" this suite's
+//   four references exist to refute. ALL 20 736 TEXELS of dawn, dusk and night move and 19 313 of
+//   noon, worst channel delta 209, 144, 251 and 255; the flatness guard fires too (night collapses
+//   to 1 distinct colour) and so does the elevation assertion. 4 of 5 cases red.
+//
+//   THE CLOUDS LEAVE THE PICTURE. `delete-lines` of `background = (background *
+//   clouds.transmittance) + clouds.scattering;` in src/rendering/sky/src/composition.cpp. The march
+//   still runs and its result still reaches `SkyCompositionSample`; what stops is the compositing,
+//   so nothing a table reads changes. 15 555, 16 303, 11 323 and 16 004 of 20 736 texels move,
+//   worst channel delta 163, 150, 195 and 187. 4 of 5 cases red.
+//
+//   MIE SCATTERS ISOTROPICALLY. `mie_phase(cos_theta, atmosphere.mie_anisotropy)` substituted with
+//   `mie_phase(cos_theta, 0.0F)` in src/rendering/sky/src/tables.cpp — the forward lobe that makes
+//   the sky bright around the sun, and the subtlest of the three. 523 texels move at dawn (worst
+//   channel delta 56) and 114 at noon (worst 6); DUSK AND NIGHT DO NOT MOVE AT ALL, because the sun
+//   is below the horizon and there is no forward lobe left to lose. 2 of 5 cases red — which is the
+//   measurement that says the 2-step tolerance is tight enough to catch a physical regression that
+//   moves half a percent of one frame.
 //
 // ================================================================================================
 // REGENERATING A REFERENCE
@@ -169,7 +193,8 @@ using rhi::Access;
 using rhi::QueueKind;
 namespace sky = rendering::sky;
 
-// --- The picture ----------------------------------------------------------------------------------
+// --- The picture
+// ----------------------------------------------------------------------------------
 
 /// The same 192x108 `render.golden` commits, and for the same reason: a reference is a committed
 /// binary this repository's encoder stores rather than deflates, so one costs about 62 KiB. Four of
@@ -207,7 +232,9 @@ constexpr f32 kEyeAltitudeMetres = 2.0F;
 
 constexpr f32 kPi = 3.14159265358979323846F;
 
-[[nodiscard]] f32 radians_of(f32 degrees) noexcept { return degrees * (kPi / 180.0F); }
+[[nodiscard]] f32 radians_of(f32 degrees) noexcept {
+    return degrees * (kPi / 180.0F);
+}
 
 /// One time of day: what it is called, where the clock is, and what it is exposed at.
 struct TimeOfDayCase {
@@ -263,7 +290,8 @@ struct SkyFramePush {
     f32 pad2 = 0.0F;
 };
 
-// --- The directions -------------------------------------------------------------------------------
+// --- The directions
+// -------------------------------------------------------------------------------
 
 /// The direction a point of the image looks along, in the engine's own frame: +Y up, +X east, -Z
 /// north — `celestial.cpp`'s frame, which is where the sun's direction comes from, so the sun in
@@ -281,7 +309,8 @@ struct SkyFramePush {
                 -std::cos(elevation) * std::cos(azimuth)};
 }
 
-// --- The sky --------------------------------------------------------------------------------------
+// --- The sky
+// --------------------------------------------------------------------------------------
 
 /// Everything `compose_sky()` needs, built once per case: the atmosphere, its tables, the weather
 /// map and the layers the reconstruction reads. The configuration is `samples/10-world`'s, because
@@ -370,9 +399,8 @@ private:
     f64 total = 0.0;
     for (u32 row = 0; row < kGridRows; ++row) {
         for (u32 column = 0; column < kGridColumns; ++column) {
-            const f32 clip_x = (static_cast<f32>(column) / static_cast<f32>(kGridColumns - 1) *
-                                2.0F) -
-                               1.0F;
+            const f32 clip_x =
+                (static_cast<f32>(column) / static_cast<f32>(kGridColumns - 1) * 2.0F) - 1.0F;
             const f32 clip_y =
                 1.0F - (static_cast<f32>(row) / static_cast<f32>(kGridRows - 1) * 2.0F);
             const Vec3 direction = ray_through(clip_x, clip_y);
@@ -383,9 +411,9 @@ private:
             vertex.r = composed.radiance.x;
             vertex.g = composed.radiance.y;
             vertex.b = composed.radiance.z;
-            total += static_cast<f64>((composed.radiance.x * 0.2126F) +
-                                      (composed.radiance.y * 0.7152F) +
-                                      (composed.radiance.z * 0.0722F));
+            total +=
+                static_cast<f64>((composed.radiance.x * 0.2126F) + (composed.radiance.y * 0.7152F) +
+                                 (composed.radiance.z * 0.0722F));
         }
     }
     mean_luminance = static_cast<f32>(total / kVertexCount);
@@ -410,7 +438,8 @@ void build_indices(u32* out) noexcept {
     }
 }
 
-// --- The frame ------------------------------------------------------------------------------------
+// --- The frame
+// ------------------------------------------------------------------------------------
 
 struct PassState {
     rendering::GraphExecutor* executor = nullptr;
@@ -438,8 +467,8 @@ void record_draw(const PassContext& context, void* user) noexcept {
     info.color_attachments = Span<const rhi::RenderAttachment>(&color, 1);
 
     context.commands->begin_rendering(info);
-    context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(kWidth),
-                                                 static_cast<f32>(kHeight), 0.0F, 1.0F});
+    context.commands->set_viewport(
+        rhi::Viewport{0.0F, 0.0F, static_cast<f32>(kWidth), static_cast<f32>(kHeight), 0.0F, 1.0F});
     context.commands->set_scissor(rhi::Rect2D{0, 0, kWidth, kHeight});
     context.commands->bind_graphics_pipeline(state->pipeline);
     context.commands->push_constants(
@@ -449,7 +478,8 @@ void record_draw(const PassContext& context, void* user) noexcept {
     context.commands->bind_vertex_buffers(0, Span<const rhi::BufferHandle>(&state->vertices, 1),
                                           Span<const u64>(&offset, 1));
     // `wide` is true: 32-bit indices, because the grid has more than 65 536 vertices at no stride
-    // this file would want and a 16-bit index list would be a limit nobody could see in the picture.
+    // this file would want and a 16-bit index list would be a limit nobody could see in the
+    // picture.
     context.commands->bind_index_buffer(state->indices, 0, true);
     context.commands->draw_indexed(kIndexCount, 1, 0, 0, 0);
     context.commands->end_rendering();
@@ -687,7 +717,8 @@ private:
     rhi::BufferHandle indices_;
 };
 
-// --- What a frame is made of ----------------------------------------------------------------------
+// --- What a frame is made of
+// ----------------------------------------------------------------------
 
 /// How many distinct texel values a frame holds, and how far apart its darkest and brightest
 /// luminances are. A flat frame compares perfectly against a flat reference and says nothing about
@@ -747,7 +778,8 @@ struct Variety {
     return static_cast<f64>(total) / (static_cast<f64>(left.texels.size()) * 3.0);
 }
 
-// --- References -----------------------------------------------------------------------------------
+// --- References
+// -----------------------------------------------------------------------------------
 
 const char* reference_path(const char* name) noexcept {
     static char storage[1024];
@@ -884,7 +916,6 @@ void photograph(u32 which) {
     CY_CHECK_EQ(fixture.validation_errors(), 0U);
 }
 
-
 // ==================================================================================================
 // THE TOLERANCE, MEASURED AGAINST THESE FRAMES RATHER THAN ASSUMED FROM golden.h's ARGUMENT.
 //
@@ -938,9 +969,9 @@ void measure_tolerance() {
                      "texel(s), worst channel delta %u\n",
                      when.name, repeat.max_channel_delta, one_ulp.differing,
                      one_ulp.max_channel_delta);
-        worst_between_runs =
-            repeat.max_channel_delta > worst_between_runs ? repeat.max_channel_delta
-                                                          : worst_between_runs;
+        worst_between_runs = repeat.max_channel_delta > worst_between_runs
+                                 ? repeat.max_channel_delta
+                                 : worst_between_runs;
         worst_under_one_ulp = one_ulp.max_channel_delta > worst_under_one_ulp
                                   ? one_ulp.max_channel_delta
                                   : worst_under_one_ulp;
@@ -964,7 +995,8 @@ void measure_tolerance() {
 }  // namespace
 }  // namespace cy::render_test
 
-CY_TEST_CASE("render.sky_times_of_day: the tolerance is larger than what two runs and one ULP move") {
+CY_TEST_CASE(
+    "render.sky_times_of_day: the tolerance is larger than what two runs and one ULP move") {
     cy::render_test::measure_tolerance();
 }
 

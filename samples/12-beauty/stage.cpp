@@ -17,6 +17,7 @@
 #include <cy/rendering/assembly/frame_assembly.h>
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
+#include <cy/rendering/particles/particle_renderer.h>
 #include <cy/rendering/pipeline/frame_bindings.h>
 #include <cy/rendering/pipeline/frame_pipelines.h>
 #include <cy/rendering/pipeline/frame_recorder.h>
@@ -37,6 +38,7 @@
 #include <numbers>
 #include <vector>
 
+#include "embers.h"
 #include "golden.h"
 
 namespace cy::sample::beauty {
@@ -53,6 +55,7 @@ using cy::rendering::assembly::CaptureProvenance;
 using cy::rendering::assembly::CapturePurpose;
 using cy::rendering::assembly::FrameAssembly;
 using cy::rendering::assembly::FrameSinks;
+using cy::rendering::particles::ParticleRenderer;
 using cy::rendering::pipeline::FrameBindings;
 using cy::rendering::pipeline::FramePipelineKind;
 using cy::rendering::pipeline::FramePipelines;
@@ -162,6 +165,7 @@ struct Stage::Batch {
 struct Stage::Device {
     explicit Device(Allocator& allocator) noexcept
         : assembly(allocator),
+          field(allocator),
           batches(allocator),
           textures(allocator),
           views(allocator),
@@ -174,6 +178,14 @@ struct Stage::Device {
     FrameAssembly assembly;
     FramePipelines pipelines;
     FrameBindings bindings;
+
+    // THE AIR. `field` owns the cooked system and the simulation world; `air` owns the sprite
+    // pipeline and the ring the frame draws from. Both are members rather than locals because the
+    // world holds a pointer INTO the compiled system and the renderer holds device handles, so
+    // neither may outlive the other or the device.
+    EmberField field;
+    ParticleRenderer air;
+    bool air_settled = false;
 
     rhi::BufferHandle vertices;
     rhi::BufferHandle indices;
@@ -223,6 +235,7 @@ Stage::~Stage() {
             (void)device_->handle.value()->wait_idle();
             // THE FRAME'S OWN OBJECTS FIRST and before the device is destroyed: both hold device
             // handles, which is the contract every device-owning object in this tree states.
+            device_->air.shutdown();
             device_->bindings.shutdown();
             device_->pipelines.shutdown();
         }
@@ -1544,6 +1557,72 @@ void record_resolve(const PassContext& context, void* user) noexcept {
     context.commands->end_rendering();
 }
 
+/// THE AIR, in the frame's own TRANSPARENT stage. M11.c task 7.5, and `m11c:vfx-in-the-shot`.
+///
+/// It is the FRAME'S stage and not a pass of this program's. `ForwardFrame` declares
+/// `FramePassKind::Transparent` between the sky and the resolve, reading the depth the opaque pass
+/// wrote, and until this rung the beauty shot left that sink empty. Filling it is what puts a mote
+/// BEHIND the pillar it is behind, and what grades the field through the same exposure and the same
+/// tone curve as the stone — two things a separate pass of this program's own would each have had
+/// to get right a second time.
+///
+/// The draw itself is `ParticleRenderer`'s, invoked through the `PassExtension` seam it publishes
+/// rather than reimplemented here. This program has no `FrameRecorder` — it records its own
+/// geometry out of its own buffers — so it builds the `ExtensionContext` the recorder would have
+/// built. `recorder` stays null, which `record_particles` never reads; `inside_rendering` is true,
+/// which it does.
+struct AirState {
+    const rendering::GraphExecutor* executor = nullptr;
+    FramePipelines* pipelines = nullptr;
+    FrameBindings* bindings = nullptr;
+    ParticleRenderer* air = nullptr;
+    ResourceId color = kInvalidResource;
+    ResourceId depth = kInvalidResource;
+    u32 width = 0;
+    u32 height = 0;
+};
+
+void record_air(const PassContext& context, void* user) noexcept {
+    auto* state = static_cast<AirState*>(user);
+    if (state->air == nullptr || !state->air->ready()) {
+        return;
+    }
+    rhi::RenderAttachment colour;
+    colour.view = state->executor->view(state->color);
+    colour.load = rhi::LoadOp::Load;
+    colour.store = rhi::StoreOp::Store;
+
+    rhi::RenderingInfo info;
+    info.render_area = rhi::Rect2D{0, 0, state->width, state->height};
+    info.color_attachments = Span<const rhi::RenderAttachment>(&colour, 1);
+    // LOADED AND NOT CLEARED, and the sprite pipeline does not write it: the graph declared this
+    // target `DepthStencilAttachmentRead` for this stage, and a blended sprite that wrote depth
+    // would occlude the sprite behind it and the field would stop reading as air.
+    info.depth_attachment.view = state->executor->view(state->depth);
+    info.depth_attachment.load = rhi::LoadOp::Load;
+    info.depth_attachment.store = rhi::StoreOp::Store;
+
+    context.commands->begin_rendering(info);
+    context.commands->set_viewport(rhi::Viewport{0.0F, 0.0F, static_cast<f32>(state->width),
+                                                 static_cast<f32>(state->height), 0.0F, 1.0F});
+    context.commands->set_scissor(rhi::Rect2D{0, 0, state->width, state->height});
+    // THE FRAME'S OWN SETS 0 AND 1, at the frame's own layout. `ParticleRenderer` reuses those two
+    // layouts verbatim so that its pipeline layout is COMPATIBLE with this one — which is the seam
+    // it exists to prove — and its own ring is set 2.
+    context.commands->bind_descriptor_sets(state->pipelines->layout(), 0, state->bindings->sets());
+
+    const cy::rendering::pipeline::PassExtension extension = state->air->extension();
+    cy::rendering::pipeline::ExtensionContext air;
+    air.commands = context.commands;
+    air.executor = state->executor;
+    air.kind = FramePassKind::Transparent;
+    air.width = state->width;
+    air.height = state->height;
+    air.inside_rendering = true;
+    extension.record(air, extension.user);
+    context.commands->end_rendering();
+}
+
 struct ReadbackState {
     const rendering::GraphExecutor* executor = nullptr;
     ResourceId color = kInvalidResource;
@@ -1775,8 +1854,38 @@ Status Stage::create_frame() noexcept {
     if (Status made = device_->bindings.initialize(device, device_->pipelines, capacity); !made) {
         return made;
     }
+
+    // --- THE AIR ------------------------------------------------------------------------------
+    //
+    // Cooked and settled ONCE, here, and not per frame: `EmberField` is deterministic — every
+    // random draw is a hash of the particle index and the stream — so one settle gives the same
+    // field on every machine and on every run, which is what makes the published still
+    // reproducible. `Stage::advance_air` is how the turntable moves it; the still never calls it.
+    //
+    // Published against `kShotEye`, which is the point the geometry was baked relative to. The
+    // motes and the colonnade are then in ONE space, and the turntable can orbit without
+    // republishing.
+    if (Status made = device_->air.initialize(device, device_->pipelines,
+                                              cy::sample::beauty::kEmberRing);
+        !made) {
+        return made;
+    }
+    if (Status made = device_->field.build(); !made) {
+        return made;
+    }
+    if (Status settled = device_->field.settle(cy::sample::beauty::kShotEye); !settled) {
+        return settled;
+    }
+    device_->air_settled = true;
     device_->frame_ready = true;
     return ok();
+}
+
+Status Stage::advance_air(f32 dt) noexcept {
+    if (device_ == nullptr || !device_->air_settled) {
+        return fail(ErrorCode::Unavailable, "the air was never settled");
+    }
+    return device_->field.advance(cy::sample::beauty::kShotEye, dt);
 }
 
 Status Stage::render(const Shot& shot, const char* png_path, const char* linear_path,
@@ -1855,6 +1964,15 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     }
     const u32 slot = *began;
 
+    // THE RING, WRITTEN INSIDE THE DEVICE FRAME and before the assembly executes, which is the
+    // contract `ParticleRenderer::upload` states for the same reason `FrameBindings::upload` does:
+    // the descriptor set is allocated out of this frame's pool.
+    device_->air.reset_report();
+    if (Status uploaded = device_->air.upload(slot, device_->field.records()); !uploaded) {
+        (void)device.end_frame();
+        return uploaded;
+    }
+
     cy::rendering::RenderGraph graph(*allocator_);
 
     // --- The light the assembly is told about, which is the same sun the picture is shaded by ----
@@ -1912,11 +2030,20 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     resolve.width = width_;
     resolve.height = height_;
 
+    AirState air;
+    air.pipelines = &device_->pipelines;
+    air.bindings = &device_->bindings;
+    air.air = &device_->air;
+    air.width = width_;
+    air.height = height_;
+
     FrameSinks sinks;
     sinks.passes[static_cast<usize>(FramePassKind::Opaque)] =
         cy::rendering::FramePassCallback{&record_scene, &scene};
     sinks.passes[static_cast<usize>(FramePassKind::Sky)] =
         cy::rendering::FramePassCallback{&record_sky, &scene};
+    sinks.passes[static_cast<usize>(FramePassKind::Transparent)] =
+        cy::rendering::FramePassCallback{&record_air, &air};
     sinks.passes[static_cast<usize>(FramePassKind::PostProcess)] =
         cy::rendering::FramePassCallback{&record_resolve, &resolve};
 
@@ -1933,6 +2060,8 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     const cy::rendering::FrameResources& resources = device_->assembly.resources();
     scene.color = resources.color;
     scene.depth = resources.depth;
+    air.color = resources.color;
+    air.depth = resources.depth;
     resolve.scene = resources.color;
     resolve.output = resources.output;
 
@@ -2011,6 +2140,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     {
         cy::rendering::GraphExecutor executor(*allocator_, device);
         scene.executor = &executor;
+        air.executor = &executor;
         resolve.executor = &executor;
         readback.executor = &executor;
         linear.executor = &executor;
@@ -2050,6 +2180,12 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
         report.manifest = *manifest;
         report.manifest_valid = true;
     }
+    // THE AIR, READ OFF THE RENDERER rather than off what this program published. The two are the
+    // same number when the frame worked and they are different numbers when it did not — a ring
+    // that overflowed, or a stage whose sink never ran — and the manifest publishes the renderer's.
+    report.particles = device_->air.report().particles;
+    report.particles_dropped = device_->air.report().dropped;
+    report.particle_draws = device_->air.report().draws;
     report.validation_errors = device_->validation_errors;
     return frame;
 }
@@ -2278,6 +2414,11 @@ Status Stage::write_manifest(const Shot& shot, const ShotReport& report,
                        static_cast<unsigned long long>(report.texture_source_bytes),
                        static_cast<unsigned long long>(report.texture_cooked_bytes));
     (void)std::fprintf(file, "supersample %ux\n", report.supersample);
+    (void)std::fprintf(file,
+                       "particles %u in %u draw(s), %u dropped  (courtyard_embers: 3 emitters, "
+                       "authored in samples/12-beauty/embers.cpp, drawn in the frame's TRANSPARENT "
+                       "stage)\n",
+                       report.particles, report.particle_draws, report.particles_dropped);
     (void)std::fprintf(file, "validation-errors %u\n", report.validation_errors);
     (void)std::fprintf(file, "sun-illuminance %.1f %.1f %.1f\n",
                        static_cast<double>(report.sun_illuminance.x),

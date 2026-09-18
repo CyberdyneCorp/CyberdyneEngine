@@ -143,12 +143,9 @@ private:
         f32 tolerance;
     };
     static constexpr Row kRows[] = {
-        {"position", "float3", -64.0F, 64.0F, 0.0F},
-        {"velocity", "float3", -8.0F, 8.0F, 0.0F},
-        {"age", "float", 0.0F, 16.0F, 0.0F},
-        {"lifetime", "float", 0.0F, 16.0F, 0.0F},
-        {"size", "float", 0.0F, 1.0F, 0.0F},
-        {"color", "float4", 0.0F, 1.0F, 1.0F / 255.0F},
+        {"position", "float3", -64.0F, 64.0F, 0.0F}, {"velocity", "float3", -8.0F, 8.0F, 0.0F},
+        {"age", "float", 0.0F, 16.0F, 0.0F},         {"lifetime", "float", 0.0F, 16.0F, 0.0F},
+        {"size", "float", 0.0F, 1.0F, 0.0F},         {"color", "float4", 0.0F, 1.0F, 1.0F / 255.0F},
         {"emission", "float", 0.0F, 40000.0F, 0.0F},
     };
     for (const Row& row : kRows) {
@@ -204,29 +201,29 @@ private:
     // They RISE, slowly and at their own speeds, with a lateral drift. 0.10 to 0.34 m/s is a mote
     // of ash in still air; the shot is a sixtieth of a second and the field is photographed after
     // six seconds of it.
-    stage.write("velocity",
-                stage.make3(stage.binary("vfx.mul", signed_draw(), stage.constant(0.075F)),
-                            stage.binary("vfx.add", stage.constant(0.10F),
-                                         stage.binary("vfx.mul", stage.random(),
-                                                      stage.constant(0.24F))),
-                            stage.binary("vfx.mul", signed_draw(), stage.constant(0.075F))));
+    stage.write(
+        "velocity",
+        stage.make3(stage.binary("vfx.mul", signed_draw(), stage.constant(0.075F)),
+                    stage.binary("vfx.add", stage.constant(0.10F),
+                                 stage.binary("vfx.mul", stage.random(), stage.constant(0.24F))),
+                    stage.binary("vfx.mul", signed_draw(), stage.constant(0.075F))));
     stage.write("age", stage.constant(0.0F));
-    stage.write("lifetime", stage.binary("vfx.add", stage.constant(4.5F),
-                                         stage.binary("vfx.mul", stage.random(),
-                                                      stage.constant(2.5F))));
+    stage.write("lifetime",
+                stage.binary("vfx.add", stage.constant(4.5F),
+                             stage.binary("vfx.mul", stage.random(), stage.constant(2.5F))));
     // 18 to 40 mm. At 1920 across and this camera that is between one and three pixels of core with
     // the sprite's falloff around it, which is what an ember looks like and not what a sprite sheet
     // looks like.
-    stage.write("size", stage.binary("vfx.add", stage.constant(0.018F),
-                                     stage.binary("vfx.mul", stage.random(),
-                                                  stage.constant(0.022F))));
+    stage.write("size",
+                stage.binary("vfx.add", stage.constant(0.018F),
+                             stage.binary("vfx.mul", stage.random(), stage.constant(0.022F))));
     // A RADIANCE, not a colour: `emission` carries the magnitude and these four are the chroma and
     // the opacity the sprite's falloff premultiplies. Warm, because the sun at 15.5 degrees is.
-    stage.write("color", stage.make4(stage.constant(1.0F), stage.constant(0.62F),
-                                     stage.constant(0.31F),
-                                     stage.binary("vfx.add", stage.constant(0.55F),
-                                                  stage.binary("vfx.mul", stage.random(),
-                                                               stage.constant(0.40F)))));
+    stage.write(
+        "color",
+        stage.make4(stage.constant(1.0F), stage.constant(0.62F), stage.constant(0.31F),
+                    stage.binary("vfx.add", stage.constant(0.55F),
+                                 stage.binary("vfx.mul", stage.random(), stage.constant(0.40F)))));
     stage.write("emission", stage.constant(2600.0F));
     if (!stage.ok()) {
         return fail(ErrorCode::Internal, "beauty embers: the initialise graph did not author");
@@ -247,8 +244,7 @@ private:
     // a warm courtyard floor accelerates upward, which is why these motes never come back down
     // inside their lifetime.
     const NodeKey next_velocity =
-        stage.binary("vfx.add", velocity,
-                     stage.binary("vfx.mul", stage.parameter("buoyancy"), dt));
+        stage.binary("vfx.add", velocity, stage.binary("vfx.mul", stage.parameter("buoyancy"), dt));
     stage.write("velocity", next_velocity);
     stage.write("position",
                 stage.binary("vfx.add", position, stage.binary("vfx.mul", next_velocity, dt)));
@@ -260,8 +256,7 @@ private:
     // A MOTE COOLS. The chroma stays where the initialise put it and the magnitude falls by a
     // factor of twenty over the life, which is what makes the far end of the field dimmer than the
     // near end without a single per-particle branch.
-    stage.write("emission",
-                stage.lerp(stage.constant(2600.0F), stage.constant(130.0F), fraction));
+    stage.write("emission", stage.lerp(stage.constant(2600.0F), stage.constant(130.0F), fraction));
     stage.kill_if(stage.binary("vfx.greater", next_age, lifetime));
     if (!stage.ok()) {
         return fail(ErrorCode::Internal, "beauty embers: the update graph did not author");

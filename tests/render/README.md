@@ -79,6 +79,54 @@ writes each reference, prints its path, **and fails**. Failing is the mechanism:
 regenerated and then passed would let a run with that variable set in its environment launder a
 defect into the repository. Look at what it wrote, then commit it.
 
+## The sky as an image — `render.sky_times_of_day`
+
+M11.c task 5.2, `m11c:sky-as-an-image`. **`atmosphere-sky-and-clouds` had been measured by five
+criteria over four suites and every one of them reads a number** — a transmittance, a radiance at a
+direction, a count of directions integrated, a cell of a cloud shadow field. The row's requirement
+is *"aerial perspective on distant geometry consistent with the sky rather than a separately tuned
+fog"*, which is a claim about what the sky LOOKS like, and a table cannot carry it.
+
+The weak form this replaces was a recipe a person ran: `just test-render sky --times-of-day 4
+--compare-golden` selected the same seventeen render cases as `just test-render` with no arguments
+at all, because ctest discards a positional it does not recognise. Nothing photographed the sky and
+nothing compared a photograph.
+
+| Case | Asserts |
+|---|---|
+| the tolerance | each time of day rendered twice, and then again with the exposure scale moved by one unit in the last place of an f32. Two runs must move **0** and one ULP must move less than the 2-step tolerance — so the tolerance is measured against these very frames rather than inherited as a round number |
+| dawn, noon, dusk, night | each frame matches `references/sky_<name>.png` within that tolerance, **and differs from the other three references** by a large mean absolute difference. The second half is the row's "response to sun elevation" made falsifiable: a sky that had stopped responding would render four frames that agree |
+
+**Four, and not one.** The sun stands at **+0.62°, +61.44°, -5.64° and -14.56°** at 03:50, 12:00,
+21:07 and 00:00 at 52°N on the June solstice — `solve_celestial()`'s own answers, asserted per case
+so a reference cannot silently become a reference of a different sky. 06:00 and 18:00 were rejected:
+they are symmetric about local noon, the sun stands at the same 18.27° in both, and two of the four
+references would have been photographs of one elevation.
+
+**What is on the processor and what is on the device.** There is no atmosphere evaluated in a shader
+anywhere in this engine, so this suite does what `samples/10-world` and `samples/12-beauty` do and
+nothing else: `compose_sky()` per grid vertex on the processor — single scattering through the
+transmittance table, the tabulated multiple scattering, the sun's disc and the cloud march — and on
+the device the rasteriser's interpolation, the exposure divide, Reinhard, the gamma encode and the
+quantisation to `Rgba8Unorm`. What it photographs is the engine's sky path, not a second sky written
+for a test.
+
+**The exposure is a committed constant per time of day and NOT an auto-exposure.** An auto-exposure
+divides out any change to the atmosphere's overall brightness, so a mutation that halved every
+scattering coefficient would produce very nearly the same picture. The four constants were measured
+from the mean sky luminance at each time, they are printed by every run, and they differ by six
+orders of magnitude between noon and midnight because the sky does.
+
+**Three ways to pass while measuring nothing, each refused before any comparison**: the readback is
+prefilled with a magenta sentinel and a surviving one is counted, so a draw that never ran is caught
+rather than inferred; every frame must hold more than 200 distinct colours across a luminance range
+above 40, because a flat frame compares perfectly against a flat reference; and the cross-time
+comparison above.
+
+Regeneration works as `render.golden`'s does and for the same reason — `CY_RENDER_UPDATE_GOLDEN=1
+ctest -R render.sky_times_of_day` writes the four references and then **fails**, naming what it
+wrote.
+
 ## Many frames on the device — `render.frames`
 
 **M4 task 1.3, and it exists because of what M3's suites could not see.** Every device suite M3

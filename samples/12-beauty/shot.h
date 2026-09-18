@@ -46,8 +46,17 @@
 //  * **One shadow map.** 2048x2048, one cascade, recorded by THIS program into the frame's graph.
 //    The engine's own shadow cache — `cy::rendering-shadows`' pages and budget — is initialised by
 //    the assembly and spends nothing, because this program draws its own geometry.
-//  * **No particles.** `vfx-system` is Working, not Complete; `src/vfx/README.md`'s four recorded
-//    absences are why, and a shot with sprites in it would not have made any of them false.
+//  * **The air is particles, and it is authored in C++ rather than as content.** Three ember
+//    emitters drift up the courtyard — `embers.cpp`, cooked by `cy::vfx`'s shipping compiler,
+//    drawn by `cy::rendering::particles::ParticleRenderer` in the frame's own TRANSPARENT stage.
+//    Everything else in this shot is a file; the air is not, because **there is no on-disk VFX
+//    asset format in this tree** and `src/vfx/README.md`'s fourth recorded absence — no VFX graph
+//    editor — is the same fact from the authoring side. What the field proves is the RUNTIME; it
+//    does not prove an authoring path, and `docs/design/beauty-shot.md` says so where the rest of
+//    this contract is.
+//  * **The motes have no texture and no soft depth fade.** `ParticleRenderer`'s sprite is a radial
+//    falloff computed in the fragment shader; there is no atlas and no depth-fade, which that
+//    module records as its own absence.
 
 #include <cy/backends/rhi/device.h>
 #include <cy/backends/rhi/handles.h>
@@ -173,6 +182,12 @@ struct ShotReport {
     u32 frame_passes = 0;
     u32 post_stages = 0;
     u32 supersample = 1;
+    /// The air, read off the renderer's own report rather than off what this program published: a
+    /// manifest that named a mote count the frame did not draw is exactly what `capture_manifest`
+    /// exists to make impossible, and the same rule applies to this program's own additions.
+    u32 particles = 0;
+    u32 particles_dropped = 0;
+    u32 particle_draws = 0;
     f64 build_ms = 0.0;
     f64 submit_ms = 0.0;
     f64 sky_ms = 0.0;
@@ -225,6 +240,12 @@ public:
     [[nodiscard]] Status render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world,
                                      const char* png_path, const char* linear_path,
                                      ShotReport& report) noexcept;
+
+    /// Step the air by one frame. THE STILL NEVER CALLS THIS: the published capture is the field
+    /// `create_frame` settled, and settling is deterministic, so the picture is reproducible. A
+    /// turntable calls it between frames, because two hundred and forty frames of frozen motes
+    /// would be two hundred and forty pictures of a defect.
+    [[nodiscard]] Status advance_air(f32 dt = 1.0F / 60.0F) noexcept;
 
     [[nodiscard]] static Status write_manifest(const Shot& shot, const ShotReport& report,
                                                const char* path) noexcept;

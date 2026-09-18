@@ -94,8 +94,7 @@ namespace {
 
 /// The artefact is 1920x1080 and this reference is 480x270. The ASPECT is what decides the framing
 /// and it is the same one, so the air sits where it sits in the still.
-inline constexpr f32 kShotAspect =
-    static_cast<f32>(kSceneWidth) / static_cast<f32>(kSceneHeight);
+inline constexpr f32 kShotAspect = static_cast<f32>(kSceneWidth) / static_cast<f32>(kSceneHeight);
 
 [[nodiscard]] f32 shot_fov_y() noexcept {
     constexpr f32 kHalfDegreesToRadians = 3.14159265358979F / 360.0F;
@@ -257,7 +256,8 @@ CY_TEST_CASE("particles are in the assembled frame") {
 
     // --- THE COMMITTED REFERENCE --------------------------------------------------------------
     render_test::Image rendered(allocator);
-    CY_REQUIRE(render_test::adopt(rendered, with_air.span(), kSceneWidth, kSceneHeight).has_value());
+    CY_REQUIRE(
+        render_test::adopt(rendered, with_air.span(), kSceneWidth, kSceneHeight).has_value());
     const char* path = reference_path();
     if (updating_references()) {
         CY_CHECK(render_test::write_png(path, rendered).has_value());

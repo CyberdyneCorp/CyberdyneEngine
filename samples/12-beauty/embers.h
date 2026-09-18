@@ -1,5 +1,6 @@
 #pragma once
-// THE AIR IN THE BEAUTY SHOT — the effect `vfx-system` puts in the artefact's frame. M11.c task 6.3.
+// THE AIR IN THE BEAUTY SHOT — the effect `vfx-system` puts in the artefact's frame. M11.c
+// task 6.3.
 //
 // ================================================================================================
 // WHY THIS FILE EXISTS AT ALL
@@ -81,8 +82,8 @@ inline constexpr EmberEmitter kEmberEmitters[] = {
     {Vec3{-0.55F, 0.25F, 9.40F}},
 };
 
-inline constexpr u32 kEmberEmitterCount = static_cast<u32>(sizeof(kEmberEmitters) /
-                                                           sizeof(kEmberEmitters[0]));
+inline constexpr u32 kEmberEmitterCount =
+    static_cast<u32>(sizeof(kEmberEmitters) / sizeof(kEmberEmitters[0]));
 
 /// Particles one emitter's block can hold. The population settles below this — see `kEmberWarmup`
 /// — and a block at capacity would be a population whose size is the pool's rather than the
@@ -98,8 +99,8 @@ inline constexpr u32 kEmberCapacity = 512;
 inline constexpr f32 kEmberWarmup = 6.0F;
 inline constexpr f32 kEmberStep = 1.0F / 60.0F;
 
-/// The ring the renderer draws from. Larger than the settled population, so `PublishReport::dropped`
-/// is zero and a non-zero one is a finding.
+/// The ring the renderer draws from. Larger than the settled population, so
+/// `PublishReport::dropped` is zero and a non-zero one is a finding.
 inline constexpr u32 kEmberRing = 4096;
 
 /// Author the ember system. Every node is placed and wired here; nothing is read from a file,

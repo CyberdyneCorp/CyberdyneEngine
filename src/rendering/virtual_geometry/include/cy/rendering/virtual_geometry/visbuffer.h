@@ -123,9 +123,8 @@ struct SurfaceAttributes {
 /// `DecodedCluster` passes it here; the overload above is this function with a decode in front of
 /// it, so there is one copy of the arithmetic.
 [[nodiscard]] Expected<SurfaceAttributes, Error> reconstruct_surface(
-    const DecodedCluster& geometry, const GeometryInstance& instance,
-    const VisibleCluster& visible, u32 triangle, const Mat4& world_to_clip, Vec2 pixel, u32 width,
-    u32 height) noexcept;
+    const DecodedCluster& geometry, const GeometryInstance& instance, const VisibleCluster& visible,
+    u32 triangle, const Mat4& world_to_clip, Vec2 pixel, u32 width, u32 height) noexcept;
 
 /// Pixels grouped by material. `virtual-geometry` — "Many materials, few passes": "WHEN a view
 /// contains thousands of distinct materials THEN material resolve SHALL evaluate them in bins

@@ -18,7 +18,8 @@
 // `samples/03-first-light`.
 //
 // ================================================================================================
-// WHAT IS THE DEVICE'S ANSWER AND WHAT IS THE HOST'S — SAID PLAINLY, BECAUSE THE PICTURE IS EVIDENCE
+// WHAT IS THE DEVICE'S ANSWER AND WHAT IS THE HOST'S — SAID PLAINLY, BECAUSE THE PICTURE IS
+// EVIDENCE
 // ================================================================================================
 //
 // FROM THE DEVICE, per pixel: which surface is visible (`VisibilitySample::surface` and

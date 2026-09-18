@@ -86,8 +86,8 @@ struct Surface {
 };
 
 /// One caster, reduced to what a directional page raster needs: its extent across the light and how
-/// far along the light its FAR face is. Level-independent — a clip level changes only the origin and
-/// the scale — so this is computed once per cluster and reused by every level.
+/// far along the light its FAR face is. Level-independent — a clip level changes only the origin
+/// and the scale — so this is computed once per cluster and reused by every level.
 struct Caster {
     f32 x_min = 0.0F;
     f32 x_max = 0.0F;
@@ -123,8 +123,7 @@ struct ClusterEntry {
         const Vec3 point{(corner & 1U) != 0U ? local.max.x : local.min.x,
                          (corner & 2U) != 0U ? local.max.y : local.min.y,
                          (corner & 4U) != 0U ? local.max.z : local.min.z};
-        const Vec3 world =
-            ((instance.rotation * point) * instance.scale) + instance.translation;
+        const Vec3 world = ((instance.rotation * point) * instance.scale) + instance.translation;
         out.min = Vec3{math::min(out.min.x, world.x), math::min(out.min.y, world.y),
                        math::min(out.min.z, world.z)};
         out.max = Vec3{math::max(out.max.x, world.x), math::max(out.max.y, world.y),
@@ -219,8 +218,8 @@ Status VirtualShadowMap::prepare(Vec3 sun_direction, Vec3 camera,
         if (Status added = levels_.push_back(resolved); !added) {
             return added;
         }
-        if (Status added = spaces_.push_back(
-                rendering::clipmap_address_space(config_, basis_, resolved, 0U));
+        if (Status added =
+                spaces_.push_back(rendering::clipmap_address_space(config_, basis_, resolved, 0U));
             !added) {
             return added;
         }
@@ -324,7 +323,8 @@ void VirtualShadowMap::rasterise_caster(const ShadowAddressSpace& space, const C
             }
             const u32 base_x = page_x * page_texels;
             const u32 base_y = page_y * page_texels;
-            for (u32 y = math::max(y0, base_y); y <= math::min(y1, base_y + page_texels - 1U); ++y) {
+            for (u32 y = math::max(y0, base_y); y <= math::min(y1, base_y + page_texels - 1U);
+                 ++y) {
                 for (u32 x = math::max(x0, base_x); x <= math::min(x1, base_x + page_texels - 1U);
                      ++x) {
                     f32* depth = texel(*slot, x - base_x, y - base_y);
@@ -360,7 +360,8 @@ Status VirtualShadowMap::render(const Scene& scene, ShadeReport& report) noexcep
         if (!entry.dirty) {
             continue;
         }
-        if (Expected<u32*, Error> added = slot_of_page_.insert(entry.page.pack(), entry.physical_slot);
+        if (Expected<u32*, Error> added =
+                slot_of_page_.insert(entry.page.pack(), entry.physical_slot);
             !added) {
             return Status{make_unexpected(added.error())};
         }
@@ -425,13 +426,11 @@ f32 VirtualShadowMap::sample(u64 requested, Vec3 position, Vec3 normal, f32 n_do
     if (caster_depth >= kNoCaster) {
         return 1.0F;
     }
-    const f32 tangent =
-        math::min(std::sqrt(math::max(1.0F - (n_dot_l * n_dot_l), 0.0F)) /
-                      math::max(n_dot_l, 0.01F),
-                  8.0F);
+    const f32 tangent = math::min(
+        std::sqrt(math::max(1.0F - (n_dot_l * n_dot_l), 0.0F)) / math::max(n_dot_l, 0.01F), 8.0F);
     const f32 receiver_depth = dot(offset, basis_.forward);
     return receiver_depth > (caster_depth + bias.constant + (bias.slope_scale * tangent)) ? 0.0F
-                                                                                         : 1.0F;
+                                                                                          : 1.0F;
 }
 
 }  // namespace
@@ -516,9 +515,9 @@ private:
         const Vec2 centre{static_cast<f32>(pixel % capture.width) + 0.5F,
                           static_cast<f32>(pixel / capture.width) + 0.5F};
         Expected<rendering::vg::SurfaceAttributes, Error> attributes =
-            rendering::vg::reconstruct_surface(entry->geometry, scene.instances[entry->record.instance],
-                                               entry->record, sample.triangle, capture.world_to_clip,
-                                               centre, capture.width, capture.height);
+            rendering::vg::reconstruct_surface(
+                entry->geometry, scene.instances[entry->record.instance], entry->record,
+                sample.triangle, capture.world_to_clip, centre, capture.width, capture.height);
         if (!attributes) {
             ++report.unreconstructed;
             continue;
@@ -644,8 +643,8 @@ Status shade_frame(const Scene& scene, const Capture& capture, const ShadeOption
         if (n_dot_l <= 0.0F) {
             ++report.facing_away;
         } else {
-            visibility = shadows.sample(requested[pixel], surface.position, surface.normal, n_dot_l,
-                                        report);
+            visibility =
+                shadows.sample(requested[pixel], surface.position, surface.normal, n_dot_l, report);
             (visibility > 0.0F ? report.lit_by_sun : report.shadowed) += 1U;
         }
 

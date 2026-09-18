@@ -20,11 +20,24 @@
 #                           volumetric cloud march, and `compose_sky_lighting` for the sun's
 #                           illuminance and the sky's irradiance.
 #
+#   cy::vfx                 the air. `embers.cpp` authors an ember system on the shipping node
+#                           library and cooks it with the shipping compiler; `SimulationWorld` plays
+#                           three instances of it and `publish_sprites` hands the settled field to
+#                           the renderer. M11.c's `vfx-in-the-shot` is the criterion, and the reason
+#                           this is here now and was not before is that an art-directed shot with no
+#                           particles in it does not exercise `vfx-system`.
+#   cy::rendering-particles the compositing half: one draw for the whole field, inside the frame's
+#                           own TRANSPARENT stage, through `PassExtension` — so the motes are
+#                           depth-tested against the colonnade and graded by the same resolve.
+#
 # WHAT IS DELIBERATELY NOT HERE. `cy::rendering-gi` — no global illumination pass runs and the
-# manifest says so. `cy::vfx` — `vfx-system` is Working, not Complete, and a shot with sprites in it
-# would have made none of its four recorded absences false. `cy::rendering-virtual-geometry` — the
-# geometry is six primitives and a cluster hierarchy over them would be a claim about a mechanism
-# this picture does not exercise.
+# manifest says so. `cy::rendering-virtual-geometry` — the geometry is six primitives and a cluster
+# hierarchy over them would be a claim about a mechanism this picture does not exercise.
+#
+# `embers.cpp` IS COMPILED BY THIS TARGET AND BY `src/vfx/tests/`, which is the same arrangement as
+# this target compiling `tests/render/golden.cpp`, in reverse. A suite that re-declared the
+# artefact's effect would assert its own copy of it, and the picture it compared would be a picture
+# of something nobody ships.
 #
 # ================================================================================================
 # THE COMPILED MATERIALS ARE NOT LINKED IN AND THAT IS THE POINT
@@ -56,6 +69,7 @@ cy_add_module(
     LAYER tools
     TYPE EXECUTABLE
     SOURCES
+        embers.cpp
         main.cpp
         shot.cpp
         stage.cpp
@@ -64,10 +78,12 @@ cy_add_module(
         cy::import
         cy::rendering-assembly
         cy::rendering-graph
+        cy::rendering-particles
         cy::rendering-pipeline
         cy::rendering-sky
         cy::rhi
-        cy::rhi-null)
+        cy::rhi-null
+        cy::vfx)
 
 target_include_directories(cy_sample_beauty
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"

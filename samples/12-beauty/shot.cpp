@@ -2,6 +2,8 @@
 
 #include "shot.h"
 
+#include "embers.h"
+
 #include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 #include <cy/import/primitive.h>
@@ -132,6 +134,41 @@ void read_instance(Shot& shot, std::string_view& rest) {
 
 }  // namespace
 
+/// Does the scene's camera and grade agree with `embers.h`'s copy of them?
+///
+/// A TOLERANCE OF ONE PART IN TEN THOUSAND rather than equality: both sides are decimal literals
+/// that pass through `strtod` and a narrowing to `f32`, and a comparison that failed on the last
+/// bit would refuse a file nobody had edited.
+[[nodiscard]] bool near_enough(f32 a, f32 b) noexcept {
+    const f32 delta = a > b ? a - b : b - a;
+    return delta <= 1.0e-4F;
+}
+
+[[nodiscard]] bool camera_matches_the_air(const Shot& shot, std::string& problem) {
+    const auto agree = [](Vec3 a, Vec3 b) noexcept {
+        return near_enough(a.x, b.x) && near_enough(a.y, b.y) && near_enough(a.z, b.z);
+    };
+    const char* which = nullptr;
+    if (!agree(shot.camera_position, kShotEye)) {
+        which = "camera position";
+    } else if (!agree(shot.camera_target, kShotTarget)) {
+        which = "camera target";
+    } else if (!near_enough(shot.field_of_view_degrees, kShotFovDegrees)) {
+        which = "camera fov";
+    } else if (!near_enough(shot.near_plane, kShotNearPlane)) {
+        which = "camera near";
+    } else if (!near_enough(shot.exposure_stops, kShotExposureStops)) {
+        which = "exposure-stops";
+    }
+    if (which == nullptr) {
+        return true;
+    }
+    problem = std::string("the scene's `") + which +
+              "` disagrees with samples/12-beauty/embers.h, which holds the same numbers so that "
+              "`render.vfx` can photograph the air from where this shot sees it. Move both.";
+    return false;
+}
+
 Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
     Allocator& memory = system_allocator(MemoryDomain::Assets);
     Array<u8> bytes(memory);
@@ -218,6 +255,18 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
                 "material `" + material.key + "` is missing its graph or one of its three textures";
             return make_unexpected(Error{ErrorCode::InvalidArgument, "incomplete material", 0});
         }
+    }
+
+    // THE ONE PLACE THE SCENE AND THE AIR COULD DISAGREE, and it refuses rather than drifts.
+    //
+    // `embers.h` holds the camera and the grade as constants, because a suite has to photograph the
+    // air from where the shot sees it without a working directory or a parser — and two copies of a
+    // number that CAN drift are a defect waiting for somebody to move the camera. So this is the
+    // check that makes them one number: move the camera in the scene file and the capture refuses,
+    // naming the header to move it in as well.
+    if (!camera_matches_the_air(shot, problem)) {
+        return make_unexpected(Error{ErrorCode::InvalidArgument, "camera disagrees with embers.h",
+                                     0});
     }
     return shot;
 }

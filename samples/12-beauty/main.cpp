@@ -294,6 +294,14 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "cy_sample_beauty: %s\n", drawn.error().message);
                 return 1;
             }
+            // THE AIR MOVES BETWEEN FRAMES AND NOT WITHIN THE STILL. `render_from` draws the field
+            // as it stands; stepping it here is what makes the turntable a film of drifting embers
+            // rather than a film of a camera orbiting a frozen one, and it leaves the still above —
+            // which never reaches this loop — exactly reproducible.
+            if (Status stepped = stage.advance_air(); !stepped) {
+                std::fprintf(stderr, "cy_sample_beauty: %s\n", stepped.error().message);
+                return 1;
+            }
         }
         std::printf("frames        %u written to %s\n", count, frames.c_str());
     }
