@@ -355,6 +355,26 @@ CY_TEST_CASE("mesh: a texture seam is not collapsed across") {
     }
     CY_CHECK(near_chart);
     CY_CHECK(far_chart);
+
+    // AND NO TRIANGLE CROSSES THE SEAM, which is the half the two checks above cannot see. FOUND BY
+    // MUTATION: deleting the lock itself — `locked[group] = group_members[group].size() > 1` in
+    // `simplify()`, the one line `preserve_seams` buys — left this case GREEN. A collapse that
+    // merges the seam column into a neighbouring column moves nothing to a midpoint, because the
+    // quadric picks an ENDPOINT of the edge: every surviving position is still x <= 2, x == 3 or
+    // x >= 4, and both charts still have a representative somewhere. What it DOES produce is a
+    // triangle with one vertex on each side of the seam — the far chart's geometry hanging off a
+    // near-chart vertex, which is the texture sliding the requirement is about. There is none.
+    for (usize triangle = 0; triangle < preserved.triangle_count(); ++triangle) {
+        bool near_side = false;
+        bool far_side = false;
+        for (usize corner = 0; corner < 3; ++corner) {
+            const f32 x = preserved.positions[preserved.indices[(triangle * 3) + corner]].x;
+            near_side = near_side || x < 3.0f - 1e-4f;
+            far_side = far_side || x > 3.0f + 1e-4f;
+        }
+        const bool crosses_the_seam = near_side && far_side;
+        CY_CHECK_FALSE(crosses_the_seam);
+    }
 }
 
 CY_TEST_CASE("mesh: a convex hull comes out of the source positions") {

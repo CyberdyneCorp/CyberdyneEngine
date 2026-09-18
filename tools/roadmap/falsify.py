@@ -1630,11 +1630,13 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
         # expected to fail, so what it owes is a mutation that makes it GREEN. Only a criterion that
         # is red WITHOUT having declared itself so falls through to the tree control.
         if criterion.is_declared_gap:
+            attempted = ""
             if mutation is not None:
                 proof = _prove_a_declared_gap(sandbox, criterion, mutation, output, finished)
                 if proof.verdict == PROVEN:
                     return proof
-            return _gap_no_mutation_can_close(criterion, mutation, code, output, finished, build_dir)
+                attempted = proof.detail
+            return _gap_no_mutation_can_close(mutation, attempted, output, finished)
         return _red_in_the_tree(criterion, code, output, finished, build_dir)
 
     if mutation is None:
@@ -1811,53 +1813,56 @@ def _prove_a_declared_gap(sandbox: Sandbox, criterion: criteria_module.Criterion
                     f"{changed} file(s) — the gap is a deadline rather than a permanent red")
 
 
-def _gap_no_mutation_can_close(criterion: criteria_module.Criterion, mutation: Mutation | None,
-                               code: int, output: str, finished, build_dir: str = "") -> Proof:
+def _gap_no_mutation_can_close(mutation: Mutation | None, attempted: str, output: str,
+                               finished) -> Proof:
     """A declared gap whose closing act is an ADDITION, which no mutation verb performs.
 
     EVERY VERB THIS MODULE HAS TAKES SOMETHING AWAY: `delete-path`, `delete-lines`, `rename-token`,
     `truncate`, `lower-tiers`. That is right for the question the tool was built to ask — break what
-    a green criterion names and require it to go red — and it is the wrong shape for the question a
-    declared gap asks, which is the mirror of it: make the red one GREEN. Eleven of this ladder's
-    gaps are red because something is ABSENT — a forbidden-pattern checker nobody has written, a
-    benchmark nobody has committed, a game project that does not exist, a screenshot nobody has
-    captured, requirements nobody has mapped, a tier nobody has raised — and no subtraction performs
-    an addition. So the author cannot write a `[criterion.falsifies]` that would work, and an author
+    a green criterion names and require it to go red — and it is the mirror of the question a
+    declared gap asks, which is: make the red one GREEN. Eleven of this ladder's gaps are red
+    because something is ABSENT — a forbidden-pattern checker nobody has written, a benchmark nobody
+    has committed, a game project that does not exist, a screenshot nobody has captured,
+    requirements nobody has mapped, a tier nobody has raised — and no subtraction performs an
+    addition. So the author cannot write a `[criterion.falsifies]` that would work, and an author
     who writes one anyway has written a mutation that makes a check stop looking rather than one
-    that closes the gap.
+    that closes the gap. THE TOOLING BEING UNABLE TO JUDGE A GAP IS A FINDING ABOUT THE TOOLING, and
+    this is where it is said, per gap, in the prover's own words.
 
-    WHAT IS STILL OBSERVED, AND IT IS THE WHOLE RECORDED CLAIM. This criterion is RED, unmutated, in
-    the sandbox and — the tree control below — in the repository: watched going red, which is the
-    `red in the tree` verdict and is a proof shape in its own right. Declaring the gap did not change
-    what the criterion checks (`digest` does not read `known_gap`), so the standing record is neither
-    stale nor re-earned falsely; what the prover has stopped being able to answer is the SECOND,
-    different question the gap raises — whether it is a deadline rather than a permanent red.
+    THE VERDICT IS UNCHANGED AND THE FLAG IS WHAT IS NEW. `no mutation` and `not provable here` are
+    what this module already returned here, and both still say what they said; what they did not say
+    is that a run which could not ASK a question has not thereby contradicted the answer to a
+    different one. Declaring a gap does not change what a criterion checks — `digest` does not read
+    `known_gap` — so a standing `red in the tree` record is neither stale nor re-earned falsely by
+    this run, and marking the verdict UNJUDGED carries it exactly as a source-only run carries a
+    build-backed proof.
 
-    So the verdict is UNJUDGED, exactly as a build-backed proof is unjudged by a source-only run: a
-    run that could not ask a question has not contradicted the answer to a different one. It is not a
-    silent carry — `command_check` prints these under their own heading — and it is not a way in: a
-    gap with NO standing proof is still refused by `_record`, because `unjudged` is only carried for
-    a key already in the inventory at the same digest.
+    IT IS NOT A WAY IN. `_record` carries an unjudged verdict only for a key already in the
+    inventory at the same digest, so a NEW declared gap with no workable mutation is refused as it
+    always was. The other direction is not this function's to hold and does not need to be: a
+    declared gap that starts PASSING never reaches here — `prove` only calls it on a criterion that
+    failed unmutated — and the ledger fails it by name with "THE GAP IS CLOSED, DELETE THE
+    DECLARATION".
     """
-    tree_code, tree_output = run_in_the_repository(criterion, build_dir, TREE_CONTROL_TIMEOUT_S)
-    named = mutation.describe() if mutation else "-"
-    if tree_code == 0:
-        return finished(REFUTED, named,
-                        "it is a declared gap, it is red in the sandbox and GREEN in the repository: "
-                        "the copy is what made it red. THE GAP MAY BE CLOSED — check it against the "
-                        f"ledger: {_first_line(output)}")
-    if tree_code < 0 or tree_code == 124:
-        return finished(UNPROVABLE, named, f"red in the sandbox, and the tree control could not "
-                                           f"judge it: {_first_line(tree_output)}", unjudged=True)
     if mutation is not None:
-        detail = (f"the mutation it declares does not make it green ({named}), and no mutation verb "
-                  "can: every verb here subtracts and this gap closes by an addition")
-    else:
-        detail = ("no mutation makes it green, and none can be written: every verb here subtracts "
-                  "and this gap closes by an addition — the thing it names is ABSENT")
-    return finished(UNPROVABLE, named,
-                    f"{GAP_IS_ADDITIVE} {detail}. Red unmutated, in the sandbox and in the "
-                    f"repository (exit {tree_code}): {_why_it_is_red(tree_output)}", unjudged=True)
+        # WHAT THE ATTEMPT SAID IS CARRIED VERBATIM and not summarised away. "the mutation changed
+        # nothing — it names a file or a token that is not there" is the commonest sentence here and
+        # it is the additive shape spelled out: the closing act would CREATE that file. A reader who
+        # thinks the declaration is simply wrong can see the same sentence a finding would have
+        # shown them; what changed is that it no longer contradicts a record it does not contradict.
+        return finished(UNPROVABLE, mutation.describe(),
+                        f"{GAP_IS_ADDITIVE} no verb here could do better — this gap closes by an "
+                        f"addition and every verb subtracts. The attempt said: {attempted}. Its "
+                        "recorded redness stands; what is unjudged is whether the gap is a deadline "
+                        f"rather than a permanent red. Red unmutated: {_last_line(output)}",
+                        unjudged=True)
+    return finished(NO_MUTATION, "-",
+                    f"{GAP_IS_ADDITIVE} a declared gap owes a mutation that makes it GREEN, none can "
+                    "be derived from its text, and none can be declared either: the thing it names "
+                    "is ABSENT and every verb here subtracts. Its recorded redness stands; what is "
+                    "unjudged is whether the gap is a deadline rather than a permanent red. Red "
+                    f"unmutated: {_last_line(output)}",
+                    unjudged=True)
 
 
 def _ledger_blind(sandbox: Sandbox, criterion: criteria_module.Criterion) -> str:

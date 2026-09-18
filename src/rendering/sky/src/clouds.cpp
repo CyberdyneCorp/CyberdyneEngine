@@ -490,8 +490,7 @@ CloudDensitySample cloud_density(const CloudField& field, Vec3 world_position, f
         // STATE, and reported before anything that depends on the octave count touches it: the
         // coverage and the type a gameplay system would read are the map's, at every tier.
         if (map.coverage > result.coverage) {
-            // MUTATION: the state a gameplay system reads now depends on the tier's octave count.
-            result.coverage = map.coverage * (0.5F + (0.1F * static_cast<f32>(octaves)));
+            result.coverage = map.coverage;
             result.type = map.type;
             result.version = map.version;
         }

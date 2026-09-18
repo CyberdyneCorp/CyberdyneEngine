@@ -125,6 +125,25 @@ CY_TEST_CASE("an evicted page's generation makes a stale reference miss") {
     CY_CHECK_FALSE(cache.redeem(reference).has_value());
     CY_CHECK_GT(cache.statistics().stale_references, 0U);
     CY_CHECK_GT(cache.statistics().evictions, 0U);
+
+    // AND NOW THE SLOT IS REUSED, WHICH IS WHERE THE GENERATION EARNS ITS PLACE. Up to this line
+    // the entry is simply NOT RESIDENT, and `redeem` refuses a reference to an absent page whether
+    // a generation exists or not — freezing the counter changes none of the answers above. The
+    // requirement's scenario is "a page is evicted AND ITS SLOT REUSED", so the page is brought
+    // back and the OLD generation is presented against the NEW entry, at the new location: the
+    // counter is then the only thing that can tell the two apart.
+    const vg::PageRequest again[1] = {{0, 1, 1000.0F, 1}};
+    for (u32 frame = 0; frame < 4; ++frame) {
+        CY_REQUIRE(cache.service(Span<const vg::PageRequest>(again, 1), 6.0 + frame).has_value());
+    }
+    CY_REQUIRE(cache.resident(0, 1));
+    const vg::PageTableEntry refreshed = cache.lookup(0, 1);
+    CY_CHECK_NE(refreshed.generation, entry.generation);
+    const vg::PageReference stale{0, 1, refreshed.location, entry.generation};
+    CY_CHECK_FALSE(cache.redeem(stale).has_value());
+    // And a reference taken NOW redeems, so the refusal above is the generation and not the page.
+    const vg::PageReference current{0, 1, refreshed.location, refreshed.generation};
+    CY_CHECK(cache.redeem(current).has_value());
     CY_TEST_MESSAGE("budget " << cache.statistics().budget_bytes << " bytes, resident "
                               << cache.statistics().resident_bytes << " over "
                               << cache.statistics().resident_pages << " pages; "

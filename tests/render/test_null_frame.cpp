@@ -28,6 +28,7 @@
 
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
+#include <cy/core/memory/array.h>
 #include <cy/core/memory/system_allocator.h>
 
 #include "renderer.h"
@@ -179,11 +180,40 @@ CY_TEST_CASE("render.null_frame: the same frame twice records the same stream") 
     cy::Expected<FrameReport, cy::Error> second = renderer.render(scene, scene.camera_at(0.25F));
     CY_REQUIRE(second.has_value());
     const cy::u64 second_stream = cy::rhi::null::command_log_hash(fixture.device());
+    // THE HASH IS NOT THE WHOLE STREAM, AND A MUTATION PROVED IT. `NullDevice::hash_commands()`
+    // folds a command's kind, its four operands and its label and NOT its `handle_bits`, so two
+    // frames that record the same calls against DIFFERENT RESOURCES hash the same — which is what a
+    // transient the device never released would produce. The log is therefore copied out and
+    // compared command by command below, `handle_bits` included, and the hash is kept beside it
+    // because a hash mismatch is the cheaper diagnostic when this fails.
+    cy::Array<cy::rhi::null::RecordedCommand> second_log(fixture.allocator());
+    for (const cy::rhi::null::RecordedCommand& command : cy::rhi::null::command_log(
+             fixture.device())) {
+        CY_REQUIRE(second_log.push_back(command).has_value());
+    }
 
     cy::rhi::null::clear_command_log(fixture.device());
     cy::Expected<FrameReport, cy::Error> third = renderer.render(scene, scene.camera_at(0.25F));
     CY_REQUIRE(third.has_value());
     const cy::u64 third_stream = cy::rhi::null::command_log_hash(fixture.device());
+    const cy::Span<const cy::rhi::null::RecordedCommand> third_log =
+        cy::rhi::null::command_log(fixture.device());
+
+    CY_REQUIRE_EQ(third_log.size(), second_log.size());
+    CY_REQUIRE(third_log.size() > 0U);
+    for (cy::usize index = 0; index < third_log.size(); ++index) {
+        const cy::rhi::null::RecordedCommand& before = second_log[index];
+        const cy::rhi::null::RecordedCommand& after = third_log[index];
+        CY_CHECK(before.kind == after.kind);
+        CY_CHECK_EQ(before.a, after.a);
+        CY_CHECK_EQ(before.b, after.b);
+        CY_CHECK_EQ(before.c, after.c);
+        CY_CHECK_EQ(before.d, after.d);
+        // The resource each command names. A frame that leaked its transients records the same
+        // calls against new handles every time, which is a reproducible frame by the hash and not
+        // by the stream.
+        CY_CHECK_EQ(before.handle_bits, after.handle_bits);
+    }
 
     // Task 7.6: frame submission order is identical across runs. design.md §6 requires it because
     // M9's replay and every golden image after this milestone depend on it, and it costs nothing to

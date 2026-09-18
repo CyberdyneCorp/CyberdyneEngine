@@ -119,7 +119,7 @@ Status EventRouter::raise(Name channel_name, const EventRecord& event) noexcept 
     }
 
     const u32 arrival = channel->next_arrival++;
-    if (true) {  // MUTATION: the declared maximum events per frame no longer bounds the channel
+    if (channel->live.size() < channel->decl.max_events_per_frame) {
         if (Status pushed = channel->live.push_back(event); !pushed) {
             return pushed;
         }

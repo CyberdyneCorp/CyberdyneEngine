@@ -1769,6 +1769,35 @@ def test_falsifiability_of_a_declared_gap(root: Path) -> None:
     none = falsify_module.prove(sandbox, "m0", gap("no-mutation", run="[ ! -s docs/gap-fixture.txt ]"))
     check("and a declared gap with no mutation at all is on the list, not in the proofs",
           none.verdict == falsify_module.NO_MUTATION, f"{none.verdict}: {none.detail}")
+
+    # AND NEITHER OF THOSE TWO CONTRADICTS A STANDING RECORD, which is the third direction and the
+    # one M11.c's ladder repair added. Eleven of this ladder's declared gaps are red because the
+    # thing they name does not EXIST — a checker nobody wrote, a game nobody built, a screenshot
+    # nobody captured — and every mutation verb this module has subtracts, so no mutation can make
+    # one green and none can be written that would. Declaring a gap does not change what the
+    # criterion checks (`digest` does not read `known_gap`), so a run that cannot ask "is this a
+    # deadline?" has not contradicted the answer to "has it been watched going red?". Both verdicts
+    # are therefore UNJUDGED and say why in the prover's own words; `reconcile` carries the standing
+    # proof instead of reporting it as one that stopped proving.
+    for label, observed in (("one whose mutation leaves it red", stays),
+                            ("one with no mutation at all", none)):
+        check(f"a declared gap that closes by an ADDITION is unjudged, not refuted — {label}",
+              observed.unjudged and falsify_module.GAP_IS_ADDITIVE in observed.detail,
+              f"unjudged={observed.unjudged}: {observed.detail}")
+
+    standing = falsify_module.Proof("m0", "stays-red", stays.digest, falsify_module.RED_IN_THE_TREE,
+                                    "-", "red unmutated, in the sandbox and in the repository")
+    inventory = falsify_module.Inventory(proofs={("m0", "stays-red"): standing}, unproven={})
+    check("and its recorded redness is CARRIED rather than reported as a proof that stopped proving",
+          falsify_module.reconcile([stays], inventory) == [],
+          falsify_module.reconcile([stays], inventory))
+
+    # THE RATCHET IS NOT LOOSENED BY THAT. A gap with no standing record is still refused, because
+    # `_record` carries an unjudged verdict only for a key the inventory already holds at the same
+    # digest — which is what stops "declare it a gap" from being the way onto the ladder.
+    refused = falsify_module._record([none], ("m0",))
+    check("but a declared gap nothing has judged is still REFUSED a place on the ladder",
+          len(refused) == 1 and "has not been shown able to fail" in refused[0], refused)
     target.unlink(missing_ok=True)
 
 

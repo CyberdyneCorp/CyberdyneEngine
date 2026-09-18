@@ -30,7 +30,7 @@ DerivedBias derive_shadow_bias(const BiasInputs& inputs) noexcept {
     // rasterisation deliberately selects coarser geometry than the camera view, so the caster's
     // surface can sit up to its declared error away from the one being shaded; a bias that ignored
     // that produces acne that appears only at distance and gets blamed on the cascade split.
-    bias.normal_offset = (texel * 0.5F) + error;
+    bias.normal_offset = texel * 0.5F;  // MUTATION: the caster's geometric error is dropped
     return bias;
 }
 

@@ -241,14 +241,12 @@ CY_TEST_CASE("the two tiers agree within tolerance over the whole room") {
     CY_CHECK_GT(cy::length(hardware_hit.radiance), 0.0F);
     CY_CHECK_GT(cy::length(software_hit.radiance), 0.0F);
     CY_CHECK_GT(hardware_hit.confidence, 0.0F);
-    std::printf("    hardware hit radiance      %.5f %.5f %.5f\n"
-                "    software hit radiance      %.5f %.5f %.5f\n\n",
-                static_cast<double>(hardware_hit.radiance.x),
-                static_cast<double>(hardware_hit.radiance.y),
-                static_cast<double>(hardware_hit.radiance.z),
-                static_cast<double>(software_hit.radiance.x),
-                static_cast<double>(software_hit.radiance.y),
-                static_cast<double>(software_hit.radiance.z));
+    std::printf(
+        "    hardware hit radiance      %.5f %.5f %.5f\n"
+        "    software hit radiance      %.5f %.5f %.5f\n\n",
+        static_cast<double>(hardware_hit.radiance.x), static_cast<double>(hardware_hit.radiance.y),
+        static_cast<double>(hardware_hit.radiance.z), static_cast<double>(software_hit.radiance.x),
+        static_cast<double>(software_hit.radiance.y), static_cast<double>(software_hit.radiance.z));
 }
 
 CY_TEST_CASE("turning ray tracing off mid-run is not a visual discontinuity") {
