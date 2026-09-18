@@ -778,7 +778,7 @@ struct StageLowering {
             // The memo is cleared because the two stages are two graphs and a `NodeKey` is unique
             // only within one; `pending` is NOT, which is the whole of the fusion.
             memo.clear();
-            state.substitute_pending = true;
+            state.substitute_pending = false;  // MUTATION: the value round-trips through memory
             if (Status lowered = lower_stage(state, *fused_graph, fused, fused_result); !lowered) {
                 return make_unexpected(lowered.error());
             }

@@ -98,7 +98,8 @@ CY_TEST_CASE("the layer test rejects before any geometry is touched") {
     SpatialEntry inside = make_entry({0, 0, -5}, 1);
     inside.layer_mask = 1U << 3U;
     CY_REQUIRE(index.insert(inside).has_value());
-    SpatialEntry behind = make_entry({0, 0, 5}, 2);  // behind the camera, so the frustum would take it
+    SpatialEntry behind =
+        make_entry({0, 0, 5}, 2);  // behind the camera, so the frustum would take it
     behind.layer_mask = 1U << 3U;
     CY_REQUIRE(index.insert(behind).has_value());
 

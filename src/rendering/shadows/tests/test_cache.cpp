@@ -215,6 +215,57 @@ CY_TEST_CASE(
     CY_CHECK_EQ(still.pages_dirtied, 0U);
     CY_CHECK_EQ(still.casters_unchanged, 1U);
 
+    // AND THE DECLARED ENVELOPE IS LOAD-BEARING, WHICH THE CASE ABOVE DOES NOT DECIDE.
+    //
+    // A swaying tree's TRANSFORM does not move, so `previous == current` above and
+    // `invalidate_caster_motion` returns on `same_box` before the envelope is ever consulted: the
+    // assertions above pass whether or not `Bounded` expands the bounds at all. That mutation was
+    // made — `margin` forced to zero — and this case stayed green, which is why the half below
+    // exists. What the declared envelope buys is stated by the requirement's own table: "bounds
+    // expanded to cover the deformation envelope", so the pages dirtied have to cover where the
+    // deformed geometry can reach. The same motion declared `Bounded` must therefore dirty
+    // strictly more pages than the same motion declared `Static`, and the margin is the only
+    // difference between the two runs.
+    const auto dirtied_by = [&space, &tree](ShadowDeformationMode mode) -> cy::u32 {
+        ShadowPageCache moved_cache(allocator());
+        CY_REQUIRE(moved_cache.initialize(ShadowCacheConfig{}).has_value());
+
+        CasterMotion moving = tree;
+        moving.mode = mode;
+        moving.current =
+            cy::Aabb::from_center_extents(cy::Vec3{2.5F, 0.0F, -20.0F}, cy::Vec3{1.0F, 3.0F, 1.0F});
+
+        // Every page either box can reach has to be RESIDENT before the report can count it: a
+        // page the cache does not hold has no contents to invalidate, which is the same reason the
+        // half above renders its pages first.
+        VirtualPage resident[256];
+        const cy::Vec3 reach{2.0F, 2.0F, 2.0F};
+        const cy::u32 held = pages_covering(
+            space, cy::Aabb{moving.previous.min - reach, moving.current.max + reach}, resident, 256);
+        CY_REQUIRE(held > 0U);
+        CY_REQUIRE(held <= 256U);
+        moved_cache.begin_frame(1);
+        for (cy::u32 index = 0; index < held; ++index) {
+            CY_REQUIRE(moved_cache.request(resident[index], UpdateClass::Normal).needs_render);
+            moved_cache.record_render(resident[index], 0.01F);
+        }
+
+        moved_cache.begin_frame(2);
+        VirtualPage into[256];
+        const cy::rendering::InvalidationReport moved_report = invalidate_caster_motion(
+            moved_cache, space, moving, InvalidationScratch{into, 256});
+        CY_TEST_MESSAGE("  mode ", cy::rendering::shadow_deformation_mode_name(mode), ": held ",
+                        held, ", dirtied ", moved_report.pages_dirtied, ", overflow ",
+                        moved_report.overflow);
+        return moved_report.pages_dirtied;
+    };
+    const cy::u32 bounded_pages = dirtied_by(ShadowDeformationMode::Bounded);
+    const cy::u32 static_pages = dirtied_by(ShadowDeformationMode::Static);
+    CY_TEST_MESSAGE("a 2.5 m move dirties ", bounded_pages, " pages declared Bounded against ",
+                    static_pages, " declared Static");
+    CY_CHECK_GT(static_pages, 0U);
+    CY_CHECK_GT(bounded_pages, static_pages);
+
     // `AlwaysDirty` is reported per caster, because it is the mode that silently removes the
     // benefit of caching.
     CasterMotion flag = tree;
