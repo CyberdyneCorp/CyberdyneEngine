@@ -134,6 +134,38 @@ function(cy_render_declare_tests)
     # For "device.h" and "shaders/material_probe_spirv.h", as the suites above.
     target_include_directories(cy_test_render_material_binding PRIVATE "${cy_render_tests_dir}")
 
+    # THE SHADED VIRTUAL-GEOMETRY FRAME, AS AN IMAGE. M11.c task 4.3, `m11c:virtual-geometry-image`.
+    # `render.virtual_geometry_gpu` compares the device against the CPU reference buffer for buffer,
+    # which is the right claim about the traversal and is not a picture. The only picture the two
+    # rows had was `docs/design/images/virtual-geometry-shaded.png`, written by
+    # `just capture-virtual-geometry` — a recipe a person runs, re-photographed by nothing and
+    # compared by nothing.
+    #
+    # IT PHOTOGRAPHS THE SAMPLE RATHER THAN A COPY OF IT: `cy::sample-fidelity-frame` is the library
+    # half of samples/07-fidelity, so a change that breaks the M7 artefact turns this gate red
+    # instead of being noticed the next time somebody runs the recipe. That is the same split
+    # `render.golden` makes over `cy::sample-first-light`, and the reason the sample was split in
+    # two at all — see samples/07-fidelity/CMakeLists.txt.
+    #
+    # It compiles golden.cpp for the same PNG encoder, the same derived tolerance and the same
+    # difference artefact the other golden suites use. KIND render because it needs a device, and it
+    # skips loudly without one like every suite here.
+    cy_add_test(
+        NAME virtual_geometry_shaded
+        KIND render
+        SOURCES
+            "${cy_render_tests_dir}/golden.cpp"
+            "${cy_render_tests_dir}/test_virtual_geometry_shaded.cpp"
+        DEPENDENCIES cy::sample-fidelity-frame cy::rendering-shadows cy::rhi cy::rhi-null
+                     cy::rhi-vulkan
+        # The reference lives beside its test, as `render.golden`'s do, and CTest runs a suite from
+        # its BINARY directory.
+        DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
+    # For "device.h" and "golden.h"; "frame.h", "scene.h" and "shade.h" arrive on
+    # cy::sample-fidelity-frame's public include directory.
+    target_include_directories(cy_test_render_virtual_geometry_shaded
+                               PRIVATE "${cy_render_tests_dir}")
+
     # THE SKY, AS AN IMAGE. M11.c task 5.2, `m11c:sky-as-an-image`. The row has been measured by
     # five criteria over four suites and every one of them reads a NUMBER; the requirement is about
     # what the sky LOOKS like, which a table cannot carry. Four times of day, each compared against
@@ -156,6 +188,34 @@ function(cy_render_declare_tests)
         DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
     # For "device.h", "golden.h" and "shaders/sky_frame_spirv.h", as the suites above.
     target_include_directories(cy_test_render_sky_times_of_day PRIVATE "${cy_render_tests_dir}")
+
+    # THE SHADED VIRTUAL-GEOMETRY FRAME. M11.c task 4, `m11c:virtual-geometry-image`. The row's
+    # published picture was a normals debug view written by `just capture-virtual-geometry` — a
+    # recipe a person runs, compared by nothing — so the picture was asserted by nobody. This suite
+    # photographs `samples/07-fidelity`'s OWN frame through `cy::sample-fidelity-frame`, shades it
+    # through `shade.cpp` (the same function the capture recipe calls, so the compared picture and
+    # the published one cannot drift), and compares it against a committed reference.
+    #
+    # It compiles golden.cpp for the same reason `render.sky_times_of_day` does: one PNG encoder,
+    # one comparison and one derived tolerance in this directory, not three.
+    #
+    # The second case starves the shadow page cache to one slot and asserts the frame CHANGES, which
+    # is what stops a reference that had quietly stopped sampling the shadow map from passing
+    # forever — `render.golden`'s third case makes the same argument about the first-light shadow.
+    cy_add_test(
+        NAME virtual_geometry_shaded
+        KIND render
+        SOURCES
+            "${cy_render_tests_dir}/golden.cpp"
+            "${cy_render_tests_dir}/test_virtual_geometry_shaded.cpp"
+        DEPENDENCIES cy::sample-fidelity-frame cy::rendering-shadows cy::rendering-virtual-geometry
+                     cy::rhi cy::rhi-null cy::rhi-vulkan
+        # The reference lives beside its test, as `render.golden`'s does, and CTest runs a suite
+        # from its BINARY directory.
+        DEFINITIONS CY_RENDER_TEST_DIR="${cy_render_tests_dir}")
+    # For "device.h" and "golden.h"; "frame.h", "scene.h" and "shade.h" arrive on the sample
+    # library's own public include directory.
+    target_include_directories(cy_test_render_virtual_geometry_shaded PRIVATE "${cy_render_tests_dir}")
 
     cy_add_test(
         NAME environment_field
