@@ -1009,6 +1009,24 @@ work was done.
         clean before each leg — with the build trees still under `build/m11c-profiles` as the phase
         was told. **It had not returned when this record was written**, and it is the one task of
         this phase that cannot be shortened
+      - [x] **THE FROM-EMPTY RUN OF ALL FOUR PROFILES RETURNED, AND ITS ONE RED LEG IS A CLOCK
+        RATHER THAN A DEFECT.** `/tmp/m11c/four-profiles.sh` — the detached worktree at `db8c76b`,
+        build trees under `build/m11c-profiles` — finished at 08:52:38 with
+        `FOUR-PROFILES: FAIL — dev:test-all`. Three of the four legs are green end to end
+        (`debug`, `profile`, `release`: build-engine, build-editor and `test-all` each rc=0), and the
+        dev leg's build and editor are green too; what failed is three unit cases inside dev's
+        `test-all` — `unit.reflect_roundtrip`, `unit.render_server`, `unit.scene_serialization` —
+        each on the harness's **stall** check rather than on an assertion: *"held the suite for
+        263.843 ms of wall clock while spending 0.181 ms of CPU"*. **This phase was running read-only
+        scans of the same machine in that window** (a `du` over a 209 GB build tree and a
+        `clang-format` pass over 2220 files), and the same three cases are green in the profile and
+        release legs that ran with the machine to themselves. It is recorded as contention, not
+        absolved: **the rule this rung has now broken twice is that a ledger or a from-empty build
+        gets the machine alone.**
+      - [x] **AND `m1:four-profiles` IS GREEN IN THE LEDGER RUN BELOW**, 1169.4 s over the four warm
+        trees under `build/m11c-final/<profile>` — build-engine, build-editor and `test-all` in each
+        of debug, dev, profile and release. That is the criterion the task names; the from-empty run
+        above is the stronger claim and it is where the three stalls were seen
 - [ ] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
       red. For this rung that includes the ones that are easiest to fake: unbind a texture and watch
       the material criterion go red; remove a post stage and watch the stage-list comparison go red;
@@ -1628,3 +1646,106 @@ were not verified, because each is a from-empty build of four whole configuratio
 `m1:four-profiles`, whose only observed failure was `smoke.editor_session` in the debug profile, and
 `m5:editor-profiles`, whose subject is the editor gate that is now green in dev. **A re-run that
 reports more than 33 has found something this gate did not**, and the remaining 33 are named above.
+
+### THE RE-RUN THIS RECORD DID NOT HAVE — IT HAS IT NOW, AND IT WAS RUN ALONE
+
+`just roadmap-milestone m11c`, `CY_BUILD_DIR=build/m11c-final`, at `fcaec4f`, **08:52:48 → 11:27:47,
+9299 s (2.58 h)**, log `/tmp/m11c-gate/ledger.log`. Nothing else ran against this tree while it read:
+the only other job on this machine — the from-empty four-profile build in the `cy-m11c-profiles`
+worktree — was **waited out by explicit PID before the ledger was started**, and no `just` recipe,
+prover or build of this phase's was executed between its first line and its last. `git status` was
+clean at the start and clean at the end, and the working tree carries no `.tmp.<pid>.<hash>` leftover.
+
+**`M11C is not closed: 11 of 435 evaluated criteria failed.`** Against the closing gate's run, each
+bucket and its predecessor:
+
+| bucket | this run | the gate's run |
+|---|---|---|
+| declared | **440** | 439 |
+| evaluated on this host | **435** | 434 |
+| pass | **396** | 385 |
+| FAIL (not a declared gap) | **11** | 39 |
+| declared gaps, still open (do not block) | **28** | 6 |
+| declared gaps that NOW PASS (these DO block) | **0** | 4 |
+| NOT EVALUATED, legitimately | **5** | 5 |
+
+The one new declaration is `m11c:every-shader-reaches-every-target` — 439 → 440.
+
+**THE ELEVEN FAILURES BY ID, AND WHICH ARE NEW.** Six are inherited from the gate's own list of 39;
+three are `m11c`'s own and were **already red, or newly honest**; two are one flaky test case.
+
+    inherited, unchanged            m1:workflows   m4:sanitizers   m5:sanitizers
+                                    m7:plan-consistency
+    inherited, this rung's own      m11c:vfx-in-the-shot   m11c:roadmap-tiers   m11c:m11d-open
+    NEW, and newly honest           m11c:virtual-geometry-image   m11c:sky-as-an-image
+    NEW, and it is one case twice   m0:test   m3:materials
+
+- **`m11c:virtual-geometry-image` and `m11c:sky-as-an-image` are new failures because 9.2 rewrote
+  them to be falsifiable.** Both passed the gate's run vacuously — `just test-render <anything>`
+  selected the same 17 render cases whatever was appended — and both now ask for their suite **by
+  name** and do not find it: *"render.virtual_geometry_shaded is not registered in build/m11c-final"*
+  and the same for `render.sky_times_of_day`. Nothing regressed; a check that could not fail was
+  replaced by one that can, and it does
+- **`m0:test` and `m3:materials` are the same case, and it is this rung's own.**
+  `unit.graph_material` — `graph_material: the canvas, the compiler's graph and the text are one
+  material`, `src/graph/material/tests/test_lower_material.cpp:300` — failed the per-case CPU budget
+  twice inside the ledger: *"spent 2.377 ms of CPU against a budget of 2.224 ms"*. Measured
+  afterwards on the idle machine it costs **0.717 ms** (`CY_TEST_BUDGET_SCALE=0.5`) to **0.776 ms**
+  (`0.75`), a third of its budget, and it passed **five runs standalone, the whole 84-case `unit`
+  label, and all four `test-all` runs inside `m1:four-profiles` in this same ledger**. The
+  instrument's own message names the mechanism — *"on a host whose governor idles at 800 MHz, M7's
+  gate measured the same case at five times its boosted-clock figure"* — so this is a case whose
+  boosted cost is comfortable and whose cold-clock cost is not. **It is reported rather than
+  repaired**: the honest fixes are the two the harness names (make it cheaper, or move it to
+  `integration`), and both are a decision about the taxonomy that the rung owning
+  `testing-and-quality` should take, not a green a closing measurement should manufacture for itself
+- `m7:plan-consistency` is the falsifiability ladder and it is now **17 disagreements, all of one
+  shape**: `m3:render-null`, `m3:xr-prerequisites`, `m3:conventions`, `m3:golden`,
+  `m7:virtual-geometry-gpu`, `m7:gpu-culling`, `m7:virtual-texturing-gpu`,
+  `m8b:render-assembly-device`, `m8c:pipeline-device`, `m8c:vfx-device`, `m10:sky-field-round-trip`,
+  `m11a:sky-field-consumed-outside-the-sky`, `m11c:ray-tracing-on-the-device`,
+  `m11c:material-texture-is-bound`, `m11c:hierarchical-depth-on-a-device`,
+  `m11c:shader-targets-for-the-next-rung` and `m11d:shader-targets-emitted` each say *"what this
+  criterion CHECKS has changed since it was last judged"*. The seventeen `<ledger>:format` entries
+  the ladder phase recorded are **gone** — see the formatting repair below — and `selftest` is
+  405/406. What they need is unchanged: one `just roadmap-falsify --record` against a GPU and a built
+  tree, in a worktree of its own, because this tree takes an auto-snapshot commit every few minutes
+  and a mutation must never meet one
+- `m4:sanitizers` (408 bytes in one allocation inside `libcuda.so.1`) and `m5:sanitizers` (1632 bytes
+  in four, `render.virtual_texturing_gpu`), `m1:workflows` (one job for two closed gates),
+  `m11c:vfx-in-the-shot` (*"the filter selected 0 case(s) of the 1 it names"* — there is still no
+  `particles are in the assembled frame` case), `m11c:roadmap-tiers` (fifteen rows the **closing**
+  change writes) and `m11c:m11d-open` (*"the next rung's change exists and nobody has entered it"*)
+  are each unchanged from the gate's reading of them
+
+**TWENTY-EIGHT OF THE THIRTY-NINE ARE DECLARED GAPS NOW, AND THAT IS BOOKKEEPING RATHER THAN
+REPAIR.** Eleven `m11a` and ten `m11b` criteria that the gate counted as failures carry a
+`known_gap` written by M11.c's gate-findings phase and closing at M11.e; with `m8c:steam-audio-configures`,
+`m9:record-matches-plan-history`, `m10:world-frame-budget`, `m11a:save-has-an-engine-consumer`,
+`m11a:developer-workflow-at-working`, `m11b:the-game-is-honest-about-its-content` and this rung's
+`m11c:every-shader-reaches-every-target` they are the 28. **None of them is fixed**; what changed is
+that each now names its rung and its reason instead of counting anonymously. **Zero declared gaps
+pass**, which is the direction that would block: the four the gate deleted stayed deleted.
+
+**EIGHT CRITERIA THE GATE MEASURED RED ARE GREEN, AND EACH WAS WATCHED GOING GREEN BY ITS OWN
+COMMAND**: `m0:test`'s `smoke.editor_session` (the glTF importer no longer manufactures a skeleton),
+`m5:editor`, `m5:artefact`, `m5:editor-profiles`, `m4:generated-code`, `m8b:feature-options-off`,
+`m8c:feature-options-off` and `m1:four-profiles` — the gate predicted six of these and two more
+"MAY go with them"; all eight did. So did the three this rung's later phases earned:
+`m11c:material-compiler-at-complete-grade`, `m11c:image-rows-at-complete-grade` and
+`m11c:shader-targets-for-the-next-rung`.
+
+**ONE REPAIR WAS MADE BY THIS PHASE, BEFORE THE RUN AND NOT DURING IT.** `just quality-format-check`
+was red on three files this rung's mutation-repair phases rewrote —
+`src/rendering/shadows/tests/test_cache.cpp`, `src/rendering/sky/tests/test_sky_tables.cpp`,
+`src/vfx/tests/test_vfx_compiler.cpp`. `clang-format -i` on exactly those three; the diff is 14 lines
+of reflow and nothing else; `m0:format` is green in the run above at 8.5 s, and the seventeen
+`<ledger>:format` disagreements the ladder phase recorded went with it. It was taken before the
+ledger started so that the measurement would describe one tree rather than two.
+
+**SO M11.c STILL DOES NOT CLOSE, AND NOW THE MARGIN IS READABLE.** `gates.toml`, `ci.yml`,
+`status.yaml`, `capability-matrix.md` and `ROADMAP.md` are untouched by this phase. Of the eleven,
+**three are this rung's picture** — the shaded virtual-geometry capture, the sky at four times of
+day, and particles in the shot — **one is the record the closing change writes**, one is the next
+rung being entered, one is the ladder's `--record` run, two are a leak-suppression decision, one is a
+continuous-integration decision, and two are one test case's cold-clock margin.
