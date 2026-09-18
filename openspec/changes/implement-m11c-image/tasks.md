@@ -989,6 +989,26 @@ work was done.
         run is contaminated for anything build-backed, and the anomaly is not attributed to the tree
       - [ ] **The clean build of every profile from empty is `m1:four-profiles` and it is inside the
         closing ledger run rather than beside it.** It had not returned when this record was written
+      - [ ] **THE FROM-EMPTY RUN OF ALL FOUR PROFILES IS RUNNING, AND ITS FIRST ATTEMPT WAS
+        CONTAMINATED BY A SECOND AGENT IN THE SAME WORKING TREE.** Started in
+        `/home/leonardo/work/CyberdyneEngine` against an empty `build/m11c-profiles`, the debug leg
+        failed after 744 s on `-Werror=unused-but-set-variable` at
+        `src/rendering/sky/src/composition.cpp:497` — a file whose md5 matches its HEAD blob and
+        which **compiles clean under the failing command's own flags**, re-run by hand. The cause is
+        not the tree: **another agent's requirement-mutation campaign was deleting and restoring
+        lines under `src/rendering/{sky,gi,culling,virtual_geometry}/` while the build read them**
+        (`/tmp/mut.py` over `/tmp/mutspecs/ra-*.json`, plus a second prover in
+        `scratchpad/mt/prove.py`), and `git status` — clean when this phase opened — carried six
+        mutated sources a few minutes later while HEAD advanced three auto-snapshot commits. That
+        campaign is corrupting itself as well: `/tmp/batch2.log` reports
+        `RESULT ra-06-render-targets-and-formats: SETUP-FAIL baseline build` on a `redeclaration of
+        'f32 weights[6]'` that is the OTHER prover's mutation. **Two mutation campaigns cannot share
+        one working tree, and neither can share it with a build.** The run was killed, its orphaned
+        `cmake` processes reaped by explicit PID, `build/m11c-profiles` deleted, and it is restarted
+        from a detached worktree at `db8c76b` — `/home/leonardo/work/cy-m11c-profiles`, verified
+        clean before each leg — with the build trees still under `build/m11c-profiles` as the phase
+        was told. **It had not returned when this record was written**, and it is the one task of
+        this phase that cannot be shortened
 - [ ] 9.2 **Every criterion executes something and can fail** — break what it checks and prove it goes
       red. For this rung that includes the ones that are easiest to fake: unbind a texture and watch
       the material criterion go red; remove a post stage and watch the stage-list comparison go red;
@@ -1113,14 +1133,153 @@ work was done.
         `m11c:subsystem-controllers-report-costs` and `m11c:skin-pass-complete` disagree with what
         is recorded for them. They are what keeps `plan-consistency` (`just roadmap-test`) red, and
         they need the same `--record` run against a GPU and a built tree
-- [ ] 9.3 **Adversarial pass on this rung's own invariants**, which are mostly claims about a picture:
+- [x] 9.3 **Adversarial pass on this rung's own invariants**, which are mostly claims about a picture:
       render the artefact with the arbiter unpinned and confirm the capture refuses rather than
       publishing a degraded frame; run the occlusion pass against the CPU model and confirm a
       disagreement is reported rather than tolerated; ask the compile report which inputs are
       textures and confirm the answer matches what the frame bound
-      - [ ] **NOT ATTEMPTED.** The gate stopped at 9.4's answer, which decides the rung, and an
-        adversarial pass over the invariants of rows that are not at Complete grade would be a pass
-        over claims nobody is making
+      - [x] **ATTEMPTED NOW, AND IT BROKE SIX THINGS. The three probes this task names are answered
+        below; the four findings above them are what the pass found by going after the seam the
+        closing gate opened — a check that passes with its subject deleted.**
+      - [x] **1. THE WHOLE `render` LABEL IS GREEN WITH NO DEVICE, AND `requires = "gpu"` DOES NOT
+        CATCH IT.** Measured against `build/m11c-final/dev`, the same seventeen suites twice:
+        **186.48 s and 95 777 assertions with the device; 3.78 s and 134 assertions with the Vulkan
+        ICD hidden** — 17 of 17 PASSED both times. 111 of those 134 belong to `render.null_frame`
+        and `render.xr_prerequisites`, which use the null backend and are the only two that measure
+        anything device-free. `tests/render/device.h::report_skip()` prints to stderr and RETURNS;
+        ctest records Passed. The ledger's guard is a different question from the test's:
+        `criteria._has_gpu()` asks whether `/dev/dri` holds a render node, and the case asks whether
+        a Vulkan device could be created, so **a host with a node and no working driver evaluates
+        these criteria and reports them green**. Run verbatim but for its build line, with the ICD
+        hidden, `m11c:material-texture-is-bound` — *"only a graphics device can answer it"* — exits
+        **0 with 0 assertions**, printing `no Vulkan device on this machine` itself through its own
+        `grep … || true`. **Twenty criteria across the ladder execute a render suite and nineteen
+        have no skip guard**; `m11a:field-device-agrees-with-cpu` is the one that does, and
+        `m10:fields-sampled-on-a-device`'s gap declaration carries the same words. **Repaired for
+        the three of this rung's five that can be green today** — `material-texture-is-bound`,
+        `ray-tracing-on-the-device` and `hierarchical-depth-on-a-device` now carry M11.a's own
+        `no Vulkan device on this machine` guard plus an assertion-count floor, and both controls
+        were watched: with the ICD hidden the body is RED at `the suite SKIPPED for want of a
+        device`, and with the device it is GREEN on 117 assertions. `virtual-geometry-image` and
+        `sky-as-an-image` are left as they are because they are red already, on suites that do not
+        exist. **THE COST IS STATED RATHER THAN HIDDEN**: the three edits move those criteria's
+        digests, so `falsifiability.toml`'s `proven against a built tree` entries for them are now
+        stale — measured, not guessed: recorded `604f97d1…`/`e84ec470…`/`d358bc07…` against live
+        `2c77edc2…`/`92cbd618…`/`c84a22e6…` — and the re-record is
+        `just roadmap-falsify prove m11c --build-dir <a built tree> --mutate-the-tree --record`
+        against a GPU, which is the same debt 9.2 already owes. `python3 tools/roadmap/selftest.py`
+        is **401 of 402**, failing only on `every criterion on the ladder is either proven or on the
+        list that only shrinks` — which is `falsify.reconcile`, the same count 9.2 above records at
+        **46 disagreements**, so it was red before this phase and is three entries redder after it
+      - [x] **2. A ROW IS AT COMPLETE GRADE WITH EVERY ONE OF ITS REQUIREMENTS DEFERRED.** Of the
+        232 requirements this rung carries, **53 are answered by `exempt:` — 22.8%, 52 of them
+        parked at M11.e** — and `rendering-post-processing` is **9 of 15, 60%**. `requirements.py`
+        counts a recorded deferral as an answer, so the rung's own `image-rows-at-complete-grade`
+        cannot tell a row that is observed from a row that is promised. Proven without touching the
+        tree, through the tool's own `--map`: a coverage map in which all fifteen of
+        `rendering-post-processing`'s requirements are `exempt:m11e` reports **"15 answered, 0
+        unanswered"** and exits **0**. The fix is not this phase's to take — a ceiling on the
+        exemption share, or a second count printed beside the first — but "40 of 232" and "162 of
+        162" are not the same measurement and this is the difference
+      - [x] **3. THE DELETION TEST, ON A RECORDED RANDOM DRAW, AND TWO MORE MAPPINGS SURVIVED.**
+        Twelve of the 177 `test:` entries of the fifteen rows were drawn with
+        `random.Random("m11c-9.3-adversarial").sample`; six carried a one-statement production
+        subject and were mutated in the isolated worktree, each rebuilt target-only and each case
+        named by filter. **Four went RED and two SURVIVED.**
+
+        | row / requirement | what was broken | verdict |
+        |---|---|---|
+        | `vfx-system` / VFX asset model | `parameters_[word] = value[component];` | RED, 2 of 15 |
+        | `material-compiler` / Material cost analysis | `add_node(*entry.value(), …)` in the attributed arm | RED, 1 of 11 |
+        | `rendering-lighting-and-shadows` / Light culling and limits | `stats.rejected_by_bound = …` | RED, 1 of 5 |
+        | `rendering-architecture` / Renderer profiles | `refusal.asked_by = …` | RED, 1 of 10 |
+        | `temporal-rendering` / Reprojection and disocclusion | `inputs.history_valid = resource != nullptr && resource->valid;` | **SURVIVED, 0 of 12** |
+        | `rendering-culling-and-lod` / Shadow caster culling | the swept-volume union, reduced to the caster's own box | **SURVIVED, 0 of 11** |
+
+        **The temporal survivor is a mapping pointed at the wrong case, and the control proves it.**
+        `the four history states, and the one that means a consumer may accumulate`
+        (`test_motion.cpp:108`) calls only the pure `classify_history(inputs)` with inputs it fills
+        in by hand; it never calls `TemporalFramework::classify`, which is where the framework reads
+        history validity off the resource and the only path a consumer takes. Forcing that read to
+        `true` — an invalidated history reaching every consumer as Valid, which is precisely what
+        *"the invalidation reaches the consumer AS a classification"* forbids — leaves all twelve
+        assertions green. The same mutation takes `two consumers agree about whether a pixel's
+        history is valid` (`test_framework.cpp:191`) **RED on 3 of 8**. The behaviour is covered;
+        the entry names the case that cannot see it, and if the other case were deleted tomorrow the
+        map would still read answered.
+        **The culling survivor is a case with no load-bearing positive control.** `casts_into_view`
+        unions the caster's box with the same box pushed along the light; replace that union with
+        the box itself and both of the case's two casters land on the same side of the test they
+        already did — the kept one at `{0, 5, -10}` intersects the camera frustum on its own, so the
+        sweep is never what keeps it. `stats.rejected_by_sweep` is asserted and is right for the
+        wrong reason. A caster placed outside the frustum and kept BECAUSE its shadow reaches in is
+        the assertion this case is missing.
+        **Not mutated and named with the reason**: `vfx-system` / GPU-first simulation is on
+        `render.vfx_gpu`, which finding 1 shows executes 2 assertions with no device — it cannot be
+        deletion-tested on a machine that would report it green anyway. Every mutation was restored
+        and verified by md5, the worktree ends clean and no `.tmp.` backup is left behind.
+        **AND THE HARNESS HAD THE DEFECT IT WAS LOOKING FOR**: it restored the source but did not
+        rebuild, so the next case's baseline ran the previous case's mutated binary and a green case
+        was reported failing. Fixed, and every number above is from the run after the fix
+      - [x] **4. THE MECHANISM UNDER THE COVERAGE MAP ADMITS THINGS THE MAP DOES NOT DO.** Four
+        probes, each run through `requirements.py --map` against a throwaway file, so nothing in the
+        repository moved. (a) `case` is an **unanchored substring search** over the tracked sources
+        beside the suite's `CMakeLists.txt`: `case = "the"` and `case = "// "` both resolve `ok`.
+        (b) The header's promise that *"pointing an entry at a case that belongs to another suite is
+        refused at the directory"* binds only where a suite is alone in its directory — **153 of the
+        180 `test:` entries name a suite that shares one** — and `test:render.null_frame` answered by
+        `render.material_binding`'s case resolves `ok`. (c) `rust:` checks only `fn <name>(`
+        somewhere in the crate: `rust:cy-editor-interface::not::a::module::main` resolves, with a
+        module path that does not exist and a function that is not a test. (d) A `criterion:` entry
+        requires a proof whose **digest is never compared**: an entry naming
+        `m11c:material-texture-is-bound`, whose body had been rewritten minutes earlier, resolves
+        `ok` against a proof taken on text that no longer exists. **THE COMMITTED MAP EXPLOITS NONE
+        OF THIS** — all 180 `test:` entries name a real `CY_TEST_CASE`/`TEST_CASE` of their own
+        suite's own sources, audited one by one, and all 7 `criterion:` entries rest on proofs whose
+        digests match today. The map is honestly written; the check that guards it would accept one
+        that is not, and (d) is one comparison away from being closed
+      - [x] **5. THE ARBITER PIN IS A COMPILE-TIME LITERAL, SO THIS TASK'S FIRST PROBE CANNOT COME
+        BACK NEGATIVE.** `capture_manifest.h` says *"`CaptureProvenance::arbiter_pinned` is READ OFF
+        `ArbiterReport::pinned` by the capturing caller"*, and `capture_refusal` really does refuse a
+        publication capture when it is false (`capture_manifest.cpp:76`, exercised at
+        `test_assembly.cpp:688`). **Both capturing callers in the tree assign the literal `true`** —
+        `samples/12-beauty/stage.cpp:2042` and `samples/10-world/stage.cpp:1247` — and neither links
+        `cy::rendering-arbiter`. So there is no state of the tree in which the artefact is captured
+        with the arbiter unpinned, the refusal is unreachable from every program that publishes, and
+        `m11c:beauty-shot`'s `^arbiter pinned$` assertion reads a constant. `docs/design/beauty-shot.md`
+        is candid about the cause — *"no arbiter runs in this program"* — which is why this is a
+        finding about the mechanism and not about the caption: the honest encoding of "no arbiter
+        runs here" is not a `true` on a field whose contract says it was measured
+      - [x] **6. THE COMPILE REPORT AND THE FRAME DISAGREE ABOUT WHICH INPUTS ARE TEXTURES, AND
+        NOTHING JOINS THEM.** The third probe, run: `cy_material author` over the three committed
+        canvases reports **`2 textures`** each — `albedo_map` and `data_map`, and the `.cymatinfo`
+        lists exactly those two — while `m11c-beauty-shot.manifest` lists **three per material and
+        `textures 9`**, the third being the normal map at its own slot. Both records are true and the
+        manifest says why in its own parenthesis (`CyClosure` has no normal term, so the FRAME samples
+        it at `beauty.slang:226`), but **no criterion compares the two**: `materials-are-textures`
+        reads the cooker's count, `beauty-shot` reads the manifest, and a manifest naming a texture no
+        material declares and no frame samples would pass both. `beauty-shot`'s `named >= 12` floor is
+        met **exactly**, and only by counting the three maps the material compiler does not know about
+      - [x] **7. TWO OF THE THREE ARTEFACT CRITERIA READ COMMITTED BYTES AND NOT THE RENDERER.**
+        `the-post-chain-changes-the-picture` opens two PNGs under `docs/design/images/` and compares
+        them (mean |delta| 144.238/255 today); `beauty-shot` reads the manifest, the still and the
+        caption. Neither consults a source file, a binary or a build, and both declare a mutation
+        that DELETES the published file — which is the prover's own record that the only way to make
+        them red is to remove the artefact. Delete the post chain from `src/rendering/post/` and both
+        stay green until someone re-captures. That is defensible for a published-artefact check and
+        it is not what their `describe` claims; the renderer half is carried by
+        `frame-passes-through-post`, which does run a suite, and saying so is the repair this phase
+        can make without re-photographing anything
+      - [x] **AND WHAT HELD UP, BECAUSE AN ADVERSARIAL PASS THAT ONLY REPORTS BREAKAGE IS NOT A
+        MEASUREMENT.** The second probe this task names — *"run the occlusion pass against the CPU
+        model and confirm a disagreement is reported rather than tolerated"* — comes back clean:
+        `tests/integration/test_rendering_culling.cpp:298` compares the device pyramid against the
+        model **texel for texel with no tolerance**, names the first differing texel with both
+        values, guards against a vacuous pyramid with `distinct_depths(model) >= 2`, and the
+        occlusion case beside it carries a positive control (an instance in front of the occluder
+        that must survive). The `-Werror` set is also load-bearing evidence: three of the six
+        mutations above would not COMPILE, which is a defect the compiler catches before a test has
+        to
 - [x] 9.4 **Read every Complete claim against the requirement, not against the mechanism.** Fifteen
       Working rows with mechanisms already built is exactly the shape in which a gate reads a
       specification and feels better about it. Where a row is short, record it and demote it — a
