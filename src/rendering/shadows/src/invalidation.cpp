@@ -75,12 +75,9 @@ InvalidationReport invalidate_caster_motion(ShadowPageCache& cache, const Shadow
     }
 
     // BOTH boxes. Dirtying only where the caster now is leaves its old shadow painted on the world.
-    dirty_box(cache, space, previous, InvalidationSource::Instance, motion.instance_id, scratch,
+    // MUTATION: the pages the caster LEFT are no longer dirtied.
+    dirty_box(cache, space, current, InvalidationSource::Instance, motion.instance_id, scratch,
               report);
-    if (!same_box(previous, current)) {
-        dirty_box(cache, space, current, InvalidationSource::Instance, motion.instance_id, scratch,
-                  report);
-    }
     return report;
 }
 
