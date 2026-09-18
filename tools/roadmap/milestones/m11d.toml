@@ -233,6 +233,20 @@ ci_job = "milestone-m11d"
 
 # --- Section 3: the native platform backend ----------------------------------------------------------
 
+# THE SAME MUTATION AS `m11c:shader-targets-for-the-next-rung`, BECAUSE IT IS THE SAME CLAIM READ
+# FROM THE RUNG THAT CONSUMES IT. This criterion asserts the prerequisite M11.d cannot start without
+# — that this build emits MSL and DXIL — and what makes DXIL emittable is the shader model the DXIL
+# case names. Take `profile_for(Target::Dxil)`'s profile away and the probe's real compilation fails,
+# `cy_shaderc targets` answers `d3d12-dxil=unavailable`, and the second grep of this body fails. It
+# still compiles: an empty last case of a switch falls out of it rather than into another case.
+# M11.c's own criterion carries the argument for why this target and not `cmake/features.cmake`,
+# which was measured unable to turn either of them red on an incremental rebuild.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/backends/shader/slang/src/slang_compiler.cpp"
+token  = "return \"sm_6_6\";"
+note   = "this criterion had no derivable mutation at all — its body is two greps over a recipe's output, and `derive` refuses to guess one from that — so it declares this one. The subject is the emission rather than the word in the table: a stub that printed \"d3d12-dxil=emitted\" without compiling anything would survive a mutation of the output file and does not survive this."
+
 [[criterion]]
 id = "native-platform-backend"
 describe = "a native `Platform` and `DisplayServer` exists for one desktop platform and SDL3 is not the only implementation. SDL3 is both today, so nothing has proved the abstraction carries no SDL assumption"

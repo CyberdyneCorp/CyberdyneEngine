@@ -267,6 +267,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.vfx$' 2>/dev/null | grep -q 'render.vfx' || {
     echo "render.vfx is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -280,6 +287,18 @@ reason = "it draws simulated particles on a graphics device and reads the image 
 ci_job = "milestone-m8c"
 
 # --- Section 3: sequences -------------------------------------------------------------------------
+
+# THE MUTATION PUBLISHES EVERY PARTICLE AT ZERO SIZE, WHICH IS A FRAME WITH NOTHING IN IT.
+# `ParticleInstance::size` defaults to `0.0F` and the header says what that means in as many words —
+# "a zero-size particle is drawn and covers nothing" — so deleting the assignment in
+# `publish_sprites` compiles cleanly, still publishes the same number of records, still dispatches
+# the same draw, and puts NO lit texels on the device. That is precisely what this criterion's first
+# case photographs, and a counter-only check would not have noticed.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/vfx/src/runtime.cpp"
+token  = "record.size = presentation.size * instance.scale;"
+note   = "`render.vfx`'s 'a simulated effect reaches the frame and puts lit texels on the device' reads the frame back off the GPU; with every sprite at the default zero half-extent the picture is empty while every count in the publish report is unchanged, so the red comes from the image."
 
 [[criterion]]
 id = "sequencing-core"

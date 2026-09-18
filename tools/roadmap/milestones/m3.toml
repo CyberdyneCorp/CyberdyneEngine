@@ -253,6 +253,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.null_frame$' 2>/dev/null | grep -q 'render.null_frame' || {
     echo "render.null_frame is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -262,6 +269,19 @@ ctest --test-dir "$d" -N -R '^render.null_frame$' 2>/dev/null | grep -q 'render.
 just test-render -R '^render.null_frame$'
 """
 ci_job = "render-device"
+
+# THE MUTATION TAKES A DEPENDENCY OUT OF THE FRAME, WHICH IS WHAT THIS CRITERION COUNTS.
+# `samples/03-first-light`'s forward pass declares that it READS the shadow map; that declaration is
+# the only thing keeping the "sun shadow" pass alive, because a render graph culls a pass whose
+# output nothing consumes. Delete it and the frame records FOUR passes rather than five and culls
+# one rather than none — which is exactly the pair of numbers this criterion's first case asserts —
+# while the tree still compiles and still renders. A mutation that stopped the sample compiling
+# would have proved that the criterion notices a broken build, which is a different claim.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "samples/03-first-light/renderer.cpp"
+token  = ".read(shadow, Access::FragmentSampledRead)"
+note   = "the mechanism: the declared read is the only consumer of the shadow pass's output, so with it gone the graph culls that pass and `passes_recorded` and `passes_culled` both move off the numbers `render.null_frame`'s first case asserts. The verdict recorded in falsifiability.toml is the prover's own observation of that, taken against a built tree; this note is the argument for the target and not a substitute for the measurement. The suite needs no device, so the red reproduces on every machine."
 
 [[criterion]]
 id = "xr-prerequisites"

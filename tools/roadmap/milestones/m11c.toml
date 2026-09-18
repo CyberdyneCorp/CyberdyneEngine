@@ -1298,18 +1298,27 @@ echo "$summary" | grep -q "disagreements=0 failures=0"
 timeout_s = 3600
 ci_job = "milestone-m11c"
 
-# THE MUTATION IS THE CAPABILITY'S OWN SWITCH AND NOT A STRING IN THE OUTPUT. The previous entry in
-# falsifiability.toml was a derived `rename-token 'dxil\x1fmsl'` in /tmp/cy-m11c-targets.txt — a
-# mutation of the criterion's own scratch file, which proves nothing about the tree. Deleting the
-# option row takes DXIL out of the build: `SLANG_ENABLE_DXIL` goes off, Slang is built without the
-# downstream compiler, the probe answers `d3d12-dxil=unavailable`, and the first grep fails. It is a
-# mutation that still CONFIGURES and still BUILDS, which is what distinguishes a criterion going red
-# for the defect it names from one going red because the tree stopped compiling.
+# THE MUTATION IS THE DXIL PROFILE, AND IT REPLACES ONE THAT WAS MEASURED NOT TO WORK.
+# The declared mutation until M11.c's closing round was `delete-lines 'CY_SHADER_DXIL|DEVELOPMENT|'`
+# in cmake/features.cmake, and the prover refuted it in as many words: "the criterion still PASSES
+# with 1 file(s) mutated and build/m11c-final rebuilt over them: it cannot go red". The argument for
+# it was sound and the reach was not — that row governs how the Slang DEPENDENCY is configured, and
+# an incremental rebuild of a tree that is already configured never revisits it, so the mutation only
+# bites from an empty build directory. A criterion whose only mutation needs a from-empty build is a
+# criterion this ladder cannot judge, which is the shape the whole module exists to refuse.
+#
+# `profile_for(Target::Dxil)` is the same claim one layer in and inside the engine's own sources:
+# shader model 6.6 is the floor `virtual-geometry`'s 64-bit atomic visibility raster requires, and
+# it is named in that function's own comment. With the line gone the case falls out of the switch to
+# `return ""`, DXIL is asked for at no profile, the probe's real compilation fails, `cy_shaderc
+# targets` reports `d3d12-dxil=unavailable`, and this criterion's second grep fails. It still
+# compiles — an empty last case is not an implicit fallthrough — which is what separates a criterion
+# going red for the defect it names from one going red because the tree stopped building.
 [criterion.falsifies]
 mutate = "delete-lines"
-target = "cmake/features.cmake"
-token  = "CY_SHADER_DXIL|DEVELOPMENT|"
-note   = "the criterion's claim is that this build emits MSL and DXIL and that two targets of one graph agree; taking the DXIL option out of the feature table removes the second target at its source. Three reds were watched by hand at M11.c tasks 1.5-1.7 and are recorded in tasks.md section 1.7: the DXC runtime moved out from beside libslang (the probe reports it unavailable — which is what proves the probe is a probe), the Slang front end made to return the SPIR-V bytes when asked for MSL (`bytes_match_target` refuses the artefact), and one parameter dropped from one target's declaration (`interfaces_agree` reports the difference naming both targets). The first of those is this mutation's effect reached by a cheaper route; this one is spelled as the option because that is the source of the capability rather than a file beside it."
+target = "src/backends/shader/slang/src/slang_compiler.cpp"
+token  = "return \"sm_6_6\";"
+note   = "measured at M11.c's close: the previously declared mutation on cmake/features.cmake was REFUTED — the criterion stayed green with the CY_SHADER_DXIL row deleted and the tree rebuilt, because an incremental rebuild does not reconfigure the Slang dependency the row governs. This one is inside the engine's own sources and is reached by the same rebuild: with no shader model the DXIL probe cannot compile, the target table reports d3d12-dxil=unavailable, and the first half of this body fails before the cross-target comparison is reached."
 
 # --- The completeness half of the same subject, asked separately and answered red ------------------
 #

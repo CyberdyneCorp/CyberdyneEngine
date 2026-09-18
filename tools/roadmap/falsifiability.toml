@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 198 proven, 455 not yet shown able to fail.
+# 200 proven, 453 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -350,10 +350,10 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): [docte
 [[proof]]
 ledger = "m11a"
 criterion = "sky-field-consumed-outside-the-sky"
-digest = "fa3d2bfd1ee4cb12"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): 0 file(s) outside src/rendering/sky/ read the cloud shadow field:"
+digest = "33d318a3378b7fe8"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'light.intensity *= report.transmittance;' in src/rendering/lighting/src/cloud_shadow.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the illumination consumer suite FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11a"
@@ -918,10 +918,10 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphe
 [[proof]]
 ledger = "m11c"
 criterion = "shader-targets-for-the-next-rung"
-digest = "c65774eaeeb48ba1"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/proofs (exit 1): just build-shaders: not implemented (task M3 — the renderer and its shader toolchain) … error: Recipe `build-shaders` failed on line 261 with exit code 1"
+digest = "8c5d1087a6085d22"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'return \"sm_6_6\";' in src/backends/shader/slang/src/slang_compiler.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: error: Recipe `build-shaders` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -1058,6 +1058,14 @@ digest = "1ee58f37a6ed1121"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): build-and-packaging: recorded 'working', below this milestone's exit of 'complete' … testing-and-quality: recorded 'seed', below this milestone's exit of 'complete'"
+
+[[proof]]
+ledger = "m11d"
+criterion = "shader-targets-emitted"
+digest = "7028fbd91b4df5a9"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'return \"sm_6_6\";' in src/backends/shader/slang/src/slang_compiler.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: error: Recipe `build-shaders` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11d"
@@ -1346,6 +1354,14 @@ digest = "cdefdce33a4240b8"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/editor-viewport-engine-frame.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m7"
+criterion = "virtual-geometry-gpu"
+digest = "64e7d46d888c74d3"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'walk.threshold = view.threshold_pixels * view.secondary_scale * instance.threshold_scale();' in src/rendering/virtual_geometry/src/traversal.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m7"
@@ -2498,14 +2514,6 @@ digest = "bd88005f43ddec38"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "shader-targets-emitted"
-digest = "54acd63db26068ce"
-verdict = "not provable here"
-mutation = "rename-token 'dxil\\x1fmsl' in /tmp/cy-m11d-targets.txt (derived)"
-detail = "it needs a built tree ('just build'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11d"
@@ -4058,14 +4066,6 @@ digest = "bafe9a8327d3f541"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m7"
-criterion = "virtual-geometry-gpu"
-digest = "3f778308051781e6"
-verdict = "refuted"
-mutation = "-"
-detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
 ledger = "m7"

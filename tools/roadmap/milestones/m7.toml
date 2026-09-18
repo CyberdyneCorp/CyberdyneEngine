@@ -359,6 +359,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.virtual_geometry_gpu$' 2>/dev/null | grep -q 'render.virtual_geometry_gpu' || {
     echo "render.virtual_geometry_gpu is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -372,6 +379,18 @@ reason = "the traversal is a compute dispatch and the visibility buffer is a com
 ci_job = "render-device"
 
 # --- Virtual shadows, temporal rendering and the post chain -------------------------------------------
+
+# THE MUTATION BREAKS THE CPU REFERENCE, BECAUSE THE CLAIM IS THAT THE TWO AGREE. The suite
+# compares the cluster set `traverse_reference` selects against the set the dispatch selects, over
+# 24 views, and it compares the SETS rather than the counters — so a counter is the wrong thing to
+# break. `walk.threshold` is the screen-space error the reference is allowed to commit; with the
+# line that computes it gone, the aggregate's own `0.0F` stands, the reference descends to the
+# finest level at every view, and the two sets differ at every one of the 24. It still compiles.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/virtual_geometry/src/traversal.cpp"
+token  = "walk.threshold = view.threshold_pixels * view.secondary_scale * instance.threshold_scale();"
+note   = "the criterion's subject is the agreement between the GPU traversal and the CPU reference; this removes the reference's threshold and leaves the dispatch's alone, so the disagreement is the one the criterion exists to report rather than a compile error standing in for it."
 
 [[criterion]]
 id = "virtual-shadows"
@@ -494,6 +513,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.gpu_culling$' 2>/dev/null | grep -q 'render.gpu_culling' || {
     echo "render.gpu_culling is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -506,6 +532,17 @@ requires = "gpu"
 reason = "the cull is a compute dispatch compared against a CPU reference; a hosted runner has no device and the entry is reported not evaluated rather than passed"
 ci_job = "render-device"
 
+# THE MUTATION IS ONE COUNTER ON THE CPU SIDE, AND THE SUITE COMPARES SIXTEEN WORD FOR WORD.
+# `render.gpu_culling` reads back the dispatch's counters and checks each field against the M6 CPU
+# reference's; `rejected_by_range` is one of them. Deleting the increment leaves the dispatch's
+# answer untouched and the reference's short by every instance the range test rejected, so the two
+# disagree on a field the case names. It compiles: the statement stands alone.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/culling/src/cull.cpp"
+token  = "++stats.rejected_by_range;"
+note   = "test_gpu_cull_pass.cpp compares `got.rejected_by_range == want.rejected_by_range` among the sixteen counter words, and `want` is the CPU reference this line feeds. The GPU shader is untouched, so what goes red is the agreement rather than either side on its own."
+
 [[criterion]]
 id = "virtual-texturing-gpu"
 describe = "a feedback buffer written by a shader and a page table sampled by one — the half m6.toml recorded as missing in so many words — with `bytes_read` making 'no per-pixel stream reaches the CPU' a measurement rather than a promise, and the CPU mirror of `record_feedback` compared line for line against the shader's"
@@ -514,6 +551,13 @@ kind = "command"
 run = """
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
+# THE BODY BUILDS FIRST, AND IT DID NOT UNTIL M11.c's CLOSING ROUND. Without this line the
+# criterion runs `ctest` over whatever binary the build tree already holds, so a mutation of the
+# source it is about never reaches the artefact under test — and `prove --mutate-the-tree` correctly
+# reported that such a criterion "cannot go red" while the behaviour it names was genuinely broken.
+# `m3:golden` and `m3:conventions` have always built first; this one did not. On a warm tree it is a
+# no-op check, and on a cold one it is the difference between judging this tree and judging the last.
+just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.virtual_texturing_gpu$' 2>/dev/null | grep -q 'render.virtual_texturing_gpu' || {
     echo "render.virtual_texturing_gpu is not registered in $d — the suite has been renamed or deleted, or this tree"
     echo "was configured with no rendering backend. Either way the behaviour is UNMEASURED, and"
@@ -533,6 +577,18 @@ ci_job = "render-device"
 # `LeverSchedule` gained the one field its own spike said it needed. The RUN STRING IS M6'S EXACTLY,
 # so this collapses into `m6:residency-separation` and is reported under that label; what M7 changes
 # about it is the claim, not the command.
+# THE MUTATION IS IN THE CPU MIRROR, WHICH IS THE HALF THIS CRITERION NAMES. `address_of_pixel`
+# is written line for line against `record_feedback`'s shader — its own comment says so and says why
+# every integer type matches — and the mip bias is applied on both sides in the same order. Take the
+# bias off the CPU side and the two answer different mips for every pixel wherever the bias is not
+# zero, which is the comparison this suite makes. `mip` is still assigned and still used, so it
+# compiles.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/virtual_texturing/src/frame.cpp"
+token  = "mip += settings_.mip_bias;"
+note   = "the claim is that the CPU mirror of `record_feedback` matches the shader's line for line; this deletes one of those lines from the mirror only. A mutation of the shader instead would have broken the subject rather than the agreement, and the agreement is what the criterion checks."
+
 [[criterion]]
 id = "residency-cost"
 describe = "one policy over separate storage, with a second claimant: every lever now declares what each pressure level COSTS relative to level 0, so the arbiter can price a step without asking the subsystem, and an undeclared schedule is a FLAT ladder rather than a free one"

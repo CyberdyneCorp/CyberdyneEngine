@@ -593,7 +593,6 @@ namespace {
         record.position[0] = presentation.position[0] + instance.position.x - camera_position.x;
         record.position[1] = presentation.position[1] + instance.position.y - camera_position.y;
         record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;
-        record.size = presentation.size * instance.scale;
         for (u32 channel = 0; channel < 3U; ++channel) {
             record.color[channel] = presentation.color[channel] * presentation.emission;
         }
