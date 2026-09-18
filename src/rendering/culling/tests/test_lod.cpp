@@ -49,6 +49,19 @@ CY_TEST_CASE(
     CY_CHECK_EQ(cy::rendering::select_lod(chain(), 0.9F, 0.0F, settings, kInvalidLod).level, 0U);
     CY_CHECK_EQ(cy::rendering::select_lod(chain(), 0.3F, 0.0F, settings, kInvalidLod).level, 1U);
     CY_CHECK_EQ(cy::rendering::select_lod(chain(), 0.01F, 0.0F, settings, kInvalidLod).level, 2U);
+
+    // AND THE SECOND HALF OF THE TITLE, WHICH THE CHAIN ABOVE CANNOT REACH. `kChain`'s coarsest
+    // level has a threshold of ZERO, so every coverage satisfies it and the walk always terminates
+    // inside the loop — "below every threshold" never happens and the fallback that answers it is
+    // never taken. This chain has a floor, so falling off the end is reachable: a mesh under every
+    // threshold must come back at the CHEAPEST level rather than at the finest one or not at all.
+    constexpr cy::render::MeshLod kFloored[3] = {
+        {0, 1, 0.5F, 1000},
+        {1, 1, 0.2F, 400},
+        {2, 1, 0.05F, 100},
+    };
+    const cy::Span<const cy::render::MeshLod> floored{kFloored, 3};
+    CY_CHECK_EQ(cy::rendering::select_lod(floored, 0.001F, 0.0F, settings, kInvalidLod).level, 2U);
 }
 
 CY_TEST_CASE("hysteresis stops an instance oscillating on a threshold") {
@@ -150,6 +163,43 @@ CY_TEST_CASE("an HLOD proxy replaces its children, and nesting resolves to one l
     CY_CHECK_FALSE(out[0].visible);
     CY_CHECK_FALSE(out[1].visible);
     CY_CHECK(out[2].visible);
+
+    // AND THE REPLACEMENT ITSELF, WHICH THE RANGES ABOVE NEVER ASK FOR. Those three ranges are
+    // DISJOINT, so at every distance at most one of them is visible on its own and the hierarchy
+    // has nothing left to do — deleting the step that hides a child under a visible parent does
+    // not change a single answer above. Here the ranges OVERLAP: the leaf is unbounded, so it is
+    // visible on its own at every distance, and the only thing that can hide it is an ancestor
+    // taking over. That is "a parent's visibility replaces its children's", and the walk to the
+    // root is what makes it resolve to ONE level per branch rather than to the nearest parent's.
+    VisibilityRange nested[3];
+    nested[0].begin = 100.0F;  // the coarsest proxy
+    nested[0].parent = kInvalidVisibilityParent;
+    nested[1].begin = 50.0F;  // the mid proxy, unbounded above so it overlaps the coarsest
+    nested[1].parent = 0;
+    nested[2].parent = 1;  // the leaf: a zeroed range is always visible on its own
+
+    cy::f32 nested_distances[3] = {150.0F, 150.0F, 150.0F};
+    CY_REQUIRE(cy::rendering::resolve_hlod(cy::Span<const VisibilityRange>(nested, 3),
+                                           cy::Span<const cy::f32>(nested_distances, 3),
+                                           cy::Span<HlodResolution>(out, 3))
+                   .has_value());
+    // Far away all three qualify on their own; the coarsest takes over both, the leaf through its
+    // GRANDparent, which is the step a resolution that stopped at the immediate parent would miss.
+    CY_CHECK(out[0].visible);
+    CY_CHECK_FALSE(out[1].visible);
+    CY_CHECK_FALSE(out[2].visible);
+
+    // Mid distance: the coarsest is out of range, so the mid proxy is the branch's one level.
+    nested_distances[0] = 75.0F;
+    nested_distances[1] = 75.0F;
+    nested_distances[2] = 75.0F;
+    CY_REQUIRE(cy::rendering::resolve_hlod(cy::Span<const VisibilityRange>(nested, 3),
+                                           cy::Span<const cy::f32>(nested_distances, 3),
+                                           cy::Span<HlodResolution>(out, 3))
+                   .has_value());
+    CY_CHECK_FALSE(out[0].visible);
+    CY_CHECK(out[1].visible);
+    CY_CHECK_FALSE(out[2].visible);
 }
 
 CY_TEST_CASE("a dependents fade draws parent and child together during the swap") {

@@ -1039,7 +1039,7 @@ struct KernelPlan {
             continue;
         }
         out[count].primary = stage;
-        out[count].fused = (can_fuse && stage == Stage::Initialise) ? Stage::Update : Stage::Count;
+        out[count].fused = Stage::Count;  // MUTATION: nothing is fused, the report still says one
         ++count;
     }
     return count;

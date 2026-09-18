@@ -355,11 +355,7 @@ Status cull_shadow_casters(const SpatialIndex& index, const ShadowCullView& view
             ++stats.rejected_by_frustum;
             continue;
         }
-        if (view.tight && !casts_into_view(bounds, view.camera_frustum, view.light_direction,
-                                           view.sweep_distance)) {
-            ++stats.rejected_by_sweep;
-            continue;
-        }
+        // MUTANT: the swept-volume rejection deleted
         VisibleInstance caster;
         caster.slot = slot;
         caster.gpu_slot = entry.gpu_slot;

@@ -80,6 +80,26 @@ CY_TEST_CASE("accumulation and filtering reconstruct a stable image from a noisy
     CY_CHECK_LT(mean_error(scene, {settled.data(), settled.size()}),
                 mean_error(scene, {first.data(), first.size()}));
     CY_CHECK_LT(mean_error(scene, {settled.data(), settled.size()}), raw_error * 0.2F);
+
+    // THE TEMPORAL STAGE, ISOLATED, AND IT IS HERE BECAUSE THE CASE ABOVE DOES NOT OBSERVE IT.
+    // M11.c's mutation pass deleted the accumulation blend outright —
+    // `state.accumulated[pixel] = value;` in place of the lerp against history — and every
+    // assertion above stayed green: this scene is FLAT within each half, so the a-trous cascade
+    // alone reconstructs it and the first stage of the pipeline the requirement names could be
+    // absent without anything noticing. With spatial filtering turned off entirely, nothing is
+    // left that can reduce the noise except accumulation over reprojected history.
+    Denoiser temporal_only;
+    CY_REQUIRE(temporal_only.resize(scene.width, scene.height).has_value());
+    SignalConfig no_spatial = cy::rendering::denoise::default_config(SignalKind::IndirectDiffuse);
+    no_spatial.max_passes = 0;
+    temporal_only.configure(SignalKind::IndirectDiffuse, no_spatial);
+    const std::vector<cy::Vec3> accumulated_only =
+        converge(temporal_only, scene, SignalKind::IndirectDiffuse, 24);
+    CY_CHECK_EQ(temporal_only.diagnostics(SignalKind::IndirectDiffuse).passes_applied, 0U);
+    // Twenty-four frames of a running mean over uniform noise: the error falls with the square
+    // root of the count, and a pipeline with no temporal stage reports exactly the raw error here.
+    CY_CHECK_LT(mean_error(scene, {accumulated_only.data(), accumulated_only.size()}),
+                raw_error * 0.3F);
 }
 
 CY_TEST_CASE("a converged signal is not blurred") {
