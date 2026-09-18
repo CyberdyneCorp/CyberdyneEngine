@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 197 proven, 456 not yet shown able to fail.
+# 198 proven, 455 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -114,6 +114,14 @@ digest = "421698e3b26e5e81"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/m10-world-budget.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m10"
+criterion = "sky-field-round-trip"
+digest = "88a060a8f10e1c6d"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'transmittance = sampled.value.x();' in src/rendering/sky/src/cloud_shadows.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: 236 of 5120 cells read one value through CloudShadowField::sample and another through the store at the same position: the four declared consumers and the substr), and green again once restored"
 
 [[proof]]
 ledger = "m10"
@@ -782,10 +790,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1
 [[proof]]
 ledger = "m11c"
 criterion = "hierarchical-depth-on-a-device"
-digest = "d358bc07ff384456"
+digest = "c84a22e6db079b41"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'step.push.source_offset = hzb_level_offset(desc_.width, desc_.height, level - 1U);' in src/rendering/hzb/src/hzb_pass.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-geometry (exit 1: render.virtual_geometry_gpu: the filter selected 1 case(s) of the 1 it names), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: render.virtual_geometry_gpu: the filter selected 1 case(s) of the 1 it names), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -862,10 +870,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-bind (exit
 [[proof]]
 ledger = "m11c"
 criterion = "material-texture-is-bound"
-digest = "e84ec470af3a2b1d"
+digest = "92cbd6184ca81702"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'bindless_set_handle_ = *set_handle;' in src/backends/rhi/vulkan/src/vulkan_instance.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-bind (exit 1: the material binding case FAILED), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the material binding case FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -886,10 +894,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1
 [[proof]]
 ledger = "m11c"
 criterion = "ray-tracing-on-the-device"
-digest = "604f97d1278ccc1b"
+digest = "2c77edc2a0fde575"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'config.device_supports_ray_tracing = capabilities.has(rhi::Capability::RayTracing);' in src/rendering/raytracing/src/capability.cpp (declared)"
-detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1: the named case(s) FAILED), and green again once restored"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -2119,14 +2127,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m10"
 criterion = "sky-core"
 digest = "7d57ca364c3aa985"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m10"
-criterion = "sky-field-round-trip"
-digest = "ae4d233e24b3d8f3"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
