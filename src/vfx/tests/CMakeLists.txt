@@ -16,7 +16,14 @@
 #   vfx             KIND integration. A simulation world, a shared pool, four hundred instances and
 #                   a synthetic overload, plus the six renderer kinds' publications (M10 task 5.3) —
 #                   which need a world and a cooked effect for the same reason and so are the same
-#                   suite rather than a fourth one.
+#                   suite rather than a fourth one. M11.c adds the device-free half of
+#                   `m11c:vfx-in-the-shot`: the artefact's own effect, simulated and PROJECTED
+#                   through the artefact's camera, which is arithmetic and needs no GPU.
+#
+# TWO SUITES COMPILE `samples/12-beauty/embers.cpp`, which is the beauty shot's effect. That is the
+# same arrangement as `samples/12-beauty` compiling `tests/render/golden.cpp`, in reverse, and for
+# the same reason: a suite that re-declared the artefact's effect would be a suite asserting its own
+# copy of it, and the picture it compared would be a picture of something nobody ships.
 #
 # THE DEVICE SUITE IS DECLARED SEPARATELY, and only when CY_RENDERER_VULKAN is on — for the reason
 # tests/render/ gives: a suite that always skips is a suite whose failure nobody would notice. With
@@ -86,10 +93,14 @@ function(cy_vfx_declare_tests)
             "${tests_dir}/effects.cpp"
             "${tests_dir}/vfx_scene.cpp"
             "${tests_dir}/test_vfx_device.cpp"
+            "${tests_dir}/test_shot_air.cpp"
+            "${CMAKE_SOURCE_DIR}/samples/12-beauty/embers.cpp"
             "${CMAKE_SOURCE_DIR}/tests/render/golden.cpp"
-        DEPENDENCIES cy::vfx cy::rendering-assembly cy::rendering-graph cy::rhi-null cy::rhi-vulkan)
+        DEPENDENCIES cy::vfx cy::rendering-assembly cy::rendering-graph cy::rhi-null cy::rhi-vulkan
+        DEFINITIONS CY_RENDER_TEST_DIR="${CMAKE_SOURCE_DIR}/tests/render")
     target_include_directories(cy_test_render_vfx
-                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render")
+                               PRIVATE "${tests_dir}" "${CMAKE_SOURCE_DIR}/tests/render"
+                                       "${CMAKE_SOURCE_DIR}/samples/12-beauty")
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL cy_vfx_declare_tests)

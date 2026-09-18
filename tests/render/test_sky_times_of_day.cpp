@@ -179,20 +179,28 @@ constexpr u32 kHeight = 108;
 constexpr u32 kTexels = kWidth * kHeight;
 
 /// Pixels between grid vertices. See the header: the dome is tessellated in the projection.
-constexpr u32 kVertexStride = 4;
+constexpr u32 kVertexStride = 2;
 constexpr u32 kGridColumns = (kWidth / kVertexStride) + 1;
 constexpr u32 kGridRows = (kHeight / kVertexStride) + 1;
 constexpr u32 kVertexCount = kGridColumns * kGridRows;
 constexpr u32 kIndexCount = (kGridColumns - 1) * (kGridRows - 1) * 6;
 
-/// The camera. FIXED across all four times of day, because a camera that turned to follow the sun
-/// would photograph the same picture four times and call it a response to elevation.
+/// THE FRAME IS THE WHOLE SKY, AND NOT A CAMERA'S VIEW OF PART OF IT.
 ///
-/// Facing south — the sun's own azimuth at local noon at a northern latitude — pitched up far
-/// enough that the horizon sits in the lower third and the noon sun's disc is inside the frame.
-constexpr f32 kCameraAzimuthDegrees = 180.0F;
-constexpr f32 kCameraPitchDegrees = 25.0F;
-constexpr f32 kVerticalFovDegrees = 80.0F;
+/// A pinhole camera at a fixed heading photographs the sun at noon and misses it at every other
+/// time of day — at 52 degrees north on the June solstice the sun rises at azimuth 51 and sets at
+/// 321, and no fixed field of view holds both of those and the south at once. A camera that TURNED
+/// to follow the sun would photograph the same picture four times and call it a response to
+/// elevation, which is the one thing these four references exist to refute.
+///
+/// So the image is an equirectangular panorama: the horizontal axis is the whole 360 degrees of
+/// azimuth with south at the centre and north at both edges, and the vertical axis runs from 15
+/// degrees below the horizon to the zenith. Every direction the sun can be in is in the frame at
+/// every time of day, the horizon is a line across it, and the sun's own azimuth moves across the
+/// picture as the day turns — which is a second thing the four references can fail on.
+constexpr f32 kAzimuthCentreDegrees = 180.0F;
+constexpr f32 kElevationLowDegrees = -15.0F;
+constexpr f32 kElevationHighDegrees = 90.0F;
 /// Eye height, in metres. Two metres above the ground: a person's, and the altitude at which a
 /// horizon is a horizon.
 constexpr f32 kEyeAltitudeMetres = 2.0F;
@@ -214,13 +222,19 @@ struct TimeOfDayCase {
     f32 sun_elevation_degrees;
 };
 
-/// 06:00, 12:00, 18:00 and 00:00 at 52 degrees north on the June solstice. The names are the
-/// reference file names.
+/// 03:50, 12:00, 21:07 and 00:00 at 52 degrees north on the June solstice — the sun just up, the
+/// sun at its highest, the sun six degrees down in the west, and the darkest the sky gets at this
+/// latitude on this day. FOUR DISTINCT ELEVATIONS, which is what the row's claim needs and what an
+/// obvious choice of 06:00 and 18:00 does NOT give: those two are symmetric about local noon, so
+/// the sun stands at the same 18.27 degrees in both and two of the four references would have been
+/// photographs of one elevation. Measured, not assumed — the first run of this suite printed them.
+///
+/// The names are the reference file names.
 constexpr TimeOfDayCase kTimes[4] = {
-    {"sky_dawn", 0.25F, 1.0F, 0.0F},
-    {"sky_noon", 0.50F, 1.0F, 0.0F},
-    {"sky_dusk", 0.75F, 1.0F, 0.0F},
-    {"sky_night", 0.00F, 1.0F, 0.0F},
+    {"sky_dawn", 0.16F, 382.209F, 0.618F},
+    {"sky_noon", 0.50F, 9480.26F, 61.440F},
+    {"sky_dusk", 0.88F, 3.66650F, -5.641F},
+    {"sky_night", 0.00F, 0.00218226F, -14.560F},
 };
 
 constexpr f32 kLatitudeDegrees = 52.0F;
@@ -251,46 +265,20 @@ struct SkyFramePush {
 
 // --- The directions -------------------------------------------------------------------------------
 
-[[nodiscard]] Vec3 normalise(Vec3 value) noexcept {
-    const f32 length = std::sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
-    return length > 0.0F ? Vec3{value.x / length, value.y / length, value.z / length} : value;
-}
-
-/// The camera basis in the engine's own frame: +Y up, +X east, -Z north — `celestial.cpp`'s, which
-/// is where the sun's direction comes from, so the sun in the picture is the sun the model placed.
-struct CameraBasis {
-    Vec3 forward;
-    Vec3 right;
-    Vec3 up;
-};
-
-[[nodiscard]] CameraBasis camera_basis() noexcept {
-    const f32 azimuth = radians_of(kCameraAzimuthDegrees);
-    const f32 pitch = radians_of(kCameraPitchDegrees);
-    CameraBasis basis;
-    basis.forward = Vec3{std::cos(pitch) * std::sin(azimuth), std::sin(pitch),
-                         -std::cos(pitch) * std::cos(azimuth)};
-    // Horizontal, and the derivative of the heading with respect to azimuth: the direction to the
-    // camera's right, which at due south is west.
-    basis.right = Vec3{std::cos(azimuth), 0.0F, std::sin(azimuth)};
-    basis.up = Vec3{(basis.right.y * basis.forward.z) - (basis.right.z * basis.forward.y),
-                    (basis.right.z * basis.forward.x) - (basis.right.x * basis.forward.z),
-                    (basis.right.x * basis.forward.y) - (basis.right.y * basis.forward.x)};
-    return basis;
-}
-
-/// The view ray through a clip-space position. Clip +Y is the TOP of the target — the engine's
-/// viewport has a negative height, `VulkanCommandBuffer::set_viewport` flips it — so a vertex at
-/// +1 is the highest elevation in the picture, which is what makes the sky's zenith the top of it.
-[[nodiscard]] Vec3 ray_through(const CameraBasis& basis, f32 clip_x, f32 clip_y) noexcept {
-    const f32 tan_half_vertical = std::tan(radians_of(kVerticalFovDegrees) * 0.5F);
-    const f32 tan_half_horizontal =
-        tan_half_vertical * (static_cast<f32>(kWidth) / static_cast<f32>(kHeight));
-    const f32 across = clip_x * tan_half_horizontal;
-    const f32 upward = clip_y * tan_half_vertical;
-    return normalise(Vec3{basis.forward.x + (basis.right.x * across) + (basis.up.x * upward),
-                          basis.forward.y + (basis.right.y * across) + (basis.up.y * upward),
-                          basis.forward.z + (basis.right.z * across) + (basis.up.z * upward)});
+/// The direction a point of the image looks along, in the engine's own frame: +Y up, +X east, -Z
+/// north — `celestial.cpp`'s frame, which is where the sun's direction comes from, so the sun in
+/// the picture is the sun the model placed.
+///
+/// Clip +Y is the TOP of the target — the engine's viewport has a negative height,
+/// `VulkanCommandBuffer::set_viewport` flips it — so a vertex at +1 is the zenith and the horizon
+/// is a line near the bottom, which is where a reader expects to find it.
+[[nodiscard]] Vec3 ray_through(f32 clip_x, f32 clip_y) noexcept {
+    const f32 azimuth = radians_of(kAzimuthCentreDegrees + (clip_x * 180.0F));
+    const f32 middle = (kElevationHighDegrees + kElevationLowDegrees) * 0.5F;
+    const f32 half = (kElevationHighDegrees - kElevationLowDegrees) * 0.5F;
+    const f32 elevation = radians_of(middle + (clip_y * half));
+    return Vec3{std::cos(elevation) * std::sin(azimuth), std::sin(elevation),
+                -std::cos(elevation) * std::cos(azimuth)};
 }
 
 // --- The sky --------------------------------------------------------------------------------------
@@ -376,7 +364,6 @@ private:
 [[nodiscard]] Status compose_grid(SkyFixture& fixture, const TimeOfDayCase& when,
                                   Array<GridVertex>& vertices, f32& mean_luminance) noexcept {
     const sky::SkyCompositionInputs inputs = fixture.at(when);
-    const CameraBasis basis = camera_basis();
     if (Status sized = vertices.resize(kVertexCount); !sized) {
         return sized;
     }
@@ -388,7 +375,7 @@ private:
                                1.0F;
             const f32 clip_y =
                 1.0F - (static_cast<f32>(row) / static_cast<f32>(kGridRows - 1) * 2.0F);
-            const Vec3 direction = ray_through(basis, clip_x, clip_y);
+            const Vec3 direction = ray_through(clip_x, clip_y);
             const sky::SkyCompositionSample composed = sky::compose_sky(inputs, direction);
             GridVertex& vertex = vertices[(static_cast<usize>(row) * kGridColumns) + column];
             vertex.x = clip_x;

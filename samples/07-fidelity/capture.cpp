@@ -7,7 +7,7 @@
 // normal. This writes three views of one frame, which is what
 // `docs/design/images/virtual-geometry-*` are and how they are regenerated:
 //
-//     cy_fidelity_capture <stem> [threshold_pixels]
+//     cy_fidelity_capture <stem> [threshold_pixels] [shaded_shot_parameter]
 //
 // The threshold is the point. It is the geometric error the cluster hierarchy is allowed to commit
 // in screen space, so running the same view at 1, 4 and 16 pixels shows the hierarchy CHOOSING —
@@ -24,12 +24,9 @@
 // and it exists because the documentation's frame is 1280x720 and a committed reference at that
 // size is 3.5 MB of uncompressed PNG.
 //
-// THE SHADED VIEW IS THE EXTERIOR HALF OF THE SHOT and the two debug views are the interior half.
-// That is not an inconsistency, it is what the shot is: `camera_at` runs from inside the hall to
-// outside it, the sun is the light the virtual shadow map is built for, and the hall is a closed
-// shell — so the interior is a picture of ambient light and the exterior is a picture of the sun
-// and what blocks it. The cluster and triangle views stay at the interior phase because the
-// level-of-detail figures `docs/design/virtual-geometry.md` publishes are that phase's.
+// ALL THREE VIEWS ARE ONE FRAME, which is why the shading reads the capture the debug views were
+// coloured from rather than rendering a second one: the cluster view, the triangle view and the
+// shaded view are the same pixels answered three ways, and a reader can put them side by side.
 //
 // It is not a test. Nothing here asserts; the golden-image suite under tests/render owns that, and
 // this borrows only its PNG writer so there is one encoder in the tree rather than two.
@@ -103,6 +100,9 @@ namespace {
 int main(int argc, char** argv) {
     const std::string stem = argc > 1 ? argv[1] : "/tmp/vg";
     const f32 threshold = argc > 2 ? std::strtof(argv[2], nullptr) : 1.0F;
+    /// Which frame of the shot all three views are. 0 — the default, and what the documentation
+    /// publishes — is inside the hall; 0.5 is the first frame outside it and 1 the last.
+    const f32 shot = argc > 3 ? std::strtof(argv[3], nullptr) : 0.0F;
 
     Allocator& allocator = cy::system_allocator(cy::MemoryDomain::Renderer);
 
@@ -118,6 +118,10 @@ int main(int argc, char** argv) {
     options.frames = 1;
     options.warmup_frames = 2;
     options.threshold_pixels = threshold;
+    // STATED RATHER THAN IMPLIED. With one timed frame the shot parameter is zero anyway; saying so
+    // is what lets a reader reproduce the frame from the scene alone, which is the argument
+    // `tests/render/test_golden_frame.cpp` makes about phase 0 of the first-light orbit.
+    options.capture_shot = shot;
 
     FrameReport report(allocator);
     Capture capture(allocator);
@@ -178,20 +182,12 @@ int main(int argc, char** argv) {
     save("-clusters.png", clusters);
     save("-triangles.png", triangles);
 
-    // THE SHADED VIEW, from a second run of the same frame at the exterior phase. `render_frames`
-    // hands back the LAST timed frame, and the shot parameter runs 0..1 over the timed frames, so
-    // two timed frames is the recipe for "the end of the shot" and one is "the start of it".
-    FrameOptions shaded_options = options;
-    shaded_options.frames = 2;
-    FrameReport shaded_report(allocator);
-    Capture shaded_capture(allocator);
-    if (Status ran = render_frames(scene, shaded_options, shaded_report, &shaded_capture); !ran) {
-        std::printf("shaded frame: %s\n", ran.error().message);
-        return 1;
-    }
+    // THE SHADED VIEW, of THE SAME CAPTURED FRAME the two debug views above are of. One frame,
+    // three pictures: the cluster hierarchy's choice, the triangles it drew, and what the surface
+    // they identify looks like lit.
     ShadedFrame shaded(allocator);
     ShadeReport shade_report;
-    if (Status lit = shade_frame(scene, shaded_capture, ShadeOptions{}, shaded, shade_report);
+    if (Status lit = shade_frame(scene, capture, ShadeOptions{}, shaded, shade_report);
         !lit) {
         std::printf("shade: %s\n", lit.error().message);
         return 1;

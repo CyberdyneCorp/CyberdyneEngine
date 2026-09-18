@@ -241,7 +241,8 @@ Status render_frames(const Scene& scene, const FrameOptions& options, FrameRepor
         // The shot parameter runs 0..1 over the TIMED frames. Deriving it from the raw loop index
         // would spend the warm-up on the interior half and leave the timed frames all exterior,
         // which is the shape the smoke test caught: `interior 0, exterior 17,016,037`.
-        const f32 t = static_cast<f32>(timed ? frame - options.warmup_frames : 0U) / span;
+        const f32 swept = static_cast<f32>(timed ? frame - options.warmup_frames : 0U) / span;
+        const f32 t = options.capture_shot >= 0.0F ? options.capture_shot : swept;
         const Vec3 camera = camera_at(scene, t);
         const Mat4 view = look_at(camera, camera_target(scene, t), Vec3{0.0F, 1.0F, 0.0F});
         const Mat4 projection = perspective_reversed_z_infinite(kShotFovY, aspect, 0.05F);

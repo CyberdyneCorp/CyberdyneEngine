@@ -103,15 +103,20 @@ CY_TEST_CASE("particles are in the assembled frame: the shot's air simulates and
 
     CY_REQUIRE(field.settle(kShotEye).has_value());
 
-    // THE POPULATION. Six seconds of sixty-Hertz spawning against a four-and-a-half to seven second
-    // life, three instances of it. The floor is a THIRD of the steady state rather than one: an
-    // effect reduced to a handful of motes is an effect that stopped working, and `> 0` would not
-    // notice.
+    // THE POPULATION, AS A BAND AROUND A MEASURED NUMBER. Six seconds of thirty-Hertz spawning at
+    // two a step against a four-and-a-half to seven second life, three instances of it: 996 motes
+    // on the machine this was written on, and the simulation is a hash of the particle index so
+    // that is the number every machine gets.
+    //
+    // A band and not `> 0`: an effect degraded to a handful of motes simulates, publishes and
+    // passes any assertion phrased as "some". A band and not equality: the arithmetic is f32 and a
+    // different rounding at a lifetime boundary legitimately moves the count by a mote.
     const u32 published = field.published().particles;
     std::fprintf(stderr, "the shot's air: %u mote(s) published, %u dropped, %u emitter(s)\n",
                  published, field.published().dropped, field.published().emitters);
     CY_CHECK_EQ(field.published().emitters, kEmberEmitterCount);
-    CY_CHECK_GT(published, 300U);
+    CY_CHECK_GT(published, 900U);
+    CY_CHECK_LT(published, 1100U);
     // The ring is bigger than the field, so a drop is the effect outgrowing its own budget rather
     // than the harness being small.
     CY_CHECK_EQ(field.published().dropped, 0U);
@@ -143,7 +148,9 @@ CY_TEST_CASE("particles are in the assembled frame: the shot's air simulates and
     // effect can be in the frame and invisible.
     CY_CHECK_GT(brightest, 100.0F);
     // AND THE CLAIM ITSELF: the air is in front of the camera, not behind it and not past the far
-    // pillar. A third of the field is the floor, because the emitters are volumes and the ones at
-    // the edges of the slab legitimately fall outside a 42-degree lens.
-    CY_CHECK_GT(framed, published / 3U);
+    // pillar. Measured: 901 of 996, which is 90%. The floor is three fifths, because the emitters
+    // are volumes and the motes at the edges of the slab legitimately fall outside a 42-degree
+    // lens — but a field that had drifted behind the camera, or been placed past the far plane,
+    // would fall under it at once.
+    CY_CHECK_GT(framed, (published * 3U) / 5U);
 }

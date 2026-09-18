@@ -21,6 +21,11 @@ Three rules, applied to every command in every `.github/workflows/*.yml`:
    contributor documentation must name the same gates and three hand-maintained copies diverge".
    This is the check that stops the first of those three from drifting: a gate nobody runs is not a
    gate, and the divergence is silent in every other direction.
+5. And the job holding that command can actually RUN, and can actually FAIL. Rule 4 asks whether the
+   command is in the file; this asks whether the job it sits in is ever scheduled by a trigger the
+   workflow declares, and whether a red from it reaches the run. `A COMMAND IS NOT A JOB` and `A JOB
+   IS NOT A RUN` are M11.a's repair-2 and repair-3 gates, learned one after the other on this
+   repository's own cross-leg jobs; this applies the same two questions to the gate set.
 
 `--list` prints each workflow's jobs and the recipes they invoke: the gate set, read from the
 workflows rather than from a document that can fall behind them.
@@ -41,6 +46,16 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+# The workflow reader, the trigger model and the `if:` evaluator live in cross_leg_audit.py, which
+# had to grow all three to answer the same two questions about the cross-leg comparison. They are
+# IMPORTED rather than written again: a second reader of this file is how the two would come to
+# disagree about which jobs exist, and that module's own selftest already asserts they do not
+# (`_reader_agrees_with_check_workflows`).
+import cross_leg_audit  # noqa: E402 — after the sys.path line that makes it importable
 
 # Commands a workflow may run that are not recipes. Each provisions a tool, and each is a command
 # `just env-doctor` prints as the correction for that tool being absent — so this list stays honest
@@ -299,6 +314,133 @@ def gate_coverage(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str
     return uncovered
 
 
+# --- A COMMAND IS NOT A JOB, AND A JOB IS NOT A RUN -----------------------------------------------
+#
+# `gate_coverage` above asks one question: is this gate's command somewhere in this directory. That
+# is the question that was worth asking while every job in ci.yml ran on every push and no job in it
+# carried a condition. It is not the whole question, and this repository has twice been shown the
+# rest of it — both times on the cross-leg comparison, both times with the criteria staying GREEN:
+#
+#   repair-2, `if: always()` -> `if: false`   the job never runs. GitHub scores a SKIPPED job as
+#                                             SUCCESS, so the pipeline is green over nothing.
+#   repair-3, `continue-on-error: true`       the job runs, the command exits 1, the job's
+#                                             conclusion is SUCCESS, and the red reaches nobody.
+#
+# Neither is visible to a check that greps for a command, and both are one line. The milestone
+# ledger is now the job in this file that depends on a condition being TRUE — it runs nightly and on
+# demand rather than on every push, because it is hours long — so the condition is load-bearing in a
+# way no gate command in this file used to be, and this is the rule that holds it.
+#
+# WHAT IT ASKS, per job that holds a declared gate's command:
+#
+#   * at least one trigger the workflow declares actually schedules the job, its `needs:` chain
+#     included. A job gated on `github.event_name == 'schedule'` in a workflow with no `schedule:`
+#     is dead code that reads exactly like a gate.
+#   * nothing forgives its failure — no `continue-on-error` on the job, and none on the step that
+#     runs the gate.
+#
+# An `if:` the evaluator cannot read is a FINDING and never a pass, which is the rule cross_leg_audit
+# arrived at after "forgiveness behind an unreadable expression" was one of its seventeen fixtures.
+#
+# WITH ONE EXCEPTION, AND IT IS NAMED RATHER THAN GENERAL. A condition reaching for `vars.`,
+# `secrets.` or `inputs.` asks a question about the REPOSITORY'S CONFIGURATION, which is not in this
+# file and is not this check's to answer. `editor-window` is the live instance: it targets a
+# self-hosted `[self-hosted, linux, x11]` runner and is guarded by `vars.CY_EDITOR_WINDOW_RUNNER`,
+# set where such a runner exists and unset everywhere else — and the comment above that job argues
+# the guard is what makes it honest, because a job targeting a label nobody has QUEUES FOREVER
+# rather than failing. The criteria it covers carry `requires = "display"`, so a machine that cannot
+# judge them reports NOT EVALUATED rather than green; that is the mechanism holding this case, and it
+# is a different one from this rule. Every OTHER unreadable condition — a function call, an operator
+# this reader does not know — is a finding, and a fixture below proves the exception does not widen
+# to cover it. The known weakness is order: `vars.X && github.event_name == 'schedule'` stops being
+# read at `vars.X`, so a dead event test hiding to the RIGHT of a deployment context is not seen.
+# That is a false GREEN this check cannot close from the file alone, and it is written down here
+# rather than left to be discovered.
+#
+# WHAT IT DOES NOT ASK is whether the gate is run OFTEN ENOUGH. `delivery-roadmap` requires a closed
+# milestone's criteria to stay green and gates.toml declares the set; neither says per-commit, and
+# the ledger of every closed milestone takes hours. Cadence is a decision recorded in the workflow
+# file beside the job. Liveness is not a decision, and that is what is checked here.
+
+
+#: An `if:` reaching for one of these asks about the repository's configuration rather than about
+#: this file. See the exception paragraph above.
+DEPLOYMENT_CONTEXT = re.compile(r"`(vars|secrets|inputs)\.")
+
+
+def _forgiven(job) -> str:
+    """Empty unless something lets this job fail without failing the run."""
+    if job.continues and job.continues.strip().lower() != "false":
+        return f"the job carries `continue-on-error: {job.continues.strip()}`"
+    for step in job.steps:
+        forgiveness = str(step.get("continue-on-error", "")).strip()
+        if forgiveness and forgiveness.lower() != "false":
+            name = str(step.get("name", step.get("run", "?"))).splitlines()[0][:60]
+            return f"the step `{name}` carries `continue-on-error: {forgiveness}`"
+    return ""
+
+
+def gate_jobs_are_live(root: pathlib.Path, workflows: list[pathlib.Path]) -> list[str]:
+    """Every job holding a declared gate's command is scheduled by something, and is not forgiven."""
+    declaration = root / "tools" / "roadmap" / "gates.toml"
+    gates = (tomllib.loads(declaration.read_text(encoding="utf-8")).get("gate", [])
+             if declaration.exists() else [])
+    declared = {run.strip() for gate in gates for run in gate.get("runs", [])}
+
+    problems: list[str] = []
+    for path in workflows:
+        jobs = cross_leg_audit.jobs_of(path)
+        index = cross_leg_audit.index_of(jobs)
+        by_name = {job.name: job for job in jobs}
+
+        holders: dict[str, str] = {}
+        for command in commands_in(path):
+            for segment in SEPARATORS.split(command.text):
+                text = segment.strip()
+                if text in declared or text.startswith("just roadmap-milestone "):
+                    holders.setdefault(command.job, text)
+
+        for name, gate_command in sorted(holders.items()):
+            job = by_name.get(name)
+            if job is None:
+                problems.append(
+                    f"{path.name}: `{gate_command}` is in a job named '{name}' that the workflow "
+                    "reader cannot find, so whether it runs cannot be answered")
+                continue
+            if not job.events:
+                problems.append(
+                    f"{path.name}: job '{name}' runs the gate `{gate_command}` and the workflow "
+                    "declares no trigger at all, so nothing ever schedules it")
+                continue
+            stoppers = []
+            for event in job.events:
+                try:
+                    stopped = cross_leg_audit.blocked_on(job, event, index)
+                except cross_leg_audit.Unreadable as unreadable:
+                    if DEPLOYMENT_CONTEXT.search(str(unreadable)):
+                        stoppers = []  # a question about the configuration, not about this file
+                        break
+                    stopped = (f"{job.label} carries an `if:` this reader cannot evaluate on "
+                               f"{event} ({unreadable})")
+                if not stopped:
+                    stoppers = []
+                    break
+                stoppers.append(stopped)
+            if stoppers:
+                problems.append(
+                    f"{path.name}: job '{name}' runs the gate `{gate_command}` and NONE of the "
+                    f"{len(job.events)} trigger(s) this workflow declares ever schedules it — "
+                    f"{stoppers[0]}. A skipped job is scored SUCCESS, so this is a gate that cannot "
+                    "go red")
+            forgiveness = _forgiven(job)
+            if forgiveness:
+                problems.append(
+                    f"{path.name}: job '{name}' runs the gate `{gate_command}` and "
+                    f"{forgiveness}. The command exits non-zero and the run stays green, which is "
+                    "the same green as a gate that passed")
+    return problems
+
+
 # The recipes that will not run without the pinned LLVM tooling, and so may not appear in a job that
 # has not installed it. `env-doctor` is here because it requires the pin rather than merely using it.
 NEEDS_PINNED_LLVM = ("just env-doctor", "just quality-format-check", "just quality-lint")
@@ -443,6 +585,17 @@ SELFTEST_LEGAL = (
     "- run: npm install -g @fission-ai/openspec",
     "- run: |\n          sudo apt-get update\n          sudo apt-get install -y ninja-build",
 )
+
+
+def declared_gate_command(root: pathlib.Path) -> str:
+    """One permanent gate's command, so the fixtures below name a gate this tree really declares."""
+    declaration = root / "tools" / "roadmap" / "gates.toml"
+    if not declaration.exists():
+        return ""
+    for gate in tomllib.loads(declaration.read_text(encoding="utf-8")).get("gate", []):
+        if gate.get("class") == "permanent" and gate.get("runs"):
+            return str(gate["runs"][0]).strip()
+    return ""
 
 
 def selftest(root: pathlib.Path) -> int:
@@ -602,7 +755,95 @@ def selftest(root: pathlib.Path) -> int:
             print("fail no milestone gate is green, so the coverage rule cannot be tested",
                   file=sys.stderr)
 
-    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5
+        # --- THE LIVENESS RULE'S OWN NEGATIVE FIXTURES ---------------------------------------------
+        #
+        # THE TWO DEFECTS, RESTORED. Each was shipped here once, on the cross-leg jobs, and each left
+        # its criteria GREEN: a gate job that never runs, and a gate job whose failure is forgiven.
+        # The fifth case is the shape this repository's own `milestone` job now has — nightly and on
+        # demand, scheduled by a `schedule:` the file declares — and it must NOT be rejected, or the
+        # rule would forbid the cadence it exists to make safe.
+        gate = declared_gate_command(root) or "just quality-layers"
+        live_cases = (
+            (
+                f"on:\n  push:\n\njobs:\n  gate:\n    if: false\n    runs-on: ubuntu-24.04\n"
+                f"    steps:\n      - run: {gate}\n",
+                "NONE of the",
+                "a gate job that can never be scheduled",
+            ),
+            (
+                f"on:\n  push:\n\njobs:\n  gate:\n"
+                f"    if: github.event_name == 'schedule'\n    runs-on: ubuntu-24.04\n"
+                f"    steps:\n      - run: {gate}\n",
+                "NONE of the",
+                "a nightly gate job in a workflow that declares no schedule",
+            ),
+            (
+                f"on:\n  push:\n\njobs:\n  gate:\n"
+                f"    if: fromJSON('true')\n    runs-on: ubuntu-24.04\n"
+                f"    steps:\n      - run: {gate}\n",
+                "cannot evaluate",
+                "a gate job behind a condition nobody can read that is not a deployment fact",
+            ),
+            (
+                f"on:\n  push:\n\njobs:\n  gate:\n    continue-on-error: true\n"
+                f"    runs-on: ubuntu-24.04\n    steps:\n      - run: {gate}\n",
+                "continue-on-error",
+                "a gate job allowed to fail without failing the run",
+            ),
+            (
+                f"on:\n  push:\n\njobs:\n  upstream:\n    if: false\n    runs-on: ubuntu-24.04\n"
+                f"    steps:\n      - run: just env-doctor\n"
+                f"  gate:\n    needs: upstream\n    runs-on: ubuntu-24.04\n"
+                f"    steps:\n      - run: {gate}\n",
+                "NONE of the",
+                "a gate job whose `needs:` can never be scheduled",
+            ),
+        )
+        for document, expected, description in live_cases:
+            scratch.write_text(document, encoding="utf-8")
+            found = gate_jobs_are_live(root, [scratch])
+            if any(expected in problem for problem in found):
+                print(f"ok   rejected: {description}")
+            else:
+                failed += 1
+                print(f"fail {description} was accepted: {found or ['nothing']}", file=sys.stderr)
+
+        scratch.write_text(
+            "on:\n  schedule:\n    - cron: '41 3 * * *'\n  workflow_dispatch:\n\n"
+            "jobs:\n  gate:\n"
+            "    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'\n"
+            "    runs-on: ubuntu-24.04\n"
+            f"    steps:\n      - run: {gate}\n",
+            encoding="utf-8",
+        )
+        found = gate_jobs_are_live(root, [scratch])
+        if found:
+            failed += 1
+            print(f"fail a nightly gate job on a declared schedule was rejected: {found}",
+                  file=sys.stderr)
+        else:
+            print("ok   accepted: a gate job that runs nightly and on demand, on triggers the "
+                  "workflow declares")
+
+        # AND THE NAMED EXCEPTION, exercised rather than asserted: a gate job guarded by a repository
+        # variable is a question about the configuration, not dead code in this file. This is
+        # `editor-window`'s shape, and without this case the exemption would be a branch nobody runs.
+        scratch.write_text(
+            "on:\n  push:\n\njobs:\n  gate:\n"
+            "    if: vars.CY_SOME_RUNNER == 'true'\n    runs-on: [self-hosted, linux]\n"
+            f"    steps:\n      - run: {gate}\n",
+            encoding="utf-8",
+        )
+        found = gate_jobs_are_live(root, [scratch])
+        if found:
+            failed += 1
+            print(f"fail a gate job guarded by a repository variable was rejected: {found}",
+                  file=sys.stderr)
+        else:
+            print("ok   accepted: a gate job guarded by a repository variable, which is a fact "
+                  "about the configuration and not about this file")
+
+    total = len(SELFTEST_CASES) + len(SELFTEST_LEGAL) + 5 + len(live_cases) + 2
     if failed:
         print(f"check-workflows selftest: {failed} of {total} cases failed", file=sys.stderr)
         return 1
@@ -696,16 +937,20 @@ def main() -> int:
                 violations.extend(check_segment(path, command, segment, recipes))
 
     uncovered = gate_coverage(root, workflows)
+    dead = gate_jobs_are_live(root, workflows)
     drift = pin_drift(root, workflows)
     system = system_dependencies(root, workflows)
     cancellation = long_run_cancellation(root, workflows)
 
-    if violations or uncovered or drift or system or cancellation:
+    if violations or uncovered or dead or drift or system or cancellation:
         print("check-workflows: the workflows and the recipes disagree", file=sys.stderr)
         for violation in violations:
             print(violation.render(root), file=sys.stderr)
         for gap in uncovered:
             print(f"  {gap}\n      `just roadmap-gates` prints the declared set.", file=sys.stderr)
+        for gap in dead:
+            print(f"  {gap}\n      a command is not a job, and a job is not a run: M11.a's "
+                  "repair-2 and repair-3 gates.", file=sys.stderr)
         for gap in drift:
             print(f"  {gap}\n      the pin is `llvm_pin_version` in the justfile.", file=sys.stderr)
         for gap in system:
@@ -719,7 +964,8 @@ def main() -> int:
     print(
         f"check-workflows: clean — {len(workflows)} workflow(s), {total} command(s), "
         "every one a recipe or a tool install, every permanent gate run, every closed "
-        "milestone's criteria evaluated, every Linux job given the documented system "
+        "milestone's criteria evaluated, every gate's job actually scheduled by a declared "
+        "trigger and forgiven by nothing, every Linux job given the documented system "
         "libraries, and no long workflow cancelling its own runs on the trunk"
     )
     return 0

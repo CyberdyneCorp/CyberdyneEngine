@@ -165,12 +165,16 @@ private:
     return ok();
 }
 
-/// One mote a step, scaled by the exposed `density`. Sixty a second against a four-and-a-half to
-/// seven second life is a settled population of about three hundred an emitter — dense enough to
-/// read as air, sparse enough that the colonnade is still the subject.
+/// Two motes a step, scaled by the exposed `density`.
+///
+/// MEASURED RATHER THAN INTENDED: the effect is `ImportanceClass::Ambient`, whose default
+/// simulation frequency is 30 Hz and not 60, so two a step is sixty a second — and against a
+/// four-and-a-half to seven second life that settles at about three hundred and twenty motes an
+/// emitter, 972 over the three. Dense enough to read as air, sparse enough that the colonnade is
+/// still the subject, and comfortably inside the 512-particle block each emitter is given.
 [[nodiscard]] Status build_spawn(Allocator& allocator, Emitter& emitter) noexcept {
     Author stage(allocator, "embers.spawn");
-    const NodeKey rate = stage.constant(1.0F);
+    const NodeKey rate = stage.constant(2.0F);
     stage.spawn_count(stage.binary("vfx.mul", rate, stage.parameter("density")));
     if (!stage.ok()) {
         return fail(ErrorCode::Internal, "beauty embers: the spawn graph did not author");

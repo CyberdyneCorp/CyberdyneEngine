@@ -63,6 +63,16 @@ struct FrameOptions {
     u32 warmup_frames = 12;
     /// `virtual-geometry`'s quality lever: the maximum acceptable geometric error, in pixels.
     f32 threshold_pixels = 1.0F;
+    /// The shot parameter every timed frame is rendered at, when a caller wants ONE frame of the
+    /// shot rather than the sweep. Negative — the default — keeps the sweep, where `t` runs 0..1
+    /// over the timed frames and a `Capture` therefore retains the LAST of them.
+    ///
+    /// A caller that sets this is capturing rather than measuring: every timed frame renders the
+    /// same view, so `median_ms` becomes the cost of one view repeated and `interior_covered` /
+    /// `exterior_covered` stop being a statement about both halves of the shot. The artefact's own
+    /// four acts never set it; `capture.cpp` and `render.virtual_geometry_shaded` do, because a
+    /// still has to be a stated frame of the shot and not "whichever one came last".
+    f32 capture_shot = -1.0F;
     /// Covered pixels shaded through the illumination system, per shot.
     u32 shaded_samples = 512;
 };
