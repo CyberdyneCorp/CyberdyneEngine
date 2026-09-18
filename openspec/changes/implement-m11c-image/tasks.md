@@ -1133,6 +1133,158 @@ work was done.
         `m11c:subsystem-controllers-report-costs` and `m11c:skin-pass-complete` disagree with what
         is recorded for them. They are what keeps `plan-consistency` (`just roadmap-test`) red, and
         they need the same `--record` run against a GPU and a built tree
+      - [x] **THE LADDER PHASE: 47 DISAGREEMENTS BEFORE, 34 disagreement(s) AFTER, BOTH COUNTED BY THE TOOL
+        ITSELF.** `just roadmap-falsify check` opened this phase at *"47 disagreement(s) between the
+        ladder and falsifiability.toml"* and closes it at *"34 disagreement(s)"*. `falsifiability.toml` went from
+        181 proofs and 471 unproven entries to 197 and 456: **the list that only shrinks, shrank by
+        fifteen.** What was repaired, by shape, and each verdict is the prover's own:
+
+        | shape | count | what was done |
+        |---|---|---|
+        | `<ledger>:workflows` | **17** | re-recorded at what they now measure: `red in the tree` |
+        | the two Complete-grade criteria | **2** | made judgeable in the sandbox, then PROVEN |
+        | `m11b:m11c-open` — judged by nothing | **1** | given a mutation; PROVEN |
+        | `m11e:every-deferral-carries-its-three-parts` | **1** | the stale document regenerated |
+        | `m11c:every-shader-reaches-every-target` | **1** | `red against a built tree`, recorded |
+        | declared gaps owing a green-making mutation | **11** | judged unjudgeable, per gap, in the tool |
+        | the fourteen moved digests | **0** | **blocked — see the last item of this section** |
+
+        **AND THE TOOL'S CLOSING NUMBER IS 34, NOT 14, BECAUSE THE TREE MOVED UNDER IT.** Thirty-three
+        of the forty-seven this phase inherited are gone and the fourteen that remain are named
+        below — but twenty disagreements that did not exist when it started appeared while it ran,
+        every one of them from the phase working the deletion audit in the same checkout: seventeen
+        `<ledger>:format` entries, because `just quality-format-check` is now red on three test files
+        that phase rewrote (`src/rendering/shadows/tests/test_cache.cpp`,
+        `src/rendering/sky/tests/test_sky_tables.cpp`, `src/vfx/tests/test_vfx_compiler.cpp` — the
+        recipe names them and `just quality-format` fixes them), and three more digests moved because
+        that phase edited `m11c:ray-tracing-on-the-device`, `m11c:material-texture-is-bound` and
+        `m11c:hierarchical-depth-on-a-device` in the ledger. **Neither is repaired here and both are
+        recorded rather than silently absorbed**: reformatting a file another writer has open is how
+        two phases lose an hour, and re-recording a criterion somebody is still editing records the
+        wrong text. 34 = 14 inherited + 17 format + 3 ledger edits.
+
+      - [x] **THE SEVENTEEN `workflows` ENTRIES NOW SAY WHAT IS TRUE, AND WHAT IS TRUE IS STILL RED.**
+        Fifteen were on the unproven list and the run said `DELETE THE ENTRY`; two — `m11a` and
+        `m11b` — were recorded `proven` and are not passing any more. All eighteen (`m11c`'s was
+        already right) were re-run and recorded `red in the tree`: red unmutated, in the sandbox AND
+        in the repository, which is a proof shape rather than an excuse. **The one red underneath
+        them is unchanged and is NOT repaired here**, deliberately: `just ci-check` reports *"2
+        closed milestone gate(s) — 'milestone-m11a', 'milestone-m11b' — are green and no workflow
+        evaluates them"*, and the fix it names — one job running `just roadmap-milestone m11b` —
+        puts a multi-hour ledger on every push to `main`. That is a decision about this project's
+        continuous integration, it belongs to the rung that closes next exactly as 8.4 says, and
+        recording the observed verdict hides nothing: every one of the eighteen ledgers prints the
+        same red on every run. The day it is fixed, `reconcile` says *"was recorded as 'red in the
+        tree' and is now 'proven'"* and the entries owe an ordinary mutation proof — which is the
+        ratchet working in the direction it was built for.
+      - [x] **THE TWO COMPLETE-GRADE CRITERIA ARE PROVEN, AND THE FIX WAS THE ONE THE LAST GATE
+        NAMED AND DECLINED.** That gate found both green in the repository and red in the sandbox,
+        wrote down the cause — `requirements.py` asks `git ls-files` and `falsify.Sandbox` is a tar
+        of the tracked tree rather than a checkout — and left it, on the ground that either repair
+        *"changes what every other proof on the ladder is taken against"*. Measured rather than
+        assumed, that is true of one of the two candidates and not of the other: initialising a
+        repository inside every sandbox would change every proof, and **a filesystem fallback inside
+        `requirements.py` changes nothing anywhere a repository exists.** It is taken only when
+        `REPO_ROOT/.git` is ABSENT — a git that is present and fails still raises, because that is a
+        broken checkout rather than a copy of one — and in a sandbox a walk and `git ls-files` list
+        the same files by construction, because the tar was written from `git ls-files`.
+        `_walked_cmake` additionally refuses any directory holding a `CMakeCache.txt`, which is the
+        build tree the original comment was written against.
+        **And then both criteria owed a mutation, because a criterion that passes and that nothing
+        can break is the defect this whole module exists to refuse.** Neither has a derivable one —
+        the body is `just quality-requirements <rows…>` with no search in it — so each declares one,
+        and the mutation deliberately breaks **the tree, not the map**: renaming the `cy_add_test`
+        that DECLARES `integration.material_lowering` leaves nine of `material-compiler`'s
+        twenty-one requirements naming a suite that is not there (34/34 → 25/34, exit 1), and the
+        same on `integration.render_gi_pipeline` takes the eight image rows from 123/123 to 109/123.
+        Mutating `requirements-coverage.toml` would have proved only that the recipe reads its own
+        map. Both verdicts: **`proven`**, positive control and ledger-blind control included.
+      - [x] **`m11b:m11c-open` WAS A CRITERION JUDGED BY NOTHING, AND IT WAS PASSING.** Its search is
+        a regex (`^- \[x\] [1-9]`) over a path assembled from a shell variable (`"$d/tasks.md"`) and
+        `derive` refuses both rather than guess, so the verdict was `no mutation` — green, with
+        nothing in the tooling able to turn it red, which is the shape of the seven. What it claims
+        is that somebody has ENTERED M11.c, and the smallest act that unclaims it is the checked
+        boxes going away: `delete-lines '- [x] '` in `openspec/changes/*m11c*/tasks.md`. **`proven`.**
+      - [x] **THE STALE DOCUMENT WAS THIS RUNG'S OWN GAP BEING DECLARED.**
+        `m11e:every-deferral-carries-its-three-parts` runs `just roadmap-debts --check` and it was
+        red because `docs/roadmap/open-debts.md` predates `m11c:every-shader-reaches-every-target`'s
+        `known_gap`. `just roadmap-debts` regenerated it — one row added, the M11.c one — and
+        `--check` is green. The entry stays on the unproven list, which is where a criterion with no
+        derivable mutation belongs; what it is not any more is a disagreement.
+      - [x] **THE ELEVEN DECLARED GAPS: THE TOOLING CANNOT JUDGE THEM, AND THAT IS A FINDING ABOUT
+        THE TOOLING RATHER THAN ABOUT THE GAPS.** A declared gap is judged the other way round — it
+        owes a mutation that makes it **GREEN** — and **every mutation verb this prover has takes
+        something away**: `delete-path`, `delete-lines`, `rename-token`, `truncate`, `lower-tiers`.
+        Eleven of this ladder's gaps are red because something is **absent**, so their closing act
+        is an **addition**, and no subtraction performs one. Not one of the eleven can be fixed by
+        writing a better `[criterion.falsifies]`, because there is no verb to write in it:
+
+        | gap | it is red because | its closing act |
+        |---|---|---|
+        | `m11a:save-forbidden-patterns-checked` | `tools/save/check_forbidden.py` does not exist | write the checker |
+        | `m11a:save-benchmark` | `benchmarks/save/` does not exist | commit the benchmark |
+        | `m11a:save-has-an-engine-consumer` | no CMakeLists above `src/save/` links `cy::save` | link it from an engine module |
+        | `m11a:network-at-complete-grade` | 0 of 67 requirements mapped | write 67 coverage entries |
+        | `m11a:roadmap-tiers` | twelve rows are below `complete` | raise twelve tiers |
+        | `m11b:gameplay-at-complete-grade` | 0 of 183 requirements mapped | write 183 coverage entries |
+        | `m11b:editor-at-complete-grade` | 9 of 133 requirements mapped | write 124 coverage entries |
+        | `m11b:the-game-exists` | there is no game project under `samples/` | build the game |
+        | `m11b:the-game-drawn` | `docs/design/images/m11b-game*.png` matches nothing | capture the shot |
+        | `m11b:the-game-is-honest-about-its-content` | the game project has no README | write it |
+        | `m11b:roadmap-tiers` | twenty-four rows are below `complete` | raise twenty-four tiers |
+
+        **NOT ONE GAP IS DELETED AND NOT ONE MUTATION IS INVENTED.** What changed is that the prover
+        now SAYS this, per gap, in its own words — `THIS GAP CLOSES BY AN ADDITION AND NO MUTATION
+        VERB ADDS: …` — and marks the verdict **unjudged** rather than a contradiction of the
+        record. That is exactly how a source-only run already treats a build-backed proof: a run
+        that could not ask a question has not contradicted the answer to a different one. It is
+        sound because **declaring a gap does not change what a criterion checks** — `digest` does
+        not read `known_gap`, and every one of these eleven still carries the same digest and the
+        same `red in the tree` proof it earned before the retroactive-gap round. `check` prints them
+        under their own heading, counted, so they are carried in the open rather than quietly.
+        **The ratchet is not loosened in either direction**, and `selftest.py` now breaks both on
+        purpose: a declared gap with NO standing record is still refused a place on the ladder
+        (`_record` carries an unjudged verdict only for a key already in the inventory at the same
+        digest), and a declared gap that starts PASSING never reaches this path at all — the ledger
+        fails it by name with `THE GAP IS CLOSED, DELETE THE DECLARATION`.
+      - [ ] **THE FOURTEEN MOVED DIGESTS ARE NOT RE-EARNED, AND THE REASON IS A SECOND MUTATOR IN
+        THIS WORKING TREE RATHER THAN A MISSING GPU.** `build/m11c-final` is built, the device is an
+        RTX 5060, and `prove --build-dir build/m11c-final --mutate-the-tree` is the command. It
+        cannot be run: throughout this phase another M11.c phase was executing the mapped-behaviour
+        deletion audit **in this same checkout** — `/tmp/m11c/audit_cases.py`, plus a from-empty
+        four-profile build — deleting a line from a source file, rebuilding, and restoring it, every
+        few minutes. `WorkingTree` refuses a tree whose `git status` has drifted from its baseline,
+        which is correct and which makes every `--mutate-the-tree` proof `not provable here` while
+        that runs; worse, a foreign edit landing inside a mutation window makes the restore raise
+        `TreeNotRestored` and abort the run. **Two mutators in one working tree is the concurrency
+        this project has already lost hours to, and this is the third time it has cost something.**
+        The fourteen are listed in the item above; ten of them (`m3:render-null`,
+        `m3:xr-prerequisites`, `m3:conventions`, `m3:golden`, `m7:virtual-geometry-gpu`,
+        `m7:gpu-culling`, `m7:virtual-texturing-gpu`, `m8b:render-assembly-device`,
+        `m8c:pipeline-device`, `m8c:vfx-device`) moved for a GOOD reason — a phase rewrote them to
+        assert the suite's registration with `ctest -N … | grep -q`, which is what killed the
+        `vacuous-suite` refusal they all carried — and **a second finding is waiting for whoever
+        runs them**: nine of the ten do not rebuild in their own body, so a source mutation would
+        not reach the artefact `ctest` runs. What turns those red is the mutation of something read
+        at RUN time — the committed reference a golden comparison loads — or a body that builds
+        first, the way `m3:golden` already does. That has to be decided per criterion, against a
+        quiet tree.
+      - [x] **AND ONE THING FOUND WHILE LOOKING, WHICH IS THE HAZARD THE PROVER'S OWN README
+        DOCUMENTS.** At commit `c39a234` the interval snapshotter committed
+        `src/rendering/culling/src/cull.cpp` carrying `// MUTANT: the rejected-by-range stage is no
+        longer counted` in place of `++stats.rejected_by_range;`, and `src/rendering/sky/src/celestial.cpp`
+        with `const f32 per_day = 86400.0F;` in place of `math::max(time.seconds_per_day, 1.0e-3F)`.
+        The working tree was correct and HEAD was not, which is the one direction `git status` reads
+        as a stray modification to be tidied away — so `git checkout --` on either file would have
+        put the mutation BACK. A later snapshot (`b8920bf`) committed the restored bytes and HEAD is
+        clean of both today, verified by reading the blobs. **This is also the second reason
+        `--mutate-the-tree` was not run**, and on its own it is decisive: the snapshotter committed
+        six times in thirty minutes while this phase measured it (`b8920bf` 07:44, `43a9d1a` 07:48,
+        `f88a049` 07:53, `e9e494b` 07:57, `bd17d55` 08:05, `e147490` 08:14), and a build-backed
+        mutation window is minutes long. `WorkingTree.restore` reads HEAD before and after and
+        RAISES when it moved, so the tooling would say so — but the bad commit would already exist,
+        and this is a hazard to avoid rather than to detect twice. **A deletion audit, an interval
+        snapshotter and a tree-mutating prover must not share a checkout.**
 - [x] 9.3 **Adversarial pass on this rung's own invariants**, which are mostly claims about a picture:
       render the artefact with the arbiter unpinned and confirm the capture refuses rather than
       publishing a degraded frame; run the occlusion pass against the CPU model and confirm a
