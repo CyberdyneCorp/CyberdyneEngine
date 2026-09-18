@@ -36,12 +36,14 @@
 // than two 8-bit steps, and a texel may differ AT ALL only where the reference itself has a
 // high-contrast four-neighbour. `differing_off_edge` must be zero.
 //
-// IT WAS MEASURED RATHER THAN CHOSEN. This frame was rendered twice on the same machine, in two
-// separate processes, and compared: the two runs are BIT-IDENTICAL — 0 of 57,600 texels differ,
-// maximum channel delta 0. That is the property `render.frames` already asserts about the M3
-// artefact for the same reason, and it is why the tolerance above is headroom for another
-// implementation rather than headroom for this one. A tolerance chosen as a round number, without
-// measuring what actually moves, is a tolerance that hides the regression it was sized for.
+// IT WAS MEASURED RATHER THAN CHOSEN. This frame was rendered THREE times on this machine, in
+// three separate processes — the run that wrote the reference and two that compared against it —
+// and all three are BIT-IDENTICAL: 0 of 57,600 texels differ, maximum channel delta 0. The
+// reference's own derived edge budget is 8,521 texels and NONE of them was needed. That is the
+// property `render.frames` already asserts about the M3 artefact for the same reason, and it is
+// why the tolerance above is headroom for another implementation rather than for this one. A
+// tolerance chosen as a round number, without measuring what actually moves, is a tolerance that
+// hides the regression it was sized for.
 //
 // ================================================================================================
 // THE PICTURE IS OF TWO ROWS, AND THE SECOND CASE IS WHY THE FIRST IS EVIDENCE ABOUT BOTH
@@ -51,6 +53,40 @@
 // page boundaries, a page per receiver picked from its projected texel density, a physical page
 // cache that allocates and evicts, pages rasterised once from the scene's level-0 clusters, and
 // every lookup walked through the fallback chain. `shade.h` carries that argument in full.
+//
+// ================================================================================================
+// PROVED RED BY BREAKING THE SUBJECT, TWICE — ONCE PER ROW
+// ================================================================================================
+//
+// A golden-image case that has only ever been seen green is a golden-image case nobody has shown
+// can fail, and breaking the COMPARISON or the reference's PATH proves only that a file is read.
+// Both mutations below break the thing the picture is OF. Measured against `build/m11c-final` on
+// an RTX 5060; each was restored afterwards and the suite re-run green.
+//
+//   `virtual-geometry` — delete `out.clusters[index].child_count = out.groups[from].member_count;`
+//   from `Finaliser::emit_hierarchy()` in `src/rendering/virtual_geometry/src/build.cpp`. Every
+//   cooked cluster then reports zero children, `clusterTooCoarse(...) && cluster.childCount > 0`
+//   in `vg_traversal.slang` is never true, and THE HIERARCHY STOPS DESCENDING: the device draws
+//   each instance's coarsest cluster and nothing under it. The cook still succeeds and validation
+//   is still clean. Clusters decoded 3,324 -> 246, coverage 57,600 -> 55,322, and 46,257 of 57,600
+//   texels move — 80.31% of the frame, 38,878 of them off any high-contrast edge, worst channel
+//   delta 188 of 255. Three assertions of the first case go red.
+//
+//   `virtual-shadows` — delete `entry.state = PageState::Resident;` from
+//   `ShadowPageCache::record_render` in `src/rendering/shadows/src/cache.cpp`. A page is then
+//   rasterised and never MARKED resident, so all 27,095 sun-facing lookups fall through the
+//   fallback chain: shadowed pixels 24,649 -> 0, and 24,578 of 57,600 texels move — 42.67%,
+//   20,089 of them off-edge, worst channel delta 163. Four assertions go red, and the first of
+//   them is `shade_report.shadowed > 0`, which is the counter that exists so a shadow cannot
+//   vanish quietly.
+//
+// This is the criterion's own declared mutation — `tools/roadmap/milestones/m11c.toml`,
+// `[criterion.falsifies]` under `virtual-geometry-image` — so the prover re-runs the first of the
+// two rather than trusting this comment.
+//
+// ================================================================================================
+// THE PICTURE IS OF TWO ROWS, AND THE SECOND CASE IS WHY THE FIRST IS EVIDENCE ABOUT BOTH (CONT.)
+// ================================================================================================
 //
 // So the second case starves the page cache to a single slot. Every receiver is then refused a
 // page, the chain falls all the way to `Unshadowed`, and the frame CHANGES — measurably, and the

@@ -585,6 +585,20 @@ requires = "gpu"
 reason = "a shaded capture needs a graphics device, AND THIS HOST HAS ONE GPU VENDOR — the M11.c spike measured every picture it took against one driver's rasterisation and one vendor's floating point, so a green here is a claim about this vendor and not about the image; `frame-passes-through-post` above carries the structural claim on every machine"
 ci_job = "milestone-m11c"
 
+# THE MUTATION BREAKS THE THING THE PICTURE IS OF, WHICH IS THE ONLY MUTATION THAT PROVES A GOLDEN
+# IMAGE. Breaking the comparison, the tolerance or the reference's path proves that a file is being
+# read; it says nothing about whether the frame is still a frame. `Finaliser::emit_hierarchy()` is
+# where a cooked cluster learns how many children it has, and without that one assignment every
+# cluster reports zero — so the GPU traversal's `clusterTooCoarse(...) && cluster.childCount > 0`
+# is never true, the hierarchy STOPS DESCENDING, and the device draws each instance's coarsest
+# cluster and nothing beneath it. The cook still succeeds, the frame still renders, validation is
+# still clean; the picture is of coarser geometry.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/rendering/virtual_geometry/src/build.cpp"
+token = "out.clusters[index].child_count = out.groups[from].member_count;"
+note = "measured against build/m11c-final on an RTX 5060: unmutated the suite is 2 cases and 28 assertions green, and the frame is BIT-IDENTICAL to the committed reference across three separate processes — 0 of 57,600 texels differ, maximum channel delta 0, which is where the tolerance comes from rather than from a round number. With the line gone the traversal decodes 246 clusters instead of 3,324, coverage falls from 57,600 to 55,322, and 46,257 of 57,600 texels move — 80.31% of the frame, 38,878 of them away from any high-contrast edge, worst channel delta 188 of 255. The second row was mutated separately and is recorded in the suite's own header: deleting `entry.state = PageState::Resident;` from `ShadowPageCache::record_render` leaves every rasterised page non-resident, drops the shadowed pixel count from 24,649 to 0, and moves 24,578 texels — 42.67%."
+
 [[criterion]]
 id = "lighting-and-shadow-suites"
 describe = "the lighting, shadow, GI, denoising, post, temporal and virtual-geometry suites are green together. Eight rows have been at Working since M7 and each has been gated separately; this is the one run in which they are all true at once"
@@ -717,7 +731,10 @@ d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
 ctest --test-dir "$d" -N -R '^render.sky_times_of_day$' 2>/dev/null | grep -q 'render.sky_times_of_day' || {
     echo "render.sky_times_of_day is not registered in $d: nothing in this tree photographs the sky at four times"
-    echo "of day and compares the frames against references. `just test-render` selects with --no-tests=ignore, so"
+    # NO BACKTICKS IN THIS MESSAGE: it is inside double quotes in a shell, so a quoted
+    # `just test-render` would be a command substitution that RAN the render suites on the way
+    # to printing a diagnostic about them.
+    echo "of day and compares the frames against references. 'just test-render' selects with --no-tests=ignore, so"
     echo "an absent suite would otherwise be reported as a pass."
     exit 1
 }
@@ -730,7 +747,32 @@ test -z "${missing}" || {
     echo "a time of day with no reference is a time of day nothing compares"
     exit 1
 }
-just test-render -R '^render.sky_times_of_day$'
+# `-V` AND NOT THE BARE RECIPE, for M10's reason on `sky-field-round-trip`: the numbers this
+# criterion is about are printed by cases that PASS, and `_ctest` passes `--output-on-failure`, so a
+# green run prints nothing. What that hides is worse than a silent pass. Every suite in
+# tests/render/ SKIPS LOUDLY and EXITS ZERO on a machine with no device — which is the right
+# behaviour for `just test-render` and the wrong verdict for a criterion whose whole claim is that a
+# picture was taken. A driver that stopped presenting a device would turn this criterion green while
+# photographing nothing, which is the defect this project has shipped nine times. So the four
+# photograph lines are required to be in the output: they are written by the case AFTER the frame
+# has been composed and read back, and no skipping run can produce one. MEASURED, not asserted: run
+# on this host with `VK_DRIVER_FILES=/dev/null`, the suite prints "no Vulkan device on this machine"
+# four times, reports `5 passed, 0 failed` over ZERO ASSERTIONS and exits 0 — and the loop below
+# turns that into the red it is.
+if ! out="$(just test-render -R '^render.sky_times_of_day$' -V 2>&1)"; then
+    printf '%s\n' "$out" | tail -40
+    echo "render.sky_times_of_day is red: the sky no longer matches its committed references"
+    exit 1
+fi
+printf '%s\n' "$out" | grep -E 'sun elevation|texels over tolerance|one ULP in the exposure' || true
+for hour in dawn noon dusk night; do
+    printf '%s\n' "$out" | grep -q "sky_${hour}: sun elevation" || {
+        echo "sky_${hour} never reported a sun elevation: the case did not photograph anything."
+        echo "Every suite under tests/render/ skips loudly and exits zero with no device, so an"
+        echo "exit code alone cannot tell a picture from an absent one."
+        exit 1
+    }
+done
 '''
 requires = "gpu"
 reason = "a sky capture needs a device, and on this one-GPU-vendor host the picture is judged against a single driver; the field round trip it depends on is checked without one by M11.a's `sky-field-consumed-outside-the-sky`"

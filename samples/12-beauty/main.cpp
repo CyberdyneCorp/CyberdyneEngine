@@ -180,6 +180,8 @@ void print_report(const Shot& shot, const ShotReport& report) {
                 static_cast<double>(report.sky_irradiance.z), report.sky_ms);
     std::printf("frame         %u passes declared, %u post stages, %ux supersampled\n",
                 report.frame_passes, report.post_stages, report.supersample);
+    std::printf("air           %u mote(s) in %u draw(s), %u dropped\n", report.particles,
+                report.particle_draws, report.particles_dropped);
     std::printf("cost          build %.1f ms, submit %.2f ms\n", report.build_ms, report.submit_ms);
     std::printf("validation    %u error(s)\n", report.validation_errors);
 }

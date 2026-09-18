@@ -123,6 +123,13 @@ rather than inferred; every frame must hold more than 200 distinct colours acros
 above 40, because a flat frame compares perfectly against a flat reference; and the cross-time
 comparison above.
 
+**A fourth way this suite cannot refuse, and the criterion does.** Every suite here skips rather
+than fails with no device, deliberately — with `VK_DRIVER_FILES=/dev/null` this one prints "no
+Vulkan device on this machine" four times, reports 5 passed over **zero assertions**, and exits 0.
+An exit code cannot tell a picture from an absent one, so `m11c:sky-as-an-image` runs the suite
+with `-V` and requires the four `sun elevation` lines, which are written only after a frame has
+been composed and read back.
+
 Regeneration works as `render.golden`'s does and for the same reason — `CY_RENDER_UPDATE_GOLDEN=1
 ctest -R render.sky_times_of_day` writes the four references and then **fails**, naming what it
 wrote.

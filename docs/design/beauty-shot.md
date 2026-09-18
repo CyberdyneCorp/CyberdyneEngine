@@ -87,9 +87,29 @@ this whole record dishonest."* So:
   what oxidised copper is, and would be the same partial metal if it were gold.
 - **The geometry is procedural and there is no mesh asset.** Thirty-one instances of six primitives,
   4 334 triangles. Nothing here was modelled or scanned.
-- **There are no particles.** `vfx-system` is Working rather than Complete and
-  `src/vfx/README.md`'s four recorded absences are why; a shot with sprites in it would have made
-  none of them false.
+- **The air is particles, and the effect is authored in C++ rather than as content.** Three ember
+  emitters drift up the courtyard: `samples/12-beauty/embers.cpp` places and wires the spawn,
+  initialise and update graphs node by node, `cy::vfx`'s shipping compiler cooks them,
+  `SimulationWorld` settles the field for six seconds at the effect's own Ambient rate, and
+  `cy::rendering::particles::ParticleRenderer` draws the whole field in ONE draw inside the frame's
+  own `Transparent` stage — so the motes are depth-tested against the colonnade and graded by the
+  same exposure and the same tone curve as the stone. The manifest publishes the count the
+  RENDERER reported.
+  **What that does not prove is an authoring path.** Everything else in this shot is a file; the air
+  is not, because **there is no on-disk VFX asset format in this tree** — `VfxSystemAsset` is built
+  by a caller and cooked by `compile_system`, nothing reads one from a file and nothing writes one —
+  and `src/vfx/README.md`'s fourth recorded absence, no VFX graph editor, is the same fact from the
+  authoring side. The effect is authored exactly the way `src/vfx/tests/effects.cpp` authors the
+  spark plume.
+  **And the motes have no texture and no soft depth fade.** `ParticleRenderer`'s sprite is a radial
+  falloff computed in the fragment shader; there is no atlas and no depth-fade, which that module
+  records as its own absence.
+  **This is the half of `vfx-system` a picture can show, and something asserts it.**
+  `render.vfx`'s `particles are in the assembled frame` renders the same field through the same
+  camera at 480x270, compares it against `tests/render/references/beauty_shot_air.png`, and asserts
+  the difference between that frame and the identical frame with the ring uploaded empty — 4 035 of
+  129 600 texels, 3.11% of the frame, worst channel 112. `integration.vfx`'s case of the same name
+  projects every published record through the artefact's camera on a machine with no GPU at all.
 - **`draws 0` in the manifest is correct and is worth reading carefully.** The frame's own draw list
   is empty: this program draws its geometry inside the frame through `FrameSinks::passes`, which is
   the seam `ForwardFrame` documents — *"ForwardFrame knows the frame STRUCTURE and the caller knows

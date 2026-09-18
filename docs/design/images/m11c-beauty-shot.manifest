@@ -24,10 +24,11 @@ triangles 4334
 materials 3  (all 3 are textured; none is constants)
 textures 9  source 899346 bytes  cooked 786852 bytes
 supersample 2x
+particles 996 in 1 draw(s), 0 dropped  (courtyard_embers: 3 emitters, authored in samples/12-beauty/embers.cpp, drawn in the frame's TRANSPARENT stage)
 validation-errors 0
 sun-illuminance 102332.5 76288.4 47310.0
 sky-irradiance 4421.6 3714.5 3384.7
-build-ms 344.3  sky-ms 122.2  submit-ms 12.71
+build-ms 4490.4  sky-ms 209.3  submit-ms 84.58
 
 material stone
   authored content/beauty/materials/weathered_stone.cygraph

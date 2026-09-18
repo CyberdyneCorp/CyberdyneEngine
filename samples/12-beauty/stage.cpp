@@ -1865,8 +1865,8 @@ Status Stage::create_frame() noexcept {
     // Published against `kShotEye`, which is the point the geometry was baked relative to. The
     // motes and the colonnade are then in ONE space, and the turntable can orbit without
     // republishing.
-    if (Status made = device_->air.initialize(device, device_->pipelines,
-                                              cy::sample::beauty::kEmberRing);
+    if (Status made =
+            device_->air.initialize(device, device_->pipelines, cy::sample::beauty::kEmberRing);
         !made) {
         return made;
     }

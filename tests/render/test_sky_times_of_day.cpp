@@ -25,8 +25,8 @@
 // reddening a long path at dawn, the ozone layer holding the zenith blue after the sun has gone,
 // multiple scattering carrying a third of the horizon at noon and none of it at midnight. One
 // still frame is consistent with a painted gradient. Four at +0.62, +61.44, -5.64 and -14.56
-// degrees of sun elevation are not — the numbers `solve_celestial()` answered and every run prints
-// — and each case here asserts that its frame matches ITS OWN reference and
+// degrees of sun elevation are not. Those are the numbers `solve_celestial()` answered and every
+// run of this suite prints them. Each case asserts that its frame matches ITS OWN reference and
 // matches NONE OF THE OTHER THREE — so a renderer that had quietly stopped responding to the sun
 // would produce four frames that agree, and agreement is what these cases fail on.
 //
@@ -117,6 +117,15 @@
 //   * THE FOUR ARE THE SAME PICTURE. Each case compares its frame against the other three
 //     references and requires a large mean absolute difference, which is the "response to sun
 //     elevation" claim made falsifiable rather than described.
+//
+// AND A FOURTH THIS SUITE CANNOT REFUSE, SAID OUT LOUD BECAUSE IT IS THE CRITERION'S TO CATCH.
+// Every suite under tests/render/ SKIPS rather than fails with no device — deliberately, because
+// most continuous-integration machines have no GPU and a suite that failed there is a suite
+// somebody disables (device.h). Measured on this host with `VK_DRIVER_FILES=/dev/null`: this suite
+// prints "no Vulkan device on this machine" four times, reports 5 passed over ZERO ASSERTIONS and
+// exits 0. An exit code therefore cannot tell a picture from an absent one, so `m11c:sky-as-an-
+// image` runs the suite with `-V` and requires the four `sun elevation` lines — written only after
+// a frame has been composed and read back — to be in the output.
 //
 // ================================================================================================
 // THE MUTATIONS THIS SUITE WAS PROVED RED BY

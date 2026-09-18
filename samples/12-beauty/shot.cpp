@@ -132,8 +132,6 @@ void read_instance(Shot& shot, std::string_view& rest) {
     shot.instances.push_back(instance);
 }
 
-}  // namespace
-
 /// Does the scene's camera and grade agree with `embers.h`'s copy of them?
 ///
 /// A TOLERANCE OF ONE PART IN TEN THOUSAND rather than equality: both sides are decimal literals
@@ -168,6 +166,8 @@ void read_instance(Shot& shot, std::string_view& rest) {
               "`render.vfx` can photograph the air from where this shot sees it. Move both.";
     return false;
 }
+
+}  // namespace
 
 Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
     Allocator& memory = system_allocator(MemoryDomain::Assets);
@@ -265,8 +265,8 @@ Expected<Shot, Error> Shot::read(const char* path, std::string& problem) {
     // check that makes them one number: move the camera in the scene file and the capture refuses,
     // naming the header to move it in as well.
     if (!camera_matches_the_air(shot, problem)) {
-        return make_unexpected(Error{ErrorCode::InvalidArgument, "camera disagrees with embers.h",
-                                     0});
+        return make_unexpected(
+            Error{ErrorCode::InvalidArgument, "camera disagrees with embers.h", 0});
     }
     return shot;
 }

@@ -156,6 +156,24 @@ Engine output, read back off a Vulkan device with validation on, written by `ren
   the same frame, the same camera, the same seed; the one difference is what the budget controller
   was told VFX cost.
 
+### And one of them is not this module's own picture
+
+`docs/design/images/m11c-beauty-shot.png` — M11.c's closing artefact — has three ember emitters
+drifting up its courtyard, and that is this row in the frame somebody actually looks at. The effect
+is `samples/12-beauty/embers.cpp`, authored the way `src/vfx/tests/effects.cpp` authors the spark
+plume and for the same reason: **there is no on-disk VFX asset format in this tree**, so the air is
+the one thing in that shot that is not content, and the shot's provenance says so.
+
+**Those three pictures above are written by a recipe and compared against nothing. The beauty
+shot's air is not.** `render.vfx`'s `particles are in the assembled frame` renders the same cooked
+system through the same camera at 480x270 and compares it against
+`tests/render/references/beauty_shot_air.png`; the case also renders the identical frame with the
+ring uploaded EMPTY and asserts how far apart the two are — 4 035 of 129 600 texels, 3.11% of the
+frame, mean |delta| 5.8/255 where they differ, worst channel 112 — so a field that got weaker fails
+as loudly as one that vanished. `integration.vfx`'s case of the same name projects every published
+record through the artefact's camera on a machine with no GPU at all, and counts the ones inside the
+frustum: 901 of 996.
+
 ## Using it, in the order the pieces expect
 
 ```cpp

@@ -27,9 +27,20 @@ to show it in, so the question is never "draw it all" but "which clusters, at wh
 
 ![The frame](images/virtual-geometry-shaded.png)
 
-*Resolved world normals under one light. Fluted left wall, three displaced shells on the ceiling, a
+*The shaded result, not a debug view. Fluted left wall, three displaced shells on the ceiling, a
 corrugated back wall, a striped floor — all of it real geometry rather than a normal map, which is
-what makes the triangle count above meaningful.*
+what makes the triangle count above meaningful. The sun is shadowed through `virtual-shadows`' own
+page cache: 132 pages allocated and rasterised for this frame, 535,027 shadow texels written, and
+412,647 of the 921,593 covered pixels in shadow with 20,061 lit and no lookup falling back.*
+
+**This picture is asserted, not merely published.** `render.virtual_geometry_shaded` renders the
+same frame — the same scene, the same shot, through the same `shade_frame()` this capture calls —
+at 320x180 and compares it against `tests/render/references/virtual_geometry_shaded.png` within
+`tests/render/golden.h`'s derived tolerance. On this machine the frame is bit-identical across
+processes, so the case asserts `differing == 0` as well as the tolerance. A second case starves
+the shadow page cache to one physical slot and asserts the frame CHANGES, which is what stops a
+reference that had quietly stopped sampling the shadow map from passing forever. Regenerating the
+picture above with `just capture-virtual-geometry` does not regenerate that reference.
 
 ## The hierarchy choosing
 

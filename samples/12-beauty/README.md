@@ -75,5 +75,11 @@ image rather than an obvious one:
 
 The full list is in the provenance, and the short version is: no anti-aliasing stage (the frame is
 supersampled and the manifest says three post stages, none of them temporal), no global illumination
-pass, no ambient occlusion pass, no particles, procedural geometry, and a normal map and an occlusion
+pass, no ambient occlusion pass, procedural geometry, and a normal map and an occlusion
 channel sampled by the FRAME because the compiled-material closure vocabulary has no term for either.
+
+**The air is the one thing in this frame that is not content.** Three ember emitters are authored in
+`embers.cpp` — node by node, on `cy::vfx`'s shipping node library and through its shipping compiler
+— because there is no on-disk VFX asset format in this tree to author them into, and no VFX graph
+editor to author them with. What the field proves is the runtime, not an authoring path, and the
+provenance says so where the rest of this list is.
