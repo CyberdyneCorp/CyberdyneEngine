@@ -2,6 +2,7 @@
 
 #include "embers.h"
 
+#include <cmath>
 #include <utility>
 
 namespace cy::sample::beauty {
@@ -380,7 +381,9 @@ Status EmberField::settle(const Vec3& camera_position) noexcept {
     if (!built_) {
         return fail(ErrorCode::Unavailable, "beauty embers: build() was not called");
     }
-    const auto steps = static_cast<u32>((kEmberWarmup / kEmberStep) + 0.5F);
+    // `lround` rather than `+ 0.5F` and a cast: the two agree here — the quotient is 360
+    // exactly — and clang-tidy is right that they do not agree in general.
+    const auto steps = static_cast<u32>(std::lround(kEmberWarmup / kEmberStep));
     for (u32 step = 0; step < steps; ++step) {
         if (Status stepped = world_.step(kEmberStep, stepped_); !stepped) {
             return stepped;

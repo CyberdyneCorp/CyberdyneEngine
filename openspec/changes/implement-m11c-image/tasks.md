@@ -876,6 +876,70 @@ work was done.
         `cy_test_integration_vfx -tc='particles are in the assembled frame*'` selects **0 of 28**
         cases, so `m11c:vfx-in-the-shot` is RED and stays red. The shot contains no particles and
         `docs/design/beauty-shot.md` says so under "what it is not"
+      - [x] **THE PARTICLES ARE IN THE PUBLISHED SHOT NOW, AND THREE THINGS ASSERT THEM.**
+        `samples/12-beauty` links `cy::vfx` and `cy::rendering-particles`, compiles `embers.cpp`
+        — three ember emitters authored node by node on the shipping node library and cooked by
+        the shipping compiler — settles the field once in `create_frame` (deterministic, so the
+        capture is reproducible) and fills the frame's own `FramePassKind::Transparent` sink, which
+        this program had left empty, through `ParticleRenderer`'s `PassExtension` seam. The motes
+        are therefore depth-tested against the colonnade and graded by the same resolve as the
+        stone. `docs/design/images/m11c-beauty-shot.png` was re-captured by
+        `just capture-beauty-shot` and the manifest now carries **`particles 996 in 1 draw(s), 0
+        dropped`**, read off `ParticleRenderer::report()` rather than off what the program
+        published. **`m11c:vfx-in-the-shot` is GREEN**, exit 0 against `build/m11c-final`
+      - [x] **THE CRITERION WAS WIDENED, BECAUSE THE OLD ONE COULD NOT SEE THE PHOTOGRAPH.** It ran
+        `integration.vfx` and nothing else: the golden case and its committed reference could both
+        have been deleted with the criterion still green. It now checks three things — the
+        device-free case (the population, and that it is inside the artefact's frustum: 901 of
+        996); that `render.vfx` is **registered by name** (`ctest -N -R '^render.vfx$' | grep -q`,
+        which is `m7:virtual-geometry-gpu`'s guard, because `just test-render` passes
+        `--no-tests=ignore` and running nothing would be a pass) and that
+        `tests/render/references/beauty_shot_air.png` is a **committed file**, then runs it; and
+        that the published manifest reports a non-zero drawn count
+      - [x] **AND IT IS PROVED RED BY BREAKING WHAT THE PICTURE IS OF.** `[criterion.falsifies]`
+        declares `delete-lines` of
+        `record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;`
+        in `src/vfx/src/runtime.cpp` — the z half of the camera rebase `publish_sprites` exists to
+        do. It compiles (both operands are still used on the lines either side), the field still
+        simulates and still publishes 996 motes with every size and every radiance intact, and it
+        lands in the plane through the camera. **Run by hand against `build/m11c-final` on an RTX
+        5060**: `integration.vfx` goes red on the framing assertion ALONE — 0 of 996 inside the
+        frame where 901 were — with the population, the emitter count, the drawability and the
+        radiance all still green; `render.vfx` goes red on six, the empty-ring negative control
+        collapsing from 4 713 texels of difference to **0** (the air draws nothing at all) and the
+        frame moving **4 111 of 129 600 texels** from the committed reference, 2 802 of them away
+        from any high-contrast edge, worst channel delta 255 at (308, 173). Restored and
+        `md5sum`-verified against the HEAD blob (`1dfc6ce1ab3d3ba3681d167c3ceaaaa1`), no prover
+        backup left behind, both suites green again
+      - [ ] **THE PROOF IS NOT RECORDED IN `falsifiability.toml`, AND THE REASON IS THE TREE.**
+        `prove --mutate-the-tree` refuses a tree `git` calls dirty, and another phase was writing
+        `tests/render/` and `src/rendering/sky/` throughout this one — the rule this rung has
+        already broken twice is that a mutation campaign does not share a working tree. The
+        criterion's text moved, so `roadmap-falsify check` will report its digest as stale against
+        the standing `red against a built tree` entry. **For the Record phase**, on a clean tree:
+        `just roadmap-falsify prove m11c --only vfx-in-the-shot --build-dir build/m11c-final
+        --mutate-the-tree --record`. Every number that run should produce is in the
+        `[criterion.falsifies]` note already
+      - [x] **THE FIRST VERSION OF THE EFFECT PHOTOGRAPHED AS SOOT, AND THAT IS A MEASUREMENT
+        RATHER THAN A STORY.** At 2 600 of radiance and 0.55-0.95 of opacity the motes were BELOW
+        this shot's own sky: the premultiplied blend subtracted, 72 297 texels moved and only
+        2 118 got brighter, every one of those over a shadow that was already black — a sky texel
+        fell from sRGB (95, 137, 179) to (54, 81, 113). A probe settled what the sky actually is
+        (the same field at a flat 20 000 and an opacity of exactly 1 displays at (255, 251, 197)
+        beside a sky at (98, 140, 179), which puts this sky near (1 800, 3 200, 5 000) of linear
+        radiance), and `embers.h` now carries 36 000 at 0.18-0.40 with the whole derivation beside
+        it. The probe was reverted and `embers.h` `md5sum`-verified back before the final capture
+      - [x] **THE PUBLISHED STILL MOVED, AND IT IS STILL BIT-REPRODUCIBLE.** Against the previous
+        capture: **69 560 of 2 073 600 texels differ (3.355%)**, brightest gain (+246, +202, +145),
+        deepest loss (-40, -43, -53), 15 590 texels brighter by more than ten and 10 763 darker;
+        the linear no-post still moves 427 texels. `just capture-beauty-shot` was then run **twice
+        more end to end** and both stills are **byte-identical** (`346ea6a8…` and `27e16a6f…`), the
+        manifest differing only in its wall-clock timings — which is the property the artefact had
+        before this change and the one it has after it
+      - [x] **AND A COMMENT THAT CLAIMED A CHECK NOBODY HAD WRITTEN IS NOW TRUE.** `embers.h` said
+        *"`Shot::read` refuses a scene file whose camera is not these numbers"*; nothing in
+        `shot.cpp` did. It does now — position, target, fov, near plane and exposure, to one part
+        in ten thousand, naming the header to move the numbers in as well
 - [ ] 6.4 The compositing half is renderer work and belongs here; **the authoring half is M11.b's
       editor surface** over this module's `CompileReport`, `AttributeLayout` and `GeneratedSource`,
       all three public for exactly that reason. If M11.b did not build it, `vfx-system` does not

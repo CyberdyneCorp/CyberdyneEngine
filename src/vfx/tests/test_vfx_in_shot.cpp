@@ -38,6 +38,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 
 using namespace cy;
 using namespace cy::sample::beauty;
@@ -56,7 +57,7 @@ inline constexpr f32 kShotAspect = 1920.0F / 1080.0F;
 /// projection wants it vertically. The same conversion `Stage::render_from` does, spelled the same
 /// way so the two cannot disagree about the framing.
 [[nodiscard]] f32 shot_fov_y() noexcept {
-    constexpr f32 kHalfDegreesToRadians = 3.14159265358979F / 360.0F;
+    constexpr f32 kHalfDegreesToRadians = std::numbers::pi_v<f32> / 360.0F;
     return 2.0F * std::atan(std::tan(kShotFovDegrees * kHalfDegreesToRadians) / kShotAspect);
 }
 

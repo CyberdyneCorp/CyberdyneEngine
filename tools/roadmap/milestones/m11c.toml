@@ -844,13 +844,18 @@ note   = "the claim is that the pass DOES dual quaternions. A dual quaternion is
 
 [[criterion]]
 id = "vfx-in-the-shot"
-describe = "particles are in the artefact's frame. An art-directed shot with no particles in it does not exercise `vfx-system`, and the row's own README records four absences by name — the fourth of which is an editor surface M11.b owes and this rung consumes"
+describe = "particles are in the artefact's frame, and something ASSERTS they are. An art-directed shot with no particles in it does not exercise `vfx-system`, and the row's own README records four absences by name — the fourth of which is an editor surface M11.b owes and this rung consumes. Three things have to hold and this criterion checks all three: the shot's own effect produces a population and that population is WHERE THE CAMERA IS LOOKING (`integration.vfx`, arithmetic, every machine); the frame DRAWS it and the drawn frame is compared against a COMMITTED reference (`render.vfx`, and the reference file must exist in the tree); and the published artefact says so — `docs/design/images/m11c-beauty-shot.manifest` carries the count the RENDERER reported, not the count the program published"
 source = "tasks 5, vfx-system"
 kind = "command"
 run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
+
+# 1. THE ARITHMETIC HALF, and it needs no graphics device. `particles are in the assembled frame:
+#    the shot's air simulates and frames` cooks the artefact's own effect, settles it, and projects
+#    every published record through the artefact's own camera. `> 0` would pass on a field behind
+#    the camera; the case counts the ones inside the frustum.
 binary="$d/cy_test_integration_vfx"
 test -x "$binary" || { echo "no $binary — the suite integration.vfx does not exist"; exit 1; }
 filter='particles are in the assembled frame*'
@@ -859,8 +864,63 @@ echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
 echo "the filter selected ${selected:-0} case(s) of the 1 it names"
 test "${selected:-0}" -ge 1 || { echo "the named case(s) are not in integration.vfx any more — renamed, deleted, or the filter is stale"; exit 1; }
+
+# 2. THE PHOTOGRAPH, ASKED FOR BY NAME BEFORE IT IS RUN. This is `m7:virtual-geometry-gpu`'s guard
+#    and `m11c:virtual-geometry-image`'s: `just test-render` passes `--no-tests=ignore`, so running
+#    NOTHING is a pass, and ctest silently drops arguments it does not recognise. Listing is a
+#    configure-time fact and needs no device.
+ctest --test-dir "$d" -N -R '^render.vfx$' 2>/dev/null | grep -q 'render.vfx' || {
+    echo "render.vfx is not registered in $d: nothing in this tree re-renders the artefact's air and"
+    echo "compares it against a reference. Either the suite was renamed or deleted, or this tree was"
+    echo "configured with no rendering backend; either way the picture is UNMEASURED."
+    exit 1
+}
+# AND THE REFERENCE IS A COMMITTED FILE. A golden comparison whose reference the run itself writes
+# is a comparison with itself. `test_shot_air.cpp` refuses to both write one and pass in the same
+# run, and this is the other half of that: the file has to be here before the run starts.
+test -f tests/render/references/beauty_shot_air.png || {
+    echo "no tests/render/references/beauty_shot_air.png — there is no committed reference for the"
+    echo "artefact's air to be compared against"
+    exit 1
+}
+# Run it. On a machine with no device `DeviceFixture` reports the skip LOUDLY and the case passes,
+# which is `tests/render/README.md`'s rule; on a machine with one this is the comparison.
+just test-render -R '^render.vfx$'
+
+# 3. AND THE PUBLISHED ARTEFACT CARRIES THE NUMBER. The still is a recipe a person runs, so what is
+#    checked here is its provenance: a manifest that says zero motes, or no longer mentions them, is
+#    a shot the row is not in any more.
+manifest=docs/design/images/m11c-beauty-shot.manifest
+test -f "$manifest" || { echo "no $manifest — the artefact has no provenance"; exit 1; }
+drawn=$(sed -nE 's/^particles ([0-9]+) in ([0-9]+) draw\(s\).*/\1 \2/p' "$manifest" | head -1)
+echo "the published manifest reports: particles ${drawn:-none}"
+set -- ${drawn:-0 0}
+test "${1:-0}" -ge 1 && test "${2:-0}" -ge 1 || {
+    echo "$manifest does not report a drawn particle count: the published beauty shot has no air in"
+    echo "it, or the manifest stopped publishing what the renderer reported"
+    exit 1
+}
 '''
+requires = "gpu"
+reason = "step 2 photographs the air and compares it against a committed reference, which needs a graphics device, and step 3 reads a manifest only a capture on one can write. THE COST IS NAMED RATHER THAN HIDDEN: step 1 needs no device at all — it cooks the artefact's effect, settles it and projects every published record through the artefact's own camera — and gating the whole criterion on a GPU means a machine without one stops evaluating that half too. It is gated anyway, for `m11c:virtual-geometry-image`'s reason: a criterion that goes RED on a tree configured with no rendering backend is red for something that is not a defect, and a reader cannot tell that red from a real one. `frame-passes-through-post` carries the structural claim about this frame on every machine"
 ci_job = "milestone-m11c"
+
+# THE MUTATION BREAKS THE THING THE PICTURE IS OF, which is the only mutation that proves a golden
+# image. Breaking the comparison, the tolerance or the reference's path proves that a file is being
+# read and says nothing about whether the air is still in the frame. `publish_sprites` is the seam
+# between the simulation and the renderer, and its one job is to REBASE a world-space particle
+# against the camera — `ParticleInstance` has no world position and nowhere to put one. Deleting the
+# z component of that rebase leaves every record with `position[2] = 0`, its default: the field
+# simulates perfectly, publishes 996 motes, keeps every size and every radiance, and lands in the
+# plane through the camera, where this shot's frustum is not. It compiles — `presentation` and
+# `camera_position` are both still used on the two lines either side — which is what makes it a
+# defect rather than a build failure, and it is the exact shape of "an effect that simulates and
+# photographs as nothing" that the case's own header says it exists to catch.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "src/vfx/src/runtime.cpp"
+token  = "record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;"
+note = "measured against build/m11c-final on an RTX 5060. UNMUTATED: `integration.vfx` reports 996 motes published, 0 dropped, 3 emitters, 901 of 996 inside the artefact's frame and a brightest radiance of 35 811.6, 12 assertions green; `render.vfx` renders the same frame twice BIT-IDENTICALLY (0 of 129 600 texels differ, maximum channel delta 0, which is where the tolerance comes from rather than from a round number), differs from the same frame with an EMPTY ring by 4 713 texels of 129 600 — 3.64%, mean |delta| 20.7/255 where they differ, worst channel 255 — and matches the committed reference exactly, 386 assertions green. MUTATED: the framing collapses to 0 of 996 and `integration.vfx` goes red on that assertion ALONE — the population, the emitter count, the drawability and the radiance all stay green, so the verdict names what broke — and `render.vfx` goes red on six: the empty-ring control falls to 0 texels of difference (the air draws nothing at all), and the frame moves 4 111 texels of 129 600 away from the committed reference, 2 802 of them away from any high-contrast edge, worst channel delta 255 at (308, 173). RESTORED: `md5sum` back to the HEAD blob (1dfc6ce1ab3d3ba3681d167c3ceaaaa1), both suites green again. TWO OTHER MUTATIONS WERE TRIED AND REJECTED: deleting `stage.spawn_count(...)` from `embers.cpp` leaves its `rate` node defined-but-not-used and -Werror stops the compile, which is a red no reader of this criterion could act on; and deleting one of the three `kEmberEmitters` rows turns the criterion red on the POPULATION band rather than on the framing, which says less about the half the criterion is named for."
 
 # --- Section 4: the artefact -------------------------------------------------------------------------
 

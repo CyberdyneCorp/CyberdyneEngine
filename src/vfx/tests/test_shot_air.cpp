@@ -78,6 +78,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <numbers>
 
 using namespace cy;
 using namespace cy::vfx_test;
@@ -98,7 +99,7 @@ namespace {
 inline constexpr f32 kShotAspect = static_cast<f32>(kSceneWidth) / static_cast<f32>(kSceneHeight);
 
 [[nodiscard]] f32 shot_fov_y() noexcept {
-    constexpr f32 kHalfDegreesToRadians = 3.14159265358979F / 360.0F;
+    constexpr f32 kHalfDegreesToRadians = std::numbers::pi_v<f32> / 360.0F;
     return 2.0F * std::atan(std::tan(kShotFovDegrees * kHalfDegreesToRadians) / kShotAspect);
 }
 
@@ -198,7 +199,9 @@ CY_TEST_CASE("particles are in the assembled frame") {
     scene.set_read_back(true);
 
     // --- Settle the field, exactly as `Stage::stage_shot` settles the artefact's ----------------
-    const auto steps = static_cast<u32>((kEmberWarmup / kEmberStep) + 0.5F);
+    // `lround` rather than `+ 0.5F` and a cast: the two agree here — the quotient is 360
+    // exactly — and clang-tidy is right that they do not agree in general.
+    const auto steps = static_cast<u32>(std::lround(kEmberWarmup / kEmberStep));
     for (u32 step = 0; step < steps; ++step) {
         CY_REQUIRE(scene.simulate(kEmberStep).has_value());
     }

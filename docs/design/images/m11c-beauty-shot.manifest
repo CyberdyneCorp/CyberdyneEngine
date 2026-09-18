@@ -28,7 +28,7 @@ particles 996 in 1 draw(s), 0 dropped  (courtyard_embers: 3 emitters, authored i
 validation-errors 0
 sun-illuminance 102332.5 76288.4 47310.0
 sky-irradiance 4421.6 3714.5 3384.7
-build-ms 350.4  sky-ms 123.3  submit-ms 12.59
+build-ms 355.9  sky-ms 121.6  submit-ms 12.67
 
 material stone
   authored content/beauty/materials/weathered_stone.cygraph

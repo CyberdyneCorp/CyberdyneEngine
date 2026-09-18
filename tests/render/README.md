@@ -134,6 +134,30 @@ Regeneration works as `render.golden`'s does and for the same reason — `CY_REN
 ctest -R render.sky_times_of_day` writes the four references and then **fails**, naming what it
 wrote.
 
+## The artefact's air — `render.vfx`, whose reference lives here
+
+M11.c task 6.3, `m11c:vfx-in-the-shot`. **The case is declared by `src/vfx/tests/CMakeLists.txt`
+and its reference — `references/beauty_shot_air.png` — is committed here**, because the alternative
+is a second directory of golden images and `tests/render/README.md`'s own rule about references
+drifting applies to directories as much as to pictures.
+
+`particles are in the assembled frame` renders `samples/12-beauty/embers.cpp`'s cooked system — the
+beauty shot's own effect, the same three emitters at the same world positions — through the shot's
+own camera at 480x270, inside `FrameAssembly`'s TRANSPARENT stage, at the shot's own exposure. What
+is committed is the artefact's transparent LAYER over the frame's own clear: the colonnade is not
+in it, because the shot's geometry is shaded by material programs `slangc` compiles at capture time
+and a suite cannot depend on a shader compiler being on the machine.
+
+| Case | Asserts |
+|---|---|
+| the tolerance | the same frame rendered twice in one process, with no simulation step between: **0** of 129 600 texels differ, maximum channel delta 0. That is the floor under the comparison against the file, and it is why `differing` is required to be exactly zero rather than "a few percent" |
+| the negative control | the identical frame with the ring uploaded EMPTY — same passes, same clear, same resolve, same exposure, same extension attached. Measured: **4 713 of 129 600 texels (3.64%)**, mean \|delta\| 20.7/255 where they differ, worst channel 255. Three floors at roughly half of each, because a field that shrank drops the count, one drawn at the wrong exposure drops the mean, and one whose sprites lost their cores drops the maximum |
+| the reference | the frame matches `references/beauty_shot_air.png` exactly, with `ParticleRenderer` reporting one draw for 996 motes and zero validation errors |
+
+Regeneration works as `render.golden`'s does — `CY_RENDER_UPDATE_GOLDEN=1 ctest -R render.vfx`
+writes the reference and then **fails on purpose**, so a regenerating run can never be a passing
+one.
+
 ## Many frames on the device — `render.frames`
 
 **M4 task 1.3, and it exists because of what M3's suites could not see.** Every device suite M3
