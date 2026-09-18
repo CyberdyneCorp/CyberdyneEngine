@@ -353,8 +353,8 @@ CY_TEST_CASE("sky tables: the sky is a lookup — drawing it integrates no atmos
         worst_departure =
             cy::math::max(worst_departure, relative_difference(middle, (a + b) * 0.5F));
     }
-    CY_TEST_MESSAGE("worst departure from a linear blend inside one column: ",
-                    worst_departure * 100.0F, "%");
+    CY_TEST_MESSAGE(
+        "worst departure from a linear blend inside one column: ", worst_departure * 100.0F, "%");
     CY_CHECK_LT(worst_departure, 1.0e-3F);
 }
 

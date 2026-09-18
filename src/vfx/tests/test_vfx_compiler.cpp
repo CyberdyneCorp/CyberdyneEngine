@@ -53,7 +53,6 @@ void dump(const graph::DiagnosticSink& sink) noexcept {
     return text.find(needle) != std::string_view::npos;
 }
 
-
 /// Does the kernel the generator labelled with BOTH stages load any attribute out of memory?
 ///
 /// `source_contains` searches the WHOLE translation unit, and the whole unit also carries the plain
@@ -226,15 +225,15 @@ CY_TEST_CASE("kernel fusion: initialise and update share one dispatch over the n
     // and nothing compared them, so setting `state.substitute_pending = false` in `compile_kernel`
     // — which makes the fused update RELOAD every value the initialise had just written — left this
     // case GREEN. The slot count cannot be the check either, and the same experiment is why: with
-    // substitution off the fused kernel gets SMALLER (32 slots against 55), because the initialise's
-    // expressions stop being carried into the update at all. What actually moves in the direction
-    // the requirement names is the generated code: substituted, the fused kernel reads its inputs
-    // out of registers and contains NO `cyVfxLoad_` at all.
+    // substitution off the fused kernel gets SMALLER (32 slots against 55), because the
+    // initialise's expressions stop being carried into the update at all. What actually moves in
+    // the direction the requirement names is the generated code: substituted, the fused kernel
+    // reads its inputs out of registers and contains NO `cyVfxLoad_` at all.
     const VfxKernel* unfused_update = without->emitters()[0].kernel_for(Stage::Update);
     CY_REQUIRE(unfused_update != nullptr);
-    std::fprintf(stderr,
-                 "fusion: fused initialise is %u slots; unfused initialise %u + unfused update %u\n",
-                 initialise->slot_count(), unfused->slot_count(), unfused_update->slot_count());
+    std::fprintf(
+        stderr, "fusion: fused initialise is %u slots; unfused initialise %u + unfused update %u\n",
+        initialise->slot_count(), unfused->slot_count(), unfused_update->slot_count());
     // THE NEEDLE IS A NEEDLE. The plain update kernel in the SAME program does load `velocity`,
     // because it runs over particles it did not initialise — so "the fused kernel loads nothing" is
     // a statement about the fused kernel and not about a symbol this generator never emits.

@@ -240,8 +240,9 @@ CY_TEST_CASE(
         // half above renders its pages first.
         VirtualPage resident[256];
         const cy::Vec3 reach{2.0F, 2.0F, 2.0F};
-        const cy::u32 held = pages_covering(
-            space, cy::Aabb{moving.previous.min - reach, moving.current.max + reach}, resident, 256);
+        const cy::u32 held =
+            pages_covering(space, cy::Aabb{moving.previous.min - reach, moving.current.max + reach},
+                           resident, 256);
         CY_REQUIRE(held > 0U);
         CY_REQUIRE(held <= 256U);
         moved_cache.begin_frame(1);
@@ -252,8 +253,8 @@ CY_TEST_CASE(
 
         moved_cache.begin_frame(2);
         VirtualPage into[256];
-        const cy::rendering::InvalidationReport moved_report = invalidate_caster_motion(
-            moved_cache, space, moving, InvalidationScratch{into, 256});
+        const cy::rendering::InvalidationReport moved_report =
+            invalidate_caster_motion(moved_cache, space, moving, InvalidationScratch{into, 256});
         CY_TEST_MESSAGE("  mode ", cy::rendering::shadow_deformation_mode_name(mode), ": held ",
                         held, ", dirtied ", moved_report.pages_dirtied, ", overflow ",
                         moved_report.overflow);
