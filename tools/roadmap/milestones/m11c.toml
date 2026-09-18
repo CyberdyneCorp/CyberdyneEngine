@@ -176,6 +176,20 @@ kind = "command"
 run = "just quality-requirements material-compiler shader-system"
 ci_job = "milestone-m11c"
 
+# WHAT TURNS THIS RED IS THE SUITE GOING MISSING, NOT THE MAP BEING EDITED, and the difference is
+# the whole complaint this rung's closing gate made about its own coverage: a mapping that survives
+# the removal of what it names is worse than an empty cell. `integration.material_lowering` answers
+# nine of `material-compiler`'s twenty-one requirements; renaming the `cy_add_test` that DECLARES it
+# leaves those nine entries naming a suite that is not there, which `requirements.py` reports as
+# "answered by something that is not there" and which drops the recipe to 25 of 34. Measured, in the
+# prover's own sandbox: 34/34 exit 0 unmutated, 25/34 exit 1 with the token renamed, 34/34 exit 0
+# again restored. Mutating `requirements-coverage.toml` instead would have proved only that the
+# recipe reads its own map.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/material/tests/CMakeLists.txt"
+token = "material_lowering"
+
 [[criterion]]
 id = "material-node-previews"
 describe = "a node in the material graph previews through the RUNTIME compiler AND THE SHADER PIPELINE rather than through a second evaluator written for the editor. `unit.material_compiler` already proved the preview's TEXT is the shipping program's own; what had no caller anywhere in this tree was the third word of the requirement's own sentence — 'the same compiler, lowering, AND SHADER PIPELINE as runtime'. A preview is a picture and a picture comes from a compiled program, so this criterion's suite compiles one, and asks the same call with the compiler GONE to fail rather than fall back"
@@ -388,6 +402,17 @@ echo "$out" | grep -E "RayTracing=|availability with the profile|no Vulkan devic
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
 test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in render.ray_tracing_capability any more"; exit 1; }
+# A SKIP IS NOT A PASS, AND TASK 9.3 MEASURED THIS ONE PASSING OVER NOTHING. `tests/render/device.h`
+# prints the line below and RETURNS when no Vulkan device can be created, so the case exits 0 having
+# executed zero assertions. `requires = "gpu"` does not catch it: `criteria._has_gpu()` asks whether
+# /dev/dri holds a render node, which is a different question from whether a Vulkan device can be
+# created, and a host with a node and no working driver evaluates this criterion and reports it
+# GREEN. Measured on this tree with the ICD hidden: the whole render label is 17 of 17 green in
+# 3.78 s against 186.48 s with the device, and this suite in 0.01 s with 0 assertions. The guard is
+# `m11a:field-device-agrees-with-cpu`'s, which has carried it since M11.a.
+printf '%s\n' "$out" | grep -q 'no Vulkan device on this machine' && { echo "the suite SKIPPED for want of a device: that is not a pass"; exit 1; }
+assertions=$(printf '%s' "$out" | sed -nE 's/.*assertions: *([0-9]+) \|.*/\1/p' | head -1)
+test "${assertions:-0}" -ge 1 || { echo "the suite executed ${assertions:-0} assertion(s): it measured nothing"; exit 1; }
 '''
 requires = "gpu"
 reason = "it opens a Vulkan device and reads what the driver answered about ray tracing, which a machine with no GPU cannot do; the derivation it checks against is covered device-free by `ray-tracing-capability-honest`, so a green here must mean the backend and not the arithmetic. AND THIS HOST HAS ONE GPU VENDOR AND ONE BACKEND — design.md §1.3 and §3.3 — so what it settles is one driver's answer through the Vulkan backend, and the portable claim is `rhi-and-render-graph`'s at M11.d"
@@ -489,6 +514,17 @@ echo "$out" | grep -E "material binding:|no Vulkan device" || true
 echo "$out" | tail -3
 selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
 test "${selected:-0}" -ge 1 || { echo "render.material_binding selected no case"; exit 1; }
+# A SKIP IS NOT A PASS, AND TASK 9.3 MEASURED THIS ONE PASSING OVER NOTHING. `tests/render/device.h`
+# prints the line below and RETURNS when no Vulkan device can be created, so the case exits 0 having
+# executed zero assertions. `requires = "gpu"` does not catch it: `criteria._has_gpu()` asks whether
+# /dev/dri holds a render node, which is a different question from whether a Vulkan device can be
+# created, and a host with a node and no working driver evaluates this criterion and reports it
+# GREEN. Measured on this tree with the ICD hidden: the whole render label is 17 of 17 green in
+# 3.78 s against 186.48 s with the device, and this suite in 0.01 s with 0 assertions. The guard is
+# `m11a:field-device-agrees-with-cpu`'s, which has carried it since M11.a.
+printf '%s\n' "$out" | grep -q 'no Vulkan device on this machine' && { echo "the suite SKIPPED for want of a device: that is not a pass"; exit 1; }
+assertions=$(printf '%s' "$out" | sed -nE 's/.*assertions: *([0-9]+) \|.*/\1/p' | head -1)
+test "${assertions:-0}" -ge 1 || { echo "the suite executed ${assertions:-0} assertion(s): it measured nothing"; exit 1; }
 '''
 requires = "gpu"
 reason = "the question is whether a shader's sample came back with the texture's own texels, and only a graphics device can answer it: a check that the handles are non-null passes on a table whose descriptors the driver never sees, and a check that the pipeline layout was created passes on a table bound at the wrong set. `material-table-is-nameable` above carries the contract on every machine. AND THIS HOST HAS ONE GPU VENDOR — design.md section 1.3 — so what a green here settles is this driver's answer through the Vulkan backend"
@@ -592,6 +628,15 @@ kind = "command"
 run = "just quality-requirements virtual-geometry virtual-shadows rendering-global-illumination denoising ray-tracing-infrastructure rendering-post-processing temporal-rendering rendering-lighting-and-shadows"
 ci_job = "milestone-m11c"
 
+# THE SAME MUTATION ON THE LARGEST OF THE EIGHT ROWS' SUITES. `integration.render_gi_pipeline`
+# answers fourteen of `rendering-global-illumination`'s twenty-nine; renaming the `cy_add_test` that
+# declares it drops the recipe from 123 of 123 to 109 of 123. Measured in the prover's sandbox: exit
+# 0 unmutated, exit 1 mutated, exit 0 again restored.
+[criterion.falsifies]
+mutate = "rename-token"
+target = "src/rendering/gi/tests/CMakeLists.txt"
+token = "render_gi_pipeline"
+
 # --- Section 3: culling, the sky, and the two architecture rows -------------------------------------
 
 [[criterion]]
@@ -615,6 +660,15 @@ check() {
     selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
     echo "$suite: the filter selected ${selected:-0} case(s) of the 1 it names"
     test "${selected:-0}" -ge 1 || { echo "the named case is not in $suite any more — renamed, deleted, or the filter is stale"; exit 1; }
+    # A SKIP IS NOT A PASS — task 9.3. `tests/render/device.h` prints this line and RETURNS when no
+    # Vulkan device can be created, so the case exits 0 having executed zero assertions, and
+    # `requires = "gpu"` does not catch it: `criteria._has_gpu()` asks whether /dev/dri holds a
+    # render node, which is a different question from whether a device can be created. Measured with
+    # the ICD hidden: the whole render label is 17 of 17 green in 3.78 s against 186.48 s with the
+    # device. The guard is `m11a:field-device-agrees-with-cpu`'s.
+    printf '%s\n' "$out" | grep -q 'no Vulkan device on this machine' && { echo "$suite SKIPPED for want of a device: that is not a pass"; exit 1; }
+    assertions=$(printf '%s' "$out" | sed -nE 's/.*assertions: *([0-9]+) \|.*/\1/p' | head -1)
+    test "${assertions:-0}" -ge 1 || { echo "$suite executed ${assertions:-0} assertion(s): it measured nothing"; exit 1; }
 }
 # 1. THE PYRAMID ITSELF, against the CPU model that has passed its own tests since M6. A model
 #    passing its own tests is not a pass; this case reads the DEVICE pyramid back and compares every

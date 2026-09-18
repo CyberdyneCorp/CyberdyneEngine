@@ -151,6 +151,27 @@ CY_TEST_CASE("a bake seeds the caches so the first frame is not black") {
     const PathTracer path(tracer, seeded.system.scene(),
                           {seeded.lights.data(), seeded.lights.size()}, SkyTerm{}, &tracer);
 
+    // THE PROBES ARE INVALIDATED BEFORE THE BAKE, AND THAT IS THE WHOLE OF WHAT MAKES THIS CASE
+    // ABOUT THE BAKE. The frame above had to run so the path tracer has a field to trace, and it
+    // also gathered every probe — so until M11.c's mutation pass, "the bake seeded the caches" was
+    // read off state that frame had already produced. Deleting `cache.seed(...)` from
+    // `seed_probes` outright left every assertion here green. `diagnostics()` compounded it: it is
+    // a snapshot `update()` takes, not a live count, so it answered for the frame rather than for
+    // the bake. Both are fixed here — the probes are cleared first, and counted directly after.
+    const auto valid_probes = [](const RadianceCache& cache) {
+        u32 valid = 0;
+        for (const Probe& probe : cache.probes()) {
+            if (probe.live && probe.valid) {
+                valid += 1;
+            }
+        }
+        return valid;
+    };
+    const cy::Aabb everywhere =
+        cy::Aabb::from_center_extents(Vec3{0.0F, 0.0F, 0.0F}, Vec3{1.0e4F, 1.0e4F, 1.0e4F});
+    CY_CHECK_GT(seeded.system.radiance().invalidate(everywhere), 0U);
+    CY_REQUIRE_EQ(valid_probes(seeded.system.radiance()), 0U);
+
     BakeSettings settings;
     settings.bounces = 1;
     settings.samples = 8;
@@ -164,11 +185,11 @@ CY_TEST_CASE("a bake seeds the caches so the first frame is not black") {
     CY_CHECK_GT(report.value().surface_pages_seeded, 0U);
     CY_CHECK_GT(report.value().rays, 0U);
 
-    // Every probe is valid immediately. The comparison is against a system that has placed its
-    // probes and not yet gathered: without a bake a probe starts invalid and converges, and that is
-    // the difference the seeding removes.
-    CY_CHECK_EQ(seeded.system.radiance().diagnostics().valid_probes,
-                seeded.system.radiance().probe_count());
+    // Every probe is valid immediately, counted off the probes themselves. The comparison is
+    // against a system that has placed its probes and not yet gathered: without a bake a probe
+    // starts invalid and converges, and that is the difference the seeding removes.
+    CY_CHECK_GT(valid_probes(seeded.system.radiance()), 0U);
+    CY_CHECK_EQ(valid_probes(seeded.system.radiance()), seeded.system.radiance().probe_count());
     ProbePlacementContext placement;
     placement.field = &unseeded.system.field();
     (void)unseeded.system.field().scroll_to(Vec3{0.0F, 0.0F, 0.0F});

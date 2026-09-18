@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 181 proven, 471 not yet shown able to fail.
+# 197 proven, 456 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -50,6 +50,14 @@ digest = "25bf82f06c8b05a5"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 7 file(s)"
+
+[[proof]]
+ledger = "m1"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m10"
@@ -114,6 +122,14 @@ digest = "2c5d659d774f0507"
 verdict = "proven"
 mutation = "delete-path in docs/design/videos/m10-world.mp4 (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m10"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m11a"
@@ -383,9 +399,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): thirdp
 ledger = "m11a"
 criterion = "workflows"
 digest = "1077408579d6044a"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m11a"
@@ -526,10 +542,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m11b"
 criterion = "m11c-open"
-digest = "1cb83e8853c0a122"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11c-image/proposal.md"
+digest = "865bb2c0261d7f4d"
+verdict = "proven"
+mutation = "delete-lines '- [x] ' in openspec/changes/*m11c*/tasks.md (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"
@@ -695,9 +711,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no bui
 ledger = "m11b"
 criterion = "workflows"
 digest = "1077408579d6044a"
-verdict = "proven"
-mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
-detail = "red under mutation of 1 file(s)"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m11c"
@@ -722,6 +738,14 @@ digest = "cf52a6e59f3bae70"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'route(routed, SignalKind::AmbientOcclusion, surfaces, history, denoiser, report);' in src/rendering/gi/src/signals.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "every-shader-reaches-every-target"
+digest = "c443f5c5d23091ce"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/m11c-final (exit 1): override: CY_BUILD_DIR=build/m11c-final … Interprocedural optimizations are turned on"
 
 [[proof]]
 ledger = "m11c"
@@ -766,10 +790,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-geometry (
 [[proof]]
 ledger = "m11c"
 criterion = "image-rows-at-complete-grade"
-digest = "53d4116af8f8920e"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  virtual-geometry virtual-shadows rendering-global-illumination denoising ray-tracing-infrastructure rendering-post-processing tempora … 0 of 123 requirement(s) across 8 row(s) map to a test, a gate or a recorded exemption"
+digest = "4a45c698f3c65617"
+verdict = "proven"
+mutation = "rename-token 'render_gi_pipeline' in src/rendering/gi/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -814,10 +838,10 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec
 [[proof]]
 ledger = "m11c"
 criterion = "material-compiler-at-complete-grade"
-digest = "877a445a2c606598"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  material-compiler shader-system … 0 of 34 requirement(s) across 2 row(s) map to a test, a gate or a recorded exemption"
+digest = "c3d4a6c3a4afe064"
+verdict = "proven"
+mutation = "rename-token 'material_lowering' in src/rendering/material/tests/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -1044,6 +1068,14 @@ mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
 
 [[proof]]
+ledger = "m11d"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m11e"
 criterion = "dependency-set-integrated"
 digest = "46b080ac5760e1d2"
@@ -1100,6 +1132,14 @@ mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): (no output)"
 
 [[proof]]
+ledger = "m11e"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m2"
 criterion = "m3-open"
 digest = "8a7e0dc0ebc899df"
@@ -1114,6 +1154,14 @@ digest = "fe8aec0e51003b64"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 6 file(s)"
+
+[[proof]]
+ledger = "m2"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m3"
@@ -1132,6 +1180,14 @@ mutation = "lower-tiers (derived)"
 detail = "red under mutation of 9 file(s)"
 
 [[proof]]
+ledger = "m3"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m4"
 criterion = "m5-open"
 digest = "637caed5b65e3bed"
@@ -1148,6 +1204,14 @@ mutation = "lower-tiers (derived)"
 detail = "red under mutation of 8 file(s)"
 
 [[proof]]
+ledger = "m4"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m5"
 criterion = "m5b-open"
 digest = "5d0b03a321f6dbde"
@@ -1162,6 +1226,14 @@ digest = "e27fee77bc44b87b"
 verdict = "proven"
 mutation = "lower-tiers (derived)"
 detail = "red under mutation of 14 file(s)"
+
+[[proof]]
+ledger = "m5"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m5b"
@@ -1196,6 +1268,14 @@ mutation = "delete-path in docs/design/images/editor-window-m5b.png (derived)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
+ledger = "m5b"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m6"
 criterion = "m7-open"
 digest = "3036764d52d53678"
@@ -1218,6 +1298,14 @@ digest = "e94982e23d8fc9fb"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/open-world-m6.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m6"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m7"
@@ -1252,6 +1340,14 @@ mutation = "delete-path in docs/design/images/editor-viewport-engine-frame.png (
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
+ledger = "m7"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m8a"
 criterion = "m8b-open"
 digest = "0cd45a1b73980e83"
@@ -1276,6 +1372,14 @@ mutation = "delete-path in docs/design/images/authoring-m8a.png (derived)"
 detail = "red under mutation of 1 file(s)"
 
 [[proof]]
+ledger = "m8a"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+
+[[proof]]
 ledger = "m8b"
 criterion = "m8c-open"
 digest = "3266ef6723ff8eef"
@@ -1298,6 +1402,14 @@ digest = "a8bcb09b9a002c0b"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/vertical-slice-m8b.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8b"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m8c"
@@ -1370,6 +1482,14 @@ digest = "1167d17707af1880"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/vfx-budget-degraded.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m8c"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m9"
@@ -1466,6 +1586,14 @@ digest = "eea74aaad741f45f"
 verdict = "proven"
 mutation = "delete-path in docs/design/images/m9-rolling-capture-and-redaction.png (derived)"
 detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m9"
+criterion = "workflows"
+digest = "c5f5226698060a32"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[unproven]]
 ledger = "m0"
@@ -1695,14 +1823,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m1"
 criterion = "tsan-jobs"
 digest = "6010b5b36d35ab43"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m1"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -2173,14 +2293,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m10"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m10"
 criterion = "world-artefact"
 digest = "faa2020740f95d14"
 verdict = "no mutation"
@@ -2412,14 +2524,6 @@ mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
-ledger = "m11d"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
 ledger = "m11e"
 criterion = "attribution-api"
 digest = "63682e0878639e2a"
@@ -2583,14 +2687,6 @@ detail = "absent-sample: just run-sample 11-ship: no samples/*/CMakeLists.txt de
 ledger = "m11e"
 criterion = "specs"
 digest = "5990f183bc47c962"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11e"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -2783,14 +2879,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m2"
 criterion = "wire-format"
 digest = "1ddcd27087d58f2d"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m2"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -2989,14 +3077,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m3"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m3"
 criterion = "xr-prerequisites"
 digest = "cde10e6e93fbef98"
 verdict = "refuted"
@@ -3188,14 +3268,6 @@ mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
-ledger = "m4"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
 ledger = "m5"
 criterion = "artefact"
 digest = "6667d26dc22e39c1"
@@ -3356,14 +3428,6 @@ mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
-ledger = "m5"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
 ledger = "m5b"
 criterion = "agent-artefact"
 digest = "d9dac7207f314b46"
@@ -3503,14 +3567,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m5b"
 criterion = "window-recipe"
 digest = "a38a919edc3930db"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m5b"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -3711,14 +3767,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m6"
 criterion = "virtual-texturing-teardown"
 digest = "7267c25bf0cb4f5c"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m6"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -4036,14 +4084,6 @@ mutation = "-"
 detail = "vacuous-suite: just test-render selects with --no-tests=ignore behind it"
 
 [[unproven]]
-ledger = "m7"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
 ledger = "m8a"
 criterion = "authoring-artefact"
 digest = "5820f376bc638efa"
@@ -4239,14 +4279,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8a"
 criterion = "specs"
 digest = "5990f183bc47c962"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8a"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -4612,14 +4644,6 @@ mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
-ledger = "m8b"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
 ledger = "m8c"
 criterion = "audio-parity"
 digest = "271463f72d9990f5"
@@ -4895,14 +4919,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m8c"
 criterion = "vfx-values"
 digest = "a59cc110c52a72e6"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m8c"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
@@ -5223,14 +5239,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 ledger = "m9"
 criterion = "state-hash-coverage"
 digest = "ed1c85fe809162d6"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m9"
-criterion = "workflows"
-digest = "c5f5226698060a32"
 verdict = "no mutation"
 mutation = "-"
 detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"

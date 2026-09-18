@@ -11,6 +11,7 @@
 #include "support.h"
 
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace {
@@ -294,12 +295,12 @@ CY_TEST_CASE("the camera moves and valid probes are reused") {
 CY_TEST_CASE("a probe on the far side of a wall does not leak into a query") {
     // "WHEN a query interpolates probes across a wall THEN the visibility term SHALL suppress the
     // contribution of probes not visible from the query point."
-    const gi_support::BoxField wall(Vec3{0.2F, 4.0F, 4.0F}, 1.0F, 9);
+    const gi_support::BoxField wall(Vec3{0.5F, 4.0F, 4.0F}, 1.0F, 9);
     DistanceField field;
     ClipmapSettings clipmaps;
     clipmaps.levels = 2;
-    clipmaps.resolution = 16;
-    clipmaps.base_extent_metres = 16.0F;
+    clipmaps.resolution = 32;
+    clipmaps.base_extent_metres = 8.0F;
     CY_REQUIRE(field.configure(clipmaps).has_value());
     CY_REQUIRE(field.place(1, wall.asset(), cy::Mat4::identity()).has_value());
     (void)field.scroll_to(Vec3{0.0F, 0.0F, 0.0F});
@@ -353,6 +354,64 @@ CY_TEST_CASE("a probe on the far side of a wall does not leak into a query") {
     }
     CY_CHECK_GT(same_side, 0U);
     CY_CHECK_EQ(through_wall, 0U);
+
+    // AND THE SUPPRESSION ITSELF, BECAUSE THE COUNT ABOVE DOES NOT OBSERVE IT. `through_wall`
+    // reads `probe.axis_distance[0]` — what the probe MEASURED — and the requirement is about what
+    // the RESOLVE does with it. M11.c's mutation pass deleted
+    // `weight *= visibility_weight(entry, position);` from `RadianceCache::sample` outright and
+    // both counts above stayed green. So the two sides of the wall are painted two colours here
+    // and the query on the near side is asked what it received.
+    const std::vector<Vec3> seed_axes = {{1.0F, 0.0F, 0.0F},  {-1.0F, 0.0F, 0.0F},
+                                         {0.0F, 1.0F, 0.0F},  {0.0F, -1.0F, 0.0F},
+                                         {0.0F, 0.0F, 1.0F},  {0.0F, 0.0F, -1.0F}};
+    const std::vector<Vec3> far_side(seed_axes.size(), Vec3{1.0F, 0.0F, 0.0F});
+    const std::vector<Vec3> near_side(seed_axes.size(), Vec3{0.0F, 1.0F, 0.0F});
+    const Vec3 query{0.5F, 0.0F, 0.0F};
+    // The query's normal points along +Y, across the wall rather than at it: the wrap term that
+    // drops a probe behind the query's own surface is then neutral on both sides, so the only
+    // thing that can still exclude the far-side probes is the visibility term.
+    const Vec3 up{0.0F, 1.0F, 0.0F};
+    u32 far_side_in_reach = 0;
+    {
+        const cy::Span<const Probe> all = cache.probes();
+        for (u32 index = 0; index < all.size(); ++index) {
+            if (!all[index].live) {
+                continue;
+            }
+            const bool beyond = all[index].position.x < -0.2F;
+            const cy::Span<const Vec3> values =
+                beyond ? cy::Span<const Vec3>{far_side.data(), far_side.size()}
+                       : cy::Span<const Vec3>{near_side.data(), near_side.size()};
+            CY_REQUIRE(
+                cache.seed(index, {seed_axes.data(), seed_axes.size()}, values).has_value());
+            // The reach `sample` gathers over: one probe spacing and a half, at this one level.
+            if (beyond && cy::length(query - all[index].position) <= settings.base_spacing_metres *
+                                                                        1.5F) {
+                far_side_in_reach += 1;
+            }
+        }
+    }
+    // The positive control. Without it "no red arrived" could mean "no red was ever in range",
+    // which is the shape of a test that passes on the defect it was written for.
+    CY_CHECK_GT(far_side_in_reach, 0U);
+    for (const Probe& probe : cache.probes()) {
+        if (!probe.live) { continue; }
+        const f32 d = cy::length(query - probe.position);
+        if (d <= settings.base_spacing_metres * 1.5F) {
+            std::printf("PROBE %6.2f %6.2f %6.2f  d=%5.2f  ax+X=%5.2f ax-X=%5.2f\n",
+                        static_cast<double>(probe.position.x),
+                        static_cast<double>(probe.position.y),
+                        static_cast<double>(probe.position.z), static_cast<double>(d),
+                        static_cast<double>(probe.axis_distance[0]),
+                        static_cast<double>(probe.axis_distance[1]));
+        }
+    }
+
+    const RadianceSample received = cache.sample(query, up, 1);
+    CY_REQUIRE(received.confidence > 0.0F);
+    CY_CHECK_GT(received.radiance.y, 0.0F);
+    // Nothing of the far side's colour crossed the wall.
+    CY_CHECK_LT(received.radiance.x, 0.01F);
 }
 
 CY_TEST_CASE("probe updates are budgeted, prioritised and bounded in age") {

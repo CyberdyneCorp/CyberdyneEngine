@@ -222,7 +222,7 @@ void GeometryCache::evict(usize slot) noexcept {
     // The generation moves BEFORE the slot is reused, so a reference taken against the old
     // generation fails its comparison rather than reading whatever lands here next.
     PageTableEntry cleared;
-    cleared.generation = static_cast<u16>(slot_entry.generation + 1U);
+    cleared.generation = slot_entry.generation;  // MUTANT: the generation no longer moves
     cleared.location = PageTableEntry::kNoLocation;
     cleared.bytes = 0;
     cleared.flags = PageFlags::kInvalid;

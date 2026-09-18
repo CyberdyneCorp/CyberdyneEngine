@@ -216,6 +216,39 @@ CY_TEST_CASE("the two tiers agree within tolerance over the whole room") {
         static_cast<double>(comparison.mean_reference_magnitude));
 
     CY_CHECK_LT(comparison.relative_error, kTierTolerance);
+
+    // AND THE HARDWARE TIER'S OWN RESOLUTION, WHICH THE COMPARISON ABOVE DOES NOT REACH.
+    // `indirect_diffuse` answers out of the radiance cache, and the probe gather that fills it
+    // resolves EVERY hit — software or hardware — through the one surface-cache lookup in
+    // `RadianceCache::gather_probe`. So `HardwareTracer::radiance`, which is where
+    // "a hardware hit is still a cache lookup" is written for the hardware tier, is not on the
+    // path above at all: M11.c's mutation pass deleted that lookup outright and every assertion
+    // above stayed green. The tiered tracer is the caller that reads it, so it is asked here by
+    // name, and the software tier is asked the same question so the two answers are comparable
+    // rather than merely non-zero.
+    const Vec3 from{0.0F, -gi_support::kRoomY + 0.1F, 0.0F};
+    const Vec3 up{0.0F, 1.0F, 0.0F};
+    TraceBudget hardware_budget;
+    const RadianceSample hardware_hit =
+        hardware.system.tracer().trace(from, up, 20.0F, hardware_budget);
+    TraceBudget software_budget;
+    const RadianceSample software_hit =
+        software.system.tracer().trace(from, up, 20.0F, software_budget);
+    CY_CHECK_EQ(hardware_hit.source, RadianceSource::HardwareTrace);
+    CY_CHECK_EQ(software_hit.source, RadianceSource::SoftwareTrace);
+    // Each tier's hit carries the cache's radiance for the ceiling it met. Black here is the
+    // failure the sentence exists to prevent: a hardware hit that resolved through nothing.
+    CY_CHECK_GT(cy::length(hardware_hit.radiance), 0.0F);
+    CY_CHECK_GT(cy::length(software_hit.radiance), 0.0F);
+    CY_CHECK_GT(hardware_hit.confidence, 0.0F);
+    std::printf("    hardware hit radiance      %.5f %.5f %.5f\n"
+                "    software hit radiance      %.5f %.5f %.5f\n\n",
+                static_cast<double>(hardware_hit.radiance.x),
+                static_cast<double>(hardware_hit.radiance.y),
+                static_cast<double>(hardware_hit.radiance.z),
+                static_cast<double>(software_hit.radiance.x),
+                static_cast<double>(software_hit.radiance.y),
+                static_cast<double>(software_hit.radiance.z));
 }
 
 CY_TEST_CASE("turning ray tracing off mid-run is not a visual discontinuity") {

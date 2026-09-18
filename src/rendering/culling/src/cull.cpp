@@ -80,7 +80,7 @@ struct CullContext {
     const bool over_instance_limit = instance_limit > 0.0F && depth > instance_limit;
     const bool over_view_limit = view_limit > 0.0F && depth > view_limit;
     if (over_instance_limit || over_view_limit) {
-        // MUTANT: the rejected-by-range stage is no longer counted
+        ++stats.rejected_by_range;
         return false;
     }
 

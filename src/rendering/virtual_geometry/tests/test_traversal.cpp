@@ -252,6 +252,26 @@ CY_TEST_CASE("instances that cannot matter are removed before any cluster work")
                     result.stats.instances_rejected_by_layer,
                 64U);
 
+    // AND THE SCREEN-SIZE TEST, WHICH THE BLOCK ABOVE CANNOT SEE. `view_at` sets
+    // `minimum_instance_pixels` to ZERO, so `instances_rejected_by_size` is zero in every case in
+    // this suite and the accounting identity above holds whether the size test is there or not —
+    // deleting it moves those instances into `instances_visible` and the sum still comes to 64.
+    // The requirement lists projected screen size beside the frustum and the layer mask, so it is
+    // asked for here directly: a frustum that clips nothing, and a pixel floor that the far end of
+    // the line falls under while the near end does not.
+    vg::TraversalView sized = view_at(8.0F, 1.0F);
+    sized.minimum_instance_pixels = 20.0F;
+    CY_REQUIRE(vg::traverse_reference(inputs, sized, result).has_value());
+    CY_CHECK_EQ(result.stats.instances_tested, 64U);
+    CY_CHECK_EQ(result.stats.instances_rejected_by_frustum, 0U);  // this frustum clips nothing
+    CY_CHECK_GT(result.stats.instances_rejected_by_size, 0U);
+    CY_CHECK_GT(result.stats.instances_visible, 0U);
+    CY_CHECK_LT(result.stats.instances_visible, 64U);
+    CY_CHECK_EQ(result.stats.instances_visible + result.stats.instances_rejected_by_frustum +
+                    result.stats.instances_rejected_by_size +
+                    result.stats.instances_rejected_by_layer,
+                64U);
+
     // A layer mask the view does not carry rejects before any geometry is looked at.
     for (vg::GeometryInstance& instance : instances) {
         instance.layer_mask = 0x2U;

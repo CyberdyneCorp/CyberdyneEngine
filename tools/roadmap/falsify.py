@@ -196,6 +196,14 @@ REFUTED = "refuted"
 UNPROVABLE = "not provable here"
 NO_MUTATION = "no mutation"
 
+#: The sentence `_gap_no_mutation_can_close` opens with, and the string `command_check` counts by.
+#: A declared gap owes a mutation that makes it GREEN and every verb this module has SUBTRACTS, so a
+#: gap that is red because the thing it names does not exist yet cannot be judged here at all. It is
+#: said in one place and printed under its own heading rather than mixed into the build-backed carry,
+#: because the two are unjudged for opposite reasons: one for want of a build on this host, this one
+#: for want of a verb that could exist.
+GAP_IS_ADDITIVE = "THIS GAP CLOSES BY AN ADDITION AND NO MUTATION VERB ADDS:"
+
 #: Every verdict that counts as a proof. `reconcile` requires the recorded one to be the observed
 #: one, so a criterion that changes proof shape is re-judged rather than carried.
 PROOF_VERDICTS = (PROVEN, RED_IN_THE_TREE, RED_WITH_A_BUILD, PROVEN_BY_REBUILD,
@@ -1622,11 +1630,11 @@ def prove(sandbox: Sandbox, ledger: str, criterion: criteria_module.Criterion,
         # expected to fail, so what it owes is a mutation that makes it GREEN. Only a criterion that
         # is red WITHOUT having declared itself so falls through to the tree control.
         if criterion.is_declared_gap:
-            if mutation is None:
-                return finished(NO_MUTATION, "-",
-                                "a declared gap owes a mutation that makes it GREEN, and none can be "
-                                "derived from its text: it must declare a [criterion.falsifies]")
-            return _prove_a_declared_gap(sandbox, criterion, mutation, output, finished)
+            if mutation is not None:
+                proof = _prove_a_declared_gap(sandbox, criterion, mutation, output, finished)
+                if proof.verdict == PROVEN:
+                    return proof
+            return _gap_no_mutation_can_close(criterion, mutation, code, output, finished, build_dir)
         return _red_in_the_tree(criterion, code, output, finished, build_dir)
 
     if mutation is None:
@@ -1801,6 +1809,55 @@ def _prove_a_declared_gap(sandbox: Sandbox, criterion: criteria_module.Criterion
     return finished(PROVEN, mutation.describe(),
                     f"a declared gap: RED unmutated ({_last_line(red)}), GREEN under the mutation of "
                     f"{changed} file(s) — the gap is a deadline rather than a permanent red")
+
+
+def _gap_no_mutation_can_close(criterion: criteria_module.Criterion, mutation: Mutation | None,
+                               code: int, output: str, finished, build_dir: str = "") -> Proof:
+    """A declared gap whose closing act is an ADDITION, which no mutation verb performs.
+
+    EVERY VERB THIS MODULE HAS TAKES SOMETHING AWAY: `delete-path`, `delete-lines`, `rename-token`,
+    `truncate`, `lower-tiers`. That is right for the question the tool was built to ask — break what
+    a green criterion names and require it to go red — and it is the wrong shape for the question a
+    declared gap asks, which is the mirror of it: make the red one GREEN. Eleven of this ladder's
+    gaps are red because something is ABSENT — a forbidden-pattern checker nobody has written, a
+    benchmark nobody has committed, a game project that does not exist, a screenshot nobody has
+    captured, requirements nobody has mapped, a tier nobody has raised — and no subtraction performs
+    an addition. So the author cannot write a `[criterion.falsifies]` that would work, and an author
+    who writes one anyway has written a mutation that makes a check stop looking rather than one
+    that closes the gap.
+
+    WHAT IS STILL OBSERVED, AND IT IS THE WHOLE RECORDED CLAIM. This criterion is RED, unmutated, in
+    the sandbox and — the tree control below — in the repository: watched going red, which is the
+    `red in the tree` verdict and is a proof shape in its own right. Declaring the gap did not change
+    what the criterion checks (`digest` does not read `known_gap`), so the standing record is neither
+    stale nor re-earned falsely; what the prover has stopped being able to answer is the SECOND,
+    different question the gap raises — whether it is a deadline rather than a permanent red.
+
+    So the verdict is UNJUDGED, exactly as a build-backed proof is unjudged by a source-only run: a
+    run that could not ask a question has not contradicted the answer to a different one. It is not a
+    silent carry — `command_check` prints these under their own heading — and it is not a way in: a
+    gap with NO standing proof is still refused by `_record`, because `unjudged` is only carried for
+    a key already in the inventory at the same digest.
+    """
+    tree_code, tree_output = run_in_the_repository(criterion, build_dir, TREE_CONTROL_TIMEOUT_S)
+    named = mutation.describe() if mutation else "-"
+    if tree_code == 0:
+        return finished(REFUTED, named,
+                        "it is a declared gap, it is red in the sandbox and GREEN in the repository: "
+                        "the copy is what made it red. THE GAP MAY BE CLOSED — check it against the "
+                        f"ledger: {_first_line(output)}")
+    if tree_code < 0 or tree_code == 124:
+        return finished(UNPROVABLE, named, f"red in the sandbox, and the tree control could not "
+                                           f"judge it: {_first_line(tree_output)}", unjudged=True)
+    if mutation is not None:
+        detail = (f"the mutation it declares does not make it green ({named}), and no mutation verb "
+                  "can: every verb here subtracts and this gap closes by an addition")
+    else:
+        detail = ("no mutation makes it green, and none can be written: every verb here subtracts "
+                  "and this gap closes by an addition — the thing it names is ABSENT")
+    return finished(UNPROVABLE, named,
+                    f"{GAP_IS_ADDITIVE} {detail}. Red unmutated, in the sandbox and in the "
+                    f"repository (exit {tree_code}): {_why_it_is_red(tree_output)}", unjudged=True)
 
 
 def _ledger_blind(sandbox: Sandbox, criterion: criteria_module.Criterion) -> str:
@@ -2211,11 +2268,23 @@ def command_check(arguments: argparse.Namespace) -> int:
     # a recorded number nobody re-earns — which is the decay this whole module was written against.
     carried = [proof for proof in observed
                if proof.unjudged and (proof.ledger, proof.criterion) in inventory.proofs]
-    if carried:
-        print(f"{len(carried)} recorded proof(s) this run could not re-earn — it has no build tree. "
+    additive = [proof for proof in carried if proof.detail.startswith(GAP_IS_ADDITIVE)]
+    if additive:
+        # SAID OUT LOUD, AND NOT AS A BUILD THAT IS MISSING. These are declared gaps whose closing
+        # act is to WRITE something, and a prover whose every verb deletes cannot perform one. The
+        # criterion is still red on every run of its ledger and its recorded redness still stands;
+        # what nobody has shown is that the gap is a deadline rather than a permanent red.
+        print(f"{len(additive)} declared gap(s) this prover cannot judge: each closes by an "
+              "ADDITION and every mutation verb here subtracts. Their recorded redness stands; "
+              "what is unjudged is whether they are deadlines rather than permanent reds:")
+        for proof in additive:
+            print(f"    {proof.ledger}:{proof.criterion}")
+    rest = [proof for proof in carried if proof not in additive]
+    if rest:
+        print(f"{len(rest)} recorded proof(s) this run could not re-earn — it has no build tree. "
               f"Set {BUILD_DIR_VARIABLE} to one, or run "
               "`just roadmap-falsify prove --build-dir <dir>`:")
-        for proof in carried[:10]:
+        for proof in rest[:10]:
             print(f"    {proof.ledger}:{proof.criterion}")
     print(f"{len(findings)} disagreement(s) between the ladder and falsifiability.toml")
     return 1 if findings else 0

@@ -88,6 +88,30 @@ CY_TEST_CASE("every shape the specification names reaches the list") {
     CY_CHECK_EQ(list.primitives().size(), expected);
     CY_CHECK_EQ(list.labels().size(), kDebugVisualisationEnabled ? 1U : 0U);
     CY_CHECK_EQ(list.dropped(), 0U);
+
+    // EACH SHAPE ARRIVES AS ITSELF, WHICH A COUNT CANNOT SAY. The requirement enumerates the six
+    // things the API accepts — "lines, spheres, boxes, capsules, frustums, and text" — so a
+    // submission that recorded a capsule as a line would satisfy every assertion above and lose one
+    // of the six. FOUND BY MUTATION: replacing `DebugShape::Capsule` with `DebugShape::Line` in
+    // `DebugDrawList::capsule()` left this case green, which made the mapping a count of primitives
+    // rather than a reading of the requirement. The list is now read back shape by shape, in
+    // submission order, with the payload each shape needs to be that shape.
+    if constexpr (kDebugVisualisationEnabled) {
+        CY_REQUIRE_EQ(list.primitives().size(), 5U);
+        const DebugShape submitted[] = {DebugShape::Line, DebugShape::Sphere, DebugShape::Box,
+                                        DebugShape::Capsule, DebugShape::Frustum};
+        for (u32 index = 0; index < 5U; ++index) {
+            CY_CHECK(list.primitives()[index].shape == submitted[index]);
+        }
+        // A capsule is two ends and a radius; a line that called itself a capsule would carry
+        // neither. The sphere's radius is the control that the field is not simply always set.
+        CY_CHECK_NEAR(list.primitives()[3].b.y, 2.0F, 1e-6F);
+        CY_CHECK_NEAR(list.primitives()[3].radius, 0.5F, 1e-6F);
+        CY_CHECK_NEAR(list.primitives()[1].radius, 1.0F, 1e-6F);
+        // Text is the sixth thing the API accepts, and it travels as a borrowed pointer.
+        CY_REQUIRE_EQ(list.labels().size(), 1U);
+        CY_CHECK(std::string_view(list.labels()[0].text) == std::string_view("spawn point"));
+    }
 }
 
 CY_TEST_CASE("submission past the capacity is dropped and counted rather than growing") {

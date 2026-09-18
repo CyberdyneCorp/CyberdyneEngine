@@ -1053,3 +1053,14 @@ fi
 echo "entered:$entered"
 '''
 ci_job = "milestone-m11b"
+
+# IT PASSES NOW — M11.c HAS CHECKED TASKS OUTSIDE ITS SECTION 0 — AND NOTHING COULD TURN IT RED.
+# The criterion's own text implies no mutation the prover can derive: its search is a regex
+# (`^- \[x\] [1-9]`) over a path assembled from a shell variable (`"$d/tasks.md"`), and `derive`
+# refuses both rather than guess, so the verdict was `no mutation` and the criterion sat on the
+# ladder judged by nothing. What it claims is that SOMEBODY HAS ENTERED the next rung, and the
+# smallest act that unclaims it is the checked boxes going away.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "openspec/changes/*m11c*/tasks.md"
+token = "- [x] "
