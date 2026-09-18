@@ -25,3 +25,41 @@
 #   suppressing each separately would be a list that goes stale. Nothing in this engine links
 #   libdbus, so the module name cannot match engine code.
 leak:libdbus-1.so
+
+# libcuda.so.1
+#   Found by M11.c's closing gate, and it is the SAME SHAPE as the entry above rather than a new
+#   kind of thing: a GPU suite pulled into a leak-checked run by a substring, and the Vulkan ICD
+#   allocating at load time in a library no engine target links.
+#
+#   Two criteria report it and both select by substring: `m4:sanitizers` runs `--tests abi`, which
+#   matches `render.ray_tracing_capability` — c-a-p-**a-b-i**-l-i-t-y — a suite M4 did not add and
+#   whose subject is ray tracing; `m5:sanitizers` runs `--tests text`, which matches
+#   `render.virtual_texturing_gpu`, the very case the libdbus entry above was written for. Measured
+#   against `build/m11c-sanitize/sanitize-address`, twice each, byte-identical both times: 408 bytes
+#   in 1 allocation from `render.ray_tracing_capability`, 1632 bytes in 4 from
+#   `render.virtual_texturing_gpu`.
+#
+#   Every stack is three frames and none of them is engine code:
+#       #0 calloc  #1 (/lib/x86_64-linux-gnu/libcuda.so.1+0x2d5304)  #2 (<unknown module>)
+#   The unsymbolised module is the NVIDIA Vulkan ICD (`/usr/share/vulkan/icd.d/nvidia_icd.json`),
+#   which dlopens libcuda while the loader enumerates drivers. Nothing in this repository links
+#   libcuda — `ldd` on the leaking test binary does not name it, and the only `cuda` in the tree is
+#   the placement STRING "cuda:0" in `src/ml/`, whose ONNX Runtime backend registers the CPU
+#   execution provider only (`onnxruntime_backend.cpp:372`).
+#
+#   AND THE ENGINE NEVER GETS A HANDLE TO RELEASE. Both suites print `no Vulkan device on this
+#   machine` for every case and pass with 0 and 15 assertions: under AddressSanitizer this driver
+#   presents no device at all, so the allocation happens during ICD enumeration, before any
+#   `cy::rhi` object exists and with nothing for a destructor to close. That is strictly more than
+#   the libdbus entry could say, where a device was created and torn down.
+#
+#   The negative control is in the same run: the eight suites `--tests abi` selects that are NOT
+#   render suites — `unit.abi`, `integration.abi_reload`, `abi_live_reload`, `abi_inspector`,
+#   `abi_baseline`, `abi_gate`, `unit.ability_core`, `integration.ability_scale` — pass with no leak
+#   in this same sanitized tree. The leak follows the Vulkan loader, not the sanitizer.
+#
+#   Scope: the module, for the reason given above — the driver is reached through the loader and has
+#   no single entry point to name, and no engine code can match a libcuda frame. `print_suppressions=1`
+#   reports this entry's count and byte total on every run, so the day it stops matching, or starts
+#   matching more than these two suites' loader allocations, the run says so.
+leak:libcuda.so.1

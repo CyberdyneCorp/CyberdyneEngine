@@ -238,6 +238,14 @@ CY_TEST_CASE("the shaded virtual-geometry frame matches its committed reference"
 
     cy::render_test::Image reference(allocator);
     const cy::Status read = cy::render_test::read_png(reference_path(), reference);
+    // NAME THE FILE. A missing reference is the one failure a reader cannot diagnose from an
+    // assertion alone — `REQUIRE(read.has_value())` on its own says a Status was empty and not
+    // WHICH file was not there — and a golden suite whose reference has been moved, renamed or
+    // never committed is exactly the state this says out loud. `test_sky_times_of_day.cpp` and
+    // `test_shot_air.cpp` print the same line for the same reason.
+    if (!read) {
+        std::fprintf(stderr, "virtual-geometry: %s: %s\n", reference_path(), read.error().message);
+    }
     CY_REQUIRE(read.has_value());
 
     const cy::render_test::Comparison comparison = cy::render_test::compare(reference, rendered);
@@ -295,6 +303,14 @@ CY_TEST_CASE("starving the shadow page cache changes the picture") {
 
     cy::render_test::Image reference(allocator);
     const cy::Status read = cy::render_test::read_png(reference_path(), reference);
+    // NAME THE FILE. A missing reference is the one failure a reader cannot diagnose from an
+    // assertion alone — `REQUIRE(read.has_value())` on its own says a Status was empty and not
+    // WHICH file was not there — and a golden suite whose reference has been moved, renamed or
+    // never committed is exactly the state this says out loud. `test_sky_times_of_day.cpp` and
+    // `test_shot_air.cpp` print the same line for the same reason.
+    if (!read) {
+        std::fprintf(stderr, "virtual-geometry: %s: %s\n", reference_path(), read.error().message);
+    }
     CY_REQUIRE(read.has_value());
     const cy::render_test::Comparison comparison = cy::render_test::compare(reference, rendered);
     CY_CHECK(comparison.comparable);
