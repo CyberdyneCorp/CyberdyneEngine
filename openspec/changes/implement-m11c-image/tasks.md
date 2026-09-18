@@ -1749,3 +1749,100 @@ ledger started so that the measurement would describe one tree rather than two.
 day, and particles in the shot — **one is the record the closing change writes**, one is the next
 rung being entered, one is the ladder's `--record` run, two are a leak-suppression decision, one is a
 continuous-integration decision, and two are one test case's cold-clock margin.
+
+### THE CLOSE — MEASURED AT HEAD, ALONE, AND M11.c DOES NOT CLOSE
+
+**THE PREVIOUS RUN COULD NOT BE CITED, SO IT WAS MADE AGAIN.** The Ledger phase's run was at
+`fcaec4f`; HEAD is **`2ca9e15`**, eight commits later, and `git diff fcaec4f..HEAD` touches
+`tools/roadmap/falsifiability.toml` (222 lines), `tools/roadmap/milestones/m11c.toml` and the `m3`,
+`m7`, `m8b`, `m8c` and `m11d` ledgers, and splits `unit.graph_material` into a unit and an
+integration suite. Every one of those is an input to a criterion, so the counts were re-measured
+rather than inherited.
+
+**THE RUN.** `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, at `2ca9e15`,
+**15:00:10 → 16:46:22 on 2026-09-18, 6372 s (1.77 h)**, log `/tmp/m11c-close/ledger.log`,
+backgrounded and polled by explicit PID. The machine was checked by `ps` before it started — no
+build, `ctest`, prover or other `roadmap-milestone` was alive — and nothing of this phase's ran
+against the tree while it read. `git status` was clean at the first line and at the last, HEAD did
+not move, and no `.tmp.<pid>.<hash>` file exists anywhere in the tree.
+
+**`M11C is not closed: 8 of 435 evaluated criteria failed.`**
+
+| bucket | this run | the Ledger phase's run at `fcaec4f` | the closing gate's run |
+|---|---|---|---|
+| declared | **440** | 440 | 439 |
+| evaluated on this host | **435** | 435 | 434 |
+| PASS | **399** | 396 | 385 |
+| FAIL (not a declared gap) | **8** | 11 | 39 |
+| declared gaps, still open (do not block) | **28** | 28 | 6 |
+| declared gaps that NOW PASS (these DO block) | **0** | 0 | 4 |
+| NOT EVALUATED, legitimately | **5** | 5 | 5 |
+
+**THREE FAILURES WENT AND NONE ARRIVED**, which is the first re-run of this rung where that is true.
+`m0:test` and `m3:materials` are green — the case that failed the unit CPU budget on a cold governor
+was MOVED to `integration.graph_material` with its assertion unchanged, which is the remedy the
+harness itself names. `m7:plan-consistency` is green — the seventeen moved digests were re-recorded,
+and `just roadmap-falsify check` no longer disagrees with the ladder. The eight that remain are the
+eight the Ledger phase named minus those three.
+
+**THE EIGHT, AND WHAT EACH IS.**
+
+| id | what it says | whose decision |
+|---|---|---|
+| `m1:workflows` | 2 closed gates (`milestone-m11a`, `m11b`) and no workflow evaluates them | a CI decision: the fix puts a multi-hour ledger on every push to `main` |
+| `m4:sanitizers` | 408 bytes leaked in one allocation inside `libcuda.so.1`, no engine frame | a leak-suppression decision, and `tests/lsan-suppressions.txt` says adding one is a decision |
+| `m5:sanitizers` | 1632 bytes in four, same shape, `render.virtual_texturing_gpu` | as above |
+| `m11c:virtual-geometry-image` | `render.virtual_geometry_shaded` is not registered, and `tests/render/references/` holds two files, both of `03-first-light` | **this rung's picture** |
+| `m11c:sky-as-an-image` | `render.sky_times_of_day` is not registered; none of `sky_{dawn,noon,dusk,night}.png` is committed | **this rung's picture** |
+| `m11c:vfx-in-the-shot` | the filter selected 0 of the 1 case it names — there is no `particles are in the assembled frame` | **this rung's picture** |
+| `m11c:roadmap-tiers` | fifteen rows are at Working where this rung's exit tiers say Complete | the record the closing change writes, and it stays unwritten |
+| `m11c:m11d-open` | the next rung's change exists and nobody has entered it | **a deliberate act, and not this gate's to farm** |
+
+Each of the three picture reds was confirmed by hand at HEAD rather than read off the log:
+`grep -rn 'sky_times_of_day\|virtual_geometry_shaded'` over every `CMakeLists.txt` in `tests/` and
+`src/` returns nothing, `ls tests/render/references/` is `first_light.png` and
+`first_light_no_shadows.png`, and `grep -rn 'particles are in the assembled frame'` over `tests/`
+and `src/` is empty.
+
+### NOTHING IS PROMOTED, AND THE REASON IS PER ROW RATHER THAN GLOBAL
+
+`gates.toml` is **unchanged** — `milestone-m11c` stays at `state = "joins-on-close"`. `ci.yml` is
+**unchanged**, still pointing at `m10`. `status.yaml`, `capability-matrix.md` and `ROADMAP.md` are
+**unchanged**: all fifteen rows stay at Working, where `m9:record-matches-plan-history` compares only
+CLOSED milestones' columns and is therefore not contradicted by the M11.c column's plan.
+
+**Four rows have a criterion of their own that is RED, and those four are named first**, because for
+them the rung's own ledger says the claim is unmeasured rather than short:
+
+| row | the criterion that refuses it |
+|---|---|
+| `virtual-geometry` | `virtual-geometry-image` — nothing photographs the shaded frame |
+| `virtual-shadows` | the same criterion, which carries both rows |
+| `atmosphere-sky-and-clouds` | `sky-as-an-image` — no capture at four times of day, no references |
+| `vfx-system` | `vfx-in-the-shot` — there are no particles in the artefact's frame |
+
+**The other eleven are not promoted either, and it is not because a criterion of theirs failed.** It
+is that a row cannot be recorded at Complete by a rung that did not close: `roadmap-tiers` is the
+criterion that reads the record, it expects fifteen, and promoting the eleven would turn a red
+criterion into a differently-worded red one while advancing eleven cells over an open gate. **A gap
+is not declared over any of the eight**, and in particular not over the three picture criteria: a
+gap declared over the rung's own artefact claim is a gap declared over the thing the rung is, and
+two closers have already refused that ending.
+
+**AND THE COVERAGE NUMBER IS STILL NOT AN OBSERVATION FOR FIVE OF THE FIFTEEN.** The closing gate
+refuted the mutation claim by counting what the campaigns actually touched — 129 of the 181
+test-backed mappings — and the 52 that were never mutated are not scattered: they are every
+test-backed mapping of **`material-compiler` (17), `shader-system` (10),
+`rendering-lighting-and-shadows` (9), `rendering-post-processing` (6) and `temporal-rendering` (6)**,
+plus `live-editing` (3) and `editor-architecture` (1), which are not this rung's rows. Those five
+rows' Complete grade rests on a map nobody has tried to break.
+**One mapping is known to be false and is still standing**, verified by reading at `2ca9e15` rather
+than inherited: `temporal-rendering` / *Reprojection and disocclusion* still names
+`the four history states, and the one that means a consumer may accumulate`
+(`src/rendering/temporal/tests/test_motion.cpp:108`), and that case calls only the pure
+`classify_history(inputs)` over inputs it fills in by hand. The behaviour the requirement is about —
+the framework reading history validity off the resource — is `framework.cpp:249`, which the case
+never reaches, and the adversarial pass measured the mutation of that line leaving all twelve of its
+assertions green. It is left as it is rather than re-pointed: moving a mapping to a case that passes
+is the act this rung has spent two gates learning to refuse, and the honest repair is an assertion
+that reaches `TemporalFramework::classify`.
