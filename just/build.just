@@ -69,7 +69,9 @@ build-engine *args:
     echo "==> build       profile=${profile}"
     cmake "${build[@]}" ${CY_JOBS:+--parallel "${CY_JOBS}"}
 
-# Build everything this milestone has: the engine, its tools, and the editor. Shaders join at M3.
+# Build everything this milestone has: the engine, its tools, and the editor. Shaders are their own
+# recipe — `build-shaders` compiles the set for every target and compares what they declare, which is
+# not something every build wants to pay for.
 build-all *args:
     @just build-engine {{args}}
     @just build-editor {{args}}

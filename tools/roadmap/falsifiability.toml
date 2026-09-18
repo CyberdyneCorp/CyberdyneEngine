@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 168 proven, 484 not yet shown able to fail.
+# 181 proven, 471 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -725,11 +725,27 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1
 
 [[proof]]
 ledger = "m11c"
+criterion = "format"
+digest = "d85c446bbb2dd265"
+verdict = "proven"
+mutation = "delete-lines 'IndentWidth: 4' in .clang-format (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
 criterion = "frame-passes-through-post"
 digest = "237973a1fcda4047"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'features.temporal = config.temporal_antialiasing || config.temporal_upscaling;' in src/rendering/assembly/src/frame_assembly.cpp (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-frame (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "generated-code"
+digest = "77479984d43b0075"
+verdict = "proven against a built tree"
+mutation = "truncate in src/core/reflect/generated/cy_reflect_generated.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 1: error: Recipe `generate-check` failed with exit code 1), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -757,11 +773,27 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requ
 
 [[proof]]
 ledger = "m11c"
+criterion = "layering"
+digest = "af09d70ad7f7be87"
+verdict = "proven"
+mutation = "rename-token 'platform/' in tools/layercheck/layercheck.py (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
 criterion = "lighting-and-shadow-suites"
 digest = "fb04516190a61ea1"
 verdict = "proven against a built tree"
 mutation = "rename-token 'render_temporal' in src/rendering/temporal/tests/CMakeLists.txt (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-frame (exit 1: a suite this criterion names is not registered — renamed, deleted, or never written), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "lint"
+digest = "712cd3eab81cb8c0"
+verdict = "proven against a built tree"
+mutation = "rename-token 'NOLINTNEXTLINE' in src/core/memory/src/tracking_allocator.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 123: error: Recipe `quality-lint` failed with exit code 123), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -837,6 +869,14 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-gi (exit 1
 
 [[proof]]
 ledger = "m11c"
+criterion = "roadmap-record"
+digest = "cb9219c1df196149"
+verdict = "proven"
+mutation = "delete-lines '    change:' in docs/roadmap/status.yaml (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
 criterion = "roadmap-tiers"
 digest = "d8b5e8dc0f03fc99"
 verdict = "red in the tree"
@@ -845,11 +885,51 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): atmosphe
 
 [[proof]]
 ledger = "m11c"
+criterion = "shader-targets-for-the-next-rung"
+digest = "c65774eaeeb48ba1"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/proofs (exit 1): just build-shaders: not implemented (task M3 — the renderer and its shader toolchain) … error: Recipe `build-shaders` failed on line 261 with exit code 1"
+
+[[proof]]
+ledger = "m11c"
 criterion = "shot-authored-through-the-editor"
 digest = "199d30b781d27fc2"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'Domain::Materials => MATERIAL_NODES,' in editor/crates/cy-editor-interface/src/specialised/mod.rs (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: cy-author-material: this build declares no authoring vocabulary for materials, so there is no canvas to author on), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "skin-pass-complete"
+digest = "f6d6fb44347c1fba"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'blend.dual[component] *= inverse;' in src/servers/render/geometry/src/skin_dispatch.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 1: the named case(s) FAILED), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "sky-as-an-image"
+digest = "a9c365b139424dde"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/proofs (exit 1): override: CY_BUILD_DIR=build/proofs … an absent suite would otherwise be reported as a pass."
+
+[[proof]]
+ledger = "m11c"
+criterion = "specs"
+digest = "ca06f26b569c60e7"
+verdict = "proven"
+mutation = "delete-lines '#### Scenario:' in openspec/specs/delivery-roadmap/spec.md (declared)"
+detail = "red under mutation of 1 file(s)"
+
+[[proof]]
+ledger = "m11c"
+criterion = "subsystem-controllers-report-costs"
+digest = "9b3802a9e3d2d8ed"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'controller_.report_measured_ms(stats_.reported_ms);' in src/rendering/sky/src/budget.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -882,6 +962,30 @@ digest = "f4d33ba04e4ff1ff"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'honestly missing' in docs/design/beauty-shot.md (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit 1: the artefact's provenance no longer states what is missing from \"authored through the editor\"), and green again once restored"
+
+[[proof]]
+ledger = "m11c"
+criterion = "vfx-in-the-shot"
+digest = "b6c7ffad6384808b"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/proofs (exit 1): override: CY_BUILD_DIR=build/proofs … the named case(s) are not in integration.vfx any more — renamed, deleted, or the filter is stale"
+
+[[proof]]
+ledger = "m11c"
+criterion = "virtual-geometry-image"
+digest = "da68f896b1146d77"
+verdict = "red against a built tree"
+mutation = "-"
+detail = "red unmutated against the build tree build/proofs (exit 1): override: CY_BUILD_DIR=build/proofs … backend; either way the image is UNMEASURED."
+
+[[proof]]
+ledger = "m11c"
+criterion = "workflows"
+digest = "96fbe4499165bcb3"
+verdict = "red in the tree"
+mutation = "-"
+detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
 
 [[proof]]
 ledger = "m11d"
@@ -2117,14 +2221,6 @@ detail = "no mutation can be derived from this criterion's text; it must declare
 
 [[unproven]]
 ledger = "m11c"
-criterion = "format"
-digest = "71ba6ab76cd42f2d"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "four-profiles"
 digest = "021dbef044895d07"
 verdict = "not provable here"
@@ -2133,107 +2229,11 @@ detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
 
 [[unproven]]
 ledger = "m11c"
-criterion = "generated-code"
-digest = "0571f02a45293a0d"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just generate'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "layering"
-digest = "013d16d0f90d9149"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "lint"
-digest = "3cf233aba6556ea2"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just quality-lint'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
 criterion = "plan-consistency"
 digest = "222149cbbdac18cb"
 verdict = "not provable here"
 mutation = "-"
 detail = "red in the sandbox, and the tree control cannot run: a criterion that runs this module cannot be controlled by running it again"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "roadmap-record"
-digest = "bd88005f43ddec38"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "shader-targets-for-the-next-rung"
-digest = "c65774eaeeb48ba1"
-verdict = "not provable here"
-mutation = "rename-token 'dxil\\x1fmsl' in /tmp/cy-m11c-targets.txt (derived)"
-detail = "it needs a built tree ('just build'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "skin-pass-complete"
-digest = "75419de791411efa"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "sky-as-an-image"
-digest = "8ae7726fcd745b37"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "specs"
-digest = "5990f183bc47c962"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "subsystem-controllers-report-costs"
-digest = "4f08086ba1b14f5d"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "vfx-in-the-shot"
-digest = "b6c7ffad6384808b"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('CY_BUILD_DIR'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "virtual-geometry-image"
-digest = "40d634ff5a37157d"
-verdict = "not provable here"
-mutation = "-"
-detail = "it needs a built tree ('just test'); the sandbox is source only"
-
-[[unproven]]
-ledger = "m11c"
-criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11d"

@@ -157,6 +157,19 @@ be lost between rungs.
       two golden images and a device capability, not a rename. It closes at M11.d because that rung
       adds the D3D12 backend and already carries `golden-images-across-three-backends`, which is the
       evidence the change needs. 37 of 39 entry points reach all three targets
+- [x] 1.9 **What the prover says, recorded rather than argued.** `just roadmap-falsify prove m11c
+      --only shader --build-dir build/m11c-shaders` returns `NOT PROVABLE HERE` for
+      `shader-targets-for-the-next-rung` — *"it PASSES against the build tree; turning it red needs
+      its source mutated and the tree rebuilt, which needs `prove --mutate-the-tree`"* — and `RED
+      AGAINST A BUILT TREE` for `every-shader-reaches-every-target`, which is the verdict that
+      criterion is declared to earn. The first is the same class the whole ladder carries for
+      criteria that need a build, and the criterion now declares a `[criterion.falsifies]` naming
+      `CY_SHADER_DXIL` in `cmake/features.cmake`, which replaces the derived `rename-token
+      'dxil\x1fmsl' in /tmp/cy-m11c-targets.txt` — a mutation of the criterion's own scratch file
+      that could never have proved anything about the tree. `--mutate-the-tree` was NOT run: it
+      mutates the repository itself, another phase was holding it at the time, and two mutators in
+      one working tree is the concurrency this project has already lost hours to. The three reds in
+      1.7 were watched by hand instead, which is what the flag would have automated
 
 ## 2. The seam the plan promised twice — `rendering-global-illumination`, `denoising`, `ray-tracing-infrastructure` → Complete
 
@@ -993,6 +1006,104 @@ work was done.
         "not provable here: it needs a built tree". **`just roadmap-falsify prove m11c --build-dir
         <a built tree> --mutate-the-tree --record` is the run that answers all fifteen** and it was
         not made here, because it mutates the working tree and the closing ledger was running in it
+      - [x] **THIRTEEN OF THE FIFTEEN ARE NOW PROVEN, AND THE TWO THAT ARE NOT ARE NAMED WITH THEIR
+        REASON.** `tools/roadmap/falsifiability.toml` carries **36 `[[proof]]` and 2 `[[unproven]]`**
+        entries for ledger `m11c`. The run was **not** made in this working tree: another phase is
+        writing the shader targets in it and auto-snapshot commits were landing every few minutes,
+        so `--mutate-the-tree` would have raced a writer it cannot see. It was made in a detached
+        `git worktree` at `/home/leonardo/work/cy-m11c-proofs`, against its own build tree
+        `build/proofs`, at commit `1c05bf9` — the last snapshot before that in-flight work — with
+        this file's `m11c.toml` edits applied on top. Every restore was verified afterwards by
+        `md5sum` against the HEAD blob for all ten mutation targets, and **the repository itself was
+        never mutated**. What each of the thirteen now records:
+
+        | criterion | verdict | what was broken |
+        |---|---|---|
+        | `specs` | proven | `#### Scenario:` deleted from `delivery-roadmap/spec.md` |
+        | `format` | proven | `IndentWidth: 4` deleted from `.clang-format` |
+        | `layering` | proven | `platform/` renamed in `tools/layercheck/layercheck.py` |
+        | `roadmap-record` | proven | `    change:` deleted from `status.yaml` |
+        | `lint` | proven against a built tree | the three earned `NOLINTNEXTLINE` in `tracking_allocator.cpp` renamed — red at exit 123, green again restored |
+        | `generated-code` | proven against a built tree | `cy_reflect_generated.cpp` truncated — `generate-check` red, green again restored |
+        | `subsystem-controllers-report-costs` | proven against a built tree | `controller_.report_measured_ms(...)` deleted from `sky/src/budget.cpp` |
+        | `skin-pass-complete` | proven against a built tree | `blend.dual[component] *= inverse;` deleted from `skin_dispatch.cpp` |
+        | `workflows` | red in the tree | `just ci-check` is red unmutated, in the sandbox AND in the repository — this is `m1:workflows`, section 8.4 |
+        | `vfx-in-the-shot` | red against a built tree | "the named case(s) are not in `integration.vfx`" — there is no `particles are in the assembled frame` case |
+        | `shader-targets-for-the-next-rung` | red against a built tree | `just build-shaders: not implemented (task M3)` |
+        | `virtual-geometry-image` | red against a built tree | rewritten, below |
+        | `sky-as-an-image` | red against a built tree | rewritten, below |
+
+        A `[criterion.falsifies]` was added to `specs`, `format`, `lint`, `layering`, `workflows`,
+        `generated-code` and `roadmap-record`, each taking m11b.toml's own mutation for the same
+        command, with m11b's rejected alternatives carried across in the note so the argument is not
+        re-had.
+      - [x] **TWO OF THE FIFTEEN COULD NOT GO RED AT ALL, AND THE SHAPE IS INSTANCE 3 OF THIS
+        MODULE'S OWN LIST.** `virtual-geometry-image` ran `just test-render virtual-geometry
+        --shaded --compare-golden` and `sky-as-an-image` ran `just test-render sky --times-of-day 4
+        --compare-golden`. `just test-render` is `_ctest render`, which selects with `--label-regex
+        "^render$" --no-tests=ignore` and then appends whatever else was passed — and **ctest
+        silently discards a positional argument it does not recognise**. Measured against
+        `build/m11c-close-gate`: `ctest … -N virtual-geometry --shaded --compare-golden`,
+        `ctest … -N sky --times-of-day 4 --compare-golden` and `ctest … -N zzzz-no-such-thing` each
+        select **the same 17 render cases**. So neither criterion's verdict had anything to do with
+        a capture, a time of day or a golden: it was "the whole render label is green", and
+        `--no-tests=ignore` would have made an EMPTY label green too. `falsify.audit` does not catch
+        it — `_vacuous_selection` only fires when `-R`/`-L` is in the argv, and these pass neither.
+        **Both are rewritten** to `m7:virtual-geometry-gpu`'s shape: the suite is asked for **by
+        name** with `ctest -N … | grep -q` before it is run, and the committed reference files are
+        required to exist. **Both then go red for the reason their text names** — there is no
+        `render.virtual_geometry_shaded` and no `render.sky_times_of_day` case anywhere in the tree
+        (the eight render suites are `null_frame`, `xr_prerequisites`, `golden`, `frames`,
+        `conventions`, `ray_tracing_capability`, `material_binding`, `environment_field`), and
+        `tests/render/references/` holds exactly two files, both of `03-first-light`. The committed
+        `docs/design/images/virtual-geometry-shaded.png` is written by `just
+        capture-virtual-geometry`, a recipe a person runs, and is asserted by nothing
+      - [ ] **THE TWO THAT REMAIN, AND NEITHER IS AN OMISSION.** `four-profiles` is `for p in debug
+        dev profile release` over `build-engine`, `build-editor` and `test-all`: one build tree of
+        this engine is **198 GB** on this disk and four are more than the 848 GB free, and the proof
+        needs three runs of all four (unmutated, mutated, restored). It stays `[[unproven]]` with its
+        digest unchanged — which is what the recorder permits and what a re-record on a machine with
+        the room will settle. `plan-consistency` runs `just roadmap-test`, which runs `falsify
+        check`, so the prover refuses its own tree control by name (`_RUNS_THE_ROADMAP_TOOLING`) and
+        the only route left is the ordinary one: PASS in the sandbox, then red under a mutation. It
+        does not pass, because `just roadmap-falsify check` reports **46 disagreements between the
+        ladder and `falsifiability.toml`** — thirty-two more than the fourteen recorded above. The
+        declaration it owes is written into `m11c.toml` as a comment beside it and goes in the moment
+        the ladder is consistent enough for the positive control to pass
+      - [ ] **THE 46, BY SHAPE, BECAUSE THE FOURTEEN ABOVE ARE ONLY ONE THIRD OF THEM.**
+        **Fifteen** are `<ledger>:workflows` — one per rung from `m1` to `m11e` — all now RED in the
+        tree for the one `m1:workflows` line of section 8.4, which turns every recorded `workflows`
+        proof into a disagreement at once. **Fourteen** are the digest mismatches already named.
+        **Twelve** are criteria the retroactive-gap round turned into declared gaps: a declared gap
+        owes a mutation that makes it GREEN, and `m11a:save-forbidden-patterns-checked`,
+        `m11a:save-benchmark`, `m11a:save-has-an-engine-consumer`, `m11a:network-at-complete-grade`,
+        `m11a:roadmap-tiers`, `m11b:gameplay-at-complete-grade`, `m11b:editor-at-complete-grade`,
+        `m11b:the-game-exists`, `m11b:the-game-drawn`, `m11b:the-game-is-honest-about-its-content`,
+        `m11b:roadmap-tiers` and `m11b:m11c-open` declare none — `m11b:the-game-drawn` is worse than
+        the rest at `refuted: the mutation changed nothing`. The **last two** are this rung's own
+        Complete-grade criteria, and they are a finding in the opposite direction: see below
+      - [x] **THE RUNG'S TWO COMPLETE-GRADE CRITERIA ARE GREEN NOW, AND THEIR RECORDED PROOFS SAY
+        "red in the tree".** `just quality-requirements material-compiler shader-system` answers
+        **34 of 34** where the closing gate measured 25 of 34, and `image-rows-at-complete-grade`
+        passes too: `tools/roadmap/requirements-coverage.toml` has grown from 9 entries to **241**
+        across seventeen rows — 188 naming a test and a case, 53 recorded deferrals, 52 of those to
+        M11.e. Both criteria therefore owe an ordinary mutation proof and have none. **They cannot
+        be proven in the sandbox at all**, and the reason is structural rather than theirs:
+        `requirements.py` asks `git ls-files` which CMake files are committed, `falsify.Sandbox`
+        materialises a tar of the tracked tree and is **not a git checkout**, so the check dies with
+        `git could not list this tree's CMake files` and the prover correctly reports "red in the
+        sandbox and GREEN in the repository". Five criteria across four ledgers run that recipe. The
+        fix is one of `Sandbox.materialise` initialising a repository in the copy, or
+        `requirements.py` falling back to a walk when git is not there; **neither is taken here**,
+        because both change what every other proof on the ladder is taken against
+      - [ ] **ONE OF THE THIRTEEN IS ALREADY STALE, AND IT IS SAID HERE RATHER THAN LEFT TO BE
+        DISCOVERED.** While these proofs were being taken, the Supply phase rewrote
+        `m11c:shader-targets-for-the-next-rung` in this tree — a probed target table, a cross-target
+        comparison, and a `[criterion.falsifies]` on `CY_SHADER_DXIL` in `cmake/features.cmake`. That
+        moves the criterion's digest, so the `red against a built tree` entry recorded for it is
+        against the OLD text and `just roadmap-falsify check` will say so. It is kept rather than
+        dropped, because a stale entry names the criterion and the reason it was red, where a missing
+        one names nothing; the rung that finishes the shader targets re-records it
       - [ ] **AND FOURTEEN RECORDED PROOFS LEDGER-WIDE NO LONGER MATCH THEIR CRITERIA.** Carried
         into this phase from the one before it and unchanged by it — `git diff 4532d68..HEAD --
         tools/roadmap/` is additive — the digests of `m3:render-null`, `m3:xr-prerequisites`,
