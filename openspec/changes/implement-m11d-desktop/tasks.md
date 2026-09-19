@@ -511,89 +511,160 @@ luck apart. `present.cpp` scopes it, and says so where it does.
       unphotographed frame; no "parity" over a backend that compiled; NOT EVALUATED is never a pass,
       and a reported gap is the outcome this gate prefers to a green one it cannot defend
 
-## The close phase's verdict — M11.d DOES NOT CLOSE
 
-Written by the close phase, which owns `gates.toml`, `ci.yml`, `status.yaml`,
-`capability-matrix.md` and `ROADMAP.md`. **No gate was flipped. No tier was written. `ci.yml`'s
-milestone job was not moved.** The rung is left open, which is the outcome a rung with red criteria
-is supposed to have, and every row below was measured here rather than inferred from a task list.
+## The close phase's verdict — M11.d DOES NOT CLOSE, AND NEITHER DOES M11.c TODAY
 
-**Measured GREEN, each run by hand at the close:** `specs` (76 of 76), `format` (2 258 files),
-`layering` (11 of 11 selftest cases, *with two platform implementations in the tree* — which is the
-abstraction claim from the gate's side), `workflows` (`just ci-check`, 19 of 19), `roadmap-record`,
-`generated-code`'s two cheap thirds (`generate-check`, `maintenance-deps-check`, 37 of 37),
-`documentation-gate` (1 932 of 2 472 documented, 540 in the declared backlog, **0 new**),
-`full-gate-set` (all three gates, after the two repairs below), `ship-sample-exists`,
-`ship-sample-drawn` (`docs/design/images/m11d-ship-native.png` opened and read: a real frame from
-the packaged application on the X11 backend, and it states in its own pixels that it is a packaging
-proof and not a game), and `native-platform-backend` after its rewrite.
+Written by the close phase, which owns `gates.toml`, `ci.yml`, `status.yaml`, `capability-matrix.md`
+and `ROADMAP.md`. **No gate was flipped. No tier was written. `ci.yml`'s milestone job was not
+moved.** Every row below was run at the close rather than read off a task list, and the runs are
+named so the next reader can repeat them.
 
-**Measured RED — nine criteria, none of them a declarable gap, because every one of them is a row
-somebody started:**
+### The fact that frames everything else: THIS PHASE IS STILL RUNNING
 
-1. `core-rows-at-complete-grade` — **0 of 71 requirements** across the six rows map to a test, a
-   gate or a recorded exemption. The tool exists and works; the map is empty. This is the largest
-   single piece of unfinished work on the rung.
-2. `release-recipes-stop-refusing` — all four `release-*` recipes still exit through
-   `_not-implemented`. **The ledger's own instruction applies: `developer-workflow-and-just` is
-   DEMOTED to M11.e with this reason rather than claimed over four refusals**, and M11.a's declared
-   gap `developer-workflow-at-working` does not close here either.
-3. `developer-workflow-recipes` — **8** recipe lines refuse naming a milestone the ladder does not
-   carry (`deploy.just:110`, `quality.just:166`, `quality.just:285`, `release.just:12,16,20,24`,
-   `run.just:408`). Two of the eight are this rung's own additions.
-4. `content-audit-and-symbols` — `cy_test_integration_packaging` **does not exist anywhere in the
+The close phase started while **at least three peer agents were still writing code and building**
+(`build/m11d-golden`, `build/m11d-just`, `build/m11d-crit` were all mid-configure at 12:00, and the
+interval snapshotter committed at 11:39, 11:48 and 11:56). Two criteria in this very ledger —
+`native-platform-backend` and `native-backend-runs-the-m0-sample` — were **rewritten by a peer while
+the close was reading them**, in both cases more strictly than the close's own first attempt, and
+`samples/03-first-light/golden_legs.py` landed at 11:52. A gate decision taken now is a decision over
+a tree that is still moving, and that is the strongest single reason not to have taken one.
+
+### What was proved GREEN, first-hand
+
+- `specs` (76 of 76), `format` (2 258 files), `layering` (11 of 11 — **with two platform
+  implementations in the tree**, which is this rung's whole claim seen from the gate's side),
+  `workflows` (`just ci-check`, 19 of 19), `roadmap-record`, `generate-check`,
+  `maintenance-deps-check` (37 of 37), `roadmap-debts --check`.
+- `documentation-gate`: 1 932 of 2 472 public symbols documented, 540 in the declared backlog,
+  **0 new**. `full-gate-set`: all three gates pass after the repair below. `just
+  quality-gates-selftest` proves **15 of 15** cases that each of the four gates still refuses what it
+  exists to refuse — so none of the four is a check that cannot fail.
+- `ship-sample-exists`, and `ship-sample-drawn`: `docs/design/images/m11d-ship-native.png` was opened
+  and read at the close. It is a real frame from the packaged application on the X11 backend, and it
+  states in its own pixels that it is a packaging proof and not a game.
+- **The M0 sample on the native backend, run at the close**: `cy_sample_empty --platform native
+  --frames 60` → `display=linux-x11 window=1`, 60 frames, 62 ticks, exit 0, trace written to the
+  XDG path. `sdl3` and `headless` likewise.
+- **THE GOLDEN HALF OF 4.3 IS DONE, AND THE CLOSE RAN IT**: `samples/03-first-light/golden_legs.py
+  --build-dir build/dev` renders one frame per platform backend and compares each against
+  `tests/render/references/first_light.png`. All four legs — headless, sdl3, **native**, stub —
+  produce **62 208 bytes EXACTLY equal to the committed reference**, and each leg is byte-identical
+  to the headless one: *"the platform backend is not in the picture."* 7 of 7 steps satisfied. It is
+  registered as `smoke.first_light_legs`, so it runs under the smoke suite rather than only by hand.
+  **Task 4.3 is therefore satisfied in substance** — it is left unticked only because its author, not
+  the close, should tick it.
+
+### What is RED — and none of it is a declarable gap, because every row has been started
+
+1. **`lint` — A PERMANENT GATE, RED ON THIS RUNG'S OWN NEW CODE.** A full sweep at the close
+   (`just quality-lint`, 1 344 files against `build/dev/compile_commands.json`) exits **123 with 25
+   clang-tidy errors across 9 files**, and **12 of the 25 are in `platform/linux-native/` — the
+   rung's headline deliverable**:
+   - `platform/linux-native/src/x11_display_server.cpp` — 4 × `readability-math-missing-parentheses`,
+     1 × `modernize-use-integer-sign-comparison`, 1 ×
+     `bugprone-implicit-widening-of-multiplication-result`, 1 × `bugprone-branch-clone`
+   - `platform/linux-native/src/linux_platform.cpp` — 4 × `readability-implicit-bool-conversion`,
+     2 × `readability-math-missing-parentheses`, 2 ×
+     `readability-convert-member-functions-to-static`, 1 × `modernize-use-integer-sign-comparison`
+   - `platform/stub/src/stub_display_server.cpp:20` — `readability-math-missing-parentheses`
+   - `samples/11-ship/card.cpp:84`, `samples/11-ship/present.cpp` — math parentheses, nested
+     conditional operator
+   - `src/core/assets/src/remote.cpp:360` — `readability-container-size-empty`;
+     `src/core/assets/tests/test_remote.cpp:312` — `modernize-use-auto`
+   - `src/rendering/graph/tests/test_aliasing.cpp:257` —
+     `bugprone-implicit-widening-of-multiplication-result` (`64 * 1024` into a `u64`)
+   - `tests/render/test_golden_backends.cpp` — `misc-unused-using-decls`;
+     `tools/build/src/package.cpp` — 2 × `modernize-use-auto`
+   Every one is a one-line fix and none is a design question. **Deliberately not applied here**:
+   every one of those files is in a directory peers were writing to during this phase, and a
+   close-phase edit landing under an active author is the collision this project has already paid
+   for. **This is also why M11.c cannot close today**: `lint` is a permanent gate on every ledger, so
+   M11.d's in-flight code holds the rung below it shut.
+2. `core-rows-at-complete-grade` — **0 of 71 requirements** across the six rows map to a test, a gate
+   or a recorded exemption. The tool works; the map is empty. Largest single piece of unfinished work.
+3. `release-recipes-stop-refusing` — all four `release-*` recipes still exit through
+   `_not-implemented` (`just release-version` → *"not implemented (task M12 — build-and-packaging)"*).
+   **The ledger's own instruction applies: `developer-workflow-and-just` is DEMOTED to M11.e with
+   this reason rather than claimed over four refusals**, and M11.a's declared gap
+   `developer-workflow-at-working` does not close here either.
+4. `developer-workflow-recipes` — **8** recipe lines name a milestone the ladder does not carry:
+   `deploy.just:110`, `quality.just:166`, `quality.just:285`, `release.just:12,16,20,24`,
+   `run.just:408`. Two of the eight are this rung's own additions.
+5. `content-audit-and-symbols` — `cy_test_integration_packaging` **does not exist anywhere in the
    tree**; task 7.5 says in its own words that the symbols half was never started.
-5. `rhi-interface-gaps-settled` — **the work is real and green and the criterion is stale.**
-   `cy_test_unit_rhi` passes 45 of 45 including twelve interface-gap cases, but the filter names
-   four cases that do not exist: it selects **0 of 45**, run and confirmed. The cases are named
-   `gap 2: the pool class is MET, not compared for equality`, `gap 4: ownership is a capability and
-   a queue kind, never a family index`, `gap 7: the engine substitutes the depth format, and never
-   drops the stencil` — and gap 6's case is `the pipeline cache round-trips through a path, and an
-   absent one is a cold start`, **in a different binary** (`cy_test_integration_rhi_pipeline_cache`),
-   so the criterion cannot span it as written. **Deliberately not repaired here**: aligning a filter
-   to whatever passes, at the gate, by the person deciding the gate, is how a check stops being one.
-6. `null-backend-refuses-what-it-cannot-do` — the same defect: `-tc=the null backend refuses*`
-   selects **0 of 45**. Same reason for leaving it.
-7. `port-touches-no-engine-layer` — **red for the workflow's commit convention, not for the
-   abstraction.** It looks for a commit whose subject names `native-platform-backend` in the last
-   40; every commit in this phase is `WIP snapshot: N file(s) in flight`, written by the interval
-   snapshotter, so the port's commits are not separable and the criterion reports "the native
-   backend has not landed" about a backend that has. Run over the whole rung instead
-   (`tools/ci/port_engine_layer_diff.py --since ebdf8d5`) it reports 14 engine-layer files — all of
-   them section 6's `core-assets` remote-file-serving, memory and ECS work, **none of them the
-   port's**. The criterion needs a range or a marker this orchestration can actually produce.
-8. `m11d5-open` — `openspec/changes/implement-m11d5-backends/tasks.md` has **no checked task outside
-   section 0**, so the rung M11.d's spike carved out has been scoped and not entered. This is the
-   handover check working exactly as designed.
-9. `roadmap-tiers` — all nine rows are below Complete, and that is correct: the closing change
-   writes them and this rung is not closing. **It must not be written while 1–8 stand.**
+6. `rhi-interface-gaps-settled` — **the work is real and green and the criterion is stale.**
+   `cy_test_unit_rhi` passes **45 of 45**, including twelve `gap N:` interface cases; the criterion's
+   filter names four cases that do not exist and selects **0 of 45** — run and confirmed at the close.
+   The real names are `gap 2: the pool class is MET, not compared for equality`, `gap 4: ownership is
+   a capability and a queue kind, never a family index`, `gap 7: the engine substitutes the depth
+   format, and never drops the stencil`; gap 6's is `the pipeline cache round-trips through a path,
+   and an absent one is a cold start`, **in a different binary**
+   (`cy_test_integration_rhi_pipeline_cache`), which the criterion cannot span as written.
+7. `null-backend-refuses-what-it-cannot-do` — same defect: `-tc=the null backend refuses*` selects
+   **0 of 45**. **6 and 7 are deliberately NOT repaired here.** Aligning a filter to whatever happens
+   to pass, at the gate, by the person deciding the gate, is how a check stops being one; the person
+   who wrote those cases should name them.
+8. `port-touches-no-engine-layer` — **red for the workflow's commit convention, not for the
+   abstraction.** It looks for a commit whose subject names `native-platform-backend` in the last 40;
+   every commit in this phase is `WIP snapshot: N file(s) in flight`, written by the interval
+   snapshotter, so the port's commits are not separable and the criterion reports *"the native backend
+   has not landed"* about a backend that demonstrably has. Run over the whole rung instead
+   (`tools/ci/port_engine_layer_diff.py --since ebdf8d5`) it names 14 engine-layer files — all of them
+   section 6's `core-assets` remote-file-serving, memory and ECS work, **none of them the port's**.
+   The criterion needs a range or a marker this orchestration can actually produce.
+9. `m11d5-open` — `openspec/changes/implement-m11d5-backends/tasks.md` has **no checked task outside
+   section 0**, so the rung this rung's spike carved out has been scoped and not entered. The handover
+   check working exactly as designed.
+10. `roadmap-tiers` — all nine rows are below Complete, which is correct: the closing change writes
+    them and this rung is not closing. **It must not be written while 1–9 stand.**
+11. `plan-consistency` — `tools/roadmap/falsifiability.toml` still carries an `m11d:m11e-open` entry
+    for a criterion re-pointed to `m11d5-open`, records `ship-sample-exists` and `ship-sample-drawn`
+    as red when both now pass, and has **zero entries for any of `m11d5`'s 19 criteria**. It cannot
+    pass until `just roadmap-falsify --record` is re-run — hours, and worth doing only on a quiet tree.
 
-**Two repairs made at the close, both of which make a check stricter and neither of which was
-needed to reach a verdict.** (a) `full-gate-set` invoked `just quality-licence-headers`, a recipe
-that does not exist — the recipe is `just quality-licence` — and behind the misname the gate was
-genuinely red: **19 files added by this rung carried no SPDX header** (all of `platform/linux-native/`,
-`platform/stub/`, `samples/11-ship/`, `src/core/assets/remote.*`, `tests/integration/test_stub_frame.cpp`,
-`tools/ci/port_engine_layer_diff.py`, `tools/docs/collect_ship.py`). The name is corrected and the 19
-headers are added, which is what the gate asks for and not a loosening: `just quality-gates-selftest`
-proves **15 of 15** cases that each of the four gates still refuses what it exists to refuse.
-(b) `native-platform-backend` could not fail — the old body searched `src/` while every
-implementation lives under `platform/`, so it matched only the abstract interface header and
-**exited 0 against ebdf8d5, the commit this rung opened on**. It has been rewritten (a peer's
-stricter version, requiring `Platform` as well as `DisplayServer`, excluding headless and the stub,
-and requiring `platform/CMakeLists.txt` to build it, superseded the close's first attempt and is
-what is in the file); measured green on this tree and red at ebdf8d5.
+### The two repairs the close did make, both of which make a check stricter
 
-**What the next run owes, in order:** the requirements map (1), the two stale filters (5, 6), a
-`port-touches-no-engine-layer` that this orchestration can satisfy (7), the packaging suite (4), the
-eight recipe lines (3), and a re-record of falsifiability — `tools/roadmap/falsifiability.toml`
-still carries an `m11d:m11e-open` entry for a criterion that was re-pointed to `m11d5-open`, records
-`ship-sample-exists` and `ship-sample-drawn` as red when both now pass, and has **zero entries for
-any of `m11d5`'s 19 criteria**, so `plan-consistency` cannot pass until `just roadmap-falsify
---record` is re-run.
+- **`full-gate-set` called a recipe that does not exist.** It ran `just quality-licence-headers`; the
+  recipe is `just quality-licence`. Behind the misname the gate was **genuinely red: 19 files added
+  by this rung carried no SPDX header** — all of `platform/linux-native/`, `platform/stub/`,
+  `samples/11-ship/`, `src/core/assets/remote.*`, `tests/integration/test_stub_frame.cpp`,
+  `tools/ci/port_engine_layer_diff.py`, `tools/docs/collect_ship.py`. The name is corrected and the 19
+  headers added, which is what the gate asks for and not a loosening — the baseline only shrinks, and
+  the gates' own selftest still proves 15 of 15 refusals.
+- **`native-platform-backend` could not fail.** Its body searched `src/` while every implementation of
+  the interface lives under `platform/`, so it matched only the abstract interface header and
+  **exited 0 against ebdf8d5, the commit this rung opened on**, when SDL3 genuinely was the only
+  implementation. `just roadmap-falsify` had already classified it "no mutation". The close rewrote
+  it; a peer's stricter version — requiring `Platform` as well as `DisplayServer`, excluding headless
+  and the stub, and requiring `platform/CMakeLists.txt` to build it — superseded that rewrite and is
+  what stands. Measured green on this tree, red at ebdf8d5.
+
+### Two smaller findings, recorded rather than fixed
+
+- **The M11.c ledger run started by the close FAILED ITS BUILD LEG ON A RACE, not on a defect.**
+  `m0:build` died at 1 249 s with `samples/03-first-light/main.cpp:50: fatal error:
+  cy/platform/stub_display_server.h: No such file or directory` — `build/dev` had been configured at
+  11:35, before a peer added `cy::platform-stub` to that sample's link list at 11:48. Rebuilding the
+  same target after CMake re-configured succeeds. The run was therefore discarded rather than
+  reported, and **M11.c's gate was left at `joins-on-close` because no trustworthy full run exists.**
+- **The stub platform's default user mount is a relative path that must already exist.**
+  `StubPlatform::user_mount_` defaults to `"stub-user/"` and nothing calls `set_user_mount()`, so
+  `cy_sample_empty --platform stub` fails startup with *"the trace file could not be created (Io)"*
+  in any working directory without that folder, and succeeds in one with it. Task 4.4's "it runs a
+  headless frame" is true; task 4.3's "all four backends run it" is true only with that undocumented
+  precondition. Either default it to a directory the platform creates, or make the refusal name the
+  path it wanted.
+
+### What the next run owes, in order
+
+The three lint errors (1) — they block **both** gates and are minutes of work. Then the requirements
+map (2), the two stale filters (6, 7), a `port-touches-no-engine-layer` this orchestration can
+satisfy (8), the packaging suite (5), the eight recipe lines (4), and finally a falsifiability
+re-record (11) **on a tree with no other agent writing to it**, followed by one clean
+`just roadmap-milestone m11c` and one clean `just roadmap-milestone m11d`.
 
 **On task 9.2 — the only box the close phase ticked.** An `m11e-open` criterion in the double-star
-glob form: **satisfied, and re-pointed.**
-      The insertion of M11.d.5 moved the handover: `m11d.toml` carries `m11d5-open` in that exact
-      form and `m11d5.toml` carries `m11e-open`, so the chain m11d → m11d5 → m11e is unbroken. A
-      handover check still naming M11.e here would have skipped a rung, which is the one thing a
-      handover check exists to make impossible.
+glob form: **satisfied, and re-pointed.** The insertion of M11.d.5 moved the handover — `m11d.toml`
+carries `m11d5-open` in that exact form and `m11d5.toml` carries `m11e-open`, so the chain
+m11d → m11d5 → m11e is unbroken. A handover check still naming M11.e here would have skipped a rung,
+which is the one thing a handover check exists to make impossible.
