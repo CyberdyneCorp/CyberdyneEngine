@@ -88,7 +88,7 @@ void record_capture(const rendering::PassContext& context, void* user) noexcept 
     return "hardware by name (this engine has no device-type query: M11.d finding, present.cpp)";
 }
 
-[[nodiscard]] const char* format_name(rhi::Format format) noexcept {
+[[nodiscard]] const char* swapchain_format_name(rhi::Format format) noexcept {
     switch (format) {
         case rhi::Format::Bgra8Srgb: return "Bgra8Srgb";
         case rhi::Format::Bgra8Unorm: return "Bgra8Unorm";
@@ -245,6 +245,10 @@ private:
 PresentReport present_card(Platform& platform, Image& image,
                            const PresentOptions& options) noexcept {
     PresentReport report;
+    // The platform is the process's own abstraction — user directories, exit, standard streams —
+    // and this function needs none of them: everything here is the DISPLAY server's. It is taken
+    // anyway because `main` chose the two together and a leg that opened an X11 window through an
+    // SDL3 platform would be a leg that had not replaced SDL3 at all.
     (void)platform;
 
     const PlatformChoice choice =
@@ -364,7 +368,7 @@ PresentReport present_card(Platform& platform, Image& image,
     report.swapchain_created = true;
 
     const rhi::SwapchainInfo info = gpu.swapchain_info(*swapchain);
-    report.swapchain_format = format_name(info.format);
+    report.swapchain_format = swapchain_format_name(info.format);
     report.swapchain_width = info.extent.width;
     report.swapchain_height = info.extent.height;
     const bool swizzle = is_bgra(info.format);
@@ -444,7 +448,14 @@ PresentReport present_card(Platform& platform, Image& image,
         const Expected<u32, Error> index =
             gpu.acquire_next_image(*swapchain, *acquired, 1'000'000'000ULL);
         if (!index) {
-            // Out of date is the compositor resizing us, not a failure: end the frame and retry.
+            // An out-of-date swapchain is the window changing size, which the interface's own
+            // comment says "the caller answers by resizing rather than by failing the frame". The
+            // window is asked what it is now rather than the swapchain being told what it was.
+            if (const Expected<Extent, Error> size = display->window_size(*window); size) {
+                (void)gpu.resize_swapchain(*swapchain,
+                                           rhi::Extent2D{static_cast<u32>(size->width),
+                                                         static_cast<u32>(size->height)});
+            }
             (void)gpu.end_frame();
             continue;
         }

@@ -29,11 +29,31 @@ can construct, and `tools/layercheck/layercheck.py --check barriers` fails the b
 symbol appears outside `src/backends/rhi/` and `src/rendering/graph/`. See `include/cy/backends/rhi/barrier.h`.
 
 **No Vulkan type above this layer.** The engine's synchronisation vocabulary — `Stage`,
-`AccessFlags`, `ImageLayout` — is engine-owned and Vulkan-shaped, in `include/cy/backends/rhi/types.h`.
+`AccessFlags`, `ImageUse` — is engine-owned and Vulkan-shaped, in `include/cy/backends/rhi/types.h`.
 Exactly one file translates it (`vulkan/src/vulkan_translate.cpp`), and
 `tools/layercheck/layercheck.py --check gpuapi` fails the build on a Vulkan, Slang or SPIR-V header
 outside `src/backends/`. That is the same rule that keeps SDL inside `platform/`, for the same
 reason: Metal is a directory rather than a rewrite.
+
+**And SHAPED BY VULKAN IS NOT SPELT IN VULKAN — four places where it had been, closed at M11.d.**
+The Metal seed (`src/backends/rhi-metal/`) exists to name every place `cy::rhi` says something a
+Metal device cannot be asked, *while that is still cheap to change*. M11.d section 1 spent that
+finding, on Vulkan and the null backend, before either new backend exists:
+
+| Was | Is | Why |
+|---|---|---|
+| `MemoryRequirements::memory_type_bits` (`u32`, a Vulkan memory-type mask the graph intersected) | `MemoryPoolClass`, an opaque token the graph MEETS and tests for empty | an `MTLHeap` picks one storage mode and has no bitmask. A MEET rather than the equality the seed proposed, because an RTX 5060 answers 0x03 for transient images and 0x1F for transient buffers and an equality would split the heap in two |
+| `ImageLayout` (nine enumerators named after `VkImageLayout`'s, on every `ImageBarrier`) | `ImageUse`, engine vocabulary; `VkImageLayout` lives only in `vulkan_translate.cpp` | Metal has no image layouts. The seed said to derive the layout in the backend from the access masks; that is **not implementable** — a barrier's `src_access` carries only the write access, so it is not the resource's current state |
+| `Device::queue_family() -> u32` and `kQueueFamilyIgnored` | `DeviceCapabilities::needs_queue_ownership_transfer()` and an opaque `queue_ownership_domain()`; barriers carry `QueueKind`s and a flag | `MTLCommandQueue` has no family index and no ownership transfer at all |
+| `save_pipeline_cache(Span<u8>)` | `save_pipeline_cache(const char* path)` | `MTLBinaryArchive` serialises to a URL. **Nothing in the tree calls either**, which is the finding beside the signature |
+
+Plus two additions and one non-change: `ShaderModuleDescription::native` with
+`DeviceCapabilities::native_shader_format()` (SPIR-V stays the interchange form; zero call sites
+moved), `Capability::ParallelPassRecording` (the engine records one secondary per pass *across*
+passes, which `MTLParallelRenderCommandEncoder` does not do *within* one), and a multi-stage
+`PushConstantRange`, which is genuinely fine and is recorded as such rather than skipped.
+`src/backends/rhi-metal/README.md` carries the argument for each at length, and `metal_gaps()`
+carries where each stands as data.
 
 ## Where the interesting decisions are written down
 

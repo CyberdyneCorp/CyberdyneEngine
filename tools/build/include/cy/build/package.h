@@ -66,6 +66,9 @@ struct Bundle {
 /// the content manifest hash."
 struct Provenance {
     std::string project;
+    /// The PROJECT's source revision. The requirement says "the engine **and** project source
+    /// revisions" and until M11.d there was one field, so a build could not say which tree a
+    /// difference came from — the commonest question a bug report about a shipped build asks.
     std::string revision;
     std::string platform;
     std::string profile;
@@ -75,6 +78,32 @@ struct Provenance {
     /// The engine content version the manifest was produced against, for
     /// `build-and-packaging`'s "Content compatibility".
     u32 content_version = 1;
+
+    // --- What M11.d task 7.5 added, field by field against the requirement's own list -----------
+    //
+    // "Every produced build SHALL record provenance: a build identity, the engine and project
+    //  source revisions, the plugin lockfile hash, the build and cook configuration, toolchain
+    //  versions, and the content manifest hash."
+    //
+    // Before this rung the manifest carried four of the seven. THE BUILD IDENTITY AND THE CONTENT
+    // MANIFEST HASH ARE ONE FIELD AND THAT IS NOT AN OMISSION: `build_id` is a digest over the
+    // sorted manifest, so it IS the content manifest hash, and writing it twice under two names
+    // would create two things that can disagree. The rest are here.
+
+    /// The ENGINE's source revision, which is not the project's. An engine built from a tag and a
+    /// project built from a branch is the ordinary case and the one a single field cannot report.
+    std::string engine_revision;
+    /// The plugin lockfile's hash. `project-and-plugins` makes the lockfile what fixes a build's
+    /// plugin set; a build whose provenance omits it cannot be reproduced even with both revisions.
+    std::string lockfile;
+    /// The COOK configuration, which is not the build configuration. `profile` above is the build's;
+    /// two builds of one revision at one profile with different cook settings produce different
+    /// content, and nothing in the manifest said so.
+    std::string cook_configuration;
+    /// Toolchain VERSIONS, readable. `toolchain` above is a digest: it proves two builds used the
+    /// same toolchain and tells a human nothing about which. Both are needed and neither replaces
+    /// the other — the digest is what a cache key compares, this is what a bug report quotes.
+    std::string toolchain_versions;
 };
 
 /// A whole build's content, by bundle.
@@ -115,6 +144,76 @@ struct AuditAnswer {
 };
 
 [[nodiscard]] Expected<AuditAnswer, Error> audit(const BuildGraph& graph, std::string_view node);
+
+// --- The content audit's cost half — M11.d task 7.4 ------------------------------------------------
+//
+// `build-and-packaging` asks the content audit two questions about SHAPE — "why is this in the
+// build?" and "what references this?" — which `audit()` above answers from the graph. It asks two
+// more about COST, and nothing answered them:
+//
+//     The build SHALL report size by category, asset, plugin, world region and install bundle.
+//     The build SHALL report cook and compile time by stage, with cache hit rates.
+//
+// Every number both sentences need was already on the report: `NodeResult` carries the stage
+// (`NodeKind`), the duration, the bytes and the outcome, and `BuildReport` carries them per node in
+// evaluation order. What did not exist was the aggregation, so `cy_build build` printed a bundle
+// table and a build id and a developer asking "what is slow?" had nothing to read.
+
+/// One stage's cost across a whole build.
+struct StageCost {
+    NodeKind kind = NodeKind::Unknown;
+    u64 nodes = 0;
+    /// Served from the cache without running. The numerator of the hit rate.
+    u64 cached = 0;
+    u64 rebuilt = 0;
+    u64 failed = 0;
+    /// Summed node durations. NOT wall time: the service runs nodes in parallel, so this is the
+    /// work done rather than the time taken, and reporting it as wall time would make a build on
+    /// more cores look slower.
+    u64 work_ns = 0;
+    u64 bytes_produced = 0;
+
+    /// Hits over nodes, as a percentage. Zero nodes is zero rather than a division.
+    [[nodiscard]] u32 hit_rate_percent() const noexcept {
+        return nodes == 0 ? 0U : static_cast<u32>((cached * 100U) / nodes);
+    }
+};
+
+/// Every stage that ran, in `NodeKind` order. A stage with no nodes is omitted — a table of zeroes
+/// is harder to read than a shorter table, and `stage_report` says how many stages it found.
+[[nodiscard]] std::vector<StageCost> stage_costs(const BuildReport& report);
+
+/// "Cook and compile time by stage, with cache hit rates", as text.
+[[nodiscard]] std::string stage_report(const BuildReport& report);
+
+/// One category's share of a package set. The category is the KIND OF NODE that produced the bytes,
+/// which is the only categorisation the graph can answer without a second declaration — an import's
+/// output is an imported asset, a cook's is cooked content, a shader node's is a compiled shader.
+struct CategoryShare {
+    NodeKind kind = NodeKind::Unknown;
+    u64 entries = 0;
+    u64 bytes = 0;
+    /// The largest single entry in this category, for the "by asset" half of the same requirement.
+    std::string largest;
+    u64 largest_bytes = 0;
+};
+
+/// Size by category, over every bundle. Needs the graph because a `PackageEntry` names the node that
+/// produced it and the node's KIND lives in the graph — deliberately not copied onto the entry,
+/// which would put a second copy of the graph's own answer into the manifest where it could go
+/// stale.
+[[nodiscard]] std::vector<CategoryShare> category_shares(const BuildGraph& graph,
+                                                         const PackageSet& packages);
+
+/// "Size by category, asset and install bundle", as text.
+///
+/// PLUGIN AND WORLD REGION ARE NOT HERE, and the report says so rather than omitting them silently.
+/// Both need a declaration this graph does not carry: a node does not record which plugin declared
+/// it, and `cybuild 1` has no world-region concept at all. Reporting them would mean inventing an
+/// attribution, and an invented attribution in a size report is worse than an absent one — it is
+/// the shape of claim `delivery-roadmap` calls evidence about something nobody examined.
+[[nodiscard]] std::string content_report(const BuildGraph& graph, const PackageSet& packages,
+                                         u32 top = 5);
 
 }  // namespace cy::build
 

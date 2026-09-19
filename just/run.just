@@ -652,15 +652,17 @@ capture-beauty-shot *args:
 # reports on a revision nobody has.
 #
 # `--platform headless` is the leg continuous integration runs — `smoke.ship` — and it presents
-# nothing and says so. `--platform sdl3` on a machine with a display and a device is the leg that
-# DRAWS, and `--shot <path>` photographs what the device presented rather than what the host
+# nothing and says so. `--platform sdl3` and `--platform native` are the two that DRAW, and
+# `--platform both` runs the same binary through each in turn, which is the only form in which "it
+# draws through the native backend and through SDL3" is one run's evidence rather than two
+# recollections. `--shot <path>` photographs what the device presented rather than what the host
 # composed. `--require-draw` turns "nothing was presented" into a non-zero exit, which is what makes
 # the drawing claim falsifiable.
 #
 # IT IS NOT A GAME. `m11b:the-game-exists` is red and this recipe does not close it; see
 # samples/11-ship/README.md.
 
-# Run the M11.d artefact: one project cooked, packaged, installed and launched. Usage: just run-ship [--profile <p>] [--platform sdl3|headless] [--frames <n>] [--shot <path>] [--coverage <path>] [--require-draw]
+# Run the M11.d artefact: one project cooked, packaged, installed and launched. Usage: just run-ship [--profile <p>] [--platform sdl3|native|headless|both] [--frames <n>] [--shot <path>] [--coverage <path>] [--require-draw]
 run-ship *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -671,6 +673,20 @@ run-ship *args:
     just build-engine --profile "${profile}" -D CY_BUILD_TOOLS=ON
 
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    mkdir -p docs/design/images
     echo "==> run         ship  profile=${profile}"
     python3 samples/11-ship/ship.py --build-dir "${build_dir}" \
         --work "${build_dir}/ship" ${rest}
+
+    # A shot written into docs/design/images is a file that lives in the tree, and the golden-image
+    # suite's PNG writer STORES rather than compresses — the right trade for a byte comparison and
+    # the wrong one here. `collect_ship.py` recompresses and REFUSES to write a file whose pixels
+    # changed, which is the same two lines every other capture recipe in this file runs.
+    shots=()
+    for shot in docs/design/images/m11d-ship-sdl3.png docs/design/images/m11d-ship-native.png; do
+        [ -f "${shot}" ] && shots+=("${shot}")
+    done
+    if [ "${#shots[@]}" -gt 0 ]; then
+        echo "==> recompress  the stills"
+        python3 tools/docs/collect_ship.py "${shots[@]}"
+    fi

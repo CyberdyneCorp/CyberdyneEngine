@@ -391,24 +391,20 @@ build-clean *args:
 # The platform a build targets, or a diagnostic saying why this host cannot produce it.
 #
 # `developer-workflow-and-just` requires that a target which cannot be built on the current host is
-# reported with what is required, rather than failing somewhere inside CMake. At M0 the answer is
-# always the host: cross-compilation needs a toolchain file, and the first ones arrive with the
-# mobile targets at M9. The seam is here so that adding one is a table entry.
+# reported with what is required, rather than failing somewhere inside CMake. THE ANSWER IS A TABLE
+# NOW, not an `if`. Until M11.d this recipe compared the request against the host and printed one
+# sentence for every difference — the same words about `macos` (supported, wrong machine), about
+# `android` (no port exists) and about `windwos` (a typo), naming a milestone that had already
+# closed. A developer could not tell those three apart.
+#
+# `just/targets.toml` is the table and tools/workflow/targets.py reads it; `just env-targets` prints
+# it, and the three refusals carry three different messages and three different exit statuses — 2
+# for a target this host cannot produce, 3 for one that does not exist. The table's `owner` field is
+# checked against `record.MILESTONES` at load, so a refusal cannot tell a developer to wait for a
+# milestone that is not on the ladder. See tools/workflow/README.md.
 [private]
 _resolve-target requested:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    host="$(just _host-platform)"
-    requested='{{requested}}'
-    if [ -z "${requested}" ] || [ "${requested}" = "${host}" ]; then
-        echo "${host}"
-        exit 0
-    fi
-    echo "cannot build for '${requested}' on a ${host} host." >&2
-    echo "  This milestone builds for the host only. Cross-compilation needs a CMake toolchain" >&2
-    echo "  file and a platform SDK, and the first of those arrive with the mobile targets at M9." >&2
-    echo "  Build for ${host}, or run this on a ${requested} host." >&2
-    exit 2
+    @cd "{{root}}" && python3 tools/workflow/targets.py resolve '{{requested}}'
 
 # Reclaim the build directories nothing is using.
 # Usage: just build-reap [--older-than <minutes>] [--keep <name>] [--apply]

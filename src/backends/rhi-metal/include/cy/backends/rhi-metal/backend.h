@@ -36,10 +36,16 @@ Status register_metal_backend() noexcept;
 /// test and `just env-doctor` can all print it on any platform.
 struct MetalSeedStatus {
     bool compiled_with_metal = false;
-    /// The gaps in `cy::rhi` this seed found that have no workaround. See `mapping.h`.
+    /// The gaps in `cy::rhi` this seed found that are STILL OPEN and have no workaround. See
+    /// `mapping.h`.
     u32 blocking_gaps = 0;
-    /// The gaps in total.
+    /// The gaps in total. This number does not move: rows are never deleted when they close,
+    /// because the finding and what was done about it are one row a reviewer reads together.
     u32 gaps = 0;
+    /// The gaps still open. THIS is the number that shrinks, and M11.d task 1.5 is the reason it
+    /// exists: a gap closed in prose and not in the data is a gap that will be re-found at the
+    /// first Metal compile.
+    u32 open_gaps = 0;
     /// What the seed can render today, stated plainly.
     const char* renders = "";
 };

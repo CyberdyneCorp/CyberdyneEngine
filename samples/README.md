@@ -8,6 +8,7 @@ narrative.
 |---|---|---|
 | `00-empty/` | M0 | Opens a window, runs an empty loop through `Runtime::tick()`, writes a trace, exits cleanly |
 | `09b-animated-character/` | M8.d | Imports four Mixamo FBX exports, retargets three clips onto one rig, drives idle → walk → run → death through a compiled locomotion machine, and skins the character on the GPU — the first thing here that draws an imported mesh |
+| `11-ship/` | M11.d | One project **built, cooked, packaged, installed and launched from a single recipe** — the first packaged project here, and the first thing in this repository ever to present a frame to a **window**. It is **not a game**: `m11b:the-game-exists` is red and a packaging proof does not close it. `just run-ship` |
 | `12-beauty/` | M11.c | Photographs a committed scene through the engine's own assembled frame with three materials authored on the editor's node-graph canvas, compiled by the material compiler at capture time and bound as BC7 and BC5 blocks — the first frame here in which a **material** decided a pixel. `just capture-beauty-shot` |
 
 Run one with `just run-sample <name>`; `--headless` runs it under the headless display server, which

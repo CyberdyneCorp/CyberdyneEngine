@@ -31,9 +31,21 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
+// THE THREE #undefs, AND THE THIRD IS THE SERIOUS ONE.
+//
+//   None      X11/X.h:  #define None 0L      — collides with GraphicsApi::None, WindowFlags::None
+//   Always    X11/X.h:  #define Always 2     — a plausible name for an enumerator
+//   Status    X11/Xlib.h:83: #define Status int — COLLIDES WITH cy::Status, the engine's universal
+//             return type. Every `Status X11DisplayServer::set_window_*()` in this file became
+//             `int ...`, and the compiler's diagnostic was "no declaration matches", nine times
+//             over. It is a macro, not a typedef, so namespace scoping cannot save it.
+//
+// Success is undefined with them because X.h defines it as 0 and the word appears in this project's
+// vocabulary as well.
 #undef None
 #undef Always
 #undef Success
+#undef Status
 
 #include <dlfcn.h>
 #include <unistd.h>

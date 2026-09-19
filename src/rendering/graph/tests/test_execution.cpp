@@ -267,7 +267,9 @@ CY_TEST_CASE("the plan dumps as readable text and as a Graphviz digraph") {
     CY_CHECK_GT(*written, 0U);
     CY_CHECK(std::strstr(text.data(), "submit 0") != nullptr);
     CY_CHECK(std::strstr(text.data(), "async-compute") != nullptr);
-    CY_CHECK(std::strstr(text.data(), "queue-family ownership transfer") != nullptr);
+    // "queue ownership transfer" and not "queue-family": M11.d took the Vulkan family index out of
+    // the barrier, because Metal has no such thing. Metal gap 4.
+    CY_CHECK(std::strstr(text.data(), "queue ownership transfer") != nullptr);
     CY_CHECK(std::strstr(text.data(), "'scratch'") != nullptr);
 
     cy::Array<char> dot(cy::system_allocator(cy::MemoryDomain::Renderer));
@@ -435,4 +437,48 @@ CY_TEST_CASE(
     // the same commands in the same order as when one thread recorded them — the only difference is
     // the `execute-secondary` markers, which the filter above removes.
     CY_CHECK_EQ(streams[0], sequential);
+
+    // AND A DEVICE THAT CANNOT DO THIS AT ALL — Metal gap 5. `MTLParallelRenderCommandEncoder`
+    // parallelises WITHIN one render pass; this engine parallelises ACROSS passes, one secondary
+    // per pass, each containing a whole render pass. Different axes, and no ordering precondition
+    // converts one into the other — which is why the fix is a capability and not the precondition
+    // the Metal seed proposed. A device answering false records sequentially and produces the
+    // IDENTICAL stream, with the caller's `parallel_recording` still set.
+    //
+    // There is no Apple toolchain here, so the device that answers false is a null one told to.
+    {
+        NullFixture fixture;
+        CY_REQUIRE(fixture.ok());
+        cy::rhi::null::override_capability(fixture.device(),
+                                           cy::rhi::Capability::ParallelPassRecording, false);
+        CY_CHECK_FALSE(fixture.device().capabilities().has(
+            cy::rhi::Capability::ParallelPassRecording));
+
+        cy::Expected<cy::rhi::TextureHandle, cy::Error> image =
+            fixture.device().create_texture(swapchain_description());
+        CY_REQUIRE(image.has_value());
+        CY_REQUIRE(fixture.device().begin_frame().has_value());
+        WideFrame frame(fixture.allocator(), *image);
+
+        cy::rendering::ExecuteOptions options;
+        options.parallel_recording = true;
+        options.parallel_pass_threshold = 2;
+        options.job_system = &jobs.get();
+
+        GraphExecutor executor(fixture.allocator(), fixture.device());
+        cy::rhi::null::clear_command_log(fixture.device());
+        cy::Expected<cy::rendering::ExecutionResult, cy::Error> result =
+            executor.execute(frame.graph, cy::rendering::CompileOptions{}, options);
+        CY_REQUIRE(result.has_value());
+
+        CY_CHECK_EQ(result->passes_recorded, WideFrame::kPasses);
+        // Not one secondary, and not one `execute-secondary` in the stream.
+        CY_CHECK_EQ(result->secondary_command_buffers, 0U);
+        for (const cy::rhi::null::RecordedCommand& command :
+             cy::rhi::null::command_log(fixture.device())) {
+            CY_CHECK_NE(command.kind, cy::rhi::null::CommandKind::ExecuteSecondary);
+        }
+        // The same commands, in the same order, as the sequential reference.
+        CY_CHECK_EQ(filtered_stream_hash(fixture.device()), sequential);
+    }
 }

@@ -162,3 +162,40 @@ hashed fields, because `ecs-core` leaves the buffer's order unspecified and hash
 operation history. `integration.state_hash_coverage` is the claim, run. The same applies to the test
 fixtures in `tests/fixtures.h`, whose hand-written `TypeInfo` descriptors carry identifiers from a
 9000-range that the manifest never issued and that never leave a test's own registry.
+
+## M11.d: `ecs-core` read requirement by requirement
+
+`ecs-core` is claimed **Complete** at M11.d, and it carries **no named blocker** — which means
+nothing has refused it, not that nothing is missing. M10 read `save-and-persistence` this way and
+found nine satisfied, three unmet and eight partial on a row two milestones had called nearly done;
+a table is the only way to tell "finished" from "unexamined". Twelve requirements, read against the
+code and the suites (`unit.ecs` 55 cases, plus `ecs_scale`, `ecs_serialization`, `ecs_scheduling`
+and `ecs_diagnostics` — 70 cases over fifteen files).
+
+| Requirement | Verdict | Evidence, and what is missing |
+|---|---|---|
+| Entities | **satisfied** | generational `Entity`, index recycling with a generation bump, bulk creation without per-entity work; the stale-id case and the recycled-index case both have tests |
+| Components | **satisfied** | five kinds — Data, Tag, Shared, Buffer, Sparse — registered through M1 reflection, with the sparse kind's whole point (no archetype move) asserted over sixteen toggles |
+| Archetypes and chunk storage | **satisfied** | `archetype.h` over `core-memory`'s `ChunkStore`; **this module allocates no chunks of its own**, which is why `core-memory`'s budget tree sees ECS memory. Contiguity, transitions and order-independence are tested |
+| Queries | **satisfied** | amortised archetype matching, chunk-granular change filtering (`filter_changed`), random access by entity |
+| Systems and access declarations | **satisfied** | declared access sets, a deterministic order, explicit ordering constraints, cyclic ordering refused |
+| Structural change deferral | **satisfied** | `command_buffer.h`, per-thread recording, deterministic merge at the flush point |
+| Resources and singletons | **satisfied** | `resource.h`, scheduled against declared access like a component |
+| Change detection and versioning | **satisfied, and chunk-granular by specification** | reads do not stamp (`QueryChunk::read` vs `::write`); the granularity is documented in `query.h` rather than discovered |
+| Entity relationships | **satisfied** | `relationships.h`, hierarchy consistency and cascade destroy both tested |
+| World serialization and snapshots | **satisfied** | `snapshot.h` restores entity ids **verbatim**, which is why M2's restore criterion passes and why M9's replay can rely on it |
+| Multiple worlds | **satisfied** | two worlds share no entities, archetypes or component numbering — asserted directly; `instantiate()` is the bulk path `cy::world`'s cell activation uses |
+| ECS diagnostics | **satisfied** | `diagnostics.h`: archetype counts, transition counts and the thrash warning |
+
+**Nothing in this row is unmet and nothing is partial**, which is a finding rather than a formality:
+of the five rows this rung audits, `ecs-core` is the only one where every requirement has both an
+implementation and a test, and where the audit found no mechanism without a caller. The three
+absences this rung's audit found elsewhere — an attribution axis nobody pushes, a thread role nobody
+declares, a report nobody calls — have no analogue here.
+
+**The one thing this row gained at M11.d** is a producer rather than a mechanism:
+`World::ensure_sparse_store()` now pushes a `MemoryAttributionScope` carrying the component's
+**reflected** `TypeId`, so a sparse side table's bytes are attributable by type. An archetype chunk
+deliberately pushes nothing — it holds a component *set*, and charging its bytes to one member would
+be a number that reads as a fact and is not. See `src/core/memory/README.md` for the axis and for
+what still has no consumer.

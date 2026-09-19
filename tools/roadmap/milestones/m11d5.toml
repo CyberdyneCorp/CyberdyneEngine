@@ -236,7 +236,7 @@ d="${CY_BUILD_DIR:-build/dev}/renderers-off"
 declared=$(grep -c 'CY_RENDERER_METAL|\|CY_RENDERER_D3D12|' cmake/features.cmake || true)
 echo "$declared of 2 renderer options declared in cmake/features.cmake"
 test "$declared" -ge 2 || { echo "an option this criterion names is not declared"; exit 1; }
-CY_BUILD_DIR="$d" just build-engine --profile dev -D CY_RENDERER_METAL=OFF -D CY_RENDERER_D3D12=OFF
+CY_BUILD_DIR="$d" just build-engine --profile dev -DCY_RENDERER_METAL=OFF -DCY_RENDERER_D3D12=OFF
 CY_BUILD_DIR="$d" just test-all --profile dev
 '''
 timeout_s = 7200
@@ -244,7 +244,7 @@ ci_job = "milestone-m11d5"
 
 [[criterion]]
 id = "rhi-row-at-complete-grade"
-describe = "every requirement of `rhi-and-render-graph` maps to a test, a gate or a recorded exemption. The row has been Working since M3 and the whole gap to Complete was the second and third backends; this is the rung that reads it at Complete grade, and it needs no device to do so. `just quality-requirements` is one of `testing-and-quality`'s gates and is M11.d's to build — a criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red"
+describe = "every requirement of `rhi-and-render-graph` maps to a test, a gate or a recorded exemption. The row has been Working since M3 and the whole gap to Complete was the second and third backends; this is the rung that reads it at Complete grade, and it needs no device to do so. `just quality-requirements` is one of `testing-and-quality`'s gates and is M11.d's to build; measured on the tree this rung opened on it answers **0 of 12 requirements mapped**, which is the honest red this criterion starts from"
 source = "tasks 5, rhi-and-render-graph, testing-and-quality"
 kind = "command"
 run = "just quality-requirements rhi-and-render-graph"

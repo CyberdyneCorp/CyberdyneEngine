@@ -76,43 +76,77 @@ constexpr MetalGapRecord kGaps[] = {
      "MSL source, or a compiled .metallib, through newLibraryWithSource: or newLibraryWithData:",
      "add an optional `Span<const u8> native` beside the SPIR-V and a `native_shader_format()` "
      "capability, so a cook can produce the form the device actually consumes",
-     true},
+     true, MetalGapStatus::Closed,
+     "M11.d task 1.3: `ShaderModuleDescription` carries `Span<const u8> native` and a "
+     "`ShaderFormat native_format`; `DeviceCapabilities::native_shader_format()` says which form a "
+     "device consumes; `validate_shader_module()` enforces exactly one of the two for every "
+     "backend at once. Zero existing call sites moved — SPIR-V is still the interchange form"},
     {MetalGap::TransientMemoryTypeBits,
      "Device::reserve_transient_memory(u64 bytes, u32 memory_type_bits)",
      "",  // nothing at all: MTLHeap picks one MTLStorageMode and there is no bitmask of types
      "replace the bitmask with an opaque `MemoryPoolClass` the backend defines and the graph only "
      "compares for equality — the graph never interprets the bits, it only intersects them",
-     false},
+     false, MetalGapStatus::Closed,
+     "M11.d task 1.1: `MemoryPoolClass`, MET rather than compared for equality. The remedy above "
+     "says equality and that was measured WRONG: an NVIDIA RTX 5060 answers 0x03 for transient "
+     "images and 0x1F for transient buffers, so an equality would split the transient heap in two "
+     "and lose the aliasing the plan reports. The graph meets the token and tests it for empty, "
+     "and never interprets it"},
     {MetalGap::ImageLayoutHasNoEquivalent, "ImageBarrier::old_layout / new_layout (ImageLayout)",
      "",  // Metal has no image layouts; a tracked heap needs no transition and an untracked one a
           // MTLFence
      "derive the layout inside the Vulkan backend from the access masks `access.h` already "
      "carries, and drop `ImageLayout` from the barrier — the engine has the information without it",
-     true},
+     true, MetalGapStatus::Closed,
+     "M11.d task 1.3: `ImageLayout` became `ImageUse` and `VkImageLayout` now appears only in "
+     "vulkan_translate.cpp. The remedy above is NOT IMPLEMENTABLE and that is the finding: a "
+     "barrier's `src_access` carries only the WRITE access, because a write-after-read needs an "
+     "execution dependency and not a memory one, so it is not the resource's current state and a "
+     "backend deriving from it would transition from the wrong one"},
     {MetalGap::QueueFamilyIndex, "Device::queue_family(QueueKind) -> u32, kQueueFamilyIgnored",
      "",  // MTLCommandQueue objects have no family index and no ownership transfer
      "replace with `bool needs_queue_ownership_transfer()` on DeviceCapabilities; the family index "
      "never leaves the Vulkan backend",
-     true},
+     true, MetalGapStatus::Closed,
+     "M11.d task 1.3, as proposed. `Device::queue_family()` and `kQueueFamilyIgnored` are gone; a "
+     "barrier carries `QueueKind`s and an `ownership_transfer` flag; `DeviceCapabilities` answers "
+     "`needs_queue_ownership_transfer()` and an opaque `queue_ownership_domain(QueueKind)` the "
+     "graph only compares"},
     {MetalGap::SecondaryCommandBufferInheritance,
      "Device::execute_secondary(CommandBufferHandle primary, ...)",
      "MTLParallelRenderCommandEncoder, whose sub-encoders exist only inside a live encoder",
      "make 'the pass is begun before its secondaries are recorded' a stated precondition; the "
      "render graph very likely already satisfies it and nothing in the interface says so",
-     false},
+     false, MetalGapStatus::Closed,
+     "M11.d task 1.2: `Capability::ParallelPassRecording`, one term in executor.cpp. The remedy "
+     "above does not address the mismatch: this engine records one secondary PER PASS, across "
+     "passes, and MTLParallelRenderCommandEncoder parallelises WITHIN one pass. Different axes; no "
+     "ordering rule converts one into the other. A device that answers false records sequentially "
+     "and produces the identical command stream"},
     {MetalGap::PipelineCacheIsABlob, "Device::save_pipeline_cache(Span<u8> out)",
      "MTLBinaryArchive, serialised to a URL",
-     "take a path, or an opaque backend-defined token the engine stores and hands back", true},
+     "take a path, or an opaque backend-defined token the engine stores and hands back", true,
+     MetalGapStatus::Closed,
+     "M11.d task 1.3: both calls take a path, and an absent file is a cold start rather than an "
+     "error. AND NOTHING IN THE TREE CALLS EITHER OF THEM — the requirement they serve, a cache "
+     "persisted across runs, is unimplemented above the RHI, which a signature change does not fix"},
     {MetalGap::Depth24Stencil8Unavailable, "Format::D24UnormS8Uint",
      "MTLPixelFormatDepth24Unorm_Stencil8, unsupported on every Apple GPU",
      "a per-format support query on DeviceCapabilities, so the engine chooses the substitute "
      "rather than the backend making it quietly",
-     true},
+     true, MetalGapStatus::Closed,
+     "M11.d task 1.3, and it was never an interface change: `format_features()` has answered per "
+     "format since M3 with no consumer above src/backends/rhi/. The consumer is the fix — "
+     "`select_depth_stencil_format()` is the engine picking, FrameAssembly calls it, and "
+     "`validate_texture` refuses an unsupported depth target rather than letting a backend "
+     "substitute quietly"},
     {MetalGap::PushConstantRangeOffsets, "PushConstantRange::offset with a multi-stage mask",
      "setBytes:length:atIndex: binds a whole block to one stage's argument table",
      "nothing: a range shared between two stages becomes two small uploads, and the sizes involved "
-     "make that free. Recorded so the next reader does not re-derive it",
-     true},
+     "make that free. Recorded so the next reader does not re-derive that",
+     true, MetalGapStatus::NoChangeNeeded,
+     "M11.d task 1.4: measured again and still nothing to do. Recorded rather than silently "
+     "skipped, which is the difference between a gap somebody closed and a gap somebody forgot"},
 };
 
 static_assert(sizeof(kGaps) / sizeof(kGaps[0]) == kMetalGapCount,
@@ -243,10 +277,21 @@ Span<const MetalGapRecord> metal_gaps() noexcept {
     return {kGaps, kMetalGapCount};
 }
 
+u32 metal_open_gap_count() noexcept {
+    u32 open = 0;
+    for (const MetalGapRecord& record : kGaps) {
+        open += record.status == MetalGapStatus::Open ? 1U : 0U;
+    }
+    return open;
+}
+
 u32 metal_blocking_gap_count() noexcept {
     u32 blocking = 0;
     for (const MetalGapRecord& record : kGaps) {
-        blocking += record.workaroundable ? 0U : 1U;
+        // OPEN AND WITH NO WORKAROUND. A closed gap is not something M11 pays for, and counting it
+        // would make this number unable to move — which is the defect task 1.5 names: a gap closed
+        // in prose and not in the data is a gap that will be re-found at the first Metal compile.
+        blocking += (record.status == MetalGapStatus::Open && !record.workaroundable) ? 1U : 0U;
     }
     return blocking;
 }

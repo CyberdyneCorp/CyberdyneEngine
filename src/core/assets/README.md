@@ -171,3 +171,78 @@ The suites are declared through a **deferred call** because `cy_add_test()` is d
 is the fourth copy of one workaround, and whoever closes M1 should settle it — either move
 `add_subdirectory(tests)` above `add_subdirectory(src)` at the top level, or lift the test taxonomy
 into a `cmake/` module both sides include.
+
+## M11.d: what M11.d added here, and the row read requirement by requirement
+
+`core-assets-and-io` is claimed **Complete** at M11.d. Its two named absences were closed here and
+the whole row was then read at Complete grade — requirement by requirement, satisfied / partial /
+unmet, the way M10 read `save-and-persistence`. A row nobody read is a row nothing checks.
+
+### The two absences, closed
+
+**1. "Development file serving" has a transport** (`remote.h`, `remote.cpp`,
+`tests/test_remote.cpp`). M1 wrote `RemoteFileProvider` as a seam and said why it stopped there —
+*"a protocol nobody has spoken is a protocol that is wrong"* — and for ten milestones the only
+implementation in the tree was `FakeHost` in `test_vfs.cpp`. There is now a host
+(`FileServingHost`) and a client (`SocketFileProvider`) speaking a three-operation protocol over
+TCP, and `integration.assets_remote` runs **both ends over the loopback**: a device mounts a
+`RemoteMount`, reads two files, and the fetch counters show it fetched each one when it was read and
+not before — the scenario's own words, asserted rather than described.
+
+Three properties are worth reading before the code: a path arriving over the socket is **re-run
+through `VirtualPath::normalise` by the host**, because the traversal rule is the type's and a
+hand-written client is exactly what it exists to refuse; the host **binds the loopback unless asked
+otherwise**, because a development file server that publishes a project directory to the network by
+default is a decision nobody made; and the socket half is **POSIX, compiled on Linux and macOS**,
+with Windows refusing rather than pretending, exactly as `net::UdpTransport` does.
+
+**2. `AssetSystem::reload` no longer refuses a package-backed asset.** The old refusal named three
+things — chunk framing, decompression, the dependency list — and all three are `PackageReader`'s, so
+the reload path uses the load pipeline rather than reimplementing it. `integration.assets_watch`
+covers a re-cooked package mounted over the one a resident asset came from: the `Ref` a material
+would be holding reads the new bytes, the newly declared dependency is started, and a second reload
+does not start it twice. The specification's hot-reload requirement names *cooked outputs* as well
+as source files, so the refusal was the requirement unmet rather than scoped.
+
+### The row at Complete grade
+
+| Requirement | Verdict | Evidence, and what is missing |
+|---|---|---|
+| Asset identity | **satisfied** | `identity.cpp`; `unit.assets` covers the moved asset, the duplicated `.meta` and the reserved placeholder id |
+| Assets are cooked, not parsed at runtime | **satisfied** | `cooked.h` header carries magic, version, kind, content hash and variant key; `integration.assets_io` covers the version mismatch and the variant addressing |
+| Virtual filesystem | **satisfied** — closed here | five mount kinds, priority resolution, patch masking, traversal refused by `VirtualPath`. "Development file serving" was the last unimplemented row and is above |
+| Package format | **partial** | directory, chunks, manifest, dedup, seekable framing, mapping and deleted-entry markers all exist and are tested. **The two encryption flags are declared and refused on open** (`package_reader.cpp`): a package that sets them cannot be read, so "package flags SHALL support encrypted directory, encrypted payload" is a declaration rather than a capability |
+| Asset loading | **satisfied** | `load`, `load_async`, `load_batch`, `preload`/`release`, `Ref<T>`, three retention policies, and the four stages on the async service and job workers; `integration.assets_loading`, 30 cases |
+| Streaming | **satisfied** | `streaming.h`: mip/LOD/audio ladders under a residency budget, a not-yet-resident level falls back to the highest resident one; `integration.assets_streaming` |
+| Hot reload | **satisfied** — closed here | `watch.h` fingerprints and debounces; `reload` swaps in place preserving every `Ref`, over a loose file **and over a package** |
+| File and directory access | **partial** | read, write, seek, size, flush, mapping, directory enumeration and atomic rename-based writes all exist — **behind `CY_ASSETS_POSIX_IO`**. The non-POSIX branch returns `Unsupported`, so on Windows this requirement is unimplemented rather than untested, and no CI leg has ever run it |
+| Serialization formats | **satisfied, within the vocabulary reflection emits** | binary and text round-trip with stable field order; `reflect::FieldKind` covers scalars, enumerations and flag sets, and a field outside that is reported by name rather than dropped. Strings, containers and nested structs are `core-type-system`'s vocabulary, not this module's omission |
+| Compression and cryptography | **UNMET IN PART, and it is the largest hole in this row** | `core/compression` promises LZ4, Zstd and Deflate: **only Zstd is implemented**, and `CompressionMethod::Lz4` and `::Deflate` are enumerators with a comment saying no codec is pinned. `core/crypto` promises SHA-256, BLAKE3, HMAC, AES-GCM and a CSPRNG: **only BLAKE3 exists** (`hash.h` says so in its own header comment). The content-hash and tampered-package scenarios pass because both run on BLAKE3; nothing else in the requirement has an implementation |
+
+**Two findings this audit produced that are not in any requirement.**
+
+*A dead second copy of this module's watcher is still in the tree, and it redefines a public class.*
+`include/cy/core/assets/hot_reload.h`, `src/hot_reload.cpp` and `tests/test_hot_reload.cpp` are an
+abandoned M2-era generation of `watch.h`: **`src/hot_reload.cpp` is in no `SOURCES` list and
+`test_hot_reload.cpp` is in no suite**, so neither is compiled by anything. The header is the
+problem rather than the sources: it is on this module's **public** include path and it declares a
+second, differently-shaped `cy::assets::FileWatcher`, `FileChange`, `FileWatcherStats` and
+`file_change_name` in the same namespace as `watch.h`'s. Any consumer that included it would link
+against `watch.cpp`'s definitions with the dead header's layout, which is an ODR violation the
+compiler cannot see. It is not a live bug: the only file that includes it,
+`src/backends/shader/include/cy/shader/hot_reload.h`, is itself part of a **dead duplicate header
+tree** under `src/backends/shader/include/cy/shader/` that no compiled source reaches (`shader.cpp`
+and `spirv.cpp` are in no `SOURCES` list either). Both trees want deleting in one change — the
+assets half alone would leave a dangling include in the shader half — and the deletion also removes
+one line from `tools/quality/licence_baseline.txt`. This module's own `CMakeLists.txt` warns about
+exactly this shape in its header comment: *"a file this list does not name is compiled by nothing,
+which reads in a review exactly like a file that passes."*
+
+*`Mount::contains()` returns `bool`, so a mount that cannot answer is indistinguishable from one
+that says no.* Measured through the new transport: when the host process goes away, the provider
+reports `Unavailable` and counts a `transport_failure`, and one layer up
+`VirtualFileSystem::resolve` reports **`NotFound`** — a dead host reads as a missing file, which is
+the diagnostic that sends a developer to look at their content. `test_remote.cpp` asserts both
+levels, including the wrong-looking one, because that is what a caller sees today. The fix is an
+interface change every mount pays for (`contains` returning `Expected<bool, Error>`, or a `probe`
+beside it) and it belongs with whoever next opens `vfs.h`.

@@ -1,6 +1,7 @@
 #include <cy/build/package.h>
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 
 #include "text.h"
@@ -165,10 +166,21 @@ std::string write_package(const PackageSet& packages) {
     out += "build ";
     out += packages.build_id;
     out += "\nprovenance\n";
+    // The order is the requirement's own list, so a reader comparing the manifest against
+    // `build-and-packaging`'s "Build provenance and symbols" reads them in the same sequence.
+    // Every field is written even when empty: an absent line and an empty one are different
+    // claims, and a manifest that silently omitted the lockfile hash would read as a build that
+    // had none rather than as one that did not record it.
     const std::pair<const char*, const std::string*> fields[] = {
-        {"project", &packages.provenance.project},     {"revision", &packages.provenance.revision},
-        {"platform", &packages.provenance.platform},   {"profile", &packages.provenance.profile},
+        {"project", &packages.provenance.project},
+        {"revision", &packages.provenance.revision},
+        {"engine-revision", &packages.provenance.engine_revision},
+        {"platform", &packages.provenance.platform},
+        {"profile", &packages.provenance.profile},
+        {"cook-configuration", &packages.provenance.cook_configuration},
+        {"lockfile", &packages.provenance.lockfile},
         {"toolchain", &packages.provenance.toolchain},
+        {"toolchain-versions", &packages.provenance.toolchain_versions},
     };
     for (const auto& field : fields) {
         out += "  ";
@@ -215,6 +227,14 @@ namespace {
         provenance.profile = value;
     } else if (keyword == "toolchain") {
         provenance.toolchain = value;
+    } else if (keyword == "engine-revision") {
+        provenance.engine_revision = value;
+    } else if (keyword == "lockfile") {
+        provenance.lockfile = value;
+    } else if (keyword == "cook-configuration") {
+        provenance.cook_configuration = value;
+    } else if (keyword == "toolchain-versions") {
+        provenance.toolchain_versions = value;
     } else if (keyword == "content-version") {
         const Expected<u64, Error> parsed = parse_number(line.word(1));
         if (!parsed) {
@@ -311,6 +331,152 @@ std::string bundle_report(const PackageSet& packages, u32 top) {
             out += '\n';
         }
     }
+    return out;
+}
+
+std::vector<StageCost> stage_costs(const BuildReport& report) {
+    // Indexed by the enumerator so the result is in NodeKind order without a sort, and so a kind
+    // added to the enumeration appears here without this function being edited.
+    constexpr usize kKinds = static_cast<usize>(NodeKind::Manifest) + 1;
+    std::array<StageCost, kKinds> totals{};
+    for (usize index = 0; index < kKinds; ++index) {
+        totals[index].kind = static_cast<NodeKind>(index);
+    }
+
+    for (const NodeResult& node : report.nodes) {
+        const usize index = static_cast<usize>(node.kind_of());
+        if (index >= kKinds) {
+            continue;
+        }
+        StageCost& stage = totals[index];
+        ++stage.nodes;
+        stage.work_ns += node.duration_ns;
+        stage.bytes_produced += node.bytes_produced;
+        switch (node.outcome) {
+            case NodeOutcome::Cached: ++stage.cached; break;
+            case NodeOutcome::Failed: ++stage.failed; break;
+            case NodeOutcome::Ran: ++stage.rebuilt; break;
+            default: break;
+        }
+    }
+
+    std::vector<StageCost> found;
+    for (const StageCost& stage : totals) {
+        if (stage.nodes != 0) {
+            found.push_back(stage);
+        }
+    }
+    return found;
+}
+
+std::string stage_report(const BuildReport& report) {
+    const std::vector<StageCost> stages = stage_costs(report);
+    std::string out = "cook and compile time by stage\n";
+    if (stages.empty()) {
+        // A build that ran no nodes is a legitimate outcome — everything was already current — and
+        // saying so is not the same as printing an empty table, which reads as a broken report.
+        out += "  no node ran: every output was current\n";
+        return out;
+    }
+    for (const StageCost& stage : stages) {
+        out += "  ";
+        out += node_kind_name(stage.kind);
+        out += "  ";
+        append_number(out, stage.nodes);
+        out += " nodes, ";
+        append_number(out, stage.cached);
+        out += " cached (";
+        append_number(out, stage.hit_rate_percent());
+        out += "% hit), ";
+        append_number(out, stage.work_ns / 1000000U);
+        out += " ms of work, ";
+        append_number(out, stage.bytes_produced);
+        out += " bytes";
+        if (stage.failed != 0) {
+            out += ", ";
+            append_number(out, stage.failed);
+            out += " FAILED";
+        }
+        out += '\n';
+    }
+    return out;
+}
+
+std::vector<CategoryShare> category_shares(const BuildGraph& graph, const PackageSet& packages) {
+    constexpr usize kKinds = static_cast<usize>(NodeKind::Manifest) + 1;
+    std::array<CategoryShare, kKinds> totals{};
+    for (usize index = 0; index < kKinds; ++index) {
+        totals[index].kind = static_cast<NodeKind>(index);
+    }
+
+    for (const Bundle& bundle : packages.bundles) {
+        for (const PackageEntry& entry : bundle.entries) {
+            // The kind comes from the GRAPH, not from the entry. A node that has left the graph
+            // lands in `Unknown` rather than being dropped: a category report that quietly omitted
+            // bytes would not add up to the package's own size, and a reader checking that sum is
+            // how a wrong report is caught.
+            const NodeId id = graph.find(entry.node);
+            const NodeKind kind = id == NodeId::Invalid ? NodeKind::Unknown : graph.node(id).kind;
+            const usize index = static_cast<usize>(kind);
+            if (index >= kKinds) {
+                continue;
+            }
+            CategoryShare& share = totals[index];
+            ++share.entries;
+            share.bytes += entry.size;
+            if (entry.size > share.largest_bytes ||
+                (entry.size == share.largest_bytes && entry.name < share.largest)) {
+                share.largest_bytes = entry.size;
+                share.largest = entry.name;
+            }
+        }
+    }
+
+    std::vector<CategoryShare> found;
+    for (const CategoryShare& share : totals) {
+        if (share.entries != 0) {
+            found.push_back(share);
+        }
+    }
+    return found;
+}
+
+std::string content_report(const BuildGraph& graph, const PackageSet& packages, u32 top) {
+    std::string out = "size by install bundle\n";
+    out += bundle_report(packages, top);
+
+    out += "size by category\n";
+    const std::vector<CategoryShare> shares = category_shares(graph, packages);
+    u64 accounted = 0;
+    for (const CategoryShare& share : shares) {
+        accounted += share.bytes;
+        out += "  ";
+        out += node_kind_name(share.kind);
+        out += "  ";
+        append_number(out, share.bytes);
+        out += " bytes in ";
+        append_number(out, share.entries);
+        out += " entries, largest ";
+        out += share.largest;
+        out += " (";
+        append_number(out, share.largest_bytes);
+        out += " bytes)\n";
+    }
+    // The sum is printed BECAUSE it can disagree. A category report whose total differs from the
+    // package's own size has lost bytes somewhere, and a reader who cannot see that cannot know.
+    out += "  total ";
+    append_number(out, accounted);
+    out += " bytes; the package set reports ";
+    append_number(out, packages.size());
+    out += " bytes\n";
+
+    // Named rather than omitted. `build-and-packaging` asks for size by plugin and by world region
+    // as well, and neither is answerable from `cybuild 1`: a node does not record which plugin
+    // declared it, and the description has no world-region concept at all. Inventing an attribution
+    // would be worse than reporting none — it would be a number nobody could check.
+    out += "size by plugin and by world region: NOT REPORTED. A node does not record the plugin\n";
+    out += "  that declared it and `cybuild 1` has no world-region concept, so both need a\n";
+    out += "  declaration the graph does not carry rather than an attribution this report invents.\n";
     return out;
 }
 

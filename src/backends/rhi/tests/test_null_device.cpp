@@ -10,6 +10,7 @@
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/validation.h>
+#include <cy/core/assets/file.h>
 #include <cy/core/memory/system_allocator.h>
 
 namespace {
@@ -417,4 +418,81 @@ CY_TEST_CASE("the global table reads through one sampler, and says so rather tha
 
     device.destroy_sampler(*second);
     device.destroy_sampler(*first);
+}
+
+CY_TEST_CASE("the pipeline cache takes a path, and an absent one is a cold start") {
+    // METAL GAP 6. `save_pipeline_cache` used to hand back a blob, which `MTLBinaryArchive` cannot
+    // produce without writing a file and reading it back; it takes a path now. The contract every
+    // backend holds is checked HERE, on the one backend every test run has: the file is written
+    // even when there is nothing to persist, an absent file loads as a cold start rather than an
+    // error, and a written one loads back.
+    //
+    // WHAT THIS DOES NOT SHOW, and it is the finding beside the signature: NOTHING IN THE ENGINE
+    // CALLS EITHER OF THEM. `rhi-and-render-graph` requires the cache to be "persisted across runs,
+    // so a warm start compiles nothing", and that is unimplemented above the RHI. Changing a
+    // signature does not implement it and this case does not claim it does.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    Device& device = fixture.device();
+
+    const char* path = "cy-null-pipeline-cache.bin";
+    (void)cy::assets::fs::remove_file(path);
+
+    // A cold start: no file at all.
+    CY_CHECK(device.load_pipeline_cache(path).has_value());
+
+    CY_CHECK(device.save_pipeline_cache(path).has_value());
+    CY_CHECK(cy::assets::fs::exists(path));
+    CY_CHECK(device.load_pipeline_cache(path).has_value());
+
+    // A path a caller forgot to fill in is refused rather than silently doing nothing.
+    CY_CHECK_FALSE(device.save_pipeline_cache("").has_value());
+    CY_CHECK_FALSE(device.load_pipeline_cache(nullptr).has_value());
+
+    (void)cy::assets::fs::remove_file(path);
+}
+
+CY_TEST_CASE("the null backend states the two answers Metal gaps 1 and 5 turned into capabilities") {
+    // A capability nothing SETS is a capability every device answers the same way by accident —
+    // which is exactly the defect `RayTracingObservation` was built to make impossible after
+    // `Capability::RayTracing` went eight milestones with no writer. These two are new at M11.d, so
+    // they are asserted the day they are added rather than the milestone somebody notices.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    const cy::rhi::DeviceCapabilities& caps = fixture.device().capabilities();
+
+    // Gap 1: this device consumes SPIR-V, and says so rather than leaving the default to mean it.
+    CY_CHECK_EQ(caps.native_shader_format(), cy::rhi::ShaderFormat::Spirv);
+    // Gap 5: the null backend implements Vulkan's secondary-command-buffer model — it is the
+    // reference — so the graph's parallel path is exercised on a machine with no GPU.
+    CY_CHECK(caps.has(cy::rhi::Capability::ParallelPassRecording));
+    // Gap 4: one ownership domain for every queue, which is what "no dedicated async compute"
+    // means and what makes the single-queue fold emit zero transfers.
+    CY_CHECK(caps.needs_queue_ownership_transfer());
+    CY_CHECK_EQ(caps.queue_ownership_domain(cy::rhi::QueueKind::AsyncCompute),
+                caps.queue_ownership_domain(cy::rhi::QueueKind::Graphics));
+}
+
+CY_TEST_CASE("a depth target the device cannot support is refused, not substituted") {
+    // METAL GAP 7's REFUSAL. The per-format query has answered since M3 with no consumer above
+    // `src/backends/rhi/`; a backend was free to swap in something of a different precision and a
+    // different footprint with nothing saying so. Now the device says no and names the call that
+    // picks the substitute, which is the engine making the decision rather than the backend.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    Device& device = fixture.device();
+
+    cy::rhi::TextureDescription depth;
+    depth.name = "depth";
+    depth.format = cy::rhi::Format::D32Sfloat;
+    depth.extent = {64, 64, 1};
+    depth.usage = cy::rhi::TextureUsage::DepthStencilAttachment;
+    cy::Expected<cy::rhi::TextureHandle, cy::Error> supported = device.create_texture(depth);
+    CY_REQUIRE(supported.has_value());
+    device.destroy_texture(*supported);
+
+    // A colour format declared as a depth attachment is the same refusal from the other side, and
+    // it is the one this backend can produce without lying about what it supports.
+    depth.format = cy::rhi::Format::Rgba8Unorm;
+    CY_CHECK_FALSE(device.create_texture(depth).has_value());
 }

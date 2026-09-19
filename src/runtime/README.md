@@ -138,3 +138,59 @@ observes it and returns from `main()`.
 architecture, the ECS/scene duality, the deferred command queue, build-time feature slicing),
 `simulation-and-determinism` (the commit boundary, the clock), `core-platform-abstraction` (the
 platform does not own the main loop).
+
+## M11.d: `engine-architecture` read requirement by requirement, and what the port cost
+
+`engine-architecture` is claimed **Complete** at M11.d. It is one of the three rows this rung audits
+that carry **no named blocker** — which means nothing has refused them rather than that nothing is
+missing. Ten requirements, read against the tree.
+
+| Requirement | Verdict | Evidence, and what is missing |
+|---|---|---|
+| Layered architecture | **satisfied, and enforced rather than advised** | `tools/layercheck/layercheck.py` behind `just quality-layers`, run in CI; the rule that refuses an SDL type above `platform/` and a graphics-API header above `src/backends/` is the same mechanism |
+| C++20 as the implementation language | **satisfied** | concepts (`values/handle.h`), `Span`, designated initialisers in descriptor structs, `constexpr` tables, `<=>`, and `Expected<T, Error>` for fallible calls with assertions for programmer error |
+| Server architecture | **PARTIAL, and it has been partial since M2** | `ServerRegistry`, the selection chain, `NullServer` and the handle semantics are all here and well tested (`test_servers.cpp`). **No production backend registers into it**: every `register_backend` call in the tree outside that test file belongs to the RHI's *own* backend registry, which is a different mechanism one layer down. `src/servers/` now holds seven real servers — render, physics, audio, input, camera, text, residency — and none of them is reached through this registry; `samples/03-first-light/main.cpp` says so in its own comment (*"wiring `cy::render::RenderServer` into `runtime::ServerRegistry` is the piece…"*). So "Backend is selectable" is exercised by test doubles, and `Runtime::enter_servers` resolves every kind to the null fallback in any real run. M3 was the milestone that was supposed to close this; it is eight rungs later and unchanged |
+| ECS core with a scene-graph façade | **satisfied** | `src/ecs/` is the storage and `src/scene/` is the view (`node.h`, `coherence.h`, `propagation.h`); the coherence rules have their own module and their own suite |
+| Module system | **satisfied at the mechanism, with one module in the tree** | `modules/example-null/module.json` carries every field the requirement names — name, description, layer, type, registration level, public and private dependencies, default-enabled, platforms, hot-reload — and discovery is from the manifest with no list to add to. `cmake/modules.cmake` refuses a module that links what its manifest does not declare. The residual is coverage, not design: one module exists, so "third-party module" and "module registers a backend" are demonstrated by the template rather than by a second author |
+| Deterministic startup and shutdown | **satisfied** | the nine-stage table in `runtime.cpp`, torn down in exact reverse, with `unwind()` releasing what a failed stage had already entered; headless startup runs through `platform/headless/` |
+| Main loop with fixed simulation and variable rendering | **satisfied** | zero or more fixed steps then one render, a bounded catch-up with the discarded time reported, interpolation for rendering, and `--fixed-step` |
+| Deferred command queue | **satisfied** | `frame_commands.h` at the runtime level and `ecs/command_buffer.h` below it |
+| Build-time feature slicing | **satisfied** | `cmake/features.cmake` defines a guard macro per option and records, per option, which milestone delivers it; `CY_DEDICATED_SERVER` is the requirement's own scenario as a single switch |
+| Non-goals for the initial architecture | **satisfied** | the list is in the specification and every change to it has gone through the OpenSpec flow — M11.d's own scope change moved two whole sections into a new rung by that route rather than by narrowing a requirement in place |
+
+### What the port cost above layer 3
+
+`engine-architecture`'s claim at this rung is a **measurement, not a promise**: a second native
+platform backend is the largest architectural stress this engine has had, and the number worth
+recording is how much of `src/` above `platform/` and `src/backends/` had to change to absorb it.
+
+The exit criterion for the native platform backend is stated as a diff — *"requiring no change in
+`src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`"* — and the check that reads a changeset is
+section 4's, not this file's. What this section records is the wider figure, over the whole of `src/`
+above the two layers a port is allowed to touch.
+
+**The method**, stated so the next port produces a comparable number:
+
+    files changed under src/, excluding src/backends/, in the changeset that adds the backend —
+    counted per directory, each non-zero count attributed to the change that forced it
+
+**The measurement, taken over M11.d's own changeset** (`git diff <rung start>..` over `src/`,
+excluding `src/backends/`, and attributed by subject rather than by author):
+
+| Directory | Files changed | Attributed to |
+|---|---:|---|
+| `src/rendering/` | 17 | **the RHI interface**, not the port: `ImageLayout` → `ImageUse` and `queue_family` → `QueueOwner` in the render graph's compile, execute and visualise paths. Section 1's work, on Vulkan and null, before any new backend exists |
+| `src/core/`, `src/ecs/`, `src/world/` | 12 | **this rung's own section 6**: the remote-file transport, the package-backed reload, and the three memory-attribution producers. Not port cost either |
+| **Attributable to the native platform backend** | **0** | `platform/linux-native/` and `platform/stub/` are new directories; **nothing under `src/` changed to accommodate either** |
+
+**Zero is the honest number, and it is the one the row is claimed on.** A second native `Platform`
+and `DisplayServer` — a different windowing model, a different input source, a different surface
+provider — was absorbed entirely below layer 3. `src/servers/` and `src/scene/` have no change of
+any kind in this rung's changeset.
+
+A non-zero count would not automatically have been a failure. A change under `src/rendering/` to
+branch on a capability a new platform exposes is the abstraction working; a change under `src/core/`
+is the abstraction being wrong, which is what `platform/README.md` already says and what section
+4.2's criterion mechanises. What the table above shows is that the only non-zero rows belong to an
+*interface* change made deliberately and to this section's own work — neither of which is the port
+reaching upward.

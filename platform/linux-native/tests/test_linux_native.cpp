@@ -34,6 +34,9 @@
 #undef None
 #undef Always
 #undef Success
+// X11/Xlib.h:83 is `#define Status int`, which collides with cy::Status — see
+// x11_display_server.cpp's note. A macro, so namespace scoping cannot save it.
+#undef Status
 
 #include <cstdio>
 #include <cstdlib>
@@ -214,21 +217,31 @@ CY_TEST_CASE("linux-native: a piped child is written to, read from, and its pid 
     CY_REQUIRE(platform.write_process_input(child, "hello\n").has_value());
     CY_REQUIRE(platform.close_process_input(child).has_value());
 
-    // Reading NEVER BLOCKS, so this polls. A zero is "not yet" or "closed" and the interface
-    // deliberately does not distinguish them — poll_process() is the call whose subject is whether
-    // the child is alive.
-    char reply[64] = {};
-    usize total = 0;
-    for (int attempt = 0; attempt < 2000 && total == 0; ++attempt) {
-        const auto read = platform.read_process_output(child, reply + total, sizeof(reply) - total - 1);
-        CY_REQUIRE(read.has_value());
-        total += read.value();
-    }
-    CY_CHECK_EQ(std::strncmp(reply, "hello", 5), 0);
-
+    // WAIT FIRST, THEN READ, and the order is the point rather than a convenience. `cat` copies its
+    // input to its output and exits when its input closes, so once wait_process() has returned
+    // everything the child will ever say is already in the pipe. Polling the non-blocking read
+    // before that is a race against process start-up — two thousand attempts took under a
+    // millisecond and read nothing, which is exactly what the interface promises a non-blocking
+    // read does and was this case's first result.
     const auto code = platform.wait_process(child);
     CY_REQUIRE(code.has_value());
     CY_CHECK_EQ(code.value(), 0);
+
+    // A zero is "nothing at this instant" OR "closed" and the interface deliberately does not
+    // distinguish them; the loop stops on the second zero after something arrived, which is all a
+    // caller can do and all it needs to.
+    char reply[64] = {};
+    usize total = 0;
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        const auto read =
+            platform.read_process_output(child, reply + total, sizeof(reply) - total - 1);
+        CY_REQUIRE(read.has_value());
+        if (read.value() == 0 && total > 0) {
+            break;
+        }
+        total += read.value();
+    }
+    CY_CHECK_EQ(std::strncmp(reply, "hello", 5), 0);
     platform.release_process(child);
 
     // An unpiped child refuses the three stream calls rather than pretending to have a channel.

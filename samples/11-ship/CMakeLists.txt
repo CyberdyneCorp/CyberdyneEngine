@@ -131,9 +131,10 @@ endif()
 # than claiming it. The leg that DRAWS is `just run-ship`, which a person runs, and which is what
 # produced docs/design/images/m11d-ship.png.
 add_test(NAME smoke.ship
-         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/ship.py"
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/ship.py"
                  --binaries "$<TARGET_FILE:cy_sample_ship>" "$<TARGET_FILE:cy_build>"
-                 --work "${CMAKE_BINARY_DIR}/ship-smoke"
+                 --work "${CMAKE_CURRENT_BINARY_DIR}/run"
                  --platform headless
-                 --frames 1)
-set_tests_properties(smoke.ship PROPERTIES TIMEOUT "${CY_SHIP_TIMEOUT}" LABELS "smoke")
+                 --frames 1
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(smoke.ship PROPERTIES LABELS "smoke" TIMEOUT "${CY_SHIP_TIMEOUT}")

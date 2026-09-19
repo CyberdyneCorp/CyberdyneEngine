@@ -27,6 +27,7 @@ using cy::rhi::metal::metal_blocking_gap_count;
 using cy::rhi::metal::metal_format_substitution;
 using cy::rhi::metal::metal_gap;
 using cy::rhi::metal::metal_gaps;
+using cy::rhi::metal::metal_open_gap_count;
 using cy::rhi::metal::metal_load_action;
 using cy::rhi::metal::metal_pixel_format;
 using cy::rhi::metal::metal_render_stage;
@@ -35,6 +36,7 @@ using cy::rhi::metal::metal_storage_mode;
 using cy::rhi::metal::metal_store_action;
 using cy::rhi::metal::MetalBarrierScope;
 using cy::rhi::metal::MetalGap;
+using cy::rhi::metal::MetalGapStatus;
 using cy::rhi::metal::MetalRenderStage;
 using cy::rhi::metal::MetalStorageMode;
 using cy::rhi::metal::register_metal_backend;
@@ -144,28 +146,50 @@ CY_TEST_CASE("metal seed: every gap has a record, a remedy and a verdict") {
         // complaint rather than a finding.
         CY_CHECK(record.interface_element[0] != '\0');
         CY_CHECK(record.remedy[0] != '\0');
+        // AND A ROW THAT IS NO LONGER OPEN SAYS WHAT HAPPENED TO IT. This is what makes
+        // `metal_open_gap_count()` a measurement rather than a claim: a row cannot be marked
+        // closed without an account of how, so "closed" and "somebody edited an enumerator" are
+        // not the same edit.
+        if (record.status != MetalGapStatus::Open) {
+            CY_CHECK(record.closed_by[0] != '\0');
+        }
         // An EMPTY `metal_equivalent` is a real value and the more expensive kind of finding:
         // "Metal has nothing at all here", as opposed to "Metal has something with different
         // semantics".
     }
 
-    // Three of the eight have no Metal equivalent whatever, and two of the eight cannot be worked
-    // around at all. Those two are what M11 pays for if nothing changes before then, and this
-    // number is the reason to seed a backend four milestones early.
+    // Three of the eight have no Metal equivalent whatever. That number is a property of Metal and
+    // does not move when the engine's interface changes.
     u32 no_equivalent = 0;
     for (u32 index = 0; index < kMetalGapCount; ++index) {
         no_equivalent += gaps[index].metal_equivalent[0] == '\0' ? 1U : 0U;
     }
-    CY_TEST_MESSAGE("gaps: ", kMetalGapCount, " total, ", no_equivalent,
-                    " where Metal has no equivalent at all, ", metal_blocking_gap_count(),
-                    " with no workaround");
+    CY_TEST_MESSAGE("gaps: ", kMetalGapCount, " total, ", metal_open_gap_count(), " still open, ",
+                    no_equivalent, " where Metal has no equivalent at all, ",
+                    metal_blocking_gap_count(), " open with no workaround");
     CY_CHECK_EQ(no_equivalent, 3U);
-    CY_CHECK_EQ(metal_blocking_gap_count(), 2U);
+
+    // WHAT M11.d's SECTION 1 DID, AS DATA. Eight gaps were open when M7 wrote this table and two of
+    // them had no workaround; the interface was settled on Vulkan and the null backend before
+    // either new backend exists, and this is the number that says so. A gap closed in prose and
+    // not here is not closed.
+    CY_CHECK_EQ(metal_open_gap_count(), 0U);
+    CY_CHECK_EQ(metal_blocking_gap_count(), 0U);
+
+    // Gap 8 is NOT closed — it is recorded as needing no change, which is a different answer and
+    // the one M11.d task 1.4 asks for. Deleting the row would lose the finding.
+    CY_CHECK_EQ(metal_gap(MetalGap::PushConstantRangeOffsets).status,
+                MetalGapStatus::NoChangeNeeded);
+    // And the two that had no workaround are closed by something the table names.
+    CY_CHECK_EQ(metal_gap(MetalGap::TransientMemoryTypeBits).status, MetalGapStatus::Closed);
+    CY_CHECK_EQ(metal_gap(MetalGap::SecondaryCommandBufferInheritance).status,
+                MetalGapStatus::Closed);
 }
 
 CY_TEST_CASE("metal seed: the registration seam refuses cleanly where there is no Metal") {
     const auto status = metal_seed_status();
     CY_CHECK_EQ(status.gaps, kMetalGapCount);
+    CY_CHECK_EQ(status.open_gaps, metal_open_gap_count());
     CY_CHECK_EQ(status.blocking_gaps, metal_blocking_gap_count());
     CY_REQUIRE(status.renders != nullptr);
     CY_CHECK(status.renders[0] != '\0');

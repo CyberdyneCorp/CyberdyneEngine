@@ -153,7 +153,7 @@ void print_usage() {
     lines.push_back({"LINUX / NATIVE X11", "ABSENT", "NOT BUILT: NO PLATFORM/LINUX-NATIVE TARGET"});
 #endif
     lines.push_back({"MACOS / METAL", "NOT EVALUATED", "NO APPLE TOOLCHAIN ON THIS HOST"});
-    lines.push_back({"WINDOWS / D3D12", "NOT EVALUATED", "LINUX HOST; MOVED TO A RUNG OF ITS OWN"});
+    lines.push_back({"WINDOWS / D3D12", "NOT EVALUATED", "LINUX HOST - MOVED TO A RUNG OF ITS OWN"});
     lines.push_back({"GPU VENDORS", "1", "ONE VENDOR, ONE DRIVER, ONE OS"});
     return lines;
 }
@@ -274,6 +274,14 @@ int main(int argc, char** argv) {
     }
     std::printf("%s: platform      %.*s\n", kTag, static_cast<int>(platform.name().size()),
                 platform.name().data());
+    // The display servers this binary was BUILT with, printed before one is chosen. A leg that is
+    // absent is absent at link time, and saying so here is cheaper for a reader than discovering it
+    // from a refusal further down.
+    std::printf("%s: display legs ", kTag);
+    for (const PlatformChoice choice : available_platforms()) {
+        std::printf(" %s", platform_choice_name(choice));
+    }
+    std::printf("\n");
 
     PresentOptions present_options;
     present_options.platform = options.platform;

@@ -8,7 +8,9 @@ upward through an include path CMake was never told about.
 Six checks, all of them cheap enough to run on every pull request:
 
   includes      a file may include a header at its own layer or below, never above
-  sdl           no SDL header appears outside platform/ — design.md §4
+  sdl           no window-system header — SDL, X11/xcb, Wayland — appears outside platform/.
+                design.md §4, and M11.d: the rule was written for SDL because SDL was the only
+                implementation, and it is about the porting surface rather than about SDL
   gpuapi        no Vulkan, Slang or SPIR-V header appears outside src/backends/ — the same rule as
                 `sdl`, for the same reason, and M3's task 2.3.1
   thirdparty    no Jolt or miniaudio header appears outside the backend that owns it — the same
@@ -285,6 +287,34 @@ def is_sdl_include(include: str) -> bool:
     return path.parts[0].startswith("SDL") or path.name.startswith("SDL")
 
 
+# --- The window-system rule (design.md §4, widened at M11.d) ----------------------------------------
+#
+# Written as "no SDL header outside platform/" when SDL was the only implementation of `Platform` and
+# `DisplayServer`. M11.d added a second — platform/linux-native/, over Xlib and XRandR — and the rule
+# is about the PORTING SURFACE, not about SDL: an `#include <X11/Xlib.h>` above platform/ is exactly
+# as wrong as an `#include <SDL3/SDL.h>` there, and a rule that named only SDL would have accepted
+# the new backend leaking a `Window` into a header the day it landed.
+#
+# Matched by the include's leading directory, which is how each of these libraries spells itself.
+WINDOW_SYSTEM_DIRECTORIES = {
+    "X11": "X11",
+    "xcb": "xcb",
+    "wayland-client.h": "Wayland",
+    "wayland-server.h": "Wayland",
+    "xkbcommon": "xkbcommon",
+}
+
+
+def window_system_library_of(include: str) -> str | None:
+    """The window-system library an include names, or None."""
+    if is_sdl_include(include):
+        return "SDL"
+    path = PurePosixPath(include.replace("\\", "/"))
+    if path.parts[0] in WINDOW_SYSTEM_DIRECTORIES:
+        return WINDOW_SYSTEM_DIRECTORIES[path.parts[0]]
+    return WINDOW_SYSTEM_DIRECTORIES.get(path.name)
+
+
 def is_gpu_api_include(include: str) -> bool:
     """Whether an include names a Vulkan, Slang or SPIR-V header.
 
@@ -347,11 +377,13 @@ def check_source_file(relative: str, text: str) -> list[Violation]:
         include = match.group(1)
         line = line_of(text, match.start())
 
-        if is_sdl_include(include) and not in_platform:
+        window_library = window_system_library_of(include)
+        if window_library is not None and not in_platform:
             violations.append(Violation(relative, line, "sdl",
-                f"includes '{include}'. No SDL header appears outside platform/ — SDL sits beneath "
-                f"the engine-owned Platform and DisplayServer interfaces, and a second backend "
-                f"lands at M11 (design.md §4)."))
+                f"includes '{include}'. No {window_library} header appears outside platform/ — a window "
+                f"system sits beneath the engine-owned Platform and DisplayServer interfaces, and "
+                f"there are TWO implementations of them since M11.d precisely so that no layer "
+                f"above can tell which one it is on (design.md §4)."))
             continue
 
         if is_gpu_api_include(include) and not in_gpu_backend:

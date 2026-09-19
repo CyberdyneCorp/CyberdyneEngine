@@ -84,8 +84,11 @@ constexpr Glyph kGlyphs[] = {
     return kGlyphs[sizeof(kGlyphs) / sizeof(kGlyphs[0]) - 1];  // '?'
 }
 
-[[nodiscard]] Error card_error(const char* message) noexcept {
-    return Error{ErrorCode::InvalidArgument, message, 0};
+/// A content error, spelled as the engine spells one. `cy::fail` returns something convertible to
+/// both `Status` and `Expected<T, Error>`, which is why this is a wrapper over it rather than a
+/// bare `Error` — a bare `Error` is not a failed `Status`.
+[[nodiscard]] auto card_error(const char* message) noexcept {
+    return fail(ErrorCode::InvalidArgument, message);
 }
 
 // --- The line reader -----------------------------------------------------------------------------

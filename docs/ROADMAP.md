@@ -1569,8 +1569,8 @@ the two backends became a rung of their own, with a gate of its own and an artef
 the continuous-integration matrix can produce.
 
 **Why it is an insertion and not a renumbering.** M11.e is the terminus: renaming it would move 27
-`known_gap_closes`, 31 criterion identifiers and 34 falsifiability entries, which is churn for a
-label. M5.5 set the precedent — insert between the neighbours, keep every existing reference valid —
+`known_gap_closes` across five ledgers, 30 criterion identifiers and 30 falsifiability entries — all
+counted rather than estimated — which is churn for a label. M5.5 set the precedent — insert between the neighbours, keep every existing reference valid —
 and `delivery-roadmap` requires an inserted milestone to take a **rung between its neighbours** in
 every mechanism that depends on milestone order, which `roadmap-test` asserts.
 

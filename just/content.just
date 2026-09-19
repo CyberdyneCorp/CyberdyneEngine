@@ -162,8 +162,30 @@ content-package *args:
     IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
-    just build-engine --profile "${profile}" -D CY_BUILD_TOOLS=ON
-    exec "${build_dir}/tools/build/cy_build" build ${rest}
+    # `--platform` is the package recipe's half of M11.d task 7.7 — `developer-workflow-and-just`
+    # names build, test, DEPLOY and PACKAGE, and this recipe used to pass the flag through to
+    # `cy_build`, which does not take it and would have failed naming an option rather than a
+    # target. The resolution is `just/targets.toml`'s, so the refusal here and the refusal from
+    # `just build-engine` are the same words.
+    platform=()
+    tool_args=()
+    expecting=0
+    for argument in ${rest}; do
+        if [ "${expecting}" -eq 1 ]; then
+            platform=(--platform "${argument}"); expecting=0; continue
+        fi
+        case "${argument}" in
+            --platform)   expecting=1 ;;
+            --platform=*) platform=(--platform "${argument#*=}") ;;
+            *)            tool_args+=("${argument}") ;;
+        esac
+    done
+    if [ "${expecting}" -eq 1 ]; then
+        echo "--platform needs a name. \`just env-targets\` prints the ones that exist." >&2
+        exit 2
+    fi
+    just build-engine --profile "${profile}" ${platform[@]+"${platform[@]}"} -D CY_BUILD_TOOLS=ON
+    exec "${build_dir}/tools/build/cy_build" build ${tool_args[@]+"${tool_args[@]}"}
 
 # `--apply` switches from producing a patch to applying one. A patch application is staged, verified
 # and switched atomically; interrupting it leaves the previous build playable, which is what

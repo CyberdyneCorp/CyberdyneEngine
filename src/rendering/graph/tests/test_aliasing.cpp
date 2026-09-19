@@ -239,3 +239,87 @@ CY_TEST_CASE("two transients whose lifetimes overlap never share memory") {
     // an assertion in one test.
     CY_CHECK(cy::rendering::validate_plan(graph, *plan).has_value());
 }
+
+// --- The memory pool class — Metal gap 2 --------------------------------------------------------
+
+namespace {
+
+/// A frame with BOTH a transient image and a transient buffer, which is the shape the pool class is
+/// about: one heap has to be legal for both, and on real hardware they do not answer the same.
+struct MixedFrame {
+    RenderGraph graph;
+    ResourceId image = cy::rendering::kInvalidResource;
+    ResourceId scratch = cy::rendering::kInvalidResource;
+    ResourceId output = cy::rendering::kInvalidResource;
+
+    MixedFrame() noexcept : graph(cy::system_allocator(cy::MemoryDomain::Renderer)) {
+        image = graph.create_texture(storage_image("image", 256));
+        scratch = graph.create_buffer(storage_buffer("scratch", 64 * 1024));
+        output = graph.import_buffer(storage_buffer("result", 4096),
+                                     cy::rhi::BufferHandle::from_slot(0, 1));
+
+        graph.add_pass("write", QueueKind::Graphics)
+            .write(image, Access::ComputeStorageWrite)
+            .write(scratch, Access::ComputeStorageWrite);
+        graph.add_pass("read", QueueKind::Graphics)
+            .read(image, Access::ComputeStorageRead)
+            .read(scratch, Access::ComputeStorageRead)
+            .write(output, Access::TransferWrite);
+    }
+};
+
+/// A memory query that answers a DIFFERENT pool class per resource kind, which is what a real
+/// device does: M11.d's spike measured an NVIDIA RTX 5060 answering 0x03 for transient images and
+/// 0x1F for transient buffers. `user` carries the class the buffers get, so one fixture covers both
+/// the case where a single pool is legal for everything and the case where none is.
+bool split_pool_query(ResourceId resource, const cy::rendering::ResourceInfo& info,
+                      cy::rhi::MemoryRequirements& out, void* user) noexcept {
+    if (!cy::rendering::synthetic_memory_query(resource, info, out, nullptr)) {
+        return false;
+    }
+    out.pool_class = info.is_texture
+                         ? cy::rhi::MemoryPoolClass{0x03}
+                         : cy::rhi::MemoryPoolClass{*static_cast<const cy::u64*>(user)};
+    return true;
+}
+
+}  // namespace
+
+CY_TEST_CASE("images and buffers that share one pool are planned into one heap") {
+    // THE CASE AN EQUALITY WOULD HAVE GOT WRONG, and the reason M11.d's task 1.1 was rewritten:
+    // the Metal seed proposed a pool class "the graph only compares for EQUALITY", and on the
+    // device this project develops on transient images and transient buffers answer differently
+    // while one pool is legal for both. An equality here would refuse to place them together and
+    // split the transient heap in two, losing exactly the aliasing `heap_bytes` exists to report.
+    MixedFrame frame;
+    cy::u64 buffer_class = 0x1F;
+    cy::rendering::CompileOptions options = single_queue_options();
+    options.query_memory = &split_pool_query;
+    options.query_user = &buffer_class;
+
+    cy::Expected<CompiledGraph, cy::Error> plan = frame.graph.compile(options);
+    CY_REQUIRE(plan.has_value());
+    // 0x03 MEET 0x1F is 0x03 — non-empty, so one pool serves the whole frame, and the graph never
+    // asked what the number meant.
+    CY_CHECK_EQ(plan->memory.pool_class.token, 0x03U);
+    CY_CHECK_FALSE(plan->memory.pool_class.empty());
+    CY_CHECK_EQ(plan->memory.placements.size(), 2U);
+}
+
+CY_TEST_CASE("a frame whose transients share no pool is refused while it is being compiled") {
+    // Emptiness is the only question the graph asks of the token, and it is a real answer rather
+    // than a formality: the proof `memory_type_bits` used to carry — one pool is legal for EVERY
+    // transient in the frame — survives the Vulkan spelling being removed only because this is
+    // checked. It is checked HERE, in compile(), where the diagnostic can name the frame, rather
+    // than in `reserve_transient_memory`, where a backend can only say that a number it was handed
+    // satisfied nothing.
+    MixedFrame frame;
+    cy::u64 buffer_class = 0x04;  // disjoint from the images' 0x03
+    cy::rendering::CompileOptions options = single_queue_options();
+    options.query_memory = &split_pool_query;
+    options.query_user = &buffer_class;
+
+    cy::Expected<CompiledGraph, cy::Error> plan = frame.graph.compile(options);
+    CY_REQUIRE_FALSE(plan.has_value());
+    CY_CHECK_EQ(plan.error().code, cy::ErrorCode::Unsupported);
+}

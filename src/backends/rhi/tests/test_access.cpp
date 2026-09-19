@@ -50,19 +50,21 @@ CY_TEST_CASE("the writing intents are exactly the ones whose names say so") {
     CY_CHECK_FALSE(cy::rhi::is_write(Access::Present));
 }
 
-CY_TEST_CASE("a storage access implies GENERAL and a sampled access implies SHADER_READ_ONLY") {
-    // The layout is what a barrier transitions to, and it is derived from the intent rather than
-    // chosen by a pass. These four rows are the ones every frame uses.
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageWrite).layout, ImageUse::Storage);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageRead).layout, ImageUse::Storage);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::FragmentSampledRead).layout,
+CY_TEST_CASE("a storage access implies Storage and a sampled access implies SampledRead") {
+    // The image use is what a barrier moves the image to, and it is derived from the intent rather
+    // than chosen by a pass. These rows are the ones every frame uses. M11.d renamed the column
+    // from `layout`: the values were `VkImageLayout`'s, in an interface that may not name a Vulkan
+    // type, and a Metal backend was being handed a field it drops. Metal gap 3.
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageWrite).use, ImageUse::Storage);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageRead).use, ImageUse::Storage);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::FragmentSampledRead).use,
                 ImageUse::SampledRead);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeSampledRead).layout,
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeSampledRead).use,
                 ImageUse::SampledRead);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ColorAttachmentWrite).layout,
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ColorAttachmentWrite).use,
                 ImageUse::ColorAttachment);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferRead).layout, ImageUse::TransferSource);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferWrite).layout,
+    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferRead).use, ImageUse::TransferSource);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferWrite).use,
                 ImageUse::TransferDestination);
 }
 

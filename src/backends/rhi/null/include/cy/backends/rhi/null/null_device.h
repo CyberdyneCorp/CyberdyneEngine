@@ -123,4 +123,19 @@ void destroy_null_device(Allocator& allocator, Device* device) noexcept;
 [[nodiscard]] u64 command_log_hash(const Device& device) noexcept;
 void clear_command_log(Device& device) noexcept;
 
+/// MAKE THIS DEVICE ANSWER A CAPABILITY DIFFERENTLY — for the paths that can only be judged against
+/// a device this project cannot create.
+///
+/// `Capability::ParallelPassRecording` is the one this exists for. A Metal backend answers false
+/// there (Metal gap 5: this engine records one secondary PER PASS, across passes, and
+/// `MTLParallelRenderCommandEncoder` parallelises WITHIN one pass), and there is no Apple toolchain
+/// here, so without this the graph's "record sequentially when the device cannot" branch would be a
+/// term nothing ever exercised — which is the defect the capability model exists to prevent, not
+/// one to introduce while closing it.
+///
+/// A TEST SEAM AND NOT A CONFIGURATION KNOB. Nothing outside a test calls it; a device that changed
+/// its own capabilities after creation would break `DeviceCapabilities`' "filled by the backend at
+/// creation and immutable after".
+void override_capability(Device& device, Capability capability, bool supported) noexcept;
+
 }  // namespace cy::rhi::null

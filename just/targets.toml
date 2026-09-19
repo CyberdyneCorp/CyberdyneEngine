@@ -1,0 +1,110 @@
+# The target platforms the workflow can be asked for, as data — M11.d task 7.7.
+#
+# `developer-workflow-and-just`:
+#
+#     The workflow SHALL support selecting a target platform for build, test, deploy, and package
+#     recipes, and SHALL report clearly when a target cannot be built on the current host and why.
+#
+#     #### Scenario: An impossible target is explained
+#     - **WHEN** a target cannot be built on the current host
+#     - **THEN** the workflow SHALL say so and state what is required
+#
+# Until M11.d the whole of that was one `if` in `_resolve-target` and one sentence — "cross-
+# compilation needs a CMake toolchain file and a platform SDK, and the first of those arrive with
+# the mobile targets at M9" — which said the same thing about macOS, Android and a typo, named a
+# milestone that had already closed, and could not distinguish "this host cannot" from "this engine
+# cannot" from "there is no such target". A second desktop is the first time that sentence has a
+# second answer, and a sentence with one answer is not a table.
+#
+# WHAT EACH FIELD IS FOR
+#
+#   hosts     the host platforms that can produce this target. `_resolve-target` compares the host
+#             against this and nothing else, so adding a cross-compilation toolchain is a field edit.
+#   requires  what a host that is NOT in `hosts` would need. Printed verbatim in the refusal, which
+#             is the "state what is required" half of the scenario.
+#   owner     the rung that makes or made it real. A refusal that names a rung is checkable against
+#             `record.MILESTONES`; a refusal that names a milestone off the end of the ladder is the
+#             defect `just/release.just`'s four recipes carry today, and tools/workflow/targets.py
+#             refuses an owner that is not on the ladder.
+#   state     buildable    a host in `hosts` can build it now.
+#             needs-host   the engine supports it; this host cannot produce it.
+#             planned      no port exists yet; `owner` is the rung that writes one.
+#
+# THE PORTS ARE NOT OPERATING SYSTEMS, and they are in the same table because a developer asks for
+# them the same way: `just build-engine --platform stub`. They are marked `kind = "port"` so that a
+# listing can separate "which operating system" from "which implementation of the porting surface",
+# and so that nothing tries to cross-compile for one.
+
+schema = 1
+
+# --- Operating systems ------------------------------------------------------------------------------
+
+[[target]]
+id = "linux"
+kind = "os"
+describe = "Linux desktop — x86-64 and arm64."
+hosts = ["linux"]
+state = "buildable"
+owner = "m0"
+requires = "a Linux host. Cross-compiling to Linux from macOS or Windows needs a sysroot and a cross toolchain file, and this project has declared neither."
+
+[[target]]
+id = "macos"
+kind = "os"
+describe = "macOS desktop — arm64 and x86-64."
+hosts = ["macos"]
+state = "buildable"
+owner = "m0"
+requires = "a macOS host. The macOS SDK is not redistributable, so there is no supported way to cross-compile for it from Linux or Windows; use a macOS machine or a macos-14 runner."
+
+[[target]]
+id = "windows"
+kind = "os"
+describe = "Windows desktop — x86-64 and arm64."
+hosts = ["windows"]
+state = "buildable"
+owner = "m0"
+requires = "a Windows host with the MSVC build tools. Cross-compiling with clang-cl and a copied Windows SDK is possible and is not supported here: nothing in CI exercises it, so it would be an untested path presented as a working one."
+
+# --- The mobile targets, which are M11.e's and are named rather than omitted -------------------------
+#
+# Omitting them would make `just env-targets` a list of what works, and the scenario this table
+# answers is about what does NOT. A developer who asks for `android` gets the rung that owns it.
+
+[[target]]
+id = "ios"
+kind = "os"
+describe = "iOS — the mobile half of build-system-and-platforms."
+hosts = []
+state = "planned"
+owner = "m11e"
+requires = "a macOS host, an iOS SDK, a CMake toolchain file and a code-signing identity. `build-system-and-platforms`' cross-compilation and mobile targets are M11.e's; no port exists in this tree yet."
+
+[[target]]
+id = "android"
+kind = "os"
+describe = "Android — the other mobile half."
+hosts = []
+state = "planned"
+owner = "m11e"
+requires = "the Android NDK and a CMake toolchain file from it. `build-system-and-platforms`' cross-compilation and mobile targets are M11.e's; no port exists in this tree yet."
+
+# --- The ports: implementations of the porting surface, not operating systems ------------------------
+
+[[target]]
+id = "native"
+kind = "port"
+describe = "The native Linux Platform and DisplayServer — the second implementation, not SDL3."
+hosts = ["linux"]
+state = "buildable"
+owner = "m11d"
+requires = "a Linux host with the Wayland and xcb development headers. It is a port of the porting surface rather than a cross-compilation target, so there is nothing to cross-compile it from."
+
+[[target]]
+id = "stub"
+kind = "port"
+describe = "The stub platform — no mouse, no resizable window, no writable filesystem outside the user mount, no ownership of the main loop."
+hosts = ["linux", "macos", "windows"]
+state = "buildable"
+owner = "m11d"
+requires = "nothing beyond a host toolchain: the stub shares no desktop assumption, which is the whole point of it, so every host can build it."

@@ -31,7 +31,9 @@
 #include <cy/runtime/runtime.h>
 #include <cy/test/test.h>
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 using cy::u32;
 using cy::u64;
@@ -81,15 +83,25 @@ CY_TEST_CASE("stub platform: the runtime starts and runs frames with no desktop 
     CY_CHECK(host.runtime.main_window() != cy::kInvalidWindow);
 
     // The loop is the caller's. Nothing in here is run_host_loop().
-    constexpr u64 kFrames = 8;
-    for (u64 frame = 0; frame < kFrames; ++frame) {
+    //
+    // IT RUNS UNTIL THE SIMULATION HAS TICKED, not for a fixed count, and that is the assertion
+    // rather than a way of avoiding one. The runtime's clock is `Platform::monotonic_nanoseconds()`
+    // and the simulation advances a fixed step when enough of it has passed, so a tick happening at
+    // all is proof that THE STUB'S OWN CLOCK drove it. Eight frames took microseconds and produced
+    // no tick, which is correct behaviour and was the first thing this case found.
+    constexpr u64 kMaxFrames = 400;
+    u64 frames = 0;
+    while (frames < kMaxFrames && host.runtime.frame().total_ticks == 0) {
         (void)host.runtime.tick();
+        ++frames;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     const cy::FrameStats stats = host.runtime.frame();
-    CY_CHECK_EQ(stats.frame_index, kFrames);
-    // Simulation ticks advanced too, which is what separates "the runtime did not refuse to start"
-    // from "the engine ran".
+    CY_CHECK_EQ(stats.frame_index, frames);
+    CY_CHECK(frames < kMaxFrames);
+    // The simulation advanced, which is what separates "the runtime did not refuse to start" from
+    // "the engine ran".
     CY_CHECK(stats.total_ticks > 0);
 }
 

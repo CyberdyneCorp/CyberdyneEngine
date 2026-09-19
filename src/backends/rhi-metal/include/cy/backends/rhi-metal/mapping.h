@@ -20,66 +20,81 @@
 // built on a Mac a wrong number is a compile error naming the row, not a wrong picture.
 //
 // ================================================================================================
-// THE FINDINGS, IN THE ORDER OF WHAT EACH COSTS TO FIX LATER
+// THE FINDINGS, AND WHAT M11.d's INTERFACE WORK DID WITH EACH
 // ================================================================================================
 //
-// Each has a `MetalGap` enumerator below, and `metal_gaps()` returns them all with their text — so
-// a diagnostic, a test and this comment cannot drift apart. `README.md` carries the argument for
-// each at length.
+// Each has a `MetalGap` enumerator below, and `metal_gaps()` returns them all with their text and
+// their STATUS — so a diagnostic, a test and this comment cannot drift apart, and "closed" is a
+// value in a table rather than a sentence somebody wrote. `README.md` carries the argument at
+// length. M11.d section 1 settled the interface on Vulkan and null BEFORE either new backend
+// exists, which is the whole reason this seed was written four milestones early.
 //
-//   1. SHADERS ARE SPIR-V IN THE INTERFACE. `ShaderModuleDescription::spirv` is `Span<const u32>`
-//      and there is no second field. Metal consumes MSL source or a compiled `.metallib`, never
-//      SPIR-V. `pipeline.h` anticipates this — "a backend that does not consume SPIR-V natively
-//      translates offline and caches the result" — but leaves the backend nowhere to PUT the
-//      translated form, so the translation lands inside `create_shader_module`, which the engine
-//      treats as cheap. CHEAP NOW: one optional `Span<const u8> native` beside the SPIR-V, and a
-//      `native_shader_format()` capability. EXPENSIVE LATER: every cook, every cache key and every
-//      hot reload path already assumes one interchange form.
+// THREE OF THE SEED'S OWN PROPOSED REMEDIES TURNED OUT WRONG WHEN MEASURED, and that is the most
+// valuable thing on this list: a remedy nobody applied is a guess. Gaps 2, 3 and 5 below say what
+// was wrong and what replaced it.
 //
-//   2. TRANSIENT MEMORY IS SPELLED IN VULKAN. `reserve_transient_memory(bytes, memory_type_bits)`
-//      and `bind_transient(handle, offset)` are `VkMemoryRequirements` and `vkBindImageMemory`.
-//      `memory_type_bits` HAS NO METAL ANALOGUE AT ALL: a `MTLHeap` picks one `MTLStorageMode` at
-//      creation and there is no bitmask of types to intersect. A Metal backend must answer `~0u`
-//      and hope nobody intersects it with anything meaningful. CHEAP NOW: an opaque
-//      `MemoryPoolClass` the backend defines and the graph only compares for equality.
+//   1. SHADERS ARE SPIR-V IN THE INTERFACE — CLOSED, ADDITIVELY. `ShaderModuleDescription` gained
+//      `Span<const u8> native` and a `ShaderFormat native_format` beside the SPIR-V, and
+//      `DeviceCapabilities::native_shader_format()` says which form a device consumes. SPIR-V stays
+//      the interchange form and every existing caller passes `spirv` untouched — the measured cost
+//      was ZERO forced call sites. `validate_shader_module()` in the interface module enforces
+//      "exactly one of the two" for every backend at once.
 //
-//   3. `ImageLayout` IS A VULKAN OBJECT IN A NEUTRAL INTERFACE. Metal has no image layouts; a
-//      resource on a hazard-tracked heap needs no transition, and one on an untracked heap needs a
-//      `MTLFence` between encoders rather than a layout. Every `ImageBarrier`'s `old_layout` and
-//      `new_layout` are dropped on the floor by a Metal backend. **AND THE ENGINE ALREADY HAS THE
-//      INFORMATION IT NEEDS WITHOUT THEM**: `access.h` carries the access masks the layouts were
-//      derived FROM. CHEAP NOW: make the layout a backend-internal derivation from the access
-//      masks, which is what the Vulkan backend does anyway.
+//   2. TRANSIENT MEMORY IS SPELLED IN VULKAN — CLOSED, AND THE SEED'S REMEDY WAS WRONG IN ONE WORD.
+//      `MemoryRequirements::memory_type_bits` (a `u32` Vulkan bitmask) became `MemoryPoolClass`, an
+//      opaque token the graph MEETS over every transient and tests for empty. The seed proposed a
+//      token the graph "only compares for EQUALITY"; measured on this project's own devices, an
+//      NVIDIA RTX 5060 answers 0x03 for transient images and 0x1F for transient buffers — they
+//      DIFFER — so an equality would have refused to put images and buffers in one pool and split
+//      the transient heap in two, losing exactly the aliasing the plan exists to report. A meet
+//      keeps the proof and loses the Vulkan spelling.
 //
-//   4. QUEUE FAMILIES ARE A VULKAN CONCEPT AND THE INTERFACE RETURNS ONE. `queue_family(QueueKind)`
-//      returns a `u32` and `kQueueFamilyIgnored` exists so a barrier can say "no transfer". Metal
-//      has `MTLCommandQueue` objects with no family index and no ownership-transfer concept at all.
-//      CHEAP NOW: `bool needs_queue_ownership_transfer()` on the capabilities, and the family index
-//      never leaves the Vulkan backend.
+//   3. `ImageLayout` IS A VULKAN OBJECT IN A NEUTRAL INTERFACE — CLOSED, AND THE SEED'S REMEDY IS
+//      NOT IMPLEMENTABLE. The seed said the engine "already has the information without them"
+//      because `access.h` carries the masks the layouts were derived from, so a backend could
+//      derive the layout itself. IT CANNOT: `compile.cpp` deliberately puts only the WRITE access
+//      in a barrier's `src_access` — a write-after-read needs an execution dependency and not a
+//      memory one — so a barrier's source mask is not the resource's current state, and a backend
+//      deriving "what it was" from it would transition from the wrong one. What was done instead:
+//      `ImageLayout` became `ImageUse`, the engine's own vocabulary for what an image is being used
+//      as, and the mapping to `VkImageLayout` moved entirely inside `vulkan_translate.cpp`. A Metal
+//      backend maps `ImageUse` to nothing, which is a mapping rather than a field it drops.
 //
-//   5. SECONDARY COMMAND BUFFERS ARE RECORDED BEFORE THEIR PASS EXISTS. `execute_secondary(primary,
-//      ...)` mirrors Vulkan's inheritance model, where a secondary buffer is recorded against a
-//      render pass *description* and executed into an instance later. Metal's equivalent is
-//      `MTLParallelRenderCommandEncoder`, whose sub-encoders can only be created FROM a live
-//      encoder — so a Metal backend cannot record a secondary buffer that does not yet have a pass.
-//      CHEAP NOW: make "the pass is begun before its secondaries are recorded" an interface
-//      precondition. The render graph probably already satisfies it; nothing says so.
+//   4. QUEUE FAMILIES ARE A VULKAN CONCEPT AND THE INTERFACE RETURNS ONE — CLOSED AS PROPOSED.
+//      `Device::queue_family()` is gone, `kQueueFamilyIgnored` is gone, and the barrier carries
+//      `QueueKind`s with an `ownership_transfer` flag. `DeviceCapabilities` answers
+//      `needs_queue_ownership_transfer()` and `queue_ownership_domain(QueueKind)` — an opaque
+//      domain the graph only compares — and the family index never leaves the Vulkan backend.
 //
-//   6. THE PIPELINE CACHE IS A MEMORY BLOB. `save_pipeline_cache(Span<u8> out)` is
-//      `vkGetPipelineCacheData`. Metal's `MTLBinaryArchive` is serialised to a URL and there is no
-//      way to hand it over as bytes without writing a file and reading it back. CHEAP NOW: a path,
-//      or an opaque backend-defined token the engine only stores.
+//   5. SECONDARY COMMAND BUFFERS ARE RECORDED BEFORE THEIR PASS EXISTS — CLOSED, AND THE SEED'S
+//      REMEDY DOES NOT ADDRESS THE MISMATCH. The seed proposed stating "the pass is begun before
+//      its secondaries are recorded" as a precondition. Read against the tree, this engine records
+//      one secondary PER PASS on job workers, each containing a whole render pass, before the
+//      primary loop reaches any of them — parallelism ACROSS passes.
+//      `MTLParallelRenderCommandEncoder` is parallelism WITHIN one pass. They are different axes
+//      and no ordering rule converts one into the other, so the precondition would be a rule the
+//      engine could satisfy and Metal still could not implement. What was done instead:
+//      `Capability::ParallelPassRecording`, one term in `executor.cpp`. A device that answers false
+//      records sequentially and produces the identical command stream.
 //
-//   7. `D24UnormS8Uint` HAS NO APPLE-SILICON EQUIVALENT. `MTLPixelFormatDepth24Unorm_Stencil8` is
-//      unavailable on Apple GPUs. A backend must substitute `Depth32Float_Stencil8`, which is a
-//      different memory footprint and a different precision. CHEAP NOW: a per-format support query
-//      on `DeviceCapabilities` so the engine picks rather than the backend substituting quietly.
+//   6. THE PIPELINE CACHE IS A MEMORY BLOB — CLOSED AS PROPOSED, and the finding beside it is worth
+//      more than the signature. `save_pipeline_cache`/`load_pipeline_cache` take a PATH, because
+//      `MTLBinaryArchive` serialises to a URL. AND NOTHING IN THE TREE CALLS EITHER OF THEM: the
+//      requirement they serve — "the cache is persisted across runs, so a warm start compiles
+//      nothing" — is unimplemented ABOVE the RHI, which changing a signature does not fix.
 //
-//   8. PUSH-CONSTANT RANGES CARRY AN OFFSET AND A STAGE MASK. Vulkan shares one block across stages
-//      at declared offsets; Metal's `setBytes:length:atIndex:` binds a whole buffer to one stage's
-//      argument table. A range shared between vertex and fragment becomes two uploads.
-//      CHEAP NOW: nothing — this one is genuinely fine, because the sizes involved are small. It is
-//      listed so the next reader does not have to re-derive that it is fine.
+//   7. `D24UnormS8Uint` HAS NO APPLE-SILICON EQUIVALENT — CLOSED, and it was never an interface
+//      change. `DeviceCapabilities::format_features()` has answered per format since M3 and both
+//      backends populate it for every format; what it had was NO CONSUMER above `src/backends/rhi/`.
+//      M11.d added the consumer: `select_depth_stencil_format()` is the engine picking, `FrameAssembly`
+//      calls it, and `validate_texture` refuses a depth target the device does not support instead
+//      of letting a backend substitute quietly.
+//
+//   8. PUSH-CONSTANT RANGES CARRY AN OFFSET AND A STAGE MASK — NO CHANGE NEEDED, and that is
+//      RECORDED rather than silently skipped. Vulkan shares one block across stages at declared
+//      offsets; Metal's `setBytes:length:atIndex:` binds a whole buffer to one stage's argument
+//      table, so a range shared between vertex and fragment becomes two small uploads. The sizes
+//      involved make that free. Listed so the next reader does not re-derive it.
 //
 // AND THREE THINGS THAT MAP CLEANLY, which is worth as much as the list above:
 //

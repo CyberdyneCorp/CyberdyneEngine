@@ -307,6 +307,27 @@ env-overrides:
         printf '  %s\n' ${active}
     fi
 
+# The target platforms this workflow knows, and which of them this host can produce. M11.d task 7.7.
+#
+# `developer-workflow-and-just` requires the workflow to "report clearly when a target cannot be
+# built on the current host and why", and this is the listing half of that: `just/targets.toml` is
+# the table, every recipe taking `--platform` resolves through it, and this prints it with the
+# host's verdict on each row. `--selftest` proves the three refusals still say three different
+# things — a refusal that says one thing about everything is what this table replaced.
+#
+#   just env-targets              what this host can and cannot build, and what each needs
+#   just env-targets --selftest   prove the refusals still discriminate
+
+# The target platforms, with what each needs and which this host can build.
+env-targets *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if [ "{{args}}" = "--selftest" ]; then
+        exec python3 tools/workflow/targets.py selftest
+    fi
+    exec python3 tools/workflow/targets.py list {{args}}
+
 # --- Shared implementation ------------------------------------------------------------------------
 
 # linux, macos or windows: the key the install hints are indexed by.

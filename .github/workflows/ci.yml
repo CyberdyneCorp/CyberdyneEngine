@@ -898,6 +898,12 @@ jobs:
         run: just quality-swift-format
       - name: The four gates' own negative cases
         run: just quality-gates-selftest --strict
+      # M11.d task 7.7. `developer-workflow-and-just` requires a target that cannot be built on the
+      # current host to be REPORTED with what is required. The table is just/targets.toml and the
+      # cases below prove its three refusals are three different messages rather than one sentence
+      # wearing three exit codes — which is what `_resolve-target` was until this rung.
+      - name: Target selection's own refusals
+        run: just env-targets --selftest
       - name: The workflow itself
         run: just ci-check
       # clang-tidy needs the flags every file is compiled with, so the build comes first.

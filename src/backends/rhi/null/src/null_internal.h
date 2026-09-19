@@ -412,6 +412,12 @@ public:
     [[nodiscard]] Span<const RecordedCommand> log() const noexcept;
     [[nodiscard]] u64 log_hash() const noexcept { return log_hash_; }
     void clear_log() noexcept;
+
+    /// The test seam behind `cy::rhi::null::override_capability`. See null_device.h for why it
+    /// exists and why nothing outside a test may call it.
+    void override_capability(Capability capability, bool supported) noexcept {
+        capabilities_.set(capability, supported);
+    }
     [[nodiscard]] DeviceStatistics& mutable_statistics() noexcept { return stats_; }
 
 private:

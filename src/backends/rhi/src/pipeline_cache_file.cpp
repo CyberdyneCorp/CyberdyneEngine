@@ -35,7 +35,7 @@ Expected<bool, Error> read_pipeline_cache_file(const char* path, Array<u8>& out)
     // AN ABSENT FILE IS A COLD START AND NOT A FAILURE. A first run has no cache; reporting that as
     // an error would make every first run log one, and a log line nobody can act on is a log line
     // everybody learns to ignore.
-    if (!assets::exists(path)) {
+    if (!assets::fs::exists(path)) {
         return false;
     }
     Expected<assets::File, Error> file = assets::File::open(path, assets::FileMode::Read);

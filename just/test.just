@@ -246,7 +246,31 @@ _ctest kind *args:
     just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
     just _report-override CY_TEST_JUNIT "${CY_TEST_JUNIT:-}"
 
-    just build-engine --profile "${profile}"
+    # `--platform` is selected here and handed to the build, so `just test-unit --platform stub`
+    # tests what that platform builds rather than testing the host's build and reporting the
+    # platform's name. M11.d task 7.7: the requirement names build, test, deploy AND package, and
+    # until this rung only `build-engine` took the flag — a test recipe silently ignoring it is the
+    # "fails obscurely" the scenario is about, one step further from the developer.
+    platform=()
+    ctest_rest=()
+    expecting=0
+    for argument in ${rest}; do
+        if [ "${expecting}" -eq 1 ]; then
+            platform=(--platform "${argument}"); expecting=0; continue
+        fi
+        case "${argument}" in
+            --platform)   expecting=1 ;;
+            --platform=*) platform=(--platform "${argument#*=}") ;;
+            *)            ctest_rest+=("${argument}") ;;
+        esac
+    done
+    if [ "${expecting}" -eq 1 ]; then
+        echo "--platform needs a name. \`just env-targets\` prints the ones that exist." >&2
+        exit 2
+    fi
+    rest="${ctest_rest[*]:-}"
+
+    just build-engine --profile "${profile}" ${platform[@]+"${platform[@]}"}
 
     build_dir="${CY_BUILD_DIR:-build/${profile}}"
     ctest_args=(--test-dir "${build_dir}" --output-on-failure)

@@ -1427,4 +1427,10 @@ void clear_command_log(Device& device) noexcept {
     }
 }
 
+void override_capability(Device& device, Capability capability, bool supported) noexcept {
+    if (NullDevice* null_device = concrete(&device); null_device != nullptr) {
+        null_device->override_capability(capability, supported);
+    }
+}
+
 }  // namespace cy::rhi::null

@@ -10,6 +10,9 @@
 #undef None
 #undef Always
 #undef Success
+// X11/Xlib.h:83 is `#define Status int`, which collides with cy::Status — see
+// x11_display_server.cpp's note. A macro, so namespace scoping cannot save it.
+#undef Status
 
 #include <linux/input-event-codes.h>
 

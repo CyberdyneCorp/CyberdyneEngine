@@ -378,10 +378,23 @@ CY_TEST_CASE("a host that goes away is reported as a transport failure, not as a
 
     host.reset();  // the developer closed their editor
 
-    const auto after = device.files.read(path_of("thing.bin"), bytes);
-    CY_CHECK_FALSE(after.has_value());
-    CY_CHECK(after.error().code == cy::ErrorCode::Unavailable);
+    // AT THE TRANSPORT, the two are different and the difference is reported: `Unavailable` rather
+    // than `NotFound`, and a `transport_failures` count that a missing file does not touch.
+    u8 destination[4] = {};
+    const cy::Status direct = device.provider.fetch(path_of("thing.bin"), 0, destination, 4);
+    CY_CHECK_FALSE(direct.has_value());
+    CY_CHECK(direct.error().code == cy::ErrorCode::Unavailable);
     CY_CHECK_EQ(device.provider.stats().transport_failures, 1U);
     // And the provider dropped the socket rather than leaving a half-finished conversation behind.
     CY_CHECK_FALSE(device.provider.is_connected());
+
+    // AT THE NAMESPACE, the distinction is LOST, and that is a property of `Mount` rather than of
+    // this transport: `Mount::contains()` returns `bool`, so `VirtualFileSystem::resolve` asks every
+    // mount "do you have this" and a mount that cannot answer at all is indistinguishable from one
+    // that says no. A dead host therefore reads as a missing file one layer up. Asserted here
+    // rather than filed as a wish, because it is what a caller sees today and because the fix is an
+    // interface change to `Mount` that every mount pays for — see src/core/assets/README.md.
+    const auto after = device.files.read(path_of("thing.bin"), bytes);
+    CY_CHECK_FALSE(after.has_value());
+    CY_CHECK(after.error().code == cy::ErrorCode::NotFound);
 }

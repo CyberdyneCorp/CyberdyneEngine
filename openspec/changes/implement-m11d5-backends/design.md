@@ -93,8 +93,8 @@ wrong: it was inserted without being added to the ordered list, so `criteria.run
 length of the list and its ledger sorted to the end of the ladder.
 
 **M11.e was not renamed, and the arithmetic is why.** Renaming the terminus would move 27
-`known_gap_closes`, 31 criterion identifiers and 34 falsifiability entries, and `falsify check` had
-just been driven from 47 disagreements to zero. That churn is not worth a label. `M11.d.5` is instead
+`known_gap_closes` across five ledgers, 30 criterion identifiers and 30 falsifiability entries — all
+counted rather than estimated — and `falsify check` had just been driven to zero disagreements. That churn is not worth a label. `M11.d.5` is instead
 the first identifier on the ladder carrying both forms at once — a letter rung from M11's split and a
 `.5` from M5.5's insertion — which is exactly what it is, and which the three readers that parse a
 milestone heading now admit by pattern and by name.

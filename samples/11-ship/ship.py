@@ -166,12 +166,21 @@ PROVENANCE = re.compile(r"provenance\s+project=(\S*) revision=(\S*) platform=(\S
 TOOLCHAIN = re.compile(r"toolchain=(\S*) content-version=(\d+)")
 CARD = re.compile(r"card\s+(\S+) (\d+)x(\d+), (\d+) directives, (\d+) bytes")
 PRESENTED = re.compile(r"frames presented\s+(\d+)")
-DEVICE = re.compile(r"device\s+(.+)")
+# Anchored, because the coverage table also carries a `device class` line two rows down and an
+# unanchored `device\s+(.+)` would read whichever came first if the order ever changed.
+DEVICE = re.compile(r"^\s+device\s{2,}(.+)$", re.MULTILINE)
+
+
+def leg_path(path: Path | None, leg: str) -> Path | None:
+    """`out.png` for one leg becomes `out-sdl3.png`. Two legs writing one file would leave whichever
+    ran last, and the artefact's claim is that BOTH drew."""
+    return None if path is None else path.with_name(f"{path.stem}-{leg}{path.suffix}")
 
 
 def act_launch(tools: Tools, report: Report, platform: str, frames: int,
                shot: Path | None, coverage: Path | None, require_draw: bool) -> tuple[str, int]:
-    print("\n==> Act 2 — the launch reads its provenance and its content out of the installation")
+    print(f"\n==> Act 2 [{platform}] — the launch reads its provenance and its content out of the "
+          "installation")
 
     launched = tools.launch(platform, frames, shot, coverage, require_draw)
     text = launched.stdout
@@ -205,7 +214,7 @@ def act_launch(tools: Tools, report: Report, platform: str, frames: int,
     device_name = device.group(1).strip() if device else "(none)"
 
     if frames_presented > 0:
-        report.did("the packaged project DREW: a swapchain frame, presented to a window",
+        report.did(f"the packaged project DREW through '{platform}': a swapchain frame, presented",
                    f"{frames_presented} frame(s) through {device_name}")
     else:
         reason = "no reason recorded"
@@ -214,7 +223,7 @@ def act_launch(tools: Tools, report: Report, platform: str, frames: int,
                 reason = line.split("NOT EVALUATED", 1)[1].strip()
         # NOT EVALUATED is never a pass and never a failure to be hidden: the harness counts it
         # where a reader cannot miss it and does not move the exit status in either direction.
-        report.not_evaluated("presentation on this machine", reason)
+        report.not_evaluated(f"presentation through '{platform}' on this machine", reason)
 
     return text, int(card.group(5))
 
@@ -278,7 +287,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--binaries", nargs="+", help="cy_sample_ship and cy_build")
     parser.add_argument("--build-dir")
     parser.add_argument("--work", default=None, help="where the project, cache and install go")
-    parser.add_argument("--platform", default="auto", help="sdl3 | native | headless | auto")
+    parser.add_argument("--platform", default="auto",
+                        help="sdl3 | native | headless | auto | both")
     parser.add_argument("--frames", type=int, default=120)
     parser.add_argument("--shot", default=None, help="write the presented frame here")
     parser.add_argument("--coverage", default=None, help="write the coverage table here")
@@ -295,13 +305,23 @@ def main(argv: list[str] | None = None) -> int:
         tools = Tools(sample, cy_build, work)
 
         act_ship(tools, report)
-        _, card_bytes = act_launch(tools, report, arguments.platform, arguments.frames,
-                                   Path(arguments.shot) if arguments.shot else None,
-                                   Path(arguments.coverage) if arguments.coverage else None,
-                                   arguments.require_draw)
-        if arguments.shot:
-            report.shot(Path(arguments.shot))
-        act_content(tools, report, arguments.platform, card_bytes)
+
+        # `--platform both` runs the SAME BINARY twice, once per display server, which is the only
+        # form in which task 8.2's claim — that it draws through the native backend AND through
+        # SDL3 — is one run's evidence rather than two people's memories of two runs.
+        legs = ["sdl3", "native"] if arguments.platform == "both" else [arguments.platform]
+        shot = Path(arguments.shot) if arguments.shot else None
+        coverage = Path(arguments.coverage) if arguments.coverage else None
+        card_bytes = 0
+        for leg in legs:
+            _, card_bytes = act_launch(tools, report, leg, arguments.frames,
+                                       leg_path(shot, leg) if len(legs) > 1 else shot,
+                                       leg_path(coverage, leg) if len(legs) > 1 else coverage,
+                                       arguments.require_draw)
+            written = leg_path(shot, leg) if len(legs) > 1 else shot
+            if written is not None and written.is_file():
+                report.shot(written)
+        act_content(tools, report, legs[-1], card_bytes)
     except Failed as failure:
         report.failed(str(failure))
     except artefact.Absent as absent:

@@ -15,10 +15,12 @@
 # backend criteria used to sit carries the full reasoning, and `rhi-and-render-graph`'s Complete cell
 # moved with them.
 #
-# WHAT IS VERIFIED ABSENT ON THE TREE THIS RUNG OPENS ON, and still is. SDL3 is the only `Platform`
-# and the only `DisplayServer`. `just quality-requirements`, `just quality-docs`,
-# `just quality-swift-format`, `just quality-licence-headers` and `just quality-spelling` do not
-# exist. `samples/11-ship` does not exist.
+# WHAT WAS VERIFIED ABSENT ON THE TREE THIS RUNG OPENED ON. SDL3 was the only `Platform` and the
+# only `DisplayServer`. None of `just quality-requirements`, `just quality-docs`,
+# `just quality-swift-format`, `just quality-licence-headers` or `just quality-spelling` existed.
+# `samples/11-ship` did not exist. Written in the past tense on purpose: this rung is being worked,
+# the criteria below are the record of what had to be true, and a header that keeps asserting an
+# absence its own rung is closing becomes false the day it succeeds.
 #
 # THE RUNG'S CENTRAL EVIDENCE QUESTION WAS ANSWERED BY ITS SPIKE AND NOT BY THIS FILE: whether a
 # hosted macOS or Windows runner can present a graphics device at all. It can — a paravirtual Metal

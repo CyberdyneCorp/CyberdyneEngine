@@ -5,9 +5,10 @@
 One project, **built, cooked, packaged, installed and launched from a single recipe**:
 
 ```
-just run-ship                                   headless: the four acts that need no device
-just run-ship --platform sdl3 --frames 240      a window, with the card presented on a swapchain
-just run-ship --platform sdl3 --shot out.png --require-draw
+just run-ship                                            headless: the acts that need no device
+just run-ship --platform sdl3 --frames 240               a window, the card on a swapchain
+just run-ship --platform native --frames 240             the same, with no SDL anywhere
+just run-ship --platform both --shot out.png --require-draw    both legs, both photographed
 ```
 
 `samples/` held fifteen entries before this one and **not one of them was a packaged project**.
@@ -39,11 +40,16 @@ install, a provenance record and a launch that reproduces from it.
 
 | Leg | Verdict | Why |
 |---|---|---|
-| Linux / SDL3 | **RAN** | this host |
-| Linux / native platform backend | **ABSENT** | M11.d section 4 had not landed when this was written |
+| Linux / SDL3 | **BUILT** | this host |
+| Linux / native X11 | **BUILT** | `platform/linux-native/`, no SDL beneath it — or **ABSENT** where that target does not exist |
 | macOS / Metal | **NOT EVALUATED** | no Apple toolchain on this host |
 | Windows / D3D12 | **NOT EVALUATED** | Linux host; both backends moved to a rung of their own |
 | GPU vendors | **1** | one vendor, one driver, one operating system |
+
+**BUILT is deliberately not RAN**, and the distinction is the point rather than pedantry: the card is
+composed before a single frame exists, so a row that said RAN would be a claim made before its
+evidence. What the run actually did is the two lines `present.cpp` writes onto the card once it knows
+the device, and the frame count in the printed table.
 
 That is the honest shape of a rung deliberately scoped to what this machine can check.
 `design.md` §1.4.3 records where sections 2 and 3 went and why: **Metal cannot be compiled on Linux
@@ -51,13 +57,18 @@ and neither can D3D12**, so neither backend could be written or judged where thi
 and `m11d:golden-images-across-three-backends` moved with them so that rung cannot close on "it
 compiles somewhere".
 
-**The native platform backend is an absence, not an omission.** Task 8.2 asks this artefact to draw
-through it as well as through SDL3. When this directory was written `platform/` held `desktop-sdl3`,
-`headless` and `host` and nothing else. Rather than invent a stand-in, the sample reports the leg
-ABSENT with that reason and runs the SDL3 leg. `present.cpp`'s `available_platforms()` carries the
-three lines that add it when section 4 lands, and nothing else in the sample knows which windowing
-implementation it got — which is the whole claim `core-platform-abstraction`'s Complete cell rests
-on.
+**Two platform legs, one binary.** `just run-ship --platform both` runs the same executable twice —
+once through SDL3, once through `platform/linux-native/`'s `LinuxPlatform` and `X11DisplayServer` —
+and reports each. That is the only form in which "it draws through the native backend *and* through
+SDL3" is one run's evidence rather than two recollections.
+
+**What is worth noticing is how little changes between them**: one `case` in `DisplayServers::start`
+and one `#include`. Everything after that is written against `cy::DisplayServer&` and
+`cy::Platform&` and cannot tell which implementation answered. That is the whole claim
+`core-platform-abstraction`'s Complete cell rests on, made by a program rather than by a document.
+Where `platform/linux-native/` does not exist — it declares nothing on a machine with no libX11 —
+the sample still builds, still runs the SDL3 leg, and reports the native leg **ABSENT** with that
+reason rather than inventing a stand-in for it.
 
 ---
 

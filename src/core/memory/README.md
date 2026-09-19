@@ -305,3 +305,85 @@ Two defects were found by running them and are fixed here, each with a regressio
 `std::atomic_thread_fence`, because GCC's ThreadSanitizer rejects the fence outright
 (`-Werror=tsan`), which would have put this module's suites out of reach of the tool most likely to
 find a bug in it.
+
+## M11.d: the attribution axes have producers, and the larger finding underneath them
+
+`core-memory-and-containers` is claimed **Complete** at M11.d. Its one named absence was that the
+four attribution axes M7 built had **no producer**: the only files naming `MemoryAttributionScope`
+were its own header, source, test and README, so in any running engine every axis reported its live
+bytes as `unattributed_bytes` and nothing else.
+
+### The producers, and where they are
+
+The axis is opaque here by design — this module is layer 0 and cannot name an `AssetId`, a `CellId`
+or a reflected `TypeId` — so **the module that owns the identity is the one that pushes it**. Three
+now do:
+
+| Axis | Producer | Why that call and not another |
+|---|---|---|
+| Asset | `AssetSystem`'s read stage and its decompress-and-publish stage (`asset_system.cpp`) | the two stages that allocate an asset's bytes. Pushed twice because they run on different threads and a scope is thread-local |
+| World cell | `CellActivation::advance()` and `::publish()` (`src/world/src/activation.cpp`) | private staging is where a cell's memory is spent — decoded columns, overlay patches, entity lists — and publication grows the chunks that hold it |
+| Type | `World::ensure_sparse_store()` (`src/ecs/src/world.cpp`) | a sparse component's side table holds exactly **one** component type, so it can honestly say which. The key is the *reflected* `TypeId`, not the world-local `ComponentTypeId`, so two worlds' reports join |
+
+**An archetype chunk deliberately pushes nothing, and that is a measurement rather than an
+omission.** A chunk holds a component *set*; charging its bytes to any one member would be a number
+that reads as a fact and is not. The type axis therefore covers sparse storage and not chunk
+storage, and a reader of a type report should know that before drawing a conclusion from it.
+
+The tests are the producers' tests and not the mechanism's: *"a sparse component's side table is
+attributed to its reflected type"* (`unit.ecs`) and *"cell activation attributes its staging to the
+cell that spent it"* (`integration.world_activation`) run the ordinary write paths on a
+`TrackingAllocator` and read the axis back. The assertion that matters in both is
+**`unattributed_bytes == 0`**: before these scopes existed every one of those bytes was in that
+figure and none was in a row. Both cases were verified against the defect — with the scope removed,
+the cell case fails on `unattributed_bytes` (17 824 bytes unattributed) and the type case on the row
+being absent.
+
+### The finding underneath: attribution has no producer *and* no consumer
+
+Closing the producers exposed the bigger half, which no requirement text names and which is the same
+firewall shape M8.c found in two other modules:
+
+* **Nothing in the engine installs a `TrackingAllocator`.** It is the only allocator that records an
+  attribution — `SystemAllocator` records the domain and nothing else — and every reference to it
+  outside this module is in a test. So a scope pushed in a shipping or development *engine* is
+  recorded by nobody today; it is recorded the moment something wraps an allocator, which is what
+  the two new tests do.
+* **`memory_log_attribution_report`, `memory_log_report`, `memory_log_leak_report`,
+  `memory_trace_report`, `memory_trace_pressure`, `memory_trace_budget_violation` and
+  `memory_trace_eviction` have no caller outside this module's own tests.** The requirement's
+  "Allocation and free events, pressure transitions, and budget violations SHALL be emitted into the
+  shared trace" is therefore implemented and unreached: the functions exist, they work, and no frame
+  loop, tool or `just diagnose-*` recipe calls one.
+* **`MemoryDomain::Gpu` is budgeted and nothing reports device memory into it.** `budget.cpp` gives
+  it 768 MiB soft on desktop and 192 MiB hard on the constrained profile; every use of the
+  enumerator in `src/` outside this module is a test fixture. The module that allocates device
+  memory is the one that owes this, which makes it the graphics backends' debt — and those backends
+  moved to **M11.d.5** with Metal and D3D12, so it is recorded here and carried there rather than
+  quietly left.
+
+What closing this needs, stated so the next reader does not re-derive it: one place in the runtime
+that owns a `TrackingAllocator` over the process allocator in development builds, and one caller per
+report — a `just diagnose-memory` recipe and a frame-loop hook are the two obvious ones. It is a
+change to `src/runtime/` and to `just/diagnose.just`, not to this module.
+
+### The row at Complete grade
+
+| Requirement | Verdict | Evidence, and what is missing |
+|---|---|---|
+| Allocator interface | **satisfied** | `allocator.h`: allocate/deallocate/reallocate with alignment, domain and tag on every allocator, no virtual dispatch on the arena's hot path |
+| Memory domains | **satisfied** | `domain.h` + `DomainStats` in every build; the hierarchy is tested for containment |
+| Memory budget tree | **satisfied** | `budget.h`, per-platform profiles, over-subscription refused at startup |
+| Memory pressure levels | **satisfied, with one caller** | `pressure.h` and its history; `update_memory_pressure()` is called from the two RHI devices and from nowhere else, so the level moves only when a graphics backend is up |
+| Allocator propagation | **satisfied** | `scope.h`'s thread-local stack; containers default to `current_allocator()` |
+| Sequence containers | **satisfied** | `Array`, `RingBuffer`, `FixedArray`, `relocatable.h`'s trait, no copy-on-write |
+| Associative containers | **satisfied** | `FlatMap` and `HashMap` with deterministic iteration order for serialization |
+| Handle pools | **satisfied** | `handle_pool.h`, generational, pointer-stable under growth |
+| Chunked component storage | **satisfied** | `chunk_storage.h`, and `src/ecs/` allocates every chunk through it rather than owning a second allocator |
+| Scratch and frame memory | **satisfied** | `frame_memory.h`, `arena.h`; poisoned on reset in development builds |
+| Retirement and frame epochs | **satisfied** | `epoch.h`, one mechanism with several consumers, depth reported |
+| Virtual address reservation | **satisfied** | `virtual_memory.h`, POSIX and Windows implementations both present |
+| Reference-counted shared data | **satisfied** | `ownership.h`'s `Ref`/`RefCounted` with a release policy; the asset system is its heaviest user |
+| Ownership conventions | **satisfied** | `UniquePtr` with allocator-aware deleters; the `mount_owned` note in `vfs.h` is the convention's sharpest edge |
+| General heap is an integration decided by measurement | **satisfied** | the measurement and its numbers are above in this file; `bench/heap_pattern.cpp` is what makes a regression visible |
+| Memory diagnostics | **partial, and the axes are only half of why** | per-tag and per-domain figures, leak reporting with call sites, red zones, poisoning, double-free detection, sampled call-stack capture and the four attribution axes all exist and are tested. **The axes now have producers** (above). What is still unmet: nothing installs a tracking allocator, no report has a caller outside tests, and `MemoryDomain::Gpu` is budgeted with no producer |

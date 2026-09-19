@@ -40,6 +40,7 @@ function(cy_rhi_declare_tests)
         KIND unit
         SOURCES
             "${cy_rhi_tests_dir}/test_access.cpp"
+            "${cy_rhi_tests_dir}/test_interface_gaps.cpp"
             "${cy_rhi_tests_dir}/test_limits.cpp"
             "${cy_rhi_tests_dir}/test_null_device.cpp"
             "${cy_rhi_tests_dir}/test_ray_tracing_capability.cpp"

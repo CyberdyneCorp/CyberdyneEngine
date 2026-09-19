@@ -49,6 +49,10 @@ CASES = (
     Case("sdl-above-platform", "check", False, checks=("sdl",),
          why="a file outside platform/ includes <SDL3/SDL.h>",
          expect=("src/runtime/host.cpp", "sdl:", "SDL3/SDL.h", "platform/")),
+    Case("x11-above-platform", "check", False, checks=("sdl",),
+         why="a file outside platform/ includes <X11/Xlib.h> — the same rule as SDL, widened at "
+             "M11.d when a second implementation of the porting surface landed",
+         expect=("src/scene/viewport.cpp", "sdl:", "X11/Xlib.h", "platform/")),
     Case("gpuapi-above-backends", "check", False, checks=("gpuapi",),
          why="a file above src/backends/ includes <vulkan/vulkan.h>",
          expect=("src/rendering/graph/pass.cpp", "gpuapi:", "vulkan/vulkan.h", "src/backends/")),
