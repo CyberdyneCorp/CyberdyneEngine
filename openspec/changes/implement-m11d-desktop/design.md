@@ -61,6 +61,151 @@ render node — so the criterion would run and pass on evidence about one vendor
 the exact defect `requires` exists to prevent. `where = "ci"` with a `reason` is the mechanism's way
 of saying "another machine", and M10's ledger header already wrote that rule down.
 
+> **The spike measured this paragraph and half of it is false.** This host enumerates **three Vulkan
+> devices from two vendors** plus a software rasteriser — NVIDIA GeForce RTX 5060, Intel UHD
+> Graphics 770 and llvmpipe — and they answer the gap-2 question *differently* (§1.4). So
+> `requires = "gpu"` here is not one vendor's driver; it is three answers, which is better evidence
+> than this paragraph assumed. The conclusion survives with a different reason: **what needs
+> `where = "ci"` is the operating system, not the GPU vendor.** Metal and D3D12 are unreachable here
+> because this is Linux, and no count of local devices changes that.
+
+### 1.4 THE SPIKE'S ANSWER — run before any of section 1
+
+Run 2026-09-19, before any of section 1. Recorded here so the rows that depend on it read it rather
+than re-derive it. The spike itself is `~/cyberdyne-spikes/m11d-desktop-spike/` — outside the
+repository, as every spike since M3 has been — and `RESULT.txt` there carries the numbers in full.
+
+#### 1.4.1 The runner question: **a device on every leg that ran, and not one of them is a GPU**
+
+**Method, stated because it decides how strong this is**: a throwaway GitHub Actions workflow on
+`spike/m11d-device-probe`, whose tree is *only* the workflow and two probe programs, so pushing it
+ran this and none of `ci.yml`. Each probe **creates a device, clears a 64×64 target to a known
+colour, reads the pixel back, and presents.** That is the strong form: a frame that happened, not a
+runner-image manifest saying an SDK is installed. Reproduced identically across two runs
+(`35438833469`, `35439163646`).
+
+| Leg | Device | Drew | Presented | What kind |
+|---|---|---|---|---|
+| `macos-14` (arm64) | `MTLDevice` **yes** | yes, pixel exact | `CAMetalLayer` headless, `presentDrawable` clean | **"Apple Paravirtual device"** |
+| `macos-13` (x86_64) | — | — | — | **no runner was ever allocated**, across both runs |
+| `windows-2022` (x64) | `ID3D12Device` **yes** | yes, pixel exact | swapchain on a hidden HWND, `hr=0` | **"Microsoft Basic Render Driver"** — software |
+| `windows-11-arm` | `ID3D12Device` **yes** | yes, pixel exact | `hr=0` | same, software |
+
+**Neither leg is outcome A.** Both are §1.2's outcome B — *a device that must be labelled what it
+is* — and the labelling matters more than this rung expected, because the runners are missing the
+specific features its own acceptance text names:
+
+- **The macOS device reports no Apple GPU family at all** (`Apple7=0`, `Apple8=0`, `Metal3=0`,
+  `Mac2=1`). **Tile memory and memoryless attachments are Apple-family features**, and they are §7's
+  entire stated reason for refusing MoltenVK. *The thing a native Metal backend is for cannot be
+  exercised on any hosted runner.*
+- **Argument buffers are Tier 1** on that device. The engine's descriptor model is bindless; the
+  bindless path needs Tier 2. So `unit.rhi_metal` can pass there without the descriptor model ever
+  having been exercised.
+- **There is no hardware GPU on any hosted Windows image**, and the trap is sharper than "it is
+  WARP": the probe found **two** adapters, both `Microsoft Basic Render Driver`, and **adapter 0 does
+  not set `DXGI_ADAPTER_FLAG_SOFTWARE`**. The ordinary "pick the first adapter without the software
+  flag" selects a software rasteriser. A D3D12 backend that trusts that flag will report hardware it
+  does not have, and so will its golden images. Task 3.5's "a WARP adapter is labelled WARP in the
+  result" is therefore not enough on its own: **the label has to come from the adapter's identity,
+  not from its flag.**
+- `isDepth24Stencil8PixelFormatSupported = 0` on the Metal device, and `ResourceHeapTier = 2` on the
+  Windows device — the first confirms gap 7's Metal claim first-hand, the second is a *hosted*
+  answer to a question only *hardware* can answer, since Tier 1 hardware still exists.
+
+#### 1.4.2 The interface question: the counts, and three places the seed's own proposal is wrong
+
+Occurrences over `src/` and `tests/`, classified by the area an edit lands in, the seed's own files
+excluded because changing them is the point.
+
+| Gap | Sites that move | What the measurement says |
+|---|---|---|
+| **2** — transient memory | **20**, and **9 files / +46−18 when actually applied** | **prototyped, built and run.** Cheapest of the eight, and it is one of the two with no workaround |
+| **5** — secondaries | **1** | the count is meaningless; the mismatch is structural, below |
+| **3** — `ImageLayout` | **~112**, of which **47 are tests** | **the expensive one by an order of magnitude**, and the seed files it as "workaround: yes" |
+| **4** — queue families | **1** | exactly **one** call to `device->queue_family()` outside tests, in `executor.cpp`. The 51 `src_`/`dst_queue_family` *field* uses stay either way |
+| **1** — shader form | **0** | purely additive; 9 renderer and 9 test sites keep passing `spirv` untouched |
+| **6** — pipeline cache | **0** | **nothing in the tree calls `save_pipeline_cache` or `load_pipeline_cache`** — not one caller, tests included |
+| **7** — `D24UnormS8Uint` | **0** | **the per-format query already exists and is already populated by both backends** |
+| **8** — push constants | **0** | confirmed: genuinely nothing |
+
+**Gap 2 is settled, and the seed's fix is wrong in one word.** The README proposes an opaque
+`MemoryPoolClass` *"the graph only compares for **equality**"*. Measured on this host's three
+devices: NVIDIA answers `0x03` for transient images and `0x1F` for transient buffers — **they
+differ** — while Intel answers `0x07` and llvmpipe `0x01` for everything. An equality would refuse
+to put images and buffers in one pool on the NVIDIA device and **split the transient heap in two**,
+which is a direct loss of the aliasing `heap_bytes` vs `naive_bytes` exists to report. **A meet
+(`a & b`, empty when zero) keeps the proof, loses the Vulkan spelling, and costs nothing extra** —
+and it needs no device, so `compile()`'s "the derivation touches no device" invariant and
+`plan_hash`'s determinism both survive. D3D12 wants the same shape: on **Resource Heap Tier 1** a
+heap holds buffers *or* textures and never a mix, which is the same partition Vulkan spells as a
+bitmask.
+
+What "an afternoon" turned out to be: **9 files, +46/−18 lines of which 22 are the doc comment, 18
+objects rebuilt, zero test sources changed, zero passes changed, zero files under `src/rendering/`
+outside the graph** — and then `unit.render_graph` 29/29, `unit.rhi` 29/29,
+`integration.render_graph_scale` 13/13 and `smoke.vulkan_frame` 4/4 **on the real RTX 5060**,
+including *"transient aliasing reduces the device's own reported heap usage"*, which is the case
+this change could have broken. The patch is `out/gap2-prototype.patch`.
+
+**Gap 5's proposed fix does not address the actual mismatch, and the real fix is cheaper.** The
+README proposes stating *"the pass is begun before its secondaries are recorded"* as a precondition.
+Read against the tree that is not the shape of the problem:
+
+- `executor.cpp:337-382` records **every** secondary for a submit, one per pass, on job workers,
+  **before the primary loop reaches any of them**;
+- `frame_recorder.cpp:209,232,254,287` — the pass callback itself calls
+  `begin_rendering`/`end_rendering`, so **each secondary contains a whole render pass**;
+- `executor.cpp:385-425` records the barriers into the **primary**, between passes.
+
+`MTLParallelRenderCommandEncoder` is parallelism **within** one render pass. This engine's is
+parallelism **across** passes. They are different axes and no ordering precondition converts one
+into the other; Metal's actual equivalent is one `MTLCommandBuffer` per pass with `-enqueue`
+establishing order, which is a different allocation strategy rather than a reordering. And
+`ExecuteOptions::parallel_recording` **defaults to `false`** (`executor.h:66`), so the feature is
+opt-in and off. **The honest fix is a capability — one term at `executor.cpp:334` — not a
+precondition the null backend polices.** Task 1.2 should be rewritten to that before it is worked.
+
+**Gaps 6 and 7 are not interface work; they are M8.c's firewall finding in a third module.**
+`capabilities.h:74-96` already defines `FormatFeature`, `DeviceCapabilities::format_features()`
+already answers per format, and `vulkan_instance.cpp:616-642` and `null_device.cpp:186-194` already
+populate it for **every** format — and **nothing outside `src/backends/rhi/` calls it.** Every depth
+path in the engine defaults to `D32Sfloat`, which Metal supports, so gap 7 is inert today. The
+pipeline cache is the same shape and worse: two interface methods, four implementations, **zero
+callers**, and a requirement — *"the cache is persisted across runs, so a warm start compiles
+nothing"* — that is therefore unimplemented above the RHI. **Noticing these is worth more than the
+signature changes**, and neither belongs in a list called "the eight gaps blocking Metal".
+
+#### 1.4.3 What the answer does to the shape of the next two rungs
+
+The interface work of section 1 is **cheaper than this rung assumed and differently distributed**:
+gap 2 is settled, gaps 1, 6, 7 and 8 move nothing, gap 4 moves one call, and **gap 3 is where all
+the cost actually is** — the one the seed files as workaroundable. Section 1 should be re-ordered to
+match the measurement rather than the table.
+
+The backend work of sections 2 and 3 is **verifiable on a hosted runner only in a form that stops
+short of what its criteria claim**: compile, validate, create a device, draw, present, read a pixel
+back — all real, all reportable — but **no Apple-family feature, no argument-buffer Tier 2, no
+hardware of any vendor, and therefore no golden-image parity against references photographed on this
+project's own hardware.** That is a *labelled software-and-paravirtual* claim plus a set of declared
+deferrals, and it is what the rung those sections move to has to be written against.
+
+**Where sections 2 and 3 go, and why.** They are **not deleted and not descoped** — they are moved
+out of M11.d into **a rung of their own inserted between M11.d and M11.e**, and
+`m11d:golden-images-across-three-backends` moves with them so that rung cannot close on "it compiles
+somewhere". The reason is the machine, not the plan: **Metal cannot be compiled on Linux and there is
+no Apple toolchain here, and D3D12 cannot be compiled on Linux either**, so neither backend could be
+written or judged where this rung is being worked. Half-building them here would produce exactly the
+defect this project has paid for nine times — a check that cannot fail. What stays in M11.d is
+everything this host can actually check: the interface (§1, and 1.4.2 says what that now costs), a
+**second native platform backend on Linux** — which is what proves the abstraction carries no SDL
+assumption and needs no Apple hardware — the core rows the port audits, the four absent quality
+gates, and `samples/11-ship` packaged and drawing. **1.4.1 is the evidence the moved rung is
+written against**, and it says that rung is *partly* verifiable: real devices that draw and present,
+labelled paravirtual and software, with the Apple-family features, argument-buffer Tier 2, hardware
+parity and Resource Heap Tier 1 as **declared deferrals** rather than criteria a hosted leg can
+answer.
+
 ## 2. The interface is the milestone; the backends are its consequence
 
 The named risk of this rung is **not** that Metal or D3D12 is hard. It is that

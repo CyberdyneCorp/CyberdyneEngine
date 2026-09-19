@@ -13,7 +13,7 @@ one that has ever created a device.
 
 ## 0. The spike — the eight RHI gaps, and whether a hosted runner has a device
 
-- [ ] 0.1 **Measure, do not assume: each of the eight proposed interface changes applied to the two
+- [x] 0.1 **Measure, do not assume: each of the eight proposed interface changes applied to the two
       backends that exist.** `src/backends/rhi-metal/README.md` proposes a fix for each gap and
       `metal_gaps()` returns them as data; what none of them has is a cost. Apply each against
       `VulkanDevice`, `NullDevice` and `src/rendering/graph/` and count what moves — the call sites
@@ -21,7 +21,7 @@ one that has ever created a device.
       execution, `device.h:254/305/336` and `device.h:182` for the interface itself). **A change that
       cannot be made cleanly on the two backends that exist will not be made cleanly on four**, and
       that is the finding
-- [ ] 0.2 **The runner question, measured before anything depends on it.** Does a hosted
+- [x] 0.2 **The runner question, measured before anything depends on it.** Does a hosted
       `macos-14` runner create a `MTLDevice` and present a `CAMetalLayer`, and does a hosted
       `windows-11-arm` / `windows-2022` runner create a D3D12 device? **Name what answers**: a WARP
       adapter is a D3D12 device and is not a GPU, and a paravirtualised Metal device is not the
@@ -30,11 +30,11 @@ one that has ever created a device.
       software/paravirtual device that is labelled as one, or no device and a compile-and-validate
       claim with the image criterion **reported NOT EVALUATED**, exactly as `m0:three-platforms` is
       reported today
-- [ ] 0.3 State plainly what the spike cannot answer on this host, through the ledger's own
+- [x] 0.3 State plainly what the spike cannot answer on this host, through the ledger's own
       `requires`/`where` mechanism rather than as a sentence. This host has one operating system and
       one GPU vendor; `where = "ci"` is the mechanism's way of saying "another machine", and NOT
       EVALUATED is never a pass
-- [ ] 0.4 Commit the spike outside the repository — as M3's, M5.5's, M6's, M7's, M8.b's, M9's and
+- [x] 0.4 Commit the spike outside the repository — as M3's, M5.5's, M6's, M7's, M8.b's, M9's and
       M10's were, because a prototype under `docs/` fails `just quality-layers` — and record its
       answer in `design.md` §1, so the rows that depend on it read it rather than re-derive it
 
