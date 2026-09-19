@@ -187,23 +187,44 @@ with nothing to check.
       change that adds the backend is the evidence, and a script that reads it is the criterion. **If
       the port does change one of those four, that change IS the finding** and it is worth more than
       the Complete cell — `platform/README.md` already says "if it does, the abstraction is wrong"
-- [ ] 4.3 `samples/00-empty` and the M3 golden images run on the native backend, which is the M11 exit
+- [x] 4.3 `samples/00-empty` and the M3 golden images run on the native backend, which is the M11 exit
       criterion stated in the ROADMAP word for word
       - **The sample half is done and measured**: `cy_sample_empty --platform native --frames 120`
         opens a real X11 window, runs 120 frames and 119 simulation ticks, exits 0, and writes its
         trace to the same XDG path the SDL3 backend uses. All four backends — `sdl3`, `native`,
         `headless`, `stub` — run it, which is task 4.5's evidence as well
-      - **The golden-image half cannot be satisfied as written, and that is a FINDING about the
-        criterion rather than about the backend.** `tests/render/` links NO platform target and uses
-        no `DisplayServer`: the goldens render offscreen through Vulkan with no window, so no
-        platform backend can change them and "on the native backend" names nothing. The claim a
-        native backend CAN make about M3's images is that the sample which produces them runs on it,
-        and that is the half above. Rewriting the criterion is the ledger owner's call, not this
-        task's
-      - Independently, `cy_test_render_golden` **does not compile on this tree** as of this writing,
-        from section 1's in-flight `ImageLayout` removal (`samples/03-first-light/renderer.h:152`,
-        `renderer.cpp:558`) — a peer's change, not this port's, and it is why no golden run could be
-        attempted at all
+      - **The golden half needed the criterion read twice, and the second reading is satisfiable.**
+        The golden SUITE cannot carry it: `tests/render/CMakeLists.txt` links NO platform target and
+        no case there constructs a `DisplayServer` — the frames are rendered offscreen through
+        Vulkan with no window and no swapchain — so no platform backend can change one texel of
+        `render.golden`, and forcing a window into it would make every machine that runs the render
+        suites need a display, which is the opposite of the argument `design.md` §1 and
+        `tests/render/README.md` make. **But the golden IMAGE is a different object from the golden
+        suite.** `tests/render/references/first_light.png` is the picture `samples/03-first-light`
+        draws, and `test_golden_frame.cpp` says so itself — *"`--frames 1` on the sample is the same
+        frame"* — and the sample, unlike the suite, is HOSTED: it owns a `cy::Platform`, a
+        `cy::DisplayServer`, a `cy::Runtime` and the host loop, and until now that pair was
+        hardwired to SDL3
+      - **Done, and measured on hardware.** `cy_sample_first-light` gained the same
+        `--platform headless|sdl3|native|stub` selector `samples/00-empty` has;
+        `samples/03-first-light/golden_legs.py` runs every leg at the reference's own 192x108 and
+        `--frames 1`, and `smoke.first_light_legs` is the CTest entry that runs it (27.9 s, passed).
+        **All four legs produced a capture that is EXACTLY the committed reference** — 62208 bytes
+        of RGB, `md5 a23a1510b36bc8e9510245895fda59ab`, zero differing texels, no tolerance applied
+        — and the native leg reports `platform=linux-native display=linux-x11`, the same display
+        server `docs/design/images/m11d-ship-native.manifest` names. The legs are also compared
+        against **each other**, which is the claim that survives a regenerated reference
+      - **The check can go red**: the same binary with `--no-shadows` differs from the reference in
+        129 texels, worst channel 132, which `golden_legs.py` reports as a GAP and a non-zero exit
+      - **It does not claim a platform backend PRESENTED the frame**, because this sample renders
+        offscreen and always has. That claim is `samples/11-ship`'s (task 8.2): two captures through
+        `platform/linux-native` and `platform/desktop-sdl3`, byte-identical, manifests differing in
+        one line. The two measurements are complementary — 11-ship proves a PRESENTED frame does not
+        depend on the display server, this one proves the M3 REFERENCE IMAGE does not depend on the
+        platform beneath it — and neither replaces the other
+      - The earlier note that `cy_test_render_golden` would not compile from section 1's in-flight
+        `ImageLayout` removal is **resolved**: the suite builds and is green on this tree in
+        `build/m11d-golden` — 5 cases, 50 assertions, 0 failed
 - [x] 4.4 **The stub platform**, which is the porting surface's own proof: no mouse, no resizable
       window, no filesystem writable outside the user mount, and **no ownership of the main loop** —
       it drives frames through `runtime.tick()`, the entry point `platform/host/` already calls
