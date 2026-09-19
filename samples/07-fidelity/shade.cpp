@@ -20,7 +20,6 @@ using rendering::FallbackOptions;
 using rendering::FallbackResult;
 using rendering::PageEntry;
 using rendering::PageLookup;
-using rendering::PageState;
 using rendering::ShadowAddress;
 using rendering::ShadowAddressSpace;
 using rendering::ShadowBasis;
@@ -72,7 +71,7 @@ constexpr u64 kNoPage = ~static_cast<u64>(0);
         const f32 mapped = (x * ((2.51F * x) + 0.03F)) / ((x * ((2.43F * x) + 0.59F)) + 0.14F);
         const f32 clamped = math::clamp(mapped, 0.0F, 1.0F);
         const f32 encoded = std::pow(clamped, 1.0F / 2.2F);
-        return static_cast<u32>((encoded * 255.0F) + 0.5F) & 0xFFU;
+        return static_cast<u32>(std::lround(encoded * 255.0F)) & 0xFFU;
     };
     return 0xFF000000U | (channel(linear.z) << 16U) | (channel(linear.y) << 8U) | channel(linear.x);
 }
@@ -512,8 +511,9 @@ private:
             ++report.unreconstructed;
             continue;
         }
-        const Vec2 centre{static_cast<f32>(pixel % capture.width) + 0.5F,
-                          static_cast<f32>(pixel / capture.width) + 0.5F};
+        const u32 column = pixel % capture.width;
+        const u32 row = pixel / capture.width;
+        const Vec2 centre{static_cast<f32>(column) + 0.5F, static_cast<f32>(row) + 0.5F};
         Expected<rendering::vg::SurfaceAttributes, Error> attributes =
             rendering::vg::reconstruct_surface(
                 entry->geometry, scene.instances[entry->record.instance], entry->record,

@@ -192,6 +192,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <numbers>
 
 namespace cy::render_test {
 namespace {
@@ -239,7 +240,7 @@ constexpr f32 kElevationHighDegrees = 90.0F;
 /// horizon is a horizon.
 constexpr f32 kEyeAltitudeMetres = 2.0F;
 
-constexpr f32 kPi = 3.14159265358979323846F;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 [[nodiscard]] f32 radians_of(f32 degrees) noexcept {
     return degrees * (kPi / 180.0F);
@@ -948,8 +949,7 @@ void measure_tolerance() {
     u32 worst_between_runs = 0;
     u32 worst_under_one_ulp = 0;
     u32 moved_under_one_ulp = 0;
-    for (u32 which = 0; which < 4; ++which) {
-        const TimeOfDayCase& when = kTimes[which];
+    for (const TimeOfDayCase& when : kTimes) {
         Array<GridVertex> grid(allocator);
         f32 mean_luminance = 0.0F;
         CY_REQUIRE(compose_grid(sky_fixture, when, grid, mean_luminance).has_value());
