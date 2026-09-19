@@ -249,14 +249,30 @@ source = "tasks 4, core-platform-abstraction"
 kind = "command"
 run = '''
 set -eo pipefail
-impls=$(grep -rln "class .*DisplayServer\|: public .*DisplayServer\|DisplayServer final" \
-    --include='*.h' --include='*.cpp' --include='*.mm' src/ | sort || true)
+# THIS CRITERION WAS REWRITTEN AT M11.d's CLOSE PHASE BECAUSE IT COULD NOT FAIL. As first written it
+# grepped `src/` for anything matching "DisplayServer", and every platform implementation in this
+# repository lives under `platform/` — so the only file it ever matched was the ABSTRACT INTERFACE
+# HEADER, src/core/platform/include/cy/core/platform/display_server.h, which is not SDL and so
+# answered "1 non-SDL implementation" on a tree with no native backend at all. Checked against the
+# commit this rung opened on (ebdf8d5): it passed there, identically, which makes it the tenth check
+# in this project unable to fail. `just roadmap-falsify` had already classified it "no mutation".
+#
+# WHAT IT ASKS NOW is the claim in the rung's own words: SDL3 is not the only way this engine opens a
+# window. HEADLESS IS EXCLUDED DELIBERATELY — it shipped before this rung and counting it would make
+# the check green on the tree the rung opened on, which is the same defect in a new place. What must
+# exist is a DisplayServer subclass that is neither SDL3's nor the pre-existing headless one.
+impls=$(grep -rln ": public DisplayServer" \
+    --include='*.h' --include='*.cpp' --include='*.mm' platform/ src/ | sort || true)
 count=$(printf '%s' "$impls" | grep -c . || true)
 echo "$count DisplayServer implementation(s):"
 printf '%s\n' "${impls:-  none}"
-non_sdl=$(printf '%s\n' "$impls" | grep -vi "sdl" | grep -c . || true)
-echo "  of which non-SDL: $non_sdl"
-test "$non_sdl" -ge 1
+ported=$(printf '%s\n' "$impls" | grep -vi "sdl" | grep -vi "headless" | grep -c . || true)
+echo "  of which neither SDL3 nor the pre-existing headless backend: $ported"
+test "$ported" -ge 1 || {
+    echo "SDL3 (and headless) are still the only DisplayServer implementations — nothing has proved"
+    echo "  the abstraction carries no SDL assumption, because nothing has implemented it twice"
+    exit 1
+}
 '''
 ci_job = "milestone-m11d"
 
