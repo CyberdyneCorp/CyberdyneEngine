@@ -77,10 +77,7 @@ constexpr MetalGapRecord kGaps[] = {
      "add an optional `Span<const u8> native` beside the SPIR-V and a `native_shader_format()` "
      "capability, so a cook can produce the form the device actually consumes",
      true, MetalGapStatus::Closed,
-     "M11.d task 1.3: `ShaderModuleDescription` carries `Span<const u8> native` and a "
-     "`ShaderFormat native_format`; `DeviceCapabilities::native_shader_format()` says which form a "
-     "device consumes; `validate_shader_module()` enforces exactly one of the two for every "
-     "backend at once. Zero existing call sites moved — SPIR-V is still the interchange form"},
+     ""},
     {MetalGap::TransientMemoryTypeBits,
      "Device::reserve_transient_memory(u64 bytes, u32 memory_type_bits)",
      "",  // nothing at all: MTLHeap picks one MTLStorageMode and there is no bitmask of types
