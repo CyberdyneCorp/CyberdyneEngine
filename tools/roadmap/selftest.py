@@ -2117,6 +2117,7 @@ def main() -> int:
         test_falsifiability_rules(_area(root, "falsify-rules"))
         test_absent_recipe_rule(_area(root, "absent-recipe"))
         test_requirements_coverage(_area(root, "requirements-coverage"))
+        test_a_wrapped_case_name_is_still_that_case(_area(root, "wrapped-case"))
         test_falsifiability_reads_a_redirection(_area(root, "falsify-redirect"))
         test_falsifiability_digest(_area(root, "falsify-digest"))
         test_falsifiability_reconciliation(_area(root, "falsify-reconcile"))
