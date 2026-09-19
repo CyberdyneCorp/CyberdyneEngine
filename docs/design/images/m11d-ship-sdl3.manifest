@@ -1,0 +1,15 @@
+coverage of samples/11-ship
+  build              441409b6711b4d395608137811f849e64e53ff20178c8894140e1a65ab0d2268
+  LINUX / SDL3             BUILT          THIS HOST
+  LINUX / NATIVE X11       BUILT          PLATFORM/LINUX-NATIVE, NO SDL BENEATH IT
+  MACOS / METAL            NOT EVALUATED  NO APPLE TOOLCHAIN ON THIS HOST
+  WINDOWS / D3D12          NOT EVALUATED  LINUX HOST - MOVED TO A RUNG OF ITS OWN
+  GPU VENDORS              1              ONE VENDOR, ONE DRIVER, ONE OS
+  display server     desktop-sdl3
+  rhi backend        vulkan
+  device             NVIDIA GeForce RTX 5060
+  device class       hardware by name (this engine has no device-type query: M11.d finding, present.cpp)
+  swapchain          Bgra8Srgb 1280x720
+  frames presented   90
+  frame plan         1 submit(s), 2 pass(es), 2 derived barrier(s), plan 0x74d32a3e5faa067b
+  validation errors  180

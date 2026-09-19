@@ -73,7 +73,8 @@ public enum Runtime {
             // Reported through the engine's own last-error slot rather than to stderr, so the
             // loader's message and the module's message are the same sentence. `native-abi`:
             // "Entry point returns false" is reported and aborts nothing.
-            let message = "this module was built against ABI \(ABI.major).\(ABI.minor) with a "
+            let message =
+                "this module was built against ABI \(ABI.major).\(ABI.minor) with a "
                 + "\(ABI.interfaceTableSize)-byte table; the engine exports "
                 + "\(candidate.abiMajor).\(candidate.abiMinor) with \(candidate.tableSize) bytes"
             message.withCString { text in

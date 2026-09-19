@@ -239,13 +239,17 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       undocumented-symbol gate — which is the "documentation gate" the M11 exit criteria name.
       `just/quality.just` today has `format`, `lint`, `layers`, `identity`, `abi` and `specs` and
       none of these four.
-      **DONE, with one exception recorded rather than hidden.** `tools/quality/` holds all four —
-      `just quality-swift-format`, `quality-licence`, `quality-spelling`, `quality-docs` — each in
-      `ci.yml`'s `quality` job, and `just quality-gates-selftest` breaks what each checks in a tree
-      derived from the live one and requires a red. **13 of its 14 cases were watched failing on
-      this host; the 14th, `swift-format-break`, needs a Swift toolchain this Linux machine does not
-      have and is reported NOT EVALUATED.** `--strict`, which CI runs on the leg that installs
-      Swift 6, refuses to pass with it unrun. Two gates carry a numbered, shrink-only backlog
+      **DONE.** `tools/quality/` holds all four — `just quality-swift-format`, `quality-licence`,
+      `quality-spelling`, `quality-docs` — each in `ci.yml`'s `quality` job, and
+      `just quality-gates-selftest` breaks what each checks in a tree derived from the live one and
+      requires a red. **All 14 cases were watched failing on this host.**
+      **A CORRECTION WORTH RECORDING:** the swift-format gate was first written as unrunnable here,
+      because `command -v swift` finds nothing — and that was wrong. There is a **Swift 6.3.3**
+      toolchain installed through `swiftly`, reachable only from a login shell, which
+      `bindings/swift/tools/cy_swift_module.py` has resolved that way since M4. The gate now
+      resolves identically; it found **all 34 Swift files unformatted**, they were reformatted, and
+      the fourteenth case runs here. *A check that reports "not available" is as wrong as one that
+      reports a false pass, if it looked in the wrong place.* Two gates carry a numbered, shrink-only backlog
       (2 582 of 2 584 files without an SPDX header, 540 of 2 472 public symbols undocumented) and a
       baseline entry that has since been FIXED also fails, which is what stops a backlog being an
       allowlist — `tools/quality/README.md` §"the baseline is a snapshot" names what the close owes
@@ -338,17 +342,84 @@ not change**, which is a first-hand reading of them whether or not anybody calls
 
 ## 8. The artefact — `samples/11-ship`, the desktop half
 
-- [ ] 8.1 One project — **built, cooked, packaged and launched from a single recipe** on each desktop
-      target. `samples/` holds fifteen entries today and not one of them is a packaged project
-- [ ] 8.2 It **draws**: through the native platform backend on the platform that has one, and through
-      **Vulkan and the null backend**, which are the graphics backends this rung has. Drawing it
-      through three is M11.d.5's artefact rather than this one's, and this task does not wait on it
-- [ ] 8.3 **The artefact is honest about its own coverage on its own face**, the way M10's was about
-      its 122 ms: which legs ran, which reported NOT EVALUATED and why, and **which device answered**
-      on each — hardware, paravirtual or WARP
-- [ ] 8.4 The package carries its provenance (7.5) and the launch reproduces from it
-- [ ] 8.5 **Capture it.** One screenshot per backend under `docs/design/images/`, each labelled with
-      the backend and the device that produced it. A diagram is allowed and **SHALL be labelled one**
+**Done, with one gap the artefact reports rather than hides.** `samples/11-ship/` is the first
+packaged project in this tree and the first thing in this repository ever to present a frame to a
+window: `Device::create_swapchain` and `GraphExecutor`'s `wait_acquire`/`signal_present` have existed
+since M3 with no caller anywhere. `just run-ship` is the one recipe; `smoke.ship` is the headless
+half; `samples/11-ship/README.md` argues the shape.
+
+- [x] 8.1 One project — **built, cooked, packaged and launched from a single recipe** on each desktop
+      target. `samples/` holds fifteen entries today and not one of them is a packaged project.
+      **Done**: `just run-ship` runs `cy_build` over a four-node graph (two imports, a cook, a
+      package), proves a cold and a cache-warm build produce byte-identical manifests, installs it,
+      **verifies** every chunk against the manifest in force, and launches `cy_sample_ship` out of
+      that installation. The card is read **by logical name**: act 3 changes one line of content,
+      watches `import:palette` come from the cache while `import:card` re-runs, reinstalls, and the
+      same binary draws a different card — 2277 bytes before, 2363 after, no recompile
+- [x] 8.2 It **draws**: through the native platform backend section 4 built, and through SDL3.
+      **Done, on hardware**: 90 frames presented on each leg through `linux-x11` and through
+      `desktop-sdl3`, on an NVIDIA GeForce RTX 5060, at `Bgra8Srgb 1280x720`. `--platform both` runs
+      the same binary through each in turn, and **both legs report the identical plan hash**
+      `0x74d32a3e5faa067b` — one submit, two passes, two derived barriers — which is the sharpest
+      form the "no SDL assumption" claim has taken: the frame is byte-identical and only the object
+      that opened the surface differs. **One interface addition was needed and it is the finding**:
+      a `VkSurfaceKHR` is created by the platform against a `VkInstance` and nothing in
+      `cy::rhi::Device` exposed one (`native_handle()` is the VkDevice), so
+      `vulkan_backend.h` grew `vulkan_instance_handle(Device&)` — on the *backend*, never on
+      `Device`, so it cannot become an identity query the renderer branches on
+- [x] 8.3 **The artefact is honest about its own coverage on its own face.** **Done**: the window
+      carries a five-row coverage table — SDL3 **BUILT**, native X11 **BUILT**, Metal **NOT
+      EVALUATED**, D3D12 **NOT EVALUATED**, GPU vendors **1** — and the device that answered is
+      drawn onto the card by `present.cpp` once it is known. **BUILT is deliberately not RAN**: the
+      card is composed before a frame exists, so a row saying RAN would be a claim made before its
+      evidence. The device is classified from its **identity** and never from a flag, which is
+      §1.4.1's finding applied: this engine has **no device-type query at all** — `DeviceCapabilities`
+      carries `device_name()` and `driver_version()` and nothing that says discrete, integrated or
+      software — and the report says that is what it read
+- [x] 8.4 The package carries its provenance (7.5) and the launch reproduces from it. **Done**: the
+      installed manifest carries build identity, project, revision, platform, profile, toolchain
+      fingerprint and content version, and the LAUNCH reads all of them back out of the installation
+      rather than out of the driver's memory of what it asked for; `ship.py` checks the revision
+      against the one the build was given
+- [x] 8.5 **Capture it.** **Done**: `docs/design/images/m11d-ship-sdl3.png` and
+      `m11d-ship-native.png`, each with a `.manifest` beside it naming the display server, the RHI
+      backend, the device, its class, the swapchain format, the frame plan and the validation count.
+      Both are **read back off the device after presentation**, not composed on the host — the
+      program says which in its own output, because a picture of what was going to be drawn is a
+      different claim from a picture of what was drawn. One per **platform leg** rather than per
+      graphics backend: there is one graphics backend in this rung and two ways of opening a window
+
+### What section 8 found, and what it did not close
+
+**The frame trips two synchronisation-validation hazards per frame, on both legs, with an identical
+plan hash — so they are the render graph's and not the window system's.** The artefact reports them
+as a GAP: `cy_sample_ship` exits **3** ("it drew and tripped validation" — neither a pass nor a
+fallen-over run) and `ship.py` records a gap, which `artefact.Report.exit_code` cannot turn back into
+a zero.
+
+1. **`SYNC-HAZARD-PRESENT-AFTER-WRITE`**, one per frame, **measured to one token.**
+   `access.cpp`'s `Present` row is `{Stage::None, AccessFlags::None, ImageUse::Presentable, …}` with
+   a comment arguing the semaphore orders the transition instead of a destination stage. Syncval
+   disagrees — a `dstStageMask` of `NONE` makes the layout-transition write available to nothing, and
+   it reports `write_barriers: 0`. **Setting that row's stage to `Stage::AllCommands` removes every
+   one of these** (measured: 10 of 10 gone on a 10-frame run, the other hazard untouched). **The edit
+   was made, measured, and REVERTED**, md5-verified: that row is `rhi-and-render-graph`'s own
+   vocabulary and its comment is a deliberate design statement, so section 8 owes it the measurement
+   and not an edit. Section 1's, or M11.d.5's
+2. **`SYNC-HAZARD-WRITE-AFTER-READ` against `PRESENT_ACQUIRE_READ`**, one per frame, **not fixed by
+   anything this section can reach.** Two candidates were tried and measured and neither moved it:
+   widening the acquire semaphore's wait stage (`SubmitInfo::wait_binary_stage` defaults to
+   `ColorAttachmentOutput`, which is right only for a frame whose first touch of the swapchain image
+   is a render pass and wrong for this one, whose first touch is a copy — syncval's `read_barriers`
+   widened to every stage and the hazard stayed), and importing the image as `ImageUse::Presentable`
+   rather than `Undefined`. Both experimental edits were reverted. The acquire boundary needs an
+   expression the graph does not currently have; the wait-stage default is worth changing on its own
+   merits and is named here so the next reader does not re-derive it
+
+**A third finding, smaller and already fixed here**: `GraphExecutor` releases its transient pool in
+its destructor, so an executor declared at function scope outlives the device it holds. It segfaulted
+on the native X11 leg and did **not** on the SDL3 one — the same dangling pointer, one allocator's
+luck apart. `present.cpp` scopes it, and says so where it does.
 
 ## 9. Records and gates
 

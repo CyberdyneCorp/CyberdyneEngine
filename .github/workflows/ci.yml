@@ -905,8 +905,9 @@ jobs:
       # THE SELFTEST IS THE POINT. This repository has shipped nine checks unable to go red, and
       # M9's gate found one that had passed 44 of 44 runs with its enforcement point deleted. The
       # last step here breaks what each of the four checks and requires it to refuse — `--strict`,
-      # so that the swift-format case, which cannot run on a machine without a Swift toolchain,
-      # cannot be quietly skipped on the one leg that HAS one.
+      # so that a case which cannot run on a machine without a Swift toolchain cannot be quietly
+      # skipped on a leg that HAS one. All fourteen cases run on the machine M11.d was worked on;
+      # `--strict` is what keeps that true here.
       - name: Install the spelling dictionary
         run: pip install codespell==2.4.3
       - name: Licence headers

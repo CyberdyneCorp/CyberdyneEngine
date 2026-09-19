@@ -102,14 +102,16 @@ public enum ModuleBootstrap {
     fileprivate static func runShutdown(_ level: InitLevel) { finalizer?(level) }
 }
 
-private let moduleInitialize: @convention(c) (CyEngine?, CyInitLevel, UnsafeMutableRawPointer?)
-    -> Void = { _, level, _ in
-        guard let level = InitLevel(rawValue: level.rawValue) else { return }
-        ModuleBootstrap.runInitialize(level)
-    }
+private let moduleInitialize:
+    @convention(c) (CyEngine?, CyInitLevel, UnsafeMutableRawPointer?)
+        -> Void = { _, level, _ in
+            guard let level = InitLevel(rawValue: level.rawValue) else { return }
+            ModuleBootstrap.runInitialize(level)
+        }
 
-private let moduleShutdown: @convention(c) (CyEngine?, CyInitLevel, UnsafeMutableRawPointer?)
-    -> Void = { _, level, _ in
-        guard let level = InitLevel(rawValue: level.rawValue) else { return }
-        ModuleBootstrap.runShutdown(level)
-    }
+private let moduleShutdown:
+    @convention(c) (CyEngine?, CyInitLevel, UnsafeMutableRawPointer?)
+        -> Void = { _, level, _ in
+            guard let level = InitLevel(rawValue: level.rawValue) else { return }
+            ModuleBootstrap.runShutdown(level)
+        }

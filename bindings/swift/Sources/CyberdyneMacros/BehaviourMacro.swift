@@ -28,10 +28,12 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
         ("onAfterReload", ".afterReload"), ("onMigrate", ".migrate"),
     ]
 
-    public static func expansion(of node: AttributeSyntax,
-                                 providingMembersOf declaration: some DeclGroupSyntax,
-                                 conformingTo protocols: [TypeSyntax],
-                                 in context: some MacroExpansionContext) throws -> [DeclSyntax] {
+    public static func expansion(
+        of node: AttributeSyntax,
+        providingMembersOf declaration: some DeclGroupSyntax,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
         guard let classDecl = declaration.as(ClassDeclSyntax.self) else {
             context.fail(node, .behaviourNeedsClass)
             return []
@@ -51,12 +53,15 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
         ]
     }
 
-    public static func expansion(of node: AttributeSyntax,
-                                 attachedTo declaration: some DeclGroupSyntax,
-                                 providingExtensionsOf type: some TypeSyntaxProtocol,
-                                 conformingTo protocols: [TypeSyntax],
-                                 in context: some MacroExpansionContext) throws
-        -> [ExtensionDeclSyntax] {
+    public static func expansion(
+        of node: AttributeSyntax,
+        attachedTo declaration: some DeclGroupSyntax,
+        providingExtensionsOf type: some TypeSyntaxProtocol,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws
+        -> [ExtensionDeclSyntax]
+    {
         guard declaration.is(ClassDeclSyntax.self) else { return [] }
         // Empty when the class already states the conformance: emitting it twice is an error, and a
         // game that writes `: Behaviour, BehaviourClass` is not wrong.
@@ -65,12 +70,15 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
     }
 
     /// The `@Export`ed property names, in declaration order.
-    static func exportedProperties(of declaration: ClassDeclSyntax,
-                                   in context: some MacroExpansionContext) -> [String] {
+    static func exportedProperties(
+        of declaration: ClassDeclSyntax,
+        in context: some MacroExpansionContext
+    ) -> [String] {
         var names: [String] = []
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self),
-                  hasAttribute("Export", on: variable.attributes) else { continue }
+                hasAttribute("Export", on: variable.attributes)
+            else { continue }
             if variable.bindingSpecifier.tokenKind == .keyword(.let) {
                 context.fail(variable, .behaviourExportMustBeVar)
                 continue
@@ -86,21 +94,22 @@ public struct BehaviourMacro: MemberMacro, ExtensionMacro {
 
     /// The `CallbackSet` members for the lifecycle functions this class declares.
     static func implementedCallbacks(of declaration: ClassDeclSyntax) -> [String] {
-        let declared = Set(declaration.memberBlock.members.compactMap { member in
-            member.decl.as(FunctionDeclSyntax.self)?.name.text
-        })
+        let declared = Set(
+            declaration.memberBlock.members.compactMap { member in
+                member.decl.as(FunctionDeclSyntax.self)?.name.text
+            })
         return callbacks.filter { declared.contains($0.0) }.map(\.1)
     }
 
     static func storageAccessor(_ names: [String]) -> DeclSyntax {
         let cases = names.map { "        case \"\($0)\": return _\($0)" }.joined(separator: "\n")
         return """
-        public func exportedStorage(named name: String) -> (any ExportedStorage)? {
-            switch name {
-        \(raw: cases)
-            default: return nil
+            public func exportedStorage(named name: String) -> (any ExportedStorage)? {
+                switch name {
+            \(raw: cases)
+                default: return nil
+                }
             }
-        }
-        """
+            """
     }
 }

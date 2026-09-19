@@ -36,31 +36,31 @@ final class BehaviourMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-            final class Player: Behaviour {
-                @Export var speed: Float = 6.0
-                override func onFixedUpdate(_ dt: Double) {}
+                final class Player: Behaviour {
+                    @Export var speed: Float = 6.0
+                    override func onFixedUpdate(_ dt: Double) {}
 
-                public static let behaviourName: String = "Player"
+                    public static let behaviourName: String = "Player"
 
-                public static let behaviourSchema: UInt32 = 1
+                    public static let behaviourSchema: UInt32 = 1
 
-                public static let behaviourCallbacks: CallbackSet = [.fixedUpdate]
+                    public static let behaviourCallbacks: CallbackSet = [.fixedUpdate]
 
-                public static let exportedNames: [String] = ["speed"]
+                    public static let exportedNames: [String] = ["speed"]
 
-                public func exportedStorage(named name: String) -> (any ExportedStorage)? {
-                    switch name {
-                        case "speed":
-                        return _speed
-                    default:
-                        return nil
+                    public func exportedStorage(named name: String) -> (any ExportedStorage)? {
+                        switch name {
+                            case "speed":
+                            return _speed
+                        default:
+                            return nil
+                        }
                     }
                 }
-            }
 
-            extension Player: BehaviourClass {
-            }
-            """,
+                extension Player: BehaviourClass {
+                }
+                """,
             macroSpecs: macros)
     }
 
@@ -74,28 +74,28 @@ final class BehaviourMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-            final class Silent: Behaviour {
+                final class Silent: Behaviour {
 
-                public static let behaviourName: String = "Renamed"
+                    public static let behaviourName: String = "Renamed"
 
-                public static let behaviourSchema: UInt32 = 4
+                    public static let behaviourSchema: UInt32 = 4
 
-                public static let behaviourCallbacks: CallbackSet = []
+                    public static let behaviourCallbacks: CallbackSet = []
 
-                public static let exportedNames: [String] = []
+                    public static let exportedNames: [String] = []
 
-                public func exportedStorage(named name: String) -> (any ExportedStorage)? {
-                    switch name {
+                    public func exportedStorage(named name: String) -> (any ExportedStorage)? {
+                        switch name {
 
-                    default:
-                        return nil
+                        default:
+                            return nil
+                        }
                     }
                 }
-            }
 
-            extension Silent: BehaviourClass {
-            }
-            """,
+                extension Silent: BehaviourClass {
+                }
+                """,
             macroSpecs: macros)
     }
 
@@ -106,11 +106,12 @@ final class BehaviourMacroTests: XCTestCase {
             struct Player {}
             """,
             expandedSource: """
-            struct Player {}
-            """,
+                struct Player {}
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.behaviourNeedsClass.message, line: 1,
-                               column: 1),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.behaviourNeedsClass.message, line: 1,
+                    column: 1)
             ],
             macroSpecs: macros)
     }
@@ -124,32 +125,33 @@ final class BehaviourMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-            final class Player: Behaviour {
-                @Export let speed: Float = 6.0
+                final class Player: Behaviour {
+                    @Export let speed: Float = 6.0
 
-                public static let behaviourName: String = "Player"
+                    public static let behaviourName: String = "Player"
 
-                public static let behaviourSchema: UInt32 = 1
+                    public static let behaviourSchema: UInt32 = 1
 
-                public static let behaviourCallbacks: CallbackSet = []
+                    public static let behaviourCallbacks: CallbackSet = []
 
-                public static let exportedNames: [String] = []
+                    public static let exportedNames: [String] = []
 
-                public func exportedStorage(named name: String) -> (any ExportedStorage)? {
-                    switch name {
+                    public func exportedStorage(named name: String) -> (any ExportedStorage)? {
+                        switch name {
 
-                    default:
-                        return nil
+                        default:
+                            return nil
+                        }
                     }
                 }
-            }
 
-            extension Player: BehaviourClass {
-            }
-            """,
+                extension Player: BehaviourClass {
+                }
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.behaviourExportMustBeVar.message, line: 3,
-                               column: 5),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.behaviourExportMustBeVar.message, line: 3,
+                    column: 5)
             ],
             macroSpecs: macros)
     }
@@ -166,21 +168,21 @@ final class ComponentMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-            struct Velocity {
-                var linear: Vec3 = .zero
-                var speed: Float = 0
+                struct Velocity {
+                    var linear: Vec3 = .zero
+                    var speed: Float = 0
 
-                public static let componentName: String = "Velocity"
+                    public static let componentName: String = "Velocity"
 
-                public static let componentFields: [FieldDescriptor] = [
-                        FieldDescriptor(name: "linear", type: .vec3, offset: MemoryLayout<Self>.offset(of: \\Self.linear) ?? 0, size: MemoryLayout<Vec3>.size),
-                        FieldDescriptor(name: "speed", type: .f32, offset: MemoryLayout<Self>.offset(of: \\Self.speed) ?? 0, size: MemoryLayout<Float>.size),
-                ]
-            }
+                    public static let componentFields: [FieldDescriptor] = [
+                            FieldDescriptor(name: "linear", type: .vec3, offset: MemoryLayout<Self>.offset(of: \\Self.linear) ?? 0, size: MemoryLayout<Vec3>.size),
+                            FieldDescriptor(name: "speed", type: .f32, offset: MemoryLayout<Self>.offset(of: \\Self.speed) ?? 0, size: MemoryLayout<Float>.size),
+                    ]
+                }
 
-            extension Velocity: Component {
-            }
-            """,
+                extension Velocity: Component {
+                }
+                """,
             macroSpecs: macros)
     }
 
@@ -196,22 +198,23 @@ final class ComponentMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-            struct Broken {
-                var owner: SomeClass = SomeClass()
+                struct Broken {
+                    var owner: SomeClass = SomeClass()
 
-                public static let componentName: String = "Broken"
+                    public static let componentName: String = "Broken"
 
-                public static let componentFields: [FieldDescriptor] = [
+                    public static let componentFields: [FieldDescriptor] = [
 
-                ]
-            }
+                    ]
+                }
 
-            extension Broken: Component {
-            }
-            """,
+                extension Broken: Component {
+                }
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.componentFieldNotStorable.message, line: 3,
-                               column: 9),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.componentFieldNotStorable.message, line: 3,
+                    column: 9)
             ],
             macroSpecs: macros)
     }
@@ -223,11 +226,12 @@ final class ComponentMacroTests: XCTestCase {
             final class Broken {}
             """,
             expandedSource: """
-            final class Broken {}
-            """,
+                final class Broken {}
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.componentNeedsStruct.message, line: 1,
-                               column: 1),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.componentNeedsStruct.message, line: 1,
+                    column: 1)
             ],
             macroSpecs: macros)
     }
@@ -241,20 +245,20 @@ final class SystemMacroTests: XCTestCase {
             func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>>, _ chunks: ChunkSource) {}
             """,
             expandedSource: """
-            func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>>, _ chunks: ChunkSource) {}
+                func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>>, _ chunks: ChunkSource) {}
 
-            public enum __CySystem_applyGravity {
-                public static let descriptor = SystemDescriptor(
-                    name: "applyGravity", stage: .simulation, access: Query<Write<Velocity>, Read<Mass>>.access)
+                public enum __CySystem_applyGravity {
+                    public static let descriptor = SystemDescriptor(
+                        name: "applyGravity", stage: .simulation, access: Query<Write<Velocity>, Read<Mass>>.access)
 
-                /// Register this system. A game calls it from `GameModule.initialize(at:)`.
-                public static func register() throws {
-                    try Systems.register(descriptor) { chunks in
-                        applyGravity(Query<Write<Velocity>, Read<Mass>>(), chunks)
+                    /// Register this system. A game calls it from `GameModule.initialize(at:)`.
+                    public static func register() throws {
+                        try Systems.register(descriptor) { chunks in
+                            applyGravity(Query<Write<Velocity>, Read<Mass>>(), chunks)
+                        }
                     }
                 }
-            }
-            """,
+                """,
             macroSpecs: macros)
     }
 
@@ -265,11 +269,12 @@ final class SystemMacroTests: XCTestCase {
             func bad(_ query: Query<Write<Health>, Read<Health>>, _ chunks: ChunkSource) {}
             """,
             expandedSource: """
-            func bad(_ query: Query<Write<Health>, Read<Health>>, _ chunks: ChunkSource) {}
-            """,
+                func bad(_ query: Query<Write<Health>, Read<Health>>, _ chunks: ChunkSource) {}
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.systemConflictingAccess.message, line: 2,
-                               column: 19),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.systemConflictingAccess.message, line: 2,
+                    column: 19)
             ],
             macroSpecs: macros)
     }
@@ -281,11 +286,12 @@ final class SystemMacroTests: XCTestCase {
             func bad(_ chunks: ChunkSource) {}
             """,
             expandedSource: """
-            func bad(_ chunks: ChunkSource) {}
-            """,
+                func bad(_ chunks: ChunkSource) {}
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.systemNeedsQuery.message, line: 2,
-                               column: 9),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.systemNeedsQuery.message, line: 2,
+                    column: 9)
             ],
             macroSpecs: macros)
     }
@@ -299,11 +305,12 @@ final class SystemMacroTests: XCTestCase {
             func bad(_ query: Query<Read<Mass>>, time: Res<Time>) {}
             """,
             expandedSource: """
-            func bad(_ query: Query<Read<Mass>>, time: Res<Time>) {}
-            """,
+                func bad(_ query: Query<Read<Mass>>, time: Res<Time>) {}
+                """,
             diagnostics: [
-                DiagnosticSpec(message: MacroDiagnostic.systemUnsupportedParameter.message, line: 2,
-                               column: 38),
+                DiagnosticSpec(
+                    message: MacroDiagnostic.systemUnsupportedParameter.message, line: 2,
+                    column: 38)
             ],
             macroSpecs: macros)
     }
@@ -319,22 +326,22 @@ final class GameModuleMacroTests: XCTestCase {
             }
             """,
             expandedSource: """
-            enum Game: GameModule {
-                static let behaviours: [any BehaviourClass.Type] = [Player.self]
-            }
+                enum Game: GameModule {
+                    static let behaviours: [any BehaviourClass.Type] = [Player.self]
+                }
 
-            @_cdecl("cy_module_entry")
-            public func cy_module_entry(_ interface: UnsafePointer<CyInterface>?,
-                                        _ engine: CyEngine?,
-                                        _ out: UnsafeMutablePointer<CyModuleInit>?) -> Bool {
-                ModuleBootstrap.entry(interface, engine, out, module: Game.self)
-            }
+                @_cdecl("cy_module_entry")
+                public func cy_module_entry(_ interface: UnsafePointer<CyInterface>?,
+                                            _ engine: CyEngine?,
+                                            _ out: UnsafeMutablePointer<CyModuleInit>?) -> Bool {
+                    ModuleBootstrap.entry(interface, engine, out, module: Game.self)
+                }
 
-            @_cdecl("cy_module_shutdown")
-            public func cy_module_shutdown() {
-                ModuleBootstrap.shutdown()
-            }
-            """,
+                @_cdecl("cy_module_shutdown")
+                public func cy_module_shutdown() {
+                    ModuleBootstrap.shutdown()
+                }
+                """,
             macroSpecs: macros)
     }
 }

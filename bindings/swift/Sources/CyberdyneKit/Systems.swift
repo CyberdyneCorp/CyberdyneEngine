@@ -157,10 +157,12 @@ public struct ChunkView {
     private let strides: [String: Int]
     private let guardToken: EscapeGuard
 
-    public init(entities: UnsafeBufferPointer<CyEntity>,
-                bases: [String: UnsafeMutableRawPointer],
-                strides: [String: Int],
-                guardToken: EscapeGuard) {
+    public init(
+        entities: UnsafeBufferPointer<CyEntity>,
+        bases: [String: UnsafeMutableRawPointer],
+        strides: [String: Int],
+        guardToken: EscapeGuard
+    ) {
         self.entities = entities
         self.bases = bases
         self.strides = strides
@@ -201,9 +203,10 @@ public final class EscapeGuard {
 
     func check(_ component: String) {
         guard !live else { return }
-        Log.error("\(systemName) used a borrowed \(component) array after its iteration ended. A "
-            + "borrowed component pointer is scoped to the callback that produced it; chunk storage "
-            + "moves when an entity changes archetype.")
+        Log.error(
+            "\(systemName) used a borrowed \(component) array after its iteration ended. A "
+                + "borrowed component pointer is scoped to the callback that produced it; chunk storage "
+                + "moves when an entity changes archetype.")
     }
 }
 
@@ -245,12 +248,15 @@ public enum Systems {
     /// Rejects a self-conflicting access set — a query that both reads and writes one component —
     /// which the `@System` macro also catches at compile time. Both, because the macro sees only
     /// what is written in one signature and a hand-built descriptor does not go through it.
-    public static func register(_ descriptor: SystemDescriptor,
-                                body: @escaping (ChunkSource) -> Void) throws {
+    public static func register(
+        _ descriptor: SystemDescriptor,
+        body: @escaping (ChunkSource) -> Void
+    ) throws {
         guard !descriptor.access.isSelfConflicting else {
             throw CyberdyneError.notRepresentable(
                 "\(descriptor.name): the query declares both Read and Write for "
-                    + "\(descriptor.access.reads.intersection(descriptor.access.writes).sorted().joined(separator: ", "))")
+                    + "\(descriptor.access.reads.intersection(descriptor.access.writes).sorted().joined(separator: ", "))"
+            )
         }
         registered.append(descriptor)
         bodies[descriptor.name] = body
@@ -271,7 +277,8 @@ public enum Systems {
         let systems = registered.filter { $0.stage == stage }
         var pairs: [(String, String)] = []
         for (index, first) in systems.enumerated() {
-            for second in systems[(index + 1)...] where first.access.conflicts(with: second.access) {
+            for second in systems[(index + 1)...] where first.access.conflicts(with: second.access)
+            {
                 pairs.append((first.name, second.name))
             }
         }

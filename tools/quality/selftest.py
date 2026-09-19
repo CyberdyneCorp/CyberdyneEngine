@@ -33,11 +33,19 @@ meaningful because it does.
    removed, each gate must FAIL rather than report a clean result. This is the exact defect class
    this project has paid for nine times, and it is the case that is most often missing.
 
---- WHAT THIS HOST CANNOT RUN ------------------------------------------------------------------------
+--- A CASE THAT NEARLY WENT UNRUN, AND WHY IT DID NOT -------------------------------------------------
 
-`swift-format-break` needs a Swift toolchain and there is none on the Linux machine M11.d was worked
-on. By default it is reported **NOT EVALUATED**, which is not a pass; `--strict`, which is what CI
-runs on a leg that installs Swift 6, refuses to exit 0 with any case unrun.
+`swift-format-break` needs a Swift toolchain, and `command -v swift` finds none on the machine M11.d
+was worked on. The first version of this file therefore reported it **NOT EVALUATED** — and that was
+WRONG. There is a **Swift 6.3.3** toolchain here, installed through `swiftly`, whose environment line
+reaches only a login shell; `bindings/swift/tools/cy_swift_module.py` has always known and this
+repository's Swift bindings are built through it. The gate now resolves the same way and all
+fourteen cases run.
+
+The lesson is the mirror of this project's usual one: **a check that reports "not available" is as
+wrong as one that reports a false pass, if it looked in the wrong place.** The UNRUN machinery is
+kept, because a machine with genuinely no toolchain still must not read as a pass, and `--strict` —
+what CI runs — refuses to exit 0 with any case unrun.
 
 Run through `just quality-gates-selftest`.
 """

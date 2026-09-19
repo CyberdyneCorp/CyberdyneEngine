@@ -40,9 +40,9 @@ final class ArrayChunkSource: ChunkSource {
     let escapeGuard = EscapeGuard(systemName: "test")
 
     init(count: Int) {
-        entities = (0 ..< count).map { CyEntity($0 + 1) }
+        entities = (0..<count).map { CyEntity($0 + 1) }
         velocities = Array(repeating: Velocity(), count: count)
-        masses = (0 ..< count).map { Mass(value: Float($0 + 1)) }
+        masses = (0..<count).map { Mass(value: Float($0 + 1)) }
     }
 
     func forEachChunk(matching access: AccessSet, _ body: (ChunkView) -> Void) {
@@ -52,10 +52,15 @@ final class ArrayChunkSource: ChunkSource {
                 masses.withUnsafeMutableBufferPointer { massBuffer in
                     let view = ChunkView(
                         entities: entityBuffer,
-                        bases: [Velocity.componentName: UnsafeMutableRawPointer(velocityBuffer.baseAddress!),
-                                Mass.componentName: UnsafeMutableRawPointer(massBuffer.baseAddress!)],
-                        strides: [Velocity.componentName: MemoryLayout<Velocity>.stride,
-                                  Mass.componentName: MemoryLayout<Mass>.stride],
+                        bases: [
+                            Velocity.componentName: UnsafeMutableRawPointer(
+                                velocityBuffer.baseAddress!),
+                            Mass.componentName: UnsafeMutableRawPointer(massBuffer.baseAddress!),
+                        ],
+                        strides: [
+                            Velocity.componentName: MemoryLayout<Velocity>.stride,
+                            Mass.componentName: MemoryLayout<Mass>.stride,
+                        ],
                         guardToken: escapeGuard)
                     body(view)
                 }
@@ -66,12 +71,15 @@ final class ArrayChunkSource: ChunkSource {
 }
 
 @System(stage: .simulation)
-func applyGravity(_ query: Query<Write<Velocity>, Read<Mass>, Without<Grounded>>,
-                  _ chunks: ChunkSource) {
+func applyGravity(
+    _ query: Query<Write<Velocity>, Read<Mass>, Without<Grounded>>,
+    _ chunks: ChunkSource
+) {
     chunks.forEachChunk(matching: type(of: query).access) { chunk in
         guard let velocities = chunk.array(Velocity.self),
-              let masses = chunk.array(Mass.self) else { return }
-        for index in 0 ..< chunk.count {
+            let masses = chunk.array(Mass.self)
+        else { return }
+        for index in 0..<chunk.count {
             velocities[index].y -= 9.81 * masses[index].value
         }
     }
@@ -107,8 +115,9 @@ final class SystemModelTests: XCTestCase {
         XCTAssertTrue(write.conflicts(with: write))
         XCTAssertFalse(read.conflicts(with: read))
         XCTAssertFalse(write.conflicts(with: unrelated))
-        XCTAssertFalse(Query<Without<Grounded>>.access.conflicts(with: write),
-                       "an exclusion filter declares no access")
+        XCTAssertFalse(
+            Query<Without<Grounded>>.access.conflicts(with: write),
+            "an exclusion filter declares no access")
     }
 
     func testTheMacroRegistersTheSignatureItWasWritten() throws {

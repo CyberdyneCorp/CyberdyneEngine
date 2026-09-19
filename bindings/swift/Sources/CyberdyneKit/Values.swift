@@ -107,8 +107,9 @@ extension Value {
 
     private static func bytes(_ variable: CyVar) -> [UInt8] {
         guard let start = variable.payload.as_bytes, variable.length > 0 else { return [] }
-        return Array(UnsafeRawBufferPointer(start: start, count: Int(variable.length))
-            .bindMemory(to: UInt8.self))
+        return Array(
+            UnsafeRawBufferPointer(start: start, count: Int(variable.length))
+                .bindMemory(to: UInt8.self))
     }
 }
 
@@ -127,14 +128,15 @@ extension Value {
             throw CyberdyneError.invalidHandle
         }
         switch self {
-        case let .string(text):
+        case .string(let text):
             var variable = text.withCString { pointer in
-                interface.varMakeString(engine: engine, utf8: pointer,
-                                        length: UInt64(text.utf8.count))
+                interface.varMakeString(
+                    engine: engine, utf8: pointer,
+                    length: UInt64(text.utf8.count))
             }
             defer { interface.varRelease(value: &variable) }
             return try body(variable)
-        case let .bytes(data):
+        case .bytes(let data):
             // An EMPTY array's `baseAddress` is nil, and `var_make_bytes(engine, NULL, 0)` is an
             // invalid argument rather than an empty value. A one-byte local gives the call an
             // address it will never read — the size is zero — so an empty `.bytes` crosses as an
@@ -142,9 +144,10 @@ extension Value {
             var empty: UInt8 = 0
             var variable = withUnsafeBytes(of: &empty) { fallback in
                 data.withUnsafeBytes { raw in
-                    interface.varMakeBytes(engine: engine,
-                                           data: raw.baseAddress ?? fallback.baseAddress!,
-                                           size: UInt64(raw.count))
+                    interface.varMakeBytes(
+                        engine: engine,
+                        data: raw.baseAddress ?? fallback.baseAddress!,
+                        size: UInt64(raw.count))
                 }
             }
             defer { interface.varRelease(value: &variable) }
@@ -163,15 +166,15 @@ extension Value {
         variable.length = 0
         switch self {
         case .none: break
-        case let .bool(value): variable.payload.as_bool = value
-        case let .i64(value): variable.payload.as_i64 = value
-        case let .f32(value): variable.payload.as_f32 = value
-        case let .f64(value): variable.payload.as_f64 = value
-        case let .vec2(value): Value.store([value.x, value.y], into: &variable)
-        case let .vec3(value): Value.store([value.x, value.y, value.z], into: &variable)
-        case let .vec4(value): Value.store([value.x, value.y, value.z, value.w], into: &variable)
-        case let .quat(value): Value.store([value.x, value.y, value.z, value.w], into: &variable)
-        case let .entity(value): variable.payload.as_entity = value.bits
+        case .bool(let value): variable.payload.as_bool = value
+        case .i64(let value): variable.payload.as_i64 = value
+        case .f32(let value): variable.payload.as_f32 = value
+        case .f64(let value): variable.payload.as_f64 = value
+        case .vec2(let value): Value.store([value.x, value.y], into: &variable)
+        case .vec3(let value): Value.store([value.x, value.y, value.z], into: &variable)
+        case .vec4(let value): Value.store([value.x, value.y, value.z, value.w], into: &variable)
+        case .quat(let value): Value.store([value.x, value.y, value.z, value.w], into: &variable)
+        case .entity(let value): variable.payload.as_entity = value.bits
         case .string, .bytes:
             // Unreachable through `withCyVar`, which handles both before it gets here. Left as a
             // nil value rather than a trap: a module that traps takes the engine's process with it,
@@ -184,8 +187,9 @@ extension Value {
     private static func store(_ lanes: [Float], into variable: inout CyVar) {
         withUnsafeMutableBytes(of: &variable.payload.as_f32x4) { raw in
             for (index, lane) in lanes.enumerated() {
-                raw.storeBytes(of: lane, toByteOffset: index * MemoryLayout<Float>.size,
-                               as: Float.self)
+                raw.storeBytes(
+                    of: lane, toByteOffset: index * MemoryLayout<Float>.size,
+                    as: Float.self)
             }
         }
     }
@@ -223,7 +227,7 @@ public protocol Exportable: Sendable {
 extension Bool: Exportable {
     public var cyValue: Value { .bool(self) }
     public init?(cyValue: Value) {
-        guard case let .bool(value) = cyValue else { return nil }
+        guard case .bool(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -231,7 +235,7 @@ extension Bool: Exportable {
 extension Int64: Exportable {
     public var cyValue: Value { .i64(self) }
     public init?(cyValue: Value) {
-        guard case let .i64(value) = cyValue else { return nil }
+        guard case .i64(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -239,7 +243,7 @@ extension Int64: Exportable {
 extension Int32: Exportable {
     public var cyValue: Value { .i64(Int64(self)) }
     public init?(cyValue: Value) {
-        guard case let .i64(value) = cyValue, let narrowed = Int32(exactly: value) else {
+        guard case .i64(let value) = cyValue, let narrowed = Int32(exactly: value) else {
             return nil
         }
         self = narrowed
@@ -249,7 +253,7 @@ extension Int32: Exportable {
 extension Int: Exportable {
     public var cyValue: Value { .i64(Int64(self)) }
     public init?(cyValue: Value) {
-        guard case let .i64(value) = cyValue, let narrowed = Int(exactly: value) else { return nil }
+        guard case .i64(let value) = cyValue, let narrowed = Int(exactly: value) else { return nil }
         self = narrowed
     }
 }
@@ -257,7 +261,7 @@ extension Int: Exportable {
 extension Float: Exportable {
     public var cyValue: Value { .f32(self) }
     public init?(cyValue: Value) {
-        guard case let .f32(value) = cyValue else { return nil }
+        guard case .f32(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -265,7 +269,7 @@ extension Float: Exportable {
 extension Double: Exportable {
     public var cyValue: Value { .f64(self) }
     public init?(cyValue: Value) {
-        guard case let .f64(value) = cyValue else { return nil }
+        guard case .f64(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -273,7 +277,7 @@ extension Double: Exportable {
 extension String: Exportable {
     public var cyValue: Value { .string(self) }
     public init?(cyValue: Value) {
-        guard case let .string(value) = cyValue else { return nil }
+        guard case .string(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -281,7 +285,7 @@ extension String: Exportable {
 extension Vec2: Exportable {
     public var cyValue: Value { .vec2(self) }
     public init?(cyValue: Value) {
-        guard case let .vec2(value) = cyValue else { return nil }
+        guard case .vec2(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -289,7 +293,7 @@ extension Vec2: Exportable {
 extension Vec3: Exportable {
     public var cyValue: Value { .vec3(self) }
     public init?(cyValue: Value) {
-        guard case let .vec3(value) = cyValue else { return nil }
+        guard case .vec3(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -297,7 +301,7 @@ extension Vec3: Exportable {
 extension Vec4: Exportable {
     public var cyValue: Value { .vec4(self) }
     public init?(cyValue: Value) {
-        guard case let .vec4(value) = cyValue else { return nil }
+        guard case .vec4(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -305,7 +309,7 @@ extension Vec4: Exportable {
 extension Quat: Exportable {
     public var cyValue: Value { .quat(self) }
     public init?(cyValue: Value) {
-        guard case let .quat(value) = cyValue else { return nil }
+        guard case .quat(let value) = cyValue else { return nil }
         self = value
     }
 }
@@ -313,7 +317,7 @@ extension Quat: Exportable {
 extension Entity: Exportable {
     public var cyValue: Value { .entity(self) }
     public init?(cyValue: Value) {
-        guard case let .entity(value) = cyValue else { return nil }
+        guard case .entity(let value) = cyValue else { return nil }
         self = value
     }
 }

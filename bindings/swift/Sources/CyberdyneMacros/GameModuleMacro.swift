@@ -10,26 +10,31 @@ import SwiftSyntax
 import SwiftSyntaxMacros
 
 public struct GameModuleMacro: PeerMacro {
-    public static func expansion(of node: AttributeSyntax,
-                                 providingPeersOf declaration: some DeclSyntaxProtocol,
-                                 in context: some MacroExpansionContext) throws -> [DeclSyntax] {
+    public static func expansion(
+        of node: AttributeSyntax,
+        providingPeersOf declaration: some DeclSyntaxProtocol,
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
         guard let name = typeName(of: declaration) else {
             context.fail(node, .gameModuleNeedsType)
             return []
         }
-        return ["""
-        @_cdecl("cy_module_entry")
-        public func cy_module_entry(_ interface: UnsafePointer<CyInterface>?,
-                                    _ engine: CyEngine?,
-                                    _ out: UnsafeMutablePointer<CyModuleInit>?) -> Bool {
-            ModuleBootstrap.entry(interface, engine, out, module: \(raw: name).self)
-        }
-        """, """
-        @_cdecl("cy_module_shutdown")
-        public func cy_module_shutdown() {
-            ModuleBootstrap.shutdown()
-        }
-        """]
+        return [
+            """
+            @_cdecl("cy_module_entry")
+            public func cy_module_entry(_ interface: UnsafePointer<CyInterface>?,
+                                        _ engine: CyEngine?,
+                                        _ out: UnsafeMutablePointer<CyModuleInit>?) -> Bool {
+                ModuleBootstrap.entry(interface, engine, out, module: \(raw: name).self)
+            }
+            """,
+            """
+            @_cdecl("cy_module_shutdown")
+            public func cy_module_shutdown() {
+                ModuleBootstrap.shutdown()
+            }
+            """,
+        ]
     }
 
     static func typeName(of declaration: some DeclSyntaxProtocol) -> String? {

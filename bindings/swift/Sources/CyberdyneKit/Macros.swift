@@ -26,8 +26,9 @@ import CyberdyneCore
 /// Behaviour.swift for why it cannot be computed at run time on this platform, and why asking the
 /// Swift runtime would be wrong in exactly the two-resident-images configuration hot reload creates.
 @attached(extension, conformances: BehaviourClass)
-@attached(member, names: named(behaviourName), named(behaviourSchema), named(behaviourCallbacks),
-          named(exportedNames), named(exportedStorage(named:)))
+@attached(
+    member, names: named(behaviourName), named(behaviourSchema), named(behaviourCallbacks),
+    named(exportedNames), named(exportedStorage(named:)))
 public macro Behaviour(name: String? = nil, schema: UInt32 = 1) =
     #externalMacro(module: "CyberdyneMacros", type: "BehaviourMacro")
 

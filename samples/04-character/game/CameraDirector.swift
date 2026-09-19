@@ -32,29 +32,29 @@ final class CameraDirector: Behaviour {
     /// Radians of camera rotation per radian of look intent. The input layer has already applied the
     /// player's sensitivity and inversion; this is the game's own multiplier on top, which is why it
     /// is one by default and exists at all.
-    @Export(range: 0 ... 4) var yawScale: Float = 1.0
-    @Export(range: 0 ... 4) var pitchScale: Float = 1.0
-    @Export(range: -1.5 ... 0) var minPitch: Float = -0.6
-    @Export(range: 0 ... 1.5) var maxPitch: Float = 1.1
+    @Export(range: 0...4) var yawScale: Float = 1.0
+    @Export(range: 0...4) var pitchScale: Float = 1.0
+    @Export(range: -1.5...0) var minPitch: Float = -0.6
+    @Export(range: 0...1.5) var maxPitch: Float = 1.1
 
     /// How high above the character's origin the camera looks. Its head, not its feet.
-    @Export(range: 0 ... 3) var focusHeight: Float = 1.5
+    @Export(range: 0...3) var focusHeight: Float = 1.5
     /// The rig's offset from the focus at zoom 0, in the rig's own frame.
     @Export var shoulderOffset: Vec3 = Vec3(x: 0.45, y: 0.2, z: 0)
-    @Export(range: 0.5 ... 20) var nearDistance: Float = 3.2
-    @Export(range: 0.5 ... 30) var farDistance: Float = 6.5
-    @Export(range: 0 ... 1) var positionHalfLife: Float = 0.11
-    @Export(range: 0 ... 1) var rotationHalfLife: Float = 0.06
+    @Export(range: 0.5...20) var nearDistance: Float = 3.2
+    @Export(range: 0.5...30) var farDistance: Float = 6.5
+    @Export(range: 0...1) var positionHalfLife: Float = 0.11
+    @Export(range: 0...1) var rotationHalfLife: Float = 0.06
     /// Vertical field of view in radians, at zoom 0 and at zoom 1. Pulling back also opens the lens
     /// slightly, which is the coherent zoom `camera-system` asks for rather than two controls.
-    @Export(range: 0.3 ... 2) var nearFieldOfView: Float = 1.0472
-    @Export(range: 0.3 ... 2) var farFieldOfView: Float = 1.1345
+    @Export(range: 0.3...2) var nearFieldOfView: Float = 1.0472
+    @Export(range: 0.3...2) var farFieldOfView: Float = 1.1345
 
     /// How fast the camera pulls back as the character speeds up. Zoom is ONE normalised parameter
     /// and this is the game's mapping onto it — from standing still to this speed is 0 to 1.
-    @Export(range: 0.5 ... 20) var zoomAtSpeed: Float = 7.6
+    @Export(range: 0.5...20) var zoomAtSpeed: Float = 7.6
     /// Seconds for the zoom to close half the gap to the speed it implies, so a sprint does not snap.
-    @Export(range: 0 ... 2) var zoomHalfLife: Float = 0.35
+    @Export(range: 0...2) var zoomHalfLife: Float = 0.35
 
     // --- Private state ------------------------------------------------------------------------------
 
@@ -100,12 +100,15 @@ final class CameraDirector: Behaviour {
         try world.setVec3(shoulderOffset, entity, spec, field: CameraSpec.field("offset"))
         try world.setFloat(nearDistance, entity, spec, field: CameraSpec.field("nearDistance"))
         try world.setFloat(farDistance, entity, spec, field: CameraSpec.field("farDistance"))
-        try world.setFloat(positionHalfLife, entity, spec,
-                           field: CameraSpec.field("positionHalfLife"))
-        try world.setFloat(rotationHalfLife, entity, spec,
-                           field: CameraSpec.field("rotationHalfLife"))
-        try world.setFloat(nearFieldOfView, entity, spec,
-                           field: CameraSpec.field("nearFieldOfView"))
+        try world.setFloat(
+            positionHalfLife, entity, spec,
+            field: CameraSpec.field("positionHalfLife"))
+        try world.setFloat(
+            rotationHalfLife, entity, spec,
+            field: CameraSpec.field("rotationHalfLife"))
+        try world.setFloat(
+            nearFieldOfView, entity, spec,
+            field: CameraSpec.field("nearFieldOfView"))
         try world.setFloat(farFieldOfView, entity, spec, field: CameraSpec.field("farFieldOfView"))
 
         // Publish the opening frame before the first tick, so the character's first step is taken in
@@ -148,8 +151,9 @@ final class CameraDirector: Behaviour {
     private func publish() throws {
         guard let world else { return }
         let position = try world.vec3(entity, state, field: statePosition)
-        try world.setVec3(Vec3(x: position.x, y: position.y + focusHeight, z: position.z),
-                          entity, intent, field: intentFocus)
+        try world.setVec3(
+            Vec3(x: position.x, y: position.y + focusHeight, z: position.z),
+            entity, intent, field: intentFocus)
         try world.setFloat(yaw, entity, intent, field: intentYaw)
         try world.setFloat(pitch, entity, intent, field: intentPitch)
         try world.setFloat(zoom, entity, intent, field: intentZoom)

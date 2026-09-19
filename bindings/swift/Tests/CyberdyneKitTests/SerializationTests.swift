@@ -4,8 +4,9 @@
 // migrated, a field defaulted. They run without an engine, because the blob is the module's own
 // format and nothing in it crosses the ABI except as opaque bytes.
 
-@testable import CyberdyneKit
 import XCTest
+
+@testable import CyberdyneKit
 
 final class SerializationTests: XCTestCase {
     private func read(_ bytes: [UInt8]) throws -> (schema: UInt32, entries: [String: Value]) {
@@ -63,7 +64,7 @@ final class SerializationTests: XCTestCase {
         var writer = BlobWriter(schema: 1)
         writer.write("health", .i64(95))
         let bytes = writer.finish()
-        for length in 0 ..< bytes.count {
+        for length in 0..<bytes.count {
             let prefix = Array(bytes.prefix(length))
             XCTAssertThrowsError(try read(prefix), "a \(length)-byte prefix was accepted")
         }

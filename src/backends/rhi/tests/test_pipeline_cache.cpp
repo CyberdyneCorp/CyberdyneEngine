@@ -3,7 +3,8 @@
 // AN INTEGRATION SUITE AND NOT A UNIT ONE, because it blocks on a filesystem: it writes a file,
 // reads it back, and asks whether one exists. `testing-and-quality` puts anything that waits above
 // the unit tier, and the harness enforces it — this case was written in `unit.rhi` first and the
-// budget check refused it by name, which is the taxonomy doing its job rather than an inconvenience.
+// budget check refused it by name, which is the taxonomy doing its job rather than an
+// inconvenience.
 //
 // WHAT THIS DOES NOT SHOW, and it is the finding that outweighs the signature change: NOTHING IN
 // THE ENGINE CALLS EITHER OF THESE. `rhi-and-render-graph` requires the cache to be "persisted

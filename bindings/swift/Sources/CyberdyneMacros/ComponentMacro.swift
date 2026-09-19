@@ -25,10 +25,12 @@ public struct ComponentMacro: MemberMacro, ExtensionMacro {
         "Vec2": ".vec2", "Vec3": ".vec3", "Vec4": ".vec4", "Quat": ".quat", "Entity": ".entity",
     ]
 
-    public static func expansion(of node: AttributeSyntax,
-                                 providingMembersOf declaration: some DeclGroupSyntax,
-                                 conformingTo protocols: [TypeSyntax],
-                                 in context: some MacroExpansionContext) throws -> [DeclSyntax] {
+    public static func expansion(
+        of node: AttributeSyntax,
+        providingMembersOf declaration: some DeclGroupSyntax,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
             context.fail(node, .componentNeedsStruct)
             return []
@@ -51,12 +53,15 @@ public struct ComponentMacro: MemberMacro, ExtensionMacro {
         ]
     }
 
-    public static func expansion(of node: AttributeSyntax,
-                                 attachedTo declaration: some DeclGroupSyntax,
-                                 providingExtensionsOf type: some TypeSyntaxProtocol,
-                                 conformingTo protocols: [TypeSyntax],
-                                 in context: some MacroExpansionContext) throws
-        -> [ExtensionDeclSyntax] {
+    public static func expansion(
+        of node: AttributeSyntax,
+        attachedTo declaration: some DeclGroupSyntax,
+        providingExtensionsOf type: some TypeSyntaxProtocol,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws
+        -> [ExtensionDeclSyntax]
+    {
         guard declaration.is(StructDeclSyntax.self), !protocols.isEmpty else { return [] }
         return [try ExtensionDeclSyntax("extension \(type.trimmed): Component {}")]
     }
@@ -70,16 +75,18 @@ public struct ComponentMacro: MemberMacro, ExtensionMacro {
     /// The stored properties, checked. A computed property is skipped — it has no storage and so no
     /// offset — and an unstorable one is diagnosed at its own declaration rather than at the
     /// attribute, so the error points at the field.
-    static func storedFields(of declaration: StructDeclSyntax,
-                             in context: some MacroExpansionContext) -> [Field] {
+    static func storedFields(
+        of declaration: StructDeclSyntax,
+        in context: some MacroExpansionContext
+    ) -> [Field] {
         var fields: [Field] = []
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self),
-                  !variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) })
+                !variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) })
             else { continue }
             for binding in variable.bindings {
                 guard binding.accessorBlock == nil,
-                      let identifier = binding.pattern.as(IdentifierPatternSyntax.self)
+                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)
                 else { continue }
                 guard let written = binding.typeAnnotation?.type.trimmedDescription else {
                     context.fail(binding, .componentFieldNeedsType)

@@ -31,28 +31,28 @@ final class Character: Behaviour {
     // `@Export`ed, so they are inspectable, range-checked where a range means something, and carried
     // across a hot reload BY NAME — the only migration that works (see cy/abi/module.h).
 
-    @Export(range: 0 ... 20) var walkSpeed: Float = 4.5
-    @Export(range: 0 ... 20) var sprintSpeed: Float = 7.6
-    @Export(range: 0 ... 20) var jumpSpeed: Float = 6.2
+    @Export(range: 0...20) var walkSpeed: Float = 4.5
+    @Export(range: 0...20) var sprintSpeed: Float = 7.6
+    @Export(range: 0...20) var jumpSpeed: Float = 6.2
 
     /// The capsule. Total height including both caps, which is the number an artist has.
-    @Export(range: 0.1 ... 2) var capsuleRadius: Float = 0.35
-    @Export(range: 0.5 ... 4) var capsuleHeight: Float = 1.8
+    @Export(range: 0.1...2) var capsuleRadius: Float = 0.35
+    @Export(range: 0.5...4) var capsuleHeight: Float = 1.8
     /// The tallest step climbed rather than blocked. The level below has a 0.3 m stair, so a game
     /// that lowered this to 0.2 would find the stair a wall — which is a gameplay change, made here.
-    @Export(range: 0 ... 1) var stepOffset: Float = 0.4
+    @Export(range: 0...1) var stepOffset: Float = 0.4
     /// Above this a surface is a wall. 46 degrees, so the level's 30-degree ramp is walkable and its
     /// 60-degree face is not.
-    @Export(range: 0 ... 1.5) var maxSlopeRadians: Float = 0.8
+    @Export(range: 0...1.5) var maxSlopeRadians: Float = 0.8
 
     @Export var spawn: Vec3 = Vec3(x: 0, y: 1.4, z: 6)
 
     /// Metres of ground covered per footstep. A cadence expressed as distance rather than as time is
     /// what makes a sprinting character's steps speed up without a second number.
-    @Export(range: 0.2 ... 5) var strideLength: Float = 1.65
+    @Export(range: 0.2...5) var strideLength: Float = 1.65
     /// How long after leaving the ground a jump is still allowed. Every third-person game has this
     /// number and no engine should.
-    @Export(range: 0 ... 0.5) var coyoteSeconds: Float = 0.12
+    @Export(range: 0...0.5) var coyoteSeconds: Float = 0.12
 
     // --- Private state: reinitialised by a reload, rebuilt in onAfterReload -----------------------
 
@@ -116,8 +116,9 @@ final class Character: Behaviour {
         try world.setFloat(capsuleRadius, entity, spec, field: CharacterSpec.field("radius"))
         try world.setFloat(capsuleHeight, entity, spec, field: CharacterSpec.field("height"))
         try world.setFloat(stepOffset, entity, spec, field: CharacterSpec.field("stepOffset"))
-        try world.setFloat(maxSlopeRadians, entity, spec,
-                           field: CharacterSpec.field("maxSlopeRadians"))
+        try world.setFloat(
+            maxSlopeRadians, entity, spec,
+            field: CharacterSpec.field("maxSlopeRadians"))
 
         Log.info("Character spawned at (\(spawn.x), \(spawn.y), \(spawn.z))")
     }
@@ -142,9 +143,10 @@ final class Character: Behaviour {
         let forwardX = -sinf(yaw)
         let forwardZ = -cosf(yaw)
         let speed = sprinting ? sprintSpeed : walkSpeed
-        let desired = Vec3(x: (move.x * -forwardZ + move.z * forwardX) * speed,
-                           y: 0,
-                           z: (move.x * forwardX + move.z * forwardZ) * speed)
+        let desired = Vec3(
+            x: (move.x * -forwardZ + move.z * forwardX) * speed,
+            y: 0,
+            z: (move.x * forwardX + move.z * forwardZ) * speed)
 
         // --- Jump, with coyote time -------------------------------------------------------------
         airborneSeconds = grounded ? 0 : airborneSeconds + step

@@ -50,7 +50,8 @@ public protocol Component {
 /// Registering Swift components with the world.
 public enum Components {
     /// Register a component type, or return the id an equal earlier registration got.
-    public static func register(_ type: any Component.Type, in world: World) throws -> ComponentType {
+    public static func register(_ type: any Component.Type, in world: World) throws -> ComponentType
+    {
         let fields = type.componentFields
         // The names must outlive the registration: cy_abi.h says the engine stores the pointer.
         // See CStrings.swift, which exists because the obvious `withCString` spelling of this
@@ -107,33 +108,41 @@ extension World {
     /// bytes.
     public func float(_ entity: Entity, _ component: ComponentType, field: UInt32) throws -> Float {
         var value: Float = 0
-        try componentGetF32(entity: entity.bits, component: component.id, field: field, into: &value)
+        try componentGetF32(
+            entity: entity.bits, component: component.id, field: field, into: &value)
         return value
     }
 
-    public func setFloat(_ value: Float, _ entity: Entity, _ component: ComponentType,
-                         field: UInt32) throws {
-        try componentSetF32(entity: entity.bits, component: component.id, field: field, value: value)
+    public func setFloat(
+        _ value: Float, _ entity: Entity, _ component: ComponentType,
+        field: UInt32
+    ) throws {
+        try componentSetF32(
+            entity: entity.bits, component: component.id, field: field, value: value)
     }
 
     public func vec3(_ entity: Entity, _ component: ComponentType, field: UInt32) throws -> Vec3 {
         var lanes = (Float(0), Float(0), Float(0))
         try withUnsafeMutablePointer(to: &lanes) { tuple in
             try tuple.withMemoryRebound(to: Float.self, capacity: 3) { storage in
-                try componentGetVec3(entity: entity.bits, component: component.id, field: field,
-                                     into: storage)
+                try componentGetVec3(
+                    entity: entity.bits, component: component.id, field: field,
+                    into: storage)
             }
         }
         return Vec3(x: lanes.0, y: lanes.1, z: lanes.2)
     }
 
-    public func setVec3(_ value: Vec3, _ entity: Entity, _ component: ComponentType,
-                        field: UInt32) throws {
+    public func setVec3(
+        _ value: Vec3, _ entity: Entity, _ component: ComponentType,
+        field: UInt32
+    ) throws {
         var lanes = (value.x, value.y, value.z)
         try withUnsafeMutablePointer(to: &lanes) { tuple in
             try tuple.withMemoryRebound(to: Float.self, capacity: 3) { storage in
-                try componentSetVec3(entity: entity.bits, component: component.id, field: field,
-                                     xyz: storage)
+                try componentSetVec3(
+                    entity: entity.bits, component: component.id, field: field,
+                    xyz: storage)
             }
         }
     }
@@ -141,8 +150,9 @@ extension World {
     /// The generic, reflective path. Correct for tools; not for a hot loop.
     public func value(_ entity: Entity, _ component: ComponentType, field: UInt32) throws -> Value {
         var variable = CyVar()
-        try componentGetVar(entity: entity.bits, component: component.id, field: field,
-                            into: &variable)
+        try componentGetVar(
+            entity: entity.bits, component: component.id, field: field,
+            into: &variable)
         defer { interface.varRelease(value: &variable) }
         guard let value = Value(reading: variable) else {
             throw CyberdyneError.notRepresentable("CyVarType \(variable.type)")
@@ -150,12 +160,15 @@ extension World {
         return value
     }
 
-    public func setValue(_ value: Value, _ entity: Entity, _ component: ComponentType,
-                         field: UInt32) throws {
+    public func setValue(
+        _ value: Value, _ entity: Entity, _ component: ComponentType,
+        field: UInt32
+    ) throws {
         try value.withCyVar { variable in
             var copy = variable
-            try componentSetVar(entity: entity.bits, component: component.id, field: field,
-                                value: &copy)
+            try componentSetVar(
+                entity: entity.bits, component: component.id, field: field,
+                value: &copy)
         }
     }
 
@@ -182,11 +195,13 @@ extension World {
         try addComponent(entity: entity.bits, component: component.id, initial: nil)
     }
 
-    public func add<T: Component>(_ value: T, as component: ComponentType, to entity: Entity) throws {
+    public func add<T: Component>(_ value: T, as component: ComponentType, to entity: Entity) throws
+    {
         var copy = value
         try withUnsafeBytes(of: &copy) { bytes in
-            try addComponent(entity: entity.bits, component: component.id,
-                             initial: bytes.baseAddress)
+            try addComponent(
+                entity: entity.bits, component: component.id,
+                initial: bytes.baseAddress)
         }
     }
 

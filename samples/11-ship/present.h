@@ -58,6 +58,7 @@ enum class PlatformChoice : u8 {
     Headless,
 };
 
+/// The choice's own spelling, for a report and for the command line. Never null.
 [[nodiscard]] const char* platform_choice_name(PlatformChoice choice) noexcept;
 
 /// What one presentation leg actually did. Every field is measured, and the ones that could not be
@@ -89,6 +90,7 @@ struct PresentReport {
     Image photograph;
 };
 
+/// What the caller asks of one presentation leg.
 struct PresentOptions {
     PlatformChoice platform = PlatformChoice::Auto;
     u32 frames = 120;

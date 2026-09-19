@@ -97,12 +97,10 @@ CY_TEST_CASE("write-after-write names the previous write on both halves") {
 
 CY_TEST_CASE("read-after-read emits nothing when the layout already agrees") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
-    const ResourceId target =
-        graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             ImageUse::Undefined);
-    const ResourceId image =
-        graph.import_texture(storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1),
-                             ImageUse::SampledRead);
+    const ResourceId target = graph.import_texture(
+        colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
+    const ResourceId image = graph.import_texture(
+        storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1), ImageUse::SampledRead);
 
     graph.add_pass("sample once", cy::rhi::QueueKind::Graphics)
         .read(image, Access::FragmentSampledRead)
@@ -122,9 +120,8 @@ CY_TEST_CASE("read-after-read emits nothing when the layout already agrees") {
 
 CY_TEST_CASE("a transient's first use transitions from UNDEFINED, which is what discards it") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
-    const ResourceId target =
-        graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             ImageUse::Undefined);
+    const ResourceId target = graph.import_texture(
+        colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
     const ResourceId image = graph.create_texture(storage_image("scratch"));
     graph.add_pass("fill", cy::rhi::QueueKind::Graphics).write(image, Access::ComputeStorageWrite);
     graph.add_pass("sample", cy::rhi::QueueKind::Graphics)
@@ -191,9 +188,8 @@ CY_TEST_CASE("a whole-image transition is one barrier, a mip range is one, a sin
 
 CY_TEST_CASE("two adjacent layer ranges reaching the same state coalesce into one barrier") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
-    const ResourceId target =
-        graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             ImageUse::Undefined);
+    const ResourceId target = graph.import_texture(
+        colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
     const ResourceId layered = graph.create_texture(storage_image("two layers", 16, 2));
 
     graph.add_pass("layer 0", cy::rhi::QueueKind::Graphics)

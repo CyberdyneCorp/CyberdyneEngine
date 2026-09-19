@@ -350,19 +350,14 @@ CY_TEST_CASE("a package manifest carries every provenance field the requirement 
 // stage, the duration, the bytes and the outcome.
 // ==================================================================================================
 CY_TEST_CASE("time by stage separates a cache hit from work, and the rate follows") {
+    // `node()` above gives a valid description — a node with no producer is REFUSED by add() — and
+    // the kind is what these cases are about, so it is the only field overridden.
     BuildGraph graph;
-    NodeDesc import_a;
+    NodeDesc import_a = node("import:a", {}, {});
     import_a.kind = NodeKind::Import;
-    import_a.name = "import:a";
-    import_a.outputs = {"derived/a.bin"};
-    NodeDesc import_b = import_a;
-    import_b.name = "import:b";
-    import_b.outputs = {"derived/b.bin"};
-    NodeDesc cook;
-    cook.kind = NodeKind::Cook;
-    cook.name = "cook:world";
-    cook.upstreams = {"import:a"};
-    cook.outputs = {"derived/world.cypak"};
+    NodeDesc import_b = node("import:b", {}, {});
+    import_b.kind = NodeKind::Import;
+    NodeDesc cook = node("cook:world", {}, {"import:a"});
     CY_REQUIRE(graph.add(import_a).has_value());
     CY_REQUIRE(graph.add(import_b).has_value());
     CY_REQUIRE(graph.add(cook).has_value());
@@ -386,6 +381,11 @@ CY_TEST_CASE("time by stage separates a cache hit from work, and the rate follow
 
     const std::vector<StageCost> stages = stage_costs(graph, report);
     CY_REQUIRE_EQ(stages.size(), 2U);
+    // REQUIRE does not abort under -fno-exceptions, and every check below indexes `stages`. Without
+    // this the real failure is buried under a page of out-of-bounds reads.
+    if (stages.size() < 2) {
+        return;
+    }
 
     // Import: two nodes, one of them a cache hit, so fifty per cent.
     CY_CHECK(stages[0].kind == NodeKind::Import);
@@ -420,14 +420,10 @@ CY_TEST_CASE("time by stage separates a cache hit from work, and the rate follow
 
 CY_TEST_CASE("size by category adds up to the package, and names what it cannot attribute") {
     BuildGraph graph;
-    NodeDesc import_a;
+    NodeDesc import_a = node("import:a", {}, {});
     import_a.kind = NodeKind::Import;
-    import_a.name = "import:a";
-    import_a.outputs = {"derived/a.bin"};
-    NodeDesc shader;
+    NodeDesc shader = node("shader:lit", {}, {});
     shader.kind = NodeKind::Shader;
-    shader.name = "shader:lit";
-    shader.outputs = {"derived/lit.spv"};
     CY_REQUIRE(graph.add(import_a).has_value());
     CY_REQUIRE(graph.add(shader).has_value());
 
@@ -441,6 +437,9 @@ CY_TEST_CASE("size by category adds up to the package, and names what it cannot 
 
     const std::vector<CategoryShare> shares = category_shares(graph, packages);
     CY_REQUIRE_EQ(shares.size(), 2U);
+    if (shares.size() < 2) {
+        return;
+    }
     CY_CHECK(shares[0].kind == NodeKind::Import);
     CY_CHECK_EQ(shares[0].bytes, 1000U);
     CY_CHECK_EQ(shares[0].entries, 2U);

@@ -21,7 +21,7 @@ final class SwiftCounter: Behaviour {
 
     /// The rename, expressed in the code that knows both shapes and nowhere else.
     override func onMigrate(_ key: String, _ value: Value) throws -> Bool {
-        guard key == "ammo", case let .i64(ammo) = value else { return false }
+        guard key == "ammo", case .i64(let ammo) = value else { return false }
         mana = ammo / 2
         return true
     }

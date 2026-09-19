@@ -16,23 +16,28 @@ requires that toolchain: `bindings/swift/Package.swift` declares `swift-tools-ve
 CI jobs install it. So the gate adds **no new dependency** — it uses the compiler that is already a
 prerequisite of building the Swift bindings at all.
 
+--- WHERE THE TOOLCHAIN ACTUALLY IS, WHICH IS NOT ON PATH --------------------------------------------
+
+**This was nearly written as an unrunnable gate.** `command -v swift` finds nothing on the machine
+M11.d was worked on, and the first version of this file reported "no Swift toolchain" and exited 2.
+It was wrong: there is a **Swift 6.3.3** toolchain installed through `swiftly`, whose environment
+line goes into `~/.profile` and therefore reaches only a LOGIN shell.
+`bindings/swift/tools/cy_swift_module.py` already knew — it runs every Swift command as
+`bash -lc '. ${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh; …'` and says why in its own
+header — and this gate now resolves the same way, through the same environment file, so the compiler
+that builds the Swift bindings and the formatter that checks them are the same installation.
+
+The lesson is the one this project keeps paying for in the other direction: **a check that reports
+"not available" is as wrong as one that reports a false pass if it looked in the wrong place.**
+
 Resolution order, first match wins, and only the first when it is set: `CY_SWIFT_FORMAT`, a
-`swift-format` binary on PATH, then `swift format`. Naming a binary and then silently running a
-different one would be worse than failing, which is the rule `just _tool-resolve` already states for
-clang-format and clang-tidy.
+`swift-format` binary on PATH, `swift` on PATH, then `swift` through the swiftly environment.
+Naming a binary and then silently running a different one would be worse than failing, which is the
+rule `just _tool-resolve` already states for clang-format and clang-tidy.
 
---- WHAT THIS HOST CANNOT DO, STATED HERE RATHER THAN DISCOVERED -------------------------------------
-
-**There is no Swift toolchain on the machine M11.d was worked on** — it is Linux with no Apple
-toolchain, which is the same fact that moved the Metal backend out of this rung. So the gate's own
-negative case, "break the formatting of a Swift file and require the gate to go red", is
-`where = "ci"`: it is proved on the Linux and macOS legs that install Swift, and it is reported NOT
-EVALUATED here. `tools/quality/selftest.py --strict` is what CI runs, and it refuses to pass with the
-case unrun.
-
-That is the honest shape and it is deliberately not the comfortable one: a gate whose red has been
-watched somewhere is a gate; a gate whose red has been watched nowhere is nine of this project's
-previous defects.
+Exit 2 means the gate DID NOT RUN, which `tools/quality/selftest.py` tells apart from exit 1: "no
+toolchain" is not "formatted correctly", and a gate that cannot find its tool must not look like a
+gate that passed.
 """
 
 from __future__ import annotations
@@ -68,8 +73,21 @@ INSTALL = {
 }
 
 
+#: How `bindings/swift/tools/cy_swift_module.py` reaches the toolchain, quoted from it so the two
+#: cannot drift: swiftly writes its environment line to ~/.profile, which only a login shell reads.
+SWIFTLY_ENV = "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
+
+
+def run(command: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """Run a resolved command, through the swiftly environment when that is where the tool lives."""
+    if command[0] == "@swiftly":
+        line = ". " + SWIFTLY_ENV + " 2>/dev/null; " + " ".join(f"'{word}'" for word in command[1:])
+        return subprocess.run(["bash", "-lc", line], cwd=cwd, capture_output=True, text=True)
+    return subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+
+
 def resolve() -> list[str] | None:
-    """The command that runs swift-format, or None when no Swift toolchain is present."""
+    """The command that runs swift-format, or None when no Swift toolchain can be reached."""
     override = os.environ.get("CY_SWIFT_FORMAT")
     if override:
         return [override]
@@ -79,6 +97,11 @@ def resolve() -> list[str] | None:
     swift = shutil.which("swift")
     if swift:
         return [swift, "format"]
+    # Not on PATH is not the same as not installed. See the header: swiftly's toolchain reaches only
+    # a login shell, and this project's own Swift build already goes through that environment file.
+    probe = run(["@swiftly", "swift", "--version"])
+    if probe.returncode == 0:
+        return ["@swiftly", "swift", "format"]
     return None
 
 
@@ -124,17 +147,15 @@ def main() -> int:
     command = resolve()
     if command is None:
         platform = "darwin" if sys.platform == "darwin" else "win32" if os.name == "nt" else "linux"
-        print("swift-format-gate: no Swift toolchain on this machine.", file=sys.stderr)
+        print("swift-format-gate: no Swift toolchain, on PATH or through swiftly.", file=sys.stderr)
         print(f"  {len(files)} Swift file(s) went unchecked, which is NOT a pass.", file=sys.stderr)
         print(f"  Install Swift 6: {INSTALL.get(platform, INSTALL['linux'])}", file=sys.stderr)
         print("  Or name one: CY_SWIFT_FORMAT=/path/to/swift-format", file=sys.stderr)
         return 2  # distinct from 1, so the selftest can tell "unrun" from "failed"
 
     action = ["format", "--in-place"] if arguments.fix else ["lint", "--strict"]
-    finished = subprocess.run(
-        [*command, *action, "--configuration", str(configuration), "--parallel", *files],
-        cwd=root, capture_output=True, text=True,
-    )
+    finished = run([*command, *action, "--configuration", str(configuration), "--parallel", *files],
+                   cwd=root)
 
     if finished.returncode != 0:
         print(f"swift-format-gate: {CONFIGURATION} is not what these files are formatted to.",
@@ -144,9 +165,9 @@ def main() -> int:
         print("  Fix it with: just quality-swift-format --fix", file=sys.stderr)
         return 1
 
-    version = subprocess.run([*command, "--version"], capture_output=True, text=True)
+    version = run([*command, "--version"])
     print(f"swift-format-gate: {len(files)} Swift file(s) match {CONFIGURATION} "
-          f"({version.stdout.strip() or ' '.join(command)})")
+          f"(swift-format {version.stdout.strip() or 'version unreported'})")
     return 0
 
 

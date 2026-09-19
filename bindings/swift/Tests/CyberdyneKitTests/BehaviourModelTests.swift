@@ -11,7 +11,7 @@ import XCTest
 @Behaviour(schema: 2)
 final class TestPlayer: Behaviour {
     @Export var speed: Float = 6.0
-    @Export(range: 0 ... 20) var jumpVelocity: Float = 8.0
+    @Export(range: 0...20) var jumpVelocity: Float = 8.0
     @Export var name: String = "unnamed"
 
     /// Not exported: private state that a reload reinitialises. `swift-scripting`'s
@@ -56,8 +56,9 @@ final class BehaviourModelTests: XCTestCase {
     func testExportedStorageReadsAndWritesTheProperty() {
         let player = TestPlayer(entity: Entity(bits: 1))
         XCTAssertEqual(player.exportedStorage(named: "speed")?.exportedValue, .f32(6.0))
-        XCTAssertNil(player.exportedStorage(named: "ticks"),
-                     "a property with no @Export must not be reachable by name")
+        XCTAssertNil(
+            player.exportedStorage(named: "ticks"),
+            "a property with no @Export must not be reachable by name")
 
         XCTAssertTrue(player.exportedStorage(named: "speed")?.assign(.f32(9.5)) ?? false)
         XCTAssertEqual(player.speed, 9.5)
@@ -73,12 +74,14 @@ final class BehaviourModelTests: XCTestCase {
 
     func testConstraintsReachTheStorage() {
         let player = TestPlayer(entity: Entity(bits: 1))
-        XCTAssertEqual(player.exportedStorage(named: "jumpVelocity")?.exportedConstraint,
-                       .range(0 ... 20))
+        XCTAssertEqual(
+            player.exportedStorage(named: "jumpVelocity")?.exportedConstraint,
+            .range(0...20))
         // Spelled in full: a bare `.none` in a comparison against an Optional is `Optional.none`,
         // which would assert that the property has no storage rather than that it has no constraint.
-        XCTAssertEqual(player.exportedStorage(named: "speed")?.exportedConstraint,
-                       ExportConstraint.none)
+        XCTAssertEqual(
+            player.exportedStorage(named: "speed")?.exportedConstraint,
+            ExportConstraint.none)
     }
 
     func testExportedValuesAreOrderedAndComplete() {
@@ -93,7 +96,8 @@ final class BehaviourModelTests: XCTestCase {
     func testABehaviourHoldsAHandleAndNotAnOwningReference() {
         let player = TestPlayer(entity: Entity(bits: 42))
         XCTAssertEqual(player.entity.bits, 42)
-        XCTAssertNil(player.world, "with no engine bound there is no world, and asking is not a trap")
+        XCTAssertNil(
+            player.world, "with no engine bound there is no world, and asking is not a trap")
         XCTAssertTrue(player.isEnabled)
     }
 
@@ -123,8 +127,8 @@ final class BehaviourDispatchTests: XCTestCase {
 
     func testOnlyImplementedCallbacksAreDispatched() {
         let player = TestPlayer(entity: Entity(bits: 1))
-        player.dispatch(.update, delta: 1)      // not implemented: must not run
-        player.dispatch(.fixedUpdate, delta: 1) // implemented
+        player.dispatch(.update, delta: 1)  // not implemented: must not run
+        player.dispatch(.fixedUpdate, delta: 1)  // implemented
         player.dispatch(.fixedUpdate, delta: 1)
         XCTAssertEqual(player.ticks, 2)
     }

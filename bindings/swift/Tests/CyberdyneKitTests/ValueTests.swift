@@ -46,15 +46,17 @@ final class ValueTests: XCTestCase {
     func testAnUnknownTagIsRefusedRatherThanRead() {
         var variable = CyVar()
         variable.type = 9999
-        XCTAssertNil(Value(reading: variable),
-                     "a tag this module predates has an unknown payload shape")
+        XCTAssertNil(
+            Value(reading: variable),
+            "a tag this module predates has an unknown payload shape")
     }
 
     func testExportableConversionsAreTotalAndTyped() {
         XCTAssertEqual(Float(cyValue: .f32(2.5)), 2.5)
         XCTAssertNil(Float(cyValue: .f64(2.5)), "a Double is not a Float across the boundary")
         XCTAssertEqual(Int32(cyValue: .i64(7)), 7)
-        XCTAssertNil(Int32(cyValue: .i64(Int64(Int32.max) + 1)), "an out-of-range integer is refused")
+        XCTAssertNil(
+            Int32(cyValue: .i64(Int64(Int32.max) + 1)), "an out-of-range integer is refused")
         XCTAssertEqual(String(cyValue: .string("x")), "x")
         XCTAssertEqual(Vec3(cyValue: .vec3(Vec3(x: 1, y: 2, z: 3))), Vec3(x: 1, y: 2, z: 3))
         XCTAssertNil(Vec3(cyValue: .vec2(.zero)))
@@ -97,11 +99,12 @@ final class RetainedCStringTests: XCTestCase {
 
     func testEveryNameIsKept() {
         let before = RetainedCString.count
-        for index in 0 ..< 8 {
+        for index in 0..<8 {
             _ = RetainedCString.make("name\(index)")
         }
-        XCTAssertEqual(RetainedCString.count, before + 8,
-                       "nothing is ever freed: an image is never unloaded, so there is no later "
-                           + "moment at which freeing one becomes safe")
+        XCTAssertEqual(
+            RetainedCString.count, before + 8,
+            "nothing is ever freed: an image is never unloaded, so there is no later "
+                + "moment at which freeing one becomes safe")
     }
 }

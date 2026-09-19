@@ -21,6 +21,7 @@
 
 namespace cy::sample::ship {
 
+/// One colour, as the palette declares it and as the image stores it.
 struct Rgba {
     u8 r = 0;
     u8 g = 0;
@@ -36,6 +37,7 @@ struct Image {
     u32 height = 0;
     std::vector<u8> pixels;
 
+    /// Bytes in `pixels` when it is sized for this width and height.
     [[nodiscard]] usize byte_size() const noexcept {
         return static_cast<usize>(width) * height * 4U;
     }
@@ -43,11 +45,14 @@ struct Image {
 
 /// One line of the coverage footer: a label, a verdict, and what answered.
 ///
-/// `verdict` is deliberately one of three words and not a boolean — "NOT EVALUATED is never a
-/// pass" is the rung's own rule, and a boolean has nowhere to put the third answer.
+/// `verdict` is deliberately a word and not a boolean — "NOT EVALUATED is never a pass" is the
+/// rung's own rule, and a boolean has nowhere to put that answer, nor the difference between a leg
+/// this binary was BUILT with and one it actually RAN.
 struct CoverageLine {
     std::string label;
-    std::string verdict;  // "RAN", "NOT EVALUATED", "ABSENT"
+    /// "RAN", "BUILT", "NOT EVALUATED", "ABSENT" — four, because BUILT is not RAN and NOT
+    /// EVALUATED is neither of them.
+    std::string verdict;
     std::string detail;
 };
 
@@ -58,8 +63,11 @@ public:
     /// Two `cycard 1` headers is the expected shape, not an error.
     [[nodiscard]] Status parse(std::string_view document) noexcept;
 
+    /// The card's declared size. Not the swapchain's: a compositor may give something else,
+    /// and `present.cpp` copies the intersection rather than assuming they agree.
     [[nodiscard]] u32 width() const noexcept { return width_; }
     [[nodiscard]] u32 height() const noexcept { return height_; }
+    /// The card's own name, as the content declared it.
     [[nodiscard]] const std::string& id() const noexcept { return id_; }
     /// How many draw directives the content carried. Reported so that "the content decided the
     /// pixels" is a number rather than an assertion.
@@ -79,8 +87,11 @@ public:
     [[nodiscard]] Rgba colour_or(std::string_view name, Rgba fallback) const noexcept;
 
 private:
+    /// The two things the content can ask for. A third would be a change to the format and to
+    /// `compose()` together, which is the point of keeping it this small.
     enum class Kind : u8 { Bar, Text };
 
+    /// One draw the content asked for, resolved against the palette at parse time.
     struct Directive {
         Kind kind = Kind::Bar;
         i32 x = 0;
@@ -92,8 +103,10 @@ private:
         std::string text;
     };
 
+    /// A colour the palette declared, or null. `colour_or` is the public form.
     [[nodiscard]] const Rgba* colour(std::string_view name) const noexcept;
 
+    /// One palette entry.
     struct NamedColour {
         std::string name;
         Rgba value;
@@ -111,6 +124,7 @@ private:
 /// Draw one run of upper-case text into an image. Exposed because the footer is drawn by the
 /// program and the card body by the content, and both need the same glyphs.
 void draw_text(Image& image, i32 x, i32 y, u32 scale, Rgba colour, std::string_view text) noexcept;
+/// Fill a rectangle, clipped to the image. The other half of the pair above.
 void fill_rect(Image& image, i32 x, i32 y, i32 w, i32 h, Rgba colour) noexcept;
 
 }  // namespace cy::sample::ship

@@ -7,13 +7,13 @@ phrase**. All four are here.
 
 | Gate | Recipe | What it reads | State on the day it landed |
 |---|---|---|---|
-| `swift-format` | `just quality-swift-format` | 34 Swift files in `bindings/swift/` and `samples/04-character/game/` | **unchecked here** — no Swift toolchain on this host; proved on CI's Swift legs |
+| `swift-format` | `just quality-swift-format` | 34 Swift files in `bindings/swift/` and `samples/04-character/game/` | **all 34 were unformatted**; reformatted in this change and green since |
 | Licence headers | `just quality-licence` | 2 584 source files under ten roots | **2 of 2 584 carry an SPDX line.** A 2 582-file declared backlog |
 | Spelling | `just quality-spelling` | comments and documentation over 17 roots | **clean**, with 25 declared words and 8 excluded lines |
 | Undocumented symbols | `just quality-docs` | 2 472 public symbols: C++ headers, the C ABI, the Swift overlay | **1 932 documented (78%)**; a 540-symbol declared backlog |
 
-`just quality-gates-selftest` proves all four. Fourteen cases, thirteen of which run on a machine
-with no Swift toolchain.
+`just quality-gates-selftest` proves all four: **fourteen cases, fourteen reds watched**, on the
+machine M11.d was worked on.
 
 ## Why two of them carry a backlog, and why that is not an allowlist
 
@@ -89,10 +89,21 @@ Each of those four has its own selftest case (`licence-reads-nothing`,
 `spelling-ignore-list-is-load-bearing` — removes one word from the ignore list and requires the gate
 to go red, which is how we know the list is being read rather than silently dropped.
 
-## What this host could not prove
+## The gate that was nearly shipped unable to run
 
-`swift-format-break` — break a Swift file's formatting and require the gate to refuse — needs a
-Swift toolchain. M11.d was worked on Linux with no Apple toolchain, which is the same fact that moved
-the Metal backend out of this rung. The case is reported **NOT EVALUATED**, which is not a pass, and
-`just quality-gates-selftest --strict` — what CI runs on a leg that installs Swift 6 — refuses to
-exit 0 with any case unrun.
+`swift-format-break` needs a Swift toolchain, `command -v swift` finds none here, and the first
+version of this gate reported "no Swift toolchain on this machine" and exited 2 — with the case
+recorded as NOT EVALUATED. **That was wrong.** There is a Swift **6.3.3** toolchain on this host,
+installed through `swiftly`, whose environment line goes into `~/.profile` and so reaches only a
+*login* shell. `bindings/swift/tools/cy_swift_module.py` has resolved it that way since M4 and says
+why in its own header; this gate now does the same, through the same environment file, so the
+compiler that builds the Swift bindings and the formatter that checks them are one installation.
+
+It found **all 34 Swift files unformatted**, which were reformatted in this change, and the
+fourteenth selftest case now runs here like the other thirteen.
+
+The lesson is the mirror of this project's usual one. Nine checks here have shipped unable to go
+red; this one nearly shipped unable to go *green*, and **a check that reports "not available" is as
+wrong as one that reports a false pass, if it looked in the wrong place.** The UNRUN machinery is
+kept for a machine that genuinely has no toolchain — exit 2 means "did not run", which the selftest
+tells apart from exit 1, and `--strict` refuses to pass with any case unrun.

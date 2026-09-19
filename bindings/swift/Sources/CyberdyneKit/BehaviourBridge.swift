@@ -45,8 +45,10 @@ final class BehaviourRegistration {
     let callbacks: CallbackSet
     let make: (Entity) -> any BehaviourClass
 
-    init(name: String, schema: UInt32, callbacks: CallbackSet,
-         make: @escaping (Entity) -> any BehaviourClass) {
+    init(
+        name: String, schema: UInt32, callbacks: CallbackSet,
+        make: @escaping (Entity) -> any BehaviourClass
+    ) {
         self.name = name
         self.schema = schema
         self.callbacks = callbacks
@@ -56,8 +58,9 @@ final class BehaviourRegistration {
     /// Report a callback that threw, and take the instance out of dispatch.
     func report(_ error: Error, in callback: String, on instance: Behaviour) {
         instance.isEnabled = false
-        Log.error("\(name).\(callback) failed: \(error). The instance is disabled; the engine keeps "
-            + "running.")
+        Log.error(
+            "\(name).\(callback) failed: \(error). The instance is disabled; the engine keeps "
+                + "running.")
     }
 }
 
@@ -78,15 +81,17 @@ public enum Behaviours {
         guard let interface = Runtime.interface, let engine = Runtime.engineHandle else {
             throw CyberdyneError.invalidHandle
         }
-        let record = BehaviourRegistration(name: type.behaviourName, schema: type.behaviourSchema,
-                                           callbacks: type.behaviourCallbacks,
-                                           make: { type.init(entity: $0) })
+        let record = BehaviourRegistration(
+            name: type.behaviourName, schema: type.behaviourSchema,
+            callbacks: type.behaviourCallbacks,
+            make: { type.init(entity: $0) })
         var vtable = makeVTable(record)
         // The name is RETAINED, not borrowed: the host keeps the pointer. See CStrings.swift for
         // what the obvious `withCString` version did instead.
-        let handle = interface.registerBehaviour(engine: engine,
-                                                 name: RetainedCString.make(type.behaviourName),
-                                                 vtable: &vtable)
+        let handle = interface.registerBehaviour(
+            engine: engine,
+            name: RetainedCString.make(type.behaviourName),
+            vtable: &vtable)
         guard let handle else {
             throw CyberdyneError.fromLastError(.internal)
         }
@@ -127,99 +132,104 @@ private func instance(_ raw: CyInstance?) -> (any BehaviourClass)? {
     return Unmanaged<Behaviour>.fromOpaque(raw).takeUnretainedValue() as? any BehaviourClass
 }
 
-private let behaviourCreate: @convention(c) (CyEngine?, CyEntity, UnsafeMutableRawPointer?)
-    -> CyInstance? = { _, entity, userData in
-        guard let record = registration(userData) else { return nil }
-        let object = record.make(Entity(bits: entity))
-        if record.callbacks.contains(.create) {
-            do {
-                try object.onCreate()
-            } catch {
-                record.report(error, in: "onCreate", on: object)
+private let behaviourCreate:
+    @convention(c) (CyEngine?, CyEntity, UnsafeMutableRawPointer?)
+        -> CyInstance? = { _, entity, userData in
+            guard let record = registration(userData) else { return nil }
+            let object = record.make(Entity(bits: entity))
+            if record.callbacks.contains(.create) {
+                do {
+                    try object.onCreate()
+                } catch {
+                    record.report(error, in: "onCreate", on: object)
+                }
+            }
+            // Retained as `Behaviour` rather than as `any BehaviourClass`: `Unmanaged` needs a class
+            // type, and the existential is not one. `destroy` takes it back at the same type, so the
+            // pair balances; the concrete class is reached again through `instance(_:)`.
+            let retained: Behaviour = object
+            return Unmanaged.passRetained(retained).toOpaque()
+        }
+
+private let behaviourDestroy:
+    @convention(c) (CyInstance?, UnsafeMutableRawPointer?)
+        -> Void = { raw, userData in
+            guard let raw, let record = registration(userData) else { return }
+            let object = Unmanaged<Behaviour>.fromOpaque(raw).takeRetainedValue()
+            if record.callbacks.contains(.destroy), object.isEnabled {
+                do {
+                    try object.onDestroy()
+                } catch {
+                    record.report(error, in: "onDestroy", on: object)
+                }
             }
         }
-        // Retained as `Behaviour` rather than as `any BehaviourClass`: `Unmanaged` needs a class
-        // type, and the existential is not one. `destroy` takes it back at the same type, so the
-        // pair balances; the concrete class is reached again through `instance(_:)`.
-        let retained: Behaviour = object
-        return Unmanaged.passRetained(retained).toOpaque()
-    }
 
-private let behaviourDestroy: @convention(c) (CyInstance?, UnsafeMutableRawPointer?)
-    -> Void = { raw, userData in
-        guard let raw, let record = registration(userData) else { return }
-        let object = Unmanaged<Behaviour>.fromOpaque(raw).takeRetainedValue()
-        if record.callbacks.contains(.destroy), object.isEnabled {
+private let behaviourFixedUpdate:
+    @convention(c) (CyInstance?, Float, UnsafeMutableRawPointer?)
+        -> Void = { raw, delta, userData in
+            guard let record = registration(userData), let object = instance(raw) else { return }
+            guard object.isEnabled, record.callbacks.contains(.fixedUpdate) else { return }
             do {
-                try object.onDestroy()
+                try object.onFixedUpdate(Double(delta))
             } catch {
-                record.report(error, in: "onDestroy", on: object)
+                record.report(error, in: "onFixedUpdate", on: object)
             }
         }
-    }
-
-private let behaviourFixedUpdate: @convention(c) (CyInstance?, Float, UnsafeMutableRawPointer?)
-    -> Void = { raw, delta, userData in
-        guard let record = registration(userData), let object = instance(raw) else { return }
-        guard object.isEnabled, record.callbacks.contains(.fixedUpdate) else { return }
-        do {
-            try object.onFixedUpdate(Double(delta))
-        } catch {
-            record.report(error, in: "onFixedUpdate", on: object)
-        }
-    }
 
 /// `serialize(self, NULL, 0, ud)` returns the byte count required and writes nothing; that is how
 /// the host sizes the blob, and it is why this builds the blob before it looks at `capacity`.
-private let behaviourSerialize: @convention(c)
-    (CyInstance?, UnsafeMutablePointer<UInt8>?, UInt32, UnsafeMutableRawPointer?)
-    -> UInt32 = { raw, buffer, capacity, userData in
-        guard let record = registration(userData), let object = instance(raw) else { return 0 }
-        var writer = BlobWriter(schema: record.schema)
-        for (name, value) in object.exportedValues() {
-            writer.write(name, value)
-        }
-        let bytes = writer.finish()
-        let required = UInt32(bytes.count)
-        guard let buffer, capacity >= required else { return required }
-        buffer.update(from: bytes, count: bytes.count)
-        return required
-    }
-
-private let behaviourDeserialize: @convention(c)
-    (CyInstance?, UnsafePointer<UInt8>?, UInt32, UInt32, UnsafeMutableRawPointer?)
-    -> Int32 = { raw, buffer, size, fromSchema, userData in
-        guard let record = registration(userData), let object = instance(raw), let buffer else {
-            return CY_RESULT_INVALID_ARGUMENT.rawValue32
-        }
-        // THE CHECK THE LOADER RELIES ON. A blob written by a schema newer than this code is not a
-        // migration this code can perform; saying so is what makes the reload be rejected with the
-        // previous generation kept live. `native-abi`'s "Incompatible reload".
-        if fromSchema > record.schema {
-            return CY_RESULT_SCHEMA_TOO_NEW.rawValue32
-        }
-        do {
-            let restored = try restore(object, buffer, size, record)
-            if record.callbacks.contains(.afterReload) {
-                try object.onAfterReload(restored: restored)
+private let behaviourSerialize:
+    @convention(c) (CyInstance?, UnsafeMutablePointer<UInt8>?, UInt32, UnsafeMutableRawPointer?)
+        -> UInt32 = { raw, buffer, capacity, userData in
+            guard let record = registration(userData), let object = instance(raw) else { return 0 }
+            var writer = BlobWriter(schema: record.schema)
+            for (name, value) in object.exportedValues() {
+                writer.write(name, value)
             }
-            return CY_RESULT_OK.rawValue32
-        } catch let error as BlobError {
-            Log.error("\(record.name): the saved state could not be read (\(error))")
-            return CY_RESULT_INVALID_ARGUMENT.rawValue32
-        } catch {
-            record.report(error, in: "onAfterReload", on: object)
-            return CY_RESULT_OK.rawValue32
+            let bytes = writer.finish()
+            let required = UInt32(bytes.count)
+            guard let buffer, capacity >= required else { return required }
+            buffer.update(from: bytes, count: bytes.count)
+            return required
         }
-    }
+
+private let behaviourDeserialize:
+    @convention(c) (CyInstance?, UnsafePointer<UInt8>?, UInt32, UInt32, UnsafeMutableRawPointer?)
+        -> Int32 = { raw, buffer, size, fromSchema, userData in
+            guard let record = registration(userData), let object = instance(raw), let buffer else {
+                return CY_RESULT_INVALID_ARGUMENT.rawValue32
+            }
+            // THE CHECK THE LOADER RELIES ON. A blob written by a schema newer than this code is not a
+            // migration this code can perform; saying so is what makes the reload be rejected with the
+            // previous generation kept live. `native-abi`'s "Incompatible reload".
+            if fromSchema > record.schema {
+                return CY_RESULT_SCHEMA_TOO_NEW.rawValue32
+            }
+            do {
+                let restored = try restore(object, buffer, size, record)
+                if record.callbacks.contains(.afterReload) {
+                    try object.onAfterReload(restored: restored)
+                }
+                return CY_RESULT_OK.rawValue32
+            } catch let error as BlobError {
+                Log.error("\(record.name): the saved state could not be read (\(error))")
+                return CY_RESULT_INVALID_ARGUMENT.rawValue32
+            } catch {
+                record.report(error, in: "onAfterReload", on: object)
+                return CY_RESULT_OK.rawValue32
+            }
+        }
 
 /// Restore by name, returning the names that were actually found.
 ///
 /// A key this class no longer has is skipped, and a property the blob does not carry keeps the
 /// default its declaration gave it — which is the whole migration story, and the only one that
 /// works. See Serialization.swift, item 1.
-private func restore(_ object: any BehaviourClass, _ buffer: UnsafePointer<UInt8>, _ size: UInt32,
-                     _ record: BehaviourRegistration) throws -> Set<String> {
+private func restore(
+    _ object: any BehaviourClass, _ buffer: UnsafePointer<UInt8>, _ size: UInt32,
+    _ record: BehaviourRegistration
+) throws -> Set<String> {
     var reader = try BlobReader(UnsafeRawBufferPointer(start: buffer, count: Int(size)))
     var restored: Set<String> = []
     while let entry = try reader.next() {
@@ -235,8 +245,9 @@ private func restore(_ object: any BehaviourClass, _ buffer: UnsafePointer<UInt8
         if storage.assign(entry.value) {
             restored.insert(entry.key)
         } else {
-            Log.warning("\(record.name).\(entry.key) changed type between schemas; the saved value "
-                + "was dropped and the property keeps its default.")
+            Log.warning(
+                "\(record.name).\(entry.key) changed type between schemas; the saved value "
+                    + "was dropped and the property keeps its default.")
         }
     }
     return restored
@@ -266,14 +277,16 @@ extension Behaviour {
     /// `delta` is ignored by every callback that does not take one.
     public func dispatch(_ callback: CallbackSet, delta: Double = 0) {
         guard isEnabled, let typed = self as? any BehaviourClass,
-              type(of: typed).behaviourCallbacks.contains(callback) else { return }
+            type(of: typed).behaviourCallbacks.contains(callback)
+        else { return }
         do {
             try invoke(callback, delta)
         } catch {
             isEnabled = false
             let name = callback.names.first ?? "a callback"
-            Log.error("\(type(of: typed).behaviourName).\(name) failed: \(error). The instance is "
-                + "disabled; the engine keeps running.")
+            Log.error(
+                "\(type(of: typed).behaviourName).\(name) failed: \(error). The instance is "
+                    + "disabled; the engine keeps running.")
         }
     }
 

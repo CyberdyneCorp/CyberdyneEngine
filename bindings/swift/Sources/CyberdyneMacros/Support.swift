@@ -44,7 +44,8 @@ enum MacroDiagnostic: String, DiagnosticMessage {
                 + "types: the ECS moves their bytes when an entity changes archetype, and moving a "
                 + "class reference that way leaks it or frees it twice."
         case .componentFieldNotStorable:
-            return "this field's type cannot be stored in a component. Components must be trivially "
+            return
+                "this field's type cannot be stored in a component. Components must be trivially "
                 + "relocatable value types; the storable types are Bool, Int64, Float, Double, "
                 + "Vec2, Vec3, Vec4, Quat and Entity."
         case .componentFieldNeedsType:
@@ -98,7 +99,7 @@ func stringLiteral(_ expression: ExprSyntax?) -> String? {
 /// arguments.
 func hasAttribute(_ named: String, on attributes: AttributeListSyntax) -> Bool {
     attributes.contains { element in
-        guard case let .attribute(attribute) = element else { return false }
+        guard case .attribute(let attribute) = element else { return false }
         return attribute.attributeName.trimmedDescription == named
             || attribute.attributeName.trimmedDescription.hasPrefix("\(named)(")
     }

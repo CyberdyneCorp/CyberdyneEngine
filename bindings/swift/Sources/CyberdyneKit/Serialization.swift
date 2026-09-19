@@ -84,20 +84,20 @@ struct BlobWriter {
     private mutating func appendPayload(_ value: Value) {
         switch value {
         case .none: break
-        case let .bool(inner): bytes.append(inner ? 1 : 0)
-        case let .i64(inner): append(UInt64(bitPattern: inner))
-        case let .f32(inner): append(inner.bitPattern)
-        case let .f64(inner): append(inner.bitPattern)
-        case let .vec2(inner): appendLanes([inner.x, inner.y])
-        case let .vec3(inner): appendLanes([inner.x, inner.y, inner.z])
-        case let .vec4(inner): appendLanes([inner.x, inner.y, inner.z, inner.w])
-        case let .quat(inner): appendLanes([inner.x, inner.y, inner.z, inner.w])
-        case let .entity(inner): append(inner.bits)
-        case let .string(inner):
+        case .bool(let inner): bytes.append(inner ? 1 : 0)
+        case .i64(let inner): append(UInt64(bitPattern: inner))
+        case .f32(let inner): append(inner.bitPattern)
+        case .f64(let inner): append(inner.bitPattern)
+        case .vec2(let inner): appendLanes([inner.x, inner.y])
+        case .vec3(let inner): appendLanes([inner.x, inner.y, inner.z])
+        case .vec4(let inner): appendLanes([inner.x, inner.y, inner.z, inner.w])
+        case .quat(let inner): appendLanes([inner.x, inner.y, inner.z, inner.w])
+        case .entity(let inner): append(inner.bits)
+        case .string(let inner):
             let utf8 = Array(inner.utf8)
             append(UInt32(utf8.count))
             bytes.append(contentsOf: utf8)
-        case let .bytes(inner):
+        case .bytes(let inner):
             append(UInt32(inner.count))
             bytes.append(contentsOf: inner)
         }
@@ -124,7 +124,8 @@ struct BlobReader {
         var cursor = 0
         func word() -> UInt32 {
             defer { cursor += 4 }
-            return UInt32(littleEndian: buffer.loadUnaligned(fromByteOffset: cursor, as: UInt32.self))
+            return UInt32(
+                littleEndian: buffer.loadUnaligned(fromByteOffset: cursor, as: UInt32.self))
         }
         guard word() == blobMagic else { throw BlobError.badMagic }
         schema = word()
@@ -169,13 +170,13 @@ struct BlobReader {
     private mutating func take(_ length: Int) throws -> UnsafeRawBufferPointer {
         guard length >= 0, offset + length <= bytes.count else { throw BlobError.truncated }
         defer { offset += length }
-        return UnsafeRawBufferPointer(rebasing: bytes[offset ..< offset + length])
+        return UnsafeRawBufferPointer(rebasing: bytes[offset..<offset + length])
     }
 
     private mutating func lanes(_ n: Int) throws -> [Float] {
         var out: [Float] = []
         out.reserveCapacity(n)
-        for _ in 0 ..< n { out.append(Float(bitPattern: try word())) }
+        for _ in 0..<n { out.append(Float(bitPattern: try word())) }
         return out
     }
 
