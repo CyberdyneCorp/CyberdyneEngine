@@ -115,6 +115,12 @@ kind = "recipe"
 run = "just ci-check"
 ci_job = "workflows"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token  = "just quality-layers"
+note   = "THE SAME MUTATION EVERY LEDGER'S `workflows` CRITERION TAKES, because every ledger runs the same `just ci-check` and the thing it guards is the same: a permanent gate whose commands no job in .github/workflows/ runs. Deleting the layering gate's command from every job is exactly that drift, and it is the smallest edit that produces it. Carried across from m11b.toml, which earned it first; the alternatives m11b rejected are rejected here for its reasons — deleting a whole job file makes the recipe red for a missing file rather than for the drift, and deleting the gate from gates.toml makes the two agree again, which is green."
+
 # ADDED AT M4'S GATE, AND THE REASON IS A DEFECT THIS FILE DID NOT CATCH. M0's `generated-code`
 # criterion runs `just generate-check` — one of the THREE commands its own gate declares in
 # tools/roadmap/gates.toml. The other two are `just generate-test` and `just maintenance-deps-check`,
@@ -128,6 +134,7 @@ ci_job = "workflows"
 # The test is fixed (it now names `-DCY_AUDIO=OFF`, so it asserts the rule rather than the default),
 # and this criterion is here so that the next flip of a default is caught by the recipe that closes
 # the milestone rather than by the pull request after it. It runs the gate's commands verbatim.
+
 [[criterion]]
 id = "generated-code"
 describe = "the generated-code gate, all three of its commands: the headers are current and reproducible, the generator's own fixtures still reject what they are meant to reject, and THIRD_PARTY.md matches the dependency manifest"

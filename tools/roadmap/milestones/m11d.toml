@@ -80,6 +80,12 @@ kind = "recipe"
 run = "just ci-check"
 ci_job = "workflows"
 
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token  = "just quality-layers"
+note   = "THE SAME MUTATION EVERY LEDGER'S `workflows` CRITERION TAKES, because every ledger runs the same `just ci-check` and the thing it guards is the same: a permanent gate whose commands no job in .github/workflows/ runs. Deleting the layering gate's command from every job is exactly that drift, and it is the smallest edit that produces it. Carried across from m11b.toml, which earned it first; the alternatives m11b rejected are rejected here for its reasons — deleting a whole job file makes the recipe red for a missing file rather than for the drift, and deleting the gate from gates.toml makes the two agree again, which is green."
+
 [[criterion]]
 id = "generated-code"
 describe = "the generated-code gate, all three commands — including the feature options two new backends add, each of which must fetch, build and link nothing when disabled"
