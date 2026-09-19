@@ -396,6 +396,13 @@ set -eo pipefail
 # passes for this label — would have made an EMPTY selection green too. `requires = "display"` did
 # not save it: this host has one, so the criterion was evaluated and passed vacuously.
 #
+# IT IS THE SAME DEFECT `m11c:virtual-geometry-image` WAS REWRITTEN FOR ONE RUNG DOWN — "it measured
+# none of those three words", instance 3 of the family `tools/roadmap/falsify.py` enumerates — and
+# that criterion's repair is the one followed here rather than a new shape: name the subject, assert
+# that what ran IS the subject, and only then believe the run. Where that one names a ctest suite
+# before running it, this one names the display server, the window and the frame count in the
+# sample's own report, because a sample's subject is what it did and not which cases were selected.
+#
 # AND THE GOLDEN CLAIM CANNOT BE SATISFIED AS IT WAS WRITTEN, WHICH IS A FINDING ABOUT THE CRITERION
 # RATHER THAN ABOUT THE BACKEND. `tests/render/` links no platform target and constructs no
 # `DisplayServer` at all: the goldens render offscreen through Vulkan into a readback buffer, so NO

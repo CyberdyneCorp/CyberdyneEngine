@@ -1046,7 +1046,7 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec
 [[proof]]
 ledger = "m11d"
 criterion = "native-backend-runs-the-m0-sample"
-digest = "0d9f87a4a70d7187"
+digest = "711b60aec038bc91"
 verdict = "proven against a built tree"
 mutation = "delete-lines 'list(APPEND cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=1)' in samples/00-empty/CMakeLists.txt (declared)"
 detail = "red under mutation of 1 file(s), rebuilt against build/m11d-crit (exit 1: the M0 sample did not reach a clean exit on the native backend), and green again once restored"
