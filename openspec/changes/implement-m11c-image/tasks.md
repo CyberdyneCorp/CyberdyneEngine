@@ -1985,3 +1985,153 @@ never reaches, and the adversarial pass measured the mutation of that line leavi
 assertions green. It is left as it is rather than re-pointed: moving a mapping to a case that passes
 is the act this rung has spent two gates learning to refuse, and the honest repair is an assertion
 that reaches `TemporalFramework::classify`.
+
+### THE CLOSE, SECOND ATTEMPT — MEASURED AT HEAD, ALONE, AND M11.c STILL DOES NOT CLOSE
+
+**THE PREVIOUS RUN COULD NOT BE CITED AND WAS NOT.** The last ledger read the tree at `2ca9e15`;
+HEAD when this phase opened was `2d68aff`, **ten commits later**, and `git diff 2ca9e15..HEAD` touches
+`tools/roadmap/milestones/m11c.toml` (114 lines), `.github/workflows/ci.yml` (97),
+`tests/lsan-suppressions.txt` (38), four new committed reference images, two new render suites and
+`samples/{07-fidelity,12-beauty}`. Every one of those is a criterion input, so the counts were
+re-measured rather than inherited — the same check the previous closer made, and it came out the
+same way.
+
+**AND THE PRE-FLIGHT FOUND TWO REDS THE BRIEF DID NOT HAVE, BOTH OF THIS RUNG'S OWN MAKING.** They
+were repaired **before** the ledger started, so the run below describes one tree rather than two:
+
+- **`m0:lint` / `m11c:lint` — 5 clang-tidy errors in code committed after the last ledger.**
+  `tests/render/test_sky_times_of_day.cpp` (a π literal where `std::numbers::pi_v<f32>` is asked
+  for; an index loop over `kTimes` that is a range loop) and `samples/07-fidelity/shade.cpp` (an
+  unused `using rendering::PageState`, a `(x * 255.0F) + 0.5F` cast that `bugprone-incorrect-roundings`
+  refuses, an integer division read in a float context). **This is the second time this rung has
+  shipped a red static-analysis gate on its own new code** — 9.1 above records the first, 41 errors
+  in nine files — and the shape is identical: a phase writes hundreds of lines and never runs the
+  gate. Repaired, and **the picture did not move**: `std::numbers::pi_v<float>` and the literal are
+  the same float, and `std::lround(x)` and `floor(x + 0.5)` agree for every non-negative `x`, which
+  `encoded` is by construction. Measured rather than argued — `render.sky_times_of_day` and
+  `render.virtual_geometry_shaded` both still pass against their committed references after the
+  rebuild, and `just quality-lint` is green.
+- **`m7:plan-consistency` / `m11c:plan-consistency` — 21 falsifiability disagreements, and 18 of
+  them were created by this rung's own CI repair.** `just ci-check` went GREEN when the `milestone`
+  job moved to `m11b`, which turned eighteen `<ledger>:workflows` proofs recorded as *"red in the
+  tree"* into *"was recorded as 'red in the tree' and is now 'proven'"* — exactly what 9.2's own
+  record predicted would happen *"the day it is fixed"*. Fifteen ledgers had no
+  `[criterion.falsifies]` to prove `workflows` with; each now carries m11b's mutation, and
+  `prove --only workflows --record` recorded **18 proven**. The other three were the digests of
+  `virtual-geometry-image`, `sky-as-an-image` and `vfx-in-the-shot`, rewritten by this rung's
+  picture phases: **`prove m11c --build-dir build/m11c-final --mutate-the-tree --record` earned all
+  three, PROVEN AGAINST A BUILT TREE**, each red under the mutation its own `[criterion.falsifies]`
+  declares and green again restored. Every mutation target was `md5sum`-verified back to its HEAD
+  blob afterwards, and **every WIP snapshot commit taken during those windows was read and none
+  carries a mutation** — the hazard `9.2` records at `c39a234` did not recur. `just roadmap-debts`
+  then dropped fifteen now-false `workflows` rows from `docs/roadmap/open-debts.md`.
+  `just roadmap-falsify check`: **47 → 21 → 0 disagreements**. `just roadmap-test`: **406/406**.
+
+**THE RUN.** `CY_BUILD_DIR=build/m11c-final just roadmap-milestone m11c`, at `6eb0c08`,
+**01:30:07 → 03:29:13 on 2026-09-19, 7146 s (1.99 h)**, log `/tmp/m11c-close2/ledger.log`,
+backgrounded and polled by explicit PID. `ps` was checked before it started — no build, `ctest`,
+prover or other ledger was alive — and nothing of this phase's ran against the tree while it read.
+`git status` was clean at the first line and at the last, **HEAD did not move** (`6eb0c08` at both
+ends), and no `.tmp.<pid>.<hash>` file is anywhere in the tree.
+
+**`M11C is not closed: 3 of 435 evaluated criteria failed.`**
+
+| bucket | this run | the previous close at `2ca9e15` | the Ledger phase at `fcaec4f` |
+|---|---|---|---|
+| declared | **440** | 440 | 440 |
+| evaluated on this host | **435** | 435 | 435 |
+| PASS | **404** | 399 | 396 |
+| FAIL (not a declared gap) | **3** | 8 | 11 |
+| declared gaps, still open (do not block) | **28** | 28 | 28 |
+| declared gaps that NOW PASS (these DO block) | **0** | 0 | 0 |
+| NOT EVALUATED, legitimately | **5** | 5 | 5 |
+
+**SIX OF THE EIGHT ARE GONE, AND ONE NEW FAILURE ARRIVED.**
+
+| the eight | now | how |
+|---|---|---|
+| `m11c:virtual-geometry-image` | **ok** | `render.virtual_geometry_shaded` is registered, `tests/render/references/virtual_geometry_shaded.png` is committed, and the suite compares against it |
+| `m11c:sky-as-an-image` | **ok** | `render.sky_times_of_day`, four committed references, and the criterion requires four `sun elevation` lines that only a composed frame can print |
+| `m11c:vfx-in-the-shot` | **ok** | the framing case, the `render.vfx` golden against `beauty_shot_air.png`, and the manifest's own `particles 996 in 1 draw(s)` |
+| `m4:sanitizers` | **ok** | the `libcuda.so.1` suppression — **and the negative control was taken here rather than inherited**: with the entry removed from a copy of the file the same binary is RED at *"408 byte(s) leaked in 1 allocation(s)"*, and with it `print_suppressions=1` reports `1 408 libcuda.so.1` beside the older `6 3804 libdbus-1.so`. The stack is three frames, `#1` inside `libcuda.so.1`, no engine frame |
+| `m5:sanitizers` | **ok** | the same entry; the control is the same and RED at *"1632 byte(s) in 4"* |
+| `m1:workflows` | **ok** | the nightly `milestone` job now runs `just roadmap-milestone m11b --ci`, so both closed gates are evaluated |
+| `m11c:roadmap-tiers` | **FAIL** | the record the closing change writes — below |
+| `m11c:m11d-open` | **FAIL** | the deliberate act, and this is the fourth closer to refuse to farm it |
+
+**AND THE NEW ONE, WHICH IS A REAL DEFECT AND IS FIXED HERE.** `m8c:feature-options-off` —
+`samples/12-beauty/CMakeLists.txt` declared `cy_sample_beauty` linking `cy::vfx` unconditionally, so
+`-D CY_VFX=OFF` failed at CMake's **generate** step for the whole tree: *"Target cy_sample_beauty
+links to cy::vfx but the target was not found"*. That is the same defect 9.1 records this rung
+committing once already, in `tests/integration/CMakeLists.txt` against `cy::rhi-vulkan`. The remedy
+is `samples/08-vertical-slice`'s, unchanged: a sample whose subject is absent **declares nothing**.
+Verified by running the criterion's own body verbatim with `CY_BUILD_DIR=build/m11c-final` —
+**both legs, exit 0**: `-D CY_VFX=OFF` configures (printing the new `samples/12-beauty: CY_VFX is
+off` line) and builds, and `-D CY_RENDERER_VULKAN=OFF -D CY_VIRTUAL_GEOMETRY=OFF` configures and
+builds 68 targets clean. **It landed after the run it is measured against**, which is said plainly
+rather than folded into the table above.
+
+### AND ONE FINDING THE LEDGER COULD NOT HAVE MADE, BECAUSE NO CRITERION ASKS IT
+
+**`vfx-system` WAS AT 24 OF 26 AND NOBODY COULD HAVE KNOWN.** Reading all fifteen rows through
+`just quality-requirements` — which is what 9.4 asks for and what no criterion does for five of
+them — `vfx-system` reported two entries *"answered by something that is not there"*: *Data
+interfaces* and *VFX does not influence gameplay state*. **Both cases exist under exactly those
+names**, at `src/vfx/tests/test_vfx_compiler.cpp:509` and `src/gameplay/tests/test_firewall.cpp:448`.
+The defect is in the checker: `requirements.py::_contains` searched the source BYTES, and a
+`CY_TEST_CASE` name longer than the line limit is wrapped by clang-format into **adjacent string
+literals**, which the compiler concatenates and a substring search does not. `git log -S` over the
+unwrapped spelling returns nothing for either file, so **neither entry had ever resolved**, and no
+run had ever said so because `material-compiler-at-complete-grade` and `image-rows-at-complete-grade`
+cover ten rows and `vfx-system` is not one of them.
+
+Repaired, narrowly: `_contains` also tries the text with quote-whitespace-quote boundaries removed,
+which is what the compiler does and nothing else. **The negative control is in the regression test**
+— `{"alpha", "beta"}` does not become `alphabeta`, because a comma is not whitespace — alongside a
+case that is genuinely absent still being absent. `selftest.py` is **410/410**, four of them new. The
+two Complete-grade criteria were re-run afterwards because their measurement was taken against the
+old code: **34 of 34** and **123 of 123**, unchanged. All fifteen rows now read **232 of 232**.
+
+### SO M11.c DOES NOT CLOSE, AND NOTHING IS PROMOTED
+
+`tools/roadmap/gates.toml` is **unchanged** — `milestone-m11c` stays at `state = "joins-on-close"`.
+`.github/workflows/ci.yml` is **unchanged**, still pointing the nightly ledger at `m11b`.
+`docs/roadmap/status.yaml`, `capability-matrix.md` and `ROADMAP.md` are **unchanged**: all fifteen
+rows stay at Working.
+
+**AND THE REASON IS NOT THAT A ROW FELL SHORT.** It is worth saying in those words, because it is the
+first time on this rung that it is true. Every one of the fifteen rows' own criteria is green, the
+two Complete-grade criteria are green, and all 232 requirements map. What stops the gate is
+`m11c:m11d-open` — *the next rung's change exists and nobody has entered it* — which is a reader's
+deliberate act and is not a gate's to manufacture.
+
+**WHY THE TIERS ARE NOT WRITTEN, WHICH WOULD HAVE TAKEN THE COUNT FROM THREE TO TWO.** Writing
+fifteen rows to Complete is the closing act of a rung that closes, not a way to retire a red. 9.5
+already recorded this project's rule in its own words — *a rung that does not close records
+nothing* — and the asymmetry is plain: the record would then claim fifteen Complete rows under an
+open milestone gate, and a reader who chose to demote one would have to walk it back. The criterion's
+own `describe` says *"IT FAILS UNTIL THE CLOSING CHANGE WRITES THEM AND IT IS MEANT TO"*, so the red
+is self-explanatory where a premature promotion would not be.
+
+**WHAT THE NEXT CLOSER NEEDS, ROW BY ROW, SO THE PROMOTION IS ONE COMMIT AND NOT A RE-MEASUREMENT.**
+Ten of the fifteen have their Complete claim asserted by a criterion; five do not, and that is a gap
+in the ledger rather than in the rows:
+
+| rows | asserted at Complete grade by | today |
+|---|---|---|
+| `material-compiler`, `shader-system` | `m11c:material-compiler-at-complete-grade` | **34/34, green** |
+| `virtual-geometry`, `virtual-shadows`, `rendering-global-illumination`, `denoising`, `ray-tracing-infrastructure`, `rendering-post-processing`, `temporal-rendering`, `rendering-lighting-and-shadows` | `m11c:image-rows-at-complete-grade` | **123/123, green** |
+| `rendering-culling-and-lod`, `atmosphere-sky-and-clouds`, `rendering-architecture`, `rendering-geometry-and-resources`, `vfx-system` | **nothing** — each has a green MECHANISM criterion (`hierarchical-depth-on-a-device`, `sky-as-an-image`, `subsystem-controllers-report-costs`, `skin-pass-complete`, `vfx-in-the-shot`) and no criterion that reads its requirements | 9/9, 13/13, 16/16, 11/11, 26/26 — **measured by hand here, asserted by no gate** |
+
+That third row is 9.4's own sentence turned back on this rung: *read every Complete claim against the
+requirement, not against the mechanism*. The cheapest honest repair is a third Complete-grade
+criterion over those five rows, which is five row names in one `just quality-requirements` line —
+and `vfx-system` is the reason it matters rather than a formality, because it is the row that was
+silently at 24 of 26.
+
+**`shader-system` CARRIES ONE OPEN GAP AND IT IS A REAL ONE.**
+`m11c:every-shader-reaches-every-target` is declared, closing at M11.d: 37 of 39 entry points reach
+all three targets, and `fullscreenVertex` and `cyParticleVertex` take `SV_VulkanVertexID`, which DXC
+refuses. The declaration is sized, measured and owned by the rung that takes the decision, which is
+what a gap is for — but a reader promoting `shader-system` to Complete should do so knowing it, not
+around it.
