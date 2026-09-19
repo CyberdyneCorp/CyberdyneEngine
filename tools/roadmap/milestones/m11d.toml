@@ -520,7 +520,7 @@ ci_job = "milestone-m11d"
 mutate = "delete-lines"
 target = "samples/00-empty/CMakeLists.txt"
 token  = "list(APPEND cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=1)"
-note   = "MEASURED_NOTE_PLACEHOLDER"
+note   = "measured against build/m11d-crit. UNMUTATED the sample answers `display=linux-x11 window=1 trace=/home/leonardo/.local/share/CyberdyneEngine/CyberdyneEngine/00-empty.cytrace` and `120 frames, 121 simulation ticks, exit 0 (frame limit)`, and the control answers `display=desktop-sdl3`; the tick count is matched as `[0-9]+` rather than asserted, because it follows the wall clock while the FRAME count is the one the loop was asked for. WITH THE DEFINITION GONE and the tree rebuilt over it, the sample's own #else answers `--platform native` with \"this build has no native platform backend\" and the run exits 1 at the first assertion here — which is exactly the claim: no native backend ran the sample, and the criterion says so instead of reading an exit code that an SDL3 run would have given identically."
 
 # --- Section 4: the gates, the quality rows, and the oldest tiers in the record ----------------------
 

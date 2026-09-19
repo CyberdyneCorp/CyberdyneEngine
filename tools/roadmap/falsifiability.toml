@@ -17,7 +17,7 @@
 # unmutated, goes RED when the tooling breaks what it names, and still passes when
 # tools/roadmap/milestones/ is deleted. See tools/roadmap/falsify.py.
 
-# 209 proven, 444 not yet shown able to fail.
+# 211 proven, 442 not yet shown able to fail.
 
 [[proof]]
 ledger = "m0"
@@ -1042,6 +1042,22 @@ digest = "c415a4b8b99407b9"
 verdict = "red in the tree"
 mutation = "-"
 detail = "red unmutated, in the sandbox and in the repository (exit 1): openspec/changes/implement-m11e-ship/proposal.md … the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+
+[[proof]]
+ledger = "m11d"
+criterion = "native-backend-runs-the-m0-sample"
+digest = "0d9f87a4a70d7187"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'list(APPEND cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=1)' in samples/00-empty/CMakeLists.txt (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11d-crit (exit 1: the M0 sample did not reach a clean exit on the native backend), and green again once restored"
+
+[[proof]]
+ledger = "m11d"
+criterion = "native-platform-backend"
+digest = "5745acc09a5a8d62"
+verdict = "proven"
+mutation = "rename-token ': public DisplayServer\\x1f: public Platform' in platform/,src/ (derived)"
+detail = "red under mutation of 7 file(s)"
 
 [[proof]]
 ledger = "m11d"
@@ -2522,22 +2538,6 @@ digest = "4e11d3dfd02d69cb"
 verdict = "not provable here"
 mutation = "-"
 detail = "this host cannot evaluate it, so it cannot judge it either: Metal exists only on macOS and this host is Linux; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered — CI job 'milestone-m11d'"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "native-backend-runs-the-m0-sample"
-digest = "10e6c6bff740ff2f"
-verdict = "refuted"
-mutation = "-"
-detail = "absent-sample: just run-sample 00-empty: no samples/*/CMakeLists.txt declares cy_sample_00-empty"
-
-[[unproven]]
-ledger = "m11d"
-criterion = "native-platform-backend"
-digest = "a32ff38263d7fa27"
-verdict = "no mutation"
-mutation = "-"
-detail = "no mutation can be derived from this criterion's text; it must declare a [criterion.falsifies]"
 
 [[unproven]]
 ledger = "m11d"
