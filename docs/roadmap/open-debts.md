@@ -99,19 +99,6 @@ so this document states the finding and moves nothing.
 
 | Rung | Criterion | Declared later by | Prover's verdict | What it said |
 |---|---|---|---|---|
-| M1 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M2 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M3 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M4 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M5 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M5.5 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M6 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M7 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M8.a | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M8.b | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M8.c | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M9 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
-| M10 | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
 | M11.a | `determinism-suites` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): 0 of 3 suite(s) match ^(determinism.simulation\|integration.replay\|integration.network)$ |
 | M11.a | `four-profiles` | — nobody | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): ==> configure profile=debug configuration=Debug platform=linux |
 | M11.a | `network-at-complete-grade` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage networking-and-replication replay-and-rollback simulation-and-determinism … 0 of 67 requirement(s) across 3 r… |
@@ -121,7 +108,6 @@ so this document states the finding and moves nothing.
 | M11.a | `save-inspector` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 45 skipped |
 | M11.a | `steam-audio-simulates` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): [doctest] test cases: 0 \| 0 passed \| 0 failed \| 31 skipped |
 | M11.a | `thirdparty-dependencies-at-working` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): thirdparty-dependencies: the evidence docs/roadmap/capability-matrix.md argues its Working tier from, re-checked against this tree |
-| M11.a | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
 | M11.a | `world-budget-headless` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … the three largest bands: terrain_shade_ms 66.5 ms, sky_ms 24.4 ms, water_ms 12.9 ms |
 | M11.a | `world-budget-on-a-device` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … 64 frames written to /tmp/tmp.aTIedgqP86/frames, vulkan validation errors: 0 |
 | M11.a | `world-streams` | M11.c | red against a built tree | red unmutated against the build tree build/repair-2-0 (exit 1): override: CY_BUILD_DIR=build/repair-2-0 … tiles_cooked: 49 tiles_resident: 49 evicted: 0 stitched_vertices: 0 |
@@ -136,7 +122,6 @@ so this document states the finding and moves nothing.
 | M11.b | `the-game-exists` | M11.c | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): no game project under samples/ |
 | M11.b | `the-game-is-playable` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no game project under samples/ |
 | M11.b | `view-modes` | M11.c | red against a built tree | red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_unit_editor_views — the suite unit.editor_views does not exist |
-| M11.b | `workflows` | — nobody | red in the tree | red unmutated, in the sandbox and in the repository (exit 1): ==> rules negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set. |
 
 ## 3. Behind the plan
 
