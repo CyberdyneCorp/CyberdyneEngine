@@ -87,6 +87,7 @@ constexpr const char* kCapabilityNames[kCapabilityCount] = {
     "DescriptorIndexingNonUniform",
     "BufferDeviceAddress",
     "SparseResources",
+    "ParallelPassRecording",
     "DynamicRendering",
     "Multiview",
     "VariableRateShading",
@@ -138,6 +139,22 @@ const char* image_layout_name(ImageLayout layout) noexcept {
     const auto index = static_cast<u32>(layout);
     constexpr u32 count = sizeof(kLayoutNames) / sizeof(kLayoutNames[0]);
     return index < count ? kLayoutNames[index] : "<invalid>";
+}
+
+const char* shader_format_name(ShaderFormat format) noexcept {
+    switch (format) {
+        case ShaderFormat::Spirv:
+            return "spirv";
+        case ShaderFormat::Msl:
+            return "msl";
+        case ShaderFormat::MetalLibrary:
+            return "metallib";
+        case ShaderFormat::Dxil:
+            return "dxil";
+        case ShaderFormat::Count:
+            break;
+    }
+    return "<invalid>";
 }
 
 const FormatInfo& format_info(Format format) noexcept {

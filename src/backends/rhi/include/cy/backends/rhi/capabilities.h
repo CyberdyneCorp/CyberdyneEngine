@@ -37,6 +37,22 @@ enum class Capability : u16 {
     BufferDeviceAddress,
     SparseResources,
 
+    /// PASSES RECORDED IN PARALLEL, INTO SECONDARY COMMAND BUFFERS — Metal gap 5.
+    ///
+    /// The engine's parallel recording records one secondary PER PASS, on job workers, before the
+    /// primary loop reaches any of them, and each secondary contains a whole render pass because
+    /// the pass callback itself begins and ends rendering. Vulkan's secondary command buffers do
+    /// that. Metal's `MTLParallelRenderCommandEncoder` does NOT: it is parallelism WITHIN one
+    /// render pass, from sub-encoders that exist only inside a live encoder, which is a different
+    /// axis and not a reordering of this one. A Metal backend answers this false and the graph
+    /// records sequentially — the path `ExecuteOptions::parallel_recording` already defaults to.
+    ///
+    /// This is a capability and NOT a precondition on `execute_secondary`, and the seed proposed
+    /// the precondition: no ordering rule converts across-passes parallelism into within-a-pass
+    /// parallelism, so a precondition would be a rule the engine could satisfy and Metal still
+    /// could not implement.
+    ParallelPassRecording,
+
     // Rendering features.
     DynamicRendering,  // no VkRenderPass objects; the M3 baseline requires it
     Multiview,         // the XR prerequisite (tests/render/README.md)
@@ -204,6 +220,15 @@ public:
     [[nodiscard]] BackendKind backend() const noexcept { return backend_; }
     void set_backend(BackendKind kind) noexcept { backend_ = kind; }
 
+    /// THE FORM THIS DEVICE CONSUMES A SHADER IN — Metal gap 1, as a capability rather than as a
+    /// backend identity test. A cook asks this, not `backend() == BackendKind::Metal`: two Metal
+    /// devices could want MSL source and a prebuilt `.metallib`, and a renderer that branched on
+    /// the backend would be wrong about one of them.
+    [[nodiscard]] ShaderFormat native_shader_format() const noexcept {
+        return native_shader_format_;
+    }
+    void set_native_shader_format(ShaderFormat format) noexcept { native_shader_format_ = format; }
+
     /// The device's own name, for a log line and the crash artefact. Truncated rather than
     /// allocated, exactly as ScreenInfo::name is.
     [[nodiscard]] const char* device_name() const noexcept { return device_name_; }
@@ -236,6 +261,7 @@ private:
     FormatFeature format_features_[static_cast<u32>(Format::Count)] = {};
     DeviceLimits limits_{};
     BackendKind backend_ = BackendKind::Null;
+    ShaderFormat native_shader_format_ = ShaderFormat::Spirv;
     char device_name_[128] = {};
     char driver_version_[64] = {};
     RayTracingObservation ray_tracing_{};

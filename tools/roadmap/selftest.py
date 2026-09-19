@@ -201,9 +201,15 @@ def test_record_rules(root: Path) -> None:
 # M10's floor was 2 while the spike owned the file — the two questions this host cannot ask — and is
 # raised by task 8.1 to the eleven rows the milestone moves, the substrate every one of them writes
 # into, the artefact, the record and the next rung. It carries 70; the floor is what may not be lost.
+# M11.d's floor stayed at 25 when its spike moved Metal, D3D12 and the three-backend image
+# comparison out to M11.d.5: it declared 30 and declares 27, which is still above the floor, and a
+# floor is what may not be LOST rather than a count of what is there. M11.d.5's own floor of 16 is
+# the deliberate answer to "how many exit conditions does this rung have" that adding a ledger is
+# supposed to force — nine static gates it shares with the ladder, the three moved claims, the three
+# a Linux host can still judge, the artefact, the tier and the handover.
 MINIMUM_CRITERIA = {"m0": 10, "m1": 15, "m2": 20, "m3": 20, "m4": 20, "m5": 20, "m5b": 20,
                     "m6": 26, "m7": 32, "m8a": 26, "m8b": 40, "m8c": 40, "m9": 44, "m10": 62,
-                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11e": 25}
+                    "m11a": 27, "m11b": 28, "m11c": 25, "m11d": 25, "m11d5": 16, "m11e": 25}
 
 
 def milestone_file(root: Path, name: str, body: str) -> Path:
@@ -476,9 +482,16 @@ def _check_every_reader_admits_an_insertion() -> None:
     load table had no row for either. The lesson is the same one and the fix is not a wider pattern
     but this list: every suffix on the ladder is named here, so the next insertion fails loudly in
     one place instead of quietly in three.
+
+    AND THE NEXT INSERTION CAME: `M11.d.5`, an insertion INTO a split, when M11.d's spike found that
+    neither Metal nor D3D12 can be compiled on the Linux host this project works on. It is the first
+    heading on the ladder carrying both a letter rung and a `.5`, so all three patterns had to admit
+    a `.5` AFTER a letter rather than only instead of one — and this list failing loudly is exactly
+    how that was discovered in one place rather than in three.
     """
-    columns = ("M5.5", "M8.a", "M8.b", "M8.c", "M11.a", "M11.b", "M11.c", "M11.d", "M11.e")
-    rungs = ("m5b", "m8a", "m8b", "m8c", "m11a", "m11b", "m11c", "m11d", "m11e")
+    columns = ("M5.5", "M8.a", "M8.b", "M8.c", "M11.a", "M11.b", "M11.c", "M11.d", "M11.d.5",
+               "M11.e")
+    rungs = ("m5b", "m8a", "m8b", "m8c", "m11a", "m11b", "m11c", "m11d", "m11d5", "m11e")
     for column in columns:
         check(f"the matrix header admits {column}",
               plan_module.milestone_id(column) in record_module.MILESTONES,
@@ -513,7 +526,8 @@ def _check_an_insertion_takes_a_rung() -> None:
     for inserted, below, above in (("m5b", "m5", "m6"), ("m8a", "m7", "m8b"),
                                    ("m8b", "m8a", "m8c"), ("m8c", "m8b", "m9"),
                                    ("m11a", "m10", "m11b"), ("m11b", "m11a", "m11c"),
-                                   ("m11c", "m11b", "m11d"), ("m11d", "m11c", "m11e")):
+                                   ("m11c", "m11b", "m11d"), ("m11d", "m11c", "m11d5"),
+                                   ("m11d5", "m11d", "m11e")):
         check(f"{inserted} sits between {below} and {above} on the ladder",
               inserted in order and below in order and above in order
               and order.index(below) < order.index(inserted) < order.index(above),
@@ -526,14 +540,16 @@ def _check_an_insertion_takes_a_rung() -> None:
           f"m8a={criteria_module.rung('m8a')} m8b={criteria_module.rung('m8b')} "
           f"m8c={criteria_module.rung('m8c')} m9={criteria_module.rung('m9')}")
 
-    # M11's five, the same property one split later. `m11e` is the last rung on the ladder, so
-    # `rung()` returning a position past the end for any of the five would be invisible in the same
-    # way `m5b`'s was — harmless until something sits above it, and then wrong in both directions.
-    order_of_five = [criteria_module.rung(name)
-                     for name in ("m10", "m11a", "m11b", "m11c", "m11d", "m11e")]
-    check("M11's five rungs sit in order between M10 and the end of the ladder",
-          order_of_five == sorted(order_of_five) and len(set(order_of_five)) == 6,
-          f"positions are {order_of_five}")
+    # M11's six, the same property one split and one insertion later. `m11e` is the last rung on the
+    # ladder, so `rung()` returning a position past the end for any of them would be invisible in the
+    # same way `m5b`'s was — harmless until something sits above it, and then wrong in both
+    # directions. `m11d5` is the one that would have been: it was inserted BELOW the last rung, so a
+    # wrong position there costs M11.e the criteria it is supposed to inherit.
+    order_of_six = [criteria_module.rung(name)
+                    for name in ("m10", "m11a", "m11b", "m11c", "m11d", "m11d5", "m11e")]
+    check("M11's six rungs sit in order between M10 and the end of the ladder",
+          order_of_six == sorted(order_of_six) and len(set(order_of_six)) == 7,
+          f"positions are {order_of_six}")
     check("no identifier `m11` survives the split, so a gap or a column naming it is caught",
           "m11" not in record_module.MILESTONES,
           f"record.MILESTONES: {', '.join(record_module.MILESTONES)}")

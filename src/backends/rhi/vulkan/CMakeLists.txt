@@ -29,6 +29,7 @@ cy_add_module(
         src/vulkan_device.cpp
         src/vulkan_instance.cpp
         src/vulkan_memory.cpp
+        src/vulkan_surface_seam.cpp
         src/vulkan_swapchain.cpp
         src/vulkan_translate.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"

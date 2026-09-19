@@ -79,11 +79,16 @@ def milestone_id(column: str) -> str:
     `.a`, `.b` and `.c` because M8 had three rungs, so `M11.d` and `M11.e` parsed as nothing and
     fourteen capabilities' Complete column pointed at columns the matrix no longer contained.
     `_check_every_reader_admits_an_insertion` in selftest.py now names every suffix on the ladder.
+
+    AND A THIRD TIME AT M11.d.5, which is an insertion INTO a split — M5.5's `.5` on the end of
+    M8's `.d`. `M11.d.5` is `m11d5`. The pattern the three readers share is now "a number, an
+    optional single-letter rung, an optional `.5` insertion", and the table below is still a table
+    rather than a derivation because the derivation is what broke twice.
     """
     text = column.strip().lower().replace(" ", "")
     return {"m5.5": "m5b", "m8.a": "m8a", "m8.b": "m8b", "m8.c": "m8c",
             "m11.a": "m11a", "m11.b": "m11b", "m11.c": "m11c", "m11.d": "m11d",
-            "m11.e": "m11e"}.get(text, text)
+            "m11.d.5": "m11d5", "m11.e": "m11e"}.get(text, text)
 
 
 def tier_rank(tier: str) -> int:
@@ -156,11 +161,13 @@ def read_matrix(path: Path = MATRIX) -> Matrix:
             if row[0] != "Capability":
                 continue
             for index, header in enumerate(row):
-                # `M5.5`, `M8.a`/`M8.b`/`M8.c` and `M11.a` … `M11.e` are insertions: a milestone
-                # heading is a number with an optional `.5` or single-letter suffix. A pattern that
-                # admitted only `.5` silently dropped M8's split columns and took every M8 cell with
-                # them; one that admitted only `.a`–`.c` did it again to M11.d and M11.e.
-                if re.fullmatch(r"M\d+(\.5|\.[a-e])?", header):
+                # `M5.5`, `M8.a`/`M8.b`/`M8.c`, `M11.a` … `M11.e` and `M11.d.5` are insertions: a
+                # milestone heading is a number, an optional single-letter rung, and an optional
+                # `.5`. A pattern that admitted only `.5` silently dropped M8's split columns and
+                # took every M8 cell with them; one that admitted only `.a`–`.c` did it again to
+                # M11.d and M11.e; one that did not admit a `.5` AFTER a letter would do it to
+                # M11.d.5 and take `rhi-and-render-graph`'s Complete cell with it.
+                if re.fullmatch(r"M\d+(\.5|\.[a-e](\.5)?)?", header):
                     columns[index] = milestone_id(header)
                 elif header == "Complete":
                     complete_column = index
@@ -211,7 +218,7 @@ def read_load_summary(path: Path = MATRIX) -> dict[str, Load]:
         # section headings, and this table's row labels all name a milestone, and all three read it
         # with a pattern of their own. Three patterns for one grammar is why the split had to be
         # made three times before the checks went quiet.
-        name = re.match(r"\*\*(M\d+(?:\.5|\.[a-e])?)\*\*", row[0])
+        name = re.match(r"\*\*(M\d+(?:\.5|\.[a-e](?:\.5)?)?)\*\*", row[0])
         if name is None:
             continue
         which = row[3].replace("—", "").strip()
@@ -280,7 +287,7 @@ def read_sections(path: Path = ROADMAP) -> dict[str, Section]:
         # pattern that admits only `.5` reads a split milestone's section as a continuation of the
         # one above it, so its whole work table is attributed to the previous milestone — which is
         # how thirty-six of M8.b's tier claims briefly became M7's.
-        heading = re.match(r"^## (M\d+(?:\.5|\.[a-e])?) ", line)
+        heading = re.match(r"^## (M\d+(?:\.5|\.[a-e](?:\.5)?)?) ", line)
         if heading is not None:
             close()
             current = milestone_id(heading.group(1))

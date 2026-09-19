@@ -309,7 +309,7 @@ public:
         TextureHandle handle) const override;
     [[nodiscard]] Expected<MemoryRequirements, Error> buffer_memory_requirements(
         BufferHandle handle) const override;
-    Status reserve_transient_memory(u64 bytes, u32 memory_type_bits) override;
+    Status reserve_transient_memory(u64 bytes, MemoryPoolClass pool_class) override;
     Status bind_transient(TextureHandle handle, u64 offset) override;
     Status bind_transient(BufferHandle handle, u64 offset) override;
     void release_transient_resources() noexcept override;

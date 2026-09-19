@@ -96,14 +96,38 @@ struct GpuMemoryReport {
     u64 device_heap_budget = 0;
 };
 
+/// WHICH POOLS A RESOURCE MAY LIVE IN, as a value the graph can meet but not read.
+///
+/// The graph's only operation on this is `meet`, over every transient it places, and its only
+/// question is whether the result is empty: one pool must be legal for all of them. It never
+/// interprets the token. Vulkan spells the token as a memory-type bitmask, D3D12 as a resource
+/// heap-tier class, Metal as the single universal class every MTLHeap belongs to — and none of
+/// those spellings reaches `src/rendering/`.
+///
+/// It is a MEET and not an equality on purpose, and that is a measurement rather than a taste:
+/// on this project's NVIDIA device transient images answer 0x03 and transient buffers 0x1F, so an
+/// equality would refuse to put them in one pool and split the transient heap in two.
+struct MemoryPoolClass {
+    u64 token = ~0ULL;
+
+    [[nodiscard]] friend constexpr MemoryPoolClass meet(MemoryPoolClass a,
+                                                        MemoryPoolClass b) noexcept {
+        return MemoryPoolClass{a.token & b.token};
+    }
+    [[nodiscard]] constexpr bool empty() const noexcept { return token == 0; }
+    [[nodiscard]] friend constexpr bool operator==(MemoryPoolClass a, MemoryPoolClass b) noexcept {
+        return a.token == b.token;
+    }
+};
+
 /// What one resource needs from an allocator. Answered without binding anything, which is what
 /// lets the render graph plan a whole frame's transient memory before a byte of it is reserved.
 struct MemoryRequirements {
     u64 size = 0;
     u64 alignment = 1;
-    /// A bitmask of the memory types the resource may live in. The graph intersects it over every
-    /// transient it places, because one pool must be legal for all of them.
-    u32 memory_type_bits = ~0U;
+    /// Which pools this resource may live in. The graph meets it over every transient it places,
+    /// because one pool must be legal for all of them.
+    MemoryPoolClass pool_class;
 };
 
 // --- Statistics -----------------------------------------------------------------------------
@@ -249,9 +273,9 @@ public:
     [[nodiscard]] virtual Expected<MemoryRequirements, Error> buffer_memory_requirements(
         BufferHandle handle) const = 0;
 
-    /// Reserve the pool the plan needs. `memory_type_bits` is the intersection over every
-    /// transient, which is what makes one pool legal for all of them.
-    virtual Status reserve_transient_memory(u64 bytes, u32 memory_type_bits) = 0;
+    /// Reserve the pool the plan needs. `pool_class` is the meet over every transient, which is
+    /// what makes one pool legal for all of them.
+    virtual Status reserve_transient_memory(u64 bytes, MemoryPoolClass pool_class) = 0;
     virtual Status bind_transient(TextureHandle handle, u64 offset) = 0;
     virtual Status bind_transient(BufferHandle handle, u64 offset) = 0;
     /// Destroy every transient resource created since the last call. The pool itself is kept, so a

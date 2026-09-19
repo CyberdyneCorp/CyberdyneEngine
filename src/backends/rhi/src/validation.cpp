@@ -129,6 +129,55 @@ Status validate_sampler(const SamplerDescription& desc, const DeviceLimits& limi
     return ok();
 }
 
+Status validate_shader_module(const ShaderModuleDescription& desc, const DeviceCapabilities& caps,
+                              ValidationMessage& message) noexcept {
+    const bool has_spirv = !desc.spirv.empty();
+    const bool has_native = !desc.native.empty();
+    if (!has_spirv && !has_native) {
+        return fail(ErrorCode::InvalidArgument,
+                    message.format("shader module '%s': no code. Supply SPIR-V through `spirv`, or "
+                                   "this device's own form (%s) through `native`",
+                                   desc.name, shader_format_name(caps.native_shader_format())));
+    }
+    if (has_spirv && has_native) {
+        return fail(ErrorCode::InvalidArgument,
+                    message.format("shader module '%s': both `spirv` and `native` are set, and a "
+                                   "module is one program. Supply exactly one",
+                                   desc.name));
+    }
+    if (has_spirv) {
+        // 0x07230203 is SPIR-V's magic number. Checked here rather than in a backend so that a
+        // Slang output which never made it through the back end is rejected in continuous
+        // integration, on the null backend, rather than on the one machine with a GPU.
+        if (desc.spirv[0] != 0x07230203U) {
+            return fail(ErrorCode::InvalidArgument,
+                        message.format("shader module '%s': the first word is 0x%08x, not SPIR-V's "
+                                       "magic number 0x07230203",
+                                       desc.name, desc.spirv[0]));
+        }
+        // A device whose native form is NOT SPIR-V is still handed SPIR-V here, and that is not an
+        // error: SPIR-V is the engine's interchange form and such a device translates it. What the
+        // interface owes that device is somewhere to be given the translated result, which is what
+        // `native` is, and NOT a refusal of the form every cook already produces.
+        return ok();
+    }
+    if (desc.native_format == ShaderFormat::Spirv) {
+        return fail(ErrorCode::InvalidArgument,
+                    message.format("shader module '%s': SPIR-V travels in `spirv`, as words. "
+                                   "`native` is for the form SPIR-V is NOT",
+                                   desc.name));
+    }
+    if (desc.native_format != caps.native_shader_format()) {
+        return fail(ErrorCode::InvalidArgument,
+                    message.format("shader module '%s': `native` holds %s and this device consumes "
+                                   "%s. A cook that produced the wrong form is a configuration "
+                                   "error, not a driver one",
+                                   desc.name, shader_format_name(desc.native_format),
+                                   shader_format_name(caps.native_shader_format())));
+    }
+    return ok();
+}
+
 Status validate_pipeline_layout(const PipelineLayoutDescription& desc,
                                 ValidationMessage& message) noexcept {
     if (desc.set_layouts.size() > kMaxDescriptorSets) {

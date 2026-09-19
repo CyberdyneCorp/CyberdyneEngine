@@ -546,6 +546,10 @@ void VulkanDevice::fill_capabilities() noexcept {
 
     capabilities_.set_backend(BackendKind::Vulkan);
     capabilities_.set_device_name(properties.properties.deviceName);
+    // SPIR-V is what this device consumes, and it is stated rather than assumed — Metal gap 1. The
+    // interchange form and the native form happen to coincide here; on Metal and D3D12 they do not,
+    // and the cook reads this rather than the backend's identity.
+    capabilities_.set_native_shader_format(ShaderFormat::Spirv);
 
     char version[64] = {};
     const u32 driver = properties.properties.driverVersion;
@@ -581,6 +585,10 @@ void VulkanDevice::fill_capabilities() noexcept {
 
     capabilities_.set(Capability::ComputeShaders, true);
     capabilities_.set(Capability::DynamicRendering, true);
+    // Vulkan secondary command buffers are recorded against a render pass DESCRIPTION and executed
+    // into an instance later, which is exactly what the graph's per-pass parallel recording needs.
+    // Metal gap 5: a backend whose equivalent is `MTLParallelRenderCommandEncoder` answers false.
+    capabilities_.set(Capability::ParallelPassRecording, true);
     capabilities_.set(Capability::AsyncCompute,
                       queue_present_[static_cast<u32>(QueueKind::AsyncCompute)]);
     capabilities_.set(Capability::DedicatedTransferQueue,

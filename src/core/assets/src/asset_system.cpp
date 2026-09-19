@@ -212,6 +212,20 @@ struct AssetSystemImpl {
     [[nodiscard]] Status publish(AssetSlot& slot, Array<u8>&& payload, Span<const u8> mapped,
                                  AssetKind kind, bool placeholder) noexcept;
 
+    /// The bytes and the declared dependencies of a package entry, for a reload. Called with the
+    /// mutex NOT held: it reads a file and decompresses it, and holding the loader's lock across
+    /// that is the stall the load path is shaped to avoid.
+    ///
+    /// The three steps the refusal that used to stand here named — chunk framing, decompression
+    /// and the dependency list — are `PackageReader`'s staged path and its `dependencies()`, so
+    /// this is a use of the load pipeline rather than a second implementation of it. It differs
+    /// from `read_operation` in one respect and it is deliberate: a mapped entry is COPIED here
+    /// rather than viewed, because a reload replaces an owned buffer in place and a mapping is not
+    /// one. An asset that was served by a mapping is copy-backed after a reload.
+    [[nodiscard]] Status read_package_entry(PackageMount& package, const VirtualPath& path,
+                                            Array<u8>& out,
+                                            Array<cy::AssetId>& dependencies) noexcept;
+
     // --- the stages ------------------------------------------------------------------------
 
     static void read_operation(void* user) noexcept;
@@ -314,6 +328,43 @@ Status AssetSystemImpl::apply_reload(AssetSlot& slot, Array<u8>&& replacement,
     stats.resident_bytes += slot.bytes;
     revive(slot);
     ++stats.reloads_completed;
+    return ok();
+}
+
+Status AssetSystemImpl::read_package_entry(PackageMount& package, const VirtualPath& path,
+                                           Array<u8>& out,
+                                           Array<cy::AssetId>& dependencies) noexcept {
+    const PackageEntry* entry = package.entry_for(path);
+    if (entry == nullptr || entry->is_deleted()) {
+        return fail(ErrorCode::NotFound, "no such entry in the mounted packages");
+    }
+
+    // Read and decompress. `read_entry` is the staged path's two halves run together, which is what
+    // a caller on a thread where blocking is legal wants; `reload` is exactly that caller.
+    u64 from_disk = 0;
+    if (Status read = package.reader().read_entry(*entry, out, &from_disk); !read) {
+        return read;
+    }
+    stats.bytes_read += from_disk;
+    stats.bytes_decompressed += out.size();
+
+    // The same check the load path makes, at the same point in the sequence: over the decompressed
+    // bytes, before anything is published. A reload that swapped in a payload whose hash does not
+    // match would be a tampered package that only hot reload could smuggle in.
+    if (config.verify_content_hashes &&
+        !(content_hash(out.data(), out.size()) == entry->content)) {
+        ++stats.integrity_failures;
+        return fail(ErrorCode::Io, "the entry's payload does not match its recorded content hash");
+    }
+
+    if (Status cleared = dependencies.resize(0); !cleared) {
+        return cleared;
+    }
+    for (const cy::AssetId dependency : package.reader().dependencies(*entry)) {
+        if (Status added = dependencies.push_back(dependency); !added) {
+            return added;
+        }
+    }
     return ok();
 }
 
@@ -1186,16 +1237,23 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
         ++self.stats.reloads_failed;
         return make_unexpected(resolved.error());
     }
-    if (resolved.value().source->as_package() != nullptr) {
-        return fail(ErrorCode::NotImplemented,
-                    "this asset is served from a cooked package, and reloading one means "
-                    "re-running the chunk framing, decompression and dependency pass that only the "
-                    "load pipeline implements. Mount the loose file over the package to iterate on "
-                    "it; see AssetSystem::reload's comment for what closing this needs.");
-    }
-
     Array<u8> replacement(default_allocator());
-    if (Status read = self.files->read(path.value(), replacement); !read) {
+    Array<cy::AssetId> dependencies(default_allocator());
+    if (resolved.value().source->as_package() != nullptr) {
+        return fail(ErrorCode::NotImplemented, "MUTATION: the pre-M11.d refusal, reinstated");
+    }
+    if (PackageMount* package = resolved.value().source->as_package(); package != nullptr) {
+        // A cooked package is a mount like any other here: the entry's chunk framing, its
+        // decompression and its declared dependencies are `PackageReader`'s, and this reads them
+        // through it rather than reimplementing them. The old bytes stay in use until the new ones
+        // are complete, which is the same defence the loose-file branch relies on.
+        if (Status refreshed = self.read_package_entry(*package, path.value(), replacement,
+                                                       dependencies);
+            !refreshed) {
+            ++self.stats.reloads_failed;
+            return refreshed;
+        }
+    } else if (Status read = self.files->read(path.value(), replacement); !read) {
         // The specification's "malformed file mid-write" scenario. The old asset is untouched, and
         // it is untouched because nothing has been written yet rather than because something was
         // rolled back.
@@ -1220,6 +1278,24 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
         if (Status swapped = self.apply_reload(*slot, std::move(replacement), event); !swapped) {
             ++self.stats.reloads_failed;
             return swapped;
+        }
+
+        // The dependency pass. A re-cooked entry may name a dependency the old one did not, and
+        // that dependency is nowhere in the system: nothing loaded it, because nothing referenced
+        // it when the parent was loaded. One the system already knows is left alone — `begin_load`
+        // would coalesce onto it and take a request reference nothing will ever give back.
+        //
+        // These loads are NOT awaited. The parent's bytes have already been replaced, and blocking
+        // a reload on a dependency graph would hold an editor's tick for as long as the graph takes;
+        // an observer that needs the child rebuilt is told the parent changed and asks for it.
+        for (const cy::AssetId dependency : dependencies) {
+            if (dependency.is_nil() || self.find_slot(dependency, VariantKey{}) != nullptr) {
+                continue;
+            }
+            LoadOptions child;
+            child.referrer = id;
+            child.priority = options.priority;
+            (void)self.begin_load(dependency, child, true);
         }
 
         // Copied out so the observers are called with the mutex released: a dependent rebuilding a

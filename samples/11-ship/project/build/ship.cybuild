@@ -1,0 +1,32 @@
+cybuild 1
+# The card's derivation graph — `cybuild 1`, read by `cy_build` (tools/build/).
+#
+# Four nodes, and the shape is samples/06-open-world's on purpose rather than by copying: two
+# independent imports, a cook over both, a package over the cook. What is different is what is
+# downstream of it — M6's package fed a world streamer, and this one feeds a WINDOW. The point of
+# the rung is that the same graph ships content to a program that draws it on a second platform
+# backend, so the graph is deliberately the one that has been run since M6.
+#
+# THE CONCATENATION ORDER IS THE DECLARATION ORDER: palette, then card. card.cpp parses a stream
+# carrying two `cycard 1` headers for that reason and says so where it does it.
+
+node "import:palette" import "normalise"
+  source "card/palette.cycard"
+  bundle "card"
+  output "card/palette.cypart"
+
+node "import:card" import "normalise"
+  source "card/ship.cycard"
+  bundle "card"
+  output "card/ship.cypart"
+
+node "cook:card" cook "concat"
+  upstream "import:palette"
+  upstream "import:card"
+  bundle "card"
+  output "card/ship.card"
+
+node "package:card" package "manifest"
+  upstream "cook:card"
+  bundle "card"
+  output "card/ship.manifest"

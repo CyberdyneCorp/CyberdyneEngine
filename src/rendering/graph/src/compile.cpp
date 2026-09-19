@@ -645,7 +645,19 @@ struct Compiler {
                 return false;
             }
             out.memory.naive_bytes += align_up_to(requirement.size, requirement.alignment);
-            out.memory.memory_type_bits &= requirement.memory_type_bits;
+            out.memory.pool_class = meet(out.memory.pool_class, requirement.pool_class);
+        }
+
+        // THE MEET IS TESTED FOR EMPTY HERE, which is the whole proof the pool class carries: one
+        // pool must be legal for EVERY transient in the frame. An empty meet says no such pool
+        // exists, and the frame cannot be planned — caught while compiling, where the diagnostic
+        // can name the graph, rather than at `reserve_transient_memory` where a backend can only
+        // say that a number it was handed satisfied nothing. The graph never asks what the token
+        // MEANS; emptiness is the only question it has about it.
+        if (!transients.empty() && out.memory.pool_class.empty()) {
+            fail(ErrorCode::Unsupported,
+                 "no single memory pool is legal for every transient in this frame");
+            return false;
         }
 
         if (!options.enable_aliasing) {

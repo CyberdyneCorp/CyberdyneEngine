@@ -1210,6 +1210,26 @@ class = "milestone"
 milestone = "m11d"
 state = "joins-on-close"
 
+# --- The gate the insertion adds -------------------------------------------------------------------
+#
+# M11.d's spike found that neither Metal nor D3D12 can be compiled on the host this project works on
+# — Linux, one GPU vendor, no Apple toolchain — so those two sections moved out of M11.d into
+# **M11.d.5 · Backends**, inserted between M11.d and M11.e in the shape M5.5 was inserted between M5
+# and M6. A rung that received two backends and no gate would be a place work goes to be forgotten,
+# which is why this gate exists in the same change as the ledger, and why
+# `golden-images-across-three-backends` moved here with its subject rather than staying behind as a
+# criterion M11.d could satisfy vacuously.
+
+[[gate]]
+id = "milestone-m11d5"
+describe = "M11.d.5 — Backends: the exit criteria of the rung M11.d's spike carved out of it — Metal native rather than a translation layer, D3D12 from nothing, and the one claim no single leg of the matrix can make: the M3 golden images matching across Vulkan, Metal and D3D12 within tolerance, with the device that answered each named in the result."
+runs = ["just roadmap-milestone m11d5"]
+platforms = ["linux", "windows", "macos"]
+since = "m11d5"
+class = "milestone"
+milestone = "m11d5"
+state = "joins-on-close"
+
 [[gate]]
 id = "milestone-m11e"
 describe = "M11.e — Ship: the exit criteria of the last rung on the ladder — mobile targets and cross-compilation, the full continuous-integration matrix, the rest of the intended dependency set, distribution artefacts from the release recipes, the sweep of every row an earlier rung demoted, and the 1.0 record: seventy-six rows, each Complete or deferred with a re-entry point, checked by something that names the offending row rather than by a document asserting it."

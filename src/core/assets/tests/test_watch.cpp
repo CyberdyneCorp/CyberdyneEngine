@@ -5,7 +5,10 @@
 // are exercised here over a memory mount, which is what makes the settle period testable without a
 // sleep: the test writes the file, steps its own clock, and polls.
 
+#include "temp_dir.h"
+
 #include <cy/core/assets/asset_system.h>
+#include <cy/core/assets/package.h>
 #include <cy/core/assets/vfs.h>
 #include <cy/core/assets/watch.h>
 #include <cy/core/jobs/async.h>
@@ -13,6 +16,7 @@
 #include <cy/core/memory/scope.h>
 #include <cy/test/test.h>
 
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -371,4 +375,170 @@ CY_TEST_CASE("reloading an asset that is not resident is refused rather than loa
     CY_CHECK(reloaded.error().code == cy::ErrorCode::NotFound);
     // And it did not start a load behind the caller's back.
     CY_CHECK_EQ(harness.assets.stats().loads_started, 0U);
+}
+
+// --- The cooked half: a package-backed asset reloads ---------------------------------------------
+//
+// `core-assets-and-io`'s hot-reload requirement names "source files AND COOKED OUTPUTS", and until
+// M11.d the cooked half was a refusal: `reload` returned NotImplemented for anything a package
+// mount served, so the requirement was unmet rather than scoped. The case below is the scenario
+// that refusal was standing in front of — a re-cooked package mounted over the one a resident asset
+// came from — and it is the reason the reload path had to run the package's chunk framing, its
+// decompression and its dependency list rather than just re-reading a file.
+
+namespace {
+
+/// A job system, an async service, a package-mounted namespace and an asset system. The same shape
+/// as `LooseHarness` above, over real `.cypak` files, because a package entry is the thing under
+/// test here rather than the mount priority.
+struct PackageHarness {
+    PackageHarness() {
+        cy::jobs::JobSystemConfig job_config;
+        job_config.worker_count = 2;
+        CY_REQUIRE(jobs.start(job_config).has_value());
+        CY_REQUIRE(async.start(jobs).has_value());
+        CY_REQUIRE(assets.start(jobs, async, files, AssetSystemConfig{}).has_value());
+    }
+
+    ~PackageHarness() {
+        assets.shutdown();
+        async.stop();
+        jobs.shutdown();
+    }
+
+    PackageHarness(const PackageHarness&) = delete;
+    PackageHarness& operator=(const PackageHarness&) = delete;
+
+    void mount(const std::string& package_path, cy::i32 priority) {
+        PackageOpenOptions options;
+        auto reader = PackageReader::open(package_path.c_str(), options);
+        CY_REQUIRE(reader.has_value());
+        auto package =
+            cy::make_unique<PackageMount>(cy::current_allocator(), std::move(reader.value()));
+        CY_REQUIRE(package.has_value());
+        CY_REQUIRE(files.mount_owned(std::move(package.value()), priority).has_value());
+    }
+
+    cy::jobs::JobSystem jobs;
+    cy::jobs::AsyncService async;
+    VirtualFileSystem files;
+    AssetSystem assets;
+};
+
+/// A payload big enough to be framed and compressed rather than stored whole, so that a reload
+/// which did not run the chunk framing and the decompression could not produce these bytes.
+cy::Array<u8> compressible(usize size, u8 seed) {
+    cy::Array<u8> bytes;
+    CY_REQUIRE(bytes.resize(size).has_value());
+    for (usize index = 0; index < size; ++index) {
+        bytes[index] = static_cast<u8>(((index / 24) * 5) + (index % 11) + seed);
+    }
+    return bytes;
+}
+
+/// Write a one-entry package, optionally declaring one dependency.
+void write_one(const std::string& path, cy::AssetId id, cy::Span<const u8> payload,
+               const cy::AssetId* dependency) {
+    PackageWriter writer;
+    PackageManifest manifest;
+    CY_REQUIRE(manifest.set_build_id("test").has_value());
+    CY_REQUIRE(writer.set_manifest(manifest).has_value());
+    PackageWriter::EntryOptions options;
+    options.kind = AssetKind::Binary;
+    const cy::Span<const cy::AssetId> dependencies =
+        dependency != nullptr ? cy::Span<const cy::AssetId>(dependency, 1)
+                              : cy::Span<const cy::AssetId>();
+    CY_REQUIRE(writer.add(id, VariantKey::any(), payload, options, dependencies).has_value());
+    CY_REQUIRE(writer.write(path.c_str()).has_value());
+}
+
+}  // namespace
+
+CY_TEST_CASE("a package-backed asset reloads from the package that is mounted over it") {
+    const test::TempDir directory("assets_reload_package");
+    const cy::AssetId id = mint_asset_id();
+    const cy::AssetId child = mint_asset_id();
+
+    const cy::Array<u8> cooked = compressible(48000, 3);
+    const cy::Array<u8> recooked = compressible(52000, 9);
+    write_one(directory.file("base.cypak"), id, cooked.span(), nullptr);
+    // The re-cook is a different payload AND a dependency the first cook did not declare, because
+    // the dependency list is one of the three things the old refusal named.
+    write_one(directory.file("recooked.cypak"), id, recooked.span(), &child);
+    const cy::Array<u8> child_payload = compressible(3000, 1);
+    write_one(directory.file("child.cypak"), child, child_payload.span(), nullptr);
+
+    PackageHarness harness;
+    harness.mount(directory.file("base.cypak"), mount_priority::kBasePackage);
+    harness.mount(directory.file("child.cypak"), mount_priority::kBasePackage);
+
+    const auto asset = harness.assets.load(id);
+    CY_REQUIRE(asset.has_value());
+    CY_REQUIRE(asset.value()->size() == cooked.size());
+
+    ReloadRecorder recorder;
+    CY_REQUIRE(harness.assets.add_reload_observer(&ReloadRecorder::observe, &recorder).has_value());
+
+    // The re-cooked package, mounted above the one the asset came from. Nothing re-loads: the
+    // asset is resident, and what the editor asks for is a reload.
+    harness.mount(directory.file("recooked.cypak"), mount_priority::kPatchPackage);
+    const cy::u64 dependency_loads_before = harness.assets.stats().dependency_loads;
+
+    CY_REQUIRE(harness.assets.reload(id).has_value());
+
+    // THE ASSERTION, and it is the same one the loose-file case makes: the `Ref` taken before the
+    // reload reads the new content, through the same object, without having been re-acquired.
+    CY_CHECK_EQ(asset.value()->size(), recooked.size());
+    CY_CHECK(std::memcmp(asset.value()->bytes().data(), recooked.data(), recooked.size()) == 0);
+    CY_CHECK_EQ(harness.assets.stats().reloads_completed, 1U);
+    CY_CHECK_EQ(harness.assets.stats().reloads_failed, 0U);
+    CY_CHECK_EQ(recorder.calls, 1U);
+    CY_CHECK_EQ(recorder.bytes, recooked.size());
+
+    // The dependency pass ran: the entry's newly declared child was started, and it was started
+    // exactly once.
+    CY_CHECK_EQ(harness.assets.stats().dependency_loads, dependency_loads_before + 1);
+
+    // And a second reload of the same asset does not start it again — `find_slot` sees it.
+    CY_REQUIRE(harness.assets.reload(id).has_value());
+    CY_CHECK_EQ(harness.assets.stats().dependency_loads, dependency_loads_before + 1);
+
+    harness.assets.remove_reload_observer(&ReloadRecorder::observe, &recorder);
+    harness.assets.update();
+    CY_CHECK_EQ(asset.value()->size(), recooked.size());
+}
+
+CY_TEST_CASE("a package reload that cannot find its entry leaves the old asset in use") {
+    // The failure half, over a package rather than a loose file: the asset stays readable and the
+    // failure is counted. The masking patch is how a package entry becomes unreachable without the
+    // file it lives in going away.
+    const test::TempDir directory("assets_reload_package_masked");
+    const cy::AssetId id = mint_asset_id();
+    const cy::Array<u8> cooked = compressible(20000, 5);
+    write_one(directory.file("base.cypak"), id, cooked.span(), nullptr);
+
+    {
+        PackageWriter writer;
+        PackageManifest manifest;
+        CY_REQUIRE(manifest.set_build_id("test").has_value());
+        CY_REQUIRE(writer.set_manifest(manifest).has_value());
+        CY_REQUIRE(writer.mark_deleted(id, VariantKey::any()).has_value());
+        CY_REQUIRE(writer.write(directory.file("patch.cypak").c_str()).has_value());
+    }
+
+    PackageHarness harness;
+    harness.mount(directory.file("base.cypak"), mount_priority::kBasePackage);
+
+    const auto asset = harness.assets.load(id);
+    CY_REQUIRE(asset.has_value());
+    CY_CHECK_EQ(asset.value()->size(), cooked.size());
+
+    harness.mount(directory.file("patch.cypak"), mount_priority::kPatchPackage);
+    const cy::Status reloaded = harness.assets.reload(id);
+    CY_CHECK_FALSE(reloaded.has_value());
+    CY_CHECK_EQ(harness.assets.stats().reloads_failed, 1U);
+    CY_CHECK_EQ(harness.assets.stats().reloads_completed, 0U);
+    // The old bytes are still there, and still the same object.
+    CY_CHECK_EQ(asset.value()->size(), cooked.size());
+    CY_CHECK(std::memcmp(asset.value()->bytes().data(), cooked.data(), cooked.size()) == 0);
 }

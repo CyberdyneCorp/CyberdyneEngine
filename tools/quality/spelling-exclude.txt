@@ -1,0 +1,6 @@
+    {0x0629, 0xFE93, 0xFE94, 0, 0, JoiningType::Right},           // teh marbuta
+    {0x062A, 0xFE95, 0xFE96, 0xFE97, 0xFE98, JoiningType::Dual},  // teh
+    const char* arguments[] = {"--renderer.porfile=mobile"};
+    for (auto& entrie : entries_) {
+        const Entry& entry = entrie;
+        entrie.token = std::move(*refusal);

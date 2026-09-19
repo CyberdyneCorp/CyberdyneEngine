@@ -47,6 +47,19 @@ struct ValidationMessage {
                                            ValidationMessage& message) noexcept;
 [[nodiscard]] Status validate_sampler(const SamplerDescription& desc, const DeviceLimits& limits,
                                       ValidationMessage& message) noexcept;
+/// THE ONE PLACE A SHADER MODULE'S FORM IS CHECKED — Metal gap 1.
+///
+/// Written once and called by every backend rather than once per backend, because the rule is
+/// about the INTERFACE and not about any device: exactly one of `spirv` and `native` is supplied,
+/// and a `native` blob must be in the form the device said it consumes. Two backends checking this
+/// separately is two chances to disagree, and the third and fourth backends would each add one.
+///
+/// `caps` is the device's own capabilities, so this takes no device and a test can put any
+/// hypothetical device — a Metal one wanting MSL, a D3D12 one wanting DXIL — in front of it on a
+/// machine that can create neither.
+[[nodiscard]] Status validate_shader_module(const ShaderModuleDescription& desc,
+                                            const DeviceCapabilities& caps,
+                                            ValidationMessage& message) noexcept;
 [[nodiscard]] Status validate_pipeline_layout(const PipelineLayoutDescription& desc,
                                               ValidationMessage& message) noexcept;
 [[nodiscard]] Status validate_graphics_pipeline(const GraphicsPipelineDescription& desc,

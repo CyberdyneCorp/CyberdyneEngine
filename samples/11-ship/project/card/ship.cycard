@@ -1,0 +1,33 @@
+cycard 1
+# The card this sample draws. It is CONTENT: nothing below is compiled into the program, and the
+# only route from this file to a pixel runs through `cy_build` — imported, cooked, packaged,
+# installed, and read back out of the installation by logical name at run time. Change a line here,
+# re-run `just run-ship`, and the window says something different without a recompile. That is the
+# whole claim of task 8.1 in one file.
+#
+# What it must NOT say is that this is a game. `m11b:the-game-exists` is red and a packaging proof
+# does not close it — see README.md, which says so at more length than a card can.
+#
+#   card  "<id>" <width> <height> <background>
+#   bar   <x> <y> <w> <h> <colour>
+#   text  <x> <y> <scale> <colour> "<TEXT>"     upper case, digits and . , : - — see card.cpp
+
+card "m11d-ship" 1280 720 ground
+
+bar    0   0 1280   96 panel
+bar    0  94 1280    2 accent
+text  48  32    5 ink    "CYBERENGINE"
+text 640  40    3 accent "M11.D  DESKTOP"
+
+text  48 152    3 ink    "ONE PROJECT, ONE RECIPE"
+text  48 196    2 dim    "BUILT - COOKED - PACKAGED - INSTALLED - LAUNCHED"
+text  48 232    2 dim    "THIS FRAME WAS READ OUT OF THE INSTALLATION BY LOGICAL NAME"
+
+bar   48 292 1184    2 panel
+
+text  48 320    3 ink    "WHAT THIS IS NOT"
+text  48 364    2 warn   "NOT A GAME. A PACKAGING PROOF."
+text  48 400    2 dim    "M11B:THE-GAME-EXISTS IS RED AND THIS DOES NOT CLOSE IT."
+
+bar   48 452 1184    2 panel
+text  48 480    3 ink    "COVERAGE"

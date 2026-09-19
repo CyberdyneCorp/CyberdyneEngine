@@ -47,9 +47,17 @@ TIER_LABEL = {"none": "not started", "seed": "seed", "working": "working", "comp
 # name what it is looking at is not a gate. The five rungs are `m11a` Foundations (the seven
 # inherited gaps and the frame budget), `m11b` Authoring (the editor, and a real game made in it),
 # `m11c` Image (materials, shaders, and a beauty shot authored through that editor), `m11d` Desktop
-# (Metal, D3D12 and a native platform backend) and `m11e` Ship (mobile, distribution and the 1.0
-# record). The ORDER is again the whole point, and it is the artefacts' dependency order rather than
-# a size ordering.
+# (the RHI interface, a native platform backend and a packaged sample) and `m11e` Ship (mobile,
+# distribution and the 1.0 record). The ORDER is again the whole point, and it is the artefacts'
+# dependency order rather than a size ordering.
+#
+# AND THEN M11.d's SPIKE MADE THE FIVE SIX. `m11d5` Backends sits between `m11d` and `m11e` and
+# carries Metal and D3D12, which M11.d was written to deliver and which no machine this project
+# works on can compile: this host is Linux, with one GPU vendor and no Apple toolchain. The rule is
+# `delivery-roadmap`'s "A spike may resize a milestone as well as redirect it", the shape is M5.5's
+# — an insertion rather than a renumbering, so every reference to M11.e stays valid — and the
+# criterion no single leg can answer, the three-backend golden-image comparison, moved with its
+# subject so the new rung cannot close on "it compiles somewhere".
 #
 # `m11` IS GONE FROM THIS TUPLE AND THAT IS DELIBERATE. `criteria._check_known_gap` refuses a
 # `known_gap_closes` naming an identifier this tuple does not carry, so the seven inherited gaps had
@@ -83,6 +91,7 @@ MILESTONES = (
     "m11b",
     "m11c",
     "m11d",
+    "m11d5",
     "m11e",
 )
 ENTRY_KEYS = ("tier", "milestone", "change")

@@ -27,4 +27,27 @@ namespace cy::rhi::vulkan {
 /// to the null backend on a machine with no GPU rather than failing.
 Status register_vulkan_backend() noexcept;
 
+/// The VkInstance this backend's devices were created against, as an opaque handle.
+///
+/// M11.d task 8.2, and it exists because presenting to a window needs it. A Vulkan surface is
+/// created by the PLATFORM — `DisplayServer::create_surface()` — and a `VkSurfaceKHR` is created
+/// against a `VkInstance`, so `SurfaceDescription::api_instance` has to be given one. Nothing in
+/// `cy::rhi::Device` exposes it: `native_handle()` is the VkDevice, which is the wrong object.
+/// Until M11.d nothing had ever built a swapchain on a window, so nothing had noticed.
+///
+/// It is on the BACKEND rather than on `Device` deliberately. A method on `cy::rhi::Device` would
+/// be an instance handle every backend has to answer and the renderer could branch on, which is
+/// exactly what `rhi-and-render-graph`'s "branch on capabilities, never on backend identity"
+/// refuses. Reaching it requires naming `cy::rhi::vulkan`, and only a host that already knows it
+/// selected Vulkan can do that.
+///
+/// PRECONDITION: `device` came from this backend — `device.capabilities().backend() ==
+/// BackendKind::Vulkan`. The engine compiles without RTTI, so this cannot be checked here; a
+/// caller that passes a device from another backend has undefined behaviour, which is the same
+/// contract `Device::native_handle()` carries and documents.
+///
+/// Still a `void*` rather than a `VkInstance`: no Vulkan type may appear in this header, and
+/// `tools/layercheck/layercheck.py`'s `gpuapi` check fails the build on one.
+[[nodiscard]] void* vulkan_instance_handle(Device& device) noexcept;
+
 }  // namespace cy::rhi::vulkan

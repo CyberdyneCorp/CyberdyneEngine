@@ -647,7 +647,7 @@ Expected<MemoryRequirements, Error> VulkanDevice::texture_memory_requirements(
     VkMemoryRequirements requirements{};
     vkGetImageMemoryRequirements(device_, texture->image, &requirements);
     return MemoryRequirements{requirements.size, requirements.alignment,
-                              requirements.memoryTypeBits};
+                              MemoryPoolClass{requirements.memoryTypeBits}};
 }
 
 Expected<MemoryRequirements, Error> VulkanDevice::buffer_memory_requirements(
@@ -659,10 +659,12 @@ Expected<MemoryRequirements, Error> VulkanDevice::buffer_memory_requirements(
     VkMemoryRequirements requirements{};
     vkGetBufferMemoryRequirements(device_, buffer->buffer, &requirements);
     return MemoryRequirements{requirements.size, requirements.alignment,
-                              requirements.memoryTypeBits};
+                              MemoryPoolClass{requirements.memoryTypeBits}};
 }
 
-Status VulkanDevice::reserve_transient_memory(u64 bytes, u32 memory_type_bits) {
+Status VulkanDevice::reserve_transient_memory(u64 bytes, MemoryPoolClass pool_class) {
+    // The backend, and ONLY the backend, reads the token back as the Vulkan spelling it wrote.
+    const u32 memory_type_bits = static_cast<u32>(pool_class.token);
     if (bytes == 0) {
         return ok();
     }
@@ -765,12 +767,9 @@ void VulkanDevice::release_transient_resources() noexcept {
 
 Expected<ShaderModuleHandle, Error> VulkanDevice::create_shader_module(
     const ShaderModuleDescription& desc) {
-    if (desc.spirv.empty()) {
-        return fail(ErrorCode::InvalidArgument, "shader module: no SPIR-V");
-    }
-    if (desc.spirv[0] != 0x07230203U) {
-        return fail(ErrorCode::InvalidArgument,
-                    "shader module: the first word is not SPIR-V's magic number");
+    ValidationMessage message;
+    if (Status valid = validate_shader_module(desc, capabilities_, message); !valid) {
+        return make_unexpected(valid.error());
     }
     VkShaderModuleCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

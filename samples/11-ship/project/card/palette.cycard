@@ -1,0 +1,17 @@
+cycard 1
+# The palette. A separate source from the card for the reason samples/06-open-world's palette is a
+# separate source from its city: two independent imports into one cook is what makes "a one-asset
+# change invalidates only the derivations that depend on it" a thing the outcome column of
+# `cy_build build` can be read for. Change a colour here and the card's import stays cached.
+#
+# `cook:card` concatenates in DECLARATION ORDER, so the palette arrives before the card that names
+# its colours, and `card.cpp` therefore never has to resolve a colour it has not seen yet.
+
+colour ground   14  17  24
+colour panel    24  29  40
+colour ink     232 236 245
+colour dim     140 150 170
+colour accent   86 168 255
+colour warn    240 176  64
+colour absent  214  92  92
+colour good    104 198 128

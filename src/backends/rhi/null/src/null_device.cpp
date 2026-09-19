@@ -135,6 +135,9 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
     capabilities_.set_backend(BackendKind::Null);
     capabilities_.set_device_name("null device");
     capabilities_.set_driver_version("0.0.0");
+    // Set rather than defaulted, and for the reason `RayTracingObservation` exists: a capability
+    // nothing writes is a capability every device answers the same way by accident.
+    capabilities_.set_native_shader_format(ShaderFormat::Spirv);
 
     // WHAT THE NULL BACKEND CLAIMS, AND WHY IT MATTERS.
     //
@@ -153,6 +156,11 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
     capabilities_.set(Capability::TimestampQueries, true);
     capabilities_.set(Capability::Multiview, true);
     capabilities_.set(Capability::MemoryBudgetReporting, true);
+    // The null backend models Vulkan's secondary command buffers — `acquire_command_buffer(queue,
+    // true)` and `execute_secondary` are implemented rather than stubbed — so it answers true and
+    // `integration.render_graph_scale`'s parallel recording exercises the path on a machine with
+    // no GPU. Metal gap 5.
+    capabilities_.set(Capability::ParallelPassRecording, true);
     capabilities_.set(Capability::AsyncCompute, false);
     capabilities_.set(Capability::DedicatedTransferQueue, false);
 
@@ -583,7 +591,8 @@ Expected<MemoryRequirements, Error> NullDevice::texture_memory_requirements(
     if (texture == nullptr) {
         return fail(ErrorCode::NotFound, "texture_memory_requirements(): stale handle");
     }
-    return MemoryRequirements{texture->byte_size, kNullAlignment, kNullMemoryTypeBits};
+    return MemoryRequirements{texture->byte_size, kNullAlignment,
+                              MemoryPoolClass{kNullMemoryTypeBits}};
 }
 
 Expected<MemoryRequirements, Error> NullDevice::buffer_memory_requirements(
@@ -593,10 +602,11 @@ Expected<MemoryRequirements, Error> NullDevice::buffer_memory_requirements(
         return fail(ErrorCode::NotFound, "buffer_memory_requirements(): stale handle");
     }
     return MemoryRequirements{align_to(buffer->desc.size, kNullAlignment), kNullAlignment,
-                              kNullMemoryTypeBits};
+                              MemoryPoolClass{kNullMemoryTypeBits}};
 }
 
-Status NullDevice::reserve_transient_memory(u64 bytes, u32 memory_type_bits) {
+Status NullDevice::reserve_transient_memory(u64 bytes, MemoryPoolClass pool_class) {
+    const u32 memory_type_bits = static_cast<u32>(pool_class.token);
     if (bytes != 0 && (memory_type_bits & kNullMemoryTypeBits) == 0) {
         return fail(ErrorCode::Unsupported, "no memory type satisfies every transient in the plan");
     }
@@ -667,15 +677,9 @@ void NullDevice::release_transient_resources() noexcept {
 
 Expected<ShaderModuleHandle, Error> NullDevice::create_shader_module(
     const ShaderModuleDescription& desc) {
-    if (desc.spirv.empty()) {
-        return fail(ErrorCode::InvalidArgument, "shader module: no SPIR-V");
-    }
-    // 0x07230203 is SPIR-V's magic number. Checking it here means a Slang output that never made it
-    // through the back end is rejected in continuous integration rather than on the one machine
-    // with a GPU.
-    if (desc.spirv[0] != 0x07230203U) {
-        return fail(ErrorCode::InvalidArgument,
-                    "shader module: the first word is not SPIR-V's magic number");
+    ValidationMessage message;
+    if (Status valid = validate_shader_module(desc, capabilities_, message); !valid) {
+        return make_unexpected(valid.error());
     }
     NullShaderModule module;
     module.name.assign(desc.name);

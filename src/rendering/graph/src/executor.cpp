@@ -189,7 +189,7 @@ Status GraphExecutor::realise_resources(RenderGraph& graph) noexcept {
 
 Status GraphExecutor::bind_and_view(RenderGraph& graph, const CompiledGraph& plan) noexcept {
     if (Status reserved =
-            device_->reserve_transient_memory(plan.memory.heap_bytes, plan.memory.memory_type_bits);
+            device_->reserve_transient_memory(plan.memory.heap_bytes, plan.memory.pool_class);
         !reserved) {
         return reserved;
     }
@@ -331,7 +331,17 @@ Status GraphExecutor::record_and_submit(RenderGraph& graph, CompiledGraph& plan,
         // Parallel recording: one secondary per pass, recorded on job workers and executed in PLAN
         // order. The workers decide when a pass is recorded, never where its commands end up, which
         // is what keeps the command stream identical regardless of thread scheduling.
+        // THE CAPABILITY TERM IS METAL GAP 5, and it is one term rather than a precondition.
+        //
+        // The engine records one secondary PER PASS, on job workers, before the primary loop
+        // reaches any of them, and each secondary contains a whole render pass. That is Vulkan's
+        // secondary-command-buffer model; it is NOT Metal's, whose
+        // `MTLParallelRenderCommandEncoder` parallelises WITHIN one pass from sub-encoders that
+        // exist only inside a live encoder. A device that cannot do the engine's kind records
+        // sequentially and produces the identical command stream — which is what makes this a
+        // capability the renderer branches on rather than a backend identity test.
         const bool parallel = options.parallel_recording && options.job_system != nullptr &&
+                              device_->capabilities().has(rhi::Capability::ParallelPassRecording) &&
                               submit.passes.size() >= options.parallel_pass_threshold;
         secondaries.clear();
         if (parallel) {

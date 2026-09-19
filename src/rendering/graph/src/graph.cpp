@@ -128,7 +128,7 @@ bool synthetic_memory_query(ResourceId resource, const ResourceInfo& info,
     }
     out.size = align_up_to(size, kSyntheticAlignment);
     out.alignment = kSyntheticAlignment;
-    out.memory_type_bits = kSyntheticMemoryTypeBits;
+    out.pool_class = rhi::MemoryPoolClass{kSyntheticMemoryTypeBits};
     return true;
 }
 

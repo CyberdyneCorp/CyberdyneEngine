@@ -51,6 +51,17 @@ struct ShaderModuleDescription {
     ShaderStage stage = ShaderStage::None;
     /// SPIR-V, as 32-bit words. Not owned: the caller keeps it alive across the create call only.
     Span<const u32> spirv;
+    /// THE DEVICE'S OWN FORM, when the cook produced it rather than SPIR-V. Not owned, same rule.
+    ///
+    /// EXACTLY ONE of `spirv` and `native` is set, and `validate_shader_module` is where that is
+    /// enforced for every backend at once rather than in each of them slightly differently. Bytes
+    /// rather than words because MSL is source text and a `.metallib` is a file image; neither has
+    /// a word size.
+    Span<const u8> native;
+    /// What `native` holds. Read only when `native` is non-empty, and refused when it is not the
+    /// device's own `native_shader_format()` — a cook that produced MSL for a DXIL device is a
+    /// configuration error, and it is one this catches rather than the driver.
+    ShaderFormat native_format = ShaderFormat::Spirv;
     /// The function the module is entered at. Slang and HLSL name it; GLSL always says "main".
     const char* entry_point = "main";
 };

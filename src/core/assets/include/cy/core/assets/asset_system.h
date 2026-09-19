@@ -314,14 +314,24 @@ public:
     /// file caught mid-write reads short or not at all, the error is returned, `reloads_failed` is
     /// counted, and every `Ref` still names the content that was working.
     ///
-    /// PACKAGE-BACKED ASSETS ARE REFUSED, by name, with `ErrorCode::Unimplemented`. An entry inside
-    /// a cooked package reaches its bytes through the package's chunk framing, decompression and
-    /// dependency list — the pipeline `load` runs across the async service and the job graph — and
-    /// re-running that synchronously here would be a second implementation of it. The iteration
-    /// loop this exists for edits loose files under a directory mount, which is the case that is
-    /// supported and tested. Doing the other one properly means restarting the load pipeline into
-    /// the existing slot and swapping at `publish()`; it is a change to this file and to nothing
-    /// that consumes it.
+    /// **A package-backed asset reloads too**, which it did not until M11.d: an entry inside a
+    /// cooked package reaches its bytes through the package's chunk framing, its decompression and
+    /// its declared dependency list, and all three are `PackageReader`'s rather than this file's,
+    /// so reading them here is a use of the load pipeline and not a second copy of it. The
+    /// specification's hot-reload requirement names *cooked outputs* as well as source files, and a
+    /// refusal for the cooked half was that requirement unmet rather than scoped.
+    ///
+    /// Three differences from a loose-file reload, each deliberate:
+    ///
+    /// * **A mapped entry becomes copy-backed.** A reload replaces an owned buffer, and a memory
+    ///   mapping is not one. The asset is served from a copy afterwards, and `entries_mapped` is
+    ///   not incremented again.
+    /// * **The declared dependencies are re-read**, and a dependency the entry now names that the
+    ///   system does not hold is started. They are not awaited: see the comment at that loop.
+    /// * **It reads the package that is mounted.** A cook that rewrites a package's directory
+    ///   produces a different file, and picking that up is a REMOUNT rather than a reload — the
+    ///   open reader holds the directory it parsed. Reloading here re-reads the entry through that
+    ///   reader, which is the case an editor's cook-in-place produces.
     [[nodiscard]] Status reload(cy::AssetId id, const LoadOptions& options = {}) noexcept;
 
     /// Register a dependent to be told when an asset's bytes are replaced. Registering the same

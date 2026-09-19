@@ -1,0 +1,320 @@
+# M11.d.5 — Backends: the exit criteria of the rung M11.d's spike carved out of it.
+#
+# WHY THIS RUNG EXISTS, AND IT IS THE MACHINE RATHER THAN THE PLAN. M11.d was written carrying
+# sections 2 (Metal, native) and 3 (D3D12, from nothing). The work of this project happens on a
+# Linux host with one operating system and no Apple toolchain: **Metal cannot be compiled here and
+# D3D12 cannot be compiled here.** Neither backend could be written or judged where M11.d is being
+# worked, and half-building them there would have produced the one defect this project has paid for
+# nine times — a check that cannot fail. So the two sections were MOVED, not deleted and not
+# descoped, into this rung, which is inserted between M11.d and M11.e exactly as M5.5 was inserted
+# between M5 and M6. `delivery-roadmap`'s "A spike may resize a milestone as well as redirect it"
+# is the rule that permits it and `openspec/changes/implement-m11d5-backends/` is the change that
+# records it.
+#
+# AND `golden-images-across-three-backends` MOVED WITH THEM, which is the half that matters. It is
+# M11's first exit criterion as ROADMAP.md has stated it since the plan was drawn, it is the only
+# claim no single leg can make, and leaving it behind in M11.d would have let THIS rung close on
+# "it compiles somewhere". `delivery-roadmap`'s "A criterion follows its subject" says so in as many
+# words: a criterion whose subject has been deferred moves with its subject, because leaving it
+# behind produces a check with nothing to check.
+#
+# WHAT THE SPIKE ALREADY MEASURED ABOUT THIS RUNG'S OWN EVIDENCE, so it is not re-derived here.
+# M11.d's spike ran a throwaway workflow whose tree was only the probes, on two runs
+# (35438833469, 35439163646). Each probe created a device, cleared a 64x64 target to a known colour,
+# read the pixel back and presented. The answers:
+#
+#   macos-14 arm64    MTLDevice yes, pixel exact, CAMetalLayer presented clean — "Apple Paravirtual
+#                     device", NO Apple GPU family at all (Apple7=0, Apple8=0, Metal3=0, Mac2=1),
+#                     argument buffers Tier 1, isDepth24Stencil8PixelFormatSupported=0
+#   macos-13 x86_64   no runner was ever allocated, on either run
+#   windows-2022 x64  ID3D12Device yes, pixel exact, swapchain on a hidden HWND hr=0 — "Microsoft
+#   windows-11-arm    Basic Render Driver", software, ResourceHeapTier=2, and TWO adapters of which
+#                     adapter 0 does NOT set DXGI_ADAPTER_FLAG_SOFTWARE
+#
+# THREE CONSEQUENCES THIS LEDGER IS WRITTEN AGAINST, none of them optional:
+#
+#   1. Tile memory and memoryless attachments are APPLE-FAMILY features and they are the entire
+#      stated reason `rhi-and-render-graph` refuses MoltenVK. The thing a native Metal backend is
+#      FOR cannot be exercised on any hosted runner. `metal-backend-is-native` below therefore
+#      claims compile-create-draw-present and NOT the feature set, and the difference is a declared
+#      deferral in design.md rather than a tick.
+#   2. The engine's descriptor model is bindless and the bindless path needs argument buffers at
+#      Tier 2. The hosted device is Tier 1, so `unit.rhi_metal` can pass there without the
+#      descriptor model having been exercised once.
+#   3. "Pick the first adapter without DXGI_ADAPTER_FLAG_SOFTWARE" selects a software rasteriser on
+#      every hosted Windows image. A backend that trusts that flag reports hardware it does not
+#      have and so do its golden images. `device-identity-is-named` below is that finding turned
+#      into a check, and it is the ONE claim of this rung a Linux host can judge in full.
+#
+# THE STATIC GATES ARE SPELLED HERE EXACTLY AS THE OTHER RUNGS SPELL THEM, so they collapse to one
+# check each across the ladder. `just roadmap-milestone m11d5` evaluates the permanent set once plus
+# the criteria in this file; it invokes no other ledger.
+
+schema = 1
+id = "m11d5"
+name = "Backends"
+artefact = "ONE SCENE, THREE BACKENDS, THE SAME PICTURE: the M3 golden images rendered through Vulkan, Metal and D3D12 and compared across legs of the matrix within tolerance, one committed screenshot per backend under docs/design/images/, and EACH ONE LABELLED WITH THE DEVICE THAT ANSWERED — hardware, paravirtual or software — because a green tick that does not say which answered is a claim about hardware nobody ran."
+
+notes = [
+    "`just roadmap-milestone m11d5` is this recipe, so it cannot be one of the criteria it evaluates.",
+    "THIS RUNG IS MOSTLY NOT EVALUABLE ON THE HOST IT IS WRITTEN ON, and that is recorded through `where`/`reason` rather than as a sentence. NOT EVALUATED is never a pass. Three criteria below CAN be judged here and are deliberately kept here rather than pushed onto a runner: `device-identity-is-named` (the labelling rule is engine-side arithmetic), `renderer-options-off-is-clean` (M8.c's rule, which a Linux host is the right place to check) and `rhi-row-at-complete-grade` (a requirement-to-evidence mapping, which needs no device).",
+    "WHAT THIS RUNG MAY NOT CLAIM, and design.md of implement-m11d5-backends carries each as a declared deferral with a re-entry point rather than a criterion a hosted leg could fake: Apple-family tile memory and memoryless attachments; argument buffers at Tier 2; parity against references photographed on this project's own hardware; and D3D12 Resource Heap Tier 1, which hardware still ships and no hosted image presents.",
+    "THE INTERFACE IS M11.d's AND IT IS BELOW THIS RUNG ON THE LADDER, so `m11d:rhi-interface-gaps-settled` and `m11d:null-backend-refuses-what-it-cannot-do` are inherited here rather than restated. The ordering is the whole point of the split M11.d's spike argued for: a gap closed inside a backend is a gap the other two backends rediscover.",
+    "MSL AND DXIL ARE `shader-system`'s, WHICH IS M11.c's ROW, and `m11d:shader-targets-emitted` is the prerequisite check — it stays in M11.d and is inherited here. This rung cannot start without it and does not own it.",
+]
+
+# --- The static gates, shared with every other rung -----------------------------------------------
+
+[[criterion]]
+id = "specs"
+describe = "openspec validate --specs --strict passes over the specification set, including the delta this rung's change writes"
+source = "tasks"
+kind = "recipe"
+run = "just quality-specs"
+ci_job = "specs"
+
+[[criterion]]
+id = "format"
+describe = "the formatting gate is green over a tree that gained two graphics backends"
+source = "tasks"
+kind = "recipe"
+run = "just quality-format-check"
+ci_job = "format"
+
+[[criterion]]
+id = "lint"
+describe = "clang-tidy is clean over both new backends, including the cognitive-complexity limits a barrier-deriving command encoder is exactly the kind of code to breach"
+source = "tasks"
+kind = "recipe"
+run = "just quality-lint"
+ci_job = "lint"
+
+[[criterion]]
+id = "layering"
+describe = "the layer order holds with three graphics backends in it — no platform `#ifdef` inside a backend, and no backend type above `src/backends/`"
+source = "tasks, engine-architecture, rhi-and-render-graph"
+kind = "recipe"
+run = "just quality-layers"
+ci_job = "layering"
+
+[[criterion]]
+id = "workflows"
+describe = "the workflows and the recipes agree, and it goes red the moment `milestone-m11d5` is green above the newest ledger any workflow evaluates"
+source = "tasks, developer-workflow-and-just"
+kind = "recipe"
+run = "just ci-check"
+ci_job = "workflows"
+
+[criterion.falsifies]
+mutate = "delete-lines"
+target = ".github/workflows/ci.yml"
+token  = "just quality-layers"
+note   = "THE SAME MUTATION EVERY LEDGER'S `workflows` CRITERION TAKES, because every ledger runs the same `just ci-check` and the thing it guards is the same: a permanent gate whose commands no job in .github/workflows/ runs. Carried across from m11b.toml, which earned it first, and from m11d.toml, whose ledger this rung was cut out of."
+
+[[criterion]]
+id = "generated-code"
+describe = "the generated-code gate, all three commands — including the two renderer feature options this rung delivers, each of which must fetch, build and link nothing when disabled"
+source = "tasks, thirdparty-dependencies, build-system-and-platforms"
+kind = "command"
+run = "just generate-check && just generate-test && just maintenance-deps-check"
+timeout_s = 3600
+ci_job = "generated-code"
+
+[[criterion]]
+id = "roadmap-record"
+describe = "the status record and openspec/specs/ agree, and every tier claim names the change that made it"
+source = "tasks"
+kind = "recipe"
+run = "just roadmap-status"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "plan-consistency"
+describe = "the roadmap tooling's own self-test: the four plan documents agree, every ledger has a floor, and the ladder places m11d5 between m11d and m11e — which is the property an insertion gets wrong, and did get wrong at M5.5"
+source = "tasks, delivery-roadmap"
+kind = "recipe"
+run = "just roadmap-test"
+ci_job = "roadmap-status"
+
+[[criterion]]
+id = "four-profiles"
+describe = "all four profiles build clean and just test-all is green in each, on every desktop platform"
+source = "tasks"
+kind = "command"
+run = "for p in debug dev profile release; do d=\"${CY_BUILD_DIR:+${CY_BUILD_DIR}/$p}\"; CY_BUILD_DIR=\"$d\" just build-engine --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just build-editor --profile \"$p\" || exit 1; CY_BUILD_DIR=\"$d\" just test-all --profile \"$p\" || exit 1; done"
+timeout_s = 28800
+ci_job = "profiles"
+
+# --- Section 1: the two backends, moved here from M11.d sections 2 and 3 --------------------------
+#
+# These three criteria are M11.d's, word for word, carried across rather than rewritten: the claim
+# did not change, the machine that can judge it did. m11d.toml's own header records the move from
+# the other side so neither file can be read as the whole story.
+
+[[criterion]]
+id = "metal-backend-is-native"
+describe = "`src/backends/rhi-metal/` compiles and runs as a NATIVE backend rather than a translation layer. `device.mm` has never been compiled by this project's continuous integration and the seed's README names two gaps with no workaround; the check is that the backend builds and passes the RHI conformance suite. WHAT IT DOES NOT CLAIM, because the spike measured that no hosted runner can answer it: tile memory, memoryless attachments and argument buffers at Tier 2 — the Apple-family features that are `rhi-and-render-graph`'s entire stated reason for refusing MoltenVK"
+source = "tasks 1, rhi-and-render-graph, moved from m11d tasks 2"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.rhi_metal)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 1 suite(s) match $pattern"
+test "$registered" -ge 1 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+where = "ci"
+reason = "Metal exists only on macOS and this host is Linux with no Apple toolchain; the claim is reported NOT EVALUATED here rather than passed, and the macOS leg of the matrix is where it is answered"
+ci_job = "milestone-m11d5"
+
+[[criterion]]
+id = "d3d12-backend-exists"
+describe = "a D3D12 backend exists and passes the RHI conformance suite. THERE WERE NO D3D12 FILES ANYWHERE IN THE TREE WHEN THIS RUNG OPENED, which is why this criterion is a build-and-run rather than a parity comparison"
+source = "tasks 2, rhi-and-render-graph, moved from m11d tasks 3"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+pattern='^(unit.rhi_d3d12)$'
+registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
+echo "$registered of 1 suite(s) match $pattern"
+test "$registered" -ge 1 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+ctest --test-dir "$d" -R "$pattern" --output-on-failure
+'''
+where = "ci"
+reason = "D3D12 exists only on Windows and this host is Linux; reported NOT EVALUATED here rather than passed by a suite that did not run"
+ci_job = "milestone-m11d5"
+
+[[criterion]]
+id = "golden-images-across-three-backends"
+describe = "the M3 golden images match across Vulkan, Metal and D3D12 within tolerance. IT IS THE MILESTONE'S FIRST EXIT CRITERION AS ROADMAP.md HAS STATED IT SINCE THE PLAN WAS DRAWN, it is the one claim no single leg can make, and it moved out of M11.d with its subject so that THIS rung cannot close on 'it compiles somewhere'"
+source = "tasks 3, ROADMAP M11.d.5 exit criteria, moved from m11d"
+kind = "command"
+run = "just test-render --compare-backends vulkan metal d3d12"
+where = "ci"
+reason = "three backends live on three operating systems and no single machine has all three; the comparison is between legs of the matrix, which is the same shape as the cross-leg digest job M11.a built"
+ci_job = "milestone-m11d5"
+
+# --- Section 2: the three claims a Linux host CAN judge -------------------------------------------
+#
+# A rung whose every criterion says NOT EVALUATED on the machine it is written on is a rung nobody
+# can develop against, and this ladder already has one terminus collecting twenty-seven gaps. These
+# three run here, fail here, and are the ones an author iterates on.
+
+[[criterion]]
+id = "device-identity-is-named"
+describe = "THE SPIKE'S SHARPEST FINDING, TURNED INTO A CHECK. Every hosted Windows image presents TWO adapters, both `Microsoft Basic Render Driver`, and adapter 0 does NOT set `DXGI_ADAPTER_FLAG_SOFTWARE` — so the ordinary 'pick the first adapter without the software flag' selects a software rasteriser and reports it as hardware. The rule this rung adopts is that the label comes from the ADAPTER'S IDENTITY, never from its flag, and that every device report names which device answered. The arithmetic is engine-side, so a Linux host with no Metal and no D3D12 can judge it in full"
+source = "tasks 4, rhi-and-render-graph, m11d design.md section 1.4.1"
+kind = "command"
+run = '''
+set -e
+d="${CY_BUILD_DIR:-build/dev}"
+just build-engine --profile dev > /dev/null
+binary="$d/cy_test_unit_rhi"
+test -x "$binary" || { echo "no $binary — the suite unit.rhi does not exist"; exit 1; }
+filter='a software device is labelled from its identity*,a device report names the device that answered*'
+out="$("$binary" "-tc=$filter" 2>&1)" || { echo "$out"; echo "the named case(s) FAILED"; exit 1; }
+echo "$out" | tail -3
+selected=$(printf '%s' "$out" | sed -nE 's/.*test cases: *([0-9]+) \|.*/\1/p' | head -1)
+echo "the filter selected ${selected:-0} case(s) of the 2 it names"
+test "${selected:-0}" -ge 2 || { echo "the named case(s) are not in unit.rhi any more — renamed, deleted, or the filter is stale"; exit 1; }
+'''
+ci_job = "milestone-m11d5"
+
+[[criterion]]
+id = "renderer-options-off-is-clean"
+describe = "M8.c's rule applied to the two options this rung delivers: the engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12` OFF as well as ON. A Linux host is the RIGHT place to check it rather than a limitation — off is the configuration every machine that is not a Mac or a Windows box builds, and a backend that has quietly become mandatory shows up here first"
+source = "tasks 1, 2, build-system-and-platforms, m8c:feature-options-off"
+kind = "command"
+run = '''
+set -eo pipefail
+d="${CY_BUILD_DIR:-build/dev}/renderers-off"
+declared=$(grep -c 'CY_RENDERER_METAL|\|CY_RENDERER_D3D12|' cmake/features.cmake || true)
+echo "$declared of 2 renderer options declared in cmake/features.cmake"
+test "$declared" -ge 2 || { echo "an option this criterion names is not declared"; exit 1; }
+CY_BUILD_DIR="$d" just build-engine --profile dev -D CY_RENDERER_METAL=OFF -D CY_RENDERER_D3D12=OFF
+CY_BUILD_DIR="$d" just test-all --profile dev
+'''
+timeout_s = 7200
+ci_job = "milestone-m11d5"
+
+[[criterion]]
+id = "rhi-row-at-complete-grade"
+describe = "every requirement of `rhi-and-render-graph` maps to a test, a gate or a recorded exemption. The row has been Working since M3 and the whole gap to Complete was the second and third backends; this is the rung that reads it at Complete grade, and it needs no device to do so. `just quality-requirements` is one of `testing-and-quality`'s gates and is M11.d's to build — a criterion that names an absent recipe fails loudly with the recipe's name in it, which is the honest red"
+source = "tasks 5, rhi-and-render-graph, testing-and-quality"
+kind = "command"
+run = "just quality-requirements rhi-and-render-graph"
+ci_job = "milestone-m11d5"
+
+# --- Section 3: the artefact ----------------------------------------------------------------------
+
+[[criterion]]
+id = "three-backend-images-committed"
+describe = "one committed screenshot per backend, each labelled with the backend and the DEVICE that produced it — hardware, paravirtual or software. The rule since M8.c holds: a picture is the only evidence that distinguishes a frame that was drawn from a suite that exited zero, and three files rather than one is the difference between this rung's artefact and any single leg's"
+source = "tasks 6, ROADMAP M11.d.5 closing artefact"
+kind = "command"
+run = '''
+set -eo pipefail
+missing=0
+for backend in vulkan metal d3d12; do
+    found=$(ls docs/design/images/m11d5-three-backends-"$backend"*.png 2>/dev/null | head -1 || true)
+    if [ -n "$found" ]; then
+        echo "  $backend: $found"
+    else
+        echo "  $backend: no docs/design/images/m11d5-three-backends-$backend*.png"
+        missing=$((missing + 1))
+    fi
+done
+echo "$missing of 3 backend images missing"
+test "$missing" -eq 0
+'''
+ci_job = "milestone-m11d5"
+
+# --- Section 4: the record, and the next rung -----------------------------------------------------
+
+[[criterion]]
+id = "roadmap-tiers"
+describe = "the status record is at this rung's exit tier. ONE ROW, AND IT IS THE OLDEST UNFINISHED ONE ON THE LADDER: `rhi-and-render-graph` has been Working since M3 over a single backend. IT FAILS UNTIL THE CLOSING CHANGE WRITES IT AND IT IS MEANT TO"
+source = "tasks, ROADMAP M11.d.5, delivery-roadmap"
+kind = "tiers"
+ci_job = "milestone-m11d5"
+
+[criterion.expect_tiers]
+rhi-and-render-graph = "complete"
+
+# THE HANDOVER CHECK, in the shape `implement-m11-reach` task 0.1 settled for all five rungs and
+# which this sixth one inherits unchanged. M11.d's own handover check was re-pointed at THIS rung in
+# the same change that created it — a handover that still named M11.e would have skipped a rung.
+[[criterion]]
+id = "m11e-open"
+describe = "the next rung's change exists — open, or closed and archived — AND has been deliberately entered. That rung is M11.e, Ship: the last on the ladder, which this rung hands three backends drawing one scene, and whatever it could not finish"
+source = "tasks, implement-m11-reach task 0.1, delivery-roadmap"
+kind = "command"
+run = '''
+set -eo pipefail
+# the double-star glob the ladder has used since M8.a: openspec/changes/**/*m11e*/proposal.md
+dirs=$(find openspec/changes -type d -name '*m11e*' | sort)
+test -n "$dirs" || { echo "no change directory matching openspec/changes/**/*m11e*/"; exit 1; }
+entered=""
+for d in $dirs; do
+    test -f "$d/proposal.md" || continue
+    echo "  $d/proposal.md"
+    # A CHECKED TASK OUTSIDE SECTION 0, and the exclusion is the point. Section 0 is a rung's own
+    # decision-and-spike section, which the split that opened all five rungs could answer in advance;
+    # a checked box there says the rung was SCOPED. A checked box in the body says the rung was
+    # STARTED, which is the deliberate act this criterion is standing in for.
+    if [ -f "$d/tasks.md" ] && grep -qE '^- \[x\] [1-9]' "$d/tasks.md"; then
+        entered="$entered $d"
+    fi
+done
+if [ -z "$entered" ]; then
+    echo "the next rung's change exists and nobody has entered it: no task outside its section 0 is checked."
+    exit 1
+fi
+echo "entered:$entered"
+'''
+ci_job = "milestone-m11d5"

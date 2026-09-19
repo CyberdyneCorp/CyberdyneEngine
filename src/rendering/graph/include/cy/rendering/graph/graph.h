@@ -224,7 +224,7 @@ struct MemoryPlan {
     /// are reported so that task 7.3's "aliasing measurably reduces peak GPU memory" is a number
     /// the plan itself carries rather than a second build.
     u64 naive_bytes = 0;
-    u32 memory_type_bits = ~0U;
+    rhi::MemoryPoolClass pool_class;
     Array<Placement> placements;
 
     explicit MemoryPlan(Allocator& allocator) noexcept : placements(allocator) {}

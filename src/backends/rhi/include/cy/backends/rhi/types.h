@@ -154,6 +154,31 @@ constexpr AccessFlags& operator|=(AccessFlags& a, AccessFlags b) noexcept {
     return static_cast<u64>(value) != 0;
 }
 
+// --- Shader interchange ---------------------------------------------------------------------
+
+/// THE FORM A DEVICE CONSUMES A SHADER IN — METAL GAP 1.
+///
+/// SPIR-V is the engine's INTERCHANGE form and this enumeration does not change that: the cook
+/// produces SPIR-V, the cache keys it, and every device that can consume it does. What the
+/// enumeration adds is somewhere for a device that CANNOT to say so, and somewhere for a cook to
+/// put what it produced instead. A Metal device consumes MSL source or a compiled `.metallib` and
+/// never SPIR-V; a D3D12 device consumes DXIL. Without this, the translation has nowhere to live
+/// but inside `create_shader_module`, which the engine treats as cheap and which would put a
+/// shader compiler on the frame path.
+enum class ShaderFormat : u8 {
+    Spirv = 0,   ///< 32-bit words, magic 0x07230203. The engine's interchange form.
+    Msl,         ///< Metal Shading Language source, as bytes.
+    MetalLibrary,  ///< A compiled `.metallib`.
+    Dxil,        ///< DXIL, as produced by DXC.
+    Count,
+};
+
+inline constexpr u32 kShaderFormatCount = static_cast<u32>(ShaderFormat::Count);
+
+/// "spirv", "msl", "metallib", "dxil". Never null — a report that named a number would be a report
+/// nobody could act on.
+[[nodiscard]] const char* shader_format_name(ShaderFormat format) noexcept;
+
 // --- Image layouts --------------------------------------------------------------------------
 //
 // A layout is a property of a subresource, not of an image, which is why every one of them is

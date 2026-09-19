@@ -1,0 +1,39 @@
+# Words codespell would correct that this project spells deliberately. One per line, lower case;
+# codespell matches case-insensitively, so `LOD`, `Lod` and `lod` are all covered by one entry.
+#
+# EVERY LINE HERE NARROWS THE GATE, so every line carries the reason it is here. A word added
+# without one is an unexplained hole in a spelling check, and this file is reviewed as such.
+#
+# What does NOT belong here is a real misspelling somebody did not want to fix. Those go in
+# spelling-exclude.txt, which suppresses ONE LINE of ONE FILE rather than a word everywhere.
+
+# --- Engine and graphics vocabulary -----------------------------------------------------------------
+lod            # level of detail. 501 occurrences; codespell reads it as `load`/`loud`/`lode`
+ser            # the roadmap's SER column (specification-evidence-requirement), and `Ser` prefixes
+inout          # the shader storage qualifier, spelled as the shading languages spell it
+outin          # `EaseKind::OutIn` — an easing curve's name, not `outing`
+perview        # `PerView` — the per-view constant buffer's name, not `preview` or `purview`
+paeth          # the PNG Paeth predictor, named after Alan Paeth
+sav            # the `.sav` save-file extension
+ane            # "cpu", "cuda:0", "ane" — Apple's Neural Engine, as a device placement token
+thirdparty     # the layer name `thirdparty`, as cy_add_module() and layercheck.py spell it
+ore            # a resource in the gameplay tests' fixture economy
+
+# --- Words that are English, which codespell reads as typos for other English words -----------------
+trough         # a wave trough. `water/displacement.h` means the trough, not "through"
+statics        # static objects, and `statics` in the material cost report — not "statistics"
+dependant      # British spelling, which this project uses throughout
+unparseable    # the spelling this tree uses; codespell prefers `unparsable`
+allo           # "Allô" — the French string in the localisation test
+
+# --- Hyphenated forms this project writes with the hyphen --------------------------------------------
+re-use
+re-used
+re-uses
+re-declare
+re-declared
+re-declares
+re-declaring
+pre-empt
+pre-empts
+pre-emptively
