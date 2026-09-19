@@ -264,13 +264,37 @@ def _tracked_sources(directory: Path, suffixes: tuple[str, ...]) -> list[Path]:
             if name and name.endswith(suffixes)]
 
 
+#: A C++ adjacent-string-literal join: a closing quote, whitespace (a line break included), an
+#: opening quote. The compiler concatenates those into one string and so does this, because the
+#: name of a test case is what the PROGRAM sees and not how the source happens to be wrapped.
+_ADJACENT_LITERALS = re.compile(r'"\s*"')
+
+
 def _contains(paths: list[Path], needle: str) -> bool:
+    """Is this case name in one of these sources — as written, or as the compiler reads it?
+
+    THE SECOND ATTEMPT IS NOT A LOOSENING AND IT WAS ADDED OVER TWO ENTRIES THAT WERE WRONGLY RED.
+    A `CY_TEST_CASE("...")` whose name is longer than the line limit is wrapped by clang-format into
+    adjacent string literals, and a plain substring search over the bytes then cannot find the name
+    the case actually has. `vfx-system` / *Data interfaces* and *VFX does not influence gameplay
+    state* were both reported "renamed, deleted, or it belongs to another suite" while the cases sat
+    in `test_vfx_compiler.cpp:509` and `test_firewall.cpp:448` under exactly those names — measured,
+    not assumed: `git log -S` over the unwrapped spelling returns nothing for either file, so neither
+    entry had ever resolved and no run had ever said so, because no criterion runs
+    `quality-requirements` over those two rows.
+
+    What the join does is what the compiler does and nothing more: it removes a quote-whitespace-
+    quote boundary. `{"foo", "bar"}` is untouched, because a comma is not whitespace — so this cannot
+    fuse two unrelated strings into a name nobody wrote. An entry naming a case that is not in these
+    sources is still red, which is the claim the whole `case` key exists to make.
+    """
     for path in paths:
         try:
-            if needle in path.read_text(encoding="utf-8"):
-                return True
+            text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        if needle in text or needle in _ADJACENT_LITERALS.sub("", text):
+            return True
     return False
 
 

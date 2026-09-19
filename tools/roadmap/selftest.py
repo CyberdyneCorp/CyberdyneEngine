@@ -1480,6 +1480,36 @@ def test_requirements_coverage(root: Path) -> None:
         requirements_module.SPECS = previous
 
 
+def test_a_wrapped_case_name_is_still_that_case(root: Path) -> None:
+    """A test case whose name clang-format wrapped is found, and an absent one is still absent.
+
+    THE REGRESSION THIS IS FOR. `_contains` searched the source bytes for the case name, and
+    `CY_TEST_CASE` names longer than the line limit are wrapped into ADJACENT STRING LITERALS —
+    `"a long name "` then `"continues"` on the next line — which the compiler concatenates and a
+    substring search does not. Two entries of `vfx-system` were red for exactly that at M11.c's
+    closing gate (`test_vfx_compiler.cpp:509`, `test_firewall.cpp:448`), both naming cases that were
+    there under those names, and no run had ever reported it because no criterion runs
+    `quality-requirements` over that row. The negative control is the point: the join is a
+    quote-whitespace-quote boundary and nothing else, so it cannot fuse two unrelated strings in a
+    list into a name nobody wrote, and a case that is genuinely not there is still not there.
+    """
+    wrapped = root / "wrapped.cpp"
+    wrapped.write_text('CY_TEST_CASE(\n    "a project registers its own data interface and it "\n'
+                       '    "reads") {\n}\n', encoding="utf-8")
+    listed = root / "list.cpp"
+    listed.write_text('const char* kNames[] = {"alpha", "beta"};\n', encoding="utf-8")
+    check("a case name the source wrapped across adjacent literals is found",
+          requirements_module._contains(
+              [wrapped], "a project registers its own data interface and it reads"))
+    check("and the name as written on one line is still found",
+          requirements_module._contains([wrapped], "a project registers its own data interface"))
+    check("a case that is not in the file is still not found",
+          not requirements_module._contains([wrapped], "a case nobody ever wrote"))
+    check("and two unrelated strings in a list are NOT fused into a name",
+          not requirements_module._contains([listed], "alphabeta"),
+          "only a quote-whitespace-quote boundary is a concatenation; a comma is not")
+
+
 def test_falsifiability_reads_a_redirection(root: Path) -> None:
     """A file descriptor in front of a redirection is not a path the criterion searches.
 

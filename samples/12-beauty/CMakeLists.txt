@@ -64,6 +64,27 @@
 # `unit.import`'s codec and encoder cases, `unit.graph_material`'s three front ends,
 # `unit.material_compiler`, `unit.assembly` and the manifest's own suite.
 
+# AND THE AIR IS A FEATURE OPTION, WHICH IS WHY THIS TARGET IS NOT DECLARED WITHOUT IT. `cy::vfx` is
+# behind `CY_VFX`, and a target that links it unconditionally turns `-D CY_VFX=OFF` into a CMake
+# GENERATE error naming this sample — "Target cy_sample_beauty links to cy::vfx but the target was
+# not found" — which fails the configure of the WHOLE tree rather than of this one artefact. That is
+# `m8c:feature-options-off`, and it is the second time this rung has hit it: the first was
+# `tests/integration/CMakeLists.txt` declaring `rendering_culling` against `cy::rhi-vulkan` outside
+# the `if(CY_RENDERER_VULKAN)` its own file's rule requires.
+#
+# The remedy is samples/08-vertical-slice's, unchanged and for its reason: a sample whose subject is
+# absent DECLARES NOTHING rather than declaring a broken target. What that costs is stated rather
+# than hidden — with CY_VFX off there is no `cy_sample_beauty`, `just capture-beauty-shot` reports an
+# absent binary rather than a defect, and the published artefact is unaffected because it is captured
+# in the default configuration where CY_VFX is ON. Removing the `cy::vfx` dependency instead was
+# rejected: `vfx-in-the-shot` is this rung's criterion and an art-directed shot with no particles in
+# it does not exercise `vfx-system`, so the link is the point rather than an accident.
+if(NOT CY_VFX)
+    message(STATUS "samples/12-beauty: CY_VFX is off, so the beauty shot — whose air is an ember "
+                   "system played by the shipping runtime — is not declared.")
+    return()
+endif()
+
 cy_add_module(
     NAME cy_sample_beauty
     LAYER tools
