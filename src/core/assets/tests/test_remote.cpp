@@ -28,13 +28,13 @@
 #include <vector>
 
 #if defined(__linux__) || defined(__APPLE__)
-#define CY_ASSETS_TEST_SOCKETS 1
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#    define CY_ASSETS_TEST_SOCKETS 1
+#    include <arpa/inet.h>
+#    include <netinet/in.h>
+#    include <sys/socket.h>
+#    include <unistd.h>
 #else
-#define CY_ASSETS_TEST_SOCKETS 0
+#    define CY_ASSETS_TEST_SOCKETS 0
 #endif
 
 using namespace cy::assets;
@@ -57,8 +57,7 @@ VirtualPath path_of(const char* raw) {
 /// has to drive `serve()`, and in an editor that something is the frame loop.
 class HostThread {
 public:
-    explicit HostThread(VirtualFileSystem& files)
-        : host_(files, cy::current_allocator()) {}
+    explicit HostThread(VirtualFileSystem& files) : host_(files, cy::current_allocator()) {}
 
     ~HostThread() { stop(); }
 
@@ -168,8 +167,7 @@ CY_TEST_CASE("a device fetches from the host on demand, and only what it reads")
     }
     const std::string first = "the first file's bytes";
     const std::string second = "a second file, longer than the first one is";
-    CY_REQUIRE(
-        memory->add(path_of("textures/stone.ktx2"), first.data(), first.size()).has_value());
+    CY_REQUIRE(memory->add(path_of("textures/stone.ktx2"), first.data(), first.size()).has_value());
     CY_REQUIRE(
         memory->add(path_of("textures/wood.ktx2"), second.data(), second.size()).has_value());
 
@@ -246,7 +244,8 @@ CY_TEST_CASE("a directory listing crosses the wire, and a visitor may stop early
     CY_REQUIRE(device.connect(host.address()));
 
     Listing listing;
-    CY_REQUIRE(device.files.enumerate(path_of("meshes"), true, &Listing::visit, &listing).has_value());
+    CY_REQUIRE(
+        device.files.enumerate(path_of("meshes"), true, &Listing::visit, &listing).has_value());
     CY_CHECK_EQ(listing.paths.size(), usize{3});
     CY_CHECK(listing.paths[0] == "meshes/a.cymesh");
 
@@ -261,8 +260,8 @@ CY_TEST_CASE("a directory listing crosses the wire, and a visitor may stop early
             return false;
         }
     } stopper;
-    CY_REQUIRE(
-        device.files.enumerate(path_of("meshes"), true, &StopAfterOne::visit, &stopper).has_value());
+    CY_REQUIRE(device.files.enumerate(path_of("meshes"), true, &StopAfterOne::visit, &stopper)
+                   .has_value());
     CY_CHECK_EQ(stopper.seen, 1U);
 
     cy::Array<u8> bytes(cy::current_allocator());
@@ -348,7 +347,7 @@ CY_TEST_CASE("a fetch larger than one request may carry is refused by both ends"
 
     std::vector<u8> destination(16);
     const cy::Status refused = device.provider.fetch(path_of("small.bin"), 0, destination.data(),
-                                                      kRemoteMaxFetchBytes + 1);
+                                                     kRemoteMaxFetchBytes + 1);
     CY_CHECK_FALSE(refused.has_value());
     CY_CHECK(refused.error().code == cy::ErrorCode::InvalidArgument);
     // Refused before it was sent: the host never saw it, so the connection is untouched.
@@ -389,11 +388,11 @@ CY_TEST_CASE("a host that goes away is reported as a transport failure, not as a
     CY_CHECK_FALSE(device.provider.is_connected());
 
     // AT THE NAMESPACE, the distinction is LOST, and that is a property of `Mount` rather than of
-    // this transport: `Mount::contains()` returns `bool`, so `VirtualFileSystem::resolve` asks every
-    // mount "do you have this" and a mount that cannot answer at all is indistinguishable from one
-    // that says no. A dead host therefore reads as a missing file one layer up. Asserted here
-    // rather than filed as a wish, because it is what a caller sees today and because the fix is an
-    // interface change to `Mount` that every mount pays for — see src/core/assets/README.md.
+    // this transport: `Mount::contains()` returns `bool`, so `VirtualFileSystem::resolve` asks
+    // every mount "do you have this" and a mount that cannot answer at all is indistinguishable
+    // from one that says no. A dead host therefore reads as a missing file one layer up. Asserted
+    // here rather than filed as a wish, because it is what a caller sees today and because the fix
+    // is an interface change to `Mount` that every mount pays for — see src/core/assets/README.md.
     const auto after = device.files.read(path_of("thing.bin"), bytes);
     CY_CHECK_FALSE(after.has_value());
     CY_CHECK(after.error().code == cy::ErrorCode::NotFound);

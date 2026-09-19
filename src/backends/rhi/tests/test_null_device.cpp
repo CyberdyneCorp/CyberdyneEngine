@@ -11,6 +11,7 @@
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/validation.h>
 #include <cy/core/assets/file.h>
+#include <cy/core/memory/domain.h>
 #include <cy/core/memory/system_allocator.h>
 
 namespace {
@@ -337,6 +338,39 @@ CY_TEST_CASE("GPU memory is accounted per category and reported as one figure") 
     CY_CHECK_EQ(device.memory_report().live_bytes[persistent], before.live_bytes[persistent]);
 }
 
+CY_TEST_CASE("publishing memory pressure reports the device heap into MemoryDomain::Gpu") {
+    // M11.d task 6.2. `MemoryDomain::Gpu` has been budgeted since M1 — 768 MiB soft on the desktop
+    // profile — and until now **no backend reported a byte into it**, so the budget was compared
+    // against zero and a per-domain report showed a GPU holding nothing. `rhi-and-render-graph`
+    // requires that "GPU memory SHALL appear in the same domain and budget model as CPU memory";
+    // the pressure half of that sentence was implemented and the domain half was not.
+    //
+    // The two reads below bracket ONE call that allocates nothing, so the difference between them
+    // is the reported device heap and cannot be host memory the fixture happened to take — which
+    // matters here because this suite's devices are deliberately built on a Gpu-domain allocator.
+    Fixture fixture;
+    CY_REQUIRE(fixture.ok());
+    Device& device = fixture.device();
+
+    cy::Expected<cy::rhi::TextureHandle, cy::Error> texture =
+        device.create_texture(target("domain-reported"));
+    CY_REQUIRE(texture.has_value());
+    const cy::u64 heap = device.memory_report().device_heap_used;
+
+    const cy::u64 before = cy::domain_stats(cy::MemoryDomain::Gpu).live_bytes;
+    device.publish_memory_pressure();
+    const cy::u64 after = cy::domain_stats(cy::MemoryDomain::Gpu).live_bytes;
+    CY_CHECK_GT(after, before);
+    CY_CHECK_EQ(after - before, heap);
+
+    // And a heap that FALLS is reported as a free rather than accumulating, which is what makes a
+    // rising row a leak rather than an artefact of the reporting.
+    device.destroy_texture(*texture);
+    device.publish_memory_pressure();
+    const cy::u64 released = cy::domain_stats(cy::MemoryDomain::Gpu).live_bytes;
+    CY_CHECK_LT(released, after);
+}
+
 CY_TEST_CASE("the backend registry falls back to null, and says that it did") {
     CY_REQUIRE(cy::rhi::null::register_null_backend().has_value());
     CY_REQUIRE(cy::rhi::find_backend(cy::rhi::kNullBackendName) != nullptr);
@@ -452,7 +486,8 @@ CY_TEST_CASE("the pipeline cache takes a path, and an absent one is a cold start
     (void)cy::assets::fs::remove_file(path);
 }
 
-CY_TEST_CASE("the null backend states the two answers Metal gaps 1 and 5 turned into capabilities") {
+CY_TEST_CASE(
+    "the null backend states the two answers Metal gaps 1 and 5 turned into capabilities") {
     // A capability nothing SETS is a capability every device answers the same way by accident —
     // which is exactly the defect `RayTracingObservation` was built to make impossible after
     // `Capability::RayTracing` went eight milestones with no writer. These two are new at M11.d, so

@@ -85,10 +85,10 @@
 //
 //   7. `D24UnormS8Uint` HAS NO APPLE-SILICON EQUIVALENT — CLOSED, and it was never an interface
 //      change. `DeviceCapabilities::format_features()` has answered per format since M3 and both
-//      backends populate it for every format; what it had was NO CONSUMER above `src/backends/rhi/`.
-//      M11.d added the consumer: `select_depth_stencil_format()` is the engine picking, `FrameAssembly`
-//      calls it, and `validate_texture` refuses a depth target the device does not support instead
-//      of letting a backend substitute quietly.
+//      backends populate it for every format; what it had was NO CONSUMER above
+//      `src/backends/rhi/`. M11.d added the consumer: `select_depth_stencil_format()` is the engine
+//      picking, `FrameAssembly` calls it, and `validate_texture` refuses a depth target the device
+//      does not support instead of letting a backend substitute quietly.
 //
 //   8. PUSH-CONSTANT RANGES CARRY AN OFFSET AND A STAGE MASK — NO CHANGE NEEDED, and that is
 //      RECORDED rather than silently skipped. Vulkan shares one block across stages at declared

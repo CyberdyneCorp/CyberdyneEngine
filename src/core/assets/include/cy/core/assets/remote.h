@@ -188,7 +188,9 @@ public:
     void close() noexcept;
     [[nodiscard]] bool is_open() const noexcept { return listener_ >= 0; }
     [[nodiscard]] u16 bound_port() const noexcept { return bound_port_; }
-    [[nodiscard]] u32 connection_count() const noexcept { return static_cast<u32>(clients_.size()); }
+    [[nodiscard]] u32 connection_count() const noexcept {
+        return static_cast<u32>(clients_.size());
+    }
 
     /// Accept what is waiting and answer what has arrived, then return. `timeout_ms` is how long to
     /// wait for the first thing to happen; zero polls and returns at once.

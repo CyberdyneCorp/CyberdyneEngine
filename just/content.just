@@ -187,6 +187,58 @@ content-package *args:
     just build-engine --profile "${profile}" ${platform[@]+"${platform[@]}"} -D CY_BUILD_TOOLS=ON
     exec "${build_dir}/tools/build/cy_build" build ${tool_args[@]+"${tool_args[@]}"}
 
+# The content audit — M11.d task 7.4.
+#
+# `build-and-packaging` asks four questions of a build and `tools/build/` could answer all four:
+#
+#     why is this in the build?      the reference chain from a declared delivery root
+#     what references this?          the dependents
+#     size by ...                    category, asset, plugin, world region and install bundle
+#     cook and compile time by ...   stage, with cache hit rates
+#
+# NO RECIPE REACHED ANY OF THEM. `cy_build audit` and `cy_build explain` have existed since M6 and
+# nothing in `just --list` named them, so the audit was a capability with no workflow — which
+# `developer-workflow-and-just` calls a defect in as many words: "a documented procedure that has no
+# recipe" is the other half of the rule that forbids a workflow reimplementing a tool.
+#
+#   just content-audit --description <file> --node <name>
+#       why that node is in the build, and what references it
+#   just content-audit --description <file> --node <name> --package <manifest>
+#       the same, plus size by category, by asset and by install bundle
+#   just content-audit --description <file> --source <path>
+#       which nodes a change to that source would reach — `cy_build explain`
+#
+# Time by stage is printed by `just content-package` on every run rather than living here, because
+# it is a property of a build that just happened and this recipe reads a build that already did.
+
+# Why is this in the build, what references it, and what does it cost. Usage: just content-audit [--profile <p>] --description <file> (--node <name> | --source <path>) [--package <manifest>]
+content-audit *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+
+    # Which of the two questions was asked. Naming neither is an error rather than a default: a
+    # default here would print one node's chain and look like an answer to the other question.
+    asked=""
+    for argument in ${rest}; do
+        case "${argument}" in
+            --node | --node=*)     asked="audit" ;;
+            --source | --source=*) asked="${asked:-explain}" ;;
+        esac
+    done
+    if [ -z "${asked}" ]; then
+        echo "content-audit: name --node <name> or --source <path>." >&2
+        echo "  --node    why that node is in the build, and what references it" >&2
+        echo "  --source  which nodes a change to that file would reach" >&2
+        exit 2
+    fi
+
+    just build-engine --profile "${profile}" -D CY_BUILD_TOOLS=ON
+    exec "${build_dir}/tools/build/cy_build" "${asked}" ${rest}
+
 # `--apply` switches from producing a patch to applying one. A patch application is staged, verified
 # and switched atomically; interrupting it leaves the previous build playable, which is what
 # `integration.build_patch` asserts by killing the process at every stage.

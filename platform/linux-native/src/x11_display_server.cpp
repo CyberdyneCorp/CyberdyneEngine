@@ -182,16 +182,16 @@ bool has_argb_visual(Display* display, int screen) {
     request.depth = 32;
     request.c_class = TrueColor;
     int count = 0;
-    XVisualInfo* found =
-        XGetVisualInfo(display, VisualScreenMask | VisualDepthMask | VisualClassMask, &request,
-                       &count);
+    XVisualInfo* found = XGetVisualInfo(
+        display, VisualScreenMask | VisualDepthMask | VisualClassMask, &request, &count);
     if (found != nullptr) {
         XFree(found);
     }
     return count > 0;
 }
 
-// --- The Vulkan surface seam ----------------------------------------------------------------------
+// --- The Vulkan surface seam
+// ----------------------------------------------------------------------
 //
 // `VK_KHR_xlib_surface`, reached through the loader by name. This file declares the three types it
 // needs itself and includes no Vulkan header — which is exactly what SDL3 does in SDL_vulkan.h, and
@@ -270,8 +270,8 @@ Status X11DisplayServer::initialise() {
     int randr_event_base = 0;
     int randr_error_base = 0;
     randr_ = XRRQueryExtension(display, &randr_event_base, &randr_error_base) != 0;
-    compositor_ = has_argb_visual(display, default_screen_) &&
-                  compositor_present(display, default_screen_);
+    compositor_ =
+        has_argb_visual(display, default_screen_) && compositor_present(display, default_screen_);
     dpi_scale_ = read_xft_dpi_scale(display);
 
     initialised_ = true;
@@ -320,7 +320,7 @@ void X11DisplayServer::set_event_observer(X11EventObserver observer, void* user)
 bool X11DisplayServer::has_feature(Feature feature) const {
     switch (feature) {
         case Feature::WindowResizable:
-        case Feature::WindowBorderless:  // _MOTIF_WM_HINTS, which every X11 window manager reads
+        case Feature::WindowBorderless:   // _MOTIF_WM_HINTS, which every X11 window manager reads
         case Feature::WindowAlwaysOnTop:  // _NET_WM_STATE_ABOVE
         case Feature::WindowNoFocus:      // WM_HINTS input = False
         case Feature::WindowPopup:        // override-redirect
@@ -430,8 +430,8 @@ void X11DisplayServer::apply_flags(u64 handle, WindowFlags flags) {
     if (has_flag(flags, WindowFlags::Popup)) {
         const Atom type = static_cast<Atom>(atoms_[kNetWmWindowTypePopupMenu]);
         XChangeProperty(display, as_window(handle), static_cast<Atom>(atoms_[kNetWmWindowType]),
-                        XA_ATOM, 32, PropModeReplace,
-                        reinterpret_cast<const unsigned char*>(&type), 1);
+                        XA_ATOM, 32, PropModeReplace, reinterpret_cast<const unsigned char*>(&type),
+                        1);
     }
 }
 
@@ -486,12 +486,12 @@ Expected<WindowId, Error> X11DisplayServer::create_window(const WindowDescriptio
     attributes.override_redirect = has_flag(flags, WindowFlags::Popup) ? 1 : 0;
 
     const Point position = description.use_position ? description.position : Point{0, 0};
-    const ::Window handle = XCreateWindow(
-        display, as_window(root_), position.x, position.y,
-        static_cast<unsigned>(description.size.width),
-        static_cast<unsigned>(description.size.height), 0, CopyFromParent, InputOutput,
-        CopyFromParent, CWBackPixel | CWBorderPixel | CWEventMask | CWOverrideRedirect,
-        &attributes);
+    const ::Window handle =
+        XCreateWindow(display, as_window(root_), position.x, position.y,
+                      static_cast<unsigned>(description.size.width),
+                      static_cast<unsigned>(description.size.height), 0, CopyFromParent,
+                      InputOutput, CopyFromParent,
+                      CWBackPixel | CWBorderPixel | CWEventMask | CWOverrideRedirect, &attributes);
     if (handle == kXNone) {
         return fail(ErrorCode::Unavailable, "XCreateWindow refused");
     }
@@ -799,7 +799,8 @@ Status X11DisplayServer::set_window_vsync(WindowId window, VSyncMode mode) {
     return ok();
 }
 
-// --- Screens --------------------------------------------------------------------------------------
+// --- Screens
+// --------------------------------------------------------------------------------------
 
 void X11DisplayServer::refresh_screens() {
     screen_count_ = 0;
@@ -849,8 +850,8 @@ void X11DisplayServer::refresh_screens() {
         ScreenInfo& info = screens_[0];
         info = ScreenInfo{};
         info.id = 1;
-        info.resolution = Extent{DisplayWidth(display, default_screen_),
-                                 DisplayHeight(display, default_screen_)};
+        info.resolution =
+            Extent{DisplayWidth(display, default_screen_), DisplayHeight(display, default_screen_)};
         info.dpi_scale = dpi_scale_;
         copy_name(info.name, "x11-default");
         screen_count_ = 1;
@@ -893,7 +894,8 @@ Expected<ScreenInfo, Error> X11DisplayServer::screen_by_id(ScreenId id) const {
     return *info;
 }
 
-// --- Surfaces -------------------------------------------------------------------------------------
+// --- Surfaces
+// -------------------------------------------------------------------------------------
 
 Expected<NativeSurface, Error> X11DisplayServer::create_surface(
     WindowId window, const SurfaceDescription& description) {
@@ -964,16 +966,17 @@ void X11DisplayServer::destroy_surface(const NativeSurface& surface) {
     if (get_proc == nullptr) {
         return;
     }
-    auto destroy = reinterpret_cast<PFN_vkDestroySurfaceKHR>(
-        get_proc(surface.display, "vkDestroySurfaceKHR"));
+    auto destroy =
+        reinterpret_cast<PFN_vkDestroySurfaceKHR>(get_proc(surface.display, "vkDestroySurfaceKHR"));
     if (destroy != nullptr) {
-        destroy(surface.display, static_cast<VkSurfaceHandle>(
-                                    reinterpret_cast<std::uintptr_t>(surface.handle)),
+        destroy(surface.display,
+                static_cast<VkSurfaceHandle>(reinterpret_cast<std::uintptr_t>(surface.handle)),
                 nullptr);
     }
 }
 
-// --- Events ---------------------------------------------------------------------------------------
+// --- Events
+// ---------------------------------------------------------------------------------------
 
 void X11DisplayServer::pump_events() {
     if (!initialised_) {

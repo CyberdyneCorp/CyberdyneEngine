@@ -70,6 +70,13 @@ struct PresentReport {
     bool swapchain_created = false;
     u32 frames_presented = 0;
     u32 validation_errors = 0;
+    /// What the frame's own plan was, from the executor's report. A presented frame that turned out
+    /// to be one submit, three passes and two derived barriers is a claim a reader can check against
+    /// the graph this sample declares; "it drew" on its own is not.
+    u32 submits = 0;
+    u32 passes_recorded = 0;
+    u32 barriers = 0;
+    u64 plan_hash = 0;
     std::string swapchain_format;
     u32 swapchain_width = 0;
     u32 swapchain_height = 0;

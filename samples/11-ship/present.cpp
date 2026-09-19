@@ -545,6 +545,11 @@ PresentReport present_card(Platform& platform, Image& image,
             break;
         }
 
+        report.submits = executed->submits;
+        report.passes_recorded = executed->passes_recorded;
+        report.barriers = executed->barriers;
+        report.plan_hash = executed->plan_hash;
+
         if (gpu.present(*swapchain, *index, *presented)) {
             ++report.frames_presented;
         }

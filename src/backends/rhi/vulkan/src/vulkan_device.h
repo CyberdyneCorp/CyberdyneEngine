@@ -461,6 +461,10 @@ private:
     Allocator* allocator_ = nullptr;
     DeviceCapabilities capabilities_;
     DeviceStatistics stats_{};
+    /// Device-local bytes this backend has already reported into `MemoryDomain::Gpu`. The heap's
+    /// usage is a LEVEL and `domain_record_allocation`/`_free` take a delta, so the previous level
+    /// has to be remembered to produce one. M11.d task 6.2; see `publish_memory_pressure`.
+    u64 reported_gpu_bytes_ = 0;
     DescriptorModel model_ = DescriptorModel::Bindless;
 
     VkInstance instance_ = VK_NULL_HANDLE;

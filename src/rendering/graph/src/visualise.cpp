@@ -72,10 +72,9 @@ bool dump_batch(Array<char>& out, const char* indent, const rhi::BarrierBatch& b
         const bool transfer = barrier.ownership_transfer;
         if (!append(out, "%simage  '%s' %s -> %s  mips[%u,%u) layers[%u,%u)  src %s  dst %s%s\n",
                     indent, graph.resource(barrier.resource).name,
-                    rhi::image_use_name(barrier.old_use),
-                    rhi::image_use_name(barrier.new_use), barrier.range.base_mip,
-                    barrier.range.base_mip + barrier.range.mip_count, barrier.range.base_layer,
-                    barrier.range.base_layer + barrier.range.layer_count,
+                    rhi::image_use_name(barrier.old_use), rhi::image_use_name(barrier.new_use),
+                    barrier.range.base_mip, barrier.range.base_mip + barrier.range.mip_count,
+                    barrier.range.base_layer, barrier.range.base_layer + barrier.range.layer_count,
                     stage_summary(barrier.src_stage), stage_summary(barrier.dst_stage),
                     transfer ? "  [queue ownership transfer]" : "")) {
             return false;
@@ -271,8 +270,7 @@ Expected<PlanAudit, Error> validate_plan(const RenderGraph& graph,
             for (const Submit& consumer : plan.submits) {
                 for (const ScheduledPass& scheduled : consumer.passes) {
                     for (const rhi::ImageBarrier& acquire : scheduled.pre.images) {
-                        if (acquire.resource != release.resource ||
-                            !acquire.ownership_transfer ||
+                        if (acquire.resource != release.resource || !acquire.ownership_transfer ||
                             acquire.src_queue != release.src_queue ||
                             acquire.dst_queue != release.dst_queue ||
                             acquire.old_use != release.old_use ||

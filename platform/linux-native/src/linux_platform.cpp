@@ -22,7 +22,7 @@
 #include <unistd.h>
 
 #if defined(__x86_64__) || defined(__i386__)
-#include <cpuid.h>
+#    include <cpuid.h>
 #endif
 
 namespace cy {
@@ -355,8 +355,8 @@ Expected<usize, Error> LinuxPlatform::preference_path(const char* suffix, char* 
     }
 
     char path[1024];
-    const int written = std::snprintf(path, sizeof(path), "%s/%s/%s/%s", base, organisation_,
-                                      application_, suffix);
+    const int written =
+        std::snprintf(path, sizeof(path), "%s/%s/%s/%s", base, organisation_, application_, suffix);
     if (written < 0 || static_cast<usize>(written) >= sizeof(path)) {
         return fail(ErrorCode::BufferTooSmall, "the user directory path is longer than 1024 bytes");
     }

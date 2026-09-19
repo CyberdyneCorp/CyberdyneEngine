@@ -13,6 +13,11 @@ M7's task says it outright: the seed exists "to expose Vulkan-specific assumptio
 `rhi-and-render-graph` **while they are still cheap**… That finding is the point of the seed, not the
 backend."
 
+**M11.d section 1 spent that finding.** All eight gaps were settled as interface changes, on Vulkan
+and the null backend, before either new backend exists — and three of the seed's own proposed
+remedies turned out to be wrong when somebody finally applied them, which is the strongest argument
+this module could have made for existing. The table below carries what each became.
+
 So the module is shaped around the finding rather than around the device. `mapping.h`, `mapping.cpp`
 and `backend.cpp` name no Metal type and compile everywhere, which means the eight gaps below are
 checked by the ordinary test run on the machine the work is being done on. A finding that can only
@@ -21,31 +26,97 @@ be read on hardware nobody in this project has is a finding nobody reads.
     just test-unit -R unit.rhi_metal_seed
 
     formats: 30 map directly, 2 have no Metal equivalent and are substituted explicitly
-    gaps: 8 total, 3 where Metal has no equivalent at all, 2 with no workaround
+    gaps: 8 total, 0 still open, 3 where Metal has no equivalent at all, 0 open with no workaround
 
-## The eight gaps, in the order of what each costs to fix later
+## The eight gaps, and what M11.d did with each
 
-`metal_gaps()` returns these as data, so a diagnostic, a test and this table cannot drift apart.
+`metal_gaps()` returns these as data — including where each stands — so a diagnostic, a test and
+this table cannot drift apart. **`metal_open_gap_count()` is the number that shrinks**, and
+`unit.rhi_metal_seed` prints it: eight open at M7, **none open after M11.d section 1**. The rows
+are never deleted when they close, because the finding, the remedy that was argued for and what was
+actually done are one row a reviewer reads together.
 
-| # | The interface says | Metal has | Fix now | Workaround? |
+M11.d settled all eight **on Vulkan and the null backend, before either new backend exists** —
+which is the whole reason this seed was written four milestones early. `delivery-roadmap` moved the
+backends themselves to M11.d.5; the interface did not move, because changing
+`reserve_transient_memory`'s contract after two more backends are written is a migration across
+every pass in the engine.
+
+| # | The interface said | Metal has | Status | What it is now |
 |---|---|---|---|---|
-| 1 | `ShaderModuleDescription::spirv` is `Span<const u32>`, and there is no second field | MSL source, or a `.metallib` | one optional `Span<const u8> native` and a `native_shader_format()` capability | yes, at a cost |
-| 2 | `reserve_transient_memory(bytes, memory_type_bits)` | **nothing**: a `MTLHeap` picks one storage mode and there is no bitmask of types | an opaque `MemoryPoolClass` the graph only compares for equality | **no** |
-| 3 | `ImageBarrier::old_layout` / `new_layout` | **nothing**: a tracked heap needs no transition, an untracked one a `MTLFence` | derive the layout inside the Vulkan backend from the access masks `access.h` already carries | yes |
-| 4 | `queue_family(QueueKind) -> u32`, `kQueueFamilyIgnored` | **nothing**: `MTLCommandQueue` has no family and no ownership transfer | `bool needs_queue_ownership_transfer()` on the capabilities | yes |
-| 5 | `execute_secondary(primary, …)` — a secondary recorded before its pass instance exists | `MTLParallelRenderCommandEncoder`, whose sub-encoders exist only inside a live encoder | state "the pass is begun before its secondaries are recorded" as a precondition | **no** |
-| 6 | `save_pipeline_cache(Span<u8> out)` | `MTLBinaryArchive`, serialised to a URL | take a path, or an opaque backend-defined token | yes |
-| 7 | `Format::D24UnormS8Uint` | `MTLPixelFormatDepth24Unorm_Stencil8`, unsupported on every Apple GPU | a per-format support query, so the *engine* picks the substitute | yes |
-| 8 | `PushConstantRange::offset` with a multi-stage mask | `setBytes:` binds a whole block to one stage's table | **nothing** — it is genuinely fine, and it is listed so the next reader does not re-derive that | yes |
+| 1 | `ShaderModuleDescription::spirv` is `Span<const u32>`, and there is no second field | MSL source, or a `.metallib` | **closed** | `Span<const u8> native` plus a `ShaderFormat native_format` beside the SPIR-V, and `DeviceCapabilities::native_shader_format()`. Additive: **zero** call sites moved |
+| 2 | `reserve_transient_memory(bytes, memory_type_bits)` | **nothing**: a `MTLHeap` picks one storage mode and there is no bitmask of types | **closed** | `MemoryPoolClass`, an opaque token the graph **meets** and tests for empty. The seed said *equality* and that was measured wrong — see below |
+| 3 | `ImageBarrier::old_layout` / `new_layout` | **nothing**: a tracked heap needs no transition, an untracked one a `MTLFence` | **closed** | `ImageUse` — engine vocabulary — and `VkImageLayout` only in `vulkan_translate.cpp`. The seed's remedy is **not implementable**; see below |
+| 4 | `queue_family(QueueKind) -> u32`, `kQueueFamilyIgnored` | **nothing**: `MTLCommandQueue` has no family and no ownership transfer | **closed** | `needs_queue_ownership_transfer()` and an opaque `queue_ownership_domain()`; barriers carry `QueueKind`s and an `ownership_transfer` flag |
+| 5 | `execute_secondary(primary, …)` — a secondary recorded before its pass instance exists | `MTLParallelRenderCommandEncoder`, whose sub-encoders exist only inside a live encoder | **closed** | `Capability::ParallelPassRecording`, one term in `executor.cpp`. The seed proposed a precondition; it does not address the mismatch — see below |
+| 6 | `save_pipeline_cache(Span<u8> out)` | `MTLBinaryArchive`, serialised to a URL | **closed** | both calls take a path; an absent file is a cold start. **And nothing in the tree calls either** |
+| 7 | `Format::D24UnormS8Uint` | `MTLPixelFormatDepth24Unorm_Stencil8`, unsupported on every Apple GPU | **closed** | never an interface change: the query existed and had **no consumer**. `select_depth_stencil_format()` is the engine picking, and `validate_texture` refuses rather than letting a backend substitute |
+| 8 | `PushConstantRange::offset` with a multi-stage mask | `setBytes:` binds a whole block to one stage's table | **no change needed** | measured again and still nothing to do. Recorded, not skipped: that is the difference between a gap somebody closed and a gap somebody forgot |
 
-**Gap 3 is the one worth arguing about.** `ImageLayout` is a Vulkan object sitting in an interface
-that is otherwise engine-owned — `types.h` says as much about the rest of its vocabulary — and the
-engine already has everything it needs without it, because `access.h` carries the access masks the
-layouts were derived *from*. A Metal backend drops every `old_layout` and `new_layout` on the floor.
+### Three of the seed's own remedies were wrong, and that is the most valuable thing on this list
 
-**Gap 2 has no workaround and no equivalent**, which is the expensive combination: `memory_type_bits`
-is intersected across every transient in a frame to prove one pool is legal for all of them, and a
-Metal backend can only answer `~0u` and hope nobody looked.
+A remedy nobody applied is a guess. M11.d applied all eight.
+
+**Gap 2 — the seed said "equality" and the word matters.** The proposal was an opaque
+`MemoryPoolClass` *"the graph only compares for equality"*. Measured on this project's own devices:
+an NVIDIA RTX 5060 answers `0x03` for transient images and `0x1F` for transient buffers — **they
+differ** — while an Intel UHD 770 answers `0x07` for everything and llvmpipe `0x01`. An equality
+would have refused to place images and buffers in one pool on the NVIDIA device and **split the
+transient heap in two**, losing exactly the aliasing `heap_bytes` against `naive_bytes` exists to
+report. A **meet** (`a & b`, empty when zero) keeps the proof, loses the Vulkan spelling, needs no
+device — so `compile()`'s "the derivation touches no device" invariant and `plan_hash`'s determinism
+both survive — and costs nothing extra. D3D12 wants the same shape: on Resource Heap Tier 1 a heap
+holds buffers *or* textures and never a mix, which is the same partition Vulkan spells as a bitmask.
+
+**Gap 3 — the seed's remedy is not implementable, and that is the finding.** It said the engine
+"already has the information without them" because `access.h` carries the masks the layouts were
+derived from, so a backend could derive the layout itself. It cannot: `compile.cpp` deliberately
+puts only the **write** access into a barrier's `src_access` — a write-after-read needs an execution
+dependency and not a memory one, and naming the read's access would ask the implementation to flush
+caches nothing wrote — so a barrier's source mask **is not the resource's current state**. An image
+last read as sampled and next written as a colour attachment produces a barrier whose `src_access`
+is a colour-attachment write from two passes ago; a backend deriving "what it was" from that would
+transition from the wrong state. And `Access::Present` carries no access bits and no stage at all,
+so a derivation could not answer for the one intent whose entire content is the state it leaves the
+image in.
+
+What was done instead is the half that *is* true: the **vocabulary** was Vulkan's and did not have
+to be. `ImageLayout` became `ImageUse` — `Storage`, `SampledRead`, `Presentable` rather than
+`General`, `ShaderReadOnly`, `Present` — and the mapping to `VkImageLayout` moved entirely inside
+`vulkan/src/vulkan_translate.cpp`. A Metal backend maps `ImageUse` to **nothing**, which is a
+mapping it writes rather than a field it silently drops. The engine keeps the value because it
+genuinely needs it: two **reads** of one image — sampled and storage — need a barrier between them
+even though neither contributes a source access mask, and that difference is visible only here.
+
+**Gap 5 — the proposed precondition does not address the mismatch.** The seed proposed stating
+*"the pass is begun before its secondaries are recorded"* as an interface precondition. Read against
+the tree, that is not the shape of the problem:
+
+* `executor.cpp` records **every** secondary for a submit, one per pass, on job workers, **before
+  the primary loop reaches any of them**;
+* `frame_recorder.cpp`'s pass callback itself calls `begin_rendering`/`end_rendering`, so **each
+  secondary contains a whole render pass**;
+* the barriers are recorded into the **primary**, between passes.
+
+`MTLParallelRenderCommandEncoder` is parallelism **within** one render pass. This engine's is
+parallelism **across** passes. They are different axes, and no ordering precondition converts one
+into the other; Metal's actual equivalent is one `MTLCommandBuffer` per pass with `-enqueue`
+establishing order, which is a different allocation strategy rather than a reordering. So the honest
+fix is a **capability** — `Capability::ParallelPassRecording`, one term in `executor.cpp` — and a
+device that answers false records sequentially and produces the **identical** command stream.
+`ExecuteOptions::parallel_recording` already defaults to false, so this is opt-in either way.
+
+### And two gaps were not interface work at all
+
+**Gaps 6 and 7 are M8.c's firewall finding in a third module.** `capabilities.h` has defined
+`FormatFeature` and `DeviceCapabilities::format_features()` since M3, and both backends populate it
+for **every** format — and **nothing outside `src/backends/rhi/` called it**. Every depth path in
+the engine defaults to `D32Sfloat`, which Metal supports, so gap 7 was inert. The pipeline cache is
+the same shape and worse: two interface methods, four implementations, **zero callers**, and a
+requirement — *"the cache is persisted across runs, so a warm start compiles nothing"* — that is
+therefore unimplemented above the RHI. **Noticing that is worth more than the signature change**, and
+changing the signature does not implement it. Gap 7 got its consumer at M11.d; gap 6 did not, and
+that is recorded rather than quietly claimed.
 
 ### And three things that map cleanly
 
@@ -91,6 +162,12 @@ inheritance, and stops.
 has never been compiled is eighty signatures that are probably slightly wrong, and it would look
 like progress while being worth less than nothing to whoever picks this up at M11 — by which time
 gaps 1 to 5 should have been closed, which will change several of those signatures anyway.
+
+**They have been, at M11.d**, so several of those signatures HAVE changed: `reserve_transient_memory`
+takes a `MemoryPoolClass`, `save_pipeline_cache` takes a path, `queue_family` is gone, and an
+`ImageBarrier` carries `ImageUse` and `QueueKind`s. Whoever writes the Metal device at M11.d.5 is
+writing it against the interface that was settled for it rather than against the one that made the
+seed necessary — which was the point.
 
 **Nothing in that file has been compiled or run. Treat every line of it as a proposal.**
 

@@ -5,6 +5,7 @@
 // reason and with the same message.
 
 #include <cy/backends/rhi/pipeline_cache_file.h>
+#include <cy/core/memory/domain.h>
 #include <cy/core/memory/pressure.h>
 
 #include "vulkan_device.h"
@@ -1923,6 +1924,27 @@ void VulkanDevice::publish_memory_pressure() noexcept {
         // Folded in as a floor: the engine never reports less pressure than the device does.
         default_pressure_monitor().report_platform_level(platform);
     }
+
+    // AND THE BYTES THEMSELVES, into `MemoryDomain::Gpu`. M11.d task 6.2: that domain has been
+    // budgeted since M1 — 768 MiB soft on desktop, 192 MiB hard on the constrained profile — and
+    // nothing reported device memory into it, so the budget was compared against zero and every
+    // per-domain report showed a GPU holding nothing. `rhi-and-render-graph` already requires that
+    // "GPU memory SHALL appear in the same domain and budget model as CPU memory"; the pressure
+    // half of that sentence was implemented above and the domain half was not.
+    //
+    // The heap's usage is a level and the domain counters take a delta, so the previous level is
+    // remembered and the difference recorded. A level that falls is a free of the difference, which
+    // keeps `live_bytes` tracking the device rather than accumulating.
+    if (report.device_heap_used != reported_gpu_bytes_) {
+        if (report.device_heap_used > reported_gpu_bytes_) {
+            domain_record_allocation(MemoryDomain::Gpu,
+                                     report.device_heap_used - reported_gpu_bytes_);
+        } else {
+            domain_record_free(MemoryDomain::Gpu, reported_gpu_bytes_ - report.device_heap_used);
+        }
+        reported_gpu_bytes_ = report.device_heap_used;
+    }
+
     (void)update_memory_pressure();
 }
 

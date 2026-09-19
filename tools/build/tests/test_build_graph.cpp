@@ -296,6 +296,187 @@ CY_TEST_CASE("a package manifest round-trips, and its build id follows its conte
     CY_CHECK_EQ(write_package(*parsed), document);
 }
 
+// ==================================================================================================
+// M11.d task 7.5. `build-and-packaging` requires SEVEN things of a build's provenance and the
+// manifest carried four: a build identity, the project revision, the platform and profile, and the
+// toolchain digest. The engine revision, the plugin lockfile hash, the cook configuration and the
+// toolchain VERSIONS were absent — so a shipped build could not say which engine tree it came from,
+// which plugin set was locked, or which compiler a human should install to reproduce it.
+//
+// The case that matters is the round trip: a field that is written and not read is a field that
+// vanishes the first time anything reads a manifest back, which is what `patch` and `install` do.
+// ==================================================================================================
+CY_TEST_CASE("a package manifest carries every provenance field the requirement names") {
+    PackageSet packages;
+    packages.provenance.project = "samples/11-ship";
+    packages.provenance.revision = "project-abc123";
+    packages.provenance.engine_revision = "engine-def456";
+    packages.provenance.platform = "linux";
+    packages.provenance.profile = "shipping";
+    packages.provenance.cook_configuration = "textures=bc7 audio=vorbis";
+    packages.provenance.lockfile = "lock-789";
+    packages.provenance.toolchain = "digest-abc";
+    packages.provenance.toolchain_versions = "clang 22.1.8; slang 2025.1";
+    packages.bundles.push_back(
+        Bundle{"base", {PackageEntry{"derived/a.bin", hash_of("A"), 1, "import:a"}}});
+    packages.build_id = "0000";
+
+    const std::string document = write_package(packages);
+    const Expected<PackageSet, Error> parsed = read_package(document);
+    CY_REQUIRE(parsed.has_value());
+
+    // Each of the seven, named, so that a field dropped from the writer or the reader fails here
+    // rather than in a bug report about a build nobody can reproduce.
+    CY_CHECK_EQ(parsed->provenance.revision, "project-abc123");
+    CY_CHECK_EQ(parsed->provenance.engine_revision, "engine-def456");
+    CY_CHECK_EQ(parsed->provenance.lockfile, "lock-789");
+    CY_CHECK_EQ(parsed->provenance.cook_configuration, "textures=bc7 audio=vorbis");
+    CY_CHECK_EQ(parsed->provenance.toolchain, "digest-abc");
+    CY_CHECK_EQ(parsed->provenance.toolchain_versions, "clang 22.1.8; slang 2025.1");
+    // The build identity IS the content manifest hash — one field, because two would be two things
+    // that can disagree.
+    CY_CHECK_EQ(parsed->build_id, "0000");
+    CY_CHECK_EQ(write_package(*parsed), document);
+
+    // AND THE ENGINE AND PROJECT REVISIONS ARE NOT THE SAME FIELD. Before M11.d there was one, and
+    // an engine built from a tag with a project built from a branch is the ordinary case.
+    CY_CHECK(parsed->provenance.revision != parsed->provenance.engine_revision);
+}
+
+// ==================================================================================================
+// M11.d task 7.4 — the content audit's COST half. `audit()` answers "why is this in the build?" and
+// "what references this?" from the graph. `build-and-packaging` asks two more questions that nothing
+// answered, and every number they need was already on the report: `NodeResult` carries the stage,
+// the duration, the bytes and the outcome.
+// ==================================================================================================
+CY_TEST_CASE("time by stage separates a cache hit from work, and the rate follows") {
+    BuildGraph graph;
+    NodeDesc import_a;
+    import_a.kind = NodeKind::Import;
+    import_a.name = "import:a";
+    import_a.outputs = {"derived/a.bin"};
+    NodeDesc import_b = import_a;
+    import_b.name = "import:b";
+    import_b.outputs = {"derived/b.bin"};
+    NodeDesc cook;
+    cook.kind = NodeKind::Cook;
+    cook.name = "cook:world";
+    cook.upstreams = {"import:a"};
+    cook.outputs = {"derived/world.cypak"};
+    CY_REQUIRE(graph.add(import_a).has_value());
+    CY_REQUIRE(graph.add(import_b).has_value());
+    CY_REQUIRE(graph.add(cook).has_value());
+
+    // Assigned rather than brace-initialised: `NodeResult` has twelve members and the build treats a
+    // missing field initialiser as an error, so a designated-initialiser list here would have to
+    // name every one of them and would break the day a thirteenth is added.
+    const auto result = [](const char* name, NodeOutcome outcome, u64 duration, u64 bytes) {
+        NodeResult node;
+        node.name = name;
+        node.outcome = outcome;
+        node.duration_ns = duration;
+        node.bytes_produced = bytes;
+        return node;
+    };
+
+    BuildReport report;
+    report.nodes.push_back(result("import:a", NodeOutcome::Cached, 1'000'000, 10));
+    report.nodes.push_back(result("import:b", NodeOutcome::Ran, 3'000'000, 20));
+    report.nodes.push_back(result("cook:world", NodeOutcome::Rebuilt, 5'000'000, 40));
+
+    const std::vector<StageCost> stages = stage_costs(graph, report);
+    CY_REQUIRE_EQ(stages.size(), 2U);
+
+    // Import: two nodes, one of them a cache hit, so fifty per cent.
+    CY_CHECK(stages[0].kind == NodeKind::Import);
+    CY_CHECK_EQ(stages[0].nodes, 2U);
+    CY_CHECK_EQ(stages[0].cached, 1U);
+    CY_CHECK_EQ(stages[0].rebuilt, 1U);
+    CY_CHECK_EQ(stages[0].hit_rate_percent(), 50U);
+    CY_CHECK_EQ(stages[0].work_ns, 4'000'000U);
+    CY_CHECK_EQ(stages[0].bytes_produced, 30U);
+
+    // Cook: one node, rebuilt, so no hits at all. `Ran` and `Rebuilt` are both work.
+    CY_CHECK(stages[1].kind == NodeKind::Cook);
+    CY_CHECK_EQ(stages[1].cached, 0U);
+    CY_CHECK_EQ(stages[1].rebuilt, 1U);
+    CY_CHECK_EQ(stages[1].hit_rate_percent(), 0U);
+
+    // A stage nothing ran in is omitted rather than printed as a row of zeroes.
+    for (const StageCost& stage : stages) {
+        CY_CHECK_GT(stage.nodes, 0U);
+    }
+
+    const std::string text = stage_report(graph, report);
+    CY_CHECK(text.find("import") != std::string::npos);
+    CY_CHECK(text.find("50% hit") != std::string::npos);
+
+    // A BUILD THAT RAN NOTHING SAYS SO. An empty table reads as a broken report, and "every output
+    // was current" is a legitimate and common outcome.
+    const BuildReport nothing;
+    CY_CHECK(stage_costs(graph, nothing).empty());
+    CY_CHECK(stage_report(graph, nothing).find("no node ran") != std::string::npos);
+}
+
+CY_TEST_CASE("size by category adds up to the package, and names what it cannot attribute") {
+    BuildGraph graph;
+    NodeDesc import_a;
+    import_a.kind = NodeKind::Import;
+    import_a.name = "import:a";
+    import_a.outputs = {"derived/a.bin"};
+    NodeDesc shader;
+    shader.kind = NodeKind::Shader;
+    shader.name = "shader:lit";
+    shader.outputs = {"derived/lit.spv"};
+    CY_REQUIRE(graph.add(import_a).has_value());
+    CY_REQUIRE(graph.add(shader).has_value());
+
+    PackageSet packages;
+    packages.bundles.push_back(Bundle{
+        "base",
+        {PackageEntry{"derived/a.bin", hash_of("A"), 100, "import:a"},
+         PackageEntry{"derived/lit.spv", hash_of("L"), 30, "shader:lit"}}});
+    packages.bundles.push_back(Bundle{
+        "high", {PackageEntry{"derived/big.bin", hash_of("B"), 900, "import:a"}}});
+
+    const std::vector<CategoryShare> shares = category_shares(graph, packages);
+    CY_REQUIRE_EQ(shares.size(), 2U);
+    CY_CHECK(shares[0].kind == NodeKind::Import);
+    CY_CHECK_EQ(shares[0].bytes, 1000U);
+    CY_CHECK_EQ(shares[0].entries, 2U);
+    // The "by asset" half of the same requirement: the largest single entry in the category.
+    CY_CHECK_EQ(shares[0].largest, "derived/big.bin");
+    CY_CHECK_EQ(shares[0].largest_bytes, 900U);
+    CY_CHECK(shares[1].kind == NodeKind::Shader);
+    CY_CHECK_EQ(shares[1].bytes, 30U);
+
+    // THE SUM IS THE CHECK. A category report whose total differs from the package's own size has
+    // lost bytes, and a reader who cannot see that cannot know.
+    u64 accounted = 0;
+    for (const CategoryShare& share : shares) {
+        accounted += share.bytes;
+    }
+    CY_CHECK_EQ(accounted, packages.size());
+
+    // An entry whose node has left the graph lands in `Unknown` rather than being dropped, so the
+    // sum still adds up — which is what makes the sum a check rather than a decoration.
+    packages.bundles[0].entries.push_back(
+        PackageEntry{"derived/orphan.bin", hash_of("O"), 7, "gone:node"});
+    const std::vector<CategoryShare> with_orphan = category_shares(graph, packages);
+    u64 after = 0;
+    for (const CategoryShare& share : with_orphan) {
+        after += share.bytes;
+    }
+    CY_CHECK_EQ(after, packages.size());
+
+    // And plugin and world region are NAMED as unreported rather than omitted: both need a
+    // declaration `cybuild 1` does not carry, and an invented attribution in a size report is worse
+    // than an absent one.
+    const std::string text = content_report(graph, packages);
+    CY_CHECK(text.find("size by category") != std::string::npos);
+    CY_CHECK(text.find("size by plugin and by world region: NOT REPORTED") != std::string::npos);
+}
+
 CY_TEST_CASE("a patch carries only the chunks whose content changed") {
     PackageSet before;
     before.build_id = "before";

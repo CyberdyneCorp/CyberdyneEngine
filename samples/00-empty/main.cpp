@@ -27,8 +27,8 @@
 #include <cy/platform/stub_platform.h>
 #include <cy/runtime/runtime.h>
 #if CY_SAMPLE_LINUX_NATIVE
-#include <cy/platform/linux_platform.h>
-#include <cy/platform/x11_display_server.h>
+#    include <cy/platform/linux_platform.h>
+#    include <cy/platform/x11_display_server.h>
 #endif
 
 #include <cstdio>
@@ -39,8 +39,8 @@ namespace {
 
 // Which pair of implementations of `Platform` and `DisplayServer` this run uses. FOUR, AND THE
 // POINT IS THAT NOTHING BELOW main() KNOWS WHICH: the runtime and the host loop see `cy::Platform`
-// and `cy::DisplayServer`, which is what the interfaces are for. Adding `native` and `stub` at M11.d
-// changed this file and no other.
+// and `cy::DisplayServer`, which is what the interfaces are for. Adding `native` and `stub` at
+// M11.d changed this file and no other.
 enum class Backend {
     Sdl3,      // the desktop, over SDL3 — the default since M0
     Native,    // the desktop, natively: POSIX and Xlib, with no SDL beneath it

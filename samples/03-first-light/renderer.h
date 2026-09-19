@@ -140,17 +140,17 @@ private:
     rhi::TextureHandle albedo_;
     rhi::TextureViewHandle albedo_view_;
     /// A persistent texture rather than a graph transient, so that the descriptor set can be
-    /// written once at start-up. Its layout is threaded across frames by `albedo_layout_` and
-    /// `shadow_layout_` below and handed to `import_texture` each frame — getting that wrong is how
-    /// a first barrier transitions from the wrong state, which is why the graph asks rather than
-    /// assumes.
+    /// written once at start-up. What it is being used as is threaded across frames by
+    /// `albedo_use_` and `shadow_use_` below and handed to `import_texture` each frame — getting
+    /// that wrong is how a first barrier transitions from the wrong state, which is why the graph
+    /// asks rather than assumes.
     rhi::TextureHandle shadow_map_;
     rhi::TextureViewHandle shadow_view_;
     rhi::SamplerHandle albedo_sampler_;
     rhi::SamplerHandle shadow_sampler_;
 
-    rhi::ImageLayout albedo_layout_ = rhi::ImageLayout::Undefined;
-    rhi::ImageLayout shadow_layout_ = rhi::ImageLayout::Undefined;
+    rhi::ImageUse albedo_use_ = rhi::ImageUse::Undefined;
+    rhi::ImageUse shadow_use_ = rhi::ImageUse::Undefined;
     /// The checkerboard is copied into the albedo texture on the first frame, by a pass the graph
     /// derives the two transitions around. Afterwards the pass is not declared at all — which is
     /// the same mechanism `rendering-forward-clustered` uses for a disabled feature.

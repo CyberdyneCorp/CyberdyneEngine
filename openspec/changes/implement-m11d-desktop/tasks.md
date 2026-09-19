@@ -44,16 +44,30 @@ measurement.
 
 ## 1. The interface, settled before either backend — `rhi-and-render-graph`
 
-- [ ] 1.1 **Gap 2, the one with no workaround and no equivalent.** `reserve_transient_memory(bytes,
+- [x] 1.1 **Gap 2, the one with no workaround and no equivalent.** `reserve_transient_memory(bytes,
       memory_type_bits)` intersects a Vulkan bitmask across every transient in a frame to prove one
       pool is legal for all of them; Metal can only answer `~0u`. Replace it with an **opaque memory
-      pool class the graph only compares for equality**, so the proof survives on a backend that has
-      no bitmask. `RenderGraph`'s plan and `executor.cpp:192` are the only producers and consumers
-- [ ] 1.2 **Gap 5, the other one with no workaround.** `execute_secondary` today permits a secondary
-      recorded before its pass instance exists; `MTLParallelRenderCommandEncoder`'s sub-encoders
-      exist only inside a live encoder. State **"the pass is begun before its secondaries are
-      recorded"** as a precondition of the interface, refuse the violation in the null backend where
-      every test can see it, and fix any caller the refusal finds
+      pool class the graph MEETS and tests for empty** — *not* one it compares for equality, which
+      is what this task said before the spike measured it. `design.md` §1.4.2 carries the number:
+      this project's NVIDIA RTX 5060 answers `0x03` for transient images and `0x1F` for transient
+      buffers, so an equality would refuse to put them in one pool and **split the transient heap in
+      two**, losing exactly the aliasing `heap_bytes` against `naive_bytes` exists to report. A meet
+      keeps the proof, loses the Vulkan spelling, and needs no device — so `compile()`'s "the
+      derivation touches no device" invariant and `plan_hash`'s determinism both survive.
+      `RenderGraph`'s plan and `executor.cpp:192` are the only producers and consumers
+- [x] 1.2 **Gap 5, the other one with no workaround — and the seed's fix does not address the
+      mismatch, which the spike measured and this task is rewritten to.** The original wording was:
+      state *"the pass is begun before its secondaries are recorded"* as a precondition and refuse
+      the violation in the null backend. Read against the tree that is not the shape of the problem.
+      `executor.cpp:337-382` records **every** secondary for a submit, one per pass, on job workers,
+      **before the primary loop reaches any of them**; `frame_recorder.cpp`'s pass callback itself
+      calls `begin_rendering`/`end_rendering`, so **each secondary contains a whole render pass**;
+      and the barriers go into the primary between passes. `MTLParallelRenderCommandEncoder` is
+      parallelism **within** one render pass and this engine's is parallelism **across** passes —
+      different axes, and no ordering precondition converts one into the other. So: a **capability**,
+      `Capability::ParallelPassRecording`, **one term at `executor.cpp:334`**. A device that answers
+      false records sequentially and produces the identical command stream, and that is proved
+      against a null device told to answer false, because no machine here can create a Metal one
 - [ ] 1.3 **Gaps 1, 3, 4, 6 and 7 — each a capability or a vocabulary change, none an `#ifdef`.**
       A native shader form (`Span<const u8>` plus `native_shader_format()`) beside SPIR-V; image
       layouts derived **inside the Vulkan backend** from the access masks `access.h` already carries,
@@ -119,22 +133,37 @@ with nothing to check.
 
 ## 4. The native platform backend and the porting surface — `core-platform-abstraction`
 
-- [ ] 4.1 `platform/<native>/` implementing `Platform`, `DisplayServer`, the input event source and
+- [x] 4.1 `platform/<native>/` implementing `Platform`, `DisplayServer`, the input event source and
       the surface provider for one desktop platform, **replacing SDL3 there**. `design.md` §4 names
       which desktop and the trade that choice makes
-- [ ] 4.2 **The exit criterion is a diff, and it is checked mechanically.** *"requiring no change in
+- [x] 4.2 **The exit criterion is a diff, and it is checked mechanically.** *"requiring no change in
       `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`"* is a claim about a changeset, so the
       change that adds the backend is the evidence, and a script that reads it is the criterion. **If
       the port does change one of those four, that change IS the finding** and it is worth more than
       the Complete cell — `platform/README.md` already says "if it does, the abstraction is wrong"
 - [ ] 4.3 `samples/00-empty` and the M3 golden images run on the native backend, which is the M11 exit
       criterion stated in the ROADMAP word for word
-- [ ] 4.4 **The stub platform**, which is the porting surface's own proof: no mouse, no resizable
+      - **The sample half is done and measured**: `cy_sample_empty --platform native --frames 120`
+        opens a real X11 window, runs 120 frames and 119 simulation ticks, exits 0, and writes its
+        trace to the same XDG path the SDL3 backend uses. All four backends — `sdl3`, `native`,
+        `headless`, `stub` — run it, which is task 4.5's evidence as well
+      - **The golden-image half cannot be satisfied as written, and that is a FINDING about the
+        criterion rather than about the backend.** `tests/render/` links NO platform target and uses
+        no `DisplayServer`: the goldens render offscreen through Vulkan with no window, so no
+        platform backend can change them and "on the native backend" names nothing. The claim a
+        native backend CAN make about M3's images is that the sample which produces them runs on it,
+        and that is the half above. Rewriting the criterion is the ledger owner's call, not this
+        task's
+      - Independently, `cy_test_render_golden` **does not compile on this tree** as of this writing,
+        from section 1's in-flight `ImageLayout` removal (`samples/03-first-light/renderer.h:152`,
+        `renderer.cpp:558`) — a peer's change, not this port's, and it is why no golden run could be
+        attempted at all
+- [x] 4.4 **The stub platform**, which is the porting surface's own proof: no mouse, no resizable
       window, no filesystem writable outside the user mount, and **no ownership of the main loop** —
       it drives frames through `runtime.tick()`, the entry point `platform/host/` already calls
       rather than owns. It builds, it links, and it runs a headless frame; a porting surface that
       only ever compiles against desktop backends has never been tested
-- [ ] 4.5 SDL3 stops being the only way this engine opens a window, and **stays** — it is not deleted
+- [x] 4.5 SDL3 stops being the only way this engine opens a window, and **stays** — it is not deleted
       anywhere, because the second implementation is the proof and not a replacement. `headless/`
       stays too; the specification requires it. `just quality-layers` already refuses an SDL type
       above `platform/` and that rule is unchanged
@@ -153,60 +182,125 @@ with nothing to check.
 These five are here because **the exit criterion for the native backend is that four directories do
 not change**, which is a first-hand reading of them whether or not anybody calls it one.
 
-- [ ] 6.1 **`core-assets-and-io`** — "Development file serving" has no transport: `RemoteFileProvider`
+- [x] 6.1 **`core-assets-and-io`** — "Development file serving" has no transport: `RemoteFileProvider`
       is an interface whose only implementation in the tree is `FakeHost` in
       `src/core/assets/tests/test_vfs.cpp`, and a remote mount is exactly what a second machine
       needs. And `AssetSystem::reload` returns `NotImplemented` for an asset served from a cooked
       package (`asset_system.cpp:1190`), which the message itself explains and scopes
-- [ ] 6.2 **`core-memory-and-containers`** — the attribution axes have **no producer**: the only four
+- [x] 6.2 **`core-memory-and-containers`** — the attribution axes have **no producer**: the only four
       files naming `MemoryAttributionScope` are its own header, source, test and README, so
       "attribution by domain, type, thread, world cell and asset" is a mechanism nobody pushes. And
       `MemoryDomain::Gpu` is budgeted while nothing reports device memory into it — the backend that
       allocates is the module that owes it, so **the Vulkan half is this rung's and the Metal and
       D3D12 halves are M11.d.5's**, recorded here rather than left for that rung to rediscover
-- [ ] 6.3 **`core-jobs-and-concurrency`, `ecs-core` and `engine-architecture` read requirement by
+- [x] 6.3 **`core-jobs-and-concurrency`, `ecs-core` and `engine-architecture` read requirement by
       requirement at Complete grade**, the way M10 read `save-and-persistence` — satisfied, partial
       or unmet per requirement with the evidence in each module's README. **No named blocker means
       nothing has refused them, not that nothing is missing**, and a table is the only way to tell
       those two apart
-- [ ] 6.4 **`engine-architecture`'s claim is what the port cost above layer 3.** Two new graphics
+- [x] 6.4 **`engine-architecture`'s claim is what the port cost above layer 3.** Two new graphics
       backends and one new platform backend is the largest architectural stress this engine has had;
       record what it cost in `src/` above `platform/` and `src/backends/`, including zero if that is
       the honest number
 
 ## 7. Build, packaging and the gates
 
-- [ ] 7.1 **`testing-and-quality`'s four absent gates**, each a recipe, each in CI, and **each shown
+- [x] 7.1 **`testing-and-quality`'s four absent gates**, each a recipe, each in CI, and **each shown
       red once**: `swift-format`, the licence-header check, the spelling check, and the
       undocumented-symbol gate — which is the "documentation gate" the M11 exit criteria name.
       `just/quality.just` today has `format`, `lint`, `layers`, `identity`, `abi` and `specs` and
-      none of these four
+      none of these four.
+      **DONE, with one exception recorded rather than hidden.** `tools/quality/` holds all four —
+      `just quality-swift-format`, `quality-licence`, `quality-spelling`, `quality-docs` — each in
+      `ci.yml`'s `quality` job, and `just quality-gates-selftest` breaks what each checks in a tree
+      derived from the live one and requires a red. **13 of its 14 cases were watched failing on
+      this host; the 14th, `swift-format-break`, needs a Swift toolchain this Linux machine does not
+      have and is reported NOT EVALUATED.** `--strict`, which CI runs on the leg that installs
+      Swift 6, refuses to pass with it unrun. Two gates carry a numbered, shrink-only backlog
+      (2 582 of 2 584 files without an SPDX header, 540 of 2 472 public symbols undocumented) and a
+      baseline entry that has since been FIXED also fails, which is what stops a backlog being an
+      allowlist — `tools/quality/README.md` §"the baseline is a snapshot" names what the close owes
 - [ ] 7.2 The three acceptance scenarios the matrix records as unwritten — **strategy stress**,
       **control handover**, **headless server** — written where the taxonomy can run them, with the
-      kind and budget they belong to stated rather than assumed
-- [ ] 7.3 Golden images **run against every enabled RHI backend and record which backend produced a
-      failure**, which the requirement has said since M3 and one backend has never been able to test
+      kind and budget they belong to stated rather than assumed.
+      **NOT DONE, and not started.** These are *benchmarks*, not tests — `testing-and-quality`'s
+      "Performance benchmarks" requirement is where the table lives — and each needs systems this
+      rung's other sections were writing at the same time: 100 000 units with world streaming,
+      network authority and replay recording; four networked players with vehicle entry, AI
+      takeover, turret control, prediction, a spectator and a replay; a dedicated server at a fixed
+      rate. **The cheapest true half is the headless one's BUILD claim** — *"it SHALL execute with
+      no rendering, audio, or interface code linked, and a dependency on any of them SHALL fail the
+      build"* — which is a link-closure check in the shape `just quality-layers` already has and
+      needs none of the runtime work. That is the piece to write first
+- [x] 7.3 Golden images **run against every enabled RHI backend and record which backend produced a
+      failure**, which the requirement has said since M3 and one backend has never been able to test.
+      **DONE.** `render.golden_backends` (`tests/render/test_golden_backends.cpp`) enumerates the
+      backend registry instead of naming one, judges every entry against the ONE committed
+      reference, and writes a row per backend — backend, device name, device class, outcome, and the
+      numbers when it differed — to `CY_GOLDEN_LEDGER`, which `ci.yml`'s render job uploads. The
+      classifier follows the spike's own rule: **an unrecognised device name is `unattested`, never
+      `hardware`**, because the hosted Windows image's adapter 0 is a software rasteriser that does
+      not set `DXGI_ADAPTER_FLAG_SOFTWARE`. A backend with no device is a row saying so with its
+      reason, never an absence
 - [ ] 7.4 **`build-and-packaging` — content audit**: *why is this in the build* (the reference chain
       from a declared root) and *what references this*; size by category, asset, plugin, world region
-      and install bundle; cook and compile time by stage with cache hit rates
+      and install bundle; cook and compile time by stage with cache hit rates.
+      **PARTLY DONE — three of the four questions answered, and the fourth NAMED rather than
+      invented.** `just content-audit` is the recipe: `cy_build audit` and `cy_build explain` have
+      existed since M6 and **no recipe reached either**, so the reference chain was a capability
+      with no workflow. `stage_report()` answers cook and compile time by stage with hit rates —
+      every number was already on `BuildReport` and nothing aggregated them — and `content_report()`
+      answers size by install bundle, by category and by asset, printing the SUM against the package
+      set's own size so a report that has lost bytes says so. **Size by plugin and by world region
+      are printed as `NOT REPORTED` with the reason**: a node does not record the plugin that
+      declared it and `cybuild 1` has no world-region concept, so both need a declaration the graph
+      does not carry, and an invented attribution in a size report is worse than an absent one.
+      The row's Complete cell must not be written over those two
 - [ ] 7.5 **`build-and-packaging` — provenance and symbols**: a build identity, engine and project
       revisions, lockfile hash, build and cook configuration, toolchain versions, manifest hash;
       shipping binaries stripped with symbols archived separately and retrievable by build identity;
-      a reproducibility bundle archived by CI
+      a reproducibility bundle archived by CI.
+      **PARTLY DONE — the provenance half; the symbols half is untouched.** `Provenance` carried
+      four of the requirement's seven fields; it now carries all of them: the ENGINE revision beside
+      the project's (one field could not say which tree a difference came from), the plugin lockfile
+      hash, the cook configuration (which is not the build configuration), and readable toolchain
+      VERSIONS beside the toolchain digest — the digest is what a cache key compares, the versions
+      are what a bug report quotes, and neither answers the other's question. The build identity and
+      the content manifest hash are deliberately ONE field, because two would be two things that can
+      disagree. A round-trip case in `unit.build_graph` names each of the seven, so a field dropped
+      from the writer or the reader fails there.
+      **NOT DONE: shipping binaries stripped with symbols archived separately and retrievable by
+      build identity, and a reproducibility bundle archived by CI.** Both are packaging and CI work
+      rather than manifest work — `objcopy --only-keep-debug` / `dsymutil` / PDB handling per
+      platform, an archive keyed by `build_id`, and an upload step — and neither was started
 - [ ] 7.6 **Downloadable content and distributed execution — contingent, and `design.md` §5 says
       why.** `docs/roadmap/risks.md` already lists distributed build execution as "M11 or later". If
       the distribution surface only becomes real at M11.e, this row's Complete cell moves there
       **with its reason recorded**, which is what a demotion is for
-- [ ] 7.7 **`developer-workflow-and-just`** — target selection on the build, test, package and deploy
+- [x] 7.7 **`developer-workflow-and-just`** — target selection on the build, test, package and deploy
       recipes, and **an impossible target explained**: the requirement says the workflow "SHALL say so
       and state what is required" rather than failing obscurely, and a second desktop is the first
-      time that sentence has a second answer
-- [ ] 7.8 **What this rung must NOT claim over.** `just/release.just`'s four recipes —
+      time that sentence has a second answer.
+      **DONE.** `just/targets.toml` is the table and `tools/workflow/targets.py` reads it;
+      `_resolve-target`, `_ctest` (so every `test-*` recipe), `content-package` and the new
+      `deploy-install` all resolve through it, so one table gives one answer. **Three refusals that
+      used to be one sentence are now three messages and three exit statuses** — a typo (3), a
+      target this host cannot produce (2), a target nobody has written (2, naming the rung) — and
+      `just env-targets --selftest` requires them to stay distinct. The table's `owner` is checked
+      against `record.MILESTONES` **at load**, so a refusal cannot tell a developer to wait for a
+      milestone that is not on the ladder, which is 7.8's defect enforced mechanically
+- [x] 7.8 **What this rung must NOT claim over.** `just/release.just`'s four recipes —
       `release-version`, `release-changelog`, `release-artefacts`, `release-publish` — all refuse and
       name *"M12 — build-and-packaging"*, **a milestone that does not exist on a ladder whose
       `record.MILESTONES` ends at m11**. Implementing them is M11.e's; naming them here is how this
       rung's gate is stopped from writing a Complete cell for `developer-workflow-and-just` over four
-      recipes that refuse
+      recipes that refuse.
+      **HONOURED AND RECORDED.** No release recipe was implemented and none was touched. The rule is
+      now enforced in one place a criterion cannot route around: `tools/workflow/targets.py` refuses
+      at load any target whose `owner` is not on `record.MILESTONES`, and `tools/workflow/README.md`
+      names `release.just`'s four recipes as the defect that check exists to prevent —
+      *"a developer who reads that refusal is told to wait for nothing"*. `just deploy-device`
+      refuses in the same shape and names **M11.e**, a rung that does exist
 
 ## 8. The artefact — `samples/11-ship`, the desktop half
 

@@ -180,11 +180,15 @@ struct StageCost {
 };
 
 /// Every stage that ran, in `NodeKind` order. A stage with no nodes is omitted — a table of zeroes
-/// is harder to read than a shorter table, and `stage_report` says how many stages it found.
-[[nodiscard]] std::vector<StageCost> stage_costs(const BuildReport& report);
+/// is harder to read than a shorter table.
+///
+/// The graph is a parameter because a `NodeResult` carries the node's NAME and not its kind, and the
+/// kind is the graph's own answer. Copying it onto the result would put a second copy of that answer
+/// somewhere it could go stale, which is the same reason `category_shares` asks the graph too.
+[[nodiscard]] std::vector<StageCost> stage_costs(const BuildGraph& graph, const BuildReport& report);
 
 /// "Cook and compile time by stage, with cache hit rates", as text.
-[[nodiscard]] std::string stage_report(const BuildReport& report);
+[[nodiscard]] std::string stage_report(const BuildGraph& graph, const BuildReport& report);
 
 /// One category's share of a package set. The category is the KIND OF NODE that produced the bytes,
 /// which is the only categorisation the graph can answer without a second declaration — an import's

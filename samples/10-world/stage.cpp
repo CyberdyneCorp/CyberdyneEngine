@@ -1066,8 +1066,7 @@ Status Stage::shoot(const World& world, const WorldVec3d& eye, const WorldVec3d&
     output_request.width = width_;
     output_request.height = height_;
     output_request.extra_usage = rhi::TextureUsage::TransferSource;
-    view.output =
-        graph.import_texture(output_request, device_->output, rhi::ImageLayout::Undefined);
+    view.output = graph.import_texture(output_request, device_->output, rhi::ImageUse::Undefined);
 
     // --- What this program records into the frame ----------------------------------------------
 

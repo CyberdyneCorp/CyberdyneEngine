@@ -277,9 +277,8 @@ bool split_pool_query(ResourceId resource, const cy::rendering::ResourceInfo& in
     if (!cy::rendering::synthetic_memory_query(resource, info, out, nullptr)) {
         return false;
     }
-    out.pool_class = info.is_texture
-                         ? cy::rhi::MemoryPoolClass{0x03}
-                         : cy::rhi::MemoryPoolClass{*static_cast<const cy::u64*>(user)};
+    out.pool_class = info.is_texture ? cy::rhi::MemoryPoolClass{0x03}
+                                     : cy::rhi::MemoryPoolClass{*static_cast<const cy::u64*>(user)};
     return true;
 }
 

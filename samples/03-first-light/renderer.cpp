@@ -555,7 +555,7 @@ Status Renderer::create_resources(const Scene& scene) noexcept {
     // a layout the graph never transitions to and produce a descriptor that disagrees with the
     // image at draw time; `src/backends/rhi/src/access.cpp` is the one place that decides, and this
     // is a reader of it rather than a second opinion.
-    writes[3].layout = rhi::ImageLayout::ShaderReadOnly;
+    writes[3].use = rhi::ImageUse::SampledRead;
     writes[4].binding = 4;
     writes[4].kind = rhi::DescriptorKind::Sampler;
     writes[4].sampler = shadow_sampler_;
@@ -653,14 +653,14 @@ Expected<FrameReport, Error> Renderer::render(const Scene& scene, const Camera& 
     albedo_request.format = rhi::Format::Rgba8Unorm;
     albedo_request.width = kCheckerExtent;
     albedo_request.height = kCheckerExtent;
-    const ResourceId albedo = graph.import_texture(albedo_request, albedo_, albedo_layout_);
+    const ResourceId albedo = graph.import_texture(albedo_request, albedo_, albedo_use_);
 
     rendering::TextureRequest shadow_request;
     shadow_request.name = "sun shadow map";
     shadow_request.format = rhi::Format::D32Sfloat;
     shadow_request.width = kShadowMapExtent;
     shadow_request.height = kShadowMapExtent;
-    const ResourceId shadow = graph.import_texture(shadow_request, shadow_map_, shadow_layout_);
+    const ResourceId shadow = graph.import_texture(shadow_request, shadow_map_, shadow_use_);
 
     rendering::TextureRequest color_request;
     color_request.name = "scene colour";
@@ -749,8 +749,8 @@ Expected<FrameReport, Error> Renderer::render(const Scene& scene, const Camera& 
 
     // What the frame left the two persistent textures in, so the next frame's import tells the
     // truth. The graph transitioned them; the renderer only has to remember where they ended up.
-    albedo_layout_ = rhi::ImageLayout::ShaderReadOnly;
-    shadow_layout_ = rhi::ImageLayout::ShaderReadOnly;
+    albedo_use_ = rhi::ImageUse::SampledRead;
+    shadow_use_ = rhi::ImageUse::SampledRead;
     albedo_uploaded_ = true;
 
     if (options_.readback) {

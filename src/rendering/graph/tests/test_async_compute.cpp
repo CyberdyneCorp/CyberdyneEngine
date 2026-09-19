@@ -34,9 +34,8 @@ struct HardCase {
 
     HardCase() noexcept : graph(cy::system_allocator(cy::MemoryDomain::Renderer)) {
         layered = graph.create_texture(storage_image("layers", 16, 2));
-        target =
-            graph.import_texture(colour_target("swapchain"),
-                                 cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
+        target = graph.import_texture(colour_target("swapchain"),
+                                      cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
         staging = graph.import_buffer(storage_buffer("readback", 4096),
                                       cy::rhi::BufferHandle::from_slot(0, 1));
 

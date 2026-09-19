@@ -173,10 +173,10 @@ constexpr AccessFlags& operator|=(AccessFlags& a, AccessFlags b) noexcept {
 /// but inside `create_shader_module`, which the engine treats as cheap and which would put a
 /// shader compiler on the frame path.
 enum class ShaderFormat : u8 {
-    Spirv = 0,   ///< 32-bit words, magic 0x07230203. The engine's interchange form.
-    Msl,         ///< Metal Shading Language source, as bytes.
+    Spirv = 0,     ///< 32-bit words, magic 0x07230203. The engine's interchange form.
+    Msl,           ///< Metal Shading Language source, as bytes.
     MetalLibrary,  ///< A compiled `.metallib`.
-    Dxil,        ///< DXIL, as produced by DXC.
+    Dxil,          ///< DXIL, as produced by DXC.
     Count,
 };
 

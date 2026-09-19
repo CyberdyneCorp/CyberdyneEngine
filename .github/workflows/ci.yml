@@ -500,8 +500,29 @@ jobs:
       - name: Shader hot reload replaces a pipeline's program without a restart
         run: just test-integration -R shader_pipeline
       # The artefact's own frame, through a device that executes nothing.
+      #
+      # M11.d task 7.3: `render.golden_backends` runs inside this same recipe and ENUMERATES the
+      # backend registry rather than naming one, writing a row per backend saying which device
+      # answered and what kind it is. CY_GOLDEN_LEDGER is what makes that row a file this run
+      # uploads rather than a line in a log nobody reads — and the rung that writes the Metal and
+      # D3D12 backends is meant to compare its legs' ledgers against this one's rather than
+      # re-deriving the comparison.
+      #
+      # THIS RUNNER HAS NO GPU, AND THE LEDGER SAYS SO. Every row here will read
+      # `NOT-EVALUATED-no-device` or `NOT-EVALUATED-no-image` with its reason, which is the point:
+      # `m0:three-platforms` is reported that way too, and a file recording that a leg could not
+      # judge an image is worth more than a green tick over an unphotographed frame.
       - name: The milestone's frame with no GPU, and the XR prerequisite seams
+        env:
+          CY_GOLDEN_LEDGER: golden-backends.ledger
         run: just test-render
+      - name: Which backend produced which image, on this leg
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-backends-ledger-linux-x86_64
+          path: golden-backends.ledger
+          if-no-files-found: warn
 
   # --- M4: the boundary, the Swift overlay, and the invariants that cross it ---------------------
   #

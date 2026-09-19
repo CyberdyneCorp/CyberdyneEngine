@@ -113,18 +113,18 @@ CY_TEST_CASE("stub platform: every capability is absent, and every absence is re
     // the tree that says no to all of them, and a backend that quietly answered true for one it had
     // not implemented is exactly what has_feature() exists to prevent.
     const cy::Feature features[] = {
-        cy::Feature::WindowResizable,   cy::Feature::WindowBorderless,
-        cy::Feature::WindowAlwaysOnTop, cy::Feature::WindowTransparency,
-        cy::Feature::WindowNoFocus,     cy::Feature::WindowPopup,
-        cy::Feature::MousePassthrough,  cy::Feature::HighDpi,
-        cy::Feature::PerScreenDpiScale, cy::Feature::ExclusiveFullscreen,
-        cy::Feature::VSyncAdaptive,     cy::Feature::VSyncMailbox,
-        cy::Feature::ScreenRefreshRate, cy::Feature::VulkanSurface,
-        cy::Feature::MetalSurface,      cy::Feature::D3D12Surface,
-        cy::Feature::Clipboard,         cy::Feature::NativeFileDialog,
+        cy::Feature::WindowResizable,     cy::Feature::WindowBorderless,
+        cy::Feature::WindowAlwaysOnTop,   cy::Feature::WindowTransparency,
+        cy::Feature::WindowNoFocus,       cy::Feature::WindowPopup,
+        cy::Feature::MousePassthrough,    cy::Feature::HighDpi,
+        cy::Feature::PerScreenDpiScale,   cy::Feature::ExclusiveFullscreen,
+        cy::Feature::VSyncAdaptive,       cy::Feature::VSyncMailbox,
+        cy::Feature::ScreenRefreshRate,   cy::Feature::VulkanSurface,
+        cy::Feature::MetalSurface,        cy::Feature::D3D12Surface,
+        cy::Feature::Clipboard,           cy::Feature::NativeFileDialog,
         cy::Feature::NativeMessageDialog, cy::Feature::CustomCursor,
-        cy::Feature::ImePositioning,    cy::Feature::OnScreenKeyboard,
-        cy::Feature::ScreenOrientation, cy::Feature::KeepAwake,
+        cy::Feature::ImePositioning,      cy::Feature::OnScreenKeyboard,
+        cy::Feature::ScreenOrientation,   cy::Feature::KeepAwake,
         cy::Feature::SystemTray,
     };
     for (const cy::Feature feature : features) {
@@ -162,9 +162,8 @@ CY_TEST_CASE("stub platform: every capability is absent, and every absence is re
 
     // No native handle for any API, which is the path `Runtime::enter_display()` treats as a
     // warning rather than a startup failure. No other implementation in this tree exercises it.
-    const auto surface =
-        display.create_surface(window.value(), cy::SurfaceDescription{cy::GraphicsApi::None,
-                                                                     nullptr});
+    const auto surface = display.create_surface(
+        window.value(), cy::SurfaceDescription{cy::GraphicsApi::None, nullptr});
     CY_REQUIRE_FALSE(surface.has_value());
     CY_CHECK_EQ(surface.error().code, cy::ErrorCode::Unavailable);
 

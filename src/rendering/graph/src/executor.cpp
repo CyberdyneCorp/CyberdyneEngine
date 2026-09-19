@@ -494,6 +494,9 @@ Status GraphExecutor::record_and_submit(RenderGraph& graph, CompiledGraph& plan,
         // submit completes.
         if (submit_index == 0) {
             info.wait_binary = options.wait_acquire;
+            // Not left at SubmitInfo's default: see ExecuteOptions::wait_acquire_stage, and the
+            // frame that found it.
+            info.wait_binary_stage = options.wait_acquire_stage;
         }
         if (submit_index + 1 == plan.submits.size()) {
             info.signal_binary = options.signal_present;

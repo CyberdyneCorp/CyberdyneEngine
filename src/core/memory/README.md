@@ -198,6 +198,8 @@ and this is the module's own answer.
 * **`MemoryDomain::Gpu` is budgeted and nothing reports into it.** "GPU memory SHALL participate in
   the same pressure model" is structurally satisfied — the domain, its budget and its pressure
   contribution all exist — and untested against a real allocator until M3.
+  **Closed at M11.d**: `VulkanDevice` and `NullDevice` both report their device-heap level into the
+  domain now; see the M11.d section at the end of this file.
 * **Paged subsystems reduce together** is the residency layer's scenario and is M6. `PressureMonitor`
   broadcasts the level every one of them will respond to; nothing here weighs their reductions
   against each other, and nothing should.
@@ -355,12 +357,17 @@ firewall shape M8.c found in two other modules:
   "Allocation and free events, pressure transitions, and budget violations SHALL be emitted into the
   shared trace" is therefore implemented and unreached: the functions exist, they work, and no frame
   loop, tool or `just diagnose-*` recipe calls one.
-* **`MemoryDomain::Gpu` is budgeted and nothing reports device memory into it.** `budget.cpp` gives
-  it 768 MiB soft on desktop and 192 MiB hard on the constrained profile; every use of the
-  enumerator in `src/` outside this module is a test fixture. The module that allocates device
-  memory is the one that owes this, which makes it the graphics backends' debt — and those backends
-  moved to **M11.d.5** with Metal and D3D12, so it is recorded here and carried there rather than
-  quietly left.
+* **`MemoryDomain::Gpu` was budgeted and no backend reported a byte into it — closed here for the
+  two backends that exist.** `budget.cpp` gives it 768 MiB soft on desktop and 192 MiB hard on the
+  constrained profile, and until M11.d the budget was compared against zero. `VulkanDevice` and
+  `NullDevice` now record their device-heap level into the domain from `publish_memory_pressure()`,
+  as a delta against the level they last reported, so `live_bytes` tracks the device rather than
+  accumulating. The producer's test is *"publishing memory pressure reports the device heap into
+  MemoryDomain::Gpu"* (`unit.rhi`), which brackets one call that allocates nothing — so the
+  difference it measures cannot be host memory — and it was verified against the defect: with the
+  reporting disabled, the released-heap assertion fails. **Metal and D3D12 owe the same two blocks
+  when they are written**, which is M11.d.5's, and this paragraph is where that rung should read the
+  shape from.
 
 What closing this needs, stated so the next reader does not re-derive it: one place in the runtime
 that owns a `TrackingAllocator` over the process allocator in development builds, and one caller per
@@ -386,4 +393,4 @@ change to `src/runtime/` and to `just/diagnose.just`, not to this module.
 | Reference-counted shared data | **satisfied** | `ownership.h`'s `Ref`/`RefCounted` with a release policy; the asset system is its heaviest user |
 | Ownership conventions | **satisfied** | `UniquePtr` with allocator-aware deleters; the `mount_owned` note in `vfs.h` is the convention's sharpest edge |
 | General heap is an integration decided by measurement | **satisfied** | the measurement and its numbers are above in this file; `bench/heap_pattern.cpp` is what makes a regression visible |
-| Memory diagnostics | **partial, and the axes are only half of why** | per-tag and per-domain figures, leak reporting with call sites, red zones, poisoning, double-free detection, sampled call-stack capture and the four attribution axes all exist and are tested. **The axes now have producers** (above). What is still unmet: nothing installs a tracking allocator, no report has a caller outside tests, and `MemoryDomain::Gpu` is budgeted with no producer |
+| Memory diagnostics | **partial, and the axes are only half of why** | per-tag and per-domain figures, leak reporting with call sites, red zones, poisoning, double-free detection, sampled call-stack capture and the four attribution axes all exist and are tested. **The axes now have producers, and `MemoryDomain::Gpu` now has one** (above). What is still unmet: nothing installs a tracking allocator, and no report has a caller outside tests |

@@ -270,6 +270,17 @@ _ctest kind *args:
     fi
     rest="${ctest_rest[*]:-}"
 
+    # A PORT IS NOT A TARGET PLATFORM, and the two share this flag. M11.d task 4.4 made
+    # `just build-engine --platform stub` build ONLY that port's dependency closure and its suite —
+    # which is what makes `m11d:porting-surface-against-a-stub` falsifiable rather than a synonym for
+    # "the tree still compiles". Handing that name on from here would build three targets and then
+    # ask ctest to run fifty executables that were never built. So a port name selects the host build
+    # here, and the port's own claim is the suite it carries: `integration.stub_platform` and
+    # `integration.linux_native`, which this recipe runs like any other.
+    case "${platform[1]:-}" in
+        stub|native) platform=() ;;
+    esac
+
     just build-engine --profile "${profile}" ${platform[@]+"${platform[@]}"}
 
     build_dir="${CY_BUILD_DIR:-build/${profile}}"

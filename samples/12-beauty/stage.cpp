@@ -198,7 +198,7 @@ struct Stage::Device {
 
     rhi::TextureHandle shadow;
     rhi::TextureViewHandle shadow_view;
-    rhi::ImageLayout shadow_layout = rhi::ImageLayout::Undefined;
+    rhi::ImageUse shadow_layout = rhi::ImageUse::Undefined;
     rhi::TextureHandle output;
 
     rhi::SamplerHandle material_sampler;
@@ -585,7 +585,7 @@ Status Stage::cook_textures(Shot& shot, ShotReport& report) noexcept {
         request.width = description->extent.width;
         request.height = description->extent.height;
         request.mip_levels = description->mip_levels;
-        imported.push_back(graph.import_texture(request, texture, rhi::ImageLayout::Undefined));
+        imported.push_back(graph.import_texture(request, texture, rhi::ImageUse::Undefined));
     }
 
     UploadState state;
@@ -1119,7 +1119,7 @@ Status Stage::create_pipelines(const Shot& shot) noexcept {
     // with `FragmentSampledRead` to the general shader-read layout, and a descriptor that named the
     // depth-specific one would disagree with it at submit time. Measured, not assumed — the
     // validation layer says which layout the command buffer expected and which the image was in.
-    shadow_writes[0].layout = rhi::ImageLayout::ShaderReadOnly;
+    shadow_writes[0].use = rhi::ImageUse::SampledRead;
     shadow_writes[1].binding = 1;
     shadow_writes[1].kind = rhi::DescriptorKind::Sampler;
     shadow_writes[1].sampler = device_->shadow_sampler;
@@ -2005,8 +2005,7 @@ Status Stage::render_from(const Shot& shot, Vec3 eye_world, Vec3 target_world, c
     output_request.width = width_;
     output_request.height = height_;
     output_request.extra_usage = rhi::TextureUsage::TransferSource;
-    view.output =
-        graph.import_texture(output_request, device_->output, rhi::ImageLayout::Undefined);
+    view.output = graph.import_texture(output_request, device_->output, rhi::ImageUse::Undefined);
 
     SceneState scene;
     scene.batches = device_->batches.data();
@@ -2243,7 +2242,7 @@ Status Stage::prepare_shadow() noexcept {
     if (Status ended = device.end_frame(); !ended && executed) {
         executed = ended;
     }
-    device_->shadow_layout = rhi::ImageLayout::ShaderReadOnly;
+    device_->shadow_layout = rhi::ImageUse::SampledRead;
     return executed;
 }
 

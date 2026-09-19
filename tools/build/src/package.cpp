@@ -334,7 +334,7 @@ std::string bundle_report(const PackageSet& packages, u32 top) {
     return out;
 }
 
-std::vector<StageCost> stage_costs(const BuildReport& report) {
+std::vector<StageCost> stage_costs(const BuildGraph& graph, const BuildReport& report) {
     // Indexed by the enumerator so the result is in NodeKind order without a sort, and so a kind
     // added to the enumeration appears here without this function being edited.
     constexpr usize kKinds = static_cast<usize>(NodeKind::Manifest) + 1;
@@ -344,7 +344,9 @@ std::vector<StageCost> stage_costs(const BuildReport& report) {
     }
 
     for (const NodeResult& node : report.nodes) {
-        const usize index = static_cast<usize>(node.kind_of());
+        const NodeId id = graph.find(node.name);
+        const NodeKind kind = id == NodeId::Invalid ? NodeKind::Unknown : graph.node(id).kind;
+        const usize index = static_cast<usize>(kind);
         if (index >= kKinds) {
             continue;
         }
@@ -355,7 +357,10 @@ std::vector<StageCost> stage_costs(const BuildReport& report) {
         switch (node.outcome) {
             case NodeOutcome::Cached: ++stage.cached; break;
             case NodeOutcome::Failed: ++stage.failed; break;
-            case NodeOutcome::Ran: ++stage.rebuilt; break;
+            // `Ran` and `Rebuilt` are both work done; the report's column is "not a cache hit",
+            // and a reader who needs to know WHY a node ran reads the node's own `reason`.
+            case NodeOutcome::Ran:
+            case NodeOutcome::Rebuilt: ++stage.rebuilt; break;
             default: break;
         }
     }
@@ -369,8 +374,8 @@ std::vector<StageCost> stage_costs(const BuildReport& report) {
     return found;
 }
 
-std::string stage_report(const BuildReport& report) {
-    const std::vector<StageCost> stages = stage_costs(report);
+std::string stage_report(const BuildGraph& graph, const BuildReport& report) {
+    const std::vector<StageCost> stages = stage_costs(graph, report);
     std::string out = "cook and compile time by stage\n";
     if (stages.empty()) {
         // A build that ran no nodes is a legitimate outcome — everything was already current — and

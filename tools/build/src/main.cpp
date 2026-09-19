@@ -226,6 +226,11 @@ void print_report(const BuildReport& report) {
     }
     print_report(*report);
 
+    // "Cook and compile time by stage, with cache hit rates" — M11.d task 7.4. Printed on every
+    // build rather than behind a flag: every number in it was already on the report, and a developer
+    // asking "what is slow?" had a list of nodes and no aggregate.
+    std::printf("%s", stage_report(project.graph, *report).c_str());
+
     if (arguments.has("package")) {
         Provenance provenance;
         provenance.project = arguments.value("project", ".");
@@ -236,6 +241,20 @@ void print_report(const BuildReport& report) {
         current_toolchain().digest().format(digest);
         provenance.toolchain = digest;
 
+        // M11.d task 7.5. `build-and-packaging` requires seven things of a build's provenance and
+        // the manifest carried four. THE CALLER SUPPLIES WHAT ONLY THE CALLER KNOWS — two source
+        // revisions and a lockfile hash are facts about the checkout, not about the build graph, and
+        // a tool that ran `git rev-parse` itself would report the revision of whatever directory it
+        // happened to be started in. They are recorded as given, INCLUDING WHEN THEY ARE EMPTY: an
+        // empty field in the manifest is a build that did not record its lockfile, which is a
+        // different and much more useful statement than a build that had none.
+        provenance.engine_revision = arguments.value("engine-revision");
+        provenance.lockfile = arguments.value("lockfile");
+        provenance.cook_configuration = arguments.value("cook-configuration");
+        // The toolchain's own description, beside its digest. The digest is what a cache key
+        // compares; this is what a bug report quotes, and neither answers the other's question.
+        provenance.toolchain_versions = describe_toolchain(current_toolchain());
+
         const Expected<PackageSet, Error> packages =
             assemble(project.graph, *report, std::move(provenance));
         if (!packages) {
@@ -245,7 +264,9 @@ void print_report(const BuildReport& report) {
             !written) {
             return fail("the package manifest could not be written", written.error());
         }
-        std::printf("%s", bundle_report(*packages).c_str());
+        // The content audit's cost half: size by install bundle, by category, and the sum, which is
+        // printed because it CAN disagree with the package's own total.
+        std::printf("%s", content_report(project.graph, *packages).c_str());
         std::printf("build %s\n", packages->build_id.c_str());
     }
     return report->succeeded() ? 0 : 1;
@@ -278,6 +299,21 @@ void print_report(const BuildReport& report) {
     std::printf("referenced by:\n");
     for (const std::string& dependent : answer->dependents) {
         std::printf("  %s\n", dependent.c_str());
+    }
+    // `build-and-packaging`'s content audit asks four questions and this command answered two. When
+    // a package manifest is named, the other two — size by category and by install bundle — are
+    // answered from it here, so that "why is this in the build?" and "what does it cost?" are one
+    // command rather than two that can be asked about different builds.
+    if (arguments.has("package")) {
+        const Expected<std::string, Error> document = read_text(arguments.value("package"));
+        if (!document) {
+            return fail("the package manifest could not be read", document.error());
+        }
+        const Expected<PackageSet, Error> packages = read_package(*document);
+        if (!packages) {
+            return fail("the package manifest could not be parsed", packages.error());
+        }
+        std::printf("%s", content_report(project.graph, *packages).c_str());
     }
     return 0;
 }

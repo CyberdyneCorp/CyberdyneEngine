@@ -184,10 +184,22 @@ def act_launch(tools: Tools, report: Report, platform: str, frames: int,
 
     launched = tools.launch(platform, frames, shot, coverage, require_draw)
     text = launched.stdout
-    if launched.returncode != 0 and require_draw:
+
+    # EXIT 3 IS "IT DREW AND TRIPPED VALIDATION", which is a gap rather than a fallen-over run: the
+    # frame is correct and the render graph's two barriers at the swapchain boundary are not. A gap
+    # cannot be turned back into a pass — `Report.exit_code` is derived — so recording it here is
+    # what makes this run non-zero for as long as the defect stands.
+    if launched.returncode == 3:
+        errors = re.search(r"validation errors\s+(\d+)", text)
+        report.gap(f"the frame through '{platform}' trips backend validation",
+                   f"{errors.group(1) if errors else '?'} error(s): SYNC-HAZARD-WRITE-AFTER-READ "
+                   "against PRESENT_ACQUIRE_READ and SYNC-HAZARD-PRESENT-AFTER-WRITE. The render "
+                   "graph spells both swapchain-boundary barriers with Stage::None on the side "
+                   "facing the presentation engine — see samples/11-ship/README.md")
+    elif launched.returncode != 0 and require_draw:
         raise Failed(f"the launch was asked to draw and did not:\n{text}{launched.stderr}")
-    expect(launched.returncode == 0,
-           f"the launch failed:\n{text}{launched.stderr}")
+    else:
+        expect(launched.returncode == 0, f"the launch failed:\n{text}{launched.stderr}")
 
     provenance = PROVENANCE.search(text)
     expect(provenance is not None, f"the launch printed no provenance:\n{text}")

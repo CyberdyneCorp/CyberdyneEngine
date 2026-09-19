@@ -57,15 +57,11 @@ CY_TEST_CASE("a storage access implies Storage and a sampled access implies Samp
     // type, and a Metal backend was being handed a field it drops. Metal gap 3.
     CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageWrite).use, ImageUse::Storage);
     CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageRead).use, ImageUse::Storage);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::FragmentSampledRead).use,
-                ImageUse::SampledRead);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeSampledRead).use,
-                ImageUse::SampledRead);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ColorAttachmentWrite).use,
-                ImageUse::ColorAttachment);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::FragmentSampledRead).use, ImageUse::SampledRead);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeSampledRead).use, ImageUse::SampledRead);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ColorAttachmentWrite).use, ImageUse::ColorAttachment);
     CY_CHECK_EQ(cy::rhi::access_info(Access::TransferRead).use, ImageUse::TransferSource);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferWrite).use,
-                ImageUse::TransferDestination);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferWrite).use, ImageUse::TransferDestination);
 }
 
 CY_TEST_CASE("depth is tested early and written late, so both stages appear") {

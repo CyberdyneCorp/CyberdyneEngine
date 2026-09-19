@@ -129,7 +129,8 @@ constexpr MetalGapRecord kGaps[] = {
      MetalGapStatus::Closed,
      "M11.d task 1.3: both calls take a path, and an absent file is a cold start rather than an "
      "error. AND NOTHING IN THE TREE CALLS EITHER OF THEM — the requirement they serve, a cache "
-     "persisted across runs, is unimplemented above the RHI, which a signature change does not fix"},
+     "persisted across runs, is unimplemented above the RHI, which a signature change does not "
+     "fix"},
     {MetalGap::Depth24Stencil8Unavailable, "Format::D24UnormS8Uint",
      "MTLPixelFormatDepth24Unorm_Stencil8, unsupported on every Apple GPU",
      "a per-format support query on DeviceCapabilities, so the engine chooses the substitute "

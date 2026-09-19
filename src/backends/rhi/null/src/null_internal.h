@@ -433,6 +433,10 @@ private:
     DeviceCapabilities capabilities_;
     DeviceStatistics stats_{};
     GpuMemoryReport memory_{};
+    /// Device-local bytes already reported into `MemoryDomain::Gpu`. The heap usage is a LEVEL and
+    /// the domain counters take a DELTA, so the previous level has to be remembered to produce one.
+    /// M11.d task 6.2; the Vulkan backend carries the same pair for the same reason.
+    u64 reported_gpu_bytes_ = 0;
     u32 frames_in_flight_ = kDefaultFramesInFlight;
     u64 frame_index_ = 0;
     u32 frame_slot_ = 0;

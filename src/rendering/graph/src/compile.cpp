@@ -1060,8 +1060,8 @@ struct Compiler {
 
     bool derive_cell(const Use& use, const rhi::AccessInfo& access, const ResourceInfo& info,
                      u16 mip, u16 layer, rhi::QueueKind my_queue, u8 my_domain, i32 submit_index,
-                     rhi::BarrierBatch& pre,
-                     Array<PendingImage>& pre_pending, Array<PendingImage>& acquire_pending,
+                     rhi::BarrierBatch& pre, Array<PendingImage>& pre_pending,
+                     Array<PendingImage>& acquire_pending,
                      Array<PendingImage>& release_pending) noexcept {
         const usize index =
             info.is_texture ? cell_index(use.resource, mip, layer) : cell_base[use.resource];

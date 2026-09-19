@@ -34,72 +34,136 @@ Key key_from_evdev(u32 code) noexcept {
     // KEYBOARD's rows rather than alphabetically, so unlike SDL's scancodes they cannot be mapped
     // with one subtraction. A table is the honest way to say that.
     switch (code) {
-        case KEY_A: return Key::A;
-        case KEY_B: return Key::B;
-        case KEY_C: return Key::C;
-        case KEY_D: return Key::D;
-        case KEY_E: return Key::E;
-        case KEY_F: return Key::F;
-        case KEY_G: return Key::G;
-        case KEY_H: return Key::H;
-        case KEY_I: return Key::I;
-        case KEY_J: return Key::J;
-        case KEY_K: return Key::K;
-        case KEY_L: return Key::L;
-        case KEY_M: return Key::M;
-        case KEY_N: return Key::N;
-        case KEY_O: return Key::O;
-        case KEY_P: return Key::P;
-        case KEY_Q: return Key::Q;
-        case KEY_R: return Key::R;
-        case KEY_S: return Key::S;
-        case KEY_T: return Key::T;
-        case KEY_U: return Key::U;
-        case KEY_V: return Key::V;
-        case KEY_W: return Key::W;
-        case KEY_X: return Key::X;
-        case KEY_Y: return Key::Y;
-        case KEY_Z: return Key::Z;
+        case KEY_A:
+            return Key::A;
+        case KEY_B:
+            return Key::B;
+        case KEY_C:
+            return Key::C;
+        case KEY_D:
+            return Key::D;
+        case KEY_E:
+            return Key::E;
+        case KEY_F:
+            return Key::F;
+        case KEY_G:
+            return Key::G;
+        case KEY_H:
+            return Key::H;
+        case KEY_I:
+            return Key::I;
+        case KEY_J:
+            return Key::J;
+        case KEY_K:
+            return Key::K;
+        case KEY_L:
+            return Key::L;
+        case KEY_M:
+            return Key::M;
+        case KEY_N:
+            return Key::N;
+        case KEY_O:
+            return Key::O;
+        case KEY_P:
+            return Key::P;
+        case KEY_Q:
+            return Key::Q;
+        case KEY_R:
+            return Key::R;
+        case KEY_S:
+            return Key::S;
+        case KEY_T:
+            return Key::T;
+        case KEY_U:
+            return Key::U;
+        case KEY_V:
+            return Key::V;
+        case KEY_W:
+            return Key::W;
+        case KEY_X:
+            return Key::X;
+        case KEY_Y:
+            return Key::Y;
+        case KEY_Z:
+            return Key::Z;
         // The kernel's digit row IS contiguous, and 0 sits after 9 exactly as it does on the
         // keyboard.
-        case KEY_1: return Key::Num1;
-        case KEY_2: return Key::Num2;
-        case KEY_3: return Key::Num3;
-        case KEY_4: return Key::Num4;
-        case KEY_5: return Key::Num5;
-        case KEY_6: return Key::Num6;
-        case KEY_7: return Key::Num7;
-        case KEY_8: return Key::Num8;
-        case KEY_9: return Key::Num9;
-        case KEY_0: return Key::Num0;
-        case KEY_SPACE: return Key::Space;
-        case KEY_ENTER: return Key::Enter;
-        case KEY_ESC: return Key::Escape;
-        case KEY_TAB: return Key::Tab;
-        case KEY_BACKSPACE: return Key::Backspace;
-        case KEY_LEFTSHIFT: return Key::LeftShift;
-        case KEY_RIGHTSHIFT: return Key::RightShift;
-        case KEY_LEFTCTRL: return Key::LeftControl;
-        case KEY_RIGHTCTRL: return Key::RightControl;
-        case KEY_LEFTALT: return Key::LeftAlt;
-        case KEY_RIGHTALT: return Key::RightAlt;
-        case KEY_LEFT: return Key::Left;
-        case KEY_RIGHT: return Key::Right;
-        case KEY_UP: return Key::Up;
-        case KEY_DOWN: return Key::Down;
-        case KEY_F1: return Key::F1;
-        case KEY_F2: return Key::F2;
-        case KEY_F3: return Key::F3;
-        case KEY_F4: return Key::F4;
-        case KEY_F5: return Key::F5;
-        case KEY_F6: return Key::F6;
-        case KEY_F7: return Key::F7;
-        case KEY_F8: return Key::F8;
-        case KEY_F9: return Key::F9;
-        case KEY_F10: return Key::F10;
-        case KEY_F11: return Key::F11;
-        case KEY_F12: return Key::F12;
-        default: return Key::Unknown;
+        case KEY_1:
+            return Key::Num1;
+        case KEY_2:
+            return Key::Num2;
+        case KEY_3:
+            return Key::Num3;
+        case KEY_4:
+            return Key::Num4;
+        case KEY_5:
+            return Key::Num5;
+        case KEY_6:
+            return Key::Num6;
+        case KEY_7:
+            return Key::Num7;
+        case KEY_8:
+            return Key::Num8;
+        case KEY_9:
+            return Key::Num9;
+        case KEY_0:
+            return Key::Num0;
+        case KEY_SPACE:
+            return Key::Space;
+        case KEY_ENTER:
+            return Key::Enter;
+        case KEY_ESC:
+            return Key::Escape;
+        case KEY_TAB:
+            return Key::Tab;
+        case KEY_BACKSPACE:
+            return Key::Backspace;
+        case KEY_LEFTSHIFT:
+            return Key::LeftShift;
+        case KEY_RIGHTSHIFT:
+            return Key::RightShift;
+        case KEY_LEFTCTRL:
+            return Key::LeftControl;
+        case KEY_RIGHTCTRL:
+            return Key::RightControl;
+        case KEY_LEFTALT:
+            return Key::LeftAlt;
+        case KEY_RIGHTALT:
+            return Key::RightAlt;
+        case KEY_LEFT:
+            return Key::Left;
+        case KEY_RIGHT:
+            return Key::Right;
+        case KEY_UP:
+            return Key::Up;
+        case KEY_DOWN:
+            return Key::Down;
+        case KEY_F1:
+            return Key::F1;
+        case KEY_F2:
+            return Key::F2;
+        case KEY_F3:
+            return Key::F3;
+        case KEY_F4:
+            return Key::F4;
+        case KEY_F5:
+            return Key::F5;
+        case KEY_F6:
+            return Key::F6;
+        case KEY_F7:
+            return Key::F7;
+        case KEY_F8:
+            return Key::F8;
+        case KEY_F9:
+            return Key::F9;
+        case KEY_F10:
+            return Key::F10;
+        case KEY_F11:
+            return Key::F11;
+        case KEY_F12:
+            return Key::F12;
+        default:
+            return Key::Unknown;
     }
 }
 
@@ -107,12 +171,18 @@ Key key_from_evdev(u32 code) noexcept {
 // delivered as presses rather than as an axis. That is the protocol, not a quirk of this backend.
 MouseControl mouse_button_from_x11(unsigned int button) noexcept {
     switch (button) {
-        case Button1: return MouseControl::Left;
-        case Button2: return MouseControl::Middle;
-        case Button3: return MouseControl::Right;
-        case 8: return MouseControl::Extra1;
-        case 9: return MouseControl::Extra2;
-        default: return MouseControl::Unknown;
+        case Button1:
+            return MouseControl::Left;
+        case Button2:
+            return MouseControl::Middle;
+        case Button3:
+            return MouseControl::Right;
+        case 8:
+            return MouseControl::Extra1;
+        case 9:
+            return MouseControl::Extra2;
+        default:
+            return MouseControl::Unknown;
     }
 }
 

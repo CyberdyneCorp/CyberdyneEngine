@@ -989,7 +989,7 @@ Status FrameCapture::shoot(const Presentation& presentation,
     request.height = height_;
     request.extra_usage =
         rhi::TextureUsage::TransferSource | rhi::TextureUsage::TransferDestination;
-    view.output = device.graph.import_texture(request, device.output, rhi::ImageLayout::Undefined);
+    view.output = device.graph.import_texture(request, device.output, rhi::ImageUse::Undefined);
 
     FrameSinks sinks;
     if (mode == CaptureMode::Assembled) {

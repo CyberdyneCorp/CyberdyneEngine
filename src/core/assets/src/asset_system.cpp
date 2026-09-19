@@ -367,8 +367,7 @@ Status AssetSystemImpl::read_package_entry(PackageMount& package, const VirtualP
     // The same check the load path makes, at the same point in the sequence: over the decompressed
     // bytes, before anything is published. A reload that swapped in a payload whose hash does not
     // match would be a tampered package that only hot reload could smuggle in.
-    if (config.verify_content_hashes &&
-        !(content_hash(out.data(), out.size()) == entry->content)) {
+    if (config.verify_content_hashes && !(content_hash(out.data(), out.size()) == entry->content)) {
         ++stats.integrity_failures;
         return fail(ErrorCode::Io, "the entry's payload does not match its recorded content hash");
     }
@@ -1271,8 +1270,8 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
         // decompression and its declared dependencies are `PackageReader`'s, and this reads them
         // through it rather than reimplementing them. The old bytes stay in use until the new ones
         // are complete, which is the same defence the loose-file branch relies on.
-        if (Status refreshed = self.read_package_entry(*package, path.value(), replacement,
-                                                       dependencies);
+        if (Status refreshed =
+                self.read_package_entry(*package, path.value(), replacement, dependencies);
             !refreshed) {
             ++self.stats.reloads_failed;
             return refreshed;
@@ -1310,8 +1309,9 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
         // would coalesce onto it and take a request reference nothing will ever give back.
         //
         // These loads are NOT awaited. The parent's bytes have already been replaced, and blocking
-        // a reload on a dependency graph would hold an editor's tick for as long as the graph takes;
-        // an observer that needs the child rebuilt is told the parent changed and asks for it.
+        // a reload on a dependency graph would hold an editor's tick for as long as the graph
+        // takes; an observer that needs the child rebuilt is told the parent changed and asks for
+        // it.
         for (const cy::AssetId dependency : dependencies) {
             if (dependency.is_nil() || self.find_slot(dependency, VariantKey{}) != nullptr) {
                 continue;

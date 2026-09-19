@@ -225,8 +225,8 @@ CY_TEST_CASE("a sparse component's side table is attributed to its reflected typ
     // `core-memory-and-containers` — "Memory diagnostics": "Reporting SHALL be attributable along
     // the axes that answer real questions: by domain, **by type**, by thread, by world cell, and by
     // asset." The axis was built at M7 and NOTHING PUSHED A SCOPE: until M11.d the only four files
-    // naming `MemoryAttributionScope` were its own header, source, test and README, so the type axis
-    // reported every live byte as unattributed in any engine that asked.
+    // naming `MemoryAttributionScope` were its own header, source, test and README, so the type
+    // axis reported every live byte as unattributed in any engine that asked.
     //
     // This case is the producer's test and not the mechanism's: it runs the ordinary write path, on
     // an ordinary world, and reads the axis back off the allocator the world was given.

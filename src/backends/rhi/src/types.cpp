@@ -65,10 +65,15 @@ static_assert(sizeof(kFormatTable) / sizeof(kFormatTable[0]) == kFormatCount,
 
 constexpr const char* kQueueKindNames[kQueueKindCount] = {"graphics", "async-compute", "transfer"};
 
-constexpr const char* kImageUseNames[static_cast<u32>(ImageUse::Count)] = {
-    "Undefined",   "Storage",        "ColorAttachment", "DepthStencilAttachment",
-    "DepthStencilReadOnly", "SampledRead", "TransferSource",  "TransferDestination",
-    "Presentable"};
+constexpr const char* kImageUseNames[static_cast<u32>(ImageUse::Count)] = {"Undefined",
+                                                                           "Storage",
+                                                                           "ColorAttachment",
+                                                                           "DepthStencilAttachment",
+                                                                           "DepthStencilReadOnly",
+                                                                           "SampledRead",
+                                                                           "TransferSource",
+                                                                           "TransferDestination",
+                                                                           "Presentable"};
 
 constexpr const char* kCapabilityNames[kCapabilityCount] = {
     "ComputeShaders",

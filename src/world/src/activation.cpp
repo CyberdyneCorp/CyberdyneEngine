@@ -298,13 +298,13 @@ Expected<StagingPhase, Error> CellActivation::advance(const CookedCell& source,
                                                       const LayerTable& layers,
                                                       const PersistenceOverlay* overlay,
                                                       Nanoseconds budget) noexcept {
-    // THE WORLD-CELL AXIS'S PRODUCER. `core-memory-and-containers` — "Memory diagnostics": reporting
-    // is attributable "by domain, by type, by thread, by world cell, and by asset", and its scenario
-    // is "a world region consumes unexpected memory ... the report SHALL attribute it by domain,
-    // asset, and cell". Private staging is where a cell's memory is spent — the decoded columns, the
-    // overlay's patches, the entity lists — so this is the call that knows which cell to charge.
-    // `cy::core-memory` is below `cy::world` and cannot name a `CellId`; the module that owns the
-    // identity is the one that pushes it, which is the axis's own rule.
+    // THE WORLD-CELL AXIS'S PRODUCER. `core-memory-and-containers` — "Memory diagnostics":
+    // reporting is attributable "by domain, by type, by thread, by world cell, and by asset", and
+    // its scenario is "a world region consumes unexpected memory ... the report SHALL attribute it
+    // by domain, asset, and cell". Private staging is where a cell's memory is spent — the decoded
+    // columns, the overlay's patches, the entity lists — so this is the call that knows which cell
+    // to charge. `cy::core-memory` is below `cy::world` and cannot name a `CellId`; the module that
+    // owns the identity is the one that pushes it, which is the axis's own rule.
     const MemoryAttributionScope attributed(MemoryAttribution{.world_cell = id_.value});
 
     if (phase_ == StagingPhase::Ready || phase_ == StagingPhase::Published) {

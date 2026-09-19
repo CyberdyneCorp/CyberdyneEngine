@@ -87,7 +87,10 @@ void print_usage() {
         "  --shot <path.png>    write the PRESENTED frame, read back off the device\n"
         "  --coverage <path>    write the coverage table this run measured\n"
         "  --require-draw       exit non-zero if nothing was presented\n"
-        "  --no-validation      do not turn the backend's validation layers on\n",
+        "  --no-validation      do not turn the backend's validation layers on\n"
+        "\n"
+        "Exit: 0 drew clean, 1 asked to draw and did not, 2 bad arguments,\n"
+        "      3 drew and tripped backend validation (a gap, not a fallen-over run)\n",
         stderr);
 }
 
@@ -178,6 +181,10 @@ void print_coverage(std::FILE* out, const std::vector<CoverageLine>& lines,
                  report.swapchain_format.empty() ? "(none)" : report.swapchain_format.c_str(),
                  report.swapchain_width, report.swapchain_height);
     std::fprintf(out, "  frames presented   %u\n", report.frames_presented);
+    std::fprintf(out, "  frame plan         %u submit(s), %u pass(es), %u derived barrier(s), "
+                      "plan 0x%016llx\n",
+                 report.submits, report.passes_recorded, report.barriers,
+                 static_cast<unsigned long long>(report.plan_hash));
     std::fprintf(out, "  validation errors  %u\n", report.validation_errors);
     if (!report.not_evaluated.empty()) {
         std::fprintf(out, "  NOT EVALUATED      %s\n", report.not_evaluated.c_str());
@@ -345,9 +352,19 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (report.validation_errors != 0) {
-        std::fprintf(stderr, "%s: the frame tripped %u validation error(s)\n", kTag,
-                     report.validation_errors);
-        return 1;
+        // EXIT 3, NOT 1, AND THE DIFFERENCE IS THE FINDING.
+        //
+        // `rhi-and-render-graph` is explicit that "a frame that renders but trips validation is not
+        // a frame that works", so this cannot be a zero. But it is not a failure of THIS program
+        // either: the frame drew, presented and photographed correctly, and what synchronisation
+        // validation objects to is how the RENDER GRAPH spells the two barriers at the swapchain
+        // boundary. See README.md, "The two hazards this artefact found". `ship.py` reads a 3 as a
+        // GAP — named, counted and non-zero — rather than as a run that fell over.
+        std::fprintf(stderr,
+                     "%s: the frame tripped %u validation error(s). It drew and presented; see "
+                     "samples/11-ship/README.md for what they are and whose they are.\n",
+                     kTag, report.validation_errors);
+        return 3;
     }
     return 0;
 }

@@ -179,8 +179,8 @@ struct UploadPlan {
         request.width = description->extent.width;
         request.height = description->extent.height;
         request.mip_levels = description->mip_levels;
-        if (Status pushed = imported.push_back(
-                graph.import_texture(request, image, rhi::ImageUse::Undefined));
+        if (Status pushed =
+                imported.push_back(graph.import_texture(request, image, rhi::ImageUse::Undefined));
             !pushed) {
             return pushed;
         }

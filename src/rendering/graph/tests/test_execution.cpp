@@ -249,9 +249,9 @@ CY_TEST_CASE("the plan dumps as readable text and as a Graphviz digraph") {
     // barriers, aliasing decisions" as text or a Graphviz diagram.
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId scratch = graph.create_texture(storage_image("scratch", 64));
-    const ResourceId target = graph.import_texture(colour_target("swapchain", 64),
-                                                   cy::rhi::TextureHandle::from_slot(0, 1),
-                                                   cy::rhi::ImageUse::Undefined);
+    const ResourceId target =
+        graph.import_texture(colour_target("swapchain", 64),
+                             cy::rhi::TextureHandle::from_slot(0, 1), cy::rhi::ImageUse::Undefined);
     graph.add_pass("compute", cy::rhi::QueueKind::AsyncCompute)
         .write(scratch, Access::ComputeStorageWrite);
     graph.add_pass("shade", cy::rhi::QueueKind::Graphics)
@@ -451,8 +451,8 @@ CY_TEST_CASE(
         CY_REQUIRE(fixture.ok());
         cy::rhi::null::override_capability(fixture.device(),
                                            cy::rhi::Capability::ParallelPassRecording, false);
-        CY_CHECK_FALSE(fixture.device().capabilities().has(
-            cy::rhi::Capability::ParallelPassRecording));
+        CY_CHECK_FALSE(
+            fixture.device().capabilities().has(cy::rhi::Capability::ParallelPassRecording));
 
         cy::Expected<cy::rhi::TextureHandle, cy::Error> image =
             fixture.device().create_texture(swapchain_description());

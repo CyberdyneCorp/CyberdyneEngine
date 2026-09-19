@@ -102,7 +102,8 @@ struct WindowFixture {
 
 // --- Platform: no window system needed --------------------------------------------------------
 
-CY_TEST_CASE("linux-native: the platform's name is its own, and it needs no initialisation ritual") {
+CY_TEST_CASE(
+    "linux-native: the platform's name is its own, and it needs no initialisation ritual") {
     cy::LinuxPlatform platform;
     CY_CHECK(platform.name() == "linux-native");
     char* arguments[] = {const_cast<char*>("test"), nullptr};
@@ -122,10 +123,12 @@ CY_TEST_CASE("linux-native: the platform's name is its own, and it needs no init
 CY_TEST_CASE("linux-native: a text call refuses a short buffer rather than truncating into it") {
     cy::LinuxPlatform platform;
     CY_REQUIRE(platform.initialise(0, nullptr).has_value());
-    CY_REQUIRE(platform.set_environment_variable("CY_LINUX_NATIVE_TEST", "a-long-value").has_value());
+    CY_REQUIRE(
+        platform.set_environment_variable("CY_LINUX_NATIVE_TEST", "a-long-value").has_value());
 
     char small[4];
-    const auto refused = platform.environment_variable("CY_LINUX_NATIVE_TEST", small, sizeof(small));
+    const auto refused =
+        platform.environment_variable("CY_LINUX_NATIVE_TEST", small, sizeof(small));
     CY_REQUIRE_FALSE(refused.has_value());
     // BufferTooSmall and not a truncated answer. A caller that got "a-l" would use it.
     CY_CHECK_EQ(refused.error().code, cy::ErrorCode::BufferTooSmall);
@@ -136,7 +139,8 @@ CY_TEST_CASE("linux-native: a text call refuses a short buffer rather than trunc
     CY_CHECK_EQ(std::strcmp(big, "a-long-value"), 0);
     CY_CHECK_EQ(written.value(), std::strlen("a-long-value"));
 
-    const auto absent = platform.environment_variable("CY_NOT_SET_ANYWHERE_12345", big, sizeof(big));
+    const auto absent =
+        platform.environment_variable("CY_NOT_SET_ANYWHERE_12345", big, sizeof(big));
     CY_REQUIRE_FALSE(absent.has_value());
     CY_CHECK_EQ(absent.error().code, cy::ErrorCode::NotFound);
     platform.shutdown();
@@ -356,7 +360,8 @@ CY_TEST_CASE("linux-native: a capability this backend lacks is refused, not sile
     CY_CHECK(surface.value().display != nullptr);
 }
 
-CY_TEST_CASE("linux-native: the input source sees the display server's events without stealing them") {
+CY_TEST_CASE(
+    "linux-native: the input source sees the display server's events without stealing them") {
     if (!display_available()) {
         CY_CHECK(announce_skip("the input cases"));
         return;
@@ -389,11 +394,10 @@ CY_TEST_CASE("linux-native: the input source sees the display server's events wi
     XEvent event{};
     event.type = KeyPress;
     event.xkey.display = display;
-    event.xkey.window = static_cast<::Window>(
-        reinterpret_cast<std::uintptr_t>(
-            fixture.server.create_surface(fixture.window, {cy::GraphicsApi::None, nullptr})
-                .value()
-                .handle));
+    event.xkey.window = static_cast<::Window>(reinterpret_cast<std::uintptr_t>(
+        fixture.server.create_surface(fixture.window, {cy::GraphicsApi::None, nullptr})
+            .value()
+            .handle));
     event.xkey.root = DefaultRootWindow(display);
     event.xkey.keycode = 25;
     event.xkey.state = 0;

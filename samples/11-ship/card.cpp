@@ -270,13 +270,14 @@ Status Card::parse(std::string_view document) noexcept {
             directive.scale = static_cast<u32>(to_integer(words.at(3)));
             directive.colour = *value;
             directive.text = std::string(words.at(5));
-            directives_.push_back(std::move(directive));
-            // The last heading the content wrote is where the program's own footer starts. The
-            // card reserves the space; the program fills it, because only the program knows what
-            // happened (card.h's second paragraph).
+            // BEFORE the move, and that is not a style preference: the first draft read
+            // `directive.text` after `std::move(directive)`, which is empty, so the heading was
+            // never found and the footer fell back to its default position — visibly, on top of the
+            // device line, in the first frame this sample ever presented.
             if (directive.text == "COVERAGE") {
                 footer_y_ = directive.y + static_cast<i32>(kGlyphHeight * directive.scale) + 16;
             }
+            directives_.push_back(std::move(directive));
         }
     }
 

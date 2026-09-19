@@ -11,6 +11,7 @@
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/pipeline_cache_file.h>
 #include <cy/core/base/assert.h>
+#include <cy/core/memory/domain.h>
 #include <cy/core/memory/pressure.h>
 
 #include <algorithm>
@@ -1303,6 +1304,25 @@ void NullDevice::publish_memory_pressure() noexcept {
     // The engine's own domain tree, not a second GPU-specific report. `rhi-and-render-graph`:
     // "GPU memory SHALL appear in the same domain and budget model as CPU memory."
     memory_.device_heap_used = total;
+
+    // AND INTO `MemoryDomain::Gpu` ITSELF. M11.d task 6.2: the domain has been budgeted since M1 —
+    // 768 MiB soft on desktop, 192 MiB hard on the constrained profile — and no backend reported a
+    // byte into it, so the budget was compared against zero and every per-domain report showed a
+    // GPU holding nothing. The module that allocates is the module that owes the figure.
+    //
+    // Nothing is double counted here: `device_heap_used` is this backend's accounting of simulated
+    // device memory, not host memory it allocated. A level that falls is recorded as a free of the
+    // difference, so `live_bytes` tracks the device rather than accumulating.
+    if (memory_.device_heap_used != reported_gpu_bytes_) {
+        if (memory_.device_heap_used > reported_gpu_bytes_) {
+            domain_record_allocation(MemoryDomain::Gpu,
+                                     memory_.device_heap_used - reported_gpu_bytes_);
+        } else {
+            domain_record_free(MemoryDomain::Gpu, reported_gpu_bytes_ - memory_.device_heap_used);
+        }
+        reported_gpu_bytes_ = memory_.device_heap_used;
+    }
+
     (void)update_memory_pressure();
 }
 

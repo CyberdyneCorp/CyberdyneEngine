@@ -7,17 +7,17 @@
 #include <cstring>
 
 #if defined(__linux__) || defined(__APPLE__)
-#define CY_ASSETS_POSIX_SOCKETS 1
-#include <arpa/inet.h>
-#include <cerrno>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#    define CY_ASSETS_POSIX_SOCKETS 1
+#    include <arpa/inet.h>
+#    include <fcntl.h>
+#    include <netinet/in.h>
+#    include <netinet/tcp.h>
+#    include <poll.h>
+#    include <sys/socket.h>
+#    include <unistd.h>
+#    include <cerrno>
 #else
-#define CY_ASSETS_POSIX_SOCKETS 0
+#    define CY_ASSETS_POSIX_SOCKETS 0
 #endif
 
 namespace cy::assets {
@@ -339,8 +339,8 @@ Status SocketFileProvider::transport_failure(const char* message) noexcept {
     return fail(ErrorCode::Unavailable, message);
 }
 
-Status SocketFileProvider::exchange(u16 op, const VirtualPath& path, u64 argument_a,
-                                    u64 argument_b, u64& answer) noexcept {
+Status SocketFileProvider::exchange(u16 op, const VirtualPath& path, u64 argument_a, u64 argument_b,
+                                    u64& answer) noexcept {
     if (!is_connected()) {
         return fail(ErrorCode::Unavailable, "this provider is not connected to a host");
     }
@@ -372,7 +372,8 @@ Status SocketFileProvider::exchange(u16 op, const VirtualPath& path, u64 argumen
             "speaking the same protocol version");
     }
     if (reply.op != op) {
-        return transport_failure("the host answered a different request from the one that was sent");
+        return transport_failure(
+            "the host answered a different request from the one that was sent");
     }
     if (reply.status != code_of(ErrorCode::None)) {
         ++stats_.refused;
@@ -431,8 +432,8 @@ Status SocketFileProvider::list(const VirtualPath& directory, bool recursive,
     }
 
     u64 entries = 0;
-    if (Status asked = exchange(static_cast<u16>(RemoteOp::List), directory, recursive ? 1U : 0U, 0,
-                                entries);
+    if (Status asked =
+            exchange(static_cast<u16>(RemoteOp::List), directory, recursive ? 1U : 0U, 0, entries);
         !asked) {
         return asked;
     }
@@ -476,7 +477,8 @@ Status SocketFileProvider::list(const VirtualPath& directory, bool recursive,
                 }
                 const u16 skip_length = get_u16(skipped);
                 if (skip_length > kMaxPathLength) {
-                    return transport_failure("the host listed an entry whose path cannot be a path");
+                    return transport_failure(
+                        "the host listed an entry whose path cannot be a path");
                 }
                 char discard[kMaxPathLength + 1] = {};
                 if (Status got = receive_all(discard, skip_length); !got) {
@@ -630,8 +632,8 @@ bool FileServingHost::serve_one(int socket, u32& served) noexcept {
     payload.clear();
 
     // THE TRAVERSAL RULE, ENFORCED ON ARRIVAL. A path from a socket has not been through
-    // `VirtualPath::normalise`, whatever the client believes it sent, and this is the one place that
-    // can be true of.
+    // `VirtualPath::normalise`, whatever the client believes it sent, and this is the one place
+    // that can be true of.
     Expected<VirtualPath, Error> path =
         VirtualPath::normalise(std::string_view(text, request.path_length));
     if (!path) {
@@ -798,8 +800,8 @@ Expected<u32, Error> FileServingHost::serve(u32 timeout_ms) noexcept {
 
     // Walked backwards so that dropping a connection does not move an index this loop has yet to
     // reach. `clients_` may have grown since the poll — a connection accepted above has no events
-    // yet, and `watched` is indexed by the order at poll time, so only the first `count - 1` clients
-    // are examined here.
+    // yet, and `watched` is indexed by the order at poll time, so only the first `count - 1`
+    // clients are examined here.
     for (usize index = count - 1; index >= 1; --index) {
         const short events = watched[index].revents;
         if (events == 0) {

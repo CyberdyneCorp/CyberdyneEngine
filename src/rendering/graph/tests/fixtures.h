@@ -29,8 +29,8 @@ inline CompileOptions two_queue_options() noexcept {
     return options;
 }
 
-/// The same declarations with async compute off: one queue, one ownership domain. This is the null backend's
-/// and continuous integration's normal path, and it must fall out of the same code.
+/// The same declarations with async compute off: one queue, one ownership domain. This is the null
+/// backend's and continuous integration's normal path, and it must fall out of the same code.
 inline CompileOptions single_queue_options() noexcept {
     CompileOptions options;
     options.enable_async_compute = false;

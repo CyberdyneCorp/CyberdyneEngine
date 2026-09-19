@@ -525,8 +525,7 @@ CY_TEST_CASE("a package reload whose payload is not there leaves the old asset i
         CY_REQUIRE(manifest.set_build_id("test").has_value());
         CY_REQUIRE(writer.set_manifest(manifest).has_value());
         const ContentHash absent = content_hash("no package holds this", 21);
-        CY_REQUIRE(writer
-                       .add_external(id, VariantKey::any(), absent, 20000, AssetKind::Binary)
+        CY_REQUIRE(writer.add_external(id, VariantKey::any(), absent, 20000, AssetKind::Binary)
                        .has_value());
         CY_REQUIRE(writer.write(directory.file("patch.cypak").c_str()).has_value());
     }
