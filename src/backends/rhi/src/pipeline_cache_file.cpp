@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Reading and writing a pipeline-cache file — Metal gap 6's half that is not a signature.
 //
 // `save_pipeline_cache` and `load_pipeline_cache` take a PATH rather than a blob, because

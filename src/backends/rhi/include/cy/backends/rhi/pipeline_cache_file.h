@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The two file operations `save_pipeline_cache` and `load_pipeline_cache` are made of — Metal
 // gap 6. Written once, in the interface module, and called by every backend.

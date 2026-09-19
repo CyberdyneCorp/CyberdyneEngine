@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // THE EIGHT METAL GAPS, AS THE INTERFACE THAT CLOSED THEM. M11.d section 1.
 //
 // `src/backends/rhi-metal/` is a seed that has never been compiled: it exists to name every place

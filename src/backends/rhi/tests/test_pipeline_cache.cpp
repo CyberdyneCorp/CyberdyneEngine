@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The pipeline cache's path contract — Metal gap 6, and the finding beside it.
 //
 // AN INTEGRATION SUITE AND NOT A UNIT ONE, because it blocks on a filesystem: it writes a file,

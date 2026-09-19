@@ -89,7 +89,10 @@ measurement.
       one, so it is not the resource's current state and a backend deriving from it would transition
       from the wrong one; and `Access::Present` carries no access bits and no stage at all. What
       landed instead is the half that is true: `ImageLayout` became **`ImageUse`**, engine
-      vocabulary, and `VkImageLayout` now exists only in `vulkan_translate.cpp`
+      vocabulary, and inside `cy::rhi` `VkImageLayout` now exists only in
+      `vulkan_translate.{h,cpp}` — checked at M11.d resume, and the one live use outside it is
+      `src/backends/viewport/src/publisher.cpp`, a native Vulkan client (volk, dma-buf export)
+      that never goes through this interface, so the neutrality gap 3 is about is intact
 - [x] 1.4 **Gap 8 stays as it is**, and that is recorded rather than silently skipped: a multi-stage
       `PushConstantRange` is genuinely fine on Metal, the seed says so, and the next reader should not
       spend an afternoon re-deriving it. Recorded as **data** rather than prose:
@@ -105,7 +108,21 @@ measurement.
       all, 0 open with no workaround"** against eight open and two blocking at M7. Rows are never
       deleted when they close — the finding, the remedy that was argued for and what was actually
       done are one row a reviewer reads together — and a row cannot be marked closed without an
-      account of how, which the test checks
+      account of how, which the test checks.
+      **VERIFIED AT RESUME, BY MUTATION RATHER THAN BY READING.** The previous session ticked 1.1-1.6
+      and was killed before reporting, so every claim above was re-checked against a build in
+      `build/m11d-rhi`: 9 of 9 suites green (`unit.rhi`, `unit.rhi_metal_seed`,
+      `integration.rhi_pipeline_cache`, `unit.render_graph`, `integration.render_graph_scale`,
+      `smoke.vulkan_frame`, `unit.shader`, `integration.shader_pipeline`, `smoke.shader_slang`), with
+      `smoke.vulkan_frame` on this project's own RTX 5060 (51 of 51 assertions, driver 580.380.320)
+      and `unit.rhi_metal_seed` printing the gap line verbatim. **And three mutations proved the
+      checks can fail** — the one thing a passing suite cannot tell you: flipping gap 8's row from
+      `NoChangeNeeded` to `Closed` failed `unit.rhi_metal_seed` (1.4 is really test-protected);
+      changing `meet()` from `&` to `|` failed three assertions in `test_interface_gaps.cpp`
+      including the 0x03/0x1F NVIDIA case (1.1); and replacing the
+      `Capability::ParallelPassRecording` term at `executor.cpp:344` with `true` failed
+      `integration.render_graph_scale` on `secondary_command_buffers == 0` (1.2). All three mutations
+      were restored and md5-verified against the pre-mutation hashes
 - [x] 1.6 **Checked rather than assumed, and the dependency landed: this rung got both targets.**
       `design.md` §6 named this as owed by M11.c, and M11.c delivered it — so the sentence this task
       was written from (*"nothing in the tree emits either"*, `SLANG_ENABLE_DXIL OFF`) is now false,
@@ -242,7 +259,25 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       **DONE.** `tools/quality/` holds all four — `just quality-swift-format`, `quality-licence`,
       `quality-spelling`, `quality-docs` — each in `ci.yml`'s `quality` job, and
       `just quality-gates-selftest` breaks what each checks in a tree derived from the live one and
-      requires a red. **All 14 cases were watched failing on this host.**
+      requires a red. **All 15 cases were watched failing on this host** (re-run and re-watched
+      after the resumed session: 15 of 15).
+      **A SECOND CORRECTION, AND A REGRESSION THIS GATE CAUSED:** `ROOTS` named the whole of
+      `bindings/swift/Tests` while `EXCLUDED` named only `Sources/CyberdyneCore/Generated`, so
+      `--fix` reformatted `Tests/CyberdyneCoreTests/Generated/LayoutTests.swift` — first line
+      GENERATED FILE — DO NOT EDIT — and turned `integration.swift_overlay` and
+      `integration.swift_overlay_gen` RED. Both generated trees are excluded now, the file was
+      restored by regenerating it (it is byte-identical to ebdf8d5 again), both tests are green, and
+      the regression is held by a fifteenth selftest case, `swift-skips-generated`: a misformatted
+      file inside a generated tree must leave the gate GREEN. That case was watched going red with
+      the exclusion removed, and the gate file restored and md5-verified afterwards.
+      **STILL RED, AND NOT MINE TO FIX:** `just quality-licence` names 23 files added by this rung
+      that carry no SPDX line — `platform/linux-native/` (5), `platform/stub/` (4),
+      `samples/11-ship/` (4), ~~`src/backends/rhi/` (4)~~ (**done** — the section 1 agent added the
+      header to all four and re-ran the gate, which now names none of them),
+      `src/core/assets/remote*` (3),
+      `tests/integration/test_stub_frame.cpp`, `tools/ci/port_engine_layer_diff.py`,
+      `tools/docs/collect_ship.py`. They belong to peers writing them now; a header is one line and
+      the gate names every file. The close cannot go green over this.
       **A CORRECTION WORTH RECORDING:** the swift-format gate was first written as unrunnable here,
       because `command -v swift` finds nothing — and that was wrong. There is a **Swift 6.3.3**
       toolchain installed through `swiftly`, reachable only from a login shell, which

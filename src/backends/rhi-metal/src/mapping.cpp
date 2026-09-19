@@ -98,8 +98,10 @@ constexpr MetalGapRecord kGaps[] = {
      "derive the layout inside the Vulkan backend from the access masks `access.h` already "
      "carries, and drop `ImageLayout` from the barrier — the engine has the information without it",
      true, MetalGapStatus::Closed,
-     "M11.d task 1.3: `ImageLayout` became `ImageUse` and `VkImageLayout` now appears only in "
-     "vulkan_translate.cpp. The remedy above is NOT IMPLEMENTABLE and that is the finding: a "
+     "M11.d task 1.3: `ImageLayout` became `ImageUse`, and inside cy::rhi `VkImageLayout` now "
+     "appears only in vulkan_translate.{h,cpp} — the editor's viewport publisher is a native "
+     "Vulkan client that never goes through this interface. The remedy above is NOT IMPLEMENTABLE "
+     "and that is the finding: a "
      "barrier's `src_access` carries only the WRITE access, because a write-after-read needs an "
      "execution dependency and not a memory one, so it is not the resource's current state and a "
      "backend deriving from it would transition from the wrong one"},
