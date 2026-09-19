@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The stub DisplayServer: one window, fixed, that nobody can resize and that has no pointer.
 // M11.d task 4.4. See stub_platform.h for what the stub platform is for.

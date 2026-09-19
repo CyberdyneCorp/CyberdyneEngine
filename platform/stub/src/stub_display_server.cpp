@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The stub DisplayServer. See stub_display_server.h for what it refuses and why.
 
 #include <cy/platform/stub_display_server.h>

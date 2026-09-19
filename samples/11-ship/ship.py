@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """samples/11-ship — M11.d's closing artefact. Section 8.
 
 `just run-ship` is the recipe, `smoke.ship` is the CTest entry, and this file is what both of them

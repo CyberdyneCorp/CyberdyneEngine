@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The remote mount's transport. See cy/core/assets/remote.h for the protocol and for why the
 // socket half is POSIX only.
 

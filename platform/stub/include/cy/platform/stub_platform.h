@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The stub platform: the porting surface's own proof. M11.d task 4.4.
 //

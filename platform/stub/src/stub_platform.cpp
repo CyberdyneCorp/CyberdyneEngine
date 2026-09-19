@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The stub platform's process services. See stub_platform.h for what it is for.
 //
 // EVERY REFUSAL BELOW IS ErrorCode::Unsupported WITH A SENTENCE. `Unsupported` rather than

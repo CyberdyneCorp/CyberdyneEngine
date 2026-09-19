@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef CY_CORE_ASSETS_REMOTE_H
 #define CY_CORE_ASSETS_REMOTE_H
 // The transport behind the remote mount: a host machine serving files to a device. M11.d task 6.1.

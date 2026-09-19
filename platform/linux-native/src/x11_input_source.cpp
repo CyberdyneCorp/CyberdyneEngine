@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The X11 input event source. See x11_input_source.h for why it observes rather than pumps, and
 // for why it has no gamepads.
 

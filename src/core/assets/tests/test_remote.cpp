@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The remote mount's transport, both ends, over a real socket. M11.d task 6.1.
 //
 // `core-assets-and-io` — "Development file serving": "**WHEN** a device runs with a remote mount

@@ -37,18 +37,32 @@ cy_add_module(
 # cy::rhi-null is linked unconditionally and cy::rhi-vulkan only when the feature is on, which is
 # also what CY_RENDERER_VULKAN means to the sample's source: the one `#if` in main.cpp guards the
 # explicit registration call and nothing else.
+#
+# EVERY PLATFORM BACKEND THIS BUILD HAS, because M11.d task 4.3 asks whether the M3 golden image is
+# the same image when something other than SDL3 owns the process. `--platform` chooses at run time
+# and `golden_legs.py` runs two of them; `samples/00-empty/CMakeLists.txt` says the same thing about
+# the same four. The native backend is a conditional dependency and a compile definition rather than
+# an unconditional link, because it is built only where it can be.
+set(cy_sample_first_light_definitions "")
+set(cy_sample_first_light_platforms
+    cy::platform-headless cy::platform-desktop-sdl3 cy::platform-stub)
+if(TARGET cy_platform_linux_native)
+    list(APPEND cy_sample_first_light_platforms cy::platform-linux-native)
+    list(APPEND cy_sample_first_light_definitions CY_SAMPLE_LINUX_NATIVE=1)
+endif()
+
 cy_add_module(
     NAME cy_sample_first-light
     LAYER tools
     TYPE EXECUTABLE
     SOURCES main.cpp
+    PRIVATE_DEFINITIONS ${cy_sample_first_light_definitions}
     PRIVATE_DEPENDENCIES
         cy::sample-first-light
         cy::rhi-null
         cy::runtime
         cy::platform-host
-        cy::platform-headless
-        cy::platform-desktop-sdl3)
+        ${cy_sample_first_light_platforms})
 
 if(CY_RENDERER_VULKAN)
     target_link_libraries(cy_sample_first-light PRIVATE cy::rhi-vulkan)

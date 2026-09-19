@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Did adding a platform backend change an engine layer? M11.d task 4.2.
 
 `core-platform-abstraction` states the exit criterion as a property of a CHANGESET, not of a test:

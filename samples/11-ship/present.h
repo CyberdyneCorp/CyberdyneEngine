@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The window half: a display server, a device, a surface, a swapchain, and a frame that is
 // PRESENTED. M11.d task 8.2.

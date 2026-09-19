@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The native X11 DisplayServer. See x11_display_server.h for why X11 and not Wayland.
 //
 // ================================================================================================

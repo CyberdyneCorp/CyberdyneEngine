@@ -277,8 +277,18 @@ _ctest kind *args:
     # ask ctest to run fifty executables that were never built. So a port name selects the host build
     # here, and the port's own claim is the suite it carries: `integration.stub_platform` and
     # `integration.linux_native`, which this recipe runs like any other.
+    # And it SAYS SO. A flag that is accepted and quietly means something else is the same defect
+    # this parse exists to fix, one layer down: the developer who typed `--platform stub` and read a
+    # green host suite would have no way to tell it apart from a green stub suite.
     case "${platform[1]:-}" in
-        stub|native) platform=() ;;
+        stub)   suite="integration.stub_platform" ;;&
+        native) suite="integration.linux_native"   ;;&
+        stub|native)
+            echo "==> --platform ${platform[1]} names a PORT, not a target platform: building the host" >&2
+            echo "    and running this suite, which includes ${suite}. The port's own claim is" >&2
+            echo "    \`just build-engine --platform ${platform[1]}\`, which builds its closure alone." >&2
+            platform=()
+            ;;
     esac
 
     just build-engine --profile "${profile}" ${platform[@]+"${platform[@]}"}

@@ -11,6 +11,7 @@
 //   just run-sample first-light --no-shadows             the control: the sun casts nothing
 //   just run-sample first-light --no-aliasing            what the frame's targets cost unaliased
 //   just run-sample first-light --backend null           the frame with no device at all
+//   just run-sample first-light --platform native        the SAME frame, hosted by platform/linux-native
 //   just run-sample first-light --help
 //
 // ================================================================================================
@@ -44,8 +45,15 @@
 #include <cy/core/memory/system_allocator.h>
 #include <cy/platform/headless_display_server.h>
 #include <cy/platform/host_loop.h>
+#include <cy/platform/sdl3_display_server.h>
 #include <cy/platform/sdl3_platform.h>
+#include <cy/platform/stub_display_server.h>
+#include <cy/platform/stub_platform.h>
 #include <cy/runtime/runtime.h>
+#if CY_SAMPLE_LINUX_NATIVE
+#    include <cy/platform/linux_platform.h>
+#    include <cy/platform/x11_display_server.h>
+#endif
 
 #include <cy/core/determinism/clock.h>
 
@@ -78,7 +86,30 @@ using cy::usize;
 
 constexpr const char* kTag = "03-first-light";
 
+// WHICH IMPLEMENTATION OF `Platform` AND `DisplayServer` HOSTS THE M3 FRAME. M11.d task 4.3.
+//
+// The frame itself is rendered OFFSCREEN and always has been — there is no swapchain here, and
+// `samples/11-ship` is the artefact that presents. So none of these four can change one texel of
+// the picture, and THAT IS THE CLAIM: `golden_legs.py` runs this program on two of them, captures
+// the frame each time, and checks the two captures against each other and against the committed M3
+// reference `tests/render/references/first_light.png`. A platform backend that had leaked into the
+// frame would show up as a difference; the measurement is worth nothing unless the selector exists.
+//
+// `samples/00-empty` has had the same four since task 4.3 opened, and NOTHING BELOW main() KNOWS
+// WHICH: the runtime, the host loop and the renderer see `cy::Platform` and `cy::DisplayServer`.
+//
+// The default is HEADLESS rather than sdl3, which is the pair this sample has used since M3 and the
+// reason README.md's "Why there is no window" is still true. A default that opened a window would
+// change what `just run-sample first-light` and every suite that drives this binary do.
+enum class PlatformBackend {
+    Headless,  // SDL3 for process services, no window system at all — the default since M3
+    Sdl3,      // the desktop, over SDL3
+    Native,    // the desktop, natively: POSIX and Xlib, with no SDL beneath it
+    Stub,      // no desktop assumption at all: one unresizable window, one writable directory
+};
+
 struct Options {
+    PlatformBackend platform_backend = PlatformBackend::Headless;
     u64 frames = 60;
     u32 width = 192;
     u32 height = 108;
@@ -106,6 +137,7 @@ void print_usage() {
         "  --no-aliasing      place every transient at its own offset\n"
         "  --no-validation    do not ask the backend for its validation layers\n"
         "  --backend <name>   'vulkan' or 'null'; the default asks for the best available\n"
+        "  --platform <name>  headless (default), sdl3, native or stub; the frame is the same\n"
         "  --capture <path>   write the last frame as a binary PPM\n"
         "  --help             this text\n",
         stderr);
@@ -137,6 +169,22 @@ bool parse_options(int argument_count, char** arguments, Options& options) {
             options.origin = std::strtod(arguments[++i], nullptr);
         } else if (argument == "--backend" && has_value) {
             options.backend = arguments[++i];
+        } else if (argument == "--platform" && has_value) {
+            const std::string_view name{arguments[++i]};
+            if (name == "headless") {
+                options.platform_backend = PlatformBackend::Headless;
+            } else if (name == "sdl3") {
+                options.platform_backend = PlatformBackend::Sdl3;
+            } else if (name == "native") {
+                options.platform_backend = PlatformBackend::Native;
+            } else if (name == "stub") {
+                options.platform_backend = PlatformBackend::Stub;
+            } else {
+                std::fprintf(stderr, "%s: unknown platform '%.*s'\n\n", kTag,
+                             static_cast<int>(name.size()), name.data());
+                print_usage();
+                return false;
+            }
         } else if (argument == "--capture" && has_value) {
             options.capture_path = arguments[++i];
         } else {
@@ -194,6 +242,100 @@ bool write_ppm(const char* path, cy::Span<const u32> texels, u32 width, u32 heig
     return true;
 }
 
+// Every implementation this build has, constructed and none of them started. Holding all of them by
+// value costs nothing — they are empty until initialise() — and it keeps the selection below a
+// switch rather than a factory with an allocation in it. `samples/00-empty` holds the same four the
+// same way, and the duplication is deliberate: a shared factory would be a fifth thing that knows
+// which backend is which, in a layer that is not a host.
+struct Backends {
+    cy::Sdl3Platform sdl3_platform;
+    cy::StubPlatform stub_platform;
+    cy::Sdl3DisplayServer sdl3_display;
+    cy::HeadlessDisplayServer headless_display;
+    cy::StubDisplayServer stub_display;
+#if CY_SAMPLE_LINUX_NATIVE
+    cy::LinuxPlatform native_platform;
+    cy::X11DisplayServer native_display;
+#endif
+};
+
+/// Starts the pair `backend` names and hands back the two interfaces.
+cy::Status select_platform(Backends& backends, PlatformBackend backend, int argument_count,
+                           char** arguments, cy::Platform*& platform, cy::DisplayServer*& display) {
+    switch (backend) {
+        case PlatformBackend::Native: {
+#if CY_SAMPLE_LINUX_NATIVE
+            if (const cy::Status started =
+                    backends.native_platform.initialise(argument_count, arguments);
+                !started) {
+                return started;
+            }
+            platform = &backends.native_platform;
+            display = &backends.native_display;
+            return backends.native_display.initialise();
+#else
+            return cy::fail(cy::ErrorCode::Unsupported,
+                            "this build has no native platform backend: platform/linux-native/ is "
+                            "built on Linux hosts and nothing else yet. Use --platform headless");
+#endif
+        }
+        case PlatformBackend::Stub: {
+            platform = &backends.stub_platform;
+            display = &backends.stub_display;
+            return backends.stub_display.initialise();
+        }
+        case PlatformBackend::Sdl3: {
+            if (const cy::Status started =
+                    backends.sdl3_platform.initialise(argument_count, arguments);
+                !started) {
+                return started;
+            }
+            platform = &backends.sdl3_platform;
+            display = &backends.sdl3_display;
+            return backends.sdl3_display.initialise();
+        }
+        case PlatformBackend::Headless:
+        default: {
+            // The SDL3 Platform serves a headless run unchanged: process services, clocks and paths
+            // need no window system, so only the display side is replaced. This is the pair this
+            // sample has used since M3 and it is still the default.
+            if (const cy::Status started =
+                    backends.sdl3_platform.initialise(argument_count, arguments);
+                !started) {
+                return started;
+            }
+            platform = &backends.sdl3_platform;
+            display = &backends.headless_display;
+            return backends.headless_display.initialise();
+        }
+    }
+}
+
+/// The mirror of select_platform(), and deliberately written next to it: a shutdown path that
+/// forgot one of the four is a leak nobody sees until a second run in the same process.
+void shutdown_platform(Backends& backends, PlatformBackend backend) {
+    switch (backend) {
+        case PlatformBackend::Native:
+#if CY_SAMPLE_LINUX_NATIVE
+            backends.native_display.shutdown();
+            backends.native_platform.shutdown();
+#endif
+            return;
+        case PlatformBackend::Stub:
+            backends.stub_display.shutdown();
+            return;
+        case PlatformBackend::Sdl3:
+            backends.sdl3_display.shutdown();
+            backends.sdl3_platform.shutdown();
+            return;
+        case PlatformBackend::Headless:
+        default:
+            backends.headless_display.shutdown();
+            backends.sdl3_platform.shutdown();
+            return;
+    }
+}
+
 }  // namespace
 
 int main(int argument_count, char** arguments) {
@@ -206,20 +348,25 @@ int main(int argument_count, char** arguments) {
         return 0;
     }
 
-    cy::Sdl3Platform platform;
-    if (const cy::Status started = platform.initialise(argument_count, arguments); !started) {
+    // The pair `--platform` named. This sample renders OFFSCREEN whichever pair it is — see
+    // README.md, "Why there is no window" — so the selector is not about the picture: it is about
+    // who owns the process, the clock, the paths and the loop underneath it. `golden_legs.py`
+    // measures that the picture does not notice.
+    Backends backends;
+    cy::Platform* platform_ptr = nullptr;
+    cy::DisplayServer* display_ptr = nullptr;
+    if (const cy::Status started = select_platform(backends, options.platform_backend,
+                                                   argument_count, arguments, platform_ptr,
+                                                   display_ptr);
+        !started) {
         report("platform", started.error());
         return 1;
     }
-    // Headless: this sample renders offscreen. See README.md, "Why there is no window" — the
-    // display server's Vulkan surface seam exists and works, and what is missing is a way for a
-    // host to get the API instance to create a surface against.
-    cy::HeadlessDisplayServer display;
-    if (const cy::Status started = display.initialise(); !started) {
-        report("display server", started.error());
-        platform.shutdown();
-        return 1;
-    }
+    cy::Platform& platform = *platform_ptr;
+    cy::DisplayServer& display = *display_ptr;
+    std::fprintf(stdout, "%s: platform platform=%.*s display=%.*s\n", kTag,
+                 static_cast<int>(platform.name().size()), platform.name().data(),
+                 static_cast<int>(display.name().size()), display.name().data());
 
     // FIXED-STEP, so the report is a function of the content rather than of how fast this machine
     // is. Four ticks a frame and no wall-clock pacing: the accumulator has no residue, so the
@@ -236,8 +383,7 @@ int main(int argument_count, char** arguments) {
     cy::Runtime runtime;
     if (const cy::Status started = runtime.startup(runtime_config); !started) {
         report("runtime startup", started.error());
-        display.shutdown();
-        platform.shutdown();
+        shutdown_platform(backends, options.platform_backend);
         return 1;
     }
 
@@ -375,8 +521,7 @@ int main(int argument_count, char** arguments) {
 
     cy::rhi::destroy_device(allocator, device.value());
     runtime.shutdown();
-    display.shutdown();
-    platform.shutdown();
+    shutdown_platform(backends, options.platform_backend);
     std::fprintf(stdout, "%s: exit %d (clean)\n", kTag, exit_code);
     return exit_code;
 }

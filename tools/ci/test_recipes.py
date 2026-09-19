@@ -169,6 +169,103 @@ def a_recipe_that_parses_flags_binds_them(root: pathlib.Path) -> list[str]:
 
 
 
+RECIPE_HEADER = re.compile(r"^([a-z_][\w-]*)(?: [^\n]*)?:\s*$")
+# A shell name being written: `x=`, `x+=`, and the `x=` of a `case` arm's one-liner body.
+SHELL_WRITE = re.compile(r"(?:^|[;&|(]|\s)([A-Za-z_]\w*)\+?=")
+# A shell name being read. Both spellings count, because the second is how a flag that sets a
+# counter is usually tested: `${x}`, `"$x"`, `${#x[@]}` — and, with no sigil at all, `((x))`.
+SHELL_READ = re.compile(r"\$\{?[#!]?([A-Za-z_]\w*)")
+ARITHMETIC = re.compile(r"\(\((.*?)\)\)", re.S)
+SHELL_WORD = re.compile(r"[A-Za-z_]\w*")
+# A `case` arm whose pattern is a flag: `--apply)`, `--platform=*)`, `--no-build|--dry-run)`.
+FLAG_ARM = re.compile(r"^\s*(--[\w-]+(?:=\*)?(?:\|--[\w-]+(?:=\*)?)*)\)(.*)$")
+
+
+def _recipe_bodies(text: str):
+    """Yield (name, body) for every recipe in one .just file.
+
+    Recipe headers sit at column zero and bodies are indented, which is the only structure this
+    needs — the alternative, splitting on blank lines, separates a header from its own body and is
+    the mistake the `set -- {{args}}` case above documents having made.
+    """
+    lines = text.splitlines()
+    starts = [
+        (index, match.group(1))
+        for index, line in enumerate(lines)
+        if (match := RECIPE_HEADER.match(line))
+    ]
+    for index, (start, name) in enumerate(starts):
+        end = starts[index + 1][0] if index + 1 < len(starts) else len(lines)
+        yield name, lines[start + 1 : end]
+
+
+def _argument_loops(body: list[str]):
+    """Yield (loop variable, loop lines) for each loop that walks a recipe's own arguments."""
+    for index, line in enumerate(body):
+        opener = re.match(r"^(\s*)(for|while)\b(.*)$", line)
+        if not opener:
+            continue
+        indent, keyword, tail = opener.groups()
+        if not any(token in tail for token in ("${rest}", "$rest", '"$@"', "$#", "{{args}}")):
+            continue
+        variable = (
+            match.group(1) if (match := re.match(r"\s+([A-Za-z_]\w*)\s+in\b", tail)) else ""
+        )
+        for close in range(index + 1, len(body)):
+            if body[close].rstrip() == indent + "done":
+                yield variable, body[index : close + 1]
+                break
+
+
+def a_recipe_never_accepts_a_flag_it_then_IGNORES(root: pathlib.Path) -> list[str]:
+    """A flag that is accepted and ignored is worse than one that is rejected.
+
+    The case above catches a recipe that never binds `{{args}}` and so parses NOTHING. This one
+    catches the half-done version, which reads as correct and is harder to see: the loop DOES
+    recognise the flag and strip it out of the list, stores its value — and then nothing downstream
+    ever reads that variable. The flag is consumed and dropped. No error, no warning, exit 0.
+
+    Found closing M11.d, in `_ctest`. `--platform` was pulled out of the argument list and never
+    handed to `build-engine`, so `just test-render --platform <anything>` built the host and ran the
+    whole unfiltered suite while reporting the platform's name back to the developer who asked for
+    it. Measured before the fix: three different argument lists selected the SAME 20 tests. Every
+    caller who has ever written `just test-<kind> ... --platform ...` — in a terminal, in CI, in a
+    milestone gate — was reading an unfiltered run as a filtered one.
+
+    Two shapes are offences, and both mean "accepted, then dropped":
+      * a `case` arm for a flag whose body is empty, and
+      * a variable an argument loop WRITES that the recipe never READS.
+    Forwarding a flag on wholesale is not an offence and is not checked here: a recipe that passes
+    `${rest}` to a tool with an argument parser (`ship.py`, a benchmark runner) has handed the
+    rejection to something that will actually perform it.
+    """
+    failures = []
+    for just_file in sorted((root / "just").glob("*.just")):
+        for name, body in _recipe_bodies(just_file.read_text(encoding="utf-8")):
+            text = "\n".join(body)
+            read = set(SHELL_READ.findall(text))
+            for span in ARITHMETIC.findall(text):
+                read.update(SHELL_WORD.findall(span))
+
+            for variable, loop in _argument_loops(body):
+                for line in loop:
+                    arm = FLAG_ARM.match(line)
+                    if arm and not arm.group(2).replace(";;", "").replace(";&", "").strip():
+                        failures.append(
+                            f"{just_file.name}: `{name}` matches {arm.group(1)} and does nothing "
+                            f"with it; the flag is accepted and dropped"
+                        )
+                written = set(SHELL_WRITE.findall("\n".join(loop)))
+                for target in sorted(written - read - {variable, "IFS"}):
+                    failures.append(
+                        f"{just_file.name}: `{name}` stores a flag's value in ${target} inside its "
+                        f"argument loop and never reads it; the flag is accepted and dropped. "
+                        f"Honour it or refuse it by name — silently continuing is the one option "
+                        f"that is not allowed"
+                    )
+    return failures
+
+
 def a_recipe_that_disables_a_feature_disables_what_needs_it(root: pathlib.Path) -> list[str]:
     """Turning an option OFF must turn off every option that REQUIRES it, or configure refuses.
 
@@ -235,6 +332,9 @@ def main() -> int:
         ),
         "a sanitized build tree's path survives -Wl,": sanitized_tree_survives_wl,
         "a recipe that parses flags binds them to $@": a_recipe_that_parses_flags_binds_them,
+        "a recipe never accepts a flag it then ignores": (
+            a_recipe_never_accepts_a_flag_it_then_IGNORES
+        ),
         "a recipe that disables an option disables what requires it": (
             a_recipe_that_disables_a_feature_disables_what_needs_it
         ),

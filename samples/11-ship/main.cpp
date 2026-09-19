@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // `cy_sample_ship` — M11.d's closing artefact. Section 8.
 //
 // ================================================================================================

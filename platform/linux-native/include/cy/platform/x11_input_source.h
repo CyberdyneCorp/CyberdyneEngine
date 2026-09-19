@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #pragma once
 // The X11 input event source: the platform end of `input-and-actions`' boundary, natively. M11.d
 // task 4.1.

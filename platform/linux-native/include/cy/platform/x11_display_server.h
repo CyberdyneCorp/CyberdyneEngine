@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The native X11 DisplayServer — Xlib and XRandR, with no SDL3 beneath it. M11.d task 4.1.
 //
 // WHY X11 AND NOT WAYLAND, MEASURED RATHER THAN PREFERRED. design.md §4 chose Linux and left the

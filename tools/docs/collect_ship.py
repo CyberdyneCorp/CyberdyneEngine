@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Recompress M11.d's ship shots and report what it cost. `just run-ship --shot ...` writes them.
 
 WHY THE STILLS ARE RECOMPRESSED, and it is the same argument — and the same two lines of PIL —
