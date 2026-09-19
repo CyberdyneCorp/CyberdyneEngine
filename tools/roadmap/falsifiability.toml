@@ -54,10 +54,10 @@ detail = "red under mutation of 7 file(s)"
 [[proof]]
 ledger = "m1"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m10"
@@ -134,10 +134,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m10"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -407,9 +407,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): thirdp
 ledger = "m11a"
 criterion = "workflows"
 digest = "1077408579d6044a"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11a"
@@ -719,9 +719,9 @@ detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no bui
 ledger = "m11b"
 criterion = "workflows"
 digest = "1077408579d6044a"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11c"
@@ -942,10 +942,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/proofs (exit 1:
 [[proof]]
 ledger = "m11c"
 criterion = "sky-as-an-image"
-digest = "a9c365b139424dde"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/proofs (exit 1): override: CY_BUILD_DIR=build/proofs … an absent suite would otherwise be reported as a pass."
+digest = "cbaf9d06b8a9f7eb"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'state.sun.direction = horizon_direction(latitude, declination, hour_angle);' in src/rendering/sky/src/celestial.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: render.sky_times_of_day is red: the sky no longer matches its committed references), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
@@ -998,26 +998,26 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit
 [[proof]]
 ledger = "m11c"
 criterion = "vfx-in-the-shot"
-digest = "b6c7ffad6384808b"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/proofs (exit 1): override: CY_BUILD_DIR=build/proofs … the named case(s) are not in integration.vfx any more — renamed, deleted, or the filter is stale"
+digest = "e24b7c0c5b0c41b9"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'record.position[2] = presentation.position[2] + instance.position.z - camera_position.z;' in src/vfx/src/runtime.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 1: the named case(s) FAILED), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
 criterion = "virtual-geometry-image"
-digest = "da68f896b1146d77"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/proofs (exit 1): override: CY_BUILD_DIR=build/proofs … backend; either way the image is UNMEASURED."
+digest = "5b3205b3b0037273"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'out.clusters[index].child_count = out.groups[from].member_count;' in src/rendering/virtual_geometry/src/build.cpp (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exit 8: error: Recipe `test-render` failed on line 31 with exit code 8), and green again once restored"
 
 [[proof]]
 ledger = "m11c"
 criterion = "workflows"
 digest = "96fbe4499165bcb3"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11d"
@@ -1086,10 +1086,10 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): (no outp
 [[proof]]
 ledger = "m11d"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11e"
@@ -1150,10 +1150,10 @@ detail = "red unmutated, in the sandbox and in the repository (exit 1): (no outp
 [[proof]]
 ledger = "m11e"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m2"
@@ -1174,10 +1174,10 @@ detail = "red under mutation of 6 file(s)"
 [[proof]]
 ledger = "m2"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m3"
@@ -1222,10 +1222,10 @@ detail = "red under mutation of 9 file(s)"
 [[proof]]
 ledger = "m3"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m3"
@@ -1254,10 +1254,10 @@ detail = "red under mutation of 8 file(s)"
 [[proof]]
 ledger = "m4"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5"
@@ -1278,10 +1278,10 @@ detail = "red under mutation of 14 file(s)"
 [[proof]]
 ledger = "m5"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m5b"
@@ -1318,10 +1318,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m5b"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m6"
@@ -1350,10 +1350,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m6"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m7"
@@ -1414,10 +1414,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m7"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8a"
@@ -1446,10 +1446,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8a"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8b"
@@ -1486,10 +1486,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m8b"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m8c"
@@ -1582,10 +1582,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-final (exi
 [[proof]]
 ledger = "m8c"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m9"
@@ -1686,10 +1686,10 @@ detail = "red under mutation of 1 file(s)"
 [[proof]]
 ledger = "m9"
 criterion = "workflows"
-digest = "c5f5226698060a32"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> rules       negative fixtures, so a rule that stopped firing is caught … `just roadmap-gates` prints the declared set."
+digest = "199a1db67f1b3b9e"
+verdict = "proven"
+mutation = "delete-lines 'just quality-layers' in .github/workflows/ci.yml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[unproven]]
 ledger = "m0"
