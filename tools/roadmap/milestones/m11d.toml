@@ -412,9 +412,17 @@ set -eo pipefail
 # SDL3's, not the headless one and not the stub's; the window id is not `kInvalidWindow`; the trace
 # went to an absolute path the native `Platform` answered and has bytes in it; and the loop ran the
 # frames it was asked for and stopped because it reached them.
+#
+# (`empty` below rather than `00-empty`: `00-empty` is the DIRECTORY and `cy_sample_empty` is the
+# binary samples/00-empty/CMakeLists.txt declares. `just run-sample` strips a leading number and
+# resolves either spelling, but `tools/roadmap/falsify.py` refuses the directory spelling before it
+# will run a criterion at all — that is its `absent-sample` rule, written after M11.a recorded two
+# criteria as "red against a built tree" over an exit 2 from `run-sample: no sample '10-world'`. A
+# criterion that cannot run is indistinguishable by exit code from one that ran and failed, so this
+# one uses the name the build declares.)
 frames=120
 
-native=$(just run-sample 00-empty --platform native --frames "${frames}" 2>&1) || {
+native=$(just run-sample empty --platform native --frames "${frames}" 2>&1) || {
     printf '%s\n' "${native}"
     echo "the M0 sample did not reach a clean exit on the native backend"
     exit 1
@@ -479,7 +487,7 @@ printf '%s\n' "${native}" | grep -qE "^00-empty: ${frames} frames, [0-9]+ simula
 # them. So the SAME binary is asked for SDL3 and must report SDL3 — which is what makes 'the display
 # it reported is not desktop-sdl3' evidence about which implementation ran rather than about what
 # this file greps for. It also re-states task 4.5: SDL3 is not deleted, it is no longer alone.
-control=$(just run-sample 00-empty --platform sdl3 --frames 4 2>&1) || {
+control=$(just run-sample empty --platform sdl3 --frames 4 2>&1) || {
     printf '%s\n' "${control}"
     echo "the M0 sample no longer runs on SDL3, which is the control this criterion reads the native"
     echo "  run against — and a regression in its own right: the second implementation is a proof,"
