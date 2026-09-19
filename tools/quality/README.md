@@ -7,12 +7,12 @@ phrase**. All four are here.
 
 | Gate | Recipe | What it reads | State on the day it landed |
 |---|---|---|---|
-| `swift-format` | `just quality-swift-format` | 34 Swift files in `bindings/swift/` and `samples/04-character/game/` | **all 34 were unformatted**; reformatted in this change and green since |
+| `swift-format` | `just quality-swift-format` | 33 Swift files in `bindings/swift/` and `samples/04-character/game/`, the two generated trees excluded | **all 33 were unformatted**; reformatted in this change and green since |
 | Licence headers | `just quality-licence` | 2 584 source files under ten roots | **2 of 2 584 carry an SPDX line.** A 2 582-file declared backlog |
 | Spelling | `just quality-spelling` | comments and documentation over 17 roots | **clean**, with 25 declared words and 8 excluded lines |
 | Undocumented symbols | `just quality-docs` | 2 472 public symbols: C++ headers, the C ABI, the Swift overlay | **1 932 documented (78%)**; a 540-symbol declared backlog |
 
-`just quality-gates-selftest` proves all four: **fourteen cases, fourteen reds watched**, on the
+`just quality-gates-selftest` proves all four: **fifteen cases, fifteen reds watched**, on the
 machine M11.d was worked on.
 
 ## Why two of them carry a backlog, and why that is not an allowlist
@@ -99,8 +99,17 @@ installed through `swiftly`, whose environment line goes into `~/.profile` and s
 why in its own header; this gate now does the same, through the same environment file, so the
 compiler that builds the Swift bindings and the formatter that checks them are one installation.
 
-It found **all 34 Swift files unformatted**, which were reformatted in this change, and the
+It found **all 33 Swift files unformatted**, which were reformatted in this change, and the
 fourteenth selftest case now runs here like the other thirteen.
+
+It also, at first, reformatted a file it had no business reading. `ROOTS` named the whole of
+`bindings/swift/Tests` while `EXCLUDED` named only `Sources/CyberdyneCore/Generated`, so `--fix`
+rewrote `Tests/CyberdyneCoreTests/Generated/LayoutTests.swift` — a file whose first line reads
+GENERATED FILE — DO NOT EDIT — and turned `integration.swift_overlay` and
+`integration.swift_overlay_gen` red, because the committed overlay was no longer what the generator
+produces. Both generated trees are excluded now, the file was restored by regenerating it, and
+`swift-skips-generated` is the fifteenth selftest case: a misformatted file inside a generated tree
+must leave the gate GREEN. Formatting there is the generator's decision, never this gate's.
 
 The lesson is the mirror of this project's usual one. Nine checks here have shipped unable to go
 red; this one nearly shipped unable to go *green*, and **a check that reports "not available" is as

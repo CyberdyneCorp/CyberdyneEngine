@@ -176,6 +176,20 @@ CASES: tuple[Case, ...] = (
          "without .swift-format the tool would enforce whatever its default is on the machine it "
          "ran on, which is not a gate — this case needs no toolchain and runs everywhere",
          says=("is missing",), remove=(".swift-format",)),
+
+    # --- 4. The gate must not reach into generated trees -------------------------------------------
+    #
+    # Regression. `EXCLUDED` named only `Sources/CyberdyneCore/Generated`, while `ROOTS` named the
+    # whole of `bindings/swift/Tests` — so the gate's --fix reformatted
+    # `Tests/CyberdyneCoreTests/Generated/LayoutTests.swift`, a file whose first line reads GENERATED
+    # FILE — DO NOT EDIT, and turned `integration.swift_overlay` and `integration.swift_overlay_gen`
+    # red. Formatting inside a generated tree is the generator's decision, never this gate's.
+    Case("swift-skips-generated", "swift",
+         "a deliberately misformatted file inside a generated tree must leave the gate GREEN — a "
+         "reformat there is erased by the next generator run and breaks the currency check",
+         expect=0, says=("match .swift-format",),
+         edit=("bindings/swift/Tests/CyberdyneCoreTests/Generated/LayoutTests.swift", "",
+               "public   enum GeneratedProbe {   }\n")),
 )
 
 COMMANDS = {
