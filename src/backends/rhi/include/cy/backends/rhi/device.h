@@ -200,10 +200,14 @@ public:
     [[nodiscard]] virtual DescriptorModel descriptor_model() const noexcept = 0;
     [[nodiscard]] virtual u32 frames_in_flight() const noexcept = 0;
 
-    /// The backend's queue-family index for a queue kind, which is what an ownership transfer
-    /// names. Two kinds may share a family — and on a device with no dedicated async compute they
-    /// do, which is exactly what makes the transfer disappear rather than needing a special case.
-    [[nodiscard]] virtual u32 queue_family(QueueKind queue) const noexcept = 0;
+    /// GONE AT M11.d, AND WHERE IT WENT — Metal gap 4. This used to be
+    /// `queue_family(QueueKind) -> u32`, a Vulkan family index returned through an engine-owned
+    /// interface, and the render graph read it to decide when a resource changed hands. Metal has
+    /// `MTLCommandQueue` objects with no family index and no ownership transfer at all; D3D12 has
+    /// neither either. What replaced it is two answers on `DeviceCapabilities` —
+    /// `needs_queue_ownership_transfer()` and `queue_ownership_domain(QueueKind)` — so the family
+    /// index never leaves the Vulkan backend and a backend that has no such concept answers false
+    /// once rather than inventing an index per queue.
     [[nodiscard]] virtual bool has_queue(QueueKind queue) const noexcept = 0;
 
     virtual void set_validation_callback(ValidationCallback callback, void* user) noexcept = 0;
@@ -365,10 +369,26 @@ public:
         const ComputePipelineDescription& desc) = 0;
     virtual void destroy_compute_pipeline(ComputePipelineHandle handle) noexcept = 0;
 
-    /// The serialised pipeline cache, to be written to disk and handed back through
-    /// `load_pipeline_cache` next run. Empty when the backend has none.
-    virtual Expected<u64, Error> save_pipeline_cache(Span<u8> out) = 0;
-    virtual Status load_pipeline_cache(Span<const u8> data) = 0;
+    /// Persist this device's pipeline cache, and load it back next run.
+    ///
+    /// A PATH AND NOT A BLOB — Metal gap 6. Vulkan's cache is bytes (`vkGetPipelineCacheData`) and
+    /// Metal's `MTLBinaryArchive` is SERIALISED TO A URL, with no way to hand it over as bytes
+    /// without writing a file and reading it back. A blob in the interface would make a Metal
+    /// backend write the file, read it, return it, and the engine write it again. A path makes the
+    /// backend's own serialisation the thing that happens, once, and says nothing about its form.
+    ///
+    /// `load_pipeline_cache` on a path that does not exist is a COLD START and returns ok(): a
+    /// first run has no cache and that is not an error. A path that exists and is unusable fails
+    /// naming the path — a driver update invalidates a Vulkan blob, and the driver itself is what
+    /// rejects it, so the engine never has to hash a driver version into a key of its own.
+    ///
+    /// AND NOTHING IN THIS TREE CALLS EITHER OF THEM. `rhi-and-render-graph` requires that "the
+    /// cache is persisted across runs, so a warm start compiles nothing"; M11.d's spike measured
+    /// zero callers of these two in `src/` and in `tests/`, so that requirement is unimplemented
+    /// ABOVE the RHI rather than in it. Changing the signature does not implement it, and the
+    /// absence is recorded here rather than left to be re-found.
+    virtual Status save_pipeline_cache(const char* path) = 0;
+    virtual Status load_pipeline_cache(const char* path) = 0;
 
     // --- Frames ---------------------------------------------------------------------------------
 

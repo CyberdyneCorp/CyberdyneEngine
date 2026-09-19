@@ -58,14 +58,22 @@ def milestone_label(identifier: str) -> str:
     rungs were enough for M8 and the fourth reader of a milestone identifier was written the same
     way as the three that dropped M8's columns. It is a letter range now, and the rule is the one
     the ladder already uses: a rung identifier is a number with an optional single-letter suffix.
+
+    AND M11.d.5 ADDED THE OTHER HALF OF THE GRAMMAR, which this reader would have rendered `M11D5`:
+    an insertion INTO a split carries a trailing `5` after the letter, the way `m5b` carries M5.5's.
+    `m5b` stays a special case because its identifier does not spell its own label; `m11d5` does, so
+    it is handled by the rule rather than by a second special case.
     """
     if identifier == "m5b":
         return "M5.5"
     text = identifier.upper()
+    inserted = ""
+    if text.endswith("5") and len(text) > 2 and text[-2].isalpha() and text[-2] != "M":
+        inserted, text = ".5", text[:-1]
     suffix = text[-1:]
     if suffix.isalpha() and text[:-1].rstrip("0123456789") == "M" and text[:-1] != "M":
-        return f"{text[:-1]}.{suffix.lower()}"
-    return text
+        return f"{text[:-1]}.{suffix.lower()}{inserted}"
+    return f"{text}{inserted}"
 
 
 def declared_gaps() -> list[dict[str, str]]:

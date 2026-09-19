@@ -171,8 +171,24 @@ enum class MetalGap : u8 {
 
 inline constexpr u32 kMetalGapCount = static_cast<u32>(MetalGap::Count);
 
-/// One gap: what the interface says, what Metal does instead, and what changing it costs now
-/// against what it costs at M11.
+/// WHERE A GAP STANDS. M11.d task 1.5: `metal_gaps()` shrinks AS DATA, because a gap closed in
+/// prose and not in this table is a gap that will be re-found at the first Metal compile.
+///
+/// The rows are NEVER DELETED when they close, and that is the point of having a status rather
+/// than a shorter table: the finding, the remedy that was argued for, and what was actually done
+/// are one row a reviewer reads together. What shrinks is `metal_open_gap_count()`.
+enum class MetalGapStatus : u8 {
+    /// Still true of `cy::rhi` as it stands.
+    Open = 0,
+    /// The interface changed. `closed_by` says what it changed to.
+    Closed,
+    /// Measured and found to need no change at all. Recorded rather than silently skipped, so the
+    /// next reader does not spend an afternoon re-deriving that it is fine.
+    NoChangeNeeded,
+};
+
+/// One gap: what the interface says, what Metal does instead, what changing it costs now against
+/// what it costs at M11, and where it stands after M11.d settled the interface.
 struct MetalGapRecord {
     MetalGap gap = MetalGap::ShaderInterchangeIsSpirv;
     /// The `cy::rhi` declaration the gap is about, spelled the way it appears in the header.
@@ -185,13 +201,23 @@ struct MetalGapRecord {
     /// True when a Metal backend can proceed by substituting something, false when the entry point
     /// simply cannot be implemented as declared. Four of the eight are the second kind.
     bool workaroundable = true;
+    /// Where the gap stands. Every row was `Open` when the seed was written at M7.
+    MetalGapStatus status = MetalGapStatus::Open;
+    /// What closed it, in the interface's own spelling, or why it needed nothing. Empty only while
+    /// the gap is still open — a closed row with no account of how is a claim nobody can check.
+    const char* closed_by = "";
 };
 
 [[nodiscard]] const MetalGapRecord& metal_gap(MetalGap gap) noexcept;
 [[nodiscard]] Span<const MetalGapRecord> metal_gaps() noexcept;
 
-/// How many of the gaps have no workaround. The number M11 pays for if nothing changes before then,
-/// and the number this seed exists to make visible at M7.
+/// HOW MANY ARE STILL OPEN. The number that shrinks, and the only honest measure of what M11.d's
+/// interface work did: every row stays in the table, and this counts the ones a Metal backend would
+/// still hit. Eight at M7; what it is now is what `unit.rhi_metal_seed` prints.
+[[nodiscard]] u32 metal_open_gap_count() noexcept;
+
+/// How many of the gaps have no workaround AND are still open. The number M11 pays for if nothing
+/// changes before then, and the number this seed exists to make visible at M7.
 [[nodiscard]] u32 metal_blocking_gap_count() noexcept;
 
 }  // namespace cy::rhi::metal

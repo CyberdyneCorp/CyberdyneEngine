@@ -69,15 +69,15 @@ const char* stage_summary(rhi::Stage stage) noexcept {
 bool dump_batch(Array<char>& out, const char* indent, const rhi::BarrierBatch& batch,
                 const RenderGraph& graph) noexcept {
     for (const rhi::ImageBarrier& barrier : batch.images) {
-        const bool transfer = barrier.src_queue_family != barrier.dst_queue_family;
+        const bool transfer = barrier.ownership_transfer;
         if (!append(out, "%simage  '%s' %s -> %s  mips[%u,%u) layers[%u,%u)  src %s  dst %s%s\n",
                     indent, graph.resource(barrier.resource).name,
-                    rhi::image_layout_name(barrier.old_layout),
-                    rhi::image_layout_name(barrier.new_layout), barrier.range.base_mip,
+                    rhi::image_use_name(barrier.old_use),
+                    rhi::image_use_name(barrier.new_use), barrier.range.base_mip,
                     barrier.range.base_mip + barrier.range.mip_count, barrier.range.base_layer,
                     barrier.range.base_layer + barrier.range.layer_count,
                     stage_summary(barrier.src_stage), stage_summary(barrier.dst_stage),
-                    transfer ? "  [queue-family ownership transfer]" : "")) {
+                    transfer ? "  [queue ownership transfer]" : "")) {
             return false;
         }
     }
@@ -85,9 +85,7 @@ bool dump_batch(Array<char>& out, const char* indent, const rhi::BarrierBatch& b
         if (!append(out, "%sbuffer '%s'  src %s  dst %s%s\n", indent,
                     graph.resource(barrier.resource).name, stage_summary(barrier.src_stage),
                     stage_summary(barrier.dst_stage),
-                    barrier.src_queue_family != barrier.dst_queue_family
-                        ? "  [queue-family ownership transfer]"
-                        : "")) {
+                    barrier.ownership_transfer ? "  [queue ownership transfer]" : "")) {
             return false;
         }
     }
@@ -265,7 +263,7 @@ Expected<PlanAudit, Error> validate_plan(const RenderGraph& graph,
     // barrier. It is silently wrong on hardware that compresses, so it is checked here instead.
     for (const Submit& submit : plan.submits) {
         for (const rhi::ImageBarrier& release : submit.release.images) {
-            if (release.src_queue_family == release.dst_queue_family) {
+            if (!release.ownership_transfer) {
                 continue;
             }
             ++audit.ownership_releases;
@@ -274,10 +272,11 @@ Expected<PlanAudit, Error> validate_plan(const RenderGraph& graph,
                 for (const ScheduledPass& scheduled : consumer.passes) {
                     for (const rhi::ImageBarrier& acquire : scheduled.pre.images) {
                         if (acquire.resource != release.resource ||
-                            acquire.src_queue_family != release.src_queue_family ||
-                            acquire.dst_queue_family != release.dst_queue_family ||
-                            acquire.old_layout != release.old_layout ||
-                            acquire.new_layout != release.new_layout ||
+                            !acquire.ownership_transfer ||
+                            acquire.src_queue != release.src_queue ||
+                            acquire.dst_queue != release.dst_queue ||
+                            acquire.old_use != release.old_use ||
+                            acquire.new_use != release.new_use ||
                             !(acquire.range == release.range)) {
                             continue;
                         }
@@ -287,7 +286,7 @@ Expected<PlanAudit, Error> validate_plan(const RenderGraph& graph,
             }
             if (!matched) {
                 return fail(ErrorCode::Internal,
-                            "a queue-family ownership release has no matching acquire. Both halves "
+                            "a queue ownership release has no matching acquire. Both halves "
                             "are derived from one hazard, so this means the derivation drifted");
             }
         }
@@ -296,10 +295,10 @@ Expected<PlanAudit, Error> validate_plan(const RenderGraph& graph,
             audit.buffer_barriers += static_cast<u32>(scheduled.pre.buffers.size());
             audit.memory_barriers += static_cast<u32>(scheduled.pre.memory.size());
             for (const rhi::ImageBarrier& barrier : scheduled.pre.images) {
-                if (barrier.old_layout != barrier.new_layout) {
+                if (barrier.old_use != barrier.new_use) {
                     ++audit.layout_transitions;
                 }
-                if (barrier.src_queue_family != barrier.dst_queue_family) {
+                if (barrier.ownership_transfer) {
                     ++audit.ownership_acquires;
                 }
             }

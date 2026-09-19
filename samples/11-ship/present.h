@@ -85,11 +85,18 @@ struct PresentOptions {
     u32 frames = 120;
     bool capture = false;   // read the presented image back, for --shot
     bool validation = true;
+    /// The colour the device line is written in, taken from the card's own palette by the caller.
+    Rgba device_line_colour{140, 150, 170, 255};
 };
 
 /// Open a window through `options.platform`, put `image` on it `options.frames` times, and report
 /// what happened. Never fails the process: an absence is a report, not an error.
-[[nodiscard]] PresentReport present_card(Platform& platform, const Image& image,
+///
+/// `image` is taken by reference and WRITTEN TO: once the device is known, its name and its class
+/// are drawn onto the card, so the frame on the screen says which device drew it rather than
+/// leaving that to a log nobody keeps. Task 8.3 — "which device answered" — on the artefact's own
+/// face rather than beside it.
+[[nodiscard]] PresentReport present_card(Platform& platform, Image& image,
                                          const PresentOptions& options) noexcept;
 
 /// The display servers this binary was BUILT with, in preference order. `Native` appears only when

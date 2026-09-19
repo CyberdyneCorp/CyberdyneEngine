@@ -8,7 +8,7 @@
 // image layout or a barrier, because there is nowhere in the pass-facing API for one to appear.
 //
 // `Access` is a CLOSED ENUM OF INTENTS, and closed is the load-bearing word. If a pass could
-// assemble its own {stage, access, layout} triple, the graph would be deriving barriers from
+// assemble its own {stage, access, use} triple, the graph would be deriving barriers from
 // whatever the pass author believed rather than from what the pass does, and the thirtieth pass
 // would be back to hand-written synchronisation with extra steps. Adding an intent is an edit to
 // this file and to the table beside it, which is a review of one table rather than of a renderer.
@@ -76,13 +76,20 @@ inline constexpr u32 kAccessCount = static_cast<u32>(Access::Count);
 
 /// One row of the table: what an intent means to a synchronisation primitive.
 ///
-/// `layout` is ImageLayout::Undefined for the buffer-only intents, which is not a layout a barrier
-/// would ever transition *to* — the graph tests `is_image` before it reads this field, and an
-/// image declared with a buffer-only intent is a programmer error the declaration catches.
+/// `use` is ImageUse::Undefined for the buffer-only intents, which is not a state a barrier would
+/// ever move an image *to* — the graph tests `is_image` before it reads this field, and an image
+/// declared with a buffer-only intent is a programmer error the declaration catches.
+///
+/// THE COLUMN IS HAND-WRITTEN AND NOT DERIVED FROM `access`, and M11.d measured why rather than
+/// assuming it: `Access::Present` carries no access bits and no stage at all — the transition is
+/// ordered against the presentation engine by the submit's semaphore — so a derivation from the
+/// mask would answer `Undefined` for the one intent whose whole content is the state it leaves the
+/// image in. One table with three columns a reviewer reads together is the right shape; a function
+/// over the mask with an exception in it is not.
 struct AccessInfo {
     Stage stage = Stage::None;
     AccessFlags access = AccessFlags::None;
-    ImageLayout layout = ImageLayout::Undefined;
+    ImageUse use = ImageUse::Undefined;
     bool is_write = false;
     /// False for the intents that make no sense against an image (HostRead), and for those that
     /// make no sense against a buffer (the attachment intents). Checked when a use is declared, so

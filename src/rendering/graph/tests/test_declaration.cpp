@@ -20,7 +20,7 @@ CY_TEST_CASE("a pass declares reads and writes, and the graph compiles them") {
     const ResourceId image = graph.create_texture(storage_image("scratch"));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
 
     graph.add_pass("fill", cy::rhi::QueueKind::Graphics).write(image, Access::ComputeStorageWrite);
     graph.add_pass("shade", cy::rhi::QueueKind::Graphics)

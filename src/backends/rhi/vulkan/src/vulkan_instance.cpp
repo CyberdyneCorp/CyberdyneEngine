@@ -589,6 +589,16 @@ void VulkanDevice::fill_capabilities() noexcept {
     // into an instance later, which is exactly what the graph's per-pass parallel recording needs.
     // Metal gap 5: a backend whose equivalent is `MTLParallelRenderCommandEncoder` answers false.
     capabilities_.set(Capability::ParallelPassRecording, true);
+    // METAL GAP 4. Vulkan is the backend that HAS queue families, so it is the one that says a
+    // transfer is needed, and it publishes each queue's family as the opaque ownership domain the
+    // graph compares. Two kinds that land on the same family answer the same domain, which is what
+    // makes the transfer disappear on a device with no dedicated async compute — the same fold
+    // that used to fall out of comparing the indices directly, now without the index leaving here.
+    capabilities_.set_needs_queue_ownership_transfer(true);
+    for (u32 kind = 0; kind < kQueueKindCount; ++kind) {
+        capabilities_.set_queue_ownership_domain(static_cast<QueueKind>(kind),
+                                                 static_cast<u8>(queue_families_[kind]));
+    }
     capabilities_.set(Capability::AsyncCompute,
                       queue_present_[static_cast<u32>(QueueKind::AsyncCompute)]);
     capabilities_.set(Capability::DedicatedTransferQueue,

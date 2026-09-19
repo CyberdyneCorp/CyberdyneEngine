@@ -65,15 +65,10 @@ static_assert(sizeof(kFormatTable) / sizeof(kFormatTable[0]) == kFormatCount,
 
 constexpr const char* kQueueKindNames[kQueueKindCount] = {"graphics", "async-compute", "transfer"};
 
-constexpr const char* kLayoutNames[] = {"Undefined",
-                                        "General",
-                                        "ColorAttachment",
-                                        "DepthStencilAttachment",
-                                        "DepthStencilReadOnly",
-                                        "ShaderReadOnly",
-                                        "TransferSource",
-                                        "TransferDestination",
-                                        "Present"};
+constexpr const char* kImageUseNames[static_cast<u32>(ImageUse::Count)] = {
+    "Undefined",   "Storage",        "ColorAttachment", "DepthStencilAttachment",
+    "DepthStencilReadOnly", "SampledRead", "TransferSource",  "TransferDestination",
+    "Presentable"};
 
 constexpr const char* kCapabilityNames[kCapabilityCount] = {
     "ComputeShaders",
@@ -135,10 +130,10 @@ const char* queue_kind_name(QueueKind queue) noexcept {
     return index < kQueueKindCount ? kQueueKindNames[index] : "<invalid>";
 }
 
-const char* image_layout_name(ImageLayout layout) noexcept {
-    const auto index = static_cast<u32>(layout);
-    constexpr u32 count = sizeof(kLayoutNames) / sizeof(kLayoutNames[0]);
-    return index < count ? kLayoutNames[index] : "<invalid>";
+const char* image_use_name(ImageUse use) noexcept {
+    const auto index = static_cast<u32>(use);
+    constexpr u32 count = static_cast<u32>(ImageUse::Count);
+    return index < count ? kImageUseNames[index] : "<invalid>";
 }
 
 const char* shader_format_name(ShaderFormat format) noexcept {
@@ -184,6 +179,39 @@ bool format_is_depth_stencil(Format format) noexcept {
 const char* capability_name(Capability capability) noexcept {
     const auto index = static_cast<u32>(capability);
     return index < kCapabilityCount ? kCapabilityNames[index] : "<invalid>";
+}
+
+Format select_supported_format(const DeviceCapabilities& caps, Span<const Format> preferences,
+                               FormatFeature required) noexcept {
+    for (const Format candidate : preferences) {
+        if (candidate == Format::Undefined) {
+            continue;
+        }
+        if (has_feature(caps.format_features(candidate), required)) {
+            return candidate;
+        }
+    }
+    return Format::Undefined;
+}
+
+Format select_depth_stencil_format(const DeviceCapabilities& caps, Format preferred) noexcept {
+    // The preference order is the engine's, written out rather than derived, so that reading it
+    // answers "what will this become on a device that refuses it" without running anything.
+    static constexpr Format kWithStencil[] = {Format::D32SfloatS8Uint, Format::D24UnormS8Uint};
+    static constexpr Format kDepthOnly[] = {Format::D32Sfloat, Format::D16Unorm};
+
+    const FormatInfo& wanted = format_info(preferred);
+    if (!wanted.has_depth) {
+        return Format::Undefined;
+    }
+    if (has_feature(caps.format_features(preferred), FormatFeature::DepthStencilAttachment)) {
+        return preferred;
+    }
+    // STENCIL IS NEVER DROPPED. A caller that asked for a stencil aspect and got a depth-only
+    // format back would lose every stencil test silently, which is worse than being told no.
+    const Span<const Format> fallbacks =
+        wanted.has_stencil ? Span<const Format>(kWithStencil) : Span<const Format>(kDepthOnly);
+    return select_supported_format(caps, fallbacks, FormatFeature::DepthStencilAttachment);
 }
 
 bool device_reports_ray_tracing(const RayTracingObservation& observed) noexcept {

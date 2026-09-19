@@ -127,6 +127,24 @@ add_subdirectory(09b-animated-character)
 # only from its own suite, and this is the first target that names all seven.
 add_subdirectory(10-world)
 
+# M11.d's artefact is a TWELFTH shape, and it is the first PACKAGED PROJECT in this tree.
+# samples/11-ship/cy_sample_ship does not read its content off a path: `cy_build` imports, cooks and
+# packages the card under project/, installs it, and the program opens that INSTALLATION, verifies
+# every chunk against the manifest in force, reads its own provenance back out of it, and reads the
+# card by logical name — then opens a window and PRESENTS it on a swapchain. `just run-ship` is the
+# recipe, and it is one recipe for all five acts, which is the whole of task 8.1.
+#
+# It is also the first thing in this repository that ever presented a frame to a window. Eleven
+# milestones of rendering drew into an offscreen image and read it back; `Device::create_swapchain`
+# and `GraphExecutor`'s `wait_acquire`/`signal_present` have existed since M3 with no caller at all.
+# A packaging rung's artefact draws for that reason: presenting is the one thing a platform backend
+# does that a headless test cannot fake.
+#
+# IT IS NOT A GAME and must not be read as one. `m11b:the-game-exists` is red, `ls -d samples/*game*`
+# matches nothing, and a packaging proof does not close it — samples/11-ship/README.md says so on its
+# first screen and the card says so on the screen it draws.
+add_subdirectory(11-ship)
+
 # BEAUTY. samples/12-beauty/cy_sample_beauty photographs a committed scene through the engine's own
 # assembled frame, with three materials authored on the editor's node-graph canvas, compiled by the
 # material compiler at capture time, and bound as BC7 and BC5 blocks at the set and binding

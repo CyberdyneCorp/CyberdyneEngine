@@ -214,16 +214,27 @@ gathers, not transitive edges, are what make partial regeneration expensive.
 
 `openspec/changes/implement-m10-worlds/design.md` §1 is the measurement in full, with the figure.
 
-### 12 — M11's five rungs, and the five spikes they each run first
+### 12 — M11's rungs, and the spikes they each run first
 
-**Milestone**: M11.a to M11.e. **Owner**: `delivery-roadmap`, and the row each rung names.
+**Milestone**: M11.a to M11.e, and M11.d.5. **Owner**: `delivery-roadmap`, and the row each rung names.
 
 Appended after the register was written, and kept in numeric order rather than renumbering the
 eleven above it. `docs/ROADMAP.md` names a spike for every milestone and M11 had none, because M11
 had no scope: it was *"everything remaining"* until `implement-m11-reach` task 0.1 split it into
 five rungs. **Each rung's spike runs at the head of its rung rather than inside it**, and a spike's
 only deliverable is a decision, consumed in that rung's `design.md` where the rows depending on it
-can read it. None of the five has run.
+can read it.
+
+**M11.d's has run, and it produced a sixth rung.** Its second question — can a hosted runner present
+a graphics device at all — was answered by two throwaway workflow runs that created a device on each
+leg, drew, read the pixel back and presented. Every allocated leg has a device and **not one of them
+is a GPU**: the macOS device reports no Apple GPU family at all, so tile memory and memoryless
+attachments cannot be exercised anywhere, and every hosted Windows image is `Microsoft Basic Render
+Driver` with two adapters of which the first does not set the software flag. Against that, and the
+plainer fact that this host is Linux with no Apple toolchain, Metal and D3D12 moved out of M11.d into
+**M11.d.5 · Backends** under `delivery-roadmap`'s *"A spike may resize a milestone as well as redirect
+it"*. M11.d.5 runs **no spike of its own**: it inherits this answer, which is what a spike at the head
+of a rung is for.
 
 | Rung | The spike | What it decides, and what a bad answer costs |
 |---|---|---|
@@ -231,10 +242,11 @@ can read it. None of the five has run.
 | **M11.b** | The **play-mode seam**: can the hosted runtime carry `InEditor`, `SeparateProcess` and `RemoteDevice` without a second world model? | M5 seeded the question and nobody has asked it since. A second world model is the defect: two definitions of "the world" is how live editing, replay and play mode each stop meaning the same thing |
 | **M11.c** | **One authored material, end to end**: author it in the editor's graph, compile it through the runtime compiler, encode its textures, bind it in the assembled frame, photograph it | Everything in M11.c assumes that path exists and **nothing in the tree has ever run it**. If it does not exist, the rung is building the path rather than tuning the picture, which is a different size of work |
 | **M11.d** | Settle the **eight RHI interface gaps** on Vulkan and null before a line of either backend is written — and, before that, find out whether a hosted macOS or Windows runner can present a graphics device at all | A gap closed inside one backend is a gap the other two rediscover. And if no hosted runner can present a device, every image claim in the rung is reportable only as NOT EVALUATED, which changes what the gate can say rather than what the code does |
+| **M11.d.5** | **None of its own** — it consumes M11.d's. The one question left to it is narrower and cannot be spiked ahead of the work: does the interface M11.d settled survive contact with two backends that were not consulted about it? | A hosted leg can compile, create a device, draw and present — all real, all reportable — and it can exercise **no** Apple-family feature, **no** argument-buffer Tier 2, **no** hardware of any vendor and therefore **no** golden-image parity against references photographed on this project's own hardware. Those four are declared deferrals with re-entry points, not criteria a leg can fake |
 | **M11.e** | Can a hosted runner **produce a mobile artefact at all**? One empty project, cross-compiled, packaged and reported | If it cannot, mobile is a deferral with a re-entry point and M11.e is the distribution and record rung. That is a finding worth having on day one rather than at the gate, which is the whole argument for running a spike at the head of a rung |
 
-*Why this is one register entry and not five*: the risk they share is the split itself. If the seam
-is wrong — if the rungs turn out not to be separable along their artefacts — the ladder gains four
+*Why this is one register entry and not six*: the risk they share is the split itself. If the seam
+is wrong — if the rungs turn out not to be separable along their artefacts — the ladder gains five
 gates that cannot close independently, which is the failure mode `split-m8-authorable-and-systems`
 named when it refused to split by count.
 

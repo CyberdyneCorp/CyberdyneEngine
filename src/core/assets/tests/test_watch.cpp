@@ -508,11 +508,13 @@ CY_TEST_CASE("a package-backed asset reloads from the package that is mounted ov
     CY_CHECK_EQ(asset.value()->size(), recooked.size());
 }
 
-CY_TEST_CASE("a package reload that cannot find its entry leaves the old asset in use") {
-    // The failure half, over a package rather than a loose file: the asset stays readable and the
-    // failure is counted. The masking patch is how a package entry becomes unreachable without the
-    // file it lives in going away.
-    const test::TempDir directory("assets_reload_package_masked");
+CY_TEST_CASE("a package reload whose payload is not there leaves the old asset in use") {
+    // The failure half, and it fails INSIDE the package read rather than before it: the higher
+    // package declares the entry and does not hold its chunk — an external reference no other
+    // mounted package satisfies — so the reload gets as far as reading and cannot finish. The old
+    // bytes stay in use and the failure is counted, which is the same contract the loose-file case
+    // keeps for a file caught mid-write.
+    const test::TempDir directory("assets_reload_package_external");
     const cy::AssetId id = mint_asset_id();
     const cy::Array<u8> cooked = compressible(20000, 5);
     write_one(directory.file("base.cypak"), id, cooked.span(), nullptr);
@@ -522,7 +524,10 @@ CY_TEST_CASE("a package reload that cannot find its entry leaves the old asset i
         PackageManifest manifest;
         CY_REQUIRE(manifest.set_build_id("test").has_value());
         CY_REQUIRE(writer.set_manifest(manifest).has_value());
-        CY_REQUIRE(writer.mark_deleted(id, VariantKey::any()).has_value());
+        const ContentHash absent = content_hash("no package holds this", 21);
+        CY_REQUIRE(writer
+                       .add_external(id, VariantKey::any(), absent, 20000, AssetKind::Binary)
+                       .has_value());
         CY_REQUIRE(writer.write(directory.file("patch.cypak").c_str()).has_value());
     }
 

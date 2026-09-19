@@ -6,10 +6,14 @@ after two backends are written is a migration across every pass in the engine, a
 is an afternoon. Section 1 is that interface, on Vulkan and null, before a line of either new backend
 exists.
 
-The spike carries a second question the rung cannot start without, and it is not a code question:
-**does a hosted runner present a graphics device at all?** Every Metal and D3D12 image claim in this
-rung is judged on a machine nobody here owns, and `ci.yml` has six legs that build and test and not
-one that has ever created a device.
+The spike carried a second question the rung could not start without, and it was not a code
+question: **does a hosted runner present a graphics device at all?** It was answered, and the answer
+**resized this rung**: every allocated leg presents a device that draws and presents, and not one of
+them is a GPU — and, more simply, neither Metal nor D3D12 compiles on the Linux host this work
+happens on. Sections 2 and 3 therefore moved to **M11.d.5 · Backends**, inserted between this rung
+and M11.e, with `rhi-and-render-graph`'s Complete cell and the three-backend golden-image comparison.
+The marker where those sections were carries the reasoning; `design.md` §1.4 carries the
+measurement.
 
 ## 0. The spike — the eight RHI gaps, and whether a hosted runner has a device
 
@@ -73,50 +77,45 @@ one that has ever created a device.
       Complete cell is **M11.c's**, not this rung's — `design.md` §6 carries it as a dependency — but
       it is a prerequisite of sections 2 and 3 either way, and this rung states which it got
 
-## 2. Metal, native — not a translation layer
+## 2 and 3. Metal and D3D12 — MOVED TO M11.d.5, not deleted and not descoped
 
-- [ ] 2.1 **`src/device.mm` is compiled for the first time.** Its per-row `static_assert`s against
-      the real `MTLPixelFormat` enumerators either fire or prove the transcription in `mapping.cpp`;
-      on this machine that table is unverified and the README says so. **Treat every line of that
-      file as a proposal**, which is what its own README calls it
-- [ ] 2.2 The rest of `cy::rhi::Device` — eighty-odd pure virtual members — behind the seed's mapping
-      layer, with **tile memory and memoryless attachments usable directly**, which is the reason
-      `rhi-and-render-graph` refuses MoltenVK as the long-term Apple strategy in as many words
-- [ ] 2.3 The three things that map cleanly, spent as the seed says rather than re-derived:
-      `MTLSharedEvent` for timeline semaphores, `MTLFunctionConstantValues` for specialization
-      constants, and **nothing at all** for reversed-Z, because the projection inverts and the
-      viewport stays [0, 1]
-- [ ] 2.4 The surface comes from `DisplayServer`, not from the backend: `Feature::MetalSurface` and a
-      `CAMetalLayer` handed across, **with no platform `#ifdef` inside the backend**, which is
-      `core-platform-abstraction`'s own scenario
-- [ ] 2.5 **The golden images on Metal**, against the committed references, failing by **naming the
-      backend** — or reported NOT EVALUATED with 0.2's runner reason. `ci.yml` already states the
-      rule for M3's images and it is not weakened here: a committed reference is a photograph of one
-      implementation, and a criterion that passes on a machine that cannot judge it is the defect
-      `requires` exists to prevent
+**Sections 2 and 3 of this task list are no longer here.** Section 0.2 measured the question this
+rung was scoped against, and the answer that resized it is not about graphics at all: **this project
+works on a Linux host with one GPU vendor and no Apple toolchain.** Metal cannot be compiled here.
+D3D12 cannot be compiled here. Neither backend could be written or judged where this rung is being
+worked, and half-building them here would have produced the one defect this project has paid for
+nine times — a check that cannot fail.
 
-## 3. D3D12 — from nothing
+They moved to **M11.d.5 · Backends**, a rung inserted between this one and M11.e:
+[`implement-m11d5-backends`](../implement-m11d5-backends/tasks.md) sections 1 to 5 carry them,
+`tools/roadmap/milestones/m11d5.toml` carries the criteria, and `design.md` §1.4.3 of this change is
+the measurement that argued for it. The governing rule is `delivery-roadmap`'s **"A spike may resize
+a milestone as well as redirect it"**, which requires re-scoping to move whole capabilities with
+their exit criteria rather than narrowing one in place — so `rhi-and-render-graph`'s **Complete cell
+moved with them**.
 
-- [ ] 3.1 **There is no D3D12 backend and there is no D3D12 file.** The only three D3D12 things in
-      the tree are `BackendKind::D3D12`, `Feature::D3D12Surface` and `CY_RENDERER_D3D12|OFF` — three
-      enumerators describing an API the engine does not have. The module is written from nothing,
-      against the interface section 1 settled
-- [ ] 3.2 **Memory is the first decision, not the last.** Vulkan's allocator is VMA, fetched through
-      `deps/manifest.toml`; there is no equivalent in this tree for D3D12. Either a suballocator of
-      the engine's own over `ID3D12Heap`, or an adopted dependency — and an adoption **"SHALL go
-      through the OpenSpec change flow recording the evaluation against these criteria"**, so it is a
-      change of its own against `thirdparty-dependencies`, decided before the backend is half written
-- [ ] 3.3 Descriptor heaps and bindless against the engine's descriptor model; a root signature
-      derived from the engine's pipeline layout; **barriers derived from the access masks**, which is
-      1.3's change paying for itself a second time
-- [ ] 3.4 DXIL out of the shader pipeline: `SLANG_ENABLE_DXIL` on, DXC declared in the manifest with
-      a licence identifier and a justification like every other integrated toolchain, and the engine
-      **building and passing its suites with `CY_RENDERER_D3D12` OFF as well as ON** — M8.c's rule,
-      applied to every option this rung adds
-- [ ] 3.5 **The golden images on D3D12**, same rule as 2.5, and one addition this rung will not let
-      itself blur: **a WARP adapter is labelled WARP in the result.** It is a real D3D12 device and it
-      is not a GPU, and a green tick that does not say which answered is a claim about hardware
-      nobody ran
+**And `m11d:golden-images-across-three-backends` moved with them**, which is the half that matters.
+It is M11's first exit criterion as `docs/ROADMAP.md` has stated it since the plan was drawn, it is
+the one claim no single leg of the matrix can make, and a rung that received two backends without it
+could close on *"it compiles somewhere"*. The same requirement's second scenario says so: a criterion
+whose subject has been deferred moves with its subject, because leaving it behind produces a check
+with nothing to check.
+
+**What this rung keeps of them**, and it is the expensive part rather than the leftovers:
+
+- **Section 1 — the interface — stays, and is now ordered by the ladder rather than by a promise.**
+  "No gap is fixed in a backend" was a rule in `design.md` §2 that a task list had to be trusted to
+  honour; it is now a property of the rungs, because the backends are one rung above. A gap fixed
+  inside Metal is a gap Vulkan never agreed to, and there is no Metal here to fix it in.
+- **`m11d:shader-targets-emitted` stays**, because it is a *prerequisite* check rather than a backend
+  claim — M11.c's row read from the rung that consumes it — and M11.d.5 inherits it from here through
+  the flat ledger. The prerequisite is proved below the rung that needs it.
+- **Task 6.2's GPU-memory debt stays here and is recorded as partly M11.d.5's**: `MemoryDomain::Gpu`
+  is budgeted while nothing reports device memory into it, and the backend that allocates is the
+  module that owes it. The Vulkan half is this rung's; the other two are M11.d.5's.
+- **Task 8.2's "it draws through each graphics backend on a leg that has a device" is now
+  one backend**, and section 8 says so rather than leaving a sentence that quietly waits for two
+  backends that are not in this rung.
 
 ## 4. The native platform backend and the porting surface — `core-platform-abstraction`
 
@@ -163,8 +162,8 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       files naming `MemoryAttributionScope` are its own header, source, test and README, so
       "attribution by domain, type, thread, world cell and asset" is a mechanism nobody pushes. And
       `MemoryDomain::Gpu` is budgeted while nothing reports device memory into it — the backend that
-      allocates is the module that owes it, which makes this section 2 and 3's debt as much as this
-      row's
+      allocates is the module that owes it, so **the Vulkan half is this rung's and the Metal and
+      D3D12 halves are M11.d.5's**, recorded here rather than left for that rung to rediscover
 - [ ] 6.3 **`core-jobs-and-concurrency`, `ecs-core` and `engine-architecture` read requirement by
       requirement at Complete grade**, the way M10 read `save-and-persistence` — satisfied, partial
       or unmet per requirement with the evidence in each module's README. **No named blocker means
@@ -214,7 +213,8 @@ not change**, which is a first-hand reading of them whether or not anybody calls
 - [ ] 8.1 One project — **built, cooked, packaged and launched from a single recipe** on each desktop
       target. `samples/` holds fifteen entries today and not one of them is a packaged project
 - [ ] 8.2 It **draws**: through the native platform backend on the platform that has one, and through
-      each graphics backend on a leg that has a device
+      **Vulkan and the null backend**, which are the graphics backends this rung has. Drawing it
+      through three is M11.d.5's artefact rather than this one's, and this task does not wait on it
 - [ ] 8.3 **The artefact is honest about its own coverage on its own face**, the way M10's was about
       its 122 ms: which legs ran, which reported NOT EVALUATED and why, and **which device answered**
       on each — hardware, paravirtual or WARP

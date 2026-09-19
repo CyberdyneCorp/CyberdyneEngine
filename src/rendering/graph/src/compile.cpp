@@ -78,8 +78,8 @@ u64 align_up_to(u64 value, u64 alignment) noexcept {
 
 /// One (mip, layer) of an image, or the whole of a buffer.
 struct CellState {
-    rhi::ImageLayout layout = rhi::ImageLayout::Undefined;
-    u32 queue_family = rhi::kQueueFamilyIgnored;
+    rhi::ImageUse use = rhi::ImageUse::Undefined;
+    rhi::QueueOwner owner{};
     rhi::Stage write_stage = rhi::Stage::None;
     rhi::AccessFlags write_access = rhi::AccessFlags::None;
     rhi::Stage read_stage = rhi::Stage::None;
@@ -93,16 +93,19 @@ struct BarrierKey {
     rhi::AccessFlags src_access = rhi::AccessFlags::None;
     rhi::Stage dst_stage = rhi::Stage::None;
     rhi::AccessFlags dst_access = rhi::AccessFlags::None;
-    rhi::ImageLayout old_layout = rhi::ImageLayout::Undefined;
-    rhi::ImageLayout new_layout = rhi::ImageLayout::Undefined;
-    u32 src_queue_family = rhi::kQueueFamilyIgnored;
-    u32 dst_queue_family = rhi::kQueueFamilyIgnored;
+    rhi::ImageUse old_use = rhi::ImageUse::Undefined;
+    rhi::ImageUse new_use = rhi::ImageUse::Undefined;
+    bool ownership_transfer = false;
+    rhi::QueueKind src_queue = rhi::QueueKind::Graphics;
+    rhi::QueueKind dst_queue = rhi::QueueKind::Graphics;
 
     [[nodiscard]] friend bool operator==(const BarrierKey& a, const BarrierKey& b) noexcept {
         return a.src_stage == b.src_stage && a.src_access == b.src_access &&
                a.dst_stage == b.dst_stage && a.dst_access == b.dst_access &&
-               a.old_layout == b.old_layout && a.new_layout == b.new_layout &&
-               a.src_queue_family == b.src_queue_family && a.dst_queue_family == b.dst_queue_family;
+               a.old_use == b.old_use && a.new_use == b.new_use &&
+               a.ownership_transfer == b.ownership_transfer &&
+               (!a.ownership_transfer ||
+                (a.src_queue == b.src_queue && a.dst_queue == b.dst_queue));
     }
 };
 
@@ -120,7 +123,8 @@ struct PendingImage {
 struct ResourceUse {
     rhi::Stage stage = rhi::Stage::None;
     rhi::AccessFlags access = rhi::AccessFlags::None;
-    u32 last_queue_family = rhi::kQueueFamilyIgnored;
+    rhi::QueueKind last_queue = rhi::QueueKind::Graphics;
+    bool used = false;
     i32 first = -1;  // position in schedule order
     i32 last = -1;
     rhi::QueueKind first_queue = rhi::QueueKind::Graphics;
@@ -214,9 +218,12 @@ struct Compiler {
         return requested;
     }
 
-    [[nodiscard]] u32 family_of(rhi::QueueKind queue) const noexcept {
+    /// WHICH OWNERSHIP DOMAIN A QUEUE IS IN — Metal gap 4. An opaque small integer the compiler
+    /// only ever compares; the Vulkan backend put its family index in it and nothing here knows
+    /// that. Two kinds in one domain need no transfer, which is the single-queue fold.
+    [[nodiscard]] u8 domain_of(rhi::QueueKind queue) const noexcept {
         const auto index = static_cast<u32>(queue);
-        return index < rhi::kQueueKindCount ? options.queue_family[index] : 0;
+        return index < rhi::kQueueKindCount ? options.queue_ownership_domain[index] : 0;
     }
 
     // --- Cells ----------------------------------------------------------------------------------
@@ -266,8 +273,8 @@ struct Compiler {
             const usize count = cells_in(info);
             for (usize offset = 0; offset < count; ++offset) {
                 CellState& cell = cells[cell_base[id] + offset];
-                cell.layout = info.initial_layout;
-                cell.queue_family = info.initial_queue_family;
+                cell.use = info.initial_use;
+                cell.owner = info.initial_owner;
             }
         }
         return true;
@@ -912,10 +919,11 @@ struct Compiler {
                 barrier.src_access = key.src_access;
                 barrier.dst_stage = key.dst_stage;
                 barrier.dst_access = key.dst_access;
-                barrier.old_layout = key.old_layout;
-                barrier.new_layout = key.new_layout;
-                barrier.src_queue_family = key.src_queue_family;
-                barrier.dst_queue_family = key.dst_queue_family;
+                barrier.old_use = key.old_use;
+                barrier.new_use = key.new_use;
+                barrier.ownership_transfer = key.ownership_transfer;
+                barrier.src_queue = key.src_queue;
+                barrier.dst_queue = key.dst_queue;
                 barrier.aspect = aspect_of(info);
                 barrier.range = rhi::SubresourceRange{base_mip, mip_count, base_layer, layer_count};
                 barrier.texture = info.imported_texture;
@@ -924,7 +932,7 @@ struct Compiler {
                     return false;
                 }
                 ++out.stats.image_barriers;
-                if (key.src_queue_family != key.dst_queue_family) {
+                if (key.ownership_transfer) {
                     ++out.stats.queue_ownership_transfers;
                 }
                 index = next;
@@ -956,7 +964,7 @@ struct Compiler {
                  scheduled_index < out.submits[submit_index].passes.size(); ++scheduled_index) {
                 const PassId pass = out.submits[submit_index].passes[scheduled_index].pass;
                 const rhi::QueueKind queue = queue_of(pass);
-                const u32 my_family = family_of(queue);
+                const u8 my_domain = domain_of(queue);
 
                 pre_pending.clear();
                 acquire_pending.clear();
@@ -967,7 +975,7 @@ struct Compiler {
                     const rhi::AccessInfo& access = rhi::access_info(use.access);
                     const ResourceInfo& info = graph.resource(use.resource);
 
-                    if (!emit_alias_barrier(use, access, my_family, alias_seen, pre)) {
+                    if (!emit_alias_barrier(use, access, my_domain, alias_seen, pre)) {
                         return false;
                     }
 
@@ -978,7 +986,7 @@ struct Compiler {
                             const auto mip = static_cast<u16>(use.range.base_mip + mip_offset);
                             const auto layer =
                                 static_cast<u16>(use.range.base_layer + layer_offset);
-                            if (!derive_cell(use, access, info, mip, layer, my_family,
+                            if (!derive_cell(use, access, info, mip, layer, queue, my_domain,
                                              static_cast<i32>(submit_index), pre, pre_pending,
                                              acquire_pending, release_pending)) {
                                 return false;
@@ -989,7 +997,8 @@ struct Compiler {
                     ResourceUse& record = resource_use[use.resource];
                     record.stage = access.stage;
                     record.access = access.access;
-                    record.last_queue_family = my_family;
+                    record.last_queue = queue;
+                    record.used = true;
                 }
 
                 // Acquires first, then the ordinary transitions: an acquire brings the resource
@@ -1011,7 +1020,7 @@ struct Compiler {
     /// A transient that reuses memory a finished transient held needs one barrier before its first
     /// use — and validation will not catch its absence, so it is a structural property of this
     /// function rather than something a layer reports.
-    bool emit_alias_barrier(const Use& use, const rhi::AccessInfo& access, u32 my_family,
+    bool emit_alias_barrier(const Use& use, const rhi::AccessInfo& access, u8 my_domain,
                             Array<bool>& alias_seen, rhi::BarrierBatch& pre) noexcept {
         if (alias_seen[use.resource]) {
             return true;
@@ -1029,7 +1038,8 @@ struct Compiler {
             // A predecessor whose last use was on another queue is ordered by the semaphore edge
             // add_alias_edges() created. A barrier here would name stages in the wrong command
             // stream and synchronise nothing.
-            if (resource_use[placement.resource].last_queue_family != my_family) {
+            const ResourceUse& predecessor = resource_use[placement.resource];
+            if (!predecessor.used || domain_of(predecessor.last_queue) != my_domain) {
                 continue;
             }
             barrier.src_stage |= resource_use[placement.resource].stage;
@@ -1049,7 +1059,8 @@ struct Compiler {
     }
 
     bool derive_cell(const Use& use, const rhi::AccessInfo& access, const ResourceInfo& info,
-                     u16 mip, u16 layer, u32 my_family, i32 submit_index, rhi::BarrierBatch& pre,
+                     u16 mip, u16 layer, rhi::QueueKind my_queue, u8 my_domain, i32 submit_index,
+                     rhi::BarrierBatch& pre,
                      Array<PendingImage>& pre_pending, Array<PendingImage>& acquire_pending,
                      Array<PendingImage>& release_pending) noexcept {
         const usize index =
@@ -1069,19 +1080,25 @@ struct Compiler {
             source_access = cell.write_access;
         }
 
-        const bool layout_changes = info.is_texture && cell.layout != access.layout;
-        const bool family_changes =
-            cell.queue_family != rhi::kQueueFamilyIgnored && cell.queue_family != my_family;
-        const bool needed = rhi::any(source_stage) || layout_changes || family_changes;
+        // A read-to-read pair with no write between them still needs a barrier when the two reads
+        // use the image differently — sampled and storage are not the same state on Vulkan or on
+        // D3D12 — and this comparison is the only reason the engine keeps an image-use vocabulary
+        // at all. Metal gap 3: the values are the ENGINE's; what they become is the backend's.
+        const bool use_changes = info.is_texture && cell.use != access.use;
+        // METAL GAP 4. A device that needs no ownership transfers turns this term off entirely,
+        // rather than each backend answering with an index that happens to compare equal.
+        const bool owner_changes = options.queue_ownership_transfers && cell.owner.owned &&
+                                   domain_of(cell.owner.queue) != my_domain;
+        const bool needed = rhi::any(source_stage) || use_changes || owner_changes;
 
         if (needed) {
-            if (family_changes && info.is_texture) {
-                if (!emit_ownership_transfer(use, access, cell, mip, layer, my_family, source_stage,
+            if (owner_changes && info.is_texture) {
+                if (!emit_ownership_transfer(use, access, cell, mip, layer, my_queue, source_stage,
                                              source_access, acquire_pending, release_pending)) {
                     return false;
                 }
-            } else if (family_changes) {
-                if (!emit_buffer_ownership_transfer(use, access, cell, my_family, source_stage,
+            } else if (owner_changes) {
+                if (!emit_buffer_ownership_transfer(use, access, cell, my_queue, source_stage,
                                                     source_access, pre)) {
                     return false;
                 }
@@ -1094,8 +1111,8 @@ struct Compiler {
                 pending.key.src_access = source_access;
                 pending.key.dst_stage = access.stage;
                 pending.key.dst_access = access.access;
-                pending.key.old_layout = cell.layout;
-                pending.key.new_layout = access.layout;
+                pending.key.old_use = cell.use;
+                pending.key.new_use = access.use;
                 if (!push(pre_pending, pending)) {
                     return false;
                 }
@@ -1113,8 +1130,8 @@ struct Compiler {
             }
         }
 
-        cell.layout = info.is_texture ? access.layout : rhi::ImageLayout::Undefined;
-        cell.queue_family = my_family;
+        cell.use = info.is_texture ? access.use : rhi::ImageUse::Undefined;
+        cell.owner = rhi::QueueOwner{my_queue, true};
         cell.last_submit = submit_index;
         if (access.is_write) {
             cell.write_stage = access.stage;
@@ -1139,7 +1156,7 @@ struct Compiler {
     /// semaphore control still fired with it on, so it masks no real hazard. Re-test when the
     /// validation layer is newer than 1.3.275.
     bool emit_ownership_transfer(const Use& use, const rhi::AccessInfo& access,
-                                 const CellState& cell, u16 mip, u16 layer, u32 my_family,
+                                 const CellState& cell, u16 mip, u16 layer, rhi::QueueKind my_queue,
                                  rhi::Stage source_stage, rhi::AccessFlags source_access,
                                  Array<PendingImage>& acquire_pending,
                                  Array<PendingImage>& release_pending) noexcept {
@@ -1151,10 +1168,11 @@ struct Compiler {
         release.key.src_access = source_access;
         release.key.dst_stage = rhi::Stage::AllCommands;
         release.key.dst_access = rhi::AccessFlags::None;
-        release.key.old_layout = cell.layout;
-        release.key.new_layout = access.layout;
-        release.key.src_queue_family = cell.queue_family;
-        release.key.dst_queue_family = my_family;
+        release.key.old_use = cell.use;
+        release.key.new_use = access.use;
+        release.key.ownership_transfer = true;
+        release.key.src_queue = cell.owner.queue;
+        release.key.dst_queue = my_queue;
         release.release_submit = cell.last_submit;
 
         PendingImage acquire = release;
@@ -1168,7 +1186,7 @@ struct Compiler {
     }
 
     bool emit_buffer_ownership_transfer(const Use& use, const rhi::AccessInfo& access,
-                                        const CellState& cell, u32 my_family,
+                                        const CellState& cell, rhi::QueueKind my_queue,
                                         rhi::Stage source_stage, rhi::AccessFlags source_access,
                                         rhi::BarrierBatch& pre) noexcept {
         const ResourceInfo& info = graph.resource(use.resource);
@@ -1179,8 +1197,9 @@ struct Compiler {
         release.src_access = source_access;
         release.dst_stage = rhi::Stage::AllCommands;
         release.dst_access = rhi::AccessFlags::None;
-        release.src_queue_family = cell.queue_family;
-        release.dst_queue_family = my_family;
+        release.ownership_transfer = true;
+        release.src_queue = cell.owner.queue;
+        release.dst_queue = my_queue;
         release.buffer = info.imported_buffer;
 
         rhi::BufferBarrier acquire = release;
@@ -1274,10 +1293,11 @@ struct Compiler {
             hash = hash_value(hash, static_cast<u64>(barrier.src_access));
             hash = hash_value(hash, static_cast<u64>(barrier.dst_stage));
             hash = hash_value(hash, static_cast<u64>(barrier.dst_access));
-            hash = hash_value(hash, static_cast<u64>(barrier.old_layout));
-            hash = hash_value(hash, static_cast<u64>(barrier.new_layout));
-            hash = hash_value(hash, barrier.src_queue_family);
-            hash = hash_value(hash, barrier.dst_queue_family);
+            hash = hash_value(hash, static_cast<u64>(barrier.old_use));
+            hash = hash_value(hash, static_cast<u64>(barrier.new_use));
+            hash = hash_value(hash, barrier.ownership_transfer ? 1U : 0U);
+            hash = hash_value(hash, static_cast<u64>(barrier.src_queue));
+            hash = hash_value(hash, static_cast<u64>(barrier.dst_queue));
             hash = hash_value(hash, barrier.range.base_mip);
             hash = hash_value(hash, barrier.range.mip_count);
             hash = hash_value(hash, barrier.range.base_layer);
@@ -1289,8 +1309,9 @@ struct Compiler {
             hash = hash_value(hash, static_cast<u64>(barrier.src_access));
             hash = hash_value(hash, static_cast<u64>(barrier.dst_stage));
             hash = hash_value(hash, static_cast<u64>(barrier.dst_access));
-            hash = hash_value(hash, barrier.src_queue_family);
-            hash = hash_value(hash, barrier.dst_queue_family);
+            hash = hash_value(hash, barrier.ownership_transfer ? 1U : 0U);
+            hash = hash_value(hash, static_cast<u64>(barrier.src_queue));
+            hash = hash_value(hash, static_cast<u64>(barrier.dst_queue));
         }
         for (const rhi::MemoryBarrier& barrier : batch.memory) {
             hash = hash_value(hash, static_cast<u64>(barrier.src_stage));

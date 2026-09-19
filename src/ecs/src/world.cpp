@@ -2,6 +2,7 @@
 
 #include <cy/ecs/world.h>
 
+#include <cy/core/memory/attribution.h>
 #include <cy/ecs/command_buffer.h>
 
 #include <cstring>
@@ -630,6 +631,20 @@ Status World::ensure_sparse_store(ComponentTypeId component) noexcept {
         return ok();
     }
     const ComponentInfo& info = components_.info(component);
+
+    // THE TYPE AXIS'S PRODUCER, and the only place in the ECS where one key is the honest answer.
+    // `core-memory-and-containers` — "Memory diagnostics" wants live bytes "by type"; a sparse
+    // component's side table holds exactly one component type, so it can say which. An ARCHETYPE
+    // CHUNK CANNOT: it holds a component SET, and charging its bytes to any one member would be a
+    // number that reads as fact and is not. That is a measurement about the axis rather than an
+    // omission, and it is recorded in src/core/memory/README.md.
+    //
+    // The key is the REFLECTED type id — `attribution.h` says "a reflected type's identity, as
+    // cy::core-reflect spells it" — and not the world-local `ComponentTypeId`, which two worlds
+    // assign differently and which would make one report's rows unjoinable with another's.
+    const MemoryAttributionScope attributed(
+        MemoryAttribution{.type = static_cast<u64>(info.type_id.value())});
+
     SparseSlot slot(*allocator_, component, info.value_size);
     return sparse_.push_back(std::move(slot));
 }

@@ -50,6 +50,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import criteria as criteria_module  # noqa: E402
+import debts as debts_module  # noqa: E402
 import falsify as falsify_module  # noqa: E402
 import gates as gates_module  # noqa: E402
 import plan as plan_module  # noqa: E402
@@ -511,6 +512,16 @@ def _check_every_reader_admits_an_insertion() -> None:
     for rung in rungs:
         check(f"{rung} is a row the load table reader returns", rung in summary,
               f"rows are {sorted(summary)}")
+
+    # THE FOURTH READER, added when M11.d.5 caught it rendering `M11D5`. `debts.milestone_label` is
+    # the one that turns an identifier back into the label a person reads, and it was written the
+    # same way as the three above — which is exactly the pattern that let M8's split break three
+    # readers at once. It is checked here rather than in its own group so the next insertion fails in
+    # the SAME place as the other three.
+    for column, rung in zip(columns, rungs):
+        check(f"the debts reader renders {rung} as {column}",
+              debts_module.milestone_label(rung) == column,
+              f"{rung} -> {debts_module.milestone_label(rung)!r}, expected {column!r}")
 
 
 def _check_an_insertion_takes_a_rung() -> None:

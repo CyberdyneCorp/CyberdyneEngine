@@ -2,7 +2,9 @@
 
 #include <cy/test/test.h>
 
+#include <cy/core/memory/attribution.h>
 #include <cy/core/memory/system_allocator.h>
+#include <cy/core/memory/tracking_allocator.h>
 #include <cy/core/reflect/demo/types.h>
 #include <cy/core/reflect/demo/types.reflect.h>
 #include <cy/ecs/world.h>
@@ -217,4 +219,44 @@ CY_TEST_CASE("a buffer component is inline until it is not, and spills to the he
     CY_REQUIRE(moved.has_value());
     CY_CHECK_EQ(moved->size(), 5u);
     CY_CHECK_EQ((*moved)[4].x, 4.0F);
+}
+
+CY_TEST_CASE("a sparse component's side table is attributed to its reflected type") {
+    // `core-memory-and-containers` — "Memory diagnostics": "Reporting SHALL be attributable along
+    // the axes that answer real questions: by domain, **by type**, by thread, by world cell, and by
+    // asset." The axis was built at M7 and NOTHING PUSHED A SCOPE: until M11.d the only four files
+    // naming `MemoryAttributionScope` were its own header, source, test and README, so the type axis
+    // reported every live byte as unattributed in any engine that asked.
+    //
+    // This case is the producer's test and not the mechanism's: it runs the ordinary write path, on
+    // an ordinary world, and reads the axis back off the allocator the world was given.
+    cy::TrackingAllocator tracked(allocator(), cy::MemoryDomain::Ecs, "ecs.attribution");
+    cy::ecs::World world(tracked);
+    CY_REQUIRE(world.initialize().has_value());
+    const auto ids = cy::ecs::test::register_all(world);
+    CY_REQUIRE(ids.has_value());
+
+    auto entity = world.create();
+    CY_REQUIRE(entity.has_value());
+    const cy::ecs::test::Selected selected{42};
+    CY_REQUIRE(world.set_sparse(*entity, ids->selected, &selected).has_value());
+
+    cy::MemoryAttributionRow rows[8] = {};
+    const cy::MemoryAttributionSummary summary = tracked.report_attribution(
+        cy::AttributionAxis::Type, cy::Span<cy::MemoryAttributionRow>(rows, 8));
+
+    // The side table's bytes carry the REFLECTED type id — 9005 is `Selected`'s, from fixtures.h —
+    // and not the world-local `ComponentTypeId`, which a second world would number differently.
+    CY_REQUIRE(summary.distinct_keys >= 1u);
+    bool found = false;
+    cy::u64 attributed_bytes = 0;
+    for (const cy::MemoryAttributionRow& row : rows) {
+        if (row.key == 9005u) {
+            found = true;
+            attributed_bytes = row.live_bytes;
+        }
+    }
+    CY_CHECK(found);
+    CY_CHECK(attributed_bytes > 0u);
+    CY_CHECK_EQ(rows[0].key_high, 0u);  // the type axis is 64 bits; only the asset axis is not
 }

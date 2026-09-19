@@ -374,12 +374,12 @@ void NullBarrierRecorder::record_barriers(CommandBufferHandle command_buffer,
     }
     u32 transfers = 0;
     for (const ImageBarrier& barrier : batch.images) {
-        if (barrier.src_queue_family != barrier.dst_queue_family) {
+        if (barrier.ownership_transfer) {
             ++transfers;
         }
     }
     for (const BufferBarrier& barrier : batch.buffers) {
-        if (barrier.src_queue_family != barrier.dst_queue_family) {
+        if (barrier.ownership_transfer) {
             ++transfers;
         }
     }

@@ -230,6 +230,70 @@ quality-requirements *args:
     echo "==> requirements coverage  {{args}}"
     python3 tools/roadmap/requirements.py {{args}}
 
+# --- M11.d's four gates: swift-format, licence headers, spelling, undocumented symbols ---------------
+#
+# `testing-and-quality`'s "Static analysis and formatting" lists six enforcement points and this
+# repository had three of them: clang-format, clang-tidy, and the specification validator. The other
+# three — `swift-format` for Swift, spelling over documentation and comments, a licence header on
+# every source file — existed in the specification and nowhere else. Its "Documentation as a gate"
+# requirement names a fourth, the undocumented-symbol check, and that one is the "documentation gate"
+# the M11 exit criteria name by that phrase.
+#
+# EACH OF THE FOUR HAS BEEN WATCHED GOING RED. `just quality-gates-selftest` breaks what each gate
+# checks, in a temporary tree derived from the live one, and requires the gate to refuse — fourteen
+# cases, thirteen of which run on a machine with no Swift toolchain. That is not politeness: this
+# project has shipped NINE checks that could not fail (`tools/roadmap/falsify.py` enumerates them)
+# and M9's gate found one that had passed 44 of 44 runs with its enforcement point deleted. Four new
+# gates landing without that file would be the tenth through thirteenth.
+#
+# Two of the four carry a DECLARED BACKLOG rather than a clean tree, and the distinction between a
+# backlog and an allowlist is mechanical: a baseline entry that has since been FIXED also fails, so
+# the debt can only shrink and a stale baseline is a red build. tools/quality/README.md has the
+# numbers and the argument.
+
+# swift-format over the Swift this project owns, against the committed .swift-format. --fix formats.
+quality-swift-format *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    echo "==> swift-format  bindings/swift/ and samples/04-character/game/ against .swift-format"
+    python3 tools/quality/swift_format_gate.py {{args}}
+
+# The licence-header check: every source file carries `SPDX-License-Identifier: MIT`. --update rebaselines.
+quality-licence *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    echo "==> licence       SPDX headers against tools/quality/licence_baseline.txt"
+    python3 tools/quality/licence_gate.py {{args}}
+
+# Spelling over documentation and comments, through codespell's misspelling dictionary.
+quality-spelling *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if ! command -v codespell >/dev/null 2>&1; then
+        echo "quality-spelling: codespell is not on PATH." >&2
+        echo "  It is the tool that holds the misspelling dictionary, and a spelling gate with no" >&2
+        echo "  dictionary checks nothing. Install it with:" >&2
+        echo "      pip install codespell==2.4.3" >&2
+        exit 1
+    fi
+    echo "==> spelling      documentation and comments"
+    python3 tools/quality/spell_gate.py {{args}}
+
+# The undocumented-symbol gate — the documentation gate the M11 exit criteria name. --update rebaselines.
+quality-docs *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    echo "==> doc-gate      public C++ headers, the C ABI and the Swift overlay"
+    python3 tools/quality/doc_gate.py {{args}}
+
+# Prove all four of M11.d's gates still refuse what they exist to refuse. --strict requires every case.
+quality-gates-selftest *args:
+    cd "{{root}}" && python3 tools/quality/selftest.py {{args}}
+
 # --- Shared implementation --------------------------------------------------------------------------
 
 # Resolve a pinned tool, or fail naming what was found, what is required, and how to correct it.

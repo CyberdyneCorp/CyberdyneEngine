@@ -83,3 +83,19 @@ if(CY_RENDERER_VULKAN)
             cy::rhi-vulkan
             cy::servers-render-culling)
 endif()
+
+# The engine running frames on a platform that shares no desktop assumption. M11.d task 4.4.
+#
+# Here rather than under platform/stub/tests/ for a structural reason: the claim is about `Runtime`
+# — a layer-5 target — standing on a layer-3 port, and a suite declared from platform/ may not
+# include cy/runtime/runtime.h at all. tools/layercheck/ gives platform/ layer 3 and tests/ layer 7,
+# so this is the only directory from which the seam can be tested at all.
+#
+# It is the porting surface's proof, and platform/linux-native/ is not: two desktop backends
+# disagree about which library opens a window and agree about everything else a desktop takes for
+# granted. See the file's own header.
+cy_add_test(
+    NAME    stub_platform
+    KIND    integration
+    SOURCES test_stub_frame.cpp
+    DEPENDENCIES cy::runtime cy::platform-stub)

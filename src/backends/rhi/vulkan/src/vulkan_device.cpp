@@ -4,6 +4,7 @@
 // Vulkan entry point, so a pipeline refused in continuous integration is refused here for the same
 // reason and with the same message.
 
+#include <cy/backends/rhi/pipeline_cache_file.h>
 #include <cy/core/memory/pressure.h>
 
 #include "vulkan_device.h"
@@ -324,7 +325,7 @@ const BufferDescription* VulkanDevice::buffer_description(BufferHandle handle) c
 
 Expected<TextureHandle, Error> VulkanDevice::create_texture(const TextureDescription& desc) {
     ValidationMessage message;
-    if (Status valid = validate_texture(desc, capabilities_.limits(), message); !valid) {
+    if (Status valid = validate_texture(desc, capabilities_, message); !valid) {
         report_validation(ValidationSeverity::Error, message.text);
         return make_unexpected(valid.error());
     }
@@ -573,7 +574,7 @@ Expected<u32, Error> VulkanDevice::read_query_results(QueryPoolHandle pool, u32 
 Expected<TextureHandle, Error> VulkanDevice::create_transient_texture(
     const TextureDescription& desc) {
     ValidationMessage message;
-    if (Status valid = validate_texture(desc, capabilities_.limits(), message); !valid) {
+    if (Status valid = validate_texture(desc, capabilities_, message); !valid) {
         report_validation(ValidationSeverity::Error, message.text);
         return make_unexpected(valid.error());
     }
@@ -1017,7 +1018,7 @@ Status VulkanDevice::update_descriptor_set(DescriptorSetHandle set,
                 }
                 info.sampler = sampler->sampler;
             }
-            info.imageLayout = to_vulkan(write.layout);
+            info.imageLayout = to_vulkan(write.use);
             if (Status pushed = image_infos.push_back(info); !pushed) {
                 return pushed;
             }
@@ -1407,23 +1408,39 @@ void VulkanDevice::destroy_compute_pipeline(ComputePipelineHandle handle) noexce
     (void)compute_pipelines_.destroy(handle);
 }
 
-Expected<u64, Error> VulkanDevice::save_pipeline_cache(Span<u8> out) {
+Status VulkanDevice::save_pipeline_cache(const char* path) {
     // `rhi-and-render-graph`, "Cache invalidated by driver update": the cache header carries the
     // driver's own identity, so a driver change makes the blob unusable and the driver itself
     // rejects it. The engine does not have to hash the driver version into a key of its own.
-    usize size = out.size();
-    const VkResult result =
-        vkGetPipelineCacheData(device_, pipeline_cache_, &size, out.empty() ? nullptr : out.data());
-    if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+    usize size = 0;
+    VkResult result = vkGetPipelineCacheData(device_, pipeline_cache_, &size, nullptr);
+    if (result != VK_SUCCESS) {
         return make_unexpected(error_from(result, "vkGetPipelineCacheData"));
     }
-    return static_cast<u64>(size);
+    Array<u8> blob(*allocator_);
+    if (size != 0) {
+        if (Status sized = blob.resize(size); !sized) {
+            return sized;
+        }
+        result = vkGetPipelineCacheData(device_, pipeline_cache_, &size, blob.data());
+        if (result != VK_SUCCESS) {
+            return make_unexpected(error_from(result, "vkGetPipelineCacheData"));
+        }
+    }
+    return write_pipeline_cache_file(path, Span<const u8>(blob.data(), blob.size()));
 }
 
-Status VulkanDevice::load_pipeline_cache(Span<const u8> data) {
-    if (data.empty()) {
+Status VulkanDevice::load_pipeline_cache(const char* path) {
+    Array<u8> blob(*allocator_);
+    Expected<bool, Error> present = read_pipeline_cache_file(path, blob);
+    if (!present) {
+        return make_unexpected(present.error());
+    }
+    // A cold start: no file, or an empty one. Not an error, and not a cache hit either.
+    if (!*present || blob.empty()) {
         return ok();
     }
+    const Span<const u8> data(blob.data(), blob.size());
     VkPipelineCacheCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
     info.initialDataSize = data.size();

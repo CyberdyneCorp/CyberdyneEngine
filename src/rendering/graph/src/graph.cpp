@@ -175,8 +175,7 @@ ResourceId RenderGraph::create_buffer(const BufferRequest& request) noexcept {
 }
 
 ResourceId RenderGraph::import_texture(const TextureRequest& request, rhi::TextureHandle texture,
-                                       rhi::ImageLayout current_layout,
-                                       u32 owning_queue_family) noexcept {
+                                       rhi::ImageUse current_use, rhi::QueueOwner owner) noexcept {
     ResourceInfo info;
     info.name = request.name;
     info.is_texture = true;
@@ -184,8 +183,8 @@ ResourceId RenderGraph::import_texture(const TextureRequest& request, rhi::Textu
     info.imported = true;
     info.texture = request;
     info.texture_usage = request.extra_usage;
-    info.initial_layout = current_layout;
-    info.initial_queue_family = owning_queue_family;
+    info.initial_use = current_use;
+    info.initial_owner = owner;
     info.imported_texture = texture;
     if (Status pushed = resources_.push_back(info); !pushed) {
         set_failure(ErrorCode::OutOfMemory,
@@ -196,7 +195,7 @@ ResourceId RenderGraph::import_texture(const TextureRequest& request, rhi::Textu
 }
 
 ResourceId RenderGraph::import_buffer(const BufferRequest& request, rhi::BufferHandle buffer,
-                                      u32 owning_queue_family) noexcept {
+                                      rhi::QueueOwner owner) noexcept {
     ResourceInfo info;
     info.name = request.name;
     info.is_texture = false;
@@ -204,7 +203,7 @@ ResourceId RenderGraph::import_buffer(const BufferRequest& request, rhi::BufferH
     info.imported = true;
     info.buffer = request;
     info.buffer_usage = request.extra_usage;
-    info.initial_queue_family = owning_queue_family;
+    info.initial_owner = owner;
     info.imported_buffer = buffer;
     if (Status pushed = resources_.push_back(info); !pushed) {
         set_failure(ErrorCode::OutOfMemory, "the render graph could not record an imported buffer");

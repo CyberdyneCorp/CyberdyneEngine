@@ -204,9 +204,20 @@ gates, and `samples/11-ship` packaged and drawing. **1.4.1 is the evidence the m
 written against**, and it says that rung is *partly* verifiable: real devices that draw and present,
 labelled paravirtual and software, with the Apple-family features, argument-buffer Tier 2, hardware
 parity and Resource Heap Tier 1 as **declared deferrals** rather than criteria a hosted leg can
-answer.
+answer. Those four are written down with their re-entry points in
+[`implement-m11d5-backends`](../implement-m11d5-backends/design.md) §2, **before** that rung's first
+line of backend code, because a deferral declared after a gate has looked at it is an excuse and one
+declared before it is scope. `rhi-and-render-graph`'s Complete cell moved with them; the governing
+rule is `delivery-roadmap`'s "A spike may resize a milestone as well as redirect it", which requires
+re-scoping to move whole capabilities with their exit criteria rather than narrowing one in place.
 
-## 2. The interface is the milestone; the backends are its consequence
+## 2. The interface is the milestone; the backends are its consequence — now literally, a rung above
+
+**§1.4.3 turned this section's argument into the shape of the ladder.** What follows was written as
+two rules a task list had to be trusted to honour; both are now properties of the rungs, because the
+backends are M11.d.5's and this rung has no Metal and no D3D12 to fix a gap inside. Rules 1 and 2
+still govern — they are what M11.d.5 will be judged against when it writes those backends — and this
+rung is where they are paid for.
 
 The named risk of this rung is **not** that Metal or D3D12 is hard. It is that
 `reserve_transient_memory`'s contract is Vulkan spelled into an engine-owned interface, and the cost
@@ -228,7 +239,11 @@ all of them.** That proof is load-bearing; the Vulkan spelling of it is not. An 
 graph compares for equality keeps the proof and loses the spelling — and a backend that can only
 answer `~0u` stops having to hope nobody looked.
 
-## 3. What counts as a delivered backend, and what is reported instead
+## 3. What counts as a delivered backend, and what is reported instead — M11.d.5's section now
+
+**Kept here because it was decided here and the decisions did not change when the rung did.**
+`implement-m11d5-backends`'s `design.md` §3 carries the same three, and that is the copy a backend
+author should read; this one is the record of where they came from.
 
 `delivery-roadmap`'s M11 exit criterion is *"golden images match across Vulkan, Metal and D3D12
 within tolerance"*. This rung has to be able to say that sentence honestly or say something else, and
@@ -338,6 +353,8 @@ gate cannot say what it is looking at, which is the reason M11 was split in the 
 
 ## 7. What this rung deliberately does not do
 
+- **No Metal and no D3D12**, which is the change §1.4.3 made and the reason every bullet below about
+  a backend now reads as a constraint on M11.d.5 rather than on this rung.
 - **No MoltenVK.** `rhi-and-render-graph` refuses it as the long-term Apple strategy by name, so that
   a native Metal backend can use tile memory, memoryless attachments and MetalFX directly. A
   translation layer would produce a green golden image and satisfy nothing.

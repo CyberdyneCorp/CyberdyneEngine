@@ -1,6 +1,7 @@
 #include <cy/world/activation.h>
 
 #include <cy/core/diagnostics/breadcrumb.h>
+#include <cy/core/memory/attribution.h>
 #include <cy/ecs/world.h>
 #include <cy/world/overlay.h>
 
@@ -297,6 +298,15 @@ Expected<StagingPhase, Error> CellActivation::advance(const CookedCell& source,
                                                       const LayerTable& layers,
                                                       const PersistenceOverlay* overlay,
                                                       Nanoseconds budget) noexcept {
+    // THE WORLD-CELL AXIS'S PRODUCER. `core-memory-and-containers` — "Memory diagnostics": reporting
+    // is attributable "by domain, by type, by thread, by world cell, and by asset", and its scenario
+    // is "a world region consumes unexpected memory ... the report SHALL attribute it by domain,
+    // asset, and cell". Private staging is where a cell's memory is spent — the decoded columns, the
+    // overlay's patches, the entity lists — so this is the call that knows which cell to charge.
+    // `cy::core-memory` is below `cy::world` and cannot name a `CellId`; the module that owns the
+    // identity is the one that pushes it, which is the axis's own rule.
+    const MemoryAttributionScope attributed(MemoryAttribution{.world_cell = id_.value});
+
     if (phase_ == StagingPhase::Ready || phase_ == StagingPhase::Published) {
         return phase_;
     }
@@ -409,6 +419,11 @@ Status CellActivation::reindex() noexcept {
 }
 
 Status CellActivation::publish(ecs::World& world, const LayerTable& layers) noexcept {
+    // Publication instantiates into the ECS world, and the chunks that grows are this cell's as
+    // much as its staging is. Declared here as well as in `advance` because the two may run on
+    // different threads and an attribution scope is thread-local by design.
+    const MemoryAttributionScope attributed(MemoryAttribution{.world_cell = id_.value});
+
     if (phase_ != StagingPhase::Ready) {
         return fail(ErrorCode::Unavailable,
                     "this cell is still being prepared; publication happens only from Ready");

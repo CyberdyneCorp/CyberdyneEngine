@@ -15,7 +15,7 @@ using cy::rendering::RenderGraph;
 using cy::rendering::ResourceId;
 using cy::rhi::Access;
 using cy::rhi::AccessFlags;
-using cy::rhi::ImageLayout;
+using cy::rhi::ImageUse;
 using cy::rhi::Stage;
 using namespace cy::rendering::test;
 
@@ -23,7 +23,7 @@ CY_TEST_CASE("read-after-write carries the writer's stage and access into the re
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
     const ResourceId image = graph.create_texture(storage_image("scratch"));
 
     graph.add_pass("compute", cy::rhi::QueueKind::Graphics)
@@ -45,8 +45,8 @@ CY_TEST_CASE("read-after-write carries the writer's stage and access into the re
         }
     }
     CY_REQUIRE(found != nullptr);
-    CY_CHECK_EQ(found->old_layout, ImageLayout::General);
-    CY_CHECK_EQ(found->new_layout, ImageLayout::ShaderReadOnly);
+    CY_CHECK_EQ(found->old_use, ImageUse::Storage);
+    CY_CHECK_EQ(found->new_use, ImageUse::SampledRead);
     CY_CHECK_EQ(found->src_stage, Stage::ComputeShader);
     CY_CHECK_EQ(found->src_access, AccessFlags::ShaderStorageWrite);
     CY_CHECK_EQ(found->dst_stage, Stage::FragmentShader);
@@ -59,7 +59,7 @@ CY_TEST_CASE("write-after-read takes the reader's stage and none of its access b
     // bits in srcAccessMask asks the implementation to make a write visible that never happened.
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId image = graph.import_texture(
-        storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1), ImageLayout::General);
+        storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1), ImageUse::Storage);
 
     graph.add_pass("read it", cy::rhi::QueueKind::Graphics).read(image, Access::ComputeStorageRead);
     graph.add_pass("overwrite it", cy::rhi::QueueKind::Graphics)
@@ -75,14 +75,14 @@ CY_TEST_CASE("write-after-read takes the reader's stage and none of its access b
     CY_CHECK_EQ(barrier.dst_stage, Stage::ComputeShader);
     CY_CHECK_EQ(barrier.dst_access, AccessFlags::ShaderStorageWrite);
     // The layout does not change: both intents are storage accesses, so both want GENERAL.
-    CY_CHECK_EQ(barrier.old_layout, ImageLayout::General);
-    CY_CHECK_EQ(barrier.new_layout, ImageLayout::General);
+    CY_CHECK_EQ(barrier.old_use, ImageUse::Storage);
+    CY_CHECK_EQ(barrier.new_use, ImageUse::Storage);
 }
 
 CY_TEST_CASE("write-after-write names the previous write on both halves") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId image = graph.import_texture(
-        storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1), ImageLayout::General);
+        storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1), ImageUse::Storage);
     graph.add_pass("first", cy::rhi::QueueKind::Graphics).write(image, Access::ComputeStorageWrite);
     graph.add_pass("second", cy::rhi::QueueKind::Graphics)
         .write(image, Access::ComputeStorageWrite);
@@ -99,10 +99,10 @@ CY_TEST_CASE("read-after-read emits nothing when the layout already agrees") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             ImageLayout::Undefined);
+                             ImageUse::Undefined);
     const ResourceId image =
         graph.import_texture(storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1),
-                             ImageLayout::ShaderReadOnly);
+                             ImageUse::SampledRead);
 
     graph.add_pass("sample once", cy::rhi::QueueKind::Graphics)
         .read(image, Access::FragmentSampledRead)
@@ -124,7 +124,7 @@ CY_TEST_CASE("a transient's first use transitions from UNDEFINED, which is what 
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             ImageLayout::Undefined);
+                             ImageUse::Undefined);
     const ResourceId image = graph.create_texture(storage_image("scratch"));
     graph.add_pass("fill", cy::rhi::QueueKind::Graphics).write(image, Access::ComputeStorageWrite);
     graph.add_pass("sample", cy::rhi::QueueKind::Graphics)
@@ -135,8 +135,8 @@ CY_TEST_CASE("a transient's first use transitions from UNDEFINED, which is what 
     CY_REQUIRE(plan.has_value());
     const cy::rhi::ImageBarrier* first = find_image_barrier(*plan, image);
     CY_REQUIRE(first != nullptr);
-    CY_CHECK_EQ(first->old_layout, ImageLayout::Undefined);
-    CY_CHECK_EQ(first->new_layout, ImageLayout::General);
+    CY_CHECK_EQ(first->old_use, ImageUse::Undefined);
+    CY_CHECK_EQ(first->new_use, ImageUse::Storage);
     // Discarding the contents is exactly what makes memory reuse legal, so this is not cosmetic.
 }
 
@@ -147,7 +147,7 @@ CY_TEST_CASE("a whole-image transition is one barrier, a mip range is one, a sin
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId image =
         graph.import_texture(storage_image("4x4", 64, 4, 4),
-                             cy::rhi::TextureHandle::from_slot(1, 1), ImageLayout::Undefined);
+                             cy::rhi::TextureHandle::from_slot(1, 1), ImageUse::Undefined);
 
     graph.add_pass("whole image", cy::rhi::QueueKind::Graphics)
         .write(image, Access::ComputeStorageWrite);
@@ -193,7 +193,7 @@ CY_TEST_CASE("two adjacent layer ranges reaching the same state coalesce into on
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             ImageLayout::Undefined);
+                             ImageUse::Undefined);
     const ResourceId layered = graph.create_texture(storage_image("two layers", 16, 2));
 
     graph.add_pass("layer 0", cy::rhi::QueueKind::Graphics)
@@ -248,7 +248,7 @@ CY_TEST_CASE("a depth attachment transitions once and keeps reversed-Z's compari
     const ResourceId depth = graph.create_texture(depth_request);
     const ResourceId target =
         graph.import_texture(colour_target("swapchain", 128),
-                             cy::rhi::TextureHandle::from_slot(0, 1), ImageLayout::Undefined);
+                             cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
 
     graph.add_pass("depth prepass", cy::rhi::QueueKind::Graphics)
         .write(depth, Access::DepthStencilAttachmentWrite);
@@ -260,7 +260,7 @@ CY_TEST_CASE("a depth attachment transitions once and keeps reversed-Z's compari
     CY_REQUIRE(plan.has_value());
     const cy::rhi::ImageBarrier* first = find_image_barrier(*plan, depth);
     CY_REQUIRE(first != nullptr);
-    CY_CHECK_EQ(first->new_layout, ImageLayout::DepthStencilAttachment);
+    CY_CHECK_EQ(first->new_use, ImageUse::DepthStencilAttachment);
     // The aspect comes from the format, not from a flag a pass had to remember to set.
     CY_CHECK_EQ(first->aspect, cy::rhi::ImageAspect::Depth);
     // Both stages, because depth is tested before the fragment shader and written after it.

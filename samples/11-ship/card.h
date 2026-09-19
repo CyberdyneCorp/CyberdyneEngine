@@ -72,6 +72,12 @@ public:
     /// them; the content supplies the space they go in.
     void draw_footer(Image& image, const std::vector<CoverageLine>& lines) const noexcept;
 
+    /// A colour the content declared, or `fallback`. The one thing a caller outside this file needs
+    /// from the palette: `present.cpp` writes the device it got onto the card once it knows it, and
+    /// a run fact drawn in a colour the content never chose would be the one line on the card that
+    /// did not come from the package.
+    [[nodiscard]] Rgba colour_or(std::string_view name, Rgba fallback) const noexcept;
+
 private:
     enum class Kind : u8 { Bar, Text };
 

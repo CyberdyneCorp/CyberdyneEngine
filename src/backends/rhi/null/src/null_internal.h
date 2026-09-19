@@ -268,7 +268,7 @@ public:
         return DescriptorModel::Bindless;
     }
     [[nodiscard]] u32 frames_in_flight() const noexcept override { return frames_in_flight_; }
-    [[nodiscard]] u32 queue_family(QueueKind queue) const noexcept override;
+
     [[nodiscard]] bool has_queue(QueueKind queue) const noexcept override;
     void set_validation_callback(ValidationCallback callback, void* user) noexcept override;
 
@@ -346,8 +346,8 @@ public:
     Expected<ComputePipelineHandle, Error> create_compute_pipeline(
         const ComputePipelineDescription& desc) override;
     void destroy_compute_pipeline(ComputePipelineHandle handle) noexcept override;
-    Expected<u64, Error> save_pipeline_cache(Span<u8> out) override;
-    Status load_pipeline_cache(Span<const u8> data) override;
+    Status save_pipeline_cache(const char* path) override;
+    Status load_pipeline_cache(const char* path) override;
 
     // --- Frames and submission
     // --------------------------------------------------------------------
@@ -432,7 +432,6 @@ private:
     u32 frame_slot_ = 0;
     bool frame_open_ = false;
     u64 timelines_[kQueueKindCount] = {};
-    u32 queue_families_[kQueueKindCount] = {};
 
     HandlePool<NullBuffer, BufferTag> buffers_;
     HandlePool<NullTexture, TextureTag> textures_;

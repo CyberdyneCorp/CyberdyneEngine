@@ -277,7 +277,7 @@ Status VfxScene::render(assembly::AssemblyReport& out) noexcept {
     request.width = kSceneWidth;
     request.height = kSceneHeight;
     request.extra_usage = rhi::TextureUsage::TransferSource;
-    view.output = graph_.import_texture(request, output_, rhi::ImageLayout::Undefined);
+    view.output = graph_.import_texture(request, output_, rhi::ImageUse::Undefined);
 
     if (Status bound = recorder_.bind(assembly_); !bound) {
         return bound;

@@ -3,6 +3,8 @@
 #include <cy/test/breadcrumbs.h>
 #include <cy/test/test.h>
 
+#include <cy/core/memory/attribution.h>
+#include <cy/core/memory/tracking_allocator.h>
 #include <cy/ecs/query.h>
 #include <cy/world/activation.h>
 #include <cy/world/overlay.h>
@@ -395,4 +397,53 @@ CY_TEST_CASE("publishing a cell leaves a level-transition breadcrumb naming the 
     // The cell, not a count: an artefact that says which cell was entering the world says where in
     // the world the process was.
     CY_CHECK_EQ(detail, activation.cell().value);
+}
+
+CY_TEST_CASE("cell activation attributes its staging to the cell that spent it") {
+    // `core-memory-and-containers` — "Memory diagnostics", scenario "Attribution answers a
+    // question": **WHEN** a world region consumes unexpected memory, **THEN** the report attributes
+    // it by domain, asset and cell. The world-cell axis was built at M7 and nothing pushed a scope
+    // until M11.d, so the answer to "which region is this" was `unattributed_bytes` and nothing
+    // else. Private staging is where a cell's memory goes, and this reads the axis back off the
+    // allocator the staging was given.
+    cy::ecs::World ecs(cy::world::test::allocator());
+    CY_REQUIRE(ecs.initialize().has_value());
+    const auto ids = cy::world::test::register_components(ecs);
+    CY_REQUIRE(ids.has_value());
+
+    cy::world::HierarchicalGrid grid(grid_config());
+    cy::world::LayerTable layers(cy::world::test::allocator());
+    const cy::world::CookedCell cell = cy::world::test::cook_props(
+        cy::world::test::allocator(), grid, cy::world::CellCoord{3, 1, 0, 0}, 500, *ids, 1);
+    CY_REQUIRE(cell.id.is_valid());
+
+    cy::TrackingAllocator tracked(cy::world::test::allocator(), cy::MemoryDomain::World,
+                                  "world.staging");
+    {
+        cy::world::CellActivation activation(tracked, cell);
+        const auto phase = activation.advance(cell, layers, nullptr, kUnbounded);
+        CY_REQUIRE(phase.has_value());
+        CY_CHECK(*phase == cy::world::StagingPhase::Ready);
+        CY_CHECK(activation.staged_bytes() > 0u);
+
+        cy::MemoryAttributionRow rows[8] = {};
+        const cy::MemoryAttributionSummary summary = tracked.report_attribution(
+            cy::AttributionAxis::WorldCell, cy::Span<cy::MemoryAttributionRow>(rows, 8));
+
+        // ONE KEY, AND IT IS THIS CELL'S. `unattributed_bytes` being zero is the half that shows
+        // the producer covers the whole of preparation rather than one call inside it: before the
+        // scope existed, every one of these bytes was in that figure and none was in a row.
+        CY_REQUIRE_EQ(summary.distinct_keys, 1u);
+        CY_CHECK_EQ(rows[0].key, cell.id.value);
+        CY_CHECK(rows[0].live_bytes > 0u);
+        CY_CHECK(rows[0].live_allocations > 0u);
+        CY_CHECK_EQ(summary.unattributed_bytes, 0u);
+    }
+
+    // And the axis empties when the staging is released, which is what makes a rising row a leak
+    // rather than an accumulation of the report's own making.
+    cy::MemoryAttributionRow after[4] = {};
+    const cy::MemoryAttributionSummary released = tracked.report_attribution(
+        cy::AttributionAxis::WorldCell, cy::Span<cy::MemoryAttributionRow>(after, 4));
+    CY_CHECK_EQ(released.distinct_keys, 0u);
 }

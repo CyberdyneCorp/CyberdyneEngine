@@ -29,6 +29,7 @@
 #include <cy/core/assets/diagnostics.h>
 #include <cy/core/base/assert.h>
 #include <cy/core/diagnostics/breadcrumb.h>
+#include <cy/core/memory/attribution.h>
 #include <cy/core/memory/scope.h>
 #include <cy/core/memory/system_allocator.h>
 
@@ -40,6 +41,21 @@
 
 namespace cy::assets {
 namespace {
+
+/// What every allocation made while loading one asset is attributed to.
+///
+/// `core-memory-and-containers` — "Memory diagnostics": reporting is attributable "by domain, by
+/// type, by thread, by world cell, and by asset". The asset axis is 128 bits because `AssetId` is;
+/// folding it to 64 would attribute two assets to one row at a rate nobody would notice. THE MODULE
+/// THAT KNOWS THE IDENTITY IS THE ONE THAT PUSHES IT — `cy::core-memory` is below `cy::core-values`
+/// and cannot name an `AssetId`, which is why the axis is an opaque pair of integers there and why
+/// this function is here rather than in `attribution.h`.
+MemoryAttribution asset_attribution(cy::AssetId id) noexcept {
+    MemoryAttribution attribution;
+    attribution.asset_high = id.high();
+    attribution.asset_low = id.low();
+    return attribution;
+}
 
 i64 monotonic_now_ns() noexcept {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -437,6 +453,11 @@ void AssetSystemImpl::read_operation(void* user) noexcept {
     auto* slot = static_cast<AssetSlot*>(user);
     AssetSystemImpl& self = *slot->owner;
 
+    // The read stage's bytes belong to this asset, and this is where that is declared. The scope is
+    // thread-local and this body owns its thread for its duration, so everything the read allocates
+    // — the stored payload above all — carries the asset key.
+    const MemoryAttributionScope attributed(asset_attribution(slot->id));
+
     // Stage boundary: a request cancelled before the read started never opens the file.
     if (slot->cancellation.is_cancelled()) {
         slot->read_status = fail(ErrorCode::Unavailable, "the load was cancelled before the read");
@@ -518,6 +539,12 @@ void AssetSystemImpl::process_job(const jobs::TaskContext& context, void* user) 
     (void)context;
     auto* slot = static_cast<AssetSlot*>(user);
     AssetSystemImpl& self = *slot->owner;
+
+    // The decompress-and-publish stage, on a worker, and it allocates the payload the asset will
+    // hold for as long as it is resident. Declared for the same reason the read stage is, and
+    // separately from it because the two stages run on different threads and a thread-local scope
+    // does not travel between them.
+    const MemoryAttributionScope attributed(asset_attribution(slot->id));
 
     // Stage boundary. Partial results — the bytes the read produced — are released here, which is
     // what "release any partial results" means for a load that got as far as reading.
@@ -1239,9 +1266,6 @@ Status AssetSystem::reload(cy::AssetId id, const LoadOptions& options) noexcept 
     }
     Array<u8> replacement(default_allocator());
     Array<cy::AssetId> dependencies(default_allocator());
-    if (resolved.value().source->as_package() != nullptr) {
-        return fail(ErrorCode::NotImplemented, "MUTATION: the pre-M11.d refusal, reinstated");
-    }
     if (PackageMount* package = resolved.value().source->as_package(); package != nullptr) {
         // A cooked package is a mount like any other here: the entry's chunk framing, its
         // decompression and its declared dependencies are `PackageReader`'s, and this reads them

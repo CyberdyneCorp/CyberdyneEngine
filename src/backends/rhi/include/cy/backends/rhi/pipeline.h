@@ -144,7 +144,9 @@ struct DescriptorWrite {
     u64 buffer_range = 0;  // zero means the rest of the buffer
     TextureViewHandle texture_view;
     SamplerHandle sampler;
-    ImageLayout layout = ImageLayout::ShaderReadOnly;
+    /// What the image is being used as through this binding — `SampledRead` for a sampled texture,
+    /// `Storage` for a storage image. Engine vocabulary, not a `VkImageLayout`; see types.h.
+    ImageUse use = ImageUse::SampledRead;
 };
 
 // --- Pipeline layouts -----------------------------------------------------------------------

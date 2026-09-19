@@ -9,6 +9,7 @@
 #include "null_internal.h"
 
 #include <cy/backends/rhi/backend.h>
+#include <cy/backends/rhi/pipeline_cache_file.h>
 #include <cy/core/base/assert.h>
 #include <cy/core/memory/pressure.h>
 
@@ -202,11 +203,15 @@ NullDevice::NullDevice(Allocator& allocator, const DeviceDescription& desc) noex
         capabilities_.set_format_features(format, features);
     }
 
-    // One queue family, which is what "no dedicated async compute" means, and what makes the
+    // ONE OWNERSHIP DOMAIN, which is what "no dedicated async compute" means, and what makes the
     // single-queue fold produce zero ownership transfers rather than transfers between two
-    // synthetic families that do not exist.
-    for (u32& family : queue_families_) {
-        family = 0;
+    // synthetic families that do not exist. Metal gap 4: a backend with no ownership concept at all
+    // answers `needs_queue_ownership_transfer()` false and the graph never derives a transfer —
+    // this one keeps the mechanism on, with every queue in domain 0, so the fold stays the path
+    // continuous integration exercises rather than a path nothing reaches.
+    capabilities_.set_needs_queue_ownership_transfer(true);
+    for (u32 index = 0; index < kQueueKindCount; ++index) {
+        capabilities_.set_queue_ownership_domain(static_cast<QueueKind>(index), 0);
     }
 
     memory_.device_heap_size = 8ULL * 1024 * 1024 * 1024;
@@ -243,11 +248,6 @@ NullDevice::~NullDevice() noexcept {
             buffer->storage_bytes = 0;
         }
     }
-}
-
-u32 NullDevice::queue_family(QueueKind queue) const noexcept {
-    const auto index = static_cast<u32>(queue);
-    return index < kQueueKindCount ? queue_families_[index] : 0;
 }
 
 bool NullDevice::has_queue(QueueKind queue) const noexcept {
@@ -395,7 +395,7 @@ const BufferDescription* NullDevice::buffer_description(BufferHandle handle) con
 
 Expected<TextureHandle, Error> NullDevice::create_texture(const TextureDescription& desc) {
     ValidationMessage message;
-    if (Status valid = validate_texture(desc, capabilities_.limits(), message); !valid) {
+    if (Status valid = validate_texture(desc, capabilities_, message); !valid) {
         report_validation(ValidationSeverity::Error, message.text);
         return make_unexpected(valid.error());
     }
@@ -536,7 +536,7 @@ Expected<u32, Error> NullDevice::read_query_results(QueryPoolHandle pool, u32 fi
 Expected<TextureHandle, Error> NullDevice::create_transient_texture(
     const TextureDescription& desc) {
     ValidationMessage message;
-    if (Status valid = validate_texture(desc, capabilities_.limits(), message); !valid) {
+    if (Status valid = validate_texture(desc, capabilities_, message); !valid) {
         report_validation(ValidationSeverity::Error, message.text);
         return make_unexpected(valid.error());
     }
@@ -899,16 +899,23 @@ void NullDevice::destroy_compute_pipeline(ComputePipelineHandle handle) noexcept
     (void)compute_pipelines_.destroy(handle);
 }
 
-Expected<u64, Error> NullDevice::save_pipeline_cache(Span<u8> out) {
-    // There is nothing to persist: no pipeline was compiled. Reporting zero bytes rather than
-    // failing is what lets a host write the same "save the cache on shutdown" code on both
-    // backends, and a zero-byte cache loads back as an empty one.
-    (void)out;
-    return 0ULL;
+Status NullDevice::save_pipeline_cache(const char* path) {
+    // There is nothing to persist: no pipeline was compiled. The FILE IS STILL WRITTEN, empty,
+    // because the contract this backend exists to hold is that a host writes the same "save the
+    // cache on shutdown" code on every backend — and an empty file loads back as a cold cache,
+    // which is what an empty cache is. A backend that quietly wrote nothing would make "did the
+    // save happen" unanswerable on the one backend every test run has.
+    return write_pipeline_cache_file(path, Span<const u8>());
 }
 
-Status NullDevice::load_pipeline_cache(Span<const u8> data) {
-    (void)data;
+Status NullDevice::load_pipeline_cache(const char* path) {
+    Array<u8> blob(*allocator_);
+    Expected<bool, Error> present = read_pipeline_cache_file(path, blob);
+    if (!present) {
+        return make_unexpected(present.error());
+    }
+    // An absent file is a cold start and not an error; a present one holds nothing this backend
+    // compiled anything from, so it counts no hit.
     return ok();
 }
 

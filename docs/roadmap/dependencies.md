@@ -254,9 +254,10 @@ flowchart TB
     RA --> RB["M11.b · Authoring<br/><i>a real game, made in the editor</i>"]
     RB --> RC["M11.c · Image<br/><i>a beauty shot, authored through it</i>"]
     GI2 --> RC
-    RC --> RD["M11.d · Desktop<br/><i>Metal · D3D12 · native platform</i>"]
-    BACKENDS["Metal · D3D12"] --> RD
-    RD --> RE["M11.e · Ship<br/><i>mobile · distribution · the 1.0 record</i>"]
+    RC --> RD["M11.d · Desktop<br/><i>the RHI interface · native platform</i>"]
+    RD --> RD5["M11.d.5 · Backends<br/><i>Metal · D3D12 · one picture</i>"]
+    BACKENDS["Metal · D3D12"] --> RD5
+    RD5 --> RE["M11.e · Ship<br/><i>mobile · distribution · the 1.0 record</i>"]
     PORT["porting surface · mobile"] --> RE
     RE --> SHIP["1.0"]
 
@@ -268,7 +269,7 @@ flowchart TB
 storage (M2), the command stream (M4), streamed cells for interest management (M6), and rollback
 primitives that are the *same mechanism* as replay. Built before those, it is built twice.
 
-**Why M11 is five rungs, and why they are in this order.** The rungs are not a partition of the work
+**Why M11 is six rungs, and why they are in this order.** The rungs are not a partition of the work
 by size: each one is a claim its own closing artefact can refute, and the edges above are what each
 artefact depends on. **M11.a first**, because a world costing 122 ms a frame is one nobody can author
 into and one nobody can tune a picture of. **M11.b before M11.c**, because a beauty shot assembled by
@@ -277,6 +278,16 @@ both. **M11.d before M11.e**, because a porting surface is proved against a stub
 against a device nobody here owns. The argument is in
 [`implement-m11-reach`](../../openspec/changes/implement-m11-reach/proposal.md) task 0.1 and the rule
 it added is in `delivery-roadmap`.
+
+**And M11.d.5 between M11.d and M11.e, because the edge above it is a toolchain rather than a
+capability.** The split produced five rungs; M11.d's spike produced the sixth. Metal and D3D12 were
+M11.d's, and no machine this project works on can compile either — Linux, one GPU vendor, no Apple
+toolchain. The edge `Metal · D3D12 → M11.d.5` is the honest drawing of that: the backends depend on
+the RHI interface M11.d settles, and the rung depends on hardware and toolchains that exist only on
+legs of the continuous-integration matrix. `delivery-roadmap`'s *"A spike may resize a milestone as
+well as redirect it"* is the rule, and
+[`implement-m11d5-backends`](../../openspec/changes/implement-m11d5-backends/proposal.md) is the
+change.
 
 **Why environment is after game systems.** Terrain, foliage, water and weather are the largest block
 of work whose absence blocks nothing else. They consume the field substrate, the streaming

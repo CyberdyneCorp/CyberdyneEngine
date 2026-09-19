@@ -13,6 +13,23 @@
 add_subdirectory(headless)
 add_subdirectory(desktop-sdl3)
 
+# stub/ — M11.d task 4.4. The porting surface's own proof: a Platform and a DisplayServer that
+# share no desktop assumption at all. Built on every host, because a stub nothing compiles proves
+# nothing.
+add_subdirectory(stub)
+
+# linux-native/ — M11.d task 4.1. The SECOND native implementation of both interfaces, which is
+# what proves the abstraction carries no SDL assumption. desktop-sdl3/ is NOT replaced: two
+# implementations is the proof, and one of them being deleted would leave the interface proved by
+# exactly as many as before.
+#
+# Guarded by the host rather than by a feature option: a native backend for another desktop is a
+# directory beside this one and one branch here, which is the same shape desktop-sdl3/ uses for its
+# per-operating-system host files.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(linux-native)
+endif()
+
 # host/ — the desktop host's frame loop (task 3.4.3). It implements neither Platform nor
 # DisplayServer: it is the `while (running)` that calls Runtime::tick(), living here because
 # `core-platform-abstraction` requires the loop to be the platform's and not the engine's.

@@ -265,7 +265,7 @@ CY_TEST_CASE("cluster assignment lands on the async queue when the device has on
 
     cy::rendering::CompileOptions options = compile_options();
     options.queue_available[static_cast<cy::u32>(cy::rhi::QueueKind::AsyncCompute)] = true;
-    options.queue_family[static_cast<cy::u32>(cy::rhi::QueueKind::AsyncCompute)] = 2;
+    options.queue_ownership_domain[static_cast<cy::u32>(cy::rhi::QueueKind::AsyncCompute)] = 2;
     cy::Expected<cy::rendering::CompiledGraph, cy::Error> split = graph.compile(options);
     CY_REQUIRE(split.has_value());
     CY_CHECK_GT(split->stats.submits, 1U);

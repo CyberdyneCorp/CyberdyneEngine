@@ -104,8 +104,8 @@ struct ResourceInfo {
     rhi::TextureUsage texture_usage = rhi::TextureUsage::None;
     rhi::BufferUsage buffer_usage = rhi::BufferUsage::None;
     /// Imported resources only: what state the caller says the resource is already in.
-    rhi::ImageLayout initial_layout = rhi::ImageLayout::Undefined;
-    u32 initial_queue_family = rhi::kQueueFamilyIgnored;
+    rhi::ImageUse initial_use = rhi::ImageUse::Undefined;
+    rhi::QueueOwner initial_owner{};
     rhi::TextureHandle imported_texture;
     rhi::BufferHandle imported_buffer;
 };
@@ -281,10 +281,19 @@ struct CompileOptions {
     /// continuous integration's normal path, and it is not a special case anywhere in the code.
     bool enable_async_compute = true;
 
-    /// Which queues the device actually has, and the family index of each. A queue the device does
-    /// not have is folded onto graphics.
+    /// Which queues the device actually has. A queue the device does not have is folded onto
+    /// graphics.
     bool queue_available[rhi::kQueueKindCount] = {true, false, false};
-    u32 queue_family[rhi::kQueueKindCount] = {0, 0, 0};
+
+    /// WHETHER A RESOURCE CHANGING QUEUES NEEDS AN EXPLICIT TRANSFER, and which queues share an
+    /// ownership domain — `DeviceCapabilities::needs_queue_ownership_transfer()` and
+    /// `queue_ownership_domain()`, copied in by the executor. Metal gap 4: this used to be a
+    /// `u32 queue_family[3]` read straight off `Device::queue_family()`, which is a Vulkan family
+    /// index in an engine-owned plan. The graph only ever COMPARES these, so an opaque domain is
+    /// all it needed, and a backend with no ownership concept turns the whole derivation off with
+    /// the flag rather than inventing indices that differ.
+    bool queue_ownership_transfers = true;
+    u8 queue_ownership_domain[rhi::kQueueKindCount] = {0, 0, 0};
 
     /// A DELIBERATE POLICY KNOB, not a defect switch. Aliasing buys memory and spends parallelism:
     /// an alias edge serialises work that shares nothing but bytes. On a frame where the async
@@ -320,17 +329,16 @@ public:
     ResourceId create_buffer(const BufferRequest& request) noexcept;
 
     /// A resource that outlives the frame: the swapchain image, the GPU scene, a persistent target.
-    /// `current_layout` and `owning_queue_family` are what the caller promises the resource is
-    /// already in, and getting them wrong is how a first barrier transitions from the wrong state.
+    /// `current_use` and `owner` are what the caller promises the resource is already in, and
+    /// getting them wrong is how a first barrier transitions from the wrong state.
     ///
     /// A write to an imported resource is a CULLING ROOT. That falls out of the definition — the
     /// graph cannot see who reads it afterwards — and it is worth knowing, because it means a
     /// culling test only means something when the shared resource is graph-owned.
     ResourceId import_texture(const TextureRequest& request, rhi::TextureHandle texture,
-                              rhi::ImageLayout current_layout,
-                              u32 owning_queue_family = rhi::kQueueFamilyIgnored) noexcept;
+                              rhi::ImageUse current_use, rhi::QueueOwner owner = {}) noexcept;
     ResourceId import_buffer(const BufferRequest& request, rhi::BufferHandle buffer,
-                             u32 owning_queue_family = rhi::kQueueFamilyIgnored) noexcept;
+                             rhi::QueueOwner owner = {}) noexcept;
 
     /// Declare a pass. Passes must be declared in dependency order: the scheduler treats
     /// declaration order as a topological order and asserts it, which is true whenever an author

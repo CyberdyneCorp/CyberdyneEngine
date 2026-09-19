@@ -268,7 +268,7 @@ Status FrameBindings::bind_scene_color(rhi::TextureViewHandle view) noexcept {
     writes[0].binding = kPassBindingSceneColor;
     writes[0].kind = rhi::DescriptorKind::SampledTexture;
     writes[0].texture_view = view;
-    writes[0].layout = rhi::ImageLayout::ShaderReadOnly;
+    writes[0].use = rhi::ImageUse::SampledRead;
     writes[1].binding = kPassBindingSampler;
     writes[1].kind = rhi::DescriptorKind::Sampler;
     writes[1].sampler = pipelines_->linear_clamp();

@@ -92,6 +92,16 @@ function(cy_assets_declare_tests)
         SOURCES "${cy_assets_tests_dir}/test_asset_system.cpp"
         DEPENDENCIES cy::core-assets cy::core-jobs cy::core-diagnostics)
 
+    # The remote mount's transport, both ends over the loopback. Its own suite for the reason
+    # `integration.networking_udp` is its own: a machine that refuses to bind a loopback socket
+    # loses this suite rather than the whole asset layer's, and the difference between "this host
+    # has no sockets" and "the asset layer is broken" is worth one CTest row.
+    cy_add_test(
+        NAME assets_remote
+        KIND integration
+        SOURCES "${cy_assets_tests_dir}/test_remote.cpp"
+        DEPENDENCIES cy::core-assets)
+
     # The watcher and the reload it feeds. Integration rather than unit for the same reason
     # `assets_loading` is: the reload cases start a job system and an I/O thread. The watcher's own
     # cases would fit a millisecond, and they are here rather than split across two suites because

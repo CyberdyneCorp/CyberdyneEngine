@@ -40,7 +40,12 @@ struct ValidationMessage {
 /// backend can report the first failure rather than a list, which is what a caller can act on.
 [[nodiscard]] Status validate_buffer(const BufferDescription& desc,
                                      ValidationMessage& message) noexcept;
-[[nodiscard]] Status validate_texture(const TextureDescription& desc, const DeviceLimits& limits,
+/// Takes the whole DeviceCapabilities rather than just its limits, because a texture is checked
+/// against WHAT THE DEVICE SUPPORTS FOR ITS FORMAT as well as against how big it may be — Metal
+/// gap 7. A depth-stencil target in a format the device does not report support for is refused
+/// here, naming `select_depth_stencil_format`, rather than substituted quietly by a backend.
+[[nodiscard]] Status validate_texture(const TextureDescription& desc,
+                                      const DeviceCapabilities& caps,
                                       ValidationMessage& message) noexcept;
 [[nodiscard]] Status validate_texture_view(const TextureViewDescription& desc,
                                            const TextureDescription& texture,

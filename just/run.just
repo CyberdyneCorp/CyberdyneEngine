@@ -38,6 +38,15 @@ run-sample *args:
     # samples/<nn>-<name>/cy_sample_<name>: the sample's number orders the directory listing and is
     # not part of its name, so the binary is found by pattern rather than by a table kept in step.
     mapfile -t binaries < <(compgen -G "${build_dir}/samples/*/cy_sample_${name}" || true)
+    # A SAMPLE MAY BE NAMED WITH ITS DIRECTORY'S NUMBER. `samples/00-empty/` builds
+    # `cy_sample_empty`, and both spellings are things a reader of the tree would type — M11.d's
+    # ledger says `just run-sample 00-empty` because that is what the directory is called. The
+    # number orders the listing and is not part of the name, so it is stripped and retried rather
+    # than kept in a table that would have to stay in step.
+    if [ "${#binaries[@]}" -eq 0 ] && [[ "${name}" =~ ^[0-9]+[a-z]?- ]]; then
+        name="${name#*-}"
+        mapfile -t binaries < <(compgen -G "${build_dir}/samples/*/cy_sample_${name}" || true)
+    fi
     if [ "${#binaries[@]}" -eq 0 ]; then
         echo "run-sample: no sample '${name}' in ${build_dir}/samples/." >&2
         echo "  built samples:" >&2
@@ -632,3 +641,36 @@ capture-beauty-shot *args:
         rm -rf "${work}/frames"
         echo "    docs/design/videos/m11c-beauty-shot.mp4"
     fi
+
+# M11.d's ARTEFACT, AND WHY IT IS ONE RECIPE AND NOT FOUR.
+#
+# Task 8.1 is "one project — built, cooked, packaged and LAUNCHED FROM A SINGLE RECIPE", and the
+# word doing the work is *single*. `just content-package` and `just content-patch` already exist and
+# already orchestrate `cy_build`; what nothing in this tree had was one entry point that takes a
+# project from source to a running window. This is it, and it builds the engine first for the same
+# reason every other run recipe does: running whatever binary happens to be lying in the build tree
+# reports on a revision nobody has.
+#
+# `--platform headless` is the leg continuous integration runs — `smoke.ship` — and it presents
+# nothing and says so. `--platform sdl3` on a machine with a display and a device is the leg that
+# DRAWS, and `--shot <path>` photographs what the device presented rather than what the host
+# composed. `--require-draw` turns "nothing was presented" into a non-zero exit, which is what makes
+# the drawing claim falsifiable.
+#
+# IT IS NOT A GAME. `m11b:the-game-exists` is red and this recipe does not close it; see
+# samples/11-ship/README.md.
+
+# Run the M11.d artefact: one project cooked, packaged, installed and launched. Usage: just run-ship [--profile <p>] [--platform sdl3|headless] [--frames <n>] [--shot <path>] [--coverage <path>] [--require-draw]
+run-ship *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    IFS=$'\t' read -r profile rest <<< "$(just _split {{args}})"
+    just _report-override CY_BUILD_DIR "${CY_BUILD_DIR:-}"
+
+    just build-engine --profile "${profile}" -D CY_BUILD_TOOLS=ON
+
+    build_dir="${CY_BUILD_DIR:-build/${profile}}"
+    echo "==> run         ship  profile=${profile}"
+    python3 samples/11-ship/ship.py --build-dir "${build_dir}" \
+        --work "${build_dir}/ship" ${rest}

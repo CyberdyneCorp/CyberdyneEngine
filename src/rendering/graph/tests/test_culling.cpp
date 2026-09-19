@@ -22,7 +22,7 @@ CY_TEST_CASE("a pass whose output nothing consumes is culled, with no branch in 
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
     const ResourceId overlay = graph.create_texture(storage_image("debug overlay"));
 
     graph.add_pass("shade", cy::rhi::QueueKind::Graphics)
@@ -62,7 +62,7 @@ CY_TEST_CASE(
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId imported =
         graph.import_texture(storage_image("shared"), cy::rhi::TextureHandle::from_slot(1, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
     const cy::rendering::PassId pass =
         graph.add_pass("write the shared image", cy::rhi::QueueKind::Graphics)
             .write(imported, Access::ComputeStorageWrite)
@@ -80,7 +80,7 @@ CY_TEST_CASE("culling reaches transitively through a chain of producers") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
     const ResourceId first = graph.create_texture(storage_image("first"));
     const ResourceId second = graph.create_texture(storage_image("second"));
     const ResourceId orphan = graph.create_texture(storage_image("orphan"));
@@ -112,7 +112,7 @@ CY_TEST_CASE("subresource precision is load-bearing for culling, not only for ba
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
     const ResourceId layered = graph.create_texture(storage_image("two layers", 16, 2));
 
     const cy::rendering::PassId writer0 =
@@ -140,7 +140,7 @@ CY_TEST_CASE("the coarse version of the same graph keeps the second writer") {
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId target =
         graph.import_texture(colour_target("swapchain"), cy::rhi::TextureHandle::from_slot(0, 1),
-                             cy::rhi::ImageLayout::Undefined);
+                             cy::rhi::ImageUse::Undefined);
     const ResourceId layered = graph.create_texture(storage_image("two layers", 16, 2));
 
     graph.add_pass("write both layers", cy::rhi::QueueKind::Graphics)

@@ -4,3 +4,5 @@
     for (auto& entrie : entries_) {
         const Entry& entry = entrie;
         entrie.token = std::move(*refusal);
+         says=("misspelling", "recieve"),
+         edit=("docs/README.md", "", "\nThe gate must recieve this line and object to it.\n")),

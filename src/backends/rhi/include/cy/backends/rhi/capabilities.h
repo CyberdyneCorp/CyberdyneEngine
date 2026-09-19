@@ -15,6 +15,7 @@
 
 #include <cy/backends/rhi/types.h>
 #include <cy/core/base/types.h>
+#include <cy/core/memory/array.h>
 
 namespace cy::rhi {
 
@@ -220,6 +221,38 @@ public:
     [[nodiscard]] BackendKind backend() const noexcept { return backend_; }
     void set_backend(BackendKind kind) noexcept { backend_ = kind; }
 
+    /// WHETHER A RESOURCE CHANGING QUEUES NEEDS AN EXPLICIT TRANSFER — Metal gap 4.
+    ///
+    /// Vulkan says yes: a resource written on one queue family and read on another needs a release
+    /// barrier on the first and an acquire barrier on the second, ordered by a semaphore. Metal
+    /// says no — `MTLCommandQueue` has no family and no ownership — and so does D3D12. The render
+    /// graph asks THIS rather than asking a device for a family index, which is what lets a backend
+    /// with no such concept answer once instead of inventing an index per queue.
+    [[nodiscard]] bool needs_queue_ownership_transfer() const noexcept {
+        return queue_ownership_transfers_;
+    }
+    void set_needs_queue_ownership_transfer(bool needed) noexcept {
+        queue_ownership_transfers_ = needed;
+    }
+
+    /// WHICH OWNERSHIP DOMAIN A QUEUE BELONGS TO. Two kinds that answer the same domain need no
+    /// transfer between them — and on a device with no dedicated async compute they do answer the
+    /// same, which is exactly what makes the transfer disappear rather than needing a special case.
+    ///
+    /// An opaque small integer the graph only COMPARES, in the shape `MemoryPoolClass` uses for the
+    /// same reason: the Vulkan backend writes its family index here, a D3D12 backend would write a
+    /// queue-type ordinal, and nothing above `src/backends/` interprets either.
+    [[nodiscard]] u8 queue_ownership_domain(QueueKind queue) const noexcept {
+        const auto index = static_cast<u32>(queue);
+        return index < kQueueKindCount ? queue_domain_[index] : 0;
+    }
+    void set_queue_ownership_domain(QueueKind queue, u8 domain) noexcept {
+        const auto index = static_cast<u32>(queue);
+        if (index < kQueueKindCount) {
+            queue_domain_[index] = domain;
+        }
+    }
+
     /// THE FORM THIS DEVICE CONSUMES A SHADER IN — Metal gap 1, as a capability rather than as a
     /// backend identity test. A cook asks this, not `backend() == BackendKind::Metal`: two Metal
     /// devices could want MSL source and a prebuilt `.metallib`, and a renderer that branched on
@@ -262,9 +295,38 @@ private:
     DeviceLimits limits_{};
     BackendKind backend_ = BackendKind::Null;
     ShaderFormat native_shader_format_ = ShaderFormat::Spirv;
+    bool queue_ownership_transfers_ = false;
+    u8 queue_domain_[kQueueKindCount] = {};
     char device_name_[128] = {};
     char driver_version_[64] = {};
     RayTracingObservation ray_tracing_{};
 };
+
+/// THE ENGINE'S OWN FORMAT CHOICE, MADE AGAINST WHAT THE DEVICE REPORTS — Metal gap 7.
+///
+/// The per-format query has existed since M3 and both backends populate it for every format; what
+/// it had until M11.d is NO CONSUMER ABOVE `src/backends/rhi/`, so "which format does this device
+/// actually support" was a question nothing asked and every backend was free to answer for itself
+/// by substituting quietly. `MTLPixelFormatDepth24Unorm_Stencil8` is the case: it exists in Metal's
+/// enumeration and is unsupported on every Apple GPU, and a backend that swapped in
+/// `Depth32Float_Stencil8` would hand the engine a different precision and a different footprint
+/// with nothing saying so.
+///
+/// These two are that decision, made once, ABOVE the backends: the engine states a preference, the
+/// device states what it supports, and the answer is a format the caller can see it got.
+///
+/// `preferences` is tried in order. Returns `Format::Undefined` when the device supports none of
+/// them, which is an answer a caller can act on rather than a format it would then create with.
+[[nodiscard]] Format select_supported_format(const DeviceCapabilities& caps,
+                                             Span<const Format> preferences,
+                                             FormatFeature required) noexcept;
+
+/// The depth-stencil format this device will actually take, given the one the engine asked for.
+///
+/// Substitution NEVER DROPS STENCIL: a caller that asked for D24UnormS8Uint gets a format with a
+/// stencil aspect or it gets `Format::Undefined`, because a silent demotion to a depth-only format
+/// is a stencil test that stops happening rather than a stencil test that fails.
+[[nodiscard]] Format select_depth_stencil_format(const DeviceCapabilities& caps,
+                                                 Format preferred) noexcept;
 
 }  // namespace cy::rhi

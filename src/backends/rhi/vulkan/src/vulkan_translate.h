@@ -1,7 +1,7 @@
 #pragma once
 // THE TRANSLATION TABLE. Task 2.3.1.
 //
-// The engine's synchronisation vocabulary — rhi::Stage, rhi::AccessFlags, rhi::ImageLayout — is
+// The engine's synchronisation vocabulary — rhi::Stage, rhi::AccessFlags, rhi::ImageUse — is
 // Vulkan-shaped and engine-owned. This file is the only place in the engine that turns one into the
 // other, which is what makes "no Vulkan type above src/backends/" a rule the compiler can enforce
 // rather than a convention.
@@ -18,7 +18,7 @@ namespace cy::rhi::vulkan {
 
 [[nodiscard]] VkPipelineStageFlags2 to_vulkan(Stage stage) noexcept;
 [[nodiscard]] VkAccessFlags2 to_vulkan(AccessFlags access) noexcept;
-[[nodiscard]] VkImageLayout to_vulkan(ImageLayout layout) noexcept;
+[[nodiscard]] VkImageLayout to_vulkan(ImageUse use) noexcept;
 [[nodiscard]] VkFormat to_vulkan(Format format) noexcept;
 [[nodiscard]] Format from_vulkan(VkFormat format) noexcept;
 [[nodiscard]] VkImageAspectFlags to_vulkan(ImageAspect aspect) noexcept;

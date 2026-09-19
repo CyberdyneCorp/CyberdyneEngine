@@ -197,6 +197,11 @@ const Rgba* Card::colour(std::string_view name) const noexcept {
     return nullptr;
 }
 
+Rgba Card::colour_or(std::string_view name, Rgba fallback) const noexcept {
+    const Rgba* found = colour(name);
+    return found != nullptr ? *found : fallback;
+}
+
 Status Card::parse(std::string_view document) noexcept {
     // TWO `cycard 1` HEADERS ARE THE EXPECTED SHAPE. `cook:card` concatenated the palette and the
     // card in declaration order, so the stream carries both files' headers — which is also why a
@@ -304,17 +309,20 @@ void Card::draw_footer(Image& image, const std::vector<CoverageLine>& lines) con
     // declared — so a card with a different palette restyles the footer without a recompile, and a
     // card that forgot one gets a legible fallback rather than an invisible line.
     const Rgba fallback{200, 200, 200, 255};
-    const Rgba* ran = colour("good");
-    const Rgba* absent = colour("absent");
     const Rgba* dim = colour("dim");
 
+    // Four verdicts, four colours, and the mapping is explicit rather than "anything that is not a
+    // pass is red": BUILT is not a pass and is not a failure either, and NOT EVALUATED is neither
+    // and must not be able to look like either. The rung's own rule, applied to a footer.
     i32 y = footer_y_ == 0 ? static_cast<i32>(height_) - 160 : footer_y_;
     for (const CoverageLine& line : lines) {
-        const Rgba* verdict_colour = dim;
-        if (line.verdict == "RAN") {
-            verdict_colour = ran;
-        } else if (line.verdict != "NOT EVALUATED") {
-            verdict_colour = absent;
+        const Rgba* verdict_colour = colour("warn");
+        if (line.verdict == "RAN" || line.verdict == "BUILT") {
+            verdict_colour = colour("good");
+        } else if (line.verdict == "NOT EVALUATED") {
+            verdict_colour = dim;
+        } else if (line.verdict == "ABSENT") {
+            verdict_colour = colour("absent");
         }
         draw_text(image, 48, y, 2, dim != nullptr ? *dim : fallback, line.label);
         draw_text(image, 520, y, 2, verdict_colour != nullptr ? *verdict_colour : fallback,

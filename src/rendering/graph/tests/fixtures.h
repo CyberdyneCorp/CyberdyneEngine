@@ -13,21 +13,23 @@
 
 namespace cy::rendering::test {
 
-/// The queue configuration M3's spike measured on: graphics on family 0, a dedicated async compute
-/// queue on family 2. Stated here rather than in each case so that "two queues, two families" reads
-/// as one decision.
+/// The queue configuration M3's spike measured on: graphics in ownership domain 0, a dedicated
+/// async compute queue in domain 2. Stated here rather than in each case so that "two queues, two
+/// ownership domains" reads as one decision. The domains ARE the Vulkan family indices on a Vulkan
+/// device and are opaque to everything above the backend — Metal gap 4.
 inline CompileOptions two_queue_options() noexcept {
     CompileOptions options;
     options.enable_async_compute = true;
     options.queue_available[static_cast<u32>(rhi::QueueKind::Graphics)] = true;
     options.queue_available[static_cast<u32>(rhi::QueueKind::AsyncCompute)] = true;
-    options.queue_family[static_cast<u32>(rhi::QueueKind::Graphics)] = 0;
-    options.queue_family[static_cast<u32>(rhi::QueueKind::AsyncCompute)] = 2;
+    options.queue_ownership_transfers = true;
+    options.queue_ownership_domain[static_cast<u32>(rhi::QueueKind::Graphics)] = 0;
+    options.queue_ownership_domain[static_cast<u32>(rhi::QueueKind::AsyncCompute)] = 2;
     options.query_memory = &synthetic_memory_query;
     return options;
 }
 
-/// The same declarations with async compute off: one queue, one family. This is the null backend's
+/// The same declarations with async compute off: one queue, one ownership domain. This is the null backend's
 /// and continuous integration's normal path, and it must fall out of the same code.
 inline CompileOptions single_queue_options() noexcept {
     CompileOptions options;
@@ -84,10 +86,10 @@ inline BarrierCounts count_barriers(const CompiledGraph& plan) noexcept {
             counts.buffer += static_cast<u32>(scheduled.pre.buffers.size());
             counts.memory += static_cast<u32>(scheduled.pre.memory.size());
             for (const rhi::ImageBarrier& barrier : scheduled.pre.images) {
-                if (barrier.old_layout != barrier.new_layout) {
+                if (barrier.old_use != barrier.new_use) {
                     ++counts.layout_transitions;
                 }
-                if (barrier.src_queue_family != barrier.dst_queue_family) {
+                if (barrier.ownership_transfer) {
                     ++counts.ownership_acquires;
                 }
             }

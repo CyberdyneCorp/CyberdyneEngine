@@ -403,7 +403,7 @@ Status GraphExecutor::record_and_submit(RenderGraph& graph, CompiledGraph& plan,
                 ++result.barrier_batches;
                 result.barriers += static_cast<u32>(scheduled.pre.count());
                 for (const rhi::ImageBarrier& barrier : scheduled.pre.images) {
-                    if (barrier.src_queue_family != barrier.dst_queue_family) {
+                    if (barrier.ownership_transfer) {
                         ++result.queue_ownership_transfers;
                     }
                 }
@@ -544,8 +544,13 @@ Expected<ExecutionResult, Error> GraphExecutor::execute(RenderGraph& graph,
         for (u32 index = 0; index < rhi::kQueueKindCount; ++index) {
             const auto queue = static_cast<rhi::QueueKind>(index);
             compile_options.queue_available[index] = device_->has_queue(queue);
-            compile_options.queue_family[index] = device_->queue_family(queue);
+            // METAL GAP 4. The device no longer answers with a queue-family index; it answers with
+            // an opaque ownership domain, and with whether transfers are a thing it has at all.
+            compile_options.queue_ownership_domain[index] =
+                device_->capabilities().queue_ownership_domain(queue);
         }
+        compile_options.queue_ownership_transfers =
+            device_->capabilities().needs_queue_ownership_transfer();
         compile_options.queue_available[static_cast<u32>(rhi::QueueKind::Graphics)] = true;
     }
 

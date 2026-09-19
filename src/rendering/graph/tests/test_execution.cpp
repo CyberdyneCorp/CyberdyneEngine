@@ -57,7 +57,7 @@ struct Frame {
         : graph(allocator) {
         scratch = graph.create_texture(storage_image("scratch", 64));
         target = graph.import_texture(colour_target("swapchain", 64), swapchain_image,
-                                      cy::rhi::ImageLayout::Undefined);
+                                      cy::rhi::ImageUse::Undefined);
 
         graph.add_pass("compute", cy::rhi::QueueKind::Graphics)
             .write(scratch, Access::ComputeStorageWrite)
@@ -251,7 +251,7 @@ CY_TEST_CASE("the plan dumps as readable text and as a Graphviz digraph") {
     const ResourceId scratch = graph.create_texture(storage_image("scratch", 64));
     const ResourceId target = graph.import_texture(colour_target("swapchain", 64),
                                                    cy::rhi::TextureHandle::from_slot(0, 1),
-                                                   cy::rhi::ImageLayout::Undefined);
+                                                   cy::rhi::ImageUse::Undefined);
     graph.add_pass("compute", cy::rhi::QueueKind::AsyncCompute)
         .write(scratch, Access::ComputeStorageWrite);
     graph.add_pass("shade", cy::rhi::QueueKind::Graphics)
@@ -336,7 +336,7 @@ struct WideFrame {
     explicit WideFrame(cy::Allocator& allocator, cy::rhi::TextureHandle target) noexcept
         : graph(allocator) {
         const ResourceId imported = graph.import_texture(colour_target("swapchain", 64), target,
-                                                         cy::rhi::ImageLayout::Undefined);
+                                                         cy::rhi::ImageUse::Undefined);
         for (RecordCounter& counter : counters) {
             const ResourceId scratch = graph.create_texture(storage_image("scratch", 32));
             graph.add_pass("wide", cy::rhi::QueueKind::Graphics)

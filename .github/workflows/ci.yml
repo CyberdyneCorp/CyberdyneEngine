@@ -873,6 +873,31 @@ jobs:
       # and the fixtures whose configure must fail. It needs no build.
       - name: Layering
         run: just quality-layers
+      # --- M11.d's four gates ---------------------------------------------------------------
+      # `testing-and-quality`'s "Static analysis and formatting" lists six enforcement points and
+      # this repository ran three of them; its "Documentation as a gate" requirement names a
+      # fourth check, which is the "documentation gate" the M11 exit criteria name by that phrase.
+      # These are the four that did not exist. None needs the build: the licence, spelling and
+      # documentation gates read declarations and prose, and swift-format reads the Swift sources,
+      # so they run before the configure step below and fail in seconds rather than in minutes.
+      #
+      # THE SELFTEST IS THE POINT. This repository has shipped nine checks unable to go red, and
+      # M9's gate found one that had passed 44 of 44 runs with its enforcement point deleted. The
+      # last step here breaks what each of the four checks and requires it to refuse — `--strict`,
+      # so that the swift-format case, which cannot run on a machine without a Swift toolchain,
+      # cannot be quietly skipped on the one leg that HAS one.
+      - name: Install the spelling dictionary
+        run: pip install codespell==2.4.3
+      - name: Licence headers
+        run: just quality-licence
+      - name: Spelling
+        run: just quality-spelling
+      - name: Undocumented public symbols
+        run: just quality-docs
+      - name: Swift formatting
+        run: just quality-swift-format
+      - name: The four gates' own negative cases
+        run: just quality-gates-selftest --strict
       - name: The workflow itself
         run: just ci-check
       # clang-tidy needs the flags every file is compiled with, so the build comes first.

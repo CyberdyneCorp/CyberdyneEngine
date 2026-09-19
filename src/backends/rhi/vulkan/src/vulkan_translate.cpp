@@ -176,26 +176,33 @@ VkAccessFlags2 to_vulkan(AccessFlags access) noexcept {
     return out;
 }
 
-VkImageLayout to_vulkan(ImageLayout layout) noexcept {
-    switch (layout) {
-        case ImageLayout::Undefined:
+// THIS FUNCTION IS WHERE `VkImageLayout` NOW LIVES, AND IT IS THE WHOLE OF METAL GAP 3's REMEDY.
+// The engine says what an image is being USED as; the mapping from that to one of Vulkan's nine
+// layouts is Vulkan's business and appears nowhere else in the tree. A D3D12 backend writes the
+// equivalent function over resource states; a Metal backend writes none at all, because a resource
+// on a hazard-tracked heap needs no transition and one on an untracked heap needs an `MTLFence`.
+VkImageLayout to_vulkan(ImageUse use) noexcept {
+    switch (use) {
+        case ImageUse::Undefined:
             return VK_IMAGE_LAYOUT_UNDEFINED;
-        case ImageLayout::General:
+        case ImageUse::Storage:
             return VK_IMAGE_LAYOUT_GENERAL;
-        case ImageLayout::ColorAttachment:
+        case ImageUse::ColorAttachment:
             return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        case ImageLayout::DepthStencilAttachment:
+        case ImageUse::DepthStencilAttachment:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        case ImageLayout::DepthStencilReadOnly:
+        case ImageUse::DepthStencilReadOnly:
             return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        case ImageLayout::ShaderReadOnly:
+        case ImageUse::SampledRead:
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        case ImageLayout::TransferSource:
+        case ImageUse::TransferSource:
             return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        case ImageLayout::TransferDestination:
+        case ImageUse::TransferDestination:
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        case ImageLayout::Present:
+        case ImageUse::Presentable:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        case ImageUse::Count:
+            break;
     }
     return VK_IMAGE_LAYOUT_UNDEFINED;
 }

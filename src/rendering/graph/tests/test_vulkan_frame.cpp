@@ -177,8 +177,12 @@ CY_TEST_CASE("a Vulkan device reports itself by capability, never by identity") 
     // device without a dedicated family reports false and the graph folds onto graphics.
     CY_CHECK(fixture.device().has_queue(QueueKind::Graphics));
     if (fixture.device().has_queue(QueueKind::AsyncCompute)) {
-        CY_CHECK_NE(fixture.device().queue_family(QueueKind::AsyncCompute),
-                    fixture.device().queue_family(QueueKind::Graphics));
+        // Metal gap 4: the device answers with an opaque OWNERSHIP DOMAIN rather than a Vulkan
+        // family index. Two queues in different domains is what "dedicated" means here, and that
+        // is the whole of what the graph needs to know.
+        CY_CHECK(capabilities.needs_queue_ownership_transfer());
+        CY_CHECK_NE(capabilities.queue_ownership_domain(QueueKind::AsyncCompute),
+                    capabilities.queue_ownership_domain(QueueKind::Graphics));
     }
 }
 

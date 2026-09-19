@@ -1,21 +1,28 @@
 #pragma once
-// The RHI's value vocabulary: formats, layouts, stages, access masks, and the hard limits.
-// Tasks 2.1.1 and 2.1.3.
+// The RHI's value vocabulary: formats, image uses, stages, access masks, and the hard limits.
+// Tasks 2.1.1 and 2.1.3; M11.d task 1.3.
 //
 // `rhi-and-render-graph` — "Explicit RHI". The interface is shaped around Vulkan because Vulkan is
 // the most explicit of the three backends on the roadmap and mapping down to Metal is
 // straightforward, while mapping up from a less explicit API would not be.
 //
 // SHAPED AROUND VULKAN IS NOT THE SAME AS SPELT IN VULKAN, and the difference is the whole reason
-// this file exists. `Stage`, `AccessFlags` and `ImageLayout` below name the same concepts
-// VK_PIPELINE_STAGE_2_*, VK_ACCESS_2_* and VkImageLayout name, with the same semantics, and none of
-// them is a Vulkan type. That is what lets the render graph — which lives above src/backends/ and
+// this file exists. `Stage` and `AccessFlags` below name the same concepts VK_PIPELINE_STAGE_2_*
+// and VK_ACCESS_2_* name, with the same semantics, and neither is a Vulkan type.
+//
+// M11.d TOOK THAT ONE STEP FURTHER, in the two places this file had been spelt in Vulkan rather
+// than merely shaped by it. `ImageLayout` — nine enumerators named after `VkImageLayout`'s — became
+// `ImageUse`, which is what the engine actually means and what a Metal backend can map to nothing
+// without dropping a field it was handed. `kQueueFamilyIgnored` and the `u32` family index became
+// `QueueOwner`, because Metal has no queue families and no ownership transfers at all. Both were
+// findings of the Metal seed, and both are cheaper to change here than after four backends read
+// them. That is what lets the render graph — which lives above src/backends/ and
 // may not see a Vulkan header — derive every barrier in the frame. Exactly one file translates
 // these into a backend's own enumerators (src/backends/rhi/vulkan/src/vulkan_translate.cpp), and
 // tools/layercheck.py fails the build if a Vulkan, Slang or SPIR-V header appears above this layer.
 //
 // WHERE THE SPIKE AND THE SPECIFICATION DISAGREED. The M3 scheduling spike put the
-// Access -> {stage, access, layout} table under src/backends/rhi/vulkan/ and typed it in Vulkan.
+// Access -> {stage, access, use} table under src/backends/rhi/vulkan/ and typed it in Vulkan.
 // The specification requires the graph to own synchronisation and forbids a Vulkan type above the
 // backend layer; those two together put the table in the RHI, in engine types. The specification
 // wins, and the cost is one translation function per backend rather than none.
@@ -179,29 +186,69 @@ inline constexpr u32 kShaderFormatCount = static_cast<u32>(ShaderFormat::Count);
 /// nobody could act on.
 [[nodiscard]] const char* shader_format_name(ShaderFormat format) noexcept;
 
-// --- Image layouts --------------------------------------------------------------------------
+// --- What an image is being used as -----------------------------------------------------------
 //
-// A layout is a property of a subresource, not of an image, which is why every one of them is
-// tracked per (mip, layer) cell by the render graph. Nothing outside the graph ever names one:
-// a pass declares an Access and the layout it implies is derived (see access.h).
+// WHAT THIS IS, AND WHAT IT REPLACED — METAL GAP 3. Until M11.d this was `ImageLayout`, with nine
+// enumerators named after `VkImageLayout`'s, sitting in an interface whose own header says a Vulkan
+// type may not appear in it. A Metal backend drops every one of them on the floor: Metal has no
+// image layouts, a resource on a hazard-tracked heap needs no transition, and one on an untracked
+// heap needs an `MTLFence` between encoders rather than a state.
+//
+// THE SEED PROPOSED DELETING IT and deriving the layout inside the Vulkan backend from the access
+// masks the barrier already carries. THAT DOES NOT WORK, and the measurement is in `compile.cpp`:
+// a barrier's `src_access` is deliberately NOT the resource's current state — a write-after-read
+// contributes the read's STAGE and none of its access bits, because a write-after-read needs an
+// execution dependency and not a memory one. So an image last READ as sampled and next WRITTEN as
+// a colour attachment produces a barrier whose `src_access` is the colour-attachment write from
+// two passes ago, and a backend deriving "what it was" from that would transition from the wrong
+// state. The information genuinely is not in the masks.
+//
+// SO IT STAYS, AND IT STOPS BEING VULKAN'S. The graph needs it: two READS of one image can be
+// incompatible — sampled and storage — and the graph must emit a barrier between them, which it
+// decides by comparing these values. The engine owns the vocabulary; the Vulkan backend maps it to
+// `VkImageLayout` on its own, D3D12 would map it to a resource state, and a Metal backend maps it
+// to nothing at all. A use is a property of a subresource, tracked per (mip, layer) cell by the
+// render graph, and nothing outside the graph ever names one: a pass declares an `Access` and the
+// use it implies comes from the table in access.h.
 
-enum class ImageLayout : u8 {
-    Undefined = 0,  // contents are discarded; every transient's first use transitions from here
-    General,
+enum class ImageUse : u8 {
+    Undefined = 0,  // contents are discarded; every transient's first use begins here
+    /// Read or written through a storage image binding. The permissive one, and the one two
+    /// otherwise-incompatible uses collapse onto.
+    Storage,
     ColorAttachment,
     DepthStencilAttachment,
     DepthStencilReadOnly,
-    ShaderReadOnly,
+    SampledRead,
     TransferSource,
     TransferDestination,
-    Present,
+    /// Handed back to the presentation engine. An engine concept and not a Vulkan one: every
+    /// windowing API has a moment where the image stops being the renderer's.
+    Presentable,
+    Count,
 };
 
-[[nodiscard]] const char* image_layout_name(ImageLayout layout) noexcept;
+[[nodiscard]] const char* image_use_name(ImageUse use) noexcept;
 
-/// The queue family a resource is not owned by anyone in particular on. Mirrors
-/// VK_QUEUE_FAMILY_IGNORED's role: a resource in this state needs no ownership transfer.
-inline constexpr u32 kQueueFamilyIgnored = ~0U;
+/// WHICH QUEUE OWNS A RESOURCE, WHEN ANYTHING DOES — Metal gap 4.
+///
+/// This replaced a raw `u32` queue-family index and a `kQueueFamilyIgnored` sentinel, both of which
+/// were Vulkan spelled into an engine-owned interface: `MTLCommandQueue` has no family index and no
+/// ownership-transfer concept at all, and D3D12's queues have neither. `owned == false` is what the
+/// sentinel meant — nobody in particular — and the queue KIND is what every backend has.
+///
+/// Whether a transfer is needed at all is `DeviceCapabilities::needs_queue_ownership_transfer()`,
+/// and which queues share an ownership domain is `queue_ownership_domain()`: two kinds that answer
+/// the same domain need no transfer between them, which is what makes the transfer disappear on a
+/// device with no dedicated async compute rather than needing a special case.
+struct QueueOwner {
+    QueueKind queue = QueueKind::Graphics;
+    bool owned = false;
+
+    [[nodiscard]] friend constexpr bool operator==(QueueOwner a, QueueOwner b) noexcept {
+        return a.owned == b.owned && (!a.owned || a.queue == b.queue);
+    }
+};
 
 // --- Formats --------------------------------------------------------------------------------
 //

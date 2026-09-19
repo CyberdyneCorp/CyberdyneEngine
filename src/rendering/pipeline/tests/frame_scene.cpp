@@ -430,7 +430,7 @@ Status FrameScene::render(RecordMode mode, AssemblyReport& out) noexcept {
     request.width = kWidth;
     request.height = kHeight;
     request.extra_usage = rhi::TextureUsage::TransferSource;
-    view.output = graph_.import_texture(request, output_, rhi::ImageLayout::Undefined);
+    view.output = graph_.import_texture(request, output_, rhi::ImageUse::Undefined);
 
     DrawSurface surface;
     FrameSinks sinks;

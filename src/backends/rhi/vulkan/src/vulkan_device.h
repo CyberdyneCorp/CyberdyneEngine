@@ -273,7 +273,10 @@ public:
     }
     [[nodiscard]] DescriptorModel descriptor_model() const noexcept override { return model_; }
     [[nodiscard]] u32 frames_in_flight() const noexcept override { return frames_in_flight_; }
-    [[nodiscard]] u32 queue_family(QueueKind queue) const noexcept override;
+    /// NOT AN OVERRIDE SINCE M11.d — Metal gap 4 removed `queue_family` from `rhi::Device`. It
+    /// stays here, on the one backend that has queue families, because `VulkanBarrierRecorder` maps
+    /// the barrier's `QueueKind`s to indices with it.
+    [[nodiscard]] u32 queue_family(QueueKind queue) const noexcept;
     [[nodiscard]] bool has_queue(QueueKind queue) const noexcept override;
     void set_validation_callback(ValidationCallback callback, void* user) noexcept override;
 
@@ -345,8 +348,8 @@ public:
     Expected<ComputePipelineHandle, Error> create_compute_pipeline(
         const ComputePipelineDescription& desc) override;
     void destroy_compute_pipeline(ComputePipelineHandle handle) noexcept override;
-    Expected<u64, Error> save_pipeline_cache(Span<u8> out) override;
-    Status load_pipeline_cache(Span<const u8> data) override;
+    Status save_pipeline_cache(const char* path) override;
+    Status load_pipeline_cache(const char* path) override;
 
     Expected<u32, Error> begin_frame() override;
     Status end_frame() override;

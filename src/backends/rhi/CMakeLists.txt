@@ -33,12 +33,16 @@ cy_add_module(
     SOURCES
         src/access.cpp
         src/backend.cpp
+        src/pipeline_cache_file.cpp
         src/types.cpp
         src/validation.cpp
     PUBLIC_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
     # cy::core-values is where the generational handles come from; cy::core-memory is where Array,
     # HandlePool and the memory domain a backend reports GPU bytes against come from.
-    PUBLIC_DEPENDENCIES cy::core-base cy::core-values cy::core-memory)
+    # cy::core-assets is here for ONE reason and it is Metal gap 6: `save_pipeline_cache` takes a
+    # path rather than a blob, because MTLBinaryArchive serialises to a URL, and the file read and
+    # write that follows from that is written once here rather than once per backend.
+    PUBLIC_DEPENDENCIES cy::core-base cy::core-values cy::core-memory cy::core-assets)
 
 # The null backend, first (design.md §1) and always built: it is the last link in the fallback chain
 # and the reason a rendering test can run in continuous integration on a machine with no GPU.

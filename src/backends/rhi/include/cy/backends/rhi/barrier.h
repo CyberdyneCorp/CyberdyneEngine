@@ -56,19 +56,27 @@ enum class ImageAspect : u8 {
 
 /// One image barrier, already coalesced into a rectangle of mips and layers.
 ///
-/// `src_queue_family` and `dst_queue_family` are kQueueFamilyIgnored except on the two halves of an
-/// ownership transfer, where they are equal on both halves and the release/acquire pair is ordered
-/// by a semaphore rather than by the barriers themselves.
+/// WHAT A BARRIER CARRIES AFTER M11.d, AND WHY. `old_use`/`new_use` are `ImageUse`, the engine's
+/// own vocabulary, and NOT `ImageLayout`: a backend maps them to whatever it has — a
+/// `VkImageLayout`, a D3D12 resource state, or nothing at all, which is Metal's answer. And the
+/// two ownership fields are a flag and two `QueueKind`s rather than a pair of `u32` family indices
+/// with a `kQueueFamilyIgnored` sentinel, because a family index is a Vulkan object and the two
+/// backends this rung is written for have no such thing. Both were Metal seed findings.
+///
+/// `ownership_transfer` is false on every ordinary barrier, and true on exactly the two halves of
+/// a transfer — where `src_queue` and `dst_queue` are equal on both halves and the release/acquire
+/// pair is ordered by a semaphore rather than by the barriers themselves.
 struct ImageBarrier {
     GraphResourceId resource = kInvalidGraphResource;
     Stage src_stage = Stage::None;
     AccessFlags src_access = AccessFlags::None;
     Stage dst_stage = Stage::None;
     AccessFlags dst_access = AccessFlags::None;
-    ImageLayout old_layout = ImageLayout::Undefined;
-    ImageLayout new_layout = ImageLayout::Undefined;
-    u32 src_queue_family = kQueueFamilyIgnored;
-    u32 dst_queue_family = kQueueFamilyIgnored;
+    ImageUse old_use = ImageUse::Undefined;
+    ImageUse new_use = ImageUse::Undefined;
+    bool ownership_transfer = false;
+    QueueKind src_queue = QueueKind::Graphics;
+    QueueKind dst_queue = QueueKind::Graphics;
     ImageAspect aspect = ImageAspect::Color;
     SubresourceRange range{};
     /// Patched by the executor immediately before recording. Null in a derived plan.
@@ -81,8 +89,9 @@ struct BufferBarrier {
     AccessFlags src_access = AccessFlags::None;
     Stage dst_stage = Stage::None;
     AccessFlags dst_access = AccessFlags::None;
-    u32 src_queue_family = kQueueFamilyIgnored;
-    u32 dst_queue_family = kQueueFamilyIgnored;
+    bool ownership_transfer = false;
+    QueueKind src_queue = QueueKind::Graphics;
+    QueueKind dst_queue = QueueKind::Graphics;
     u64 offset = 0;
     /// Zero means the whole buffer, resolved by the backend. Nothing derives a partial range yet.
     u64 size = 0;

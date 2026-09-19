@@ -133,7 +133,7 @@ name M11; three Complete cells moved out of M10's column for rows the milestone 
 the artefact's frame budget missed by seven times, **measured across the cycle rather than asserted at
 one time of day**.
 
-**M11 · Reach — scoped, and it is five rungs.** `openspec/changes/implement-m11-reach/` asked the
+**M11 · Reach — scoped, and it is six rungs.** `openspec/changes/implement-m11-reach/` asked the
 question the matrix had carried since M6 — is M11 one milestone or two? — and answered **five**. Its
 load had grown from 48 to **65 of the 76 capabilities** in two steps at M10's gate alone, and
 sixty-five Complete cells behind one closing artefact is a gate that cannot name what it is looking
@@ -144,12 +144,14 @@ at. The seam is the artefact, not the count, and the order is what each artefact
 | **M11.a** · Foundations | `implement-m11a-foundations/` | the seven inherited gaps, the 122 ms frame budget, one cross-leg digest job that answers three criteria, `save-and-persistence` re-scoped | the world demo inside 16.7 ms on a device, streaming |
 | **M11.b** · Authoring | `implement-m11b-authoring/` | `editor-architecture` and `live-editing` off the Seed they have sat at since M5, the editor finished, the gameplay rows | **a real sample game**, made through the editor |
 | **M11.c** · Image | `implement-m11c-image/` | `material-compiler` and `shader-system` first, then the eight rows the picture is made of | **an art-directed beauty shot**, authored through that editor |
-| **M11.d** · Desktop | `implement-m11d-desktop/` | Metal native, D3D12, a native `Platform` and `DisplayServer`, the gate set | `samples/11-ship` on desktop |
+| **M11.d** · Desktop | `implement-m11d-desktop/` | the RHI interface settled on Vulkan and null, a native `Platform` and `DisplayServer`, the core rows the port audits, the gate set | `samples/11-ship` on desktop |
+| **M11.d.5** · Backends | `implement-m11d5-backends/` | Metal native and D3D12 from nothing — **inserted by M11.d's spike**, because neither compiles on the Linux host this project works on | **one scene, three backends, the same picture** |
 | **M11.e** · Ship | `implement-m11e-ship/` | mobile, the full matrix, distribution, the sweep | `samples/11-ship` everywhere, and the 1.0 record |
 
 Each rung has its own ledger under `tools/roadmap/milestones/`, its own gate in `gates.toml` at
 `joins-on-close`, its own floor in `selftest.MINIMUM_CRITERIA` and its own spike in
-[risks entry 12](risks.md) — **none of which has run**. The seven inherited gaps are re-pointed rather
+[risks entry 12](risks.md). **M11.d.5 is the exception that proves the mechanism works**: it exists
+*because* a spike ran, and it inherits M11.d's answer rather than owning a spike of its own. The seven inherited gaps are re-pointed rather
 than deleted: six name **M11.a** and `record-matches-plan-history` names **M11.e**, because it cannot
 pass until the last of its four rows is evaluated and recorded.
 

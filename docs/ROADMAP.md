@@ -15,10 +15,10 @@ from its first symbol whether that symbol appears next month or next year. The r
 
 ## The shape of it
 
-Nineteen rungs, four eras. Each rung ends in something that runs, committed to the repository and
+Twenty rungs, four eras. Each rung ends in something that runs, committed to the repository and
 exercised by continuous integration — so it becomes a regression gate for everything after it.
 
-**Nineteen and not twelve, because the ladder has been split three times and never renumbered.**
+**Twenty and not twelve, because the ladder has been split four times and never renumbered.**
 [`implement-m5b-operable`](../openspec/changes/implement-m5b-operable/proposal.md) **inserted
 M5.5 · Operable between M5 and M6**: M5 claimed `editor-ui-ux` at Working and closed on a scripted
 session with no window, and the correct repair was to give the window a milestone rather than make
@@ -30,11 +30,17 @@ its own risk spike succeeding contains two. And
 into M11.a through M11.e** — applied by
 [`implement-m11a-foundations`](../openspec/changes/implement-m11a-foundations/proposal.md), which
 carries the rule — because sixty-five Complete cells behind one artefact is a gate that cannot name
-what it is looking at.
+what it is looking at. And
+[`implement-m11d5-backends`](../openspec/changes/implement-m11d5-backends/proposal.md) **inserted
+M11.d.5 · Backends between M11.d and M11.e**, because M11.d's spike established that neither Metal
+nor D3D12 can be compiled on the host this project works on — Linux, one GPU vendor, no Apple
+toolchain — and a rung cannot be judged on work no machine it runs on can build.
 
 Inserting rather than renumbering keeps every reference to a later milestone valid, and the suffix
 says plainly that the ladder gained an entry rather than always having had one. **M8 and M11 remain
 the names of their groups**, and a sentence written before either split still means what it said.
+M11.d.5 is the first identifier to carry both forms at once — a letter rung from M11's split and a
+`.5` insertion from M5.5's — which is exactly what it is.
 
 ```mermaid
 flowchart LR
@@ -69,9 +75,10 @@ flowchart LR
         M11A["M11.a · Foundations<br/><i>the debts, the budget</i>"]
         M11B["M11.b · Authoring<br/><i>a real game</i>"]
         M11C["M11.c · Image<br/><i>a beauty shot</i>"]
-        M11D["M11.d · Desktop<br/><i>Metal · D3D12 · native</i>"]
+        M11D["M11.d · Desktop<br/><i>native platform · packaging</i>"]
+        M11D5["M11.d.5 · Backends<br/><i>Metal · D3D12</i>"]
         M11E["M11.e · Ship<br/><i>mobile · 1.0</i>"]
-        M9 --> M10 --> M11A --> M11B --> M11C --> M11D --> M11E
+        M9 --> M10 --> M11A --> M11B --> M11C --> M11D --> M11D5 --> M11E
     end
     M2 --> M3
     M5B --> M6
@@ -1285,12 +1292,13 @@ streaming**, both on its own README's face.
 
 ---
 
-## Reach — the 1.0 gate, and why M11 is five rungs
+## Reach — the 1.0 gate, and why M11 is six rungs
 
 *The same project, everywhere, from one command.*
 
-**M11 is not a milestone section. It is the name of five.** The five below — M11.a Foundations,
-M11.b Authoring, M11.c Image, M11.d Desktop, M11.e Ship — are the milestone, and every existing
+**M11 is not a milestone section. It is the name of six.** The six below — M11.a Foundations,
+M11.b Authoring, M11.c Image, M11.d Desktop, M11.d.5 Backends, M11.e Ship — are the milestone, and
+every existing
 reference to "M11" in this document, in the capability matrix, in the ledgers and in the archived
 changes stays valid as the name of the group, exactly as references to M8 did when it became M8.a,
 M8.b and M8.c.
@@ -1320,12 +1328,21 @@ evaluate on any machine it owns.
 | **M11.a** · Foundations | 12 | 233 | the world demo inside its frame budget, on a device, streaming |
 | **M11.b** · Authoring | 24 | 420 | a real sample game, made through the editor |
 | **M11.c** · Image | 15 | 232 | an art-directed beauty shot, authored through that editor |
-| **M11.d** · Desktop | 10 | 129 | `samples/11-ship` on desktop, and a native platform backend |
+| **M11.d** · Desktop | 9 | 117 | `samples/11-ship` on desktop, and a native platform backend |
+| **M11.d.5** · Backends | 1 | 12 | one scene, three backends, the same picture |
 | **M11.e** · Ship | 4 | 55 | `samples/11-ship` on every target, and the 1.0 record |
+
+**M11.d.5 was not in the split; M11.d's spike produced it.** That rung was written carrying Metal
+and D3D12, and the spike established what the plan had assumed: this project works on a Linux host
+with one GPU vendor and no Apple toolchain, so **neither backend can be compiled here**. Half-building
+them in a rung whose other criteria can be judged is how a project acquires a check that cannot fail.
+`delivery-roadmap`'s *"A spike may resize a milestone as well as redirect it"* is the rule, and its
+companion — *"A criterion follows its subject"* — is why the three-backend golden-image comparison
+moved with them rather than staying behind as something M11.d could satisfy vacuously.
 
 **Exit criteria of M11 as a whole**, unchanged by the split and owned by the rung named against each:
 
-- Golden images match across Vulkan, Metal and D3D12 within tolerance — **M11.d**
+- Golden images match across Vulkan, Metal and D3D12 within tolerance — **M11.d.5**
 - A native backend for one desktop platform passes the M0 sample and the M3 golden images, requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/` — **M11.d**
 - The porting surface builds against a stub platform that shares no desktop assumption — **M11.d**, and against a real non-desktop one — **M11.e**
 - Every capability is Complete or has a recorded deferral with its re-entry point — **M11.e**
@@ -1479,21 +1496,31 @@ path exists; nothing in the tree has ever run it.
 
 ## M11.d — Desktop
 
-*Three backends, one platform layer, one package.*
+*One platform layer, one package, and the interface the backends will be written against.*
 
 **Entry**: M11.c green.
 
-**Why this rung exists.** `rhi-and-render-graph` has been Working since M3 and the gap to Complete
-is entirely the second and third backends; `core-platform-abstraction` has SDL3 as its only
-implementation, so nothing has yet proved the abstraction carries no SDL assumption. Neither MSL nor
-DXIL is emitted anywhere in the tree today, which is why `shader-system` is M11.c's row and this
-rung's hard prerequisite.
+**Why this rung exists.** `core-platform-abstraction` has SDL3 as its only implementation, so nothing
+has yet proved the abstraction carries no SDL assumption — and proving it needs a second *native*
+platform, not a second operating system, so it is the one portability claim this host can make
+first-hand. Six of this rung's nine rows were last advanced at M0, M1 or M2, which makes it the rung
+carrying the oldest tiers in the record.
+
+**What this rung no longer carries, and where it went.** It was written with Metal and D3D12 in it.
+Its spike measured the two questions it was scoped against, and the second answer resized it: this
+host is Linux, with one GPU vendor and no Apple toolchain, so **neither backend can be compiled here,
+let alone judged**. Sections 2 and 3 of its task list moved — not deleted, not descoped — into
+**[M11.d.5 · Backends](#m11d5--backends)**, together with `rhi-and-render-graph`'s Complete cell and
+the three-backend golden-image comparison. What stays is everything this host can actually check,
+including the RHI **interface** those backends will be written against, which is settled here on
+Vulkan and null *before* either backend exists — the ordering the spike argued for, now enforced by
+the ladder rather than requested by a task list.
 
 **Work**
 
 | Capability | → | Scope |
 |---|:---:|---|
-| `rhi-and-render-graph` | C | **Metal, native and not a translation layer**, and **D3D12 to parity with Vulkan**. The eight gaps the Metal seed recorded are interface changes before they are backends: an opaque memory-pool class, layouts derived from the access masks, a queue-ownership query, a per-format support query, a pipeline-cache token, and a precondition on secondary recording |
+| `rhi-and-render-graph` | — | **The interface, and not the backends.** The eight gaps the Metal seed recorded are interface changes before they are backends: an opaque memory-pool class, layouts derived from the access masks, a queue-ownership query, a per-format support query, a pipeline-cache token, and secondary recording. They land here, on Vulkan and the null backend, because changing `reserve_transient_memory`'s contract after two backends are written is a migration across every pass. The row's **C** cell is M11.d.5's |
 | `core-platform-abstraction` | C | A **native** `Platform` and `DisplayServer` for one desktop platform, replacing SDL3 there and **requiring no change in `src/core/`, `src/ecs/`, `src/servers/` or `src/scene/`**, plus the porting surface built against a stub platform that shares no desktop assumption |
 | `rendering-forward-clustered` | — | MSAA and multi-view, the desktop half. The row's **C** cell stays at M11.e with the mobile pipeline differences, because a row is not Complete on the half of its scope this rung can reach |
 | `build-and-packaging` | C | Content audit, provenance and symbols |
@@ -1507,15 +1534,82 @@ from one recipe, plus the M0 sample and the M3 golden images on the native platf
 
 **Exit criteria**
 
-- Golden images match across Vulkan, Metal and D3D12 within tolerance
 - The native backend passes the M0 sample and the M3 golden images, and the diff touches no engine layer
 - The porting surface builds against a stub platform that shares no desktop assumption
 - The documentation gate passes: every public API documented, every recipe described
 - `samples/11-ship` is built, cooked, packaged and launched on each desktop target from one recipe
+- The eight RHI interface gaps are closed in the interface, on Vulkan and null, with no backend written
+
+*Golden images matching across Vulkan, Metal and D3D12 was this rung's first exit criterion and is
+now M11.d.5's. It moved with its subject rather than staying behind, because a criterion whose
+subject has been deferred is one the milestone can satisfy vacuously.*
 
 **Risk spike**: **settle the eight RHI gaps as interface changes, on Vulkan and null, before a line
 of either backend is written** — and, before that, find out whether a hosted macOS or Windows runner
-can present a graphics device at all, because every image claim in this rung depends on the answer.
+can present a graphics device at all, because every image claim in this rung depended on the answer.
+**Both were run, and the second resized the rung**: every hosted leg presents a device that draws and
+presents, and not one of them is a GPU — a paravirtual Metal device reporting *no* Apple GPU family,
+and `Microsoft Basic Render Driver` on every Windows image, with two adapters of which the first does
+not set the software flag. The full measurement is in
+[`implement-m11d-desktop`](../openspec/changes/implement-m11d-desktop/design.md)'s design §1.4.
+
+---
+
+## M11.d.5 — Backends
+
+*One scene, three backends, the same picture.*
+
+**Entry**: M11.d green.
+
+**Why this rung exists.** It is the machine rather than the plan. M11.d was written to deliver Metal
+and D3D12; **this project works on a Linux host with one GPU vendor and no Apple toolchain**, so
+neither backend can be compiled where that rung is worked, let alone judged. A rung that half-builds
+what it cannot run acquires a check that cannot fail, and this project has shipped nine of those. So
+the two backends became a rung of their own, with a gate of its own and an artefact no single leg of
+the continuous-integration matrix can produce.
+
+**Why it is an insertion and not a renumbering.** M11.e is the terminus: renaming it would move 27
+`known_gap_closes`, 31 criterion identifiers and 34 falsifiability entries, which is churn for a
+label. M5.5 set the precedent — insert between the neighbours, keep every existing reference valid —
+and `delivery-roadmap` requires an inserted milestone to take a **rung between its neighbours** in
+every mechanism that depends on milestone order, which `roadmap-test` asserts.
+
+**Work**
+
+| Capability | → | Scope |
+|---|:---:|---|
+| `rhi-and-render-graph` | C | **Metal, native and not a translation layer**, against the interface M11.d settled; and **D3D12 from nothing** — there was not one D3D12 file in the tree when this rung opened. Both are written against capability queries rather than backend identity tests, which is the rule the eight gaps were the first real pressure on |
+
+**Closing artefact**: the M3 golden images rendered through Vulkan, Metal and D3D12 and compared
+across legs of the matrix within tolerance; one committed screenshot per backend under
+`docs/design/images/`; and **each one labelled with the device that answered** — hardware,
+paravirtual or software.
+
+**Exit criteria**
+
+- Golden images match across Vulkan, Metal and D3D12 within tolerance
+- The Metal backend compiles, creates a device, draws and presents, and passes the RHI conformance suite
+- The D3D12 backend does the same, from nothing
+- Every device report names the device that answered, and a software device is labelled from its **identity**, never from its flag
+- The engine builds and passes its suites with `CY_RENDERER_METAL` and `CY_RENDERER_D3D12` **off** as well as on
+- Every requirement of `rhi-and-render-graph` maps to a test, a gate or a recorded exemption
+
+**What this rung may not claim, recorded as deferrals rather than criteria a hosted leg could fake.**
+M11.d's spike created a device on every runner that was allocated, and none of them is a GPU: the
+macOS device reports **no Apple GPU family at all**, so tile memory and memoryless attachments — the
+whole stated reason `rhi-and-render-graph` refuses MoltenVK — cannot be exercised anywhere; argument
+buffers are Tier 1 there, so the bindless descriptor model can pass untested; every hosted Windows
+image is `Microsoft Basic Render Driver`; and D3D12 Resource Heap Tier 1, which hardware still ships,
+is presented by no runner. Each is carried in
+[`implement-m11d5-backends`](../openspec/changes/implement-m11d5-backends/design.md) with a re-entry
+point.
+
+**Risk spike**: **already spent, by M11.d.** Two throwaway workflow runs created a device on each
+hosted leg, cleared a target to a known colour, read the pixel back and presented it — a frame that
+happened, not a runner manifest saying an SDK is installed. This rung starts from that answer rather
+than re-deriving it, and the one question it must answer for itself is the narrow one the spike could
+not: whether the *interface* M11.d settled survives contact with two backends that were not consulted
+about it.
 
 ---
 
@@ -1523,7 +1617,7 @@ can present a graphics device at all, because every image claim in this rung dep
 
 *Every target, and the 1.0 record.*
 
-**Entry**: M11.d green.
+**Entry**: M11.d.5 green.
 
 **Why this rung is last.** Mobile is the only scope on the ladder this project cannot evaluate on
 any machine it owns, and the sweep — every row an earlier rung demoted — cannot be sized until the

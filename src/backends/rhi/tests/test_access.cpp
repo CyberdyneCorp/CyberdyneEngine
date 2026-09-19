@@ -13,7 +13,7 @@
 using cy::rhi::Access;
 using cy::rhi::AccessFlags;
 using cy::rhi::AccessInfo;
-using cy::rhi::ImageLayout;
+using cy::rhi::ImageUse;
 using cy::rhi::Stage;
 
 CY_TEST_CASE("every access intent has a row, a name and a stage") {
@@ -53,17 +53,17 @@ CY_TEST_CASE("the writing intents are exactly the ones whose names say so") {
 CY_TEST_CASE("a storage access implies GENERAL and a sampled access implies SHADER_READ_ONLY") {
     // The layout is what a barrier transitions to, and it is derived from the intent rather than
     // chosen by a pass. These four rows are the ones every frame uses.
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageWrite).layout, ImageLayout::General);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageRead).layout, ImageLayout::General);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageWrite).layout, ImageUse::Storage);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeStorageRead).layout, ImageUse::Storage);
     CY_CHECK_EQ(cy::rhi::access_info(Access::FragmentSampledRead).layout,
-                ImageLayout::ShaderReadOnly);
+                ImageUse::SampledRead);
     CY_CHECK_EQ(cy::rhi::access_info(Access::ComputeSampledRead).layout,
-                ImageLayout::ShaderReadOnly);
+                ImageUse::SampledRead);
     CY_CHECK_EQ(cy::rhi::access_info(Access::ColorAttachmentWrite).layout,
-                ImageLayout::ColorAttachment);
-    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferRead).layout, ImageLayout::TransferSource);
+                ImageUse::ColorAttachment);
+    CY_CHECK_EQ(cy::rhi::access_info(Access::TransferRead).layout, ImageUse::TransferSource);
     CY_CHECK_EQ(cy::rhi::access_info(Access::TransferWrite).layout,
-                ImageLayout::TransferDestination);
+                ImageUse::TransferDestination);
 }
 
 CY_TEST_CASE("depth is tested early and written late, so both stages appear") {

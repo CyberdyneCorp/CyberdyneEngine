@@ -1,11 +1,29 @@
-# M11.d — Desktop: the same project on a second and a third desktop
+# M11.d — Desktop: the same project on a second desktop, and the interface for a third graphics API
+
+> **SCOPE CHANGE, RECORDED BEFORE THE REST OF THIS DOCUMENT IS READ.** This rung was written
+> carrying Metal and D3D12. Its spike ran and established what the plan had assumed away: **this
+> project works on a Linux host with one GPU vendor and no Apple toolchain**, so neither backend can
+> be compiled here, let alone judged. Sections 2 and 3 therefore **moved** — not deleted, not
+> descoped — into **M11.d.5 · Backends**, a rung inserted between this one and M11.e
+> ([`implement-m11d5-backends`](../implement-m11d5-backends/proposal.md)), together with
+> `rhi-and-render-graph`'s Complete cell and `m11d:golden-images-across-three-backends`, which moved
+> so that rung cannot close on "it compiles somewhere". `delivery-roadmap`'s *"A spike may resize a
+> milestone as well as redirect it"* is the rule. **What stays here is everything this host can
+> actually check**, including the RHI *interface* those backends will be written against, which is
+> settled here on Vulkan and null before either backend exists — the ordering this rung's spike
+> argued for, now enforced by the ladder rather than requested by a task list. Passages below that
+> describe the backends are kept as the record of why they moved; `design.md` §1.4 is the
+> measurement.
 
 ## Why
 
 **Eleven milestones in, this engine runs on one graphics API, through one windowing library, on one
 operating system.** `delivery-roadmap`'s M11 row is about exactly that and nothing else in M11 is;
 the other four rungs are debt, authoring, image and distribution. This rung is the milestone as the
-plan actually wrote it.
+plan actually wrote it — **minus the half no machine here can build**, which is now M11.d.5 and is
+the other rung of the same claim rather than a reduction of it. What is left is the half that can be
+proved first-hand: a second windowing library, on this operating system, against an interface settled
+before a second graphics API exists.
 
 **What is verified absent on the tree this rung starts from**, rather than assumed:
 
@@ -50,11 +68,15 @@ plan actually wrote it.
 
 ## What Changes
 
-- **`rhi-and-render-graph` to Complete** — **Metal, native and not a translation layer**, and
-  **D3D12 to parity with Vulkan**. The eight gaps the seed recorded are interface changes before they
-  are backends: an opaque memory-pool class the graph only compares for equality, layouts derived
-  from the access masks `access.h` already carries, a queue-ownership capability query, a
-  per-format support query, a pipeline-cache token, and a precondition on secondary recording.
+- **`rhi-and-render-graph`'s INTERFACE, and not its Complete cell.** The eight gaps the seed
+  recorded are interface changes before they are backends: an opaque memory-pool class the graph
+  MEETS rather than compares for equality (§1.4.2 of `design.md` measured why an equality would split
+  the transient heap in two on this host's NVIDIA device), layouts derived from the access masks
+  `access.h` already carries, a queue-ownership capability query, a per-format support query, a
+  pipeline-cache token, and secondary recording. They land here, on Vulkan and the null backend,
+  because changing `reserve_transient_memory`'s contract after two backends are written is a
+  migration across every pass and changing it before is an afternoon. **The row's Complete cell is
+  M11.d.5's**, with Metal and D3D12.
 - **`core-platform-abstraction` to Complete** — a **native** `Platform` and `DisplayServer` for one
   desktop platform, replacing SDL3 there, **requiring no change in `src/core/`, `src/ecs/`,
   `src/servers/` or `src/scene/`**, and the porting surface built against a stub platform that shares
@@ -76,25 +98,29 @@ plan actually wrote it.
 
 ## Capabilities
 
-**Ten rows to Complete — eight from Working and two from Seed** — carrying **129 requirements**.
+**Nine rows to Complete — seven from Working and two from Seed** — carrying **117 requirements**.
+Ten and 129 until `rhi-and-render-graph` moved to M11.d.5 with the two backends its Complete cell was
+entirely about.
 
 From **Seed**: `testing-and-quality` and `developer-workflow-and-just`, both recorded at M0.
-From **Working**: `rhi-and-render-graph` (M3), `core-platform-abstraction` (M4),
-`build-and-packaging` (M6), `core-assets-and-io`, `ecs-core`, `engine-architecture` (M2),
-`core-jobs-and-concurrency` and `core-memory-and-containers` (M1).
+From **Working**: `core-platform-abstraction` (M4), `build-and-packaging` (M6), `core-assets-and-io`,
+`ecs-core`, `engine-architecture` (M2), `core-jobs-and-concurrency` and `core-memory-and-containers`
+(M1).
 
-Seven of these ten rows were last advanced at M0, M1 or M2 — two at M0, two at M1 and three at M2 —
-so this rung carries the oldest tiers in the record, and is the first to read them at Complete grade.
+Six of these nine rows were last advanced at M0, M1 or M2 — two at M0, two at M1 and two at M2 — so
+this rung carries the oldest tiers in the record, and is the first to read them at Complete grade.
 
 ## What is contingent, and what this rung predicts about itself
 
-- **This host has one operating system and one GPU vendor**, and that is the rung's defining
-  constraint rather than an inconvenience. Every Metal and D3D12 claim must be judged on a hosted
-  runner, and **whether a hosted runner can present a device at all is the first thing this rung must
-  measure, not assume.** `ci.yml` already carries `macos-arm64` and `windows-arm64` legs; what it has
-  never done is run a graphics device on one. If a leg cannot present a device, the honest claim is a
-  compile-and-validate claim with the golden-image criterion **reported as not evaluated**, exactly
-  as `m0:three-platforms` is reported today — not a green tick over an unphotographed frame.
+- **This host has one operating system, and that was the rung's defining constraint rather than an
+  inconvenience — it was MEASURED, and it resized the rung.** Every Metal and D3D12 claim would have
+  had to be judged on a hosted runner, and whether a hosted runner can present a device at all was
+  the first thing this rung measured rather than assumed. It can: every allocated leg created a
+  device, drew, read a pixel back and presented — **and not one of them is a GPU**. Against that, and
+  against the plainer fact that neither backend compiles on Linux at all, the backends moved to
+  M11.d.5, where `design.md` §2 of `implement-m11d5-backends` carries what a hosted leg cannot
+  exercise as declared deferrals. What this rung keeps of the finding is the rule it produced: NOT
+  EVALUATED is never a pass, and a result names the device that answered.
 - **The named risk is the interface, not the backends.** Two of the eight gaps have no workaround,
   and both sit in interfaces the render graph depends on. Changing `reserve_transient_memory`'s
   contract after two backends are written is a migration across every pass in the engine; changing it
@@ -115,12 +141,14 @@ so this rung carries the oldest tiers in the record, and is the first to read th
 
 ## Impact
 
-- **New code**: a D3D12 backend; a Metal backend behind the seed's mapping layer; a native `Platform`
-  and `DisplayServer` for one desktop; a stub platform for the porting surface; a transport behind
-  `RemoteFileProvider`; memory attribution producers; four quality gates and three acceptance
-  scenarios; the desktop half of `samples/11-ship`.
+- **New code**: a **native `Platform` and `DisplayServer` for Linux**, which is what proves the
+  abstraction carries no SDL assumption and needs no Apple hardware; a stub platform for the porting
+  surface; a transport behind `RemoteFileProvider`; memory attribution producers; four quality gates
+  and three acceptance scenarios; the desktop half of `samples/11-ship`. **No Metal and no D3D12** —
+  those are M11.d.5's.
 - **Existing code**: the RHI interface changes the eight gaps name, applied across the render graph
-  and both existing backends before either new backend is written.
+  and both existing backends before either new backend is written — which is now a property of the
+  ladder rather than a promise in a task list, because the new backends are a rung above.
 - **Machinery**: CI legs that build and run with a device where a runner has one, and report NOT
   EVALUATED where it has not.
 - **Closing artefact**: `samples/11-ship` built, cooked, packaged and launched on each desktop target
@@ -128,4 +156,6 @@ so this rung carries the oldest tiers in the record, and is the first to read th
   `src/core/`, `src/ecs/`, `src/servers/` and `src/scene/` untouched.
 - **Risk**, and the rung's named spike: **settle the eight RHI gaps as interface changes, on Vulkan
   and null, before a line of either backend is written.** The seed exists to make that finding cheap;
-  spending it is this rung's first task.
+  spending it was this rung's first task, and it has been spent — `design.md` §1.4.2 has the counts,
+  and three of the seed's eight proposals turned out to be wrong or inert. That half re-ordered
+  section 1; the other half of the same spike resized the rung.

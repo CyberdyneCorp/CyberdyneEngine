@@ -127,6 +127,7 @@ cy_add_module(
         src/package_reader.cpp
         src/package_writer.cpp
         src/path.cpp
+        src/remote.cpp
         src/serialization.cpp
         src/streaming.cpp
         src/toolchain.cpp

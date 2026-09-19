@@ -19,7 +19,7 @@ using cy::rendering::CompiledGraph;
 using cy::rendering::RenderGraph;
 using cy::rendering::ResourceId;
 using cy::rhi::Access;
-using cy::rhi::ImageLayout;
+using cy::rhi::ImageUse;
 using cy::rhi::QueueKind;
 using namespace cy::rendering::test;
 
@@ -36,7 +36,7 @@ struct HardCase {
         layered = graph.create_texture(storage_image("layers", 16, 2));
         target =
             graph.import_texture(colour_target("swapchain"),
-                                 cy::rhi::TextureHandle::from_slot(0, 1), ImageLayout::Undefined);
+                                 cy::rhi::TextureHandle::from_slot(0, 1), ImageUse::Undefined);
         staging = graph.import_buffer(storage_buffer("readback", 4096),
                                       cy::rhi::BufferHandle::from_slot(0, 1));
 
@@ -86,15 +86,16 @@ CY_TEST_CASE("cross-queue work becomes a semaphore and an ownership transfer, ne
     CY_REQUIRE_EQ(plan->submits[0].release.images.size(), 1U);
     const cy::rhi::ImageBarrier& release = plan->submits[0].release.images[0];
     CY_CHECK_EQ(release.resource, scene.layered);
-    CY_CHECK_EQ(release.old_layout, ImageLayout::General);
-    CY_CHECK_EQ(release.new_layout, ImageLayout::ShaderReadOnly);
-    CY_CHECK_EQ(release.src_queue_family, 2U);
-    CY_CHECK_EQ(release.dst_queue_family, 0U);
+    CY_CHECK_EQ(release.old_use, ImageUse::Storage);
+    CY_CHECK_EQ(release.new_use, ImageUse::SampledRead);
+    CY_CHECK(release.ownership_transfer);
+    CY_CHECK_EQ(release.src_queue, cy::rhi::QueueKind::AsyncCompute);
+    CY_CHECK_EQ(release.dst_queue, cy::rhi::QueueKind::Graphics);
     CY_CHECK_EQ(release.range.base_layer, 0);
     CY_CHECK_EQ(release.range.layer_count, 2);
 
-    // The matching acquire, in the consuming pass's pre-batch, with IDENTICAL layouts, families and
-    // subresource range. Both halves come from one hazard, which is why they cannot drift.
+    // The matching acquire, in the consuming pass's pre-batch, with IDENTICAL image uses, queues
+    // and subresource range. Both halves come from one hazard, which is why they cannot drift.
     const cy::rhi::BarrierBatch& shade = plan->submits[1].passes[0].pre;
     const cy::rhi::ImageBarrier* acquire = nullptr;
     for (const cy::rhi::ImageBarrier& barrier : shade.images) {
@@ -103,10 +104,11 @@ CY_TEST_CASE("cross-queue work becomes a semaphore and an ownership transfer, ne
         }
     }
     CY_REQUIRE(acquire != nullptr);
-    CY_CHECK_EQ(acquire->old_layout, release.old_layout);
-    CY_CHECK_EQ(acquire->new_layout, release.new_layout);
-    CY_CHECK_EQ(acquire->src_queue_family, release.src_queue_family);
-    CY_CHECK_EQ(acquire->dst_queue_family, release.dst_queue_family);
+    CY_CHECK_EQ(acquire->old_use, release.old_use);
+    CY_CHECK_EQ(acquire->new_use, release.new_use);
+    CY_CHECK(acquire->ownership_transfer);
+    CY_CHECK_EQ(acquire->src_queue, release.src_queue);
+    CY_CHECK_EQ(acquire->dst_queue, release.dst_queue);
     CY_CHECK(acquire->range == release.range);
 
     // The plan's own audit checks the same invariants, plus the ones a validation layer does not.
@@ -169,7 +171,7 @@ CY_TEST_CASE("with async compute off the same declarations collapse to one submi
         }
         ++for_layered;
         CY_CHECK_EQ(barrier.range.layer_count, 2);
-        CY_CHECK_EQ(barrier.src_queue_family, cy::rhi::kQueueFamilyIgnored);
+        CY_CHECK_FALSE(barrier.ownership_transfer);
     }
     CY_CHECK_EQ(for_layered, 1U);
 }
@@ -196,7 +198,7 @@ CY_TEST_CASE("a chain alternating queues every step transfers ownership in both 
     RenderGraph graph(cy::system_allocator(cy::MemoryDomain::Renderer));
     const ResourceId image =
         graph.import_texture(storage_image("ping-pong", 32),
-                             cy::rhi::TextureHandle::from_slot(1, 1), ImageLayout::Undefined);
+                             cy::rhi::TextureHandle::from_slot(1, 1), ImageUse::Undefined);
 
     constexpr cy::u32 kSteps = 8;
     for (cy::u32 step = 0; step < kSteps; ++step) {

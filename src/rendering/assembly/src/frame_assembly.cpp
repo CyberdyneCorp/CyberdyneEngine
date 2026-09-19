@@ -164,6 +164,22 @@ Status FrameAssembly::attach_device(rhi::Device& device) noexcept {
         return fail(ErrorCode::InvalidArgument, "attach a device after initialize()");
     }
     device_ = &device;
+
+    // METAL GAP 7'S CONSUMER, AND THE ONLY ONE IN THE ENGINE. The per-format query has answered
+    // since M3 and until M11.d nothing above `src/backends/rhi/` asked it, so a format the device
+    // refuses was a backend's problem to solve quietly. THE ENGINE PICKS, HERE, ONCE: the frame's
+    // depth format is confirmed against what this device reports and substituted by the engine's
+    // own preference order when it is not supported — never dropping the stencil aspect. Today
+    // every path defaults to D32Sfloat and no device refuses it, so this normally changes nothing;
+    // it is the mechanism being connected rather than a fix for a failure in the tree.
+    const rhi::Format supported =
+        rhi::select_depth_stencil_format(device.capabilities(), description_.depth_format);
+    if (supported == rhi::Format::Undefined) {
+        return fail(ErrorCode::Unsupported,
+                    "this device supports no depth-stencil format the frame can use");
+    }
+    description_.depth_format = supported;
+
     if (!description_.gpu_culling || !gpu_culling::GpuCullPass::supported(device)) {
         // NOT AN ERROR. A device with no compute queue or no indirect drawing gets the CPU path,
         // and cull.h's own comment says why that is the same answer rather than a lesser one.

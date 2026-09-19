@@ -33,7 +33,34 @@ build-engine *args:
             *)            cmake_args+=("${argument}") ;;
         esac
     done
-    target="$(just _resolve-target "${target:-${CY_TARGET_PLATFORM:-}}")"
+    # A PORT IS NOT AN OPERATING SYSTEM, and `--platform` now carries both. M11.d added two
+    # implementations of the porting surface that are not cross-compilation targets — `stub`, which
+    # shares no desktop assumption, and `native`, the Linux backend that is not SDL3 — and the
+    # milestone ledger's `porting-surface-against-a-stub` criterion is literally
+    # `just build-engine --platform stub`. Rather than invent a second flag for a question the
+    # developer asks the same way ("build this for X"), the two names are recognised here and turn
+    # into a RESTRICTED BUILD of that port's dependency closure and its suite.
+    #
+    # That restriction is the whole value of the criterion: a port's closure that links and a suite
+    # that runs prove the layers above it need nothing the port does not have. Building the whole
+    # tree instead would prove only that the desktop backends still compile.
+    port=""
+    case "${target}" in
+        stub)
+            port="stub"
+            build_targets=(cy_platform_stub cy_test_integration_stub_platform)
+            target="$(just _host-platform)"
+            ;;
+        native)
+            port="native"
+            build_targets=(cy_platform_linux_native cy_test_integration_linux_native cy_sample_empty)
+            target="$(just _host-platform)"
+            ;;
+        *)
+            build_targets=()
+            target="$(just _resolve-target "${target:-${CY_TARGET_PLATFORM:-}}")"
+            ;;
+    esac
 
     # Both the profile and the configuration are passed: cmake/profiles.cmake cross-checks them, so
     # the table above cannot drift away from the one in cmake/profiles.cmake without a configure
@@ -66,7 +93,12 @@ build-engine *args:
 
     echo "==> configure   profile=${profile}  configuration=${config}  platform=${target}"
     cmake "${configure[@]}" ${cmake_args[@]+"${cmake_args[@]}"}
-    echo "==> build       profile=${profile}"
+    if [ -n "${port}" ]; then
+        echo "==> build       profile=${profile}  port=${port}  targets=${build_targets[*]}"
+        build+=(--target "${build_targets[@]}")
+    else
+        echo "==> build       profile=${profile}"
+    fi
     cmake "${build[@]}" ${CY_JOBS:+--parallel "${CY_JOBS}"}
 
 # Build everything this milestone has: the engine, its tools, and the editor. Shaders are their own

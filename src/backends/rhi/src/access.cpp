@@ -20,63 +20,63 @@ namespace {
 // enumerators exactly and the static_assert below is what keeps it that way after an insertion.
 constexpr AccessInfo kAccessTable[kAccessCount] = {
     // --- Compute -------------------------------------------------------------------------------
-    {Stage::ComputeShader, AccessFlags::ShaderStorageWrite, ImageLayout::General, true, true, true,
+    {Stage::ComputeShader, AccessFlags::ShaderStorageWrite, ImageUse::Storage, true, true, true,
      "ComputeStorageWrite"},
-    {Stage::ComputeShader, AccessFlags::ShaderStorageRead, ImageLayout::General, false, true, true,
+    {Stage::ComputeShader, AccessFlags::ShaderStorageRead, ImageUse::Storage, false, true, true,
      "ComputeStorageRead"},
     {Stage::ComputeShader, AccessFlags::ShaderStorageRead | AccessFlags::ShaderStorageWrite,
-     ImageLayout::General, true, true, true, "ComputeStorageReadWrite"},
-    {Stage::ComputeShader, AccessFlags::ShaderSampledRead, ImageLayout::ShaderReadOnly, false, true,
+     ImageUse::Storage, true, true, true, "ComputeStorageReadWrite"},
+    {Stage::ComputeShader, AccessFlags::ShaderSampledRead, ImageUse::SampledRead, false, true,
      false, "ComputeSampledRead"},
-    {Stage::ComputeShader, AccessFlags::UniformRead, ImageLayout::Undefined, false, false, true,
+    {Stage::ComputeShader, AccessFlags::UniformRead, ImageUse::Undefined, false, false, true,
      "ComputeUniformRead"},
 
     // --- Graphics ------------------------------------------------------------------------------
-    {Stage::VertexInput, AccessFlags::VertexAttributeRead, ImageLayout::Undefined, false, false,
+    {Stage::VertexInput, AccessFlags::VertexAttributeRead, ImageUse::Undefined, false, false,
      true, "VertexAttributeRead"},
-    {Stage::VertexInput, AccessFlags::IndexRead, ImageLayout::Undefined, false, false, true,
+    {Stage::VertexInput, AccessFlags::IndexRead, ImageUse::Undefined, false, false, true,
      "IndexRead"},
-    {Stage::DrawIndirect, AccessFlags::IndirectCommandRead, ImageLayout::Undefined, false, false,
+    {Stage::DrawIndirect, AccessFlags::IndirectCommandRead, ImageUse::Undefined, false, false,
      true, "IndirectCommandRead"},
-    {Stage::VertexShader, AccessFlags::UniformRead, ImageLayout::Undefined, false, false, true,
+    {Stage::VertexShader, AccessFlags::UniformRead, ImageUse::Undefined, false, false, true,
      "VertexUniformRead"},
-    {Stage::VertexShader, AccessFlags::ShaderStorageRead, ImageLayout::General, false, true, true,
+    {Stage::VertexShader, AccessFlags::ShaderStorageRead, ImageUse::Storage, false, true, true,
      "VertexStorageRead"},
-    {Stage::FragmentShader, AccessFlags::UniformRead, ImageLayout::Undefined, false, false, true,
+    {Stage::FragmentShader, AccessFlags::UniformRead, ImageUse::Undefined, false, false, true,
      "FragmentUniformRead"},
-    {Stage::FragmentShader, AccessFlags::ShaderSampledRead, ImageLayout::ShaderReadOnly, false,
+    {Stage::FragmentShader, AccessFlags::ShaderSampledRead, ImageUse::SampledRead, false,
      true, false, "FragmentSampledRead"},
-    {Stage::FragmentShader, AccessFlags::ShaderStorageRead, ImageLayout::General, false, true, true,
+    {Stage::FragmentShader, AccessFlags::ShaderStorageRead, ImageUse::Storage, false, true, true,
      "FragmentStorageRead"},
-    {Stage::ColorAttachmentOutput, AccessFlags::ColorAttachmentWrite, ImageLayout::ColorAttachment,
+    {Stage::ColorAttachmentOutput, AccessFlags::ColorAttachmentWrite, ImageUse::ColorAttachment,
      true, true, false, "ColorAttachmentWrite"},
     {Stage::ColorAttachmentOutput,
      AccessFlags::ColorAttachmentRead | AccessFlags::ColorAttachmentWrite,
-     ImageLayout::ColorAttachment, true, true, false, "ColorAttachmentReadWrite"},
+     ImageUse::ColorAttachment, true, true, false, "ColorAttachmentReadWrite"},
 
     // Depth is tested before the fragment shader and written after it, so both stages appear on
     // both rows. Naming only the late stage would let a depth write race the early-fragment test of
     // the pass before it, which is a hazard that reproduces once every few thousand frames.
     {Stage::EarlyFragmentTests | Stage::LateFragmentTests,
      AccessFlags::DepthStencilAttachmentRead | AccessFlags::DepthStencilAttachmentWrite,
-     ImageLayout::DepthStencilAttachment, true, true, false, "DepthStencilAttachmentWrite"},
+     ImageUse::DepthStencilAttachment, true, true, false, "DepthStencilAttachmentWrite"},
     {Stage::EarlyFragmentTests | Stage::LateFragmentTests, AccessFlags::DepthStencilAttachmentRead,
-     ImageLayout::DepthStencilReadOnly, false, true, false, "DepthStencilAttachmentRead"},
+     ImageUse::DepthStencilReadOnly, false, true, false, "DepthStencilAttachmentRead"},
 
     // --- Transfer ------------------------------------------------------------------------------
-    {Stage::Copy, AccessFlags::TransferRead, ImageLayout::TransferSource, false, true, true,
+    {Stage::Copy, AccessFlags::TransferRead, ImageUse::TransferSource, false, true, true,
      "TransferRead"},
-    {Stage::Copy, AccessFlags::TransferWrite, ImageLayout::TransferDestination, true, true, true,
+    {Stage::Copy, AccessFlags::TransferWrite, ImageUse::TransferDestination, true, true, true,
      "TransferWrite"},
 
     // --- Host and presentation -------------------------------------------------------------------
-    {Stage::Host, AccessFlags::HostRead, ImageLayout::Undefined, false, false, true, "HostRead"},
+    {Stage::Host, AccessFlags::HostRead, ImageUse::Undefined, false, false, true, "HostRead"},
 
     // Present carries no stage and no access on purpose. The transition to the presentable layout
     // is ordered against the presentation engine by the semaphore the submit signals, not by a
     // destination stage — naming one here would be a barrier that claims to synchronise work the
     // command buffer does not contain.
-    {Stage::None, AccessFlags::None, ImageLayout::Present, false, true, false, "Present"},
+    {Stage::None, AccessFlags::None, ImageUse::Presentable, false, true, false, "Present"},
 };
 
 static_assert(sizeof(kAccessTable) / sizeof(kAccessTable[0]) == kAccessCount,

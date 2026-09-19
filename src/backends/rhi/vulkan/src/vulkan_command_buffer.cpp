@@ -363,16 +363,18 @@ void VulkanBarrierRecorder::record_barriers(CommandBufferHandle command_buffer,
         out.srcAccessMask = to_vulkan(barrier.src_access);
         out.dstStageMask = to_vulkan(barrier.dst_stage);
         out.dstAccessMask = to_vulkan(barrier.dst_access);
-        out.oldLayout = to_vulkan(barrier.old_layout);
-        out.newLayout = to_vulkan(barrier.new_layout);
-        // VK_QUEUE_FAMILY_IGNORED on both halves unless this is an ownership transfer, and the
-        // engine's kQueueFamilyIgnored is the same sentinel.
-        out.srcQueueFamilyIndex = barrier.src_queue_family == kQueueFamilyIgnored
-                                      ? VK_QUEUE_FAMILY_IGNORED
-                                      : barrier.src_queue_family;
-        out.dstQueueFamilyIndex = barrier.dst_queue_family == kQueueFamilyIgnored
-                                      ? VK_QUEUE_FAMILY_IGNORED
-                                      : barrier.dst_queue_family;
+        // THE ENGINE SAYS WHAT THE IMAGE IS USED AS; THIS LINE IS WHERE IT BECOMES A LAYOUT.
+        out.oldLayout = to_vulkan(barrier.old_use);
+        out.newLayout = to_vulkan(barrier.new_use);
+        // VK_QUEUE_FAMILY_IGNORED on both halves unless this is an ownership transfer. The FAMILY
+        // INDEX IS DERIVED HERE and nowhere above: the barrier names `QueueKind`s, which is what
+        // every backend has, and this backend is the only one that has families — Metal gap 4.
+        out.srcQueueFamilyIndex = barrier.ownership_transfer
+                                      ? device_->queue_family(barrier.src_queue)
+                                      : VK_QUEUE_FAMILY_IGNORED;
+        out.dstQueueFamilyIndex = barrier.ownership_transfer
+                                      ? device_->queue_family(barrier.dst_queue)
+                                      : VK_QUEUE_FAMILY_IGNORED;
         out.image = texture->image;
         out.subresourceRange.aspectMask = to_vulkan(barrier.aspect);
         out.subresourceRange.baseMipLevel = barrier.range.base_mip;
@@ -397,12 +399,12 @@ void VulkanBarrierRecorder::record_barriers(CommandBufferHandle command_buffer,
         out.srcAccessMask = to_vulkan(barrier.src_access);
         out.dstStageMask = to_vulkan(barrier.dst_stage);
         out.dstAccessMask = to_vulkan(barrier.dst_access);
-        out.srcQueueFamilyIndex = barrier.src_queue_family == kQueueFamilyIgnored
-                                      ? VK_QUEUE_FAMILY_IGNORED
-                                      : barrier.src_queue_family;
-        out.dstQueueFamilyIndex = barrier.dst_queue_family == kQueueFamilyIgnored
-                                      ? VK_QUEUE_FAMILY_IGNORED
-                                      : barrier.dst_queue_family;
+        out.srcQueueFamilyIndex = barrier.ownership_transfer
+                                      ? device_->queue_family(barrier.src_queue)
+                                      : VK_QUEUE_FAMILY_IGNORED;
+        out.dstQueueFamilyIndex = barrier.ownership_transfer
+                                      ? device_->queue_family(barrier.dst_queue)
+                                      : VK_QUEUE_FAMILY_IGNORED;
         out.buffer = buffer->buffer;
         out.offset = barrier.offset;
         out.size = barrier.size == 0 ? VK_WHOLE_SIZE : barrier.size;

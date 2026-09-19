@@ -41,8 +41,9 @@ Status validate_buffer(const BufferDescription& desc, ValidationMessage& message
     return ok();
 }
 
-Status validate_texture(const TextureDescription& desc, const DeviceLimits& limits,
+Status validate_texture(const TextureDescription& desc, const DeviceCapabilities& caps,
                         ValidationMessage& message) noexcept {
+    const DeviceLimits& limits = caps.limits();
     if (desc.format == Format::Undefined) {
         return fail(ErrorCode::InvalidArgument,
                     message.format("texture '%s': Format::Undefined", desc.name));
@@ -82,6 +83,21 @@ Status validate_texture(const TextureDescription& desc, const DeviceLimits& limi
         return fail(ErrorCode::InvalidArgument,
                     message.format("texture '%s': %s is a depth format and cannot be a colour "
                                    "attachment",
+                                   desc.name, format_name(desc.format)));
+    }
+    // METAL GAP 7, AS A REFUSAL RATHER THAN A SUBSTITUTION. A depth-stencil target whose format
+    // this device does not report support for is refused NAMING the format and the call that picks
+    // a substitute, because the alternative — a backend quietly swapping in something of a
+    // different precision and a different footprint — is a decision the engine never sees.
+    // `MTLPixelFormatDepth24Unorm_Stencil8` is the case this exists for: it is in Metal's
+    // enumeration and unsupported on every Apple GPU.
+    if (has_usage(desc.usage, TextureUsage::DepthStencilAttachment) &&
+        !has_feature(caps.format_features(desc.format), FormatFeature::DepthStencilAttachment)) {
+        return fail(ErrorCode::Unsupported,
+                    message.format("texture '%s': this device does not support %s as a "
+                                   "depth-stencil attachment. Ask "
+                                   "rhi::select_depth_stencil_format() what it does support — the "
+                                   "engine picks the substitute, not the backend",
                                    desc.name, format_name(desc.format)));
     }
     return ok();
