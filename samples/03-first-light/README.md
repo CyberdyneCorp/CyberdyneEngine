@@ -154,6 +154,32 @@ when it lands: swap the headless display server for the SDL3 one, create a surfa
 swapchain, import the acquired image into the graph, and declare a `Present` pass — which the access
 table already has an intent for.
 
+**M11.d: the accessor landed, and it was a different sample that consumed it.**
+`vulkan_instance_handle(Device&)` is in `vulkan_backend.h` — on the *backend* rather than on
+`Device`, so it cannot become an identity query the renderer branches on — and
+`samples/11-ship/present.cpp` is the first frame this repository ever presented. **This sample still
+does not present, deliberately**: it is the frame the golden references are made of, and a frame
+that went through a swapchain would be a frame whose picture depended on a surface format and a
+display server. `samples/11-ship` is where presenting is proved.
+
+## The same image, hosted four different ways — M11.d task 4.3
+
+`--platform headless|sdl3|native|stub` chooses which implementation of `cy::Platform` and
+`cy::DisplayServer` owns the process, the clock, the paths and the host loop. **The frame is
+rendered offscreen whichever one it is**, which is exactly the claim: the M11 exit criterion asks for
+*"the M3 golden images ... on the native backend"*, and the object that can carry it is this
+program — `tests/render/` links no platform target at all and constructs no display server, so no
+platform backend can change one texel of `render.golden`.
+
+`golden_legs.py` is the measurement, and `smoke.first_light_legs` is the CTest entry that runs it.
+Each leg renders `--frames 1` at 192x108 — the viewport and the phase `test_golden_frame.cpp` says
+are the sample's own — and the capture is compared **exactly**, with no tolerance, against
+`tests/render/references/first_light.png` and against every other leg. A leg this machine cannot run
+is reported NOT EVALUATED rather than passed.
+
+The default is `headless`, which is the pair this sample has used since M3: a default that opened a
+window would change what `just run-sample first-light` does on a machine with no display.
+
 ## What is thinner than it looks
 
 **One frame at a time.** `render()` waits for the device before it returns. Frames in flight,

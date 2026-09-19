@@ -361,7 +361,25 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       target this host cannot produce (2), a target nobody has written (2, naming the rung) — and
       `just env-targets --selftest` requires them to stay distinct. The table's `owner` is checked
       against `record.MILESTONES` **at load**, so a refusal cannot tell a developer to wait for a
-      milestone that is not on the ladder, which is 7.8's defect enforced mechanically
+      milestone that is not on the ladder, which is 7.8's defect enforced mechanically.
+      **AND THE DEFECT THAT WRITING IT EXPOSED, WHICH IS WORTH MORE THAN THE CRITERION.** Before
+      `_ctest` took the flag, `just test-render --platform <anything>` *accepted* it: the recipe
+      passed the argument through to ctest, which drops an unrecognised positional without a word.
+      Measured — three different argument lists selected the same 20 tests. So every caller who has
+      ever written `just test-<kind> ... --platform ...` read an unfiltered run as a filtered one.
+      A flag that is accepted and ignored is worse than one that is rejected, and the fix is not
+      allowed to be "silently continue": `--platform` with no name exits 2 naming the flag, an
+      unknown name exits 3 through `_resolve-target`, and a PORT name (`stub`, `native`) — which
+      deliberately selects the host build, since a port's closure has no fifty executables for ctest
+      to run — now **says on stderr** that it did so and which suite carries the port's own claim.
+      **The regression test is the invariant, not the instance**: `tools/ci/test_recipes.py` case
+      *"a recipe never accepts a flag it then ignores"* reads every recipe in `just/` and fails on a
+      flag arm with an empty body, or on a variable an argument loop writes that the recipe never
+      reads. Proved red twice by reinstating each shape in `_ctest` (1 of 6 cases failed, exit 1),
+      then restored and md5-verified. A sweep of all 13 `.just` files under that rule finds no other
+      offender: `build-reap`'s `--apply` is read arithmetically as `((apply))`, and the recipes that
+      hand `${rest}` on wholesale forward to argument parsers that *do* refuse — `ship.py` uses
+      `parse_args`, not `parse_known_args`. `ctest` is the one consumer in the workflow that does not
 - [x] 7.8 **What this rung must NOT claim over.** `just/release.just`'s four recipes —
       `release-version`, `release-changelog`, `release-artefacts`, `release-publish` — all refuse and
       name *"M12 — build-and-packaging"*, **a milestone that does not exist on a ladder whose
@@ -460,7 +478,8 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 
 - [ ] 9.1 Write `tools/roadmap/milestones/m11d.toml` — this rung's own criteria only, the ledger flat
       — declare `milestone-m11d` in `gates.toml` and raise `selftest.MINIMUM_CRITERIA`
-- [ ] 9.2 An `m11e-open` criterion using the double-star glob form
+- [x] 9.2 An `m11e-open` criterion using the double-star glob form — satisfied and RE-POINTED by
+      the insertion; see the close phase's verdict at the end of this file
 - [ ] 9.3 Update `status.yaml`, `capability-matrix.md`, `ROADMAP.md` and `dependencies.md`, and run
       the plan-consistency checks over them
 - [ ] 9.4 Move `ci.yml`'s milestone job to `m11d` in the same commit that flips the gate green — the
@@ -491,3 +510,90 @@ luck apart. `present.cpp` scopes it, and says so where it does.
 - [ ] 10.5 **The evidence rule applied to this rung's own claims.** No golden-image tick over an
       unphotographed frame; no "parity" over a backend that compiled; NOT EVALUATED is never a pass,
       and a reported gap is the outcome this gate prefers to a green one it cannot defend
+
+## The close phase's verdict — M11.d DOES NOT CLOSE
+
+Written by the close phase, which owns `gates.toml`, `ci.yml`, `status.yaml`,
+`capability-matrix.md` and `ROADMAP.md`. **No gate was flipped. No tier was written. `ci.yml`'s
+milestone job was not moved.** The rung is left open, which is the outcome a rung with red criteria
+is supposed to have, and every row below was measured here rather than inferred from a task list.
+
+**Measured GREEN, each run by hand at the close:** `specs` (76 of 76), `format` (2 258 files),
+`layering` (11 of 11 selftest cases, *with two platform implementations in the tree* — which is the
+abstraction claim from the gate's side), `workflows` (`just ci-check`, 19 of 19), `roadmap-record`,
+`generated-code`'s two cheap thirds (`generate-check`, `maintenance-deps-check`, 37 of 37),
+`documentation-gate` (1 932 of 2 472 documented, 540 in the declared backlog, **0 new**),
+`full-gate-set` (all three gates, after the two repairs below), `ship-sample-exists`,
+`ship-sample-drawn` (`docs/design/images/m11d-ship-native.png` opened and read: a real frame from
+the packaged application on the X11 backend, and it states in its own pixels that it is a packaging
+proof and not a game), and `native-platform-backend` after its rewrite.
+
+**Measured RED — nine criteria, none of them a declarable gap, because every one of them is a row
+somebody started:**
+
+1. `core-rows-at-complete-grade` — **0 of 71 requirements** across the six rows map to a test, a
+   gate or a recorded exemption. The tool exists and works; the map is empty. This is the largest
+   single piece of unfinished work on the rung.
+2. `release-recipes-stop-refusing` — all four `release-*` recipes still exit through
+   `_not-implemented`. **The ledger's own instruction applies: `developer-workflow-and-just` is
+   DEMOTED to M11.e with this reason rather than claimed over four refusals**, and M11.a's declared
+   gap `developer-workflow-at-working` does not close here either.
+3. `developer-workflow-recipes` — **8** recipe lines refuse naming a milestone the ladder does not
+   carry (`deploy.just:110`, `quality.just:166`, `quality.just:285`, `release.just:12,16,20,24`,
+   `run.just:408`). Two of the eight are this rung's own additions.
+4. `content-audit-and-symbols` — `cy_test_integration_packaging` **does not exist anywhere in the
+   tree**; task 7.5 says in its own words that the symbols half was never started.
+5. `rhi-interface-gaps-settled` — **the work is real and green and the criterion is stale.**
+   `cy_test_unit_rhi` passes 45 of 45 including twelve interface-gap cases, but the filter names
+   four cases that do not exist: it selects **0 of 45**, run and confirmed. The cases are named
+   `gap 2: the pool class is MET, not compared for equality`, `gap 4: ownership is a capability and
+   a queue kind, never a family index`, `gap 7: the engine substitutes the depth format, and never
+   drops the stencil` — and gap 6's case is `the pipeline cache round-trips through a path, and an
+   absent one is a cold start`, **in a different binary** (`cy_test_integration_rhi_pipeline_cache`),
+   so the criterion cannot span it as written. **Deliberately not repaired here**: aligning a filter
+   to whatever passes, at the gate, by the person deciding the gate, is how a check stops being one.
+6. `null-backend-refuses-what-it-cannot-do` — the same defect: `-tc=the null backend refuses*`
+   selects **0 of 45**. Same reason for leaving it.
+7. `port-touches-no-engine-layer` — **red for the workflow's commit convention, not for the
+   abstraction.** It looks for a commit whose subject names `native-platform-backend` in the last
+   40; every commit in this phase is `WIP snapshot: N file(s) in flight`, written by the interval
+   snapshotter, so the port's commits are not separable and the criterion reports "the native
+   backend has not landed" about a backend that has. Run over the whole rung instead
+   (`tools/ci/port_engine_layer_diff.py --since ebdf8d5`) it reports 14 engine-layer files — all of
+   them section 6's `core-assets` remote-file-serving, memory and ECS work, **none of them the
+   port's**. The criterion needs a range or a marker this orchestration can actually produce.
+8. `m11d5-open` — `openspec/changes/implement-m11d5-backends/tasks.md` has **no checked task outside
+   section 0**, so the rung M11.d's spike carved out has been scoped and not entered. This is the
+   handover check working exactly as designed.
+9. `roadmap-tiers` — all nine rows are below Complete, and that is correct: the closing change
+   writes them and this rung is not closing. **It must not be written while 1–8 stand.**
+
+**Two repairs made at the close, both of which make a check stricter and neither of which was
+needed to reach a verdict.** (a) `full-gate-set` invoked `just quality-licence-headers`, a recipe
+that does not exist — the recipe is `just quality-licence` — and behind the misname the gate was
+genuinely red: **19 files added by this rung carried no SPDX header** (all of `platform/linux-native/`,
+`platform/stub/`, `samples/11-ship/`, `src/core/assets/remote.*`, `tests/integration/test_stub_frame.cpp`,
+`tools/ci/port_engine_layer_diff.py`, `tools/docs/collect_ship.py`). The name is corrected and the 19
+headers are added, which is what the gate asks for and not a loosening: `just quality-gates-selftest`
+proves **15 of 15** cases that each of the four gates still refuses what it exists to refuse.
+(b) `native-platform-backend` could not fail — the old body searched `src/` while every
+implementation lives under `platform/`, so it matched only the abstract interface header and
+**exited 0 against ebdf8d5, the commit this rung opened on**. It has been rewritten (a peer's
+stricter version, requiring `Platform` as well as `DisplayServer`, excluding headless and the stub,
+and requiring `platform/CMakeLists.txt` to build it, superseded the close's first attempt and is
+what is in the file); measured green on this tree and red at ebdf8d5.
+
+**What the next run owes, in order:** the requirements map (1), the two stale filters (5, 6), a
+`port-touches-no-engine-layer` that this orchestration can satisfy (7), the packaging suite (4), the
+eight recipe lines (3), and a re-record of falsifiability — `tools/roadmap/falsifiability.toml`
+still carries an `m11d:m11e-open` entry for a criterion that was re-pointed to `m11d5-open`, records
+`ship-sample-exists` and `ship-sample-drawn` as red when both now pass, and has **zero entries for
+any of `m11d5`'s 19 criteria**, so `plan-consistency` cannot pass until `just roadmap-falsify
+--record` is re-run.
+
+**On task 9.2 — the only box the close phase ticked.** An `m11e-open` criterion in the double-star
+glob form: **satisfied, and re-pointed.**
+      The insertion of M11.d.5 moved the handover: `m11d.toml` carries `m11d5-open` in that exact
+      form and `m11d5.toml` carries `m11e-open`, so the chain m11d → m11d5 → m11e is unbroken. A
+      handover check still naming M11.e here would have skipped a rung, which is the one thing a
+      handover check exists to make impossible.

@@ -11,7 +11,7 @@
 //   just run-sample first-light --no-shadows             the control: the sun casts nothing
 //   just run-sample first-light --no-aliasing            what the frame's targets cost unaliased
 //   just run-sample first-light --backend null           the frame with no device at all
-//   just run-sample first-light --platform native        the SAME frame, hosted by platform/linux-native
+//   just run-sample first-light --platform native        the same frame, on platform/linux-native
 //   just run-sample first-light --help
 //
 // ================================================================================================
@@ -355,9 +355,9 @@ int main(int argument_count, char** arguments) {
     Backends backends;
     cy::Platform* platform_ptr = nullptr;
     cy::DisplayServer* display_ptr = nullptr;
-    if (const cy::Status started = select_platform(backends, options.platform_backend,
-                                                   argument_count, arguments, platform_ptr,
-                                                   display_ptr);
+    if (const cy::Status started =
+            select_platform(backends, options.platform_backend, argument_count, arguments,
+                            platform_ptr, display_ptr);
         !started) {
         report("platform", started.error());
         return 1;

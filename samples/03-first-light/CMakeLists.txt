@@ -67,3 +67,46 @@ cy_add_module(
 if(CY_RENDERER_VULKAN)
     target_link_libraries(cy_sample_first-light PRIVATE cy::rhi-vulkan)
 endif()
+
+if(NOT CY_BUILD_TESTS)
+    return()
+endif()
+
+# --- THE M3 GOLDEN IMAGE, ONCE PER PLATFORM BACKEND. M11.d task 4.3 ------------------------------
+#
+# `golden_legs.py` runs this binary on every platform backend the build has and checks each capture
+# against `tests/render/references/first_light.png` — the reference `render.golden` judges — and
+# against the other legs. Its own header says at length why the claim lives HERE and not in
+# `tests/render/`: that directory links no platform target and constructs no `DisplayServer`, so no
+# platform backend can change one texel of it, and putting a window into it would make the render
+# suites need a display on every machine that runs them.
+#
+# `python3` absent means the entry is not declared, which is what samples/06-open-world,
+# 05-editor-session, 05b-agent-authoring and 11-ship all do rather than registering a test that
+# would skip on exactly the machines least able to judge the claim.
+find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+if(NOT Python3_Interpreter_FOUND)
+    message(STATUS "samples/03-first-light: python3 is absent, so smoke.first_light_legs is not "
+                   "declared.")
+    return()
+endif()
+
+get_directory_property(CY_FIRST_LIGHT_TIMEOUT DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
+                       DEFINITION CY_TEST_TIMEOUT_smoke)
+if(NOT CY_FIRST_LIGHT_TIMEOUT)
+    message(FATAL_ERROR
+        "samples/03-first-light: the test taxonomy's timeouts could not be read from "
+        "tests/CMakeLists.txt. If those variables were renamed, this lookup should move with them.")
+endif()
+
+# SKIP_RETURN_CODE 3, as samples/05b-editor-window does: a machine with no graphics device cannot
+# compare a picture and a machine with no display cannot run the windowed legs, and both of those
+# are the MACHINE's limits rather than the subject's. A leg that could not run is reported NOT
+# EVALUATED inside the run; a run where no leg at all could be judged exits 3 and CTest says SKIP.
+add_test(NAME smoke.first_light_legs
+         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/golden_legs.py"
+                 --sample "$<TARGET_FILE:cy_sample_first-light>"
+                 --work "${CMAKE_CURRENT_BINARY_DIR}/legs"
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(smoke.first_light_legs PROPERTIES
+                     LABELS "smoke" TIMEOUT "${CY_FIRST_LIGHT_TIMEOUT}" SKIP_RETURN_CODE 3)

@@ -244,33 +244,86 @@ note   = "this criterion had no derivable mutation at all — its body is two gr
 
 [[criterion]]
 id = "native-platform-backend"
-describe = "a native `Platform` and `DisplayServer` exists for one desktop platform and SDL3 is not the only implementation. SDL3 is both today, so nothing has proved the abstraction carries no SDL assumption"
+describe = "a native `Platform` AND a native `DisplayServer` exist for one desktop platform, are neither SDL3's nor anything that predates this rung, and are compiled — so SDL3 is not the only way this engine opens a window. SDL3 was both since M0, and nothing had proved the abstraction carries no SDL assumption"
 source = "tasks 4, core-platform-abstraction"
 kind = "command"
 run = '''
 set -eo pipefail
-# THIS CRITERION WAS REWRITTEN AT M11.d's CLOSE PHASE BECAUSE IT COULD NOT FAIL. As first written it
-# grepped `src/` for anything matching "DisplayServer", and every platform implementation in this
-# repository lives under `platform/` — so the only file it ever matched was the ABSTRACT INTERFACE
-# HEADER, src/core/platform/include/cy/core/platform/display_server.h, which is not SDL and so
-# answered "1 non-SDL implementation" on a tree with no native backend at all. Checked against the
-# commit this rung opened on (ebdf8d5): it passed there, identically, which makes it the tenth check
-# in this project unable to fail. `just roadmap-falsify` had already classified it "no mutation".
+# THIS CRITERION WAS REWRITTEN AT M11.d's CLOSE PHASE BECAUSE IT COULD NOT FAIL, and the rewrite is
+# the one m11c:virtual-geometry-image records: ask for the subject BY NAME, and check the thing the
+# describe actually claims. As first written it searched `src/` for `class .*DisplayServer`, and
+# EVERY implementation of that interface in this repository lives under `platform/` — so the only
+# file it ever matched was the ABSTRACT INTERFACE HEADER,
+# src/core/platform/include/cy/core/platform/display_server.h, which contains no "sdl" and so
+# answered "1 non-SDL implementation" on a tree with no native backend at all.
 #
-# WHAT IT ASKS NOW is the claim in the rung's own words: SDL3 is not the only way this engine opens a
-# window. HEADLESS IS EXCLUDED DELIBERATELY — it shipped before this rung and counting it would make
-# the check green on the tree the rung opened on, which is the same defect in a new place. What must
-# exist is a DisplayServer subclass that is neither SDL3's nor the pre-existing headless one.
-impls=$(grep -rln ": public DisplayServer" \
+# THE BREAK TEST THAT CONDEMNED IT, run rather than argued: the old body, verbatim, against ebdf8d5 —
+# the commit this rung opened on, when SDL3 genuinely WAS the only implementation and this
+# criterion's own describe said so — prints "1 DisplayServer implementation(s) … of which non-SDL: 1"
+# and EXITS 0. A check that is green on the state it exists to refuse is not a check.
+# `just roadmap-falsify` had already classified it "no mutation": `class .*DisplayServer` is not a
+# literal, so nothing could be renamed to turn it red either.
+#
+# WHAT IT ASKS NOW, and why each exclusion is there rather than convenient. The claim has three parts
+# and this body has three parts:
+#
+#   BOTH interfaces          `core-platform-abstraction` says a port implements Platform AND
+#                            DisplayServer. A window with no process services behind it is half a
+#                            port, and the describe has always said "a native `Platform` and
+#                            `DisplayServer`".
+#   NEITHER headless NOR     both shipped before this rung — headless since M0, and counting either
+#   the stub                 would make this criterion GREEN on the tree the rung opened on, which is
+#                            the defect above committed in a new place. The stub is this rung's own
+#                            work and it is a porting-surface proof, not a desktop: it is
+#                            `m11d:porting-surface-against-a-stub`'s subject, and borrowing it here
+#                            would let the native backend be deleted with this criterion still green.
+#   AND IT IS COMPILED       platform/CMakeLists.txt must add the directory the implementation lives
+#                            in. A backend nothing builds proves nothing about the abstraction, and a
+#                            header alone would satisfy a search.
+#
+# MEASURED, both ways, at the close: GREEN on this tree (linux-native, one DisplayServer and one
+# Platform, built by platform/CMakeLists.txt) and RED at ebdf8d5 with the message below — which is
+# the difference this criterion exists to detect, and the one the old body could not see.
+servers=$(grep -rl ": public DisplayServer" \
     --include='*.h' --include='*.cpp' --include='*.mm' platform/ src/ | sort || true)
-count=$(printf '%s' "$impls" | grep -c . || true)
-echo "$count DisplayServer implementation(s):"
-printf '%s\n' "${impls:-  none}"
-ported=$(printf '%s\n' "$impls" | grep -vi "sdl" | grep -vi "headless" | grep -c . || true)
-echo "  of which neither SDL3 nor the pre-existing headless backend: $ported"
-test "$ported" -ge 1 || {
-    echo "SDL3 (and headless) are still the only DisplayServer implementations — nothing has proved"
-    echo "  the abstraction carries no SDL assumption, because nothing has implemented it twice"
+platforms=$(grep -rl ": public Platform" \
+    --include='*.h' --include='*.cpp' --include='*.mm' platform/ src/ | sort || true)
+echo "DisplayServer implementations:"
+printf '%s\n' "${servers:-  none}"
+echo "Platform implementations:"
+printf '%s\n' "${platforms:-  none}"
+
+# Filtered on the PATH rather than on the class name, because the directory a backend lives in is
+# what the build adds and what a reader looks for: platform/desktop-sdl3/, platform/headless/,
+# platform/stub/. A native port for a second desktop is a directory beside them and needs no change
+# here.
+ported_servers=$(printf '%s\n' "$servers" | grep -vi sdl | grep -vi headless | grep -vi stub || true)
+ported_platforms=$(printf '%s\n' "$platforms" | grep -vi sdl | grep -vi stub || true)
+server_count=$(printf '%s\n' "$ported_servers" | grep -c . || true)
+platform_count=$(printf '%s\n' "$ported_platforms" | grep -c . || true)
+echo "  neither SDL3's, nor headless's, nor the stub's: ${server_count} DisplayServer(s), ${platform_count} Platform(s)"
+
+test "$server_count" -ge 1 && test "$platform_count" -ge 1 || {
+    echo "SDL3 is still the only desktop implementation of these two interfaces. The headless display"
+    echo "  server and the stub platform are both excluded on purpose — headless predates this rung"
+    echo "  and the stub is the porting-surface proof, so neither can stand for the second"
+    echo "  implementation this criterion is about. Nothing has proved the abstraction carries no SDL"
+    echo "  assumption, because nothing has implemented it twice."
+    exit 1
+}
+
+wired=0
+for file in $ported_servers; do
+    directory="${file#platform/}"
+    directory="${directory%%/*}"
+    if grep -q "add_subdirectory(${directory})" platform/CMakeLists.txt; then
+        echo "  and platform/CMakeLists.txt builds ${directory}/"
+        wired=1
+    fi
+done
+test "$wired" -eq 1 || {
+    echo "the second implementation is in the tree and platform/CMakeLists.txt adds no directory that"
+    echo "  holds it: a backend nothing compiles proves nothing about the abstraction."
     exit 1
 }
 '''
@@ -317,13 +370,149 @@ ci_job = "milestone-m11d"
 
 [[criterion]]
 id = "native-backend-runs-the-m0-sample"
-describe = "the M0 sample and the M3 golden images run on the native backend. The sample is the cheapest possible proof that the window, the event loop and the device all came up, and the goldens are the proof that the picture is the same one"
-source = "tasks 4, ROADMAP M11.d exit criteria"
+describe = "the M0 sample RUNS on the native backend: it opens a real window through the native `DisplayServer`, ticks the runtime for a stated number of frames, writes its trace under the path the native `Platform` answered, and exits clean — and the display it reports is the native one rather than SDL3's. This is the cheapest possible proof that the window, the event loop and the runtime all came up on an implementation SDL never touched"
+source = "tasks 4.3, ROADMAP M11.d exit criteria"
 kind = "command"
-run = "just run-sample 00-empty --platform native && just test-render m3 --platform native --compare-golden"
+run = '''
+set -eo pipefail
+# THIS CRITERION WAS REWRITTEN AT M11.d's CLOSE PHASE BECAUSE NEITHER HALF OF IT MEASURED ANYTHING.
+# It read:
+#
+#   just run-sample 00-empty --platform native && just test-render m3 --platform native --compare-golden
+#
+# THE FIRST HALF NEVER TERMINATED AND ASSERTED NOTHING. `samples/00-empty` with no `--frames` runs
+# "until the window is closed or the process is interrupted" (main.cpp, Options::frames), so on a
+# machine with a display this half hangs until the ledger's own timeout kills it; and had it
+# returned, an exit code is all it looked at — the same exit code an SDL3 run gives, and the same
+# one a build with no native backend at all gives if anything ever fell back.
+#
+# THE SECOND HALF DISCARDED ITS OWN FLAG, TWICE OVER. `just test-render` is `_ctest render`
+# (just/test.just:30), and `_ctest` PARSES `--platform` OUT AND THROWS IT AWAY for a port name —
+# `case "${platform[1]:-}" in stub|native) platform=() ;;` — after which ctest silently drops the
+# positional arguments it does not recognise. MEASURED at the close against three configured build
+# trees (build/dev, build/m11c-final, build/m11d-core): `ctest -L render -N m3 --compare-golden`,
+# the same with `zzzz-no-such-thing`, and NO ARGUMENTS AT ALL each select THE SAME 20 render tests.
+# So its verdict was "the whole render label is green", and `--no-tests=ignore` — which `_ctest`
+# passes for this label — would have made an EMPTY selection green too. `requires = "display"` did
+# not save it: this host has one, so the criterion was evaluated and passed vacuously.
+#
+# AND THE GOLDEN CLAIM CANNOT BE SATISFIED AS IT WAS WRITTEN, WHICH IS A FINDING ABOUT THE CRITERION
+# RATHER THAN ABOUT THE BACKEND. `tests/render/` links no platform target and constructs no
+# `DisplayServer` at all: the goldens render offscreen through Vulkan into a readback buffer, so NO
+# platform backend can change one texel of them and "the M3 golden images on the native backend"
+# names nothing that exists. That is task 4.3's second bullet, and rewriting this criterion is where
+# it lands. The M3 images are not thereby unasserted — `m3:golden` asks for `render.golden` BY NAME,
+# refuses a selection that matched nothing, and compares against committed references, and
+# `m11d5:golden-images-across-three-backends` carries the cross-backend claim. What a platform
+# backend CAN be held to about a picture is that a frame reaches a window it opened, which is what
+# `m11d:ship-sample-on-desktop` and `m11d:ship-sample-drawn` photograph.
+#
+# WHAT IS ASKED HERE, then, is the half that is about this backend, and every line of it is an
+# observation of the run rather than of its exit code: the display server the sample REPORTS is not
+# SDL3's, not the headless one and not the stub's; the window id is not `kInvalidWindow`; the trace
+# went to an absolute path the native `Platform` answered and has bytes in it; and the loop ran the
+# frames it was asked for and stopped because it reached them.
+frames=120
+
+native=$(just run-sample 00-empty --platform native --frames "${frames}" 2>&1) || {
+    printf '%s\n' "${native}"
+    echo "the M0 sample did not reach a clean exit on the native backend"
+    exit 1
+}
+line=$(printf '%s\n' "${native}" | grep -m1 '^00-empty: display=' || true)
+test -n "${line}" || {
+    printf '%s\n' "${native}"
+    echo "the sample printed no 'display=' line: it never got as far as a window"
+    exit 1
+}
+echo "  ${line}"
+
+server=$(printf '%s' "${line}" | sed -nE 's/^00-empty: display=([^ ]*) .*/\1/p')
+window=$(printf '%s' "${line}" | sed -nE 's/.* window=([0-9]+) .*/\1/p')
+trace=$(printf '%s' "${line}" | sed -nE 's/.* trace=(.*)$/\1/p')
+
+# THE NAMES ARE THE THREE THIS RUNG DID NOT WRITE, not the one it did: a criterion that required the
+# string "linux-x11" would have to be edited the day a second native port lands, and editing a
+# criterion to admit a new implementation is how a check comes to be about its author's tree.
+case "${server}" in
+    ""|desktop-sdl3|headless|stub)
+        echo "the sample was asked for the native backend and reports display='${server}'."
+        echo "  A run that fell back to SDL3 — or to the headless server, or to the stub — is not a"
+        echo "  native backend running the sample, and it is the outcome this criterion exists to"
+        echo "  tell apart from success. The display server names itself (DisplayServer::name())."
+        exit 1
+        ;;
+esac
+
+test "${window:-0}" -ge 1 || {
+    echo "the native display server reported window=${window:-<none>}, which is cy::kInvalidWindow:"
+    echo "  the backend came up and no window was opened."
+    exit 1
+}
+
+case "${trace}" in
+    /*) ;;
+    *)  echo "the trace went to '${trace}', which is not an absolute path. The sample falls back to"
+        echo "  a bare '00-empty.cytrace' in the working directory when the platform cannot answer"
+        echo "  its user data directory (main.cpp, resolve_trace_path), so a relative path here is"
+        echo "  the native Platform failing to answer rather than the runtime choosing to write"
+        echo "  where it was told."
+        exit 1
+        ;;
+esac
+test -s "${trace}" || {
+    echo "no bytes at ${trace}: the runtime opened a trace on the native platform's own path and"
+    echo "  nothing was written to it."
+    exit 1
+}
+
+printf '%s\n' "${native}" | grep -qE "^00-empty: ${frames} frames, [0-9]+ simulation ticks, exit 0 \(frame limit\)$" || {
+    printf '%s\n' "${native}" | grep -E "^00-empty:" || true
+    echo "the loop did not run ${frames} frames and stop because it reached them. A window that"
+    echo "  closed early, an interrupt, or a frame count that is not the one asked for are all"
+    echo "  states in which the event loop did not do what this criterion claims it did."
+    exit 1
+}
+
+# THE NEGATIVE CONTROL, and the reason it is here: every assertion above reads a string the sample
+# printed, and a sample that printed the same string whatever it was asked for would satisfy all of
+# them. So the SAME binary is asked for SDL3 and must report SDL3 — which is what makes 'the display
+# it reported is not desktop-sdl3' evidence about which implementation ran rather than about what
+# this file greps for. It also re-states task 4.5: SDL3 is not deleted, it is no longer alone.
+control=$(just run-sample 00-empty --platform sdl3 --frames 4 2>&1) || {
+    printf '%s\n' "${control}"
+    echo "the M0 sample no longer runs on SDL3, which is the control this criterion reads the native"
+    echo "  run against — and a regression in its own right: the second implementation is a proof,"
+    echo "  not a replacement (task 4.5)"
+    exit 1
+}
+control_server=$(printf '%s\n' "${control}" | sed -nE 's/^00-empty: display=([^ ]*) .*/\1/p' | head -1)
+echo "  control: the same binary asked for sdl3 reports display=${control_server:-<none>}"
+test "${control_server}" = "desktop-sdl3" || {
+    echo "asked for SDL3, the sample reports display='${control_server}' rather than desktop-sdl3:"
+    echo "  the reported name does not track the backend that was selected, so it is not evidence"
+    echo "  about which implementation ran and nothing above can be believed."
+    exit 1
+}
+'''
 requires = "display"
-reason = "a native DisplayServer needs a display to open a window; `port-touches-no-engine-layer` and `porting-surface-against-a-stub` carry the structural half of the claim on every machine"
+timeout_s = 3600
+reason = "a native DisplayServer needs a display to open a window, and this criterion's whole subject is a window that opened. `port-touches-no-engine-layer`, `native-platform-backend` and `porting-surface-against-a-stub` carry the structural half of the claim on every machine, and `smoke.empty_sample` runs the same sample headless everywhere"
 ci_job = "milestone-m11d"
+
+# THE MUTATION TAKES THE NATIVE BACKEND OUT OF THE SAMPLE'S BUILD, WHICH IS THE CLAIM ITSELF, and it
+# is a mutation this tree COMPILES: `CY_SAMPLE_LINUX_NATIVE` is what guards the sample's include of
+# the native pair, its two members, and both arms of its switch, so without the definition the
+# sample builds exactly as it did before M11.d and answers `--platform native` with "this build has
+# no native platform backend". The alternative — breaking the X11 backend itself — was rejected for
+# the reason platform/linux-native/src/x11_display_server.cpp was in flight under a peer at the time
+# this was written; the mutation a prover applies to the WORKING TREE must not land in a file
+# somebody else is editing.
+[criterion.falsifies]
+mutate = "delete-lines"
+target = "samples/00-empty/CMakeLists.txt"
+token  = "list(APPEND cy_sample_empty_definitions CY_SAMPLE_LINUX_NATIVE=1)"
+note   = "MEASURED_NOTE_PLACEHOLDER"
 
 # --- Section 4: the gates, the quality rows, and the oldest tiers in the record ----------------------
 

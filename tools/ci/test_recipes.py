@@ -168,7 +168,6 @@ def a_recipe_that_parses_flags_binds_them(root: pathlib.Path) -> list[str]:
     ]
 
 
-
 RECIPE_HEADER = re.compile(r"^([a-z_][\w-]*)(?: [^\n]*)?:\s*$")
 # A shell name being written: `x=`, `x+=`, and the `x=` of a `case` arm's one-liner body.
 SHELL_WRITE = re.compile(r"(?:^|[;&|(]|\s)([A-Za-z_]\w*)\+?=")
@@ -205,7 +204,7 @@ def _argument_loops(body: list[str]):
         opener = re.match(r"^(\s*)(for|while)\b(.*)$", line)
         if not opener:
             continue
-        indent, keyword, tail = opener.groups()
+        indent, _keyword, tail = opener.groups()
         if not any(token in tail for token in ("${rest}", "$rest", '"$@"', "$#", "{{args}}")):
             continue
         variable = (
@@ -217,7 +216,7 @@ def _argument_loops(body: list[str]):
                 break
 
 
-def a_recipe_never_accepts_a_flag_it_then_IGNORES(root: pathlib.Path) -> list[str]:
+def a_recipe_never_accepts_a_flag_it_then_ignores(root: pathlib.Path) -> list[str]:
     """A flag that is accepted and ignored is worse than one that is rejected.
 
     The case above catches a recipe that never binds `{{args}}` and so parses NOTHING. This one
@@ -333,7 +332,7 @@ def main() -> int:
         "a sanitized build tree's path survives -Wl,": sanitized_tree_survives_wl,
         "a recipe that parses flags binds them to $@": a_recipe_that_parses_flags_binds_them,
         "a recipe never accepts a flag it then ignores": (
-            a_recipe_never_accepts_a_flag_it_then_IGNORES
+            a_recipe_never_accepts_a_flag_it_then_ignores
         ),
         "a recipe that disables an option disables what requires it": (
             a_recipe_that_disables_a_feature_disables_what_needs_it
