@@ -44,7 +44,7 @@
 #include <cy/core/platform/platform.h>
 #include <cy/platform/sdl3_platform.h>
 #ifdef CY_SHIP_HAS_NATIVE_PLATFORM
-#include <cy/platform/linux_platform.h>
+#    include <cy/platform/linux_platform.h>
 #endif
 
 #include <cstdio>
@@ -156,7 +156,8 @@ void print_usage() {
     lines.push_back({"LINUX / NATIVE X11", "ABSENT", "NOT BUILT: NO PLATFORM/LINUX-NATIVE TARGET"});
 #endif
     lines.push_back({"MACOS / METAL", "NOT EVALUATED", "NO APPLE TOOLCHAIN ON THIS HOST"});
-    lines.push_back({"WINDOWS / D3D12", "NOT EVALUATED", "LINUX HOST - MOVED TO A RUNG OF ITS OWN"});
+    lines.push_back(
+        {"WINDOWS / D3D12", "NOT EVALUATED", "LINUX HOST - MOVED TO A RUNG OF ITS OWN"});
     lines.push_back({"GPU VENDORS", "1", "ONE VENDOR, ONE DRIVER, ONE OS"});
     return lines;
 }
@@ -181,8 +182,9 @@ void print_coverage(std::FILE* out, const std::vector<CoverageLine>& lines,
                  report.swapchain_format.empty() ? "(none)" : report.swapchain_format.c_str(),
                  report.swapchain_width, report.swapchain_height);
     std::fprintf(out, "  frames presented   %u\n", report.frames_presented);
-    std::fprintf(out, "  frame plan         %u submit(s), %u pass(es), %u derived barrier(s), "
-                      "plan 0x%016llx\n",
+    std::fprintf(out,
+                 "  frame plan         %u submit(s), %u pass(es), %u derived barrier(s), "
+                 "plan 0x%016llx\n",
                  report.submits, report.passes_recorded, report.barriers,
                  static_cast<unsigned long long>(report.plan_hash));
     std::fprintf(out, "  validation errors  %u\n", report.validation_errors);
@@ -327,8 +329,7 @@ int main(int argc, char** argv) {
         // shifts rather than a memcpy so that the two conventions never have to agree by accident.
         for (usize index = 0; index < out.texels.size(); ++index) {
             const u8* texel = source.pixels.data() + (index * 4U);
-            out.texels[index] = static_cast<u32>(texel[0]) |
-                                (static_cast<u32>(texel[1]) << 8U) |
+            out.texels[index] = static_cast<u32>(texel[0]) | (static_cast<u32>(texel[1]) << 8U) |
                                 (static_cast<u32>(texel[2]) << 16U) |
                                 (static_cast<u32>(texel[3]) << 24U);
         }
@@ -342,13 +343,13 @@ int main(int argc, char** argv) {
     }
 
     if (options.require_draw && report.frames_presented == 0) {
-        std::fprintf(stderr,
-                     "%s: --require-draw was given and nothing was presented: %s\n"
-                     "%s: NOT EVALUATED is never a pass.\n",
-                     kTag,
-                     report.not_evaluated.empty() ? "no reason was recorded"
-                                                  : report.not_evaluated.c_str(),
-                     kTag);
+        std::fprintf(
+            stderr,
+            "%s: --require-draw was given and nothing was presented: %s\n"
+            "%s: NOT EVALUATED is never a pass.\n",
+            kTag,
+            report.not_evaluated.empty() ? "no reason was recorded" : report.not_evaluated.c_str(),
+            kTag);
         return 1;
     }
     if (report.validation_errors != 0) {

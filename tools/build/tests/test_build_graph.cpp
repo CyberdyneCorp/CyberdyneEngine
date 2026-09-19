@@ -345,9 +345,9 @@ CY_TEST_CASE("a package manifest carries every provenance field the requirement 
 
 // ==================================================================================================
 // M11.d task 7.4 — the content audit's COST half. `audit()` answers "why is this in the build?" and
-// "what references this?" from the graph. `build-and-packaging` asks two more questions that nothing
-// answered, and every number they need was already on the report: `NodeResult` carries the stage,
-// the duration, the bytes and the outcome.
+// "what references this?" from the graph. `build-and-packaging` asks two more questions that
+// nothing answered, and every number they need was already on the report: `NodeResult` carries the
+// stage, the duration, the bytes and the outcome.
 // ==================================================================================================
 CY_TEST_CASE("time by stage separates a cache hit from work, and the rate follows") {
     BuildGraph graph;
@@ -367,8 +367,8 @@ CY_TEST_CASE("time by stage separates a cache hit from work, and the rate follow
     CY_REQUIRE(graph.add(import_b).has_value());
     CY_REQUIRE(graph.add(cook).has_value());
 
-    // Assigned rather than brace-initialised: `NodeResult` has twelve members and the build treats a
-    // missing field initialiser as an error, so a designated-initialiser list here would have to
+    // Assigned rather than brace-initialised: `NodeResult` has twelve members and the build treats
+    // a missing field initialiser as an error, so a designated-initialiser list here would have to
     // name every one of them and would break the day a thirteenth is added.
     const auto result = [](const char* name, NodeOutcome outcome, u64 duration, u64 bytes) {
         NodeResult node;
@@ -432,12 +432,12 @@ CY_TEST_CASE("size by category adds up to the package, and names what it cannot 
     CY_REQUIRE(graph.add(shader).has_value());
 
     PackageSet packages;
-    packages.bundles.push_back(Bundle{
-        "base",
-        {PackageEntry{"derived/a.bin", hash_of("A"), 100, "import:a"},
-         PackageEntry{"derived/lit.spv", hash_of("L"), 30, "shader:lit"}}});
-    packages.bundles.push_back(Bundle{
-        "high", {PackageEntry{"derived/big.bin", hash_of("B"), 900, "import:a"}}});
+    packages.bundles.push_back(
+        Bundle{"base",
+               {PackageEntry{"derived/a.bin", hash_of("A"), 100, "import:a"},
+                PackageEntry{"derived/lit.spv", hash_of("L"), 30, "shader:lit"}}});
+    packages.bundles.push_back(
+        Bundle{"high", {PackageEntry{"derived/big.bin", hash_of("B"), 900, "import:a"}}});
 
     const std::vector<CategoryShare> shares = category_shares(graph, packages);
     CY_REQUIRE_EQ(shares.size(), 2U);

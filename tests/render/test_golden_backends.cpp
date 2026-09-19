@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// The golden image, run against EVERY ENABLED RHI BACKEND, with the answer recorded. M11.d task 7.3.
+// The golden image, run against EVERY ENABLED RHI BACKEND, with the answer recorded. M11.d
+// task 7.3.
 //
 // ================================================================================================
 // WHAT WAS WRONG WITH THE SUITE THIS ONE JOINS
@@ -157,13 +158,14 @@ LedgerRow judge(const cy::rhi::BackendRegistration& registration,
 
     cy::render_test::set_field(row.device, sizeof(row.device),
                                device.value()->capabilities().device_name());
-    row.device_class = cy::render_test::classify(row.device, device.value()->capabilities().backend());
+    row.device_class =
+        cy::render_test::classify(row.device, device.value()->capabilities().backend());
 
     if (!answered_itself) {
         row.outcome = Outcome::NoDevice;
-        cy::render_test::set_field(row.reason, sizeof(row.reason),
-                                   selection.reason[0] != '\0' ? selection.reason
-                                                               : "the selection fell back");
+        cy::render_test::set_field(
+            row.reason, sizeof(row.reason),
+            selection.reason[0] != '\0' ? selection.reason : "the selection fell back");
         (void)device.value()->wait_idle();
         cy::rhi::destroy_device(allocator, device.value());
         return row;
@@ -230,8 +232,8 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
 
     CY_REQUIRE_EQ(rows.size(), backends.size());
     cy::render_test::report_ledger(rows.data(), rows.size());
-    if (const char* written = cy::render_test::write_ledger(rows.data(), rows.size(),
-                                                            "render.golden_backends")) {
+    if (const char* written =
+            cy::render_test::write_ledger(rows.data(), rows.size(), "render.golden_backends")) {
         std::fprintf(stderr, "golden_backends: ledger written to %s\n", written);
     }
 
@@ -270,14 +272,17 @@ CY_TEST_CASE("render.golden_backends: every enabled backend is judged, and the a
 // is that the label must come from the adapter's IDENTITY, and this case is that rule with a test
 // under it — written now, on a tree where it can be watched working, rather than at the same time
 // as the D3D12 backend it will judge.
-CY_TEST_CASE("render.golden_backends: a device is never called hardware because nothing said it was not") {
+CY_TEST_CASE(
+    "render.golden_backends: a device is never called hardware because nothing said it was not") {
     using cy::render_test::classify;
     using cy::rhi::BackendKind;
 
     // Every string here was OBSERVED — the three Linux ones on the machine M11.d was worked on, the
     // two hosted-runner ones by the spike's probe workflow on macos-14 and windows-2022.
-    CY_CHECK(classify("llvmpipe (LLVM 17.0.6, 256 bits)", BackendKind::Vulkan) == DeviceClass::Software);
-    CY_CHECK(classify("Microsoft Basic Render Driver", BackendKind::D3D12) == DeviceClass::Software);
+    CY_CHECK(classify("llvmpipe (LLVM 17.0.6, 256 bits)", BackendKind::Vulkan) ==
+             DeviceClass::Software);
+    CY_CHECK(classify("Microsoft Basic Render Driver", BackendKind::D3D12) ==
+             DeviceClass::Software);
     CY_CHECK(classify("Apple Paravirtual device", BackendKind::Metal) == DeviceClass::Paravirtual);
     CY_CHECK(classify("", BackendKind::Null) == DeviceClass::NullBackend);
 

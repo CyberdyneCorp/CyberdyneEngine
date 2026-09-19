@@ -71,9 +71,12 @@ before a second graphics API exists.
 - **`rhi-and-render-graph`'s INTERFACE, and not its Complete cell.** The eight gaps the seed
   recorded are interface changes before they are backends: an opaque memory-pool class the graph
   MEETS rather than compares for equality (§1.4.2 of `design.md` measured why an equality would split
-  the transient heap in two on this host's NVIDIA device), layouts derived from the access masks
-  `access.h` already carries, a queue-ownership capability query, a per-format support query, a
-  pipeline-cache token, and secondary recording. They land here, on Vulkan and the null backend,
+  the transient heap in two on this host's NVIDIA device), an engine-owned `ImageUse` in place of
+  `ImageLayout` — **not** the layout "derived from the access masks `access.h` already carries" that
+  the seed proposed and this document repeated, which section 1 measured to be unimplementable
+  because a barrier's `src_access` deliberately carries only the write access and so is not the
+  resource's current state — a queue-ownership capability query, a per-format support query, a
+  pipeline-cache path, and parallel pass recording as a capability. They land here, on Vulkan and the null backend,
   because changing `reserve_transient_memory`'s contract after two backends are written is a
   migration across every pass and changing it before is an afternoon. **The row's Complete cell is
   M11.d.5's**, with Metal and D3D12.

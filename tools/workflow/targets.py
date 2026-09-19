@@ -21,7 +21,7 @@ printed one sentence:
 
 Three things are wrong with that and only one of them is the stale milestone number. It said the
 same thing about `macos` (which the engine supports and this host cannot produce), about `android`
-(which the engine does not support at all), and about `windwos` (which is a typo) — so a developer
+(which the engine does not support at all), and about `macoss` (which is a typo) — so a developer
 could not tell "wrong machine" from "not written yet" from "you misspelled it". **A sentence with
 one answer is not a table**, and a second desktop is the first time the requirement's own scenario
 has a second answer.
@@ -198,7 +198,7 @@ def selftest() -> int:
         ("a target that needs another host", "macos", 2, "macOS SDK is not redistributable"),
         ("a target nobody has written", "android", 2, "Android NDK"),
         ("the rung that owns an unwritten target", "ios", 2, "M11E"),
-        ("a misspelling", "windwos", 3, "there is no target"),
+        ("a misspelling", "macoss", 3, "there is no target"),
         ("an empty request is the host", "", 0, ""),
     ]
 
@@ -216,7 +216,7 @@ def selftest() -> int:
 
     # The three refusals must not be one refusal wearing three exit codes.
     messages = set()
-    for requested in ("macos", "android", "windwos"):
+    for requested in ("macos", "android", "macoss"):
         buffer = io.StringIO()
         resolve(requested, host, targets, out=buffer)
         messages.add(buffer.getvalue())

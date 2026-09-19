@@ -355,13 +355,20 @@ std::vector<StageCost> stage_costs(const BuildGraph& graph, const BuildReport& r
         stage.work_ns += node.duration_ns;
         stage.bytes_produced += node.bytes_produced;
         switch (node.outcome) {
-            case NodeOutcome::Cached: ++stage.cached; break;
-            case NodeOutcome::Failed: ++stage.failed; break;
+            case NodeOutcome::Cached:
+                ++stage.cached;
+                break;
+            case NodeOutcome::Failed:
+                ++stage.failed;
+                break;
             // `Ran` and `Rebuilt` are both work done; the report's column is "not a cache hit",
             // and a reader who needs to know WHY a node ran reads the node's own `reason`.
             case NodeOutcome::Ran:
-            case NodeOutcome::Rebuilt: ++stage.rebuilt; break;
-            default: break;
+            case NodeOutcome::Rebuilt:
+                ++stage.rebuilt;
+                break;
+            default:
+                break;
         }
     }
 
@@ -481,7 +488,8 @@ std::string content_report(const BuildGraph& graph, const PackageSet& packages, 
     // would be worse than reporting none — it would be a number nobody could check.
     out += "size by plugin and by world region: NOT REPORTED. A node does not record the plugin\n";
     out += "  that declared it and `cybuild 1` has no world-region concept, so both need a\n";
-    out += "  declaration the graph does not carry rather than an attribution this report invents.\n";
+    out +=
+        "  declaration the graph does not carry rather than an attribution this report invents.\n";
     return out;
 }
 

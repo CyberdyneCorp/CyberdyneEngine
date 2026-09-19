@@ -19,7 +19,7 @@ function(cy_rhi_declare_tests)
 
     # cy_add_test() reads the taxonomy from variables that tests/CMakeLists.txt sets in its own
     # directory scope, and this function runs in the top-level scope, which is not a child of it.
-    foreach(kind IN ITEMS unit)
+    foreach(kind IN ITEMS unit integration)
         get_directory_property(budget DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
                                DEFINITION CY_TEST_BUDGET_${kind})
         get_directory_property(timeout DIRECTORY "${CMAKE_SOURCE_DIR}/tests"
@@ -45,6 +45,18 @@ function(cy_rhi_declare_tests)
             "${cy_rhi_tests_dir}/test_null_device.cpp"
             "${cy_rhi_tests_dir}/test_ray_tracing_capability.cpp"
         DEPENDENCIES cy::rhi cy::rhi-null)
+
+    # AN INTEGRATION SUITE FOR ONE CASE, and the reason is the taxonomy rather than the subject.
+    # Metal gap 6 made the pipeline cache take a PATH — `MTLBinaryArchive` serialises to a URL and
+    # has no byte form — so checking the contract means writing a file, reading it back and asking
+    # whether one exists. `testing-and-quality` puts anything that blocks on a filesystem above the
+    # unit tier, and the budget check refused this case by name when it was written in `rhi`.
+    cy_add_test(
+        NAME rhi_pipeline_cache
+        KIND integration
+        SOURCES
+            "${cy_rhi_tests_dir}/test_pipeline_cache.cpp"
+        DEPENDENCIES cy::rhi cy::rhi-null cy::core-assets)
 
 endfunction()
 

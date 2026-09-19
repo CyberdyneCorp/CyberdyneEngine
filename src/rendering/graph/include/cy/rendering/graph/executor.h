@@ -55,22 +55,6 @@ struct ExecuteOptions {
     /// semaphore is signalled by the last.
     rhi::SemaphoreHandle wait_acquire;
     rhi::SemaphoreHandle signal_present;
-    /// WHICH STAGE THE ACQUIRE IS WAITED AT, and it is not `ColorAttachmentOutput`.
-    ///
-    /// M11.d task 8.2 found this the first time anything in this repository presented a frame.
-    /// `SubmitInfo::wait_binary_stage` defaults to `ColorAttachmentOutput` — correct for a frame
-    /// whose first touch of the swapchain image is a render pass, and WRONG for any other: a frame
-    /// that begins with a transfer, a blit or a clear transitions the image out of `Undefined` at
-    /// the transfer stage, which is *before* the waited stage, and the transition therefore races
-    /// the presentation engine's read. Synchronisation validation reports it as
-    /// SYNC-HAZARD-WRITE-AFTER-READ against `PRESENT_ACQUIRE_READ` — 120 of them in
-    /// `samples/11-ship`'s first run.
-    ///
-    /// `AllCommands` is the answer that is right for every frame shape rather than for the common
-    /// one. It costs the first submit a wider wait on a semaphore the presentation engine has
-    /// usually already signalled, and it cannot be wrong; a caller that knows its frame begins with
-    /// a colour attachment may narrow it.
-    rhi::Stage wait_acquire_stage = rhi::Stage::AllCommands;
     /// Record independent passes into secondary command buffers on job workers, joined before
     /// submission. Off by default, because a graph test must not need a running job system and
     /// because sequential recording is the reference the parallel path is compared against.

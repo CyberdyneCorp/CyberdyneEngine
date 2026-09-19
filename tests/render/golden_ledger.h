@@ -55,7 +55,8 @@
 
 namespace cy::render_test {
 
-/// What kind of implementation answered. Derived from the device's reported name, never from a flag.
+/// What kind of implementation answered. Derived from the device's reported name, never from a
+/// flag.
 enum class DeviceClass : u8 {
     /// A software rasteriser: llvmpipe, lavapipe, SwiftShader, WARP, Microsoft Basic Render Driver.
     Software,
@@ -65,7 +66,8 @@ enum class DeviceClass : u8 {
     NullBackend,
     /// A name no table entry matches: no evidence it is software, and NO EVIDENCE IT IS HARDWARE.
     /// Deliberately not spelled `Hardware` — see the header comment. The rung that writes the Metal
-    /// and D3D12 backends is where this can become an attested answer, because `VkPhysicalDeviceType`,
+    /// and D3D12 backends is where this can become an attested answer, because
+    /// `VkPhysicalDeviceType`,
     /// `DXGI_ADAPTER_DESC` and `MTLDevice`'s own properties are the only things that can give one,
     /// and none of them is reachable through `DeviceCapabilities` today.
     Unattested,
@@ -73,10 +75,14 @@ enum class DeviceClass : u8 {
 
 [[nodiscard]] inline const char* describe(DeviceClass kind) noexcept {
     switch (kind) {
-        case DeviceClass::Software: return "software";
-        case DeviceClass::Paravirtual: return "paravirtual";
-        case DeviceClass::NullBackend: return "null-backend";
-        case DeviceClass::Unattested: return "unattested";
+        case DeviceClass::Software:
+            return "software";
+        case DeviceClass::Paravirtual:
+            return "paravirtual";
+        case DeviceClass::NullBackend:
+            return "null-backend";
+        case DeviceClass::Unattested:
+            return "unattested";
     }
     return "unattested";
 }
@@ -98,7 +104,10 @@ inline constexpr NonHardware kNonHardware[] = {
     {"WARP", DeviceClass::Software},
     {"Paravirtual", DeviceClass::Paravirtual},
     {"Virtual", DeviceClass::Paravirtual},
-    {"null", DeviceClass::NullBackend},
+    // The null backend is NOT a fragment here: `classify` decides it from the backend KIND, which
+    // is a fact rather than a string. A `"null"` fragment would also match a real device whose
+    // reported name happened to contain the word, which is the false positive a name table has to
+    // avoid when its whole purpose is not to mislabel a device.
 };
 
 /// Classify a device by the name it reports about itself.
@@ -135,10 +144,14 @@ enum class Outcome : u8 {
 
 [[nodiscard]] inline const char* describe(Outcome outcome) noexcept {
     switch (outcome) {
-        case Outcome::Matched: return "matched";
-        case Outcome::Differed: return "differed";
-        case Outcome::NoDevice: return "NOT-EVALUATED-no-device";
-        case Outcome::NoImage: return "NOT-EVALUATED-no-image";
+        case Outcome::Matched:
+            return "matched";
+        case Outcome::Differed:
+            return "differed";
+        case Outcome::NoDevice:
+            return "NOT-EVALUATED-no-device";
+        case Outcome::NoImage:
+            return "NOT-EVALUATED-no-image";
     }
     return "NOT-EVALUATED-no-device";
 }
@@ -200,7 +213,8 @@ inline void set_field(char* field, usize capacity, const char* value) noexcept {
 /// Print the ledger to stderr, always. A file a reader has to know to look for is not a report, and
 /// a leg that never set CY_GOLDEN_LEDGER still has to say which backend answered.
 inline void report_ledger(const LedgerRow* rows, usize count) noexcept {
-    std::fprintf(stderr, "\n--- golden images by backend ---------------------------------------\n");
+    std::fprintf(stderr,
+                 "\n--- golden images by backend ---------------------------------------\n");
     for (usize index = 0; index < count; ++index) {
         const LedgerRow& row = rows[index];
         std::fprintf(stderr, "  %-8s %-24s %-12s %s", row.backend, row.image,

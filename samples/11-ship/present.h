@@ -2,7 +2,8 @@
 // The window half: a display server, a device, a surface, a swapchain, and a frame that is
 // PRESENTED. M11.d task 8.2.
 //
-// --- WHAT IS NEW HERE, AND IT IS NOT THE PICTURE --------------------------------------------------
+// --- WHAT IS NEW HERE, AND IT IS NOT THE PICTURE
+// --------------------------------------------------
 //
 // This is the first thing in this repository that presents a frame to a window. Eleven milestones
 // of rendering — the golden images, the beauty shot, the world, the character — every one of them
@@ -16,7 +17,8 @@
 // That is why the artefact of a packaging rung draws at all: presenting is the one thing a platform
 // backend does that a headless test cannot fake.
 //
-// --- WHAT IT DOES WHEN IT CANNOT ------------------------------------------------------------------
+// --- WHAT IT DOES WHEN IT CANNOT
+// ------------------------------------------------------------------
 //
 // Every step is allowed to be absent and each absence is reported rather than worked around:
 //
@@ -61,18 +63,18 @@ enum class PlatformChoice : u8 {
 /// What one presentation leg actually did. Every field is measured, and the ones that could not be
 /// measured say so rather than defaulting to something that reads like success.
 struct PresentReport {
-    std::string display_server;    // what DisplayServer::name() answered
-    std::string backend;           // the RHI backend that was SELECTED, not the one requested
-    std::string device_name;       // the device that answered, which is what task 8.3 asks for
-    std::string device_class;      // "hardware", "software", "null" — never inferred from a flag
+    std::string display_server;  // what DisplayServer::name() answered
+    std::string backend;         // the RHI backend that was SELECTED, not the one requested
+    std::string device_name;     // the device that answered, which is what task 8.3 asks for
+    std::string device_class;    // "hardware", "software", "null" — never inferred from a flag
     bool window_opened = false;
     bool surface_created = false;
     bool swapchain_created = false;
     u32 frames_presented = 0;
     u32 validation_errors = 0;
     /// What the frame's own plan was, from the executor's report. A presented frame that turned out
-    /// to be one submit, three passes and two derived barriers is a claim a reader can check against
-    /// the graph this sample declares; "it drew" on its own is not.
+    /// to be one submit, three passes and two derived barriers is a claim a reader can check
+    /// against the graph this sample declares; "it drew" on its own is not.
     u32 submits = 0;
     u32 passes_recorded = 0;
     u32 barriers = 0;
@@ -90,7 +92,7 @@ struct PresentReport {
 struct PresentOptions {
     PlatformChoice platform = PlatformChoice::Auto;
     u32 frames = 120;
-    bool capture = false;   // read the presented image back, for --shot
+    bool capture = false;  // read the presented image back, for --shot
     bool validation = true;
     /// The colour the device line is written in, taken from the card's own palette by the caller.
     Rgba device_line_colour{140, 150, 170, 255};

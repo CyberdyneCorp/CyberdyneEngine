@@ -9,13 +9,13 @@
 #include <cy/platform/headless_display_server.h>
 #include <cy/platform/sdl3_display_server.h>
 #ifdef CY_SHIP_HAS_NATIVE_PLATFORM
-#include <cy/platform/x11_display_server.h>
+#    include <cy/platform/x11_display_server.h>
 #endif
 #include <cy/rendering/graph/executor.h>
 #include <cy/rendering/graph/graph.h>
 
 #ifdef CY_SHIP_HAS_VULKAN
-#include <cy/backends/rhi/vulkan/vulkan_backend.h>
+#    include <cy/backends/rhi/vulkan/vulkan_backend.h>
 #endif
 
 #include <cstdio>
@@ -90,11 +90,16 @@ void record_capture(const rendering::PassContext& context, void* user) noexcept 
 
 [[nodiscard]] const char* swapchain_format_name(rhi::Format format) noexcept {
     switch (format) {
-        case rhi::Format::Bgra8Srgb: return "Bgra8Srgb";
-        case rhi::Format::Bgra8Unorm: return "Bgra8Unorm";
-        case rhi::Format::Rgba8Srgb: return "Rgba8Srgb";
-        case rhi::Format::Rgba8Unorm: return "Rgba8Unorm";
-        default: return "other";
+        case rhi::Format::Bgra8Srgb:
+            return "Bgra8Srgb";
+        case rhi::Format::Bgra8Unorm:
+            return "Bgra8Unorm";
+        case rhi::Format::Rgba8Srgb:
+            return "Rgba8Srgb";
+        case rhi::Format::Rgba8Unorm:
+            return "Rgba8Unorm";
+        default:
+            return "other";
     }
 }
 
@@ -152,10 +157,14 @@ void report_validation(rhi::ValidationSeverity severity, const char* message,
 
 const char* platform_choice_name(PlatformChoice choice) noexcept {
     switch (choice) {
-        case PlatformChoice::Auto: return "auto";
-        case PlatformChoice::Sdl3: return "sdl3";
-        case PlatformChoice::Native: return "native";
-        case PlatformChoice::Headless: return "headless";
+        case PlatformChoice::Auto:
+            return "auto";
+        case PlatformChoice::Sdl3:
+            return "sdl3";
+        case PlatformChoice::Native:
+            return "native";
+        case PlatformChoice::Headless:
+            return "headless";
     }
     return "?";
 }
@@ -325,8 +334,8 @@ PresentReport present_card(Platform& platform, Image& image,
 
     if (gpu.capabilities().backend() != rhi::BackendKind::Vulkan) {
         report.not_evaluated =
-            std::string("the '") + selection.selected +
-            "' backend answered instead of Vulkan (" + selection.reason +
+            std::string("the '") + selection.selected + "' backend answered instead of Vulkan (" +
+            selection.reason +
             "), and a swapchain needs the Vulkan instance the platform creates a surface against";
         rhi::destroy_device(allocator, &gpu);
         display->destroy_window(*window);
@@ -410,9 +419,8 @@ PresentReport present_card(Platform& platform, Image& image,
         // looks like a frame and is not one — the class of outcome this whole file is written to
         // make impossible to confuse with a pass.
         report.not_evaluated =
-            mapped == nullptr
-                ? "the staging buffer did not map, so there was nothing to present"
-                : "presentation's binary semaphores could not be created";
+            mapped == nullptr ? "the staging buffer did not map, so there was nothing to present"
+                              : "presentation's binary semaphores could not be created";
         if (options.capture) {
             gpu.destroy_buffer(*readback);
         }
@@ -426,152 +434,170 @@ PresentReport present_card(Platform& platform, Image& image,
     }
     fill_staging(mapped, image, swizzle);
 
-    rendering::GraphExecutor executor(allocator, gpu);
+    // THE EXECUTOR IS SCOPED, AND THAT IS A CRASH THIS SAMPLE ALREADY PAID FOR.
+    //
+    // `GraphExecutor` holds the device and releases its transient pool in its DESTRUCTOR. Declared
+    // at function scope it is destroyed at `return`, which is after `destroy_device` below —
+    // `device_->release_transient_resources()` on a freed device. It segfaulted on the native X11
+    // leg and did not on the SDL3 one, which is what a dangling pointer does: the same bug, one
+    // allocator's luck apart. The brace is the fix and the brace is why it is here.
     bool captured = false;
+    {
+        rendering::GraphExecutor executor(allocator, gpu);
 
-    for (u32 frame = 0; frame < options.frames; ++frame) {
-        // The window's own events. A close request ends the run the way samples/00-empty does:
-        // the intent is recorded and the loop observes it, rather than the event handler exiting.
-        display->pump_events();
-        WindowEvent event;
-        bool closing = false;
-        while (display->poll_event(event)) {
-            closing = closing || event.type == WindowEventType::CloseRequested;
-        }
-        if (closing) {
-            break;
-        }
-
-        if (!gpu.begin_frame()) {
-            break;
-        }
-        const Expected<u32, Error> index =
-            gpu.acquire_next_image(*swapchain, *acquired, 1'000'000'000ULL);
-        if (!index) {
-            // An out-of-date swapchain is the window changing size, which the interface's own
-            // comment says "the caller answers by resizing rather than by failing the frame". The
-            // window is asked what it is now rather than the swapchain being told what it was.
-            if (const Expected<Extent, Error> size = display->window_size(*window); size) {
-                (void)gpu.resize_swapchain(*swapchain,
-                                           rhi::Extent2D{static_cast<u32>(size->width),
-                                                         static_cast<u32>(size->height)});
+        for (u32 frame = 0; frame < options.frames; ++frame) {
+            // The window's own events. A close request ends the run the way samples/00-empty does:
+            // the intent is recorded and the loop observes it, rather than the event handler
+            // exiting.
+            display->pump_events();
+            WindowEvent event;
+            bool closing = false;
+            while (display->poll_event(event)) {
+                closing = closing || event.type == WindowEventType::CloseRequested;
             }
-            (void)gpu.end_frame();
-            continue;
-        }
+            if (closing) {
+                break;
+            }
 
-        rendering::RenderGraph graph(allocator);
+            if (!gpu.begin_frame()) {
+                break;
+            }
+            const Expected<u32, Error> index =
+                gpu.acquire_next_image(*swapchain, *acquired, 1'000'000'000ULL);
+            if (!index) {
+                // An out-of-date swapchain is the window changing size, which the interface's own
+                // comment says "the caller answers by resizing rather than by failing the frame".
+                // The window is asked what it is now rather than the swapchain being told what it
+                // was.
+                if (const Expected<Extent, Error> size = display->window_size(*window); size) {
+                    (void)gpu.resize_swapchain(*swapchain,
+                                               rhi::Extent2D{static_cast<u32>(size->width),
+                                                             static_cast<u32>(size->height)});
+                }
+                (void)gpu.end_frame();
+                continue;
+            }
 
-        rendering::BufferRequest staging_request;
-        staging_request.name = "card";
-        staging_request.size = staging_description.size;
-        staging_request.extra_usage = rhi::BufferUsage::TransferSource;
-        const ResourceId staging_id = graph.import_buffer(staging_request, *staging);
+            rendering::RenderGraph graph(allocator);
 
-        rendering::TextureRequest target_request;
-        target_request.name = "swapchain";
-        target_request.format = info.format;
-        target_request.width = info.extent.width;
-        target_request.height = info.extent.height;
-        target_request.extra_usage =
-            rhi::TextureUsage::TransferDestination | rhi::TextureUsage::TransferSource;
-        // `Undefined` is the honest state after an acquire: the presentation engine promises the
-        // image, not its contents, and this frame overwrites every texel of it. `ImageUse` rather
-        // than a Vulkan image layout because M11.d section 1 made it one — gap 3 — and this is the
-        // first caller outside the graph's own tests to say so.
-        const ResourceId target_id = graph.import_texture(
-            target_request, gpu.swapchain_texture(*swapchain, *index), rhi::ImageUse::Undefined);
+            rendering::BufferRequest staging_request;
+            staging_request.name = "card";
+            staging_request.size = staging_description.size;
+            staging_request.extra_usage = rhi::BufferUsage::TransferSource;
+            const ResourceId staging_id = graph.import_buffer(staging_request, *staging);
 
-        const bool capture_this_frame = options.capture && !captured;
-        ResourceId readback_id = rendering::kInvalidResource;
-        if (capture_this_frame) {
-            rendering::BufferRequest readback_request;
-            readback_request.name = "photograph";
-            readback_request.size = readback_description.size;
-            readback_request.extra_usage = rhi::BufferUsage::TransferDestination;
-            readback_id = graph.import_buffer(readback_request, *readback);
-        }
+            rendering::TextureRequest target_request;
+            target_request.name = "swapchain";
+            target_request.format = info.format;
+            target_request.width = info.extent.width;
+            target_request.height = info.extent.height;
+            target_request.extra_usage =
+                rhi::TextureUsage::TransferDestination | rhi::TextureUsage::TransferSource;
+            // `Undefined` is the honest state after an acquire: the presentation engine promises
+            // the image, not its contents, and this frame overwrites every texel of it. `ImageUse`
+            // rather than a Vulkan image layout because M11.d section 1 made it one — gap 3 — and
+            // this is the first caller outside the graph's own tests to say so.
+            const ResourceId target_id =
+                graph.import_texture(target_request, gpu.swapchain_texture(*swapchain, *index),
+                                     rhi::ImageUse::Undefined);
 
-        BlitState state;
-        state.executor = &executor;
-        state.staging = staging_id;
-        state.target = target_id;
-        state.readback = readback_id;
-        state.width = copy_width;
-        state.height = copy_height;
-        state.row_length = image.width;
+            const bool capture_this_frame = options.capture && !captured;
+            ResourceId readback_id = rendering::kInvalidResource;
+            if (capture_this_frame) {
+                rendering::BufferRequest readback_request;
+                readback_request.name = "photograph";
+                readback_request.size = readback_description.size;
+                readback_request.extra_usage = rhi::BufferUsage::TransferDestination;
+                readback_id = graph.import_buffer(readback_request, *readback);
+            }
 
-        graph.add_pass("card", QueueKind::Graphics)
-            .read(staging_id, Access::TransferRead)
-            .write(target_id, Access::TransferWrite)
-            .record(&record_blit, &state);
+            BlitState state;
+            state.executor = &executor;
+            state.staging = staging_id;
+            state.target = target_id;
+            state.readback = readback_id;
+            state.width = copy_width;
+            state.height = copy_height;
+            state.row_length = image.width;
 
-        if (capture_this_frame) {
-            // THE PHOTOGRAPH IS OF THE PRESENTED IMAGE, not of the CPU buffer it came from. A
-            // screenshot composed on the host would prove the compositor nothing; this one is the
-            // device reading back what it is about to hand to the presentation engine.
-            graph.add_pass("photograph", QueueKind::Graphics)
-                .read(target_id, Access::TransferRead)
-                .write(readback_id, Access::TransferWrite)
-                .record(&record_capture, &state);
-            graph.add_pass("host", QueueKind::Graphics)
-                .read(readback_id, Access::HostRead)
+            graph.add_pass("card", QueueKind::Graphics)
+                .read(staging_id, Access::TransferRead)
+                .write(target_id, Access::TransferWrite)
+                .record(&record_blit, &state);
+
+            if (capture_this_frame) {
+                // THE PHOTOGRAPH IS OF THE PRESENTED IMAGE, not of the CPU buffer it came from. A
+                // screenshot composed on the host would prove the compositor nothing; this one is
+                // the device reading back what it is about to hand to the presentation engine.
+                graph.add_pass("photograph", QueueKind::Graphics)
+                    .read(target_id, Access::TransferRead)
+                    .write(readback_id, Access::TransferWrite)
+                    .record(&record_capture, &state);
+                graph.add_pass("host", QueueKind::Graphics)
+                    .read(readback_id, Access::HostRead)
+                    .side_effect();
+            }
+
+            // The pass that hands the image back. It records nothing: what it declares is the
+            // LAYOUT the presentation engine needs, and the graph derives the transition like every
+            // other one.
+            graph.add_pass("present", QueueKind::Graphics)
+                .read(target_id, Access::Present)
                 .side_effect();
-        }
 
-        // The pass that hands the image back. It records nothing: what it declares is the LAYOUT
-        // the presentation engine needs, and the graph derives the transition like every other one.
-        graph.add_pass("present", QueueKind::Graphics).read(target_id, Access::Present).side_effect();
+            // A graph that failed to declare something refuses to compile rather than compiling a
+            // plan with a hole in it, and `status()` is where the accumulated failure surfaces.
+            // Checking it is one line and the alternative is an error attributed to the executor.
+            if (const Status declared = graph.status(); !declared) {
+                std::fprintf(stderr, "11-ship: the frame's graph is not well formed: %s\n",
+                             declared.error().message);
+                (void)gpu.end_frame();
+                break;
+            }
 
-        // A graph that failed to declare something refuses to compile rather than compiling a plan
-        // with a hole in it, and `status()` is where the accumulated failure surfaces. Checking it
-        // is one line and the alternative is an error attributed to the executor.
-        if (const Status declared = graph.status(); !declared) {
-            std::fprintf(stderr, "11-ship: the frame's graph is not well formed: %s\n",
-                         declared.error().message);
+            rendering::ExecuteOptions execute;
+            execute.wait_acquire = *acquired;
+            execute.signal_present = *presented;
+            const Expected<rendering::ExecutionResult, Error> executed =
+                executor.execute(graph, rendering::CompileOptions{}, execute);
+            if (!executed) {
+                std::fprintf(stderr, "11-ship: the frame did not execute: %s\n",
+                             executed.error().message);
+                (void)gpu.end_frame();
+                break;
+            }
+
+            report.submits = executed->submits;
+            report.passes_recorded = executed->passes_recorded;
+            report.barriers = executed->barriers;
+            report.plan_hash = executed->plan_hash;
+
+            if (gpu.present(*swapchain, *index, *presented)) {
+                ++report.frames_presented;
+            }
+            // One frame at a time. A sample that showed a still card has nothing to gain from
+            // frames in flight, and waiting here is what makes the acquire semaphore safe to reuse
+            // next frame without a per-image fence — stated because it is a simplification, not an
+            // oversight.
+            (void)gpu.wait_idle();
             (void)gpu.end_frame();
-            break;
-        }
 
-        rendering::ExecuteOptions execute;
-        execute.wait_acquire = *acquired;
-        execute.signal_present = *presented;
-        const Expected<rendering::ExecutionResult, Error> executed =
-            executor.execute(graph, rendering::CompileOptions{}, execute);
-        if (!executed) {
-            std::fprintf(stderr, "11-ship: the frame did not execute: %s\n",
-                         executed.error().message);
-            (void)gpu.end_frame();
-            break;
-        }
-
-        report.submits = executed->submits;
-        report.passes_recorded = executed->passes_recorded;
-        report.barriers = executed->barriers;
-        report.plan_hash = executed->plan_hash;
-
-        if (gpu.present(*swapchain, *index, *presented)) {
-            ++report.frames_presented;
-        }
-        // One frame at a time. A sample that showed a still card has nothing to gain from frames in
-        // flight, and waiting here is what makes the acquire semaphore safe to reuse next frame
-        // without a per-image fence — stated because it is a simplification, not an oversight.
-        (void)gpu.wait_idle();
-        (void)gpu.end_frame();
-
-        if (capture_this_frame) {
-            if (const auto* bytes = static_cast<const u8*>(gpu.buffer_mapped_pointer(*readback));
-                bytes != nullptr) {
-                read_photograph(report.photograph, bytes, copy_width, copy_height, image.width,
-                                swizzle);
-                captured = true;
+            if (capture_this_frame) {
+                if (const auto* bytes =
+                        static_cast<const u8*>(gpu.buffer_mapped_pointer(*readback));
+                    bytes != nullptr) {
+                    read_photograph(report.photograph, bytes, copy_width, copy_height, image.width,
+                                    swizzle);
+                    captured = true;
+                }
             }
         }
-    }
 
-    report.validation_errors = gpu.statistics().validation_errors;
+        report.validation_errors = gpu.statistics().validation_errors;
 
-    executor.release();
+        executor.release();
+    }  // the executor is destroyed HERE, while the device it holds is still alive
+
     (void)gpu.wait_idle();
     if (options.capture) {
         gpu.destroy_buffer(*readback);

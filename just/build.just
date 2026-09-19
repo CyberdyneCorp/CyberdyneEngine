@@ -394,7 +394,7 @@ build-clean *args:
 # reported with what is required, rather than failing somewhere inside CMake. THE ANSWER IS A TABLE
 # NOW, not an `if`. Until M11.d this recipe compared the request against the host and printed one
 # sentence for every difference — the same words about `macos` (supported, wrong machine), about
-# `android` (no port exists) and about `windwos` (a typo), naming a milestone that had already
+# `android` (no port exists) and about `macoss` (a typo), naming a milestone that had already
 # closed. A developer could not tell those three apart.
 #
 # `just/targets.toml` is the table and tools/workflow/targets.py reads it; `just env-targets` prints

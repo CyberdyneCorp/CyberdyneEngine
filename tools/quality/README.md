@@ -60,7 +60,8 @@ message. Anything added *after* that must carry a header and a doc comment, whic
   SPDX rather than a copyright paragraph because a licence scanner run over a shipped source drop
   gets the same answer this gate does.
 * **`spell_gate.py`** — codespell, which is a list of *known misspellings* rather than a dictionary.
-  A dictionary speller over a game engine reports `navmesh` and `swizzle`; codespell reports `teh`.
+  A dictionary speller over a game engine reports `navmesh` and `swizzle`; codespell reports only
+  words that are known misspellings of real ones.
   Measured before any configuration: 889 hits, all but three of them this project's own vocabulary.
   `spelling-ignore.txt` suppresses a **word everywhere, with its reason on the line**;
   `spelling-exclude.txt` suppresses **one literal line**, which is where a misspelling that must stay

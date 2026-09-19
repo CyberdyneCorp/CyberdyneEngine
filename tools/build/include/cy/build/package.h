@@ -96,9 +96,9 @@ struct Provenance {
     /// The plugin lockfile's hash. `project-and-plugins` makes the lockfile what fixes a build's
     /// plugin set; a build whose provenance omits it cannot be reproduced even with both revisions.
     std::string lockfile;
-    /// The COOK configuration, which is not the build configuration. `profile` above is the build's;
-    /// two builds of one revision at one profile with different cook settings produce different
-    /// content, and nothing in the manifest said so.
+    /// The COOK configuration, which is not the build configuration. `profile` above is the
+    /// build's; two builds of one revision at one profile with different cook settings produce
+    /// different content, and nothing in the manifest said so.
     std::string cook_configuration;
     /// Toolchain VERSIONS, readable. `toolchain` above is a digest: it proves two builds used the
     /// same toolchain and tells a human nothing about which. Both are needed and neither replaces
@@ -145,7 +145,8 @@ struct AuditAnswer {
 
 [[nodiscard]] Expected<AuditAnswer, Error> audit(const BuildGraph& graph, std::string_view node);
 
-// --- The content audit's cost half — M11.d task 7.4 ------------------------------------------------
+// --- The content audit's cost half — M11.d task 7.4
+// ------------------------------------------------
 //
 // `build-and-packaging` asks the content audit two questions about SHAPE — "why is this in the
 // build?" and "what references this?" — which `audit()` above answers from the graph. It asks two
@@ -182,10 +183,12 @@ struct StageCost {
 /// Every stage that ran, in `NodeKind` order. A stage with no nodes is omitted — a table of zeroes
 /// is harder to read than a shorter table.
 ///
-/// The graph is a parameter because a `NodeResult` carries the node's NAME and not its kind, and the
-/// kind is the graph's own answer. Copying it onto the result would put a second copy of that answer
-/// somewhere it could go stale, which is the same reason `category_shares` asks the graph too.
-[[nodiscard]] std::vector<StageCost> stage_costs(const BuildGraph& graph, const BuildReport& report);
+/// The graph is a parameter because a `NodeResult` carries the node's NAME and not its kind, and
+/// the kind is the graph's own answer. Copying it onto the result would put a second copy of that
+/// answer somewhere it could go stale, which is the same reason `category_shares` asks the graph
+/// too.
+[[nodiscard]] std::vector<StageCost> stage_costs(const BuildGraph& graph,
+                                                 const BuildReport& report);
 
 /// "Cook and compile time by stage, with cache hit rates", as text.
 [[nodiscard]] std::string stage_report(const BuildGraph& graph, const BuildReport& report);
@@ -202,10 +205,10 @@ struct CategoryShare {
     u64 largest_bytes = 0;
 };
 
-/// Size by category, over every bundle. Needs the graph because a `PackageEntry` names the node that
-/// produced it and the node's KIND lives in the graph — deliberately not copied onto the entry,
-/// which would put a second copy of the graph's own answer into the manifest where it could go
-/// stale.
+/// Size by category, over every bundle. Needs the graph because a `PackageEntry` names the node
+/// that produced it and the node's KIND lives in the graph — deliberately not copied onto the
+/// entry, which would put a second copy of the graph's own answer into the manifest where it could
+/// go stale.
 [[nodiscard]] std::vector<CategoryShare> category_shares(const BuildGraph& graph,
                                                          const PackageSet& packages);
 

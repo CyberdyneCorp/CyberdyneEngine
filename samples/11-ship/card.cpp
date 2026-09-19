@@ -157,7 +157,8 @@ void fill_rect(Image& image, i32 x, i32 y, i32 w, i32 h, Rgba colour) noexcept {
     const i32 x0 = x < 0 ? 0 : x;
     const i32 y0 = y < 0 ? 0 : y;
     const i32 x1 = (x + w) > static_cast<i32>(image.width) ? static_cast<i32>(image.width) : x + w;
-    const i32 y1 = (y + h) > static_cast<i32>(image.height) ? static_cast<i32>(image.height) : y + h;
+    const i32 y1 =
+        (y + h) > static_cast<i32>(image.height) ? static_cast<i32>(image.height) : y + h;
     for (i32 row = y0; row < y1; ++row) {
         u8* line = image.pixels.data() + (static_cast<usize>(row) * image.width * 4U);
         for (i32 column = x0; column < x1; ++column) {
@@ -213,9 +214,8 @@ Status Card::parse(std::string_view document) noexcept {
     usize cursor = 0;
     while (cursor <= document.size()) {
         const usize newline = document.find('\n', cursor);
-        const std::string_view line =
-            document.substr(cursor, newline == std::string_view::npos ? std::string_view::npos
-                                                                      : newline - cursor);
+        const std::string_view line = document.substr(
+            cursor, newline == std::string_view::npos ? std::string_view::npos : newline - cursor);
         cursor = (newline == std::string_view::npos) ? document.size() + 1 : newline + 1;
 
         const Words words = split(line);

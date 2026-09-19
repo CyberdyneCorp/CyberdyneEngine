@@ -68,28 +68,57 @@ measurement.
       `Capability::ParallelPassRecording`, **one term at `executor.cpp:334`**. A device that answers
       false records sequentially and produces the identical command stream, and that is proved
       against a null device told to answer false, because no machine here can create a Metal one
-- [ ] 1.3 **Gaps 1, 3, 4, 6 and 7 — each a capability or a vocabulary change, none an `#ifdef`.**
-      A native shader form (`Span<const u8>` plus `native_shader_format()`) beside SPIR-V; image
-      layouts derived **inside the Vulkan backend** from the access masks `access.h` already carries,
-      so `ImageLayout` stops being a Vulkan object in an engine-owned interface; a
-      `needs_queue_ownership_transfer()` capability instead of `queue_family()`/`kQueueFamilyIgnored`
-      at call sites; a pipeline cache that takes an opaque backend-defined token or a path; and a
-      **per-format support query** so the *engine* picks the substitute for `D24UnormS8Uint` rather
-      than each backend inventing one. `Backend capability model` already requires that the renderer
-      branch on capabilities and never on backend identity — every one of these must land that way
-- [ ] 1.4 **Gap 8 stays as it is**, and that is recorded rather than silently skipped: a multi-stage
+- [x] 1.3 **Gaps 1, 3, 4, 6 and 7 — each a capability or a vocabulary change, none an `#ifdef`.**
+      Landed, and **not one platform conditional was written in the interface**. Gap 1: additive —
+      `ShaderModuleDescription::native` (`Span<const u8>`) with a `ShaderFormat native_format`, plus
+      `DeviceCapabilities::native_shader_format()`, and `validate_shader_module()` in the interface
+      module enforcing "exactly one of the two" for every backend at once; **zero existing call
+      sites moved**, because SPIR-V stays the interchange form. Gap 4: `Device::queue_family()` and
+      `kQueueFamilyIgnored` are **deleted**, replaced by `needs_queue_ownership_transfer()` and an
+      opaque `queue_ownership_domain(QueueKind)` the graph only compares; a barrier carries
+      `QueueKind`s and an `ownership_transfer` flag, and the family index never leaves
+      `vulkan_command_buffer.cpp`. Gap 6: both cache calls take a path, and an absent file is a cold
+      start. Gap 7: the query **already existed and had no consumer** —
+      `select_depth_stencil_format()` is the engine picking, `FrameAssembly::attach_device` calls it,
+      and `validate_texture` now refuses an unsupported depth target instead of letting a backend
+      substitute quietly.
+      **Gap 3 is where the cost was and where this task's own text was wrong**: "image layouts derived
+      inside the Vulkan backend from the access masks `access.h` already carries" is **not
+      implementable**, and `compile.cpp` is why — a barrier's `src_access` deliberately carries only
+      the WRITE access, because a write-after-read needs an execution dependency and not a memory
+      one, so it is not the resource's current state and a backend deriving from it would transition
+      from the wrong one; and `Access::Present` carries no access bits and no stage at all. What
+      landed instead is the half that is true: `ImageLayout` became **`ImageUse`**, engine
+      vocabulary, and `VkImageLayout` now exists only in `vulkan_translate.cpp`
+- [x] 1.4 **Gap 8 stays as it is**, and that is recorded rather than silently skipped: a multi-stage
       `PushConstantRange` is genuinely fine on Metal, the seed says so, and the next reader should not
-      spend an afternoon re-deriving it
-- [ ] 1.5 **Every change lands on Vulkan AND null first, and `metal_gaps()` shrinks as data.**
-      `unit.rhi_metal_seed` reads the same table the README prints, so the gap table, the diagnostic
-      and the test cannot drift apart; a gap closed in prose and not in `mapping.cpp` is a gap that
-      will be re-found at the first Metal compile
-- [ ] 1.6 **The shader targets both backends need do not exist.** `cache.h` already names
-      `"metal-msl"` and `"d3d12-dxil"` as interchange forms, `compiler.h` describes the translation
-      in a comment, **nothing in the tree emits either**, and `cmake/dependencies.cmake` sets
-      `SLANG_ENABLE_DXIL OFF` with "D3D12 turns this on" written beside it. `shader-system`'s
-      Complete cell is **M11.c's**, not this rung's — `design.md` §6 carries it as a dependency — but
-      it is a prerequisite of sections 2 and 3 either way, and this rung states which it got
+      spend an afternoon re-deriving it. Recorded as **data** rather than prose:
+      `MetalGapStatus::NoChangeNeeded` on its row — a third answer beside Open and Closed — and
+      `unit.rhi_metal_seed` asserts that row is exactly that, so deleting it to shorten the table
+      fails a test
+- [x] 1.5 **Every change lands on Vulkan AND null first, and `metal_gaps()` shrinks as data.**
+      All eight are implemented on both existing backends, and `smoke.vulkan_frame` runs the changed
+      interface on this project's own RTX 5060 — 4 of 4, including the transient-aliasing case the
+      pool-class change could have broken. The table shrank AS DATA: `MetalGapRecord` gained a
+      `status` and a `closed_by`, `metal_open_gap_count()` is the number that moves, and
+      `unit.rhi_metal_seed` prints **"gaps: 8 total, 0 still open, 3 where Metal has no equivalent at
+      all, 0 open with no workaround"** against eight open and two blocking at M7. Rows are never
+      deleted when they close — the finding, the remedy that was argued for and what was actually
+      done are one row a reviewer reads together — and a row cannot be marked closed without an
+      account of how, which the test checks
+- [x] 1.6 **Checked rather than assumed, and the dependency landed: this rung got both targets.**
+      `design.md` §6 named this as owed by M11.c, and M11.c delivered it — so the sentence this task
+      was written from (*"nothing in the tree emits either"*, `SLANG_ENABLE_DXIL OFF`) is now false,
+      which is recorded rather than repeated. `slang/src/slang_compiler.cpp` maps `Target::Msl` to
+      `SLANG_METAL` — MSL **source**, deliberately not `SLANG_METAL_LIB`, because a `.metallib` needs
+      Apple's `metal` driver and would make the target unavailable on every machine this project's
+      CI runs on — and `Target::Dxil` to `SLANG_DXIL` at `sm_6_6`, a floor that was *measured* from
+      `vgVisRaster`'s 64-bit atomics rather than chosen. `cmake/dependencies.cmake` no longer
+      hard-codes the option off: `CY_SHADER_DXIL` is the switch, default **on in Debug and
+      Development**, and MSL needs no option at all because it comes out of the same Slang session.
+      **What this rung owed the shader system in return is gap 1**: `ShaderModuleDescription::native`
+      and `native_shader_format()` are where those two artefacts can now be handed to a device, which
+      before M11.d had nowhere to go but inside `create_shader_module`, on the frame path
 
 ## 2 and 3. Metal and D3D12 — MOVED TO M11.d.5, not deleted and not descoped
 
@@ -230,8 +259,13 @@ not change**, which is a first-hand reading of them whether or not anybody calls
       takeover, turret control, prediction, a spectator and a replay; a dedicated server at a fixed
       rate. **The cheapest true half is the headless one's BUILD claim** — *"it SHALL execute with
       no rendering, audio, or interface code linked, and a dependency on any of them SHALL fail the
-      build"* — which is a link-closure check in the shape `just quality-layers` already has and
-      needs none of the runtime work. That is the piece to write first
+      build"* — a link-closure check in the shape `just quality-layers` already has. **But it has
+      nothing to check against yet, and that is the finding**: there is NO dedicated-server build
+      configuration in this tree. "Headless" today is a RUN-TIME display-server choice on the
+      ordinary binary — `just run-headless` is `just run-sample --headless` — so the renderer, the
+      audio backend and the interface are linked into it whatever it chooses at startup. The
+      scenario's build claim needs a configuration before it needs a check, and writing the check
+      first would produce one that passes because there is nothing for it to look at
 - [x] 7.3 Golden images **run against every enabled RHI backend and record which backend produced a
       failure**, which the requirement has said since M3 and one backend has never been able to test.
       **DONE.** `render.golden_backends` (`tests/render/test_golden_backends.cpp`) enumerates the

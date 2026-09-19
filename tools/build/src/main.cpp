@@ -227,8 +227,8 @@ void print_report(const BuildReport& report) {
     print_report(*report);
 
     // "Cook and compile time by stage, with cache hit rates" — M11.d task 7.4. Printed on every
-    // build rather than behind a flag: every number in it was already on the report, and a developer
-    // asking "what is slow?" had a list of nodes and no aggregate.
+    // build rather than behind a flag: every number in it was already on the report, and a
+    // developer asking "what is slow?" had a list of nodes and no aggregate.
     std::printf("%s", stage_report(project.graph, *report).c_str());
 
     if (arguments.has("package")) {
@@ -243,11 +243,11 @@ void print_report(const BuildReport& report) {
 
         // M11.d task 7.5. `build-and-packaging` requires seven things of a build's provenance and
         // the manifest carried four. THE CALLER SUPPLIES WHAT ONLY THE CALLER KNOWS — two source
-        // revisions and a lockfile hash are facts about the checkout, not about the build graph, and
-        // a tool that ran `git rev-parse` itself would report the revision of whatever directory it
-        // happened to be started in. They are recorded as given, INCLUDING WHEN THEY ARE EMPTY: an
-        // empty field in the manifest is a build that did not record its lockfile, which is a
-        // different and much more useful statement than a build that had none.
+        // revisions and a lockfile hash are facts about the checkout, not about the build graph,
+        // and a tool that ran `git rev-parse` itself would report the revision of whatever
+        // directory it happened to be started in. They are recorded as given, INCLUDING WHEN THEY
+        // ARE EMPTY: an empty field in the manifest is a build that did not record its lockfile,
+        // which is a different and much more useful statement than a build that had none.
         provenance.engine_revision = arguments.value("engine-revision");
         provenance.lockfile = arguments.value("lockfile");
         provenance.cook_configuration = arguments.value("cook-configuration");

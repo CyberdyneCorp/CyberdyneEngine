@@ -17,7 +17,7 @@ One `if` in `just/build.just`'s `_resolve-target`, and one sentence:
 
 Three problems, and the stale milestone number is the least of them. It said **the same words**
 about `macos` (the engine supports it; this host cannot produce it), about `android` (no port exists
-in the tree at all) and about `windwos` (a misspelling) — so a developer could not tell "wrong
+in the tree at all) and about `macoss` (a misspelling) — so a developer could not tell "wrong
 machine" from "not written yet" from "you typed it wrong". And only `build-engine` took the flag:
 `test-*`, `content-package` and any deploy recipe ignored it or passed it to a tool that would have
 failed naming an option.
@@ -39,7 +39,7 @@ resolve through the same function, so `just build-engine --platform ios` and `ju
 
 | Request | Says | Exit |
 |---|---|---|
-| `windwos` | there is no such target, and lists the ones that exist | **3** |
+| `macoss` | there is no such target, and lists the ones that exist | **3** |
 | `macos` from Linux | the engine supports it, this host cannot produce it, what a cross-build would need, and which hosts can | **2** |
 | `android` | no port exists in this tree, what one would need, and **the rung that writes it** | **2** |
 

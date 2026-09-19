@@ -10,7 +10,6 @@
 #include <cy/backends/rhi/backend.h>
 #include <cy/backends/rhi/null/null_device.h>
 #include <cy/backends/rhi/validation.h>
-#include <cy/core/assets/file.h>
 #include <cy/core/memory/domain.h>
 #include <cy/core/memory/system_allocator.h>
 
@@ -454,36 +453,19 @@ CY_TEST_CASE("the global table reads through one sampler, and says so rather tha
     device.destroy_sampler(*first);
 }
 
-CY_TEST_CASE("the pipeline cache takes a path, and an absent one is a cold start") {
-    // METAL GAP 6. `save_pipeline_cache` used to hand back a blob, which `MTLBinaryArchive` cannot
-    // produce without writing a file and reading it back; it takes a path now. The contract every
-    // backend holds is checked HERE, on the one backend every test run has: the file is written
-    // even when there is nothing to persist, an absent file loads as a cold start rather than an
-    // error, and a written one loads back.
+CY_TEST_CASE("the pipeline cache refuses a path a caller forgot to fill in") {
+    // METAL GAP 6, the half that touches no disk. `save_pipeline_cache` used to hand back a blob,
+    // which `MTLBinaryArchive` cannot produce without writing a file and reading it back; it takes
+    // a path now, and a path that is empty or null is a caller error rather than a silent no-op.
     //
-    // WHAT THIS DOES NOT SHOW, and it is the finding beside the signature: NOTHING IN THE ENGINE
-    // CALLS EITHER OF THEM. `rhi-and-render-graph` requires the cache to be "persisted across runs,
-    // so a warm start compiles nothing", and that is unimplemented above the RHI. Changing a
-    // signature does not implement it and this case does not claim it does.
+    // The round trip — write, read back, cold start on an absent file — is
+    // `integration.rhi_pipeline_cache`, because it blocks on a filesystem and
+    // `testing-and-quality` puts anything that waits above the unit tier.
     Fixture fixture;
     CY_REQUIRE(fixture.ok());
     Device& device = fixture.device();
-
-    const char* path = "cy-null-pipeline-cache.bin";
-    (void)cy::assets::fs::remove_file(path);
-
-    // A cold start: no file at all.
-    CY_CHECK(device.load_pipeline_cache(path).has_value());
-
-    CY_CHECK(device.save_pipeline_cache(path).has_value());
-    CY_CHECK(cy::assets::fs::exists(path));
-    CY_CHECK(device.load_pipeline_cache(path).has_value());
-
-    // A path a caller forgot to fill in is refused rather than silently doing nothing.
     CY_CHECK_FALSE(device.save_pipeline_cache("").has_value());
     CY_CHECK_FALSE(device.load_pipeline_cache(nullptr).has_value());
-
-    (void)cy::assets::fs::remove_file(path);
 }
 
 CY_TEST_CASE(
