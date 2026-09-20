@@ -7,9 +7,11 @@ on:
       - src/backends/rhi/**
       - src/core/diagnostics/src/crash_handler_windows.cpp
       - src/core/determinism/src/hash.cpp
+      - src/core/determinism/include/cy/core/determinism/random.h
       - src/core/jobs/src/schedule.cpp
       - src/core/memory/include/cy/core/memory/hash.h
       - src/core/memory/tests/test_containers.cpp
+      - src/pcg/include/cy/pcg/dataset.h
       - tests/render/**
       - samples/03-first-light/shaders/first_light.slang
       - samples/03-first-light/shaders/first_light_dxil.h

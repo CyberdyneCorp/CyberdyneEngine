@@ -39,6 +39,7 @@
 #include <cy/core/base/expected.h>
 #include <cy/core/base/types.h>
 #include <cy/core/memory/array.h>
+#include <cy/core/memory/hash.h>
 #include <cy/core/memory/hash_map.h>
 
 namespace cy::pcg {
@@ -344,8 +345,7 @@ private:
     static constexpr u64 kPrime2 = 0x94d049bb133111ebULL;
 
     [[nodiscard]] static constexpr u64 fold(u64 a, u64 b) noexcept {
-        const __uint128_t product = static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b);
-        return static_cast<u64>(product) ^ static_cast<u64>(product >> 64U);
+        return cy::detail::mix(a, b);
     }
 
     u64 state_ = 0xcbf29ce484222325ULL;
