@@ -68,9 +68,16 @@ jobs:
           cy_sample_first-light
       - name: Run the D3D12 debug-layer and golden suites
         shell: pwsh
-        run: ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|render.golden_backends)$" --output-on-failure
+        env:
+          CY_GOLDEN_CAPTURE_DIR: ${{ runner.temp }}\golden
+          CY_GOLDEN_LEDGER: ${{ runner.temp }}\golden\m11d5-three-backends-d3d12.manifest
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:CY_GOLDEN_CAPTURE_DIR" | Out-Null
+          ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|render.golden_backends)$" --output-on-failure
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: first-light-dxil
-          path: samples/03-first-light/shaders/first_light_dxil.h
+          name: m11d5-d3d12-evidence
+          path: |
+            samples/03-first-light/shaders/first_light_dxil.h
+            ${{ runner.temp }}\golden\*
