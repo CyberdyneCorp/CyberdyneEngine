@@ -60,7 +60,10 @@ The nine Editor capability rows now map all 133 requirements to executable evide
 M11.e deferral in `tools/roadmap/requirements-coverage.toml`. The map resolves to 71 Rust tests, five
 engine tests, 13 proven roadmap criteria, two gates, and 42 explicit deferrals. A deferral names the
 missing producer or end-to-end behavior and the test that must close it; it does not upgrade the
-capability or turn unfinished work green.
+capability or turn unfinished work green. The tested editor process boundary, tick-boundary edit
+application, policy classification, state preservation, and structured refusal paths move
+`editor-architecture` and `live-editing` from Seed to Working. The deferred requirements keep both
+rows below Complete.
 
 The audit also replaces two claimed surfaces that did not exist. `just run-editor --smoke` now opens
 the native desktop shell and closes after three drawn frames, while importer parity is checked by

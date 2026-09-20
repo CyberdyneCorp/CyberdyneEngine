@@ -132,12 +132,10 @@ note = "The real first-light frame constructs, culls, schedules, records and sub
 
 # --- live-editing ----------------------------------------------------------------------------------
 #
-# FIVE OF ELEVEN, AND THE SIX THAT ARE NOT HERE ARE NOT HERE ON PURPOSE. `Live asset reload`,
-# `Shader and material live reload`, `Module hot reload is a declared capability`, `Runtime
-# inspection`, `Runtime tweaking is distinct from authoring` and `Live editing diagnostics` are
-# openspec/changes/implement-m11b-authoring/tasks.md §3.10, which is not done. An entry for one of
-# them naming a suite that exercises a neighbouring claim is exactly the rot this map's own header
-# warns about, so each stays UNANSWERED and each run prints its title.
+# FIVE REQUIREMENTS HAVE EXECUTABLE EVIDENCE. The other six are recorded M11.e deferrals rather
+# than borrowed from a neighbouring case: each note names the missing end-to-end behavior and the
+# test that must replace the exemption. That is sufficient for an honest Working tier and
+# deliberately insufficient for Complete.
 
 [[coverage]]
 row = "live-editing"
@@ -210,14 +208,10 @@ note = "Policy announcement and structured refusals exist, but the diagnostics s
 
 # --- editor-architecture ---------------------------------------------------------------------------
 #
-# FOUR OF THIRTEEN. `Project management and settings`, `Build and deployment` and `Debugging and
-# profiling tools` are tasks §3.6, §3.7 and §3.8 and none of them is started — M11.b's gate read the
-# tree for each and found `CentreLower` referenced by one file, no FrameProfiler, no RenderDebugger
-# and no breakpoint outside two unrelated headers. `Editor is an engine application`, `Editor mode
-# and tool execution`, `Scene editing viewports`, `Scene hierarchy and asset browser` and
-# `Collaboration-friendly behaviour` each have cases in the tree that answer PART of them, and a
-# part recorded as an answer is a green tick that outlives its subject. They stay unanswered until
-# somebody reads each one end to end, which is what this map exists to force.
+# FOUR REQUIREMENTS HAVE PROVEN ROADMAP OR transaction evidence. The other nine are mapped to M11.e
+# with the exact unsupported clauses and re-entry tests. Core authoring is now Working-grade; the
+# exemptions keep broad build, deployment, debugger, renderer and collaboration claims from being
+# mistaken for Complete.
 
 [[coverage]]
 row = "editor-architecture"

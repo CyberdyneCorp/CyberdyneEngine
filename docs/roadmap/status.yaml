@@ -584,9 +584,9 @@ capabilities:
     milestone: M5B
     change: implement-m5b-operable
   editor-architecture:
-    tier: seed
-    milestone: M5
-    change: implement-m5-authorable
+    tier: working
+    milestone: M11B
+    change: implement-m11b-authoring
   editor-documents-and-transactions:
     tier: working
     milestone: M5
@@ -608,9 +608,9 @@ capabilities:
     milestone: M5
     change: implement-m5-authorable
   live-editing:
-    tier: seed
-    milestone: M5
-    change: implement-m5-authorable
+    tier: working
+    milestone: M11B
+    change: implement-m11b-authoring
   project-and-plugins:
     tier: working
     milestone: M1

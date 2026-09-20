@@ -45,7 +45,9 @@ function above its applicable project target.
   Metal, renderer, or backend ownership paths entered this change.
 - The Editor requirement audit passed with 133 of 133 requirements mapped across all nine rows: 91
   map to executable tests, proven criteria, or gates, and 42 are explicit M11.e deferrals with named
-  re-entry tests.
+  re-entry tests. The implemented and tested process boundary, tick-boundary edit application,
+  policy classification, state preservation, and refusal behavior advance `editor-architecture`
+  and `live-editing` from Seed to Working; the deferrals keep both below Complete.
 - The 56-case theme/density/width accessibility matrix and pointer-free keyboard check passed for
   all seven new panels; the headless harness has no raster screenshot path, as recorded in the
   change README.

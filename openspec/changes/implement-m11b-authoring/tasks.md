@@ -412,13 +412,14 @@ Section 0's answer is the input to 3.1 and 3.2. Everything else here is independ
       **Done:** the editor exposes its dynamically discovered catalogue through `--list-importers`;
       the independent comparator observes 5 importers, 9 extensions and 84 typed settings from both
       built programs
-- [ ] 3.13 **Read all nine editor rows requirement by requirement.** Add only evidence that resolves
+- [x] 3.13 **Read all nine editor rows requirement by requirement.** Add only evidence that resolves
       to a named test case, a proven criterion, a gate, or a recorded exemption. A partial case does
       not answer a whole requirement. The target is `just quality-requirements` reporting 133 of
       133 with zero stale or missing evidence
-      **Progress:** each of the seven previously empty rows now has at least one resolved, exact
-      evidence entry. The audit moved from 9/133 across two rows to 16/133 across all nine rows;
-      the remaining 117 titles stay visibly unanswered rather than borrowing partial cases
+      **Done:** all 133 requirements resolve with zero stale or missing evidence: 71 Rust tests,
+      five engine tests, 13 proven criteria, two gates and 42 explicit M11.e deferrals. Every
+      deferral names the unsupported clause and a concrete re-entry test, so the coverage result
+      does not imply Complete-grade behavior.
 - [x] 3.14 **Repair the view-mode criterion without taking M11.c rendering work.** The editor SHALL
       prove every engine-provided debug view is selectable, described and carried to the runtime.
       Modes whose renderer producer is absent remain explicit gaps owned by their rendering
