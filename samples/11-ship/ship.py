@@ -298,8 +298,10 @@ def binaries(arguments) -> tuple[Path, Path]:
     build_dir = Path(arguments.build_dir or os.environ.get("CY_BUILD_DIR", "build/dev"))
     if not build_dir.is_absolute():
         build_dir = ROOT / build_dir
-    sample = build_dir / "samples" / "11-ship" / "cy_sample_ship"
-    cy_build = build_dir / "tools" / "build" / "cy_build"
+    # Windows appends `.exe`; POSIX does not. Try both, prefer the platform's convention.
+    exe = ".exe" if sys.platform == "win32" else ""
+    sample = build_dir / "samples" / "11-ship" / f"cy_sample_ship{exe}"
+    cy_build = build_dir / "tools" / "build" / f"cy_build{exe}"
     for binary in (sample, cy_build):
         expect(binary.exists(),
                f"{binary} does not exist; build with `just build-engine -D CY_BUILD_TOOLS=ON`")

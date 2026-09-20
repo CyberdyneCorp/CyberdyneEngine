@@ -533,8 +533,9 @@ def binaries(arguments) -> tuple[Path, Path]:
         return Path(arguments.sample), Path(arguments.cy_build)
     build_dir = Path(arguments.build_dir or os.environ.get("CY_BUILD_DIR")
                      or ROOT / "build" / arguments.profile)
-    sample = build_dir / "samples" / "06-open-world" / "cy_sample_open-world"
-    cy_build = build_dir / "tools" / "build" / "cy_build"
+    exe = ".exe" if sys.platform == "win32" else ""
+    sample = build_dir / "samples" / "06-open-world" / f"cy_sample_open-world{exe}"
+    cy_build = build_dir / "tools" / "build" / f"cy_build{exe}"
     for binary in (sample, cy_build):
         if not binary.is_file():
             raise Failed(

@@ -355,8 +355,17 @@ CY_TEST_CASE("material_stages: the command line and the library agree about the 
         assets::fs::write_atomic(source.c_str(), kWornMetal, std::strlen(kWornMetal)).has_value());
 
     // --- the command line's answer --------------------------------------------------------------
+    //
+    // Windows: cmd.exe /c strips a matching outer pair of quotes, so wrap the whole command in one
+    // extra pair (see tests/smoke/process.h for the full explanation of the rule). And write NUL
+    // rather than /dev/null for stderr redirection.
+#if defined(_WIN32)
+    const std::string command = "\"\"" + std::string(CY_MATERIAL_BINARY) + "\" compile \"" +
+                                source + "\" --stages 2>NUL\"";
+#else
     const std::string command =
         std::string(CY_MATERIAL_BINARY) + " compile " + source + " --stages 2>/dev/null";
+#endif
     std::string printed;
     {
         // The command is the build-generated path to `cy_material` plus this case's own
