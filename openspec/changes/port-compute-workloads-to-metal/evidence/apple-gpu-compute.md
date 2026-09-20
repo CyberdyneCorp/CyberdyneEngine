@@ -22,5 +22,6 @@ ctest --test-dir build/dev -R '^(render\.skinning_metal|render\.vfx_gpu_metal)$'
   --output-on-failure
 ```
 
-This proves the shared engine passes on a physical Apple GPU. It does not yet claim that the final
-iPhone presentation scene submits both workloads; that integration has its own device measurement.
+This proves the shared engine passes on a physical Apple GPU. The follow-up
+[combined iPhone measurement](../../integrate-ios-compute-scene/evidence/physical-device.md) covers
+submission and presentation of both workloads with the mobile scene.

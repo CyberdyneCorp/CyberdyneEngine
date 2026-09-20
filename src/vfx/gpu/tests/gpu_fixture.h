@@ -137,6 +137,14 @@ private:
         std::fprintf(stderr, "declare failed: %s\n", declared.error().message);
         return false;
     }
+    if (pass.particles_buffer().is_null() || pass.alive_buffer().is_null() ||
+        pass.indices_buffer().is_null() ||
+        pass.particles_resource() == cy::rendering::kInvalidResource ||
+        pass.alive_resource() == cy::rendering::kInvalidResource ||
+        pass.indices_resource() == cy::rendering::kInvalidResource) {
+        std::fprintf(stderr, "VFX render inputs were not published after declaration\n");
+        return false;
+    }
     cy::rendering::GraphExecutor executor(allocator, gpu.device());
     auto executed =
         executor.execute(graph, cy::rendering::CompileOptions{}, cy::rendering::ExecuteOptions{});

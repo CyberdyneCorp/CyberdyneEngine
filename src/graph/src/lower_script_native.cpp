@@ -240,7 +240,12 @@ namespace {
         return reserved;
     }
     for (const BasicBlock& block : program.blocks()) {
-        if (Status pushed = starts.push_back(steps.size()); !pushed) {
+        if (steps.size() > static_cast<usize>(UINT32_MAX)) {
+            return fail(ErrorCode::OutOfRange,
+                        "the native script contains more steps than its 32-bit branch table can "
+                        "address");
+        }
+        if (Status pushed = starts.push_back(static_cast<u32>(steps.size())); !pushed) {
             return pushed;
         }
         for (u32 index = 0; index < block.count; ++index) {

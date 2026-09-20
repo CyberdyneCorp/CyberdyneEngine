@@ -243,8 +243,18 @@ public:
     [[nodiscard]] rhi::QueueKind queue() const noexcept { return queue_; }
     /// The block this pass was sized for: the emitter's own cooked capacity.
     [[nodiscard]] u32 block_capacity() const noexcept { return block_capacity_; }
-    /// The generated Slang this pass compiled, for a diagnostic or an editor. Empty when the pass
-    /// was created from pre-cooked SPIR-V.
+    /// Device-local simulation buffers consumed by a particle renderer. These handles remain
+    /// stable until `destroy`; reading them on the CPU is neither supported nor required.
+    [[nodiscard]] rhi::BufferHandle particles_buffer() const noexcept { return buffers_.particles; }
+    [[nodiscard]] rhi::BufferHandle alive_buffer() const noexcept { return buffers_.alive; }
+    [[nodiscard]] rhi::BufferHandle indices_buffer() const noexcept { return buffers_.indices; }
+    /// Resource identifiers imported by the most recent `declare` or `declare_reset`. A render
+    /// pass in the same graph reads these IDs so compute-to-graphics barriers are derived.
+    [[nodiscard]] ResourceId particles_resource() const noexcept { return resources_.particles; }
+    [[nodiscard]] ResourceId alive_resource() const noexcept { return resources_.alive; }
+    [[nodiscard]] ResourceId indices_resource() const noexcept { return resources_.indices; }
+    /// The generated Slang for a diagnostic, editor, or cooked-kernel hash check. A shipping build
+    /// still generates this text from its cooked system metadata but does not compile it.
     [[nodiscard]] Span<const char> generated_source() const noexcept { return source_.span(); }
 
     void destroy() noexcept;
@@ -331,6 +341,7 @@ private:
     rhi::ComputePipelineHandle sort_pipeline_;
     rhi::DescriptorSetHandle descriptor_set_;
     Buffers buffers_{};
+    Resources resources_{};
 
     /// The dispatches this step declared, in declaration order. Fixed-size because the count is
     /// bounded by the pass list and an allocation a frame is exactly what this module must not do.

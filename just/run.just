@@ -94,9 +94,9 @@ run-ios-device device:
         --app build/ios-device/samples/11-ship/ios/Development-iphoneos/cy_sample_ship_ios.app \
         --seconds 12 \
         --minimum-samples 8 \
-        --log build/ios-device/ios-open-world.log \
-        --screenshot docs/design/images/ios-open-world-iphone.png \
-        --evidence openspec/changes/implement-ios-platform-support/evidence/physical-device.md
+        --log build/ios-device/ios-compute-scene.log \
+        --screenshot docs/design/images/ios-compute-scene-iphone.png \
+        --evidence openspec/changes/integrate-ios-compute-scene/evidence/physical-device.md
 
 # WHAT `run-editor` RUNS, AND WHAT IT DOES NOT.
 #

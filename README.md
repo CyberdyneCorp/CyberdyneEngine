@@ -583,22 +583,30 @@ Windows remains a supported target. Its CI workflow is currently the authoritati
 
 The iOS port uses UIKit for application lifecycle, `CADisplayLink` for frame pacing, and the native
 Metal RHI for presentation. The included mobile sample renders procedural open-world terrain with
-a moving day/night cycle and reports measured FPS both on screen and as `CY_IOS_FPS` log records.
-It requires Xcode 27 or newer and targets iOS 17 or newer.
+a moving day/night cycle, a GPU-skinned walking character, and a GPU-simulated spark plume. It
+reports measured FPS both on screen and as `CY_IOS_FPS` log records. It requires Xcode 27 or newer
+and targets iOS 17 or newer.
 
 ![The iOS open-world sample running through Metal on an iPhone 16](docs/design/images/ios-open-world-iphone.png)
 
-*Physical-device validation on an iPhone 16 reported the Apple A18 GPU and a median 60.10 FPS. The
+*The terrain-only baseline on an iPhone 16 reported the Apple A18 GPU and a median 60.10 FPS. The
 3D workload shades a 1534 × 707 drawable at 60% linear scale while UIKit remains native at
 2556 × 1179. The [physical-device evidence](openspec/changes/implement-ios-platform-support/evidence/physical-device.md)
 and [before/after comparison](openspec/changes/optimize-ios-mobile-rendering/evidence/physical-device-performance.md)
 record the reproducible measurements and platform contract.*
 
-The shared compute renderer is native on Metal as well: GPU skinning and GPU particle simulation
-pass their CPU/GPU parity suites on an Apple M3 Pro using MSL selected from the same shader package
-as Vulkan's SPIR-V. The [Apple GPU compute evidence](openspec/changes/port-compute-workloads-to-metal/evidence/apple-gpu-compute.md)
-records the workloads and numeric deltas. These engine results are separate from the terrain-only
-iPhone FPS measurement above; the combined iPhone scene remains a presentation integration task.
+![The combined terrain, GPU-skinned character, and GPU VFX scene on an iPhone 16](docs/design/images/ios-compute-scene-iphone.png)
+
+The shared compute renderer is native on Metal: GPU skinning and GPU particle simulation pass their
+CPU/GPU parity suites on an Apple M3 Pro, and the combined iPhone scene consumes both outputs in
+the presented frame. Its frame graph derives the compute-to-graphics barriers; the particle draw
+uses 512 fixed-capacity instances and reads device-local liveness, with no CPU particle readback.
+On the iPhone 16, the combined mobile tier rendered at 1074 × 495 (42% linear scale), three terrain
+octaves, and 32 march steps with a median 60.09 FPS and a 55.09–60.12 FPS range. Skinning uses one
+pose buffer per frame slot, and the VFX state stays ordered on the Metal graphics queue, so normal
+frames in flight replace a per-frame device drain.
+See the [Apple GPU compute evidence](openspec/changes/port-compute-workloads-to-metal/evidence/apple-gpu-compute.md)
+and [combined iPhone evidence](openspec/changes/integrate-ios-compute-scene/evidence/physical-device.md).
 
 ![The iOS open-world sample running through Metal in the simulator](docs/design/images/ios-open-world-simulator.png)
 
@@ -625,8 +633,9 @@ CY_IOS_BUNDLE_IDENTIFIER=com.example.cyberdyne \
 The simulator verifies packaging, UIKit lifecycle, and Metal presentation. Performance evidence
 must come from a physical Apple GPU. The device recipe rejects simulators and fails unless it sees
 the platform contract, a native Metal device and swapchain, internally consistent mobile-quality
-dimensions, and at least eight FPS samples with a median of 55 FPS or better. It writes the raw log
-under `build/ios-device/` and the reviewable screenshot and evidence report into the source tree.
+dimensions, non-zero skinning and VFX workloads with particle readback disabled, and at least eight
+FPS samples with a median of 55 FPS or better. It writes the raw log under `build/ios-device/` and
+the reviewable screenshot and evidence report into the source tree.
 
 ## Working on this
 

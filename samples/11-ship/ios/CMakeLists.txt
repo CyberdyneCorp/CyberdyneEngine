@@ -7,9 +7,10 @@ cy_add_module(
     NAME cy_sample_ship_ios
     LAYER tools
     TYPE EXECUTABLE
-    SOURCES main.mm
+    SOURCES main.mm mobile_vfx_effect.cpp
     PRIVATE_DEPENDENCIES
-        cy::platform-ios cy::rhi cy::rhi-metal cy::core-memory
+        cy::platform-ios cy::rhi cy::rhi-metal cy::core-math cy::core-memory
+        cy::rendering-graph cy::rendering-skinning cy::vfx-gpu cy::vfx-compiler cy::graph
         "-framework UIKit" "-framework QuartzCore" "-framework Metal")
 set_source_files_properties(main.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 

@@ -31,6 +31,10 @@ QUALITY = re.compile(
     r"scale=([0-9]+(?:\.[0-9]+)?) terrain_octaves=(\d+) march_steps=(\d+)"
 )
 FPS = re.compile(r"CY_IOS_FPS fps=([0-9]+(?:\.[0-9]+)?) frames=(\d+) seconds=([0-9]+(?:\.[0-9]+)?)")
+COMPUTE = re.compile(
+    r"CY_IOS_COMPUTE skin_vertices=(\d+) skin_bones=(\d+) vfx_capacity=(\d+) "
+    r"vfx_dispatches=(\d+) gpu_particle_instances=(\d+) cpu_particle_readback=(\d+)"
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,11 @@ class Measurement:
     scale: float
     terrain_octaves: int
     march_steps: int
+    skin_vertices: int
+    skin_bones: int
+    vfx_capacity: int
+    vfx_dispatches: int
+    gpu_particle_instances: int
     fps: tuple[float, ...]
 
 
@@ -158,6 +167,21 @@ def parse_fps(
     return samples
 
 
+def parse_compute(lines: list[str]) -> tuple[int, int, int, int, int]:
+    marker = next((match for line in lines if (match := COMPUTE.search(line))), None)
+    if marker is None:
+        raise RuntimeError("the app never emitted CY_IOS_COMPUTE after presenting the combined scene")
+    values = tuple(int(marker.group(index)) for index in range(1, 7))
+    skin_vertices, skin_bones, capacity, dispatches, instances, readback = values
+    if min(skin_vertices, skin_bones, capacity, dispatches, instances) <= 0:
+        raise RuntimeError("the combined compute marker contains an empty workload")
+    if instances != capacity:
+        raise RuntimeError("GPU particle instance count must cover the device-resident capacity")
+    if readback != 0:
+        raise RuntimeError("the presentation path enabled CPU particle readback")
+    return skin_vertices, skin_bones, capacity, dispatches, instances
+
+
 def parse_measurement(
     lines: list[str], minimum_samples: int, minimum_median_fps: float = 0.0
 ) -> Measurement:
@@ -168,6 +192,7 @@ def parse_measurement(
     quality = parse_quality(lines)
     if (quality.drawable_width, quality.drawable_height) != (ready_width, ready_height):
         raise RuntimeError("CY_IOS_READY and CY_IOS_QUALITY disagree about drawable dimensions")
+    skin_vertices, skin_bones, capacity, dispatches, instances = parse_compute(lines)
     samples = parse_fps(lines, minimum_samples, minimum_median_fps)
     return Measurement(
         backend=backend,
@@ -179,6 +204,11 @@ def parse_measurement(
         scale=quality.scale,
         terrain_octaves=quality.terrain_octaves,
         march_steps=quality.march_steps,
+        skin_vertices=skin_vertices,
+        skin_bones=skin_bones,
+        vfx_capacity=capacity,
+        vfx_dispatches=dispatches,
+        gpu_particle_instances=instances,
         fps=samples,
     )
 
@@ -300,13 +330,19 @@ def write_evidence(path: Path, screenshot: Path, device: Device, measurement: Me
                 f"- Linear render scale: {measurement.scale:.3f}",
                 f"- Terrain quality: {measurement.terrain_octaves} octaves, "
                 f"{measurement.march_steps} maximum march steps",
+                f"- GPU skinning: {measurement.skin_vertices} vertices, "
+                f"{measurement.skin_bones} animated bones",
+                f"- GPU VFX: {measurement.vfx_capacity} device-resident slots, "
+                f"{measurement.vfx_dispatches} simulation dispatches, "
+                f"{measurement.gpu_particle_instances} fixed-capacity draw instances",
+                "- CPU particle readback: disabled",
                 f"- FPS samples: {samples}",
                 f"- Median FPS: {statistics.median(measurement.fps):.2f}",
                 f"- Range: {min(measurement.fps):.2f}–{max(measurement.fps):.2f} FPS",
                 "- Contract: platform `ios`, one fullscreen window, desktop operations rejected, "
                 "Metal surface, four touch events",
                 "",
-                f"![Open-world terrain and day/night cycle on {device.model}]({relative_screenshot})",
+                f"![Terrain, GPU-skinned character, and GPU VFX on {device.model}]({relative_screenshot})",
                 "",
             ]
         ),
@@ -338,6 +374,8 @@ def self_test() -> int:
         CONTRACT,
         "CY_IOS_READY backend=metal device=Apple A18 GPU size=1534x707",
         "CY_IOS_QUALITY native=2556x1179 drawable=1534x707 scale=0.600 terrain_octaves=4 march_steps=64",
+        "CY_IOS_COMPUTE skin_vertices=36 skin_bones=5 vfx_capacity=512 vfx_dispatches=4 "
+        "gpu_particle_instances=512 cpu_particle_readback=0",
         "CY_IOS_FPS fps=59.80 frames=60 seconds=1.003",
         "CY_IOS_FPS fps=60.00 frames=60 seconds=1.000",
         "CY_IOS_FPS fps=59.90 frames=60 seconds=1.002",
@@ -345,9 +383,13 @@ def self_test() -> int:
     parsed = parse_measurement(good, 3, 55.0)
     assert parsed.fps == (59.8, 60.0, 59.9)
     assert parsed.scale == 0.6 and parsed.terrain_octaves == 4 and parsed.march_steps == 64
+    assert parsed.skin_vertices == 36 and parsed.vfx_dispatches == 4
     broken_runs = (
         good[1:],
         [line for line in good if "CY_IOS_QUALITY" not in line],
+        [line for line in good if "CY_IOS_COMPUTE" not in line],
+        [line.replace("skin_vertices=36", "skin_vertices=0") for line in good],
+        [line.replace("cpu_particle_readback=0", "cpu_particle_readback=1") for line in good],
         [line.replace("drawable=1534x707", "drawable=2556x1179") for line in good],
         [line.replace("scale=0.600", "scale=1.000") for line in good],
         [line.replace("backend=metal", "backend=null") for line in good],

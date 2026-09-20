@@ -59,7 +59,7 @@
         "CY_ML_ONNXRUNTIME": "OFF",
         "CY_AUDIO": "OFF",
         "CY_AUDIO_STEAM_AUDIO": "OFF",
-        "CY_VFX": "OFF",
+        "CY_VFX": "ON",
         "CY_ANIMATION": "OFF",
         "CY_UI": "OFF",
         "CY_SHADER_SLANG": "OFF",

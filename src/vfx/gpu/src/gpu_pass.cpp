@@ -125,20 +125,19 @@ Status VfxGpuPass::create(Allocator& allocator, rhi::Device& device, const Compi
 
 Status VfxGpuPass::compile_kernel(const CompiledSystem& system,
                                   const GpuPassDescription& desc) noexcept {
-    const bool cooked = !desc.kernel.spirv.empty() || !desc.kernel.msl.empty() ||
-                        !desc.kernel.metal_library.empty() || !desc.kernel.dxil.empty();
-    if (cooked) {
-        // THE SHIPPING PATH. A cooked bundle supplies the module and no front end is involved,
-        // which is what `shader-system` requires of a shipping build: it contains no Slang
-        // compiler. Nothing in this tree cooks one yet — see this header's closing note.
-        return create_pipelines(desc.kernel);
-    }
-
     const CompiledEmitter& emitter = system.emitters()[desc.emitter];
     if (Status assembled =
             assemble_dispatch_unit(emitter, system.parameters(), system.channels(), source_);
         !assembled) {
         return assembled;
+    }
+    const bool cooked = !desc.kernel.spirv.empty() || !desc.kernel.msl.empty() ||
+                        !desc.kernel.metal_library.empty() || !desc.kernel.dxil.empty();
+    if (cooked) {
+        // THE SHIPPING PATH. The generated source remains available for a cook-key/hash check and
+        // diagnostics, but the module comes from the bundle and no front end is involved. This is
+        // what `shader-system` requires of a shipping build: it contains no Slang compiler.
+        return create_pipelines(desc.kernel);
     }
 
 #if defined(CY_SHADER_SLANG) && CY_SHADER_SLANG
@@ -592,17 +591,17 @@ VfxGpuPass::Resources VfxGpuPass::import_all(RenderGraph& graph) noexcept {
         return graph.import_buffer(request, handle);
     };
     const auto storage = rhi::BufferUsage::Storage;
-    Resources resources;
-    resources.particles = import("vfx particles", buffers_.particles, storage);
-    resources.alive = import("vfx alive", buffers_.alive, storage);
-    resources.indices = import("vfx indices", buffers_.indices, storage);
-    resources.counts = import("vfx counts", buffers_.counts, storage);
-    resources.free = import("vfx free", buffers_.free, storage);
-    resources.parameters = import("vfx parameters", buffers_.parameters, storage);
-    resources.keys = import("vfx keys", buffers_.keys, storage);
-    resources.events = import("vfx events", buffers_.events, storage);
-    resources.args = import("vfx args", buffers_.args, storage | rhi::BufferUsage::Indirect);
-    return resources;
+    resources_ = Resources{};
+    resources_.particles = import("vfx particles", buffers_.particles, storage);
+    resources_.alive = import("vfx alive", buffers_.alive, storage);
+    resources_.indices = import("vfx indices", buffers_.indices, storage);
+    resources_.counts = import("vfx counts", buffers_.counts, storage);
+    resources_.free = import("vfx free", buffers_.free, storage);
+    resources_.parameters = import("vfx parameters", buffers_.parameters, storage);
+    resources_.keys = import("vfx keys", buffers_.keys, storage);
+    resources_.events = import("vfx events", buffers_.events, storage);
+    resources_.args = import("vfx args", buffers_.args, storage | rhi::BufferUsage::Indirect);
+    return resources_;
 }
 
 void VfxGpuPass::declare_dispatch(RenderGraph& graph, const Resources& resources, const char* name,
