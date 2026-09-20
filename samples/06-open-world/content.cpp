@@ -234,7 +234,15 @@ Status WorldContent::parse(std::string_view text) noexcept {
         const usize newline = text.find('\n', start);
         const usize end = newline == std::string_view::npos ? text.size() : newline;
         ++number;
-        if (Status parsed = parse_line(text.substr(start, end - start), number); !parsed) {
+        std::string_view line = text.substr(start, end - start);
+        // Windows-authored sources arrive with CRLF endings; strip the trailing `\r` so a token
+        // comparison like `words.at(1) == "1"` does not fail on "1\r". Same shape as the other
+        // line-splitting parsers in this tree (tools/build/src/text.cpp, src/core/serialize/
+        // src/text.cpp, src/graph/src/text.cpp).
+        if (!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+        if (Status parsed = parse_line(line, number); !parsed) {
             return parsed;
         }
         if (newline == std::string_view::npos) {
