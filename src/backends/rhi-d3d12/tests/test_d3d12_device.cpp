@@ -63,7 +63,9 @@ CY_TEST_CASE("the D3D12 device names the adapter and class that answered") {
                     "; DXGI software flag: ", identity.dxgi_software_flag ? 1 : 0,
                     "; resource heap tier: ", identity.resource_heap_tier);
     CY_CHECK(identity.name[0] != '\0');
-    CY_CHECK(identity.resource_heap_tier == 1 || identity.resource_heap_tier == 2);
+    const bool known_resource_heap_tier =
+        identity.resource_heap_tier == 1 || identity.resource_heap_tier == 2;
+    CY_CHECK(known_resource_heap_tier);
     CY_CHECK_EQ(fixture.selection().kind, cy::rhi::BackendKind::D3D12);
     CY_CHECK_EQ(fixture.device().capabilities().backend(), cy::rhi::BackendKind::D3D12);
     CY_CHECK_EQ(std::strcmp(fixture.device().capabilities().device_name(), identity.name), 0);
