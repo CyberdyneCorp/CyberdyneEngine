@@ -48,6 +48,9 @@ function above its applicable project target.
   re-entry tests. The implemented and tested process boundary, tick-boundary edit application,
   policy classification, state preservation, and refusal behavior advance `editor-architecture`
   and `live-editing` from Seed to Working; the deferrals keep both below Complete.
+- The `m11b:editor-at-complete-grade` coverage criterion was re-proven after the map became green:
+  renaming one mapped requirement makes the audit report both an unanswered requirement and a stale
+  entry, so the 133/133 result is demonstrably able to fail.
 - The 56-case theme/density/width accessibility matrix and pointer-free keyboard check passed for
   all seven new panels; the headless harness has no raster screenshot path, as recorded in the
   change README.

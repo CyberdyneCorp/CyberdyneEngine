@@ -478,10 +478,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/repair-1-4 (exi
 [[proof]]
 ledger = "m11b"
 criterion = "editor-at-complete-grade"
-digest = "6aed660b056c19e2"
-verdict = "red in the tree"
-mutation = "-"
-detail = "red unmutated, in the sandbox and in the repository (exit 1): ==> requirements coverage  editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-and-gizmos editor-docume … 0 of 133 requirement(s) across 9 row(s) map to a test, a gate or a recorded exemption"
+digest = "84710c3e3d194d6c"
+verdict = "proven"
+mutation = "rename-token 'Live editing is a compilation step' in tools/roadmap/requirements-coverage.toml (declared)"
+detail = "red under mutation of 1 file(s)"
 
 [[proof]]
 ledger = "m11b"

@@ -900,9 +900,11 @@ kind = "command"
 run = "just quality-requirements editor-architecture live-editing editor-rust-application editor-ui-ux editor-visual-language editor-viewport-and-gizmos editor-documents-and-transactions editor-agent-interface project-and-plugins"
 ci_job = "milestone-m11b"
 
-known_gap = "DECLARED AT M11.c's GATE-FINDINGS PHASE AND NOT BY THE RUNG THAT OWNS IT. This criterion was RED when `milestone-m11b` was flipped to `state = \"green\"` in gates.toml, and nobody declared it; `tools/roadmap/falsifiability.toml` records the prover's own verdict for it as `red in the tree`, which is the verdict a criterion earns by never having been watched passing. The declaration is the WEAKER of the two honest remedies and it is the only one this phase may take: the stronger one is reverting milestone-m11b to `joins-on-close`, and a closed milestone's gate belongs to the Close phase. Re-run on 2026-09-17 against build/m11c-record: `just quality-requirements` over the nine editor rows reports 9 of 133 requirements mapped, and all nine of those are `live-editing` and `editor-documents-and-transactions` entries written into `tools/roadmap/requirements-coverage.toml` when that file was created. Seven of the nine rows have not one requirement mapped. This is the rung's own claim — eight editor capabilities of 13 to 22 requirements each, two of them at Seed since M5 — and it was never made in a form anything can answer. M11.e's `every-requirement-maps` is the criterion that sweeps it."
-known_gap_closes = "m11e"
-known_gap_declared_by = "m11c"
+[criterion.falsifies]
+mutate = "rename-token"
+target = "tools/roadmap/requirements-coverage.toml"
+token = "Live editing is a compilation step"
+note = "renaming one mapped requirement leaves its evidence in place but makes the map both stale and incomplete; the coverage audit must reject both conditions"
 
 [[criterion]]
 id = "ml-inference-or-a-deferral"
