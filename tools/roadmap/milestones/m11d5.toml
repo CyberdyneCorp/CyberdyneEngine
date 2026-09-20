@@ -179,10 +179,10 @@ run = '''
 set -e
 d="${CY_BUILD_DIR:-build/dev}"
 just build-engine --profile dev > /dev/null
-pattern='^(unit.rhi_d3d12)$'
+pattern='^(unit.rhi_d3d12|integration.rhi_d3d12)$'
 registered=$(ctest --test-dir "$d" -N -R "$pattern" 2>/dev/null | grep -c 'Test *#' || true)
-echo "$registered of 1 suite(s) match $pattern"
-test "$registered" -ge 1 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
+echo "$registered of 2 suite(s) match $pattern"
+test "$registered" -ge 2 || { echo "a suite this criterion names is not registered — renamed, deleted, or never written"; exit 1; }
 ctest --test-dir "$d" -R "$pattern" --output-on-failure
 '''
 where = "ci"

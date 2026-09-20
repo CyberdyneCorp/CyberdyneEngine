@@ -15,7 +15,7 @@ public:
     Fixture() noexcept : allocator_(cy::system_allocator(cy::MemoryDomain::Gpu)) {
         (void)cy::rhi::d3d12::register_d3d12_backend();
         cy::rhi::DeviceDescription description;
-        description.application_name = "unit.rhi_d3d12";
+        description.application_name = "integration.rhi_d3d12";
         description.enable_validation = true;
         device_ = cy::rhi::create_device(allocator_, cy::rhi::d3d12::kD3D12BackendName, description,
                                          selection_);
@@ -37,22 +37,6 @@ private:
         cy::fail(cy::ErrorCode::Unavailable, "not created");
 };
 }  // namespace
-
-CY_TEST_CASE("D3D12 Resource Heap Tier 1 partitions incompatible resources without a device") {
-    using cy::rhi::d3d12::HeapResourceClass;
-    using cy::rhi::d3d12::memory_pool_class;
-    const cy::rhi::MemoryPoolClass tier1_buffer = memory_pool_class(1, HeapResourceClass::Buffer);
-    const cy::rhi::MemoryPoolClass tier1_texture = memory_pool_class(1, HeapResourceClass::Texture);
-    const cy::rhi::MemoryPoolClass tier1_target =
-        memory_pool_class(1, HeapResourceClass::RenderTarget);
-    CY_CHECK(meet(tier1_buffer, tier1_texture).empty());
-    CY_CHECK(meet(tier1_texture, tier1_target).empty());
-
-    const cy::rhi::MemoryPoolClass tier2_buffer = memory_pool_class(2, HeapResourceClass::Buffer);
-    const cy::rhi::MemoryPoolClass tier2_target =
-        memory_pool_class(2, HeapResourceClass::RenderTarget);
-    CY_CHECK_FALSE(meet(tier2_buffer, tier2_target).empty());
-}
 
 CY_TEST_CASE("the D3D12 device names the adapter and class that answered") {
     Fixture fixture;

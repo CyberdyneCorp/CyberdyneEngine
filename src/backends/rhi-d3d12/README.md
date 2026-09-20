@@ -13,9 +13,10 @@ GitHub's `windows-2022` image exposes `Microsoft Basic Render Driver` as adapter
 the adapter returned by `EnumWarpAdapter` when no known hardware vendor is available. Unknown
 vendors remain `unknown` rather than being promoted to hardware.
 
-`unit.rhi_d3d12` prints the identity, vendor, derived class, DXGI flag and resource-heap tier of the
-device that answered. A WARP run establishes that the API path compiles, creates a device, records
-under the debug layer, draws and reads back. It is not hardware evidence.
+`integration.rhi_d3d12` prints the identity, vendor, derived class, DXGI flag and resource-heap tier
+of the device that answered. `unit.rhi_d3d12` keeps the device-free Tier 1/Tier 2 heap policy under
+the unit budget. A WARP run establishes that the API path compiles, creates a device, records under
+the debug layer, draws and reads back. It is not hardware evidence.
 
 ## Memory
 
@@ -60,11 +61,10 @@ On a Windows developer prompt:
 
 ```powershell
 cmake --preset dev -D CY_RENDERER_D3D12=ON
-cmake --build --preset dev --target cy_rhi_d3d12 cy_test_unit_rhi_d3d12 cy_test_render_golden_backends
-ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|render.golden_backends)$" --output-on-failure
+cmake --build --preset dev --target cy_rhi_d3d12 cy_test_unit_rhi_d3d12 cy_test_integration_rhi_d3d12 cy_test_render_golden_backends
+ctest --test-dir build/dev -C Development -R "^(unit.rhi_d3d12|integration.rhi_d3d12|render.golden_backends)$" --output-on-failure
 ```
 
 Set `CY_GOLDEN_CAPTURE_DIR` and `CY_GOLDEN_LEDGER` when running `render.golden_backends` to retain
 the rendered PNG and the device-labelled result. A missing reference is an error; the suite never
 regenerates it.
-
