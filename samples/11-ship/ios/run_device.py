@@ -26,6 +26,10 @@ CONTRACT = (
     "surface=metal touch_events=4"
 )
 READY = re.compile(r"CY_IOS_READY backend=(\S+) device=(.+) size=(\d+)x(\d+)")
+QUALITY = re.compile(
+    r"CY_IOS_QUALITY native=(\d+)x(\d+) drawable=(\d+)x(\d+) "
+    r"scale=([0-9]+(?:\.[0-9]+)?) terrain_octaves=(\d+) march_steps=(\d+)"
+)
 FPS = re.compile(r"CY_IOS_FPS fps=([0-9]+(?:\.[0-9]+)?) frames=(\d+) seconds=([0-9]+(?:\.[0-9]+)?)")
 
 
@@ -44,7 +48,23 @@ class Measurement:
     gpu: str
     width: int
     height: int
+    native_width: int
+    native_height: int
+    scale: float
+    terrain_octaves: int
+    march_steps: int
     fps: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class Quality:
+    native_width: int
+    native_height: int
+    drawable_width: int
+    drawable_height: int
+    scale: float
+    terrain_octaves: int
+    march_steps: int
 
 
 def _nested(value: dict[str, Any], *keys: str, default: Any = "") -> Any:
@@ -84,25 +104,81 @@ def select_physical_iphone(document: dict[str, Any], requested: str) -> Device:
     raise RuntimeError(f"no device matches {requested!r}; check `xcrun devicectl list devices`")
 
 
-def parse_measurement(lines: list[str], minimum_samples: int) -> Measurement:
-    """Require the full platform contract, native Metal selection, and enough measured frames."""
-    if not any(CONTRACT in line for line in lines):
-        raise RuntimeError("the app never emitted the iOS platform contract marker")
+def parse_ready(lines: list[str]) -> tuple[str, str, int, int]:
     ready = next((match for line in lines if (match := READY.search(line))), None)
     if ready is None:
         raise RuntimeError("the app never emitted CY_IOS_READY after creating its Metal swapchain")
-    if ready.group(1) != "metal":
-        raise RuntimeError(f"the app selected {ready.group(1)!r}, expected the native Metal backend")
+    backend = ready.group(1)
+    if backend != "metal":
+        raise RuntimeError(f"the app selected {backend!r}, expected the native Metal backend")
+    return backend, ready.group(2), int(ready.group(3)), int(ready.group(4))
+
+
+def parse_quality(lines: list[str]) -> Quality:
+    quality = next((match for line in lines if (match := QUALITY.search(line))), None)
+    if quality is None:
+        raise RuntimeError("the app never emitted CY_IOS_QUALITY for its mobile workload")
+    native_width, native_height = int(quality.group(1)), int(quality.group(2))
+    drawable_width, drawable_height = int(quality.group(3)), int(quality.group(4))
+    scale = float(quality.group(5))
+    if not 0.0 < scale < 1.0:
+        raise RuntimeError("the mobile workload must use a render scale between zero and one")
+    if abs(drawable_width - round(native_width * scale)) > 1:
+        raise RuntimeError(
+            "reported drawable dimensions do not match the native dimensions and render scale"
+        )
+    if abs(drawable_height - round(native_height * scale)) > 1:
+        raise RuntimeError(
+            "reported drawable dimensions do not match the native dimensions and render scale"
+        )
+    return Quality(
+        native_width,
+        native_height,
+        drawable_width,
+        drawable_height,
+        scale,
+        int(quality.group(6)),
+        int(quality.group(7)),
+    )
+
+
+def parse_fps(
+    lines: list[str], minimum_samples: int, minimum_median_fps: float
+) -> tuple[float, ...]:
     samples = tuple(float(match.group(1)) for line in lines if (match := FPS.search(line)))
     if len(samples) < minimum_samples:
         raise RuntimeError(f"only {len(samples)} FPS samples arrived; expected at least {minimum_samples}")
     if any(sample <= 0.0 for sample in samples):
         raise RuntimeError("an FPS sample was zero; frames were not continuously presented")
+    median_fps = statistics.median(samples)
+    if median_fps < minimum_median_fps:
+        raise RuntimeError(
+            f"median {median_fps:.2f} FPS is below the required {minimum_median_fps:.2f} FPS"
+        )
+    return samples
+
+
+def parse_measurement(
+    lines: list[str], minimum_samples: int, minimum_median_fps: float = 0.0
+) -> Measurement:
+    """Require the platform, Metal, quality, and measured-frame evidence contracts."""
+    if not any(CONTRACT in line for line in lines):
+        raise RuntimeError("the app never emitted the iOS platform contract marker")
+    backend, gpu, ready_width, ready_height = parse_ready(lines)
+    quality = parse_quality(lines)
+    if (quality.drawable_width, quality.drawable_height) != (ready_width, ready_height):
+        raise RuntimeError("CY_IOS_READY and CY_IOS_QUALITY disagree about drawable dimensions")
+    samples = parse_fps(lines, minimum_samples, minimum_median_fps)
     return Measurement(
-        backend=ready.group(1),
-        gpu=ready.group(2),
-        width=int(ready.group(3)),
-        height=int(ready.group(4)),
+        backend=backend,
+        gpu=gpu,
+        width=quality.drawable_width,
+        height=quality.drawable_height,
+        native_width=quality.native_width,
+        native_height=quality.native_height,
+        scale=quality.scale,
+        terrain_octaves=quality.terrain_octaves,
+        march_steps=quality.march_steps,
         fps=samples,
     )
 
@@ -121,11 +197,47 @@ def discover(requested: str) -> Device:
     return select_physical_iphone(json.loads(listed.stdout), requested)
 
 
+def collect_console(
+    process: subprocess.Popen[str], received: queue.Queue[Optional[str]], seconds: float
+) -> list[str]:
+    lines: list[str] = []
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            line = received.get(timeout=min(0.25, max(0.01, deadline - time.monotonic())))
+        except queue.Empty:
+            if process.poll() is not None:
+                break
+            continue
+        if line is None:
+            break
+        print(line, flush=True)
+        lines.append(line)
+    while not received.empty():
+        line = received.get_nowait()
+        if line is not None:
+            print(line, flush=True)
+            lines.append(line)
+    return lines
+
+
+def stop_process(process: subprocess.Popen[str], reader: threading.Thread) -> None:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    reader.join(timeout=1)
+
+
 def measure(
     device: Device,
     bundle_id: str,
     seconds: float,
     minimum_samples: int,
+    minimum_median_fps: float,
     screenshot: Path,
     log: Path,
 ) -> Measurement:
@@ -142,8 +254,6 @@ def measure(
         bufsize=1,
     )
     received: queue.Queue[Optional[str]] = queue.Queue()
-    lines: list[str] = []
-
     def read_console() -> None:
         assert process.stdout is not None
         for line in process.stdout:
@@ -152,30 +262,11 @@ def measure(
 
     reader = threading.Thread(target=read_console, daemon=True)
     reader.start()
-    deadline = time.monotonic() + seconds
     try:
-        while time.monotonic() < deadline:
-            try:
-                line = received.get(timeout=min(0.25, max(0.01, deadline - time.monotonic())))
-            except queue.Empty:
-                if process.poll() is not None:
-                    break
-                continue
-            if line is None:
-                break
-            print(line, flush=True)
-            lines.append(line)
-        while True:
-            try:
-                line = received.get_nowait()
-            except queue.Empty:
-                break
-            if line is not None:
-                print(line, flush=True)
-                lines.append(line)
+        lines = collect_console(process, received, seconds)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        measurement = parse_measurement(lines, minimum_samples)
+        measurement = parse_measurement(lines, minimum_samples, minimum_median_fps)
         if process.poll() is not None:
             raise RuntimeError("the app exited before its physical display could be captured")
         screenshot.parent.mkdir(parents=True, exist_ok=True)
@@ -187,14 +278,7 @@ def measure(
             raise RuntimeError("physical-device screenshot is missing or implausibly small")
         return measurement
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        reader.join(timeout=1)
+        stop_process(process, reader)
 
 
 def write_evidence(path: Path, screenshot: Path, device: Device, measurement: Measurement) -> None:
@@ -211,7 +295,11 @@ def write_evidence(path: Path, screenshot: Path, device: Device, measurement: Me
                 f"- OS: iOS {device.os_version}",
                 f"- Backend: `{measurement.backend}`",
                 f"- GPU reported by RHI: `{measurement.gpu}`",
-                f"- Drawable: {measurement.width} × {measurement.height}",
+                f"- Native display: {measurement.native_width} × {measurement.native_height}",
+                f"- Render drawable: {measurement.width} × {measurement.height}",
+                f"- Linear render scale: {measurement.scale:.3f}",
+                f"- Terrain quality: {measurement.terrain_octaves} octaves, "
+                f"{measurement.march_steps} maximum march steps",
                 f"- FPS samples: {samples}",
                 f"- Median FPS: {statistics.median(measurement.fps):.2f}",
                 f"- Range: {min(measurement.fps):.2f}–{max(measurement.fps):.2f} FPS",
@@ -248,15 +336,27 @@ def self_test() -> int:
         assert "not a physical iPhone" in str(error)
     good = [
         CONTRACT,
-        "CY_IOS_READY backend=metal device=Apple A18 GPU size=2556x1179",
+        "CY_IOS_READY backend=metal device=Apple A18 GPU size=1534x707",
+        "CY_IOS_QUALITY native=2556x1179 drawable=1534x707 scale=0.600 terrain_octaves=4 march_steps=64",
         "CY_IOS_FPS fps=59.80 frames=60 seconds=1.003",
         "CY_IOS_FPS fps=60.00 frames=60 seconds=1.000",
         "CY_IOS_FPS fps=59.90 frames=60 seconds=1.002",
     ]
-    assert parse_measurement(good, 3).fps == (59.8, 60.0, 59.9)
-    for broken in (good[1:], [*good[:2], good[2]], [line.replace("backend=metal", "backend=null") for line in good]):
+    parsed = parse_measurement(good, 3, 55.0)
+    assert parsed.fps == (59.8, 60.0, 59.9)
+    assert parsed.scale == 0.6 and parsed.terrain_octaves == 4 and parsed.march_steps == 64
+    broken_runs = (
+        good[1:],
+        [line for line in good if "CY_IOS_QUALITY" not in line],
+        [line.replace("drawable=1534x707", "drawable=2556x1179") for line in good],
+        [line.replace("scale=0.600", "scale=1.000") for line in good],
+        [line.replace("backend=metal", "backend=null") for line in good],
+        [line.replace("fps=59.80", "fps=20.00").replace("fps=60.00", "fps=20.00")
+              .replace("fps=59.90", "fps=20.00") for line in good],
+    )
+    for broken in broken_runs:
         try:
-            parse_measurement(broken, 3)
+            parse_measurement(broken, 3, 55.0)
             raise AssertionError("invalid device evidence was accepted")
         except RuntimeError:
             pass
@@ -270,8 +370,9 @@ def main() -> int:
     parser.add_argument("--device", help="physical iPhone name, CoreDevice identifier, or UDID")
     parser.add_argument("--app", type=Path)
     parser.add_argument("--bundle-id")
-    parser.add_argument("--seconds", type=float, default=8.0)
-    parser.add_argument("--minimum-samples", type=int, default=3)
+    parser.add_argument("--seconds", type=float, default=12.0)
+    parser.add_argument("--minimum-samples", type=int, default=8)
+    parser.add_argument("--minimum-median-fps", type=float, default=55.0)
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -295,6 +396,7 @@ def main() -> int:
         args.bundle_id,
         args.seconds,
         args.minimum_samples,
+        args.minimum_median_fps,
         args.screenshot,
         args.log,
     )

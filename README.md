@@ -588,9 +588,11 @@ It requires Xcode 27 or newer and targets iOS 17 or newer.
 
 ![The iOS open-world sample running through Metal on an iPhone 16](docs/design/images/ios-open-world-iphone.png)
 
-*Physical-device validation on an iPhone 16 reported the Apple A18 GPU and a median 17.30 FPS at
-2556 × 1179. The reproducible measurements and platform contract are recorded in the
-[physical-device evidence](openspec/changes/implement-ios-platform-support/evidence/physical-device.md).*
+*Physical-device validation on an iPhone 16 reported the Apple A18 GPU and a median 60.10 FPS. The
+3D workload shades a 1534 × 707 drawable at 60% linear scale while UIKit remains native at
+2556 × 1179. The [physical-device evidence](openspec/changes/implement-ios-platform-support/evidence/physical-device.md)
+and [before/after comparison](openspec/changes/optimize-ios-mobile-rendering/evidence/physical-device-performance.md)
+record the reproducible measurements and platform contract.*
 
 ![The iOS open-world sample running through Metal in the simulator](docs/design/images/ios-open-world-simulator.png)
 
@@ -604,8 +606,8 @@ just run-ios-simulator
 ```
 
 For a physical device, supply the Apple development team and a bundle identifier covered by its
-provisioning profile. With the iPhone unlocked and connected, one command builds, installs, runs an
-eight-second sample, verifies the engine markers, records several FPS samples, and captures the
+provisioning profile. With the iPhone unlocked and connected, one command builds, installs, runs a
+twelve-second sample, verifies the engine markers, records several FPS samples, and captures the
 screen:
 
 ```bash
@@ -616,9 +618,9 @@ CY_IOS_BUNDLE_IDENTIFIER=com.example.cyberdyne \
 
 The simulator verifies packaging, UIKit lifecycle, and Metal presentation. Performance evidence
 must come from a physical Apple GPU. The device recipe rejects simulators and fails unless it sees
-the platform contract, a native Metal device and swapchain, and at least three positive
-`CY_IOS_FPS` samples. It writes the raw log under `build/ios-device/` and the reviewable screenshot
-and evidence report into the source tree.
+the platform contract, a native Metal device and swapchain, internally consistent mobile-quality
+dimensions, and at least eight FPS samples with a median of 55 FPS or better. It writes the raw log
+under `build/ios-device/` and the reviewable screenshot and evidence report into the source tree.
 
 ## Working on this
 

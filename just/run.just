@@ -92,8 +92,8 @@ run-ios-device device:
         --device "{{device}}" \
         --bundle-id "${CY_IOS_BUNDLE_IDENTIFIER}" \
         --app build/ios-device/samples/11-ship/ios/Development-iphoneos/cy_sample_ship_ios.app \
-        --seconds 8 \
-        --minimum-samples 3 \
+        --seconds 12 \
+        --minimum-samples 8 \
         --log build/ios-device/ios-open-world.log \
         --screenshot docs/design/images/ios-open-world-iphone.png \
         --evidence openspec/changes/implement-ios-platform-support/evidence/physical-device.md

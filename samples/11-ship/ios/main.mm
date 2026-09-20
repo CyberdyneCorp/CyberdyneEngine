@@ -14,11 +14,16 @@
 #include <cy/servers/input/server.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
 
 namespace {
+
+constexpr float kMobileRenderScale = 0.60F;
+constexpr int kTerrainOctaves = 4;
+constexpr int kTerrainMarchSteps = 64;
 
 constexpr char kWorldShader[] = R"msl(
 #include <metal_stdlib>
@@ -35,12 +40,27 @@ vertex Raster world_vertex(uint id [[vertex_id]]) {
     return out;
 }
 
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return fract(p.x * p.y);
+}
+
+float smooth_noise(float2 p) {
+    const float2 cell = floor(p);
+    float2 local = fract(p);
+    local = local * local * (3.0 - 2.0 * local);
+    const float low = mix(hash21(cell), hash21(cell + float2(1,0)), local.x);
+    const float high = mix(hash21(cell + float2(0,1)), hash21(cell + 1.0), local.x);
+    return mix(low, high, local.y) * 2.0 - 1.0;
+}
+
 float terrain(float2 p) {
     float h = 0.0;
     float a = 0.55;
-    for (int i = 0; i < 6; ++i) {
-        h += a * sin(p.x * 0.71 + cos(p.y * 0.43)) * cos(p.y * 0.63 - p.x * 0.19);
-        p = float2(p.x * 1.73 - p.y * 0.29, p.x * 0.29 + p.y * 1.73);
+    for (int i = 0; i < 4; ++i) {
+        h += a * smooth_noise(p);
+        p = float2(p.x * 1.81 - p.y * 0.34, p.x * 0.34 + p.y * 1.81) + 7.13;
         a *= 0.48;
     }
     return h * 0.72;
@@ -71,7 +91,7 @@ fragment float4 world_fragment(Raster in [[stage_in]], constant Frame& frame [[b
     const float3 ray = normalize(forward * 1.55 + right * screen.x + up * screen.y);
 
     const float3 day_sky = mix(float3(0.62,0.77,0.92), float3(0.08,0.32,0.68), in.uv.y);
-    const float stars = step(0.997, fract(sin(dot(floor(in.uv * 520.0), float2(12.9898,78.233))) * 43758.5453));
+    const float stars = step(0.997, hash21(floor(in.uv * 520.0)));
     float3 color = mix(float3(0.006,0.012,0.04) + stars * 0.65, day_sky, daylight);
     const float sun_disk = pow(max(dot(ray, sun), 0.0), 900.0);
     color += float3(1.0,0.67,0.28) * sun_disk * (0.4 + daylight);
@@ -79,11 +99,11 @@ fragment float4 world_fragment(Raster in [[stage_in]], constant Frame& frame [[b
     float distance = 0.0;
     float3 point = camera;
     bool hit = false;
-    for (int step = 0; step < 92; ++step) {
+    for (int step = 0; step < 64; ++step) {
         point = camera + ray * distance;
         const float d = map_world(point);
         if (d < 0.006) { hit = true; break; }
-        distance += clamp(d * 0.42, 0.025, 0.34);
+        distance += clamp(d * 0.50, 0.03, 0.40);
         if (distance > 28.0) break;
     }
     if (hit) {
@@ -106,6 +126,17 @@ fragment float4 world_fragment(Raster in [[stage_in]], constant Frame& frame [[b
 )msl";
 
 struct FrameConstants { float time; float aspect; float padding[2]; };
+
+cy::Extent scaled_drawable(CGSize view_size, CGFloat native_scale) {
+    const auto scaled = native_scale * static_cast<CGFloat>(kMobileRenderScale);
+    return {static_cast<cy::i32>(std::lround(view_size.width * scaled)),
+            static_cast<cy::i32>(std::lround(view_size.height * scaled))};
+}
+
+cy::Extent native_drawable(CGSize view_size, CGFloat native_scale) {
+    return {static_cast<cy::i32>(std::lround(view_size.width * native_scale)),
+            static_cast<cy::i32>(std::lround(view_size.height * native_scale))};
+}
 
 void report(const char* operation, const cy::Error& error) {
     std::fprintf(stderr, "CY_IOS_ERROR operation=%s code=%u message=%s\n", operation,
@@ -371,9 +402,9 @@ private:
     const CGFloat scale = UIScreen.mainScreen.nativeScale;
     self.view.contentScaleFactor = scale;
     const CGSize size = self.view.bounds.size;
-    layer.drawableSize = CGSizeMake(size.width * scale, size.height * scale);
-    const cy::Extent pixels{static_cast<cy::i32>(layer.drawableSize.width),
-                            static_cast<cy::i32>(layer.drawableSize.height)};
+    const cy::Extent native_pixels = native_drawable(size, scale);
+    const cy::Extent pixels = scaled_drawable(size, scale);
+    layer.drawableSize = CGSizeMake(pixels.width, pixels.height);
     (void)_display.initialise((__bridge void*)self.view, (__bridge void*)layer, pixels,
                               static_cast<cy::f32>(scale), UIScreen.mainScreen.maximumFramesPerSecond);
     cy::WindowDescription window_description;
@@ -391,13 +422,17 @@ private:
         std::abort();
     }
     if (!_renderer.start(layer, pixels)) std::abort();
+    std::printf("CY_IOS_QUALITY native=%dx%d drawable=%dx%d scale=%.3f terrain_octaves=%d march_steps=%d\n",
+                native_pixels.width, native_pixels.height, pixels.width, pixels.height,
+                static_cast<double>(kMobileRenderScale), kTerrainOctaves, kTerrainMarchSteps);
+    std::fflush(stdout);
 
     _stats = [[UILabel alloc] initWithFrame:CGRectMake(18, 18, 360, 72)];
     _stats.textColor = UIColor.whiteColor;
     _stats.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45];
     _stats.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightSemibold];
     _stats.numberOfLines = 3;
-    _stats.text = @"Cyberdyne iOS • Metal\nOpen world • day/night\nmeasuring FPS…";
+    _stats.text = @"Cyberdyne iOS • Metal\nOpen world • day/night\n60% render scale • measuring…";
     [self.view addSubview:_stats];
 
     _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(drawFrame:)];
@@ -409,11 +444,10 @@ private:
     [super viewDidLayoutSubviews];
     CAMetalLayer* layer = (CAMetalLayer*)self.view.layer;
     const CGFloat scale = self.view.contentScaleFactor;
-    const CGSize wanted = CGSizeMake(self.view.bounds.size.width * scale,
-                                     self.view.bounds.size.height * scale);
+    const cy::Extent pixels = scaled_drawable(self.view.bounds.size, scale);
+    const CGSize wanted = CGSizeMake(pixels.width, pixels.height);
     if (!CGSizeEqualToSize(layer.drawableSize, wanted)) {
         layer.drawableSize = wanted;
-        const cy::Extent pixels{static_cast<cy::i32>(wanted.width), static_cast<cy::i32>(wanted.height)};
         _display.update_metrics(pixels, static_cast<cy::f32>(scale),
                                 UIScreen.mainScreen.maximumFramesPerSecond);
         _renderer.resize(pixels);
@@ -429,8 +463,8 @@ private:
     const CFTimeInterval elapsed = CACurrentMediaTime() - _sampleStart;
     if (elapsed >= 1.0) {
         const double fps = static_cast<double>(_sampleFrames) / elapsed;
-        _stats.text = [NSString stringWithFormat:@"Cyberdyne iOS • Metal\nOpen world • day/night\n%.1f FPS • %ld Hz display",
-                       fps, (long)UIScreen.mainScreen.maximumFramesPerSecond];
+        _stats.text = [NSString stringWithFormat:@"Cyberdyne iOS • Metal\nOpen world • day/night\n%.1f FPS • 60%% render scale",
+                       fps];
         std::printf("CY_IOS_FPS fps=%.2f frames=%llu seconds=%.3f\n", fps,
                     static_cast<unsigned long long>(_sampleFrames), elapsed);
         std::fflush(stdout);
