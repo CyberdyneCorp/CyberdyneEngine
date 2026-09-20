@@ -542,10 +542,10 @@ detail = "red under mutation of 1 file(s), rebuilt against build/m11c-shot (exit
 [[proof]]
 ledger = "m11b"
 criterion = "import-from-the-editor"
-digest = "4f4b2793eb1c164b"
-verdict = "red against a built tree"
-mutation = "-"
-detail = "red unmutated against the build tree build/repair-1-4 (exit 1): no build/repair-1-4/cy_test_integration_editor_import — the suite integration.editor_import does not exist"
+digest = "ba7449028980ac02"
+verdict = "proven against a built tree"
+mutation = "delete-lines 'format.extensions = extensions;' in editor/crates/cy-editor-services/src/assets.rs (declared)"
+detail = "red under mutation of 1 file(s), rebuilt against build/dev (exit 1: AssertionError: the editor importer catalogue differs from tools/import), and green again once restored"
 
 [[proof]]
 ledger = "m11b"
