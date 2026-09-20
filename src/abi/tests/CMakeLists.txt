@@ -45,6 +45,14 @@ function(cy_abi_test_module name)
         SOURCES module/behaviour.c
         PRIVATE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../include"
         PRIVATE_DEFINITIONS ${ARGN})
+    # Windows: MSVC hides every DLL symbol by default, so `cy_module_entry` — the entry point the
+    # loader looks up via GetProcAddress — would not appear in the export table. `dumpbin /exports`
+    # on such a build shows an empty list. Setting WINDOWS_EXPORT_ALL_SYMBOLS asks CMake to
+    # auto-generate a .def file that exports every symbol, matching the POSIX default and letting
+    # the loader find `cy_module_entry` and `cy_module_shutdown` at runtime.
+    if(WIN32)
+        set_target_properties(${name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    endif()
 endfunction()
 
 # schema 1: health, ammo, ticks.

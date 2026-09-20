@@ -29,9 +29,19 @@ CASES = (
 
 
 def compile_one(compiler: str, includes: list[str], source: pathlib.Path) -> tuple[bool, str]:
-    command = [compiler, "-std=c++20", "-fno-exceptions", "-fno-rtti", "-fsyntax-only"]
-    for include in includes:
-        command += ["-I", include]
+    # MSVC and GCC/Clang disagree about every flag on this line. Detect from the compiler name.
+    compiler_name = pathlib.Path(compiler).name.lower()
+    is_msvc = compiler_name in ("cl", "cl.exe")
+    if is_msvc:
+        # /nologo, /std:c++20, /EHs-c- and /GR- match the engine's -fno-exceptions / -fno-rtti;
+        # /Zs is the syntax-only equivalent of -fsyntax-only.
+        command = [compiler, "/nologo", "/std:c++20", "/EHs-c-", "/GR-", "/Zs"]
+        for include in includes:
+            command += ["/I", include]
+    else:
+        command = [compiler, "-std=c++20", "-fno-exceptions", "-fno-rtti", "-fsyntax-only"]
+        for include in includes:
+            command += ["-I", include]
     command.append(str(source))
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     return completed.returncode == 0, (completed.stderr or completed.stdout).strip()
